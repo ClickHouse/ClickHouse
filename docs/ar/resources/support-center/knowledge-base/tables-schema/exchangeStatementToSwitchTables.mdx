@@ -1,0 +1,95 @@
+---
+title: كيفية استخدام الأمر EXCHANGE للتبديل بين الجداول
+description: "كيفية استخدام الأمر EXCHANGE للتبديل بين الجداول"
+date: 2024-11-21
+tags: ['إدارة البيانات']
+keywords: ['EXCHANGE']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="question">
+  ## السؤال
+</div>
+
+كيف أستخدم الأمر [`EXCHANGE`](/ar/reference/statements/exchange) لتبديل اسمي جدولين؟
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+يكون الأمر `EXCHANGE` مفيدًا عندما تحتاج إلى استبدال جدول حالي بجدول مؤقت آخر، بعد تحديث المفتاح الأساسي أو بعض الإعدادات الأخرى فيه.
+ويتم ذلك بصورة ذرية بخلاف الأمر `RENAME`.
+ويكون مفيدًا أيضًا عندما تكون لديك عروض مادية تُفعَّل على الجدول المصدر وتريد تجنب إعادة بناء العرض.
+
+فيما يلي مثال بسيط يوضح كيفية عمله وكيفية اختباره:
+
+* أنشئ قاعدة بيانات تجريبية
+
+```sql
+create database db1;
+```
+
+* أنشئ جدولًا نموذجيًا
+
+```sql
+create table db1.table1_exchange
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* أدرِج صفًا تجريبيًا
+
+```sql
+insert into db1.table1_exchange
+values
+(1, 'a');
+```
+
+* أنشئ جدولًا مؤقتًا نموذجيًا سيُجرى تبديله
+
+```sql
+create table db1.table1_exchange_temp
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* أدرِج صفًا كمثال في الجدول المؤقت
+
+```sql
+insert into db1.table1_exchange_temp
+values
+(2, 'b');
+```
+
+* نفّذ الأمر `EXCHANGE` للتبديل بين الجداول
+
+```sql
+exchange tables db1.table1_exchange and db1.table1_exchange_temp;
+```
+
+* تحقّق من أنه قد تم الآن تنفيذ EXCHANGE بين الجداول، وأظهر أن الصفوف قد تبدّلت
+
+```sql
+select * from db1.table1_exchange;
+```
+
+```text
+┌─id─┬─string_field─┐
+│  2 │ b            │
+└────┴──────────────┘
+
+1 row in set. Elapsed: 0.002 sec. 
+```

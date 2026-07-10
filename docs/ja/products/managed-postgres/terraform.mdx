@@ -1,0 +1,186 @@
+---
+slug: /cloud/managed-postgres/terraform
+sidebarTitle: 'Terraform'
+title: 'Managed Postgres Terraform リファレンス'
+description: 'ClickHouse Terraform プロバイダーを使用して ClickHouse Managed Postgres サービスを管理するためのリファレンス。'
+keywords: ['managed postgres', 'terraform', 'Infrastructure as Code', 'IaC', 'プロバイダー', 'プログラマティック']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.terraform-beta" />
+
+ClickHouse Managed Postgres サービスは、[ClickHouse Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service)の `clickhouse_postgres_service` リソースを使用して作成および管理できます。このページでは、このリソースと関連するデータソースについて、プロバイダーのセットアップと設定例を説明します。
+
+<Note>
+  このリソースはアルファ段階であり、今後のプロバイダー バージョンで動作が変更される可能性があります。通常のプロバイダー ビルドに含まれており、プロバイダー バージョン **v3.17.1** 以降で利用できます。詳細は [プロバイダーのリリース](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) を確認してください。
+</Note>
+
+<div id="provider-setup">
+  ## プロバイダーの設定
+</div>
+
+ClickHouse プロバイダーを Terraform の設定に追加します。
+
+```hcl
+terraform {
+  required_providers {
+    clickhouse = {
+      source  = "ClickHouse/clickhouse"
+      version = ">= 3.17.1"
+    }
+  }
+}
+
+provider "clickhouse" {
+  organization_id = var.organization_id
+  token_key       = var.token_key
+  token_secret    = var.token_secret
+}
+```
+
+プロバイダーで使用するための API キーを作成する手順については、[API キーの管理](/ja/products/cloud/features/admin-features/api/openapi) を参照してください。
+
+<div id="resource-overview">
+  ## リソースの概要
+</div>
+
+`clickhouse_postgres_service` リソースでは、以下の引数を使用できます。
+
+| 引数                         | 必須     | 説明                                                                                                                       |
+| -------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `name`                     | はい     | サービスの人間が読める名前です。変更不可で、変更するとサービスは破棄されて再作成されます。                                                                            |
+| `cloud_provider`           | 通常の作成時 | インスタンスをホストするクラウドプロバイダーです。現在サポートされているのは `aws` のみです。読み取りレプリカまたはポイントインタイム復元の場合は省略してください (ソースから継承されます) 。                     |
+| `region`                   | 通常の作成時 | クラウドリージョンです (例: `us-east-1`) 。読み取りレプリカまたはポイントインタイム復元の場合は省略してください (ソースから継承されます) 。                                         |
+| `size`                     | 通常の作成時 | インスタンスサイズ (VM SKU) です (例: `m6gd.large`) 。その場でサイズ変更できます。ポイントインタイム復元の場合は省略してください (復元されたインスタンスはバックアップ時のサイズで起動します) 。         |
+| `postgres_version`         | いいえ    | Postgres のメジャーバージョンです (例: `18`) 。メジャーバージョンを変更すると、サービスは破棄されて再作成されます。                                                      |
+| `ha_type`                  | いいえ    | 高可用性モード: `none`、`async`、または `sync`。詳細は [高可用性](#high-availability) を参照してください。                                             |
+| `password`                 | いいえ    | スーパーユーザー のパスワードです。省略すると、server が生成します。(sensitive) な state に保存されます。                                                      |
+| `pg_config`                | いいえ    | キー・バリュー map として指定する Postgres server パラメーターです。                                                                            |
+| `pgbouncer_config`         | いいえ    | キー・バリュー map として指定する PgBouncer connection-pooler パラメーターです。                                                                |
+| `tags`                     | いいえ    | キー・バリュー map として指定するリソースタグです。                                                                                             |
+| `read_replica_of`          | いいえ    | レプリカ化するプライマリ service の ID です。詳細は [読み取りレプリカ](#read-replicas) を参照してください。`restore_to_point_in_time` とは同時に指定できません。           |
+| `restore_to_point_in_time` | いいえ    | 別の service を特定時点に復元して service を作成します。詳細は [ポイントインタイム復元](#point-in-time-restore) を参照してください。`read_replica_of` とは同時に指定できません。 |
+
+以下の属性は読み取り専用で、作成後に ClickHouse Cloud によって設定されます: `id`、`state`、`created_at`、`is_primary`、`hostname`、`port`、`username`、および `connection_string` (sensitive) 。
+
+<Warning>
+  `password` は Terraform の state に平文で保存されます。そのため、state file は適切に保護してください。たとえば、保存時暗号化を備えたリモート backend を使用します。`password` を省略すると、server が生成し、provider は refresh のたびにそれを state に読み戻します。
+</Warning>
+
+<div id="create-a-service">
+  ## サービスを作成する
+</div>
+
+```hcl
+resource "clickhouse_postgres_service" "example" {
+  name           = "my-postgres"
+  cloud_provider = "aws"
+  region         = "us-east-1"
+  size           = "m6gd.large"
+
+  # High-availability mode — number of standby replicas:
+  #   "none"  – primary only, no standby (default)
+  #   "async" – 1 standby, asynchronous replication
+  #   "sync"  – 2 standbys, synchronous replication
+  ha_type = "async"
+
+  tags = {
+    environment = "production"
+    team        = "data"
+  }
+}
+```
+
+`password` を自分で管理するには、`password` を設定してください。12 文字以上で、少なくとも小文字 1 文字、大文字 1 文字、数字 1 文字を含める必要があります。省略すると、サーバーによって自動生成されます。
+
+<div id="high-availability">
+  ## 高可用性
+</div>
+
+`ha_type` 引数は、スタンバイ レプリカの数を制御します。
+
+| `ha_type` | スタンバイ        | レプリケーション                               |
+| --------- | ------------ | -------------------------------------- |
+| `none`    | なし (プライマリのみ) | —                                      |
+| `async`   | スタンバイ 1 台    | 非同期 — 書き込みはスタンバイを待たずにコミットされます          |
+| `sync`    | スタンバイ 2 台    | 同期 — プライマリは少なくとも 1 台のスタンバイからの確認応答を待ちます |
+
+`ha_type` は作成後も変更可能で、変更すると HA の切り替えが発生します。詳しくは [高可用性](/ja/products/managed-postgres/high-availability) を参照してください。
+
+<div id="read-replicas">
+  ## 読み取りレプリカ
+</div>
+
+ストリーミング読み取りレプリカを作成するには、`read_replica_of` にプライマリサービスの `id` を設定します。レプリカはプライマリの `cloud_provider`、`region`、`postgres_version`、およびスーパーユーザーを継承するため、これら (および `password`) は指定しないでください。
+
+```hcl
+resource "clickhouse_postgres_service" "replica" {
+  name            = "my-postgres-replica"
+  size            = "m6gd.large"
+  read_replica_of = clickhouse_postgres_service.example.id
+}
+```
+
+詳細は、[読み取りレプリカ](/ja/products/managed-postgres/read-replicas)を参照してください。
+
+<div id="point-in-time-restore">
+  ## ポイントインタイム復元
+</div>
+
+別のサービスのバックアップを特定時点に復元してサービスを作成するには、`restore_to_point_in_time` を設定します。`cloud_provider`、`region`、`postgres_version` は元のサービスから引き継がれるため指定不要です。`size` と `ha_type` も指定できません:
+
+```hcl
+resource "clickhouse_postgres_service" "restored" {
+  name = "my-postgres-restored"
+
+  restore_to_point_in_time = {
+    source_id      = clickhouse_postgres_service.example.id
+    restore_target = "2026-06-01T12:00:00Z"
+  }
+}
+```
+
+このブロック全体は作成時にのみ指定できます。`source_id` または `restore_target` を変更するか、ブロックを削除すると、サービスは削除されて再作成されます。詳しくは [バックアップと復元](/ja/products/managed-postgres/backup-and-restore) を参照してください。
+
+<div id="data-sources">
+  ## データソース
+</div>
+
+既存のサービスを参照できる補助的なデータソースが3つあります:
+
+```hcl
+# A single service by ID.
+data "clickhouse_postgres_service" "example" {
+  id = clickhouse_postgres_service.example.id
+}
+
+# All Managed Postgres services in the organization.
+data "clickhouse_postgres_services" "all" {}
+
+# The CA certificates for a service, for TLS connections.
+data "clickhouse_postgres_service_ca_certificates" "certs" {
+  service_id = clickhouse_postgres_service.example.id
+}
+```
+
+<div id="importing-existing-services">
+  ## 既存のサービスのインポート
+</div>
+
+既存の Managed Postgres サービスは、service ID を使って Terraform state にインポートできます。インポート時にはパスワードも復元されます。これは、サーバーが `GET` に対してその値を返すためです。
+
+```bash
+terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+<div id="unsupported-operations">
+  ## サポート対象外の操作
+</div>
+
+以下の項目は、リソース スキーマに意図的に含まれていません。
+
+* 運用コマンド (restart、promote、switchover) 。
+* IP許可リスト、プライベート エンドポイント、バックアップ設定、メンテナンス ウィンドウ、顧客管理暗号化キー、BYOC。
+* ライフサイクル タイムアウトは設定できません。`timeouts {}` ブロックはありません。

@@ -1,0 +1,157 @@
+---
+alias: []
+description: 'Arrowフォーマットのドキュメント'
+input_format: true
+keywords: ['Arrow']
+output_format: true
+slug: /interfaces/formats/Arrow
+title: 'Arrow'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✔  | ✔  |       |
+
+<div id="description">
+  ## 説明
+</div>
+
+[Apache Arrow](https://arrow.apache.org/) には、組み込みの列指向ストレージフォーマットが 2 種類あります。
+ClickHouse はこれらのフォーマットの読み書きをサポートしています。
+`Arrow` は Apache Arrow の「ファイルモード」フォーマットで、メモリ内でのランダムアクセス向けに設計されています。
+
+<div id="data-types-matching">
+  ## データ型の対応
+</div>
+
+以下の表は、サポートされているデータ型と、`INSERT` クエリおよび `SELECT` クエリでそれらが ClickHouse の [data types](/ja/reference/data-types/index) にどのように対応するかを示しています。
+
+| Arrow データ型 (`INSERT`)                   | ClickHouse データ型                                                                                           | Arrow データ型 (`SELECT`) |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------- |
+| `BOOL`                                  | [Bool](/ja/reference/data-types/boolean)                                                                     | `BOOL`                |
+| `UINT8`, `BOOL`                         | [UInt8](/ja/reference/data-types/int-uint)                                                                   | `UINT8`               |
+| `INT8`                                  | [Int8](/ja/reference/data-types/int-uint)/[Enum8](/ja/reference/data-types/enum)                                | `INT8`                |
+| `UINT16`                                | [UInt16](/ja/reference/data-types/int-uint)                                                                  | `UINT16`              |
+| `INT16`                                 | [Int16](/ja/reference/data-types/int-uint)/[Enum16](/ja/reference/data-types/enum)                              | `INT16`               |
+| `UINT32`                                | [UInt32](/ja/reference/data-types/int-uint)                                                                  | `UINT32`              |
+| `INT32`                                 | [Int32](/ja/reference/data-types/int-uint)                                                                   | `INT32`               |
+| `UINT64`                                | [UInt64](/ja/reference/data-types/int-uint)                                                                  | `UINT64`              |
+| `INT64`                                 | [Int64](/ja/reference/data-types/int-uint)                                                                   | `INT64`               |
+| `FLOAT`, `HALF_FLOAT`                   | [Float32](/ja/reference/data-types/float)                                                                    | `FLOAT32`             |
+| `DOUBLE`                                | [Float64](/ja/reference/data-types/float)                                                                    | `FLOAT64`             |
+| `DATE32`                                | [Date32](/ja/reference/data-types/date32)                                                                    | `UINT16`              |
+| `DATE64`                                | [DateTime](/ja/reference/data-types/datetime)                                                                | `UINT32`              |
+| `TIMESTAMP`, `TIME32`, `TIME64`         | [DateTime64](/ja/reference/data-types/datetime64)                                                            | `TIMESTAMP`           |
+| `STRING`, `BINARY`                      | [String](/ja/reference/data-types/string)                                                                    | `BINARY`              |
+| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/ja/reference/data-types/fixedstring)                                                          | `FIXED_SIZE_BINARY`   |
+| `DECIMAL`                               | [Decimal](/ja/reference/data-types/decimal)                                                                  | `DECIMAL`             |
+| `DECIMAL256`                            | [Decimal256](/ja/reference/data-types/decimal)                                                               | `DECIMAL256`          |
+| `LIST`                                  | [Array](/ja/reference/data-types/array)                                                                      | `LIST`                |
+| `STRUCT`                                | [Tuple](/ja/reference/data-types/tuple)                                                                      | `STRUCT`              |
+| `MAP`                                   | [Map](/ja/reference/data-types/map)                                                                          | `MAP`                 |
+| `UINT32`                                | [IPv4](/ja/reference/data-types/ipv4)                                                                        | `UINT32`              |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/ja/reference/data-types/ipv6)                                                                        | `FIXED_SIZE_BINARY`   |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/ja/reference/data-types/int-uint)                                           | `FIXED_SIZE_BINARY`   |
+| `DURATION`                              | [Interval](/ja/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`            |
+| `INT64`                                 | [Interval](/ja/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year)   | `INT64`               |
+
+Array はネストでき、引数として `Nullable` 型の値を取ることもできます。`Tuple` 型と `Map` 型もネストできます。
+
+`DICTIONARY` 型は `INSERT` クエリでサポートされています。`SELECT` クエリでは、[`output_format_arrow_low_cardinality_as_dictionary`](/ja/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary) 設定により、[LowCardinality](/ja/reference/data-types/lowcardinality) 型を `DICTIONARY` 型として出力できます。`LowCardinality` の Dictionary には未使用の値が含まれる場合があり、その結果、出力される Arrow の `DICTIONARY` にも未使用の値が含まれる可能性がある点に注意してください。
+
+サポートされていない Arrow データ型:
+
+* `FIXED_SIZE_BINARY`
+* `JSON`
+* `UUID`
+* `ENUM`.
+
+ClickHouseテーブルのカラムのデータ型は、対応するArrowのデータフィールドと一致している必要はありません。データを挿入する際、ClickHouseは上の表に従ってデータ型を解釈し、その後、ClickHouseテーブルのカラムに設定されたデータ型へデータを[キャスト](/ja/reference/functions/regular-functions/type-conversion-functions#CAST)します。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+以下の例では、[ClickHouse SQL playground](https://sql.clickhouse.com) で利用可能な `forex` データセットを使用します。
+
+<div id="selecting-data">
+  ### データの選択
+</div>
+
+Playground から `EUR/USD` の為替レートの 1 日分を取得し、
+ローカルの `forex_eurusd.arrow` ファイルに保存します。HTTP
+インターフェイス経由で Playground にクエリを送信します。ホストは
+`sql-clickhouse.clickhouse.com`、ユーザーは
+`demo` (パスワードなし) です:
+
+```bash
+curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
+    --data-binary "
+        SELECT
+            concat(base, '.', quote) AS base_quote,
+            datetime AS last_update,
+            CAST(bid, 'Float32') AS bid,
+            CAST(ask, 'Float32') AS ask,
+            ask - bid AS spread
+        FROM forex
+        WHERE base = 'EUR' AND quote = 'USD'
+            AND datetime >= '2020-01-01' AND datetime < '2020-01-02'
+        ORDER BY datetime ASC
+        FORMAT Arrow
+        SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
+```
+
+<div id="reading-data">
+  ### ファイルを読み戻す
+</div>
+
+これで、[`clickhouse-local`](/ja/concepts/features/tools-and-utilities/clickhouse-local) と
+[`file`](/ja/reference/functions/table-functions/file) テーブル関数を使って、ローカルの Arrow ファイルを読み戻せます。このファイルは
+自己記述型なので、`Arrow` フォーマットがスキーマを自動的に推論します。
+
+```bash
+clickhouse-local --query "
+    SELECT *
+    FROM file('forex_eurusd.arrow', Arrow)
+    ORDER BY last_update ASC
+    LIMIT 5
+    FORMAT PrettyCompact"
+```
+
+```response title="Response"
+   ┌─base_quote─┬─────────────last_update─┬─────bid─┬─────ask─┬────────────────spread─┐
+1. │ EUR.USD    │ 2020-01-01 17:00:00.065 │  1.1212 │ 1.12172 │ 0.0005199909210205078 │
+2. │ EUR.USD    │ 2020-01-01 17:00:10.447 │  1.1212 │ 1.12192 │ 0.0007200241088867188 │
+3. │ EUR.USD    │ 2020-01-01 17:00:10.498 │ 1.12117 │ 1.12161 │ 0.0004400014877319336 │
+4. │ EUR.USD    │ 2020-01-01 17:00:12.579 │  1.1212 │ 1.12161 │ 0.0004100799560546875 │
+5. │ EUR.USD    │ 2020-01-01 17:00:12.630 │  1.1212 │ 1.12172 │ 0.0005199909210205078 │
+   └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
+```
+
+<div id="inserting-data">
+  ### データの挿入
+</div>
+
+Arrow ファイルを ClickHouse テーブルに読み込むには、`FORMAT Arrow` を指定して `clickhouse-client` にパイプして渡します:
+
+```bash
+cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
+```
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
+
+| 設定                                                                           | 説明                                                                  | デフォルト       |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------- |
+| `input_format_arrow_allow_missing_columns`                                   | Arrow入力フォーマットの読み取り時に、欠落しているカラムを許可します。                               | `1`         |
+| `input_format_arrow_case_insensitive_column_matching`                        | ArrowのカラムとCHカラムの照合時に、大文字と小文字の違いを無視します。                              | `0`         |
+| `input_format_arrow_import_nested`                                           | 廃止された設定で、何も行いません。                                                   | `0`         |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Arrowフォーマットのスキーマ推論時に、未対応の型を持つカラムをスキップします。                           | `0`         |
+| `output_format_arrow_compression_method`                                     | Arrow出力フォーマットの圧縮方式です。サポートされるコーデック: lz4&#95;frame, zstd, none (非圧縮)  | `lz4_frame` |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | FixedStringカラムでは、Binaryの代わりにArrowのFIXED&#95;SIZE&#95;BINARY型を使用します。 | `1`         |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | LowCardinality型をArrowのDictionary型として出力します。                          | `0`         |
+| `output_format_arrow_string_as_string`                                       | Stringカラムでは、Binaryの代わりにArrowのString型を使用します。                         | `1`         |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | ArrowフォーマットのDictionaryインデックスには常に64ビット整数を使用します。                              | `0`         |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | ArrowフォーマットのDictionaryインデックスに符号付き整数を使用します。                                  | `1`         |

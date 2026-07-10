@@ -1,0 +1,459 @@
+---
+slug: /guides/developer/understanding-query-execution-with-the-analyzer
+sidebarTitle: 'فهم تنفيذ الاستعلامات باستخدام المحلل'
+title: 'فهم تنفيذ الاستعلامات باستخدام المحلل'
+description: 'يوضح كيف يمكنك استخدام المحلل لفهم كيفية تنفيذ ClickHouse لاستعلاماتك'
+doc_type: 'guide'
+keywords: ['تنفيذ الاستعلامات', 'المحلل', 'تحسين الاستعلامات', 'شرح', 'الأداء']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يعالج ClickHouse الاستعلامات بسرعة فائقة، لكن تنفيذ الاستعلام ليس بهذه البساطة. لِنحاول فهم كيفية تنفيذ استعلام `SELECT`. ولتوضيح ذلك، دعونا نُضيف بعض البيانات إلى جدول في ClickHouse:
+
+```sql
+CREATE TABLE session_events(
+   clientId UUID,
+   sessionId UUID,
+   pageId UUID,
+   timestamp DateTime,
+   type String
+) ORDER BY (timestamp);
+
+INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
+   sessionId UUID,
+   pageId UUID,
+   timestamp DateTime,
+   type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000;
+```
+
+الآن بعد أن أصبحت لدينا بعض البيانات في ClickHouse، نريد تشغيل بعض الاستعلامات وفهم كيفية تنفيذها. يُقسَّم تنفيذ الاستعلام إلى العديد من الخطوات. ويمكن تحليل كل خطوة من خطوات تنفيذ الاستعلام واستكشاف أخطائها وإصلاحها باستخدام استعلام `EXPLAIN` المقابل. تُلخَّص هذه الخطوات في المخطط أدناه:
+
+<Image img="/images/guides/developer/analyzer1.webp" alt="خطوات استعلام Explain" size="md" />
+
+لنلقِ نظرة على كل مكوّن أثناء تنفيذ الاستعلام. سنأخذ بضعة استعلامات ثم نفحصها باستخدام عبارة `EXPLAIN`.
+
+<div id="parser">
+  ## المُحلِّل
+</div>
+
+يهدف المُحلِّل إلى تحويل نص الاستعلام إلى AST (شجرة البنية المجرّدة). ويمكن توضيح هذه الخطوة باستخدام `EXPLAIN AST`:
+
+```sql
+EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
+```
+
+```response
+┌─explain────────────────────────────────────────────┐
+│ SelectWithUnionQuery (children 1)                  │
+│  ExpressionList (children 1)                       │
+│   SelectQuery (children 2)                         │
+│    ExpressionList (children 2)                     │
+│     Function min (alias minimum_date) (children 1) │
+│      ExpressionList (children 1)                   │
+│       Identifier timestamp                         │
+│     Function max (alias maximum_date) (children 1) │
+│      ExpressionList (children 1)                   │
+│       Identifier timestamp                         │
+│    TablesInSelectQuery (children 1)                │
+│     TablesInSelectQueryElement (children 1)        │
+│      TableExpression (children 1)                  │
+│       TableIdentifier session_events               │
+└────────────────────────────────────────────────────┘
+```
+
+الناتج هو شجرة البنية المجرّدة يمكن عرضها بصريًا كما هو موضح أدناه:
+
+<Image img="/images/guides/developer/analyzer2.webp" alt="مخرجات AST" size="md" />
+
+لكل عقدة عُقد فرعية مرتبطة بها، وتمثل الشجرة بأكملها البنية العامة لاستعلامك. وهذه بنية منطقية تساعد في معالجة الاستعلام. ومن منظور المستخدم النهائي (ما لم يكن مهتمًا بتنفيذ الاستعلام)، فهي ليست مفيدة كثيرًا؛ إذ تُستخدم هذه الأداة أساسًا من قِبل المطورين.
+
+<div id="analyzer">
+  ## المحلّل
+</div>
+
+لدى ClickHouse حاليًا معماريتان للمحلّل. يمكنك استخدام المعمارية القديمة عبر تعيين: `enable_analyzer=0`. المعمارية الجديدة مفعّلة افتراضيًا. وسنقتصر هنا على وصف المعمارية الجديدة، لأن القديمة ستصبح مهملة بمجرد أن يصبح المحلّل الجديد متاحًا رسميًا للاستخدام العام.
+
+<Note>
+  يُفترض أن توفّر لنا المعمارية الجديدة إطار عمل أفضل لتحسين أداء ClickHouse. ومع ذلك، وبما أنها مكوّن أساسي في خطوات معالجة الاستعلام، فقد تؤثر سلبًا في بعض الاستعلامات، كما توجد [حالات عدم توافق معروفة](/ar/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). يمكنك الرجوع إلى المحلّل القديم بتغيير الإعداد `enable_analyzer` على مستوى الاستعلام أو المستخدم.
+</Note>
+
+يُعدّ المحلّل مرحلة مهمة في تنفيذ الاستعلام. فهو يأخذ AST ويحوّله إلى شجرة استعلام. والفائدة الأساسية لشجرة الاستعلام مقارنةً بـ AST هي أن كثيرًا من المكوّنات يكون قد جرى حلّها، مثل التخزين على سبيل المثال. كما يصبح معروفًا أيضًا من أي جدول ستتم القراءة، وتُحلّ الأسماء المستعارة، وتعرف الشجرة أنواع البيانات المختلفة المستخدمة. ومع هذه المزايا، يمكن للمحلّل تطبيق تحسينات. وتعمل هذه التحسينات عبر &quot;تمريرات&quot;. وتبحث كل تمريرة عن نوع مختلف من التحسينات. يمكنك الاطلاع على جميع التمريرات [هنا](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249)، ولنرَ ذلك عمليًا باستخدام استعلامنا السابق:
+
+```sql
+EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────────────────────────┐
+│ QUERY id: 0                                                                            │
+│   PROJECTION                                                                           │
+│     LIST id: 1, nodes: 2                                                               │
+│       FUNCTION id: 2, alias: minimum_date, function_name: min, function_type: ordinary │
+│         ARGUMENTS                                                                      │
+│           LIST id: 3, nodes: 1                                                         │
+│             IDENTIFIER id: 4, identifier: timestamp                                    │
+│       FUNCTION id: 5, alias: maximum_date, function_name: max, function_type: ordinary │
+│         ARGUMENTS                                                                      │
+│           LIST id: 6, nodes: 1                                                         │
+│             IDENTIFIER id: 7, identifier: timestamp                                    │
+│   JOIN TREE                                                                            │
+│     IDENTIFIER id: 8, identifier: session_events                                       │
+│   SETTINGS allow_experimental_analyzer=1                                               │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+```
+
+```response
+┌─explain───────────────────────────────────────────────────────────────────────────────────┐
+│ QUERY id: 0                                                                               │
+│   PROJECTION COLUMNS                                                                      │
+│     minimum_date DateTime                                                                 │
+│     maximum_date DateTime                                                                 │
+│   PROJECTION                                                                              │
+│     LIST id: 1, nodes: 2                                                                  │
+│       FUNCTION id: 2, function_name: min, function_type: aggregate, result_type: DateTime │
+│         ARGUMENTS                                                                         │
+│           LIST id: 3, nodes: 1                                                            │
+│             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
+│       FUNCTION id: 6, function_name: max, function_type: aggregate, result_type: DateTime │
+│         ARGUMENTS                                                                         │
+│           LIST id: 7, nodes: 1                                                            │
+│             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
+│   JOIN TREE                                                                               │
+│     TABLE id: 5, alias: __table1, table_name: default.session_events                      │
+│   SETTINGS allow_experimental_analyzer=1                                                  │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+بين عمليتَي التنفيذ، يمكنك ملاحظة كيفية معالجة الأسماء المستعارة والإسقاطات.
+
+<div id="planner">
+  ## المُخطِّط
+</div>
+
+يأخذ المُخطِّط شجرة الاستعلام ويبني منها خطة استعلام. توضّح لنا شجرة الاستعلام ما الذي نريد فعله باستعلام معيّن، بينما توضّح لنا خطة الاستعلام كيف سننفّذ ذلك. كما ستُجرى تحسينات إضافية ضمن خطة الاستعلام. يمكنك استخدام `EXPLAIN PLAN` أو `EXPLAIN` لرؤية خطة الاستعلام (سينفّذ `EXPLAIN` الأمر `EXPLAIN PLAN`).
+
+```sql
+EXPLAIN PLAN WITH
+   (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT type, min(timestamp) AS minimum_date, max(timestamp) AS maximum_date, count(*) /total_rows * 100 AS percentage FROM session_events GROUP BY type
+```
+
+```response
+┌─explain──────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))      │
+│   Aggregating                                    │
+│     Expression (Before GROUP BY)                 │
+│       ReadFromMergeTree (default.session_events) │
+└──────────────────────────────────────────────────┘
+```
+
+رغم أن هذا يعطينا بعض المعلومات، يمكننا الحصول على المزيد. على سبيل المثال، قد نرغب في معرفة اسم العمود الذي نحتاج إلى الإسقاطات عليه. يمكنك إضافة الترويسة إلى الاستعلام:
+
+```SQL
+EXPLAIN header = 1
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+```
+
+```response
+┌─explain──────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))      │
+│ Header: type String                              │
+│         minimum_date DateTime                    │
+│         maximum_date DateTime                    │
+│         percentage Nullable(Float64)             │
+│   Aggregating                                    │
+│   Header: type String                            │
+│           min(timestamp) DateTime                │
+│           max(timestamp) DateTime                │
+│           count() UInt64                         │
+│     Expression (Before GROUP BY)                 │
+│     Header: timestamp DateTime                   │
+│             type String                          │
+│       ReadFromMergeTree (default.session_events) │
+│       Header: timestamp DateTime                 │
+│               type String                        │
+└──────────────────────────────────────────────────┘
+```
+
+إذًا، أنت تعرف الآن أسماء الأعمدة التي يجب إنشاؤها للإسقاط الأخير (`minimum_date` و`maximum_date` و`percentage`)، لكن قد ترغب أيضًا في الاطّلاع على تفاصيل جميع الإجراءات التي يجب تنفيذها. يمكنك فعل ذلك بتعيين `actions=1`.
+
+```sql
+EXPLAIN actions = 1
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))                                                                                                │
+│ Actions: INPUT :: 0 -> type String : 0                                                                                                     │
+│          INPUT : 1 -> min(timestamp) DateTime : 1                                                                                          │
+│          INPUT : 2 -> max(timestamp) DateTime : 2                                                                                          │
+│          INPUT : 3 -> count() UInt64 : 3                                                                                                   │
+│          COLUMN Const(Nullable(UInt64)) -> total_rows Nullable(UInt64) : 4                                                                 │
+│          COLUMN Const(UInt8) -> 100 UInt8 : 5                                                                                              │
+│          ALIAS min(timestamp) :: 1 -> minimum_date DateTime : 6                                                                            │
+│          ALIAS max(timestamp) :: 2 -> maximum_date DateTime : 1                                                                            │
+│          FUNCTION divide(count() :: 3, total_rows :: 4) -> divide(count(), total_rows) Nullable(Float64) : 2                               │
+│          FUNCTION multiply(divide(count(), total_rows) :: 2, 100 :: 5) -> multiply(divide(count(), total_rows), 100) Nullable(Float64) : 4 │
+│          ALIAS multiply(divide(count(), total_rows), 100) :: 4 -> percentage Nullable(Float64) : 5                                         │
+│ Positions: 0 6 1 5                                                                                                                         │
+│   Aggregating                                                                                                                              │
+│   Keys: type                                                                                                                               │
+│   Aggregates:                                                                                                                              │
+│       min(timestamp)                                                                                                                       │
+│         Function: min(DateTime) → DateTime                                                                                                 │
+│         Arguments: timestamp                                                                                                               │
+│       max(timestamp)                                                                                                                       │
+│         Function: max(DateTime) → DateTime                                                                                                 │
+│         Arguments: timestamp                                                                                                               │
+│       count()                                                                                                                              │
+│         Function: count() → UInt64                                                                                                         │
+│         Arguments: none                                                                                                                    │
+│   Skip merging: 0                                                                                                                          │
+│     Expression (Before GROUP BY)                                                                                                           │
+│     Actions: INPUT :: 0 -> timestamp DateTime : 0                                                                                          │
+│              INPUT :: 1 -> type String : 1                                                                                                 │
+│     Positions: 0 1                                                                                                                         │
+│       ReadFromMergeTree (default.session_events)                                                                                           │
+│       ReadType: Default                                                                                                                    │
+│       Parts: 1                                                                                                                             │
+│       Granules: 1                                                                                                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+يمكنك الآن رؤية جميع المدخلات والدوال والأسماء المستعارة وأنواع البيانات المستخدمة. كما يمكنك الاطلاع [هنا](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h) على بعض التحسينات التي سيطبّقها المُخطِّط.
+
+<div id="query-pipeline">
+  ## مسار تنفيذ الاستعلام
+</div>
+
+يُشتق مسار تنفيذ الاستعلام من خطة الاستعلام. وهو يشبه خطة الاستعلام إلى حد كبير، إلا أنه ليس شجرة بل رسمًا بيانيًا. ويُظهر كيف سينفّذ ClickHouse الاستعلام وما الموارد التي ستُستخدم. ويُعد تحليل مسار تنفيذ الاستعلام مفيدًا جدًا لتحديد موضع الاختناق من حيث المدخلات/المخرجات. لنأخذ الاستعلام السابق ونلقِ نظرة على تنفيذ مسار تنفيذ الاستعلام:
+
+```sql
+EXPLAIN PIPELINE
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type;
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                               │
+│ ExpressionTransform × 2                                                    │
+│   (Aggregating)                                                            │
+│   Resize 1 → 2                                                             │
+│     AggregatingTransform                                                   │
+│       (Expression)                                                         │
+│       ExpressionTransform                                                  │
+│         (ReadFromMergeTree)                                                │
+│         MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) 0 → 1 │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+داخل القوسين تظهر خطوة من خطة الاستعلام، وبجوارها المعالج. هذه معلومات مفيدة جدًا، ولكن بما أن هذا رسم بياني، فمن الأفضل عرضه بهذه الصورة. لدينا إعداد `graph` يمكننا ضبطه على 1 وتحديد تنسيق الإخراج ليكون TSV:
+
+```sql
+EXPLAIN PIPELINE graph=1 WITH
+   (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT type, min(timestamp) AS minimum_date, max(timestamp) AS maximum_date, count(*) /total_rows * 100 AS percentage FROM session_events GROUP BY type FORMAT TSV;
+```
+
+```response
+digraph
+{
+ rankdir="LR";
+ { node [shape = rect]
+   subgraph cluster_0 {
+     label ="Expression";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n5 [label="ExpressionTransform × 2"];
+     }
+   }
+   subgraph cluster_1 {
+     label ="Aggregating";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n3 [label="AggregatingTransform"];
+       n4 [label="Resize"];
+     }
+   }
+   subgraph cluster_2 {
+     label ="Expression";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n2 [label="ExpressionTransform"];
+     }
+   }
+   subgraph cluster_3 {
+     label ="ReadFromMergeTree";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n1 [label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+     }
+   }
+ }
+ n3 -> n4 [label=""];
+ n4 -> n5 [label="× 2"];
+ n2 -> n3 [label=""];
+ n1 -> n2 [label=""];
+}
+```
+
+يمكنك بعد ذلك نسخ هذا الناتج ولصقه [هنا](https://dreampuf.github.io/GraphvizOnline)، وسيؤدي ذلك إلى إنشاء الرسم البياني التالي:
+
+<Image img="/images/guides/developer/analyzer3.webp" alt="مخرَج الرسم البياني" size="md" />
+
+يشير المستطيل الأبيض إلى عقدة في مسار المعالجة، ويشير المستطيل الرمادي إلى خطوات خطة الاستعلام، أما الرمز `x` متبوعًا برقم فيشير إلى عدد المدخلات/المخرجات المستخدمة. وإذا كنت لا تريد عرضها بصيغة مضغوطة، فيمكنك دائمًا إضافة `compact=0`:
+
+```sql
+EXPLAIN PIPELINE graph = 1, compact = 0
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+FORMAT TSV
+```
+
+```response
+digraph
+{
+ rankdir="LR";
+ { node [shape = rect]
+   n0[label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+   n1[label="ExpressionTransform"];
+   n2[label="AggregatingTransform"];
+   n3[label="Resize"];
+   n4[label="ExpressionTransform"];
+   n5[label="ExpressionTransform"];
+ }
+ n0 -> n1;
+ n1 -> n2;
+ n2 -> n3;
+ n3 -> n4;
+ n3 -> n5;
+}
+```
+
+<Image img="/images/guides/developer/analyzer4.webp" alt="مخرجات الرسم البياني المضغوط" size="md" />
+
+لماذا لا يقرأ ClickHouse من الجدول باستخدام مؤشرات ترابط متعددة؟ لنجرب إضافة المزيد من البيانات إلى جدولنا:
+
+```sql
+INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
+   sessionId UUID,
+   pageId UUID,
+   timestamp DateTime,
+   type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000000;
+```
+
+والآن لنشغّل استعلام `EXPLAIN` مجددًا:
+
+```sql
+EXPLAIN PIPELINE graph = 1, compact = 0
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+FORMAT TSV
+```
+
+```response
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    n0[label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+    n1[label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+    n2[label="ExpressionTransform"];
+    n3[label="ExpressionTransform"];
+    n4[label="StrictResize"];
+    n5[label="AggregatingTransform"];
+    n6[label="AggregatingTransform"];
+    n7[label="Resize"];
+    n8[label="ExpressionTransform"];
+    n9[label="ExpressionTransform"];
+  }
+  n0 -> n2;
+  n1 -> n3;
+  n2 -> n4;
+  n3 -> n4;
+  n4 -> n5;
+  n4 -> n6;
+  n5 -> n7;
+  n6 -> n7;
+  n7 -> n8;
+  n7 -> n9;
+}
+```
+
+<Image img="/images/guides/developer/analyzer5.webp" alt="مخرجات الرسم البياني المتوازي" size="md" />
+
+لذلك قرر المنفّذ عدم تنفيذ العمليات بالتوازي لأن حجم البيانات لم يكن كبيرًا بما يكفي. وبعد إضافة المزيد من الصفوف، قرر المنفّذ استخدام عدة خيوط كما هو موضح في الرسم البياني.
+
+<div id="executor">
+  ## المنفّذ
+</div>
+
+أخيرًا، يتولى المنفّذ الخطوة الأخيرة من تنفيذ الاستعلام. إذ يأخذ مسار تنفيذ الاستعلام وينفّذه. وتوجد أنواع مختلفة من المنفّذات، بحسب ما إذا كنت تنفّذ `SELECT` أو `INSERT` أو `INSERT SELECT`.

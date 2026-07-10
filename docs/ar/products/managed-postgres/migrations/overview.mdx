@@ -1,0 +1,83 @@
+---
+slug: /cloud/managed-postgres/migrations/overview
+sidebarTitle: 'نظرة عامة'
+title: 'ترحيل البيانات إلى ClickHouse Managed Postgres'
+description: 'قارن بين مسارات الترحيل الأربعة إلى ClickHouse Managed Postgres واختر المسار الأنسب لقاعدة بيانات المصدر ومتطلبات وقت التوقف.'
+keywords: ['Managed Postgres', 'الترحيل', 'ترحيل Postgres', 'ClickPipes', 'peerdb', 'pg_dump', 'pg_restore', 'النسخ المتماثل المنطقي']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-overview-beta" />
+
+يمكنك الترحيل إلى Managed Postgres عبر أربعة مسارات مختلفة. ويتوقف اختيار
+المسار الأنسب على ما إذا كنت تحتاج إلى نسخ متماثل مستمر (CDC)، وعلى مصدر
+الترحيل، وعلى مقدار فترة التوقف التي يمكن لتطبيقك تحمّلها أثناء
+التحويل النهائي.
+
+| الطريقة                                                                                    | نسخ متماثل مستمر (CDC) | مكان التشغيل             | الأنسب لـ                                                                                |
+| ------------------------------------------------------------------------------------------ | ---------------------- | ------------------------ | ---------------------------------------------------------------------------------------- |
+| [ClickPipes](/ar/products/managed-postgres/migrations/clickpipes)                             | نعم                    | ClickHouse Cloud console | معظم عمليات الترحيل — معالج موجّه يتضمن التحميل الأولي وCDC بشكل جاهز                    |
+| [PeerDB](/ar/products/managed-postgres/migrations/peerdb)                                     | نعم                    | مستضاف ذاتيًا (Docker)   | المصادر أو سير العمل غير المتاحة في ClickPipes UI                                        |
+| [pg&#95;dump and pg&#95;restore](/ar/products/managed-postgres/migrations/pg_dump-pg_restore) | لا                     | جهازك المحلي             | عمليات نقل لمرة واحدة لمجموعات البيانات الصغيرة أو الثابتة عندما تكون فترة التوقف مقبولة |
+| [النسخ المتماثل المنطقي](/ar/products/managed-postgres/migrations/logical-replication)        | نعم                    | Postgres المصدر والهدف   | تحكم مباشر في التكرار الأصلي في Postgres، من دون أدوات خارجية                            |
+
+<div id="clickpipes">
+  ## ClickPipes
+</div>
+
+يُعد [ClickPipes](/ar/products/managed-postgres/migrations/clickpipes) المسار الموصى به
+لمعظم عمليات الترحيل. وهو يعمل بالكامل داخل ClickHouse Cloud Console
+ويرشدك خطوة بخطوة خلال الاتصال بالمصدر، وتصدير المخطط واستيراده،
+وبدء التحميل الأولي مع CDC أو من دونه. وتدعم موصلات المصادر الجاهزة
+Amazon RDS وAurora وSupabase وGoogle Cloud SQL وAzure
+Flexible Server وNeon وCrunchy Bridge وTimescaleDB وأي مثيل Postgres
+قياسي.
+
+<div id="peerdb">
+  ## PeerDB
+</div>
+
+[PeerDB](/ar/products/managed-postgres/migrations/peerdb) هي أداة ترحيل مستضافة ذاتيًا
+تُشغِّلها عبر Docker. استخدمها عندما لا يكون مصدرك أو سير العمل لديك مناسبًا
+لمعالج ClickPipes — على سبيل المثال، عندما تحتاج إلى إنشاء peer باستخدام برنامج نصي
+عبر عدد كبير من قواعد البيانات أو تشغيل الترحيل بالكامل داخل شبكتك الخاصة.
+لا يرحّل PeerDB الفهارس أو القيود أو المشغّلات تلقائيًا؛
+بل تُعيد إنشاءها على الجهة الهدف بعد وصول البيانات.
+
+<div id="pg-dump-pg-restore">
+  ## pg_dump and pg_restore
+</div>
+
+يقوم [pg&#95;dump and pg&#95;restore](/ar/products/managed-postgres/migrations/pg_dump-pg_restore)
+بأخذ لقطة من المصدر ثم استعادتها على الوجهة. لا يوجد نسخ متماثل
+مستمر، لذا يجب إيقاف عمليات الكتابة على المصدر طوال مدة التفريغ
+والاستعادة. وهذا هو الخيار المناسب لمجموعات البيانات الصغيرة أو الثابتة، أو
+للبيئات غير الإنتاجية التي تكون فيها نافذة صيانة مقبولة.
+
+<div id="logical-replication">
+  ## النسخ المتماثل المنطقي
+</div>
+
+يستخدم [النسخ المتماثل المنطقي](/ar/products/managed-postgres/migrations/logical-replication)
+عناصر `publication` و`subscription` المدمجة في Postgres لبثّ التغييرات من
+المصدر إلى الوجهة. أنت من يضبط `wal_level` وفتحات النسخ المتماثل وامتياز
+`REPLICATION` بنفسك — من دون أي أدوات ترحيل خارجية تتوسط العملية. اختر هذا
+المسار عندما تريد تحكمًا كاملًا في آليات النسخ المتماثل أو عندما لا تسمح
+بيئتك باستخدام أدوات ترحيل خارجية.
+
+<div id="after-migration">
+  ## بعد الترحيل
+</div>
+
+بمجرد أن تبدأ البيانات في الانتقال، استخدم [التحقق من صحة البيانات](/ar/products/managed-postgres/migrations/data-validation)
+للتأكد من تطابق عدد الصفوف والمحتوى بين المصدر والوجهة قبل
+تحويل حركة مرور التطبيق. تغطي [الأسئلة الشائعة حول الترحيل](/ar/products/managed-postgres/migrations/faq)
+الأخطاء الشائعة وخطوات التعافي.
+
+<div id="supabase">
+  ## الترحيل من Supabase
+</div>
+
+إذا كنت تنتقل من Supabase، فراجع [دليل الترحيل من Supabase إلى Managed Postgres](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md) للاطلاع على شرح تفصيلي خطوة بخطوة.

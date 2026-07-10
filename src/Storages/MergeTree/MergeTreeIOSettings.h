@@ -71,6 +71,9 @@ struct MergeTreeReaderSettings
     size_t filesystem_prefetches_limit = 0;
     bool enable_analyzer = false;
     bool load_marks_asynchronously = false;
+    /// If true, compress marks into the in-memory representation one block at a time
+    /// instead of materializing the full plain marks array.
+    bool use_streaming_marks_compression = false;
     /// If true, only column sample with 0 rows will be read.
     /// This information can be used for more optimal reading of
     /// columns prefixes.
