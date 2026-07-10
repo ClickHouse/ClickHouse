@@ -185,3 +185,47 @@ SELECT 'analysisOfVariance', analysisOfVariance(CAST(number AS Variant(UInt8, UI
 -- error code is reported unchanged -- BAD_ARGUMENTS / NOT_IMPLEMENTED, not ILLEGAL_TYPE_OF_ARGUMENT.
 SELECT rankCorr(CAST(toUInt64(1) AS Variant(String, UInt64)), 1); -- { serverError NOT_IMPLEMENTED }
 SELECT analysisOfVariance(CAST(toUInt64(1) AS Variant(String, UInt64)), 0); -- { serverError BAD_ARGUMENTS }
+
+-- The Float64 fallback covers the whole statistical / moment family, not just sum/avg. The tests above only exercise
+-- a Variant with a lossless common supertype (Variant(UInt8, UInt64) -> UInt64), which never reaches the fallback.
+-- Here the value Variant is Int64 + Float64, which has NO lossless supertype, so these functions -- whose result is a
+-- floating-point statistic read from the inputs via Float64 -- must aggregate over Float64, exactly like sum/avg. This
+-- is a regression for the review comment that the float-promoting allowlist omitted the numerically stable
+-- variance/covariance/correlation siblings, the *TTest family, meanZTest, analysisOfVariance and the rank/matrix
+-- statistics. Each result must match the same function applied to the explicit Nullable(Float64) cast of the Variant,
+-- which is exactly what the adapter computes internally.
+DROP TABLE IF EXISTS t_variant_stat;
+CREATE TABLE t_variant_stat (x Variant(Int64, Float64), y Variant(Int64, Float64), g UInt8, grp UInt64) ENGINE = Memory;
+INSERT INTO t_variant_stat VALUES
+    (1::Int64, 5::Int64, 0, 0),
+    (2.5::Float64, 6.5::Float64, 0, 0),
+    (3::Int64, 4::Int64, 1, 1),
+    (4.5::Float64, 9.5::Float64, 1, 1),
+    (2::Int64, 3.5::Float64, 0, 2),
+    (NULL, NULL, 1, 2);
+
+SELECT 'varSampStable',         varSampStable(x)                = varSampStable(CAST(x AS Nullable(Float64)))                                              FROM t_variant_stat;
+SELECT 'varPopStable',          varPopStable(x)                 = varPopStable(CAST(x AS Nullable(Float64)))                                               FROM t_variant_stat;
+SELECT 'stddevSampStable',      stddevSampStable(x)             = stddevSampStable(CAST(x AS Nullable(Float64)))                                           FROM t_variant_stat;
+SELECT 'stddevPopStable',       stddevPopStable(x)              = stddevPopStable(CAST(x AS Nullable(Float64)))                                            FROM t_variant_stat;
+SELECT 'covarSampStable',       covarSampStable(x, y)           = covarSampStable(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))             FROM t_variant_stat;
+SELECT 'covarPopStable',        covarPopStable(x, y)            = covarPopStable(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))              FROM t_variant_stat;
+SELECT 'corrStable',            corrStable(x, y)                = corrStable(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))                  FROM t_variant_stat;
+SELECT 'covarSampMatrix',       covarSampMatrix(x, y)           = covarSampMatrix(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))             FROM t_variant_stat;
+SELECT 'covarPopMatrix',        covarPopMatrix(x, y)            = covarPopMatrix(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))              FROM t_variant_stat;
+SELECT 'corrMatrix',            corrMatrix(x, y)                = corrMatrix(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))                  FROM t_variant_stat;
+SELECT 'studentTTest',          studentTTest(x, g)              = studentTTest(CAST(x AS Nullable(Float64)), g)                                           FROM t_variant_stat;
+SELECT 'welchTTest',            welchTTest(x, g)                = welchTTest(CAST(x AS Nullable(Float64)), g)                                             FROM t_variant_stat;
+SELECT 'studentTTestOneSample', studentTTestOneSample(x, 2.0)   = studentTTestOneSample(CAST(x AS Nullable(Float64)), 2.0)                                FROM t_variant_stat;
+SELECT 'meanZTest',             meanZTest(0.5, 0.6, 0.95)(x, g) = meanZTest(0.5, 0.6, 0.95)(CAST(x AS Nullable(Float64)), g)                              FROM t_variant_stat;
+SELECT 'analysisOfVariance',    analysisOfVariance(x, grp)      = analysisOfVariance(CAST(x AS Nullable(Float64)), grp)                                   FROM t_variant_stat;
+SELECT 'rankCorr',              rankCorr(x, y)                  = rankCorr(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))                    FROM t_variant_stat;
+SELECT 'mannWhitneyUTest',      mannWhitneyUTest(x, g)          = mannWhitneyUTest(CAST(x AS Nullable(Float64)), g)                                       FROM t_variant_stat;
+SELECT 'kolmogorovSmirnovTest', kolmogorovSmirnovTest(x, g)     = kolmogorovSmirnovTest(CAST(x AS Nullable(Float64)), g)                                  FROM t_variant_stat;
+
+-- Combinators compose with the fallback (the adapter is the outermost wrapper): -If filters rows, and a stored
+-- -State round-trips through -Merge, both aggregating over the same Float64 supertype.
+SELECT 'studentTTestIf',        studentTTestIf(x, g, grp != 2)  = studentTTestIf(CAST(x AS Nullable(Float64)), g, grp != 2)                               FROM t_variant_stat;
+SELECT 'varPopStableState',     varPopStableMerge(vs)           = varPopStableMerge(fs) FROM (SELECT varPopStableState(x) AS vs, varPopStableState(CAST(x AS Nullable(Float64))) AS fs FROM t_variant_stat);
+
+DROP TABLE t_variant_stat;

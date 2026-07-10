@@ -218,23 +218,42 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     AggregateFunctionProperties & out_properties,
     AggregateFunctionStateVariant state_variant) const
 {
-    /// Whether an aggregate function's result is a floating-point value computed by arithmetic over its input (the
-    /// sum/avg/variance/... families). Only for these is the Float64 fallback below safe: a numeric mix with no
-    /// lossless common supertype is naturally computed in Float64, exactly as arithmetic does. Exact/order-based
-    /// aggregates (min/max/argMin/argMax/any/quantileExact/...) are not float-promoting -- a lossy Float64 cast
-    /// would silently return wrong results for them (two distinct integers above 2^53 collapse to the same Float64)
-    /// -- so they keep reporting the original error. This is an allowlist (fail-closed): an unknown function is
-    /// treated as not float-promoting. Combinator suffixes are stripped and aliases resolved to classify the base
-    /// function (sumIf / sumArray / sumMerge / ... -> sum), mirroring tryGetProperties. Names are compared
-    /// case-insensitively (lowercased).
+    /// Whether the Float64 fallback below is safe for this aggregate: true only when the function's result is a
+    /// floating-point value computed by arithmetic/statistics over its numeric input, so that aggregating a numeric
+    /// mix with no lossless common supertype in Float64 is exactly what the function already does internally. The
+    /// sum/avg families accumulate arithmetically; the variance/covariance/correlation/moment families and the
+    /// statistical tests read every numeric input through `getFloat64` and return Float64 statistics. For all of
+    /// these, casting the input to Float64 loses nothing the function would not already lose. Exact/order-based
+    /// aggregates (min/max/argMin/argMax/any/quantileExact/uniqExact/...) are NOT float-promoting: a lossy Float64
+    /// cast would silently return wrong results for them (two distinct integers above 2^53 collapse to the same
+    /// Float64), so they keep reporting the original error when there is no lossless common supertype.
+    ///
+    /// This is a hand-maintained allowlist, kept fail-closed on purpose: an unknown function is treated as not
+    /// float-promoting. The capability cannot be reliably derived from metadata such as the return type -- e.g.
+    /// `entropy` also returns Float64 but keys on the exact input values (a Float64 cast would merge distinct
+    /// integers and change the result), so it must stay off the list. Combinator suffixes are stripped and aliases
+    /// resolved to classify the base function (sumIf / sumArray / sumMerge / ... -> sum), mirroring
+    /// tryGetProperties. Names are compared case-insensitively (lowercased).
     auto is_float_promoting = [this](String fn_name) -> bool
     {
         static const NameSet float_promoting_aggregate_functions
         {
+            /// Arithmetic accumulation over the input.
             "sum", "sumkahan", "avg", "avgweighted",
+            /// Variance / standard deviation / covariance / correlation and higher moments (skewness, kurtosis),
+            /// computed as Float64 moments -- the moment-based implementations, their numerically stable `*Stable`
+            /// siblings, and the matrix forms.
             "varsamp", "varpop", "stddevsamp", "stddevpop",
             "covarsamp", "covarpop", "corr",
             "skewsamp", "skewpop", "kurtsamp", "kurtpop",
+            "varsampstable", "varpopstable", "stddevsampstable", "stddevpopstable",
+            "covarsampstable", "covarpopstable", "corrstable",
+            "covarsampmatrix", "covarpopmatrix", "corrmatrix",
+            /// Statistical hypothesis tests: they read their numeric samples via `getFloat64` and return Float64
+            /// statistics (rank-based tests rank the values after reading them as Float64, so a Float64 cast is
+            /// consistent with their own semantics).
+            "studentttest", "studentttestonesample", "welchttest", "meanztest", "analysisofvariance",
+            "rankcorr", "mannwhitneyutest", "kolmogorovsmirnovtest",
         };
 
         while (true)

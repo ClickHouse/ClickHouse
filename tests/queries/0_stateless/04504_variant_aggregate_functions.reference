@@ -24,3 +24,23 @@ argMin	a	Variant(String, UInt64)
 argMax type	Variant(UInt64, UInt8)
 rankCorr	1
 analysisOfVariance	1
+varSampStable	1
+varPopStable	1
+stddevSampStable	1
+stddevPopStable	1
+covarSampStable	1
+covarPopStable	1
+corrStable	1
+covarSampMatrix	1
+covarPopMatrix	1
+corrMatrix	1
+studentTTest	1
+welchTTest	1
+studentTTestOneSample	1
+meanZTest	1
+analysisOfVariance	1
+rankCorr	1
+mannWhitneyUTest	1
+kolmogorovSmirnovTest	1
+studentTTestIf	1
+varPopStableState	1
