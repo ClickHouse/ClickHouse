@@ -1,0 +1,500 @@
+---
+alias: []
+description: 'Native 格式文档'
+input_format: true
+keywords: ['Native']
+output_format: true
+slug: /interfaces/formats/Native
+title: 'Native'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 描述
+</div>
+
+`Native` 格式的完整官方规范可在[这里](/zh/reference/interfaces/specs/NativeFormat)查看，而 `Native` 协议的配套规范——即承载该格式的 TCP 线协议——可在[这里](/zh/reference/interfaces/specs/NativeProtocol)查看。
+
+<Note>
+  这两份规范都是由 LLM 根据 ClickHouse 源代码生成的。代码仍然是主要的事实依据：如果规范与代码不一致，以代码为准。
+</Note>
+
+`Native` 格式是 ClickHouse 效率最高的格式，因为它是真正的“列式”格式，
+也就是说，它不会将列转换为行。
+
+在这种格式中，数据以二进制格式按[块](/zh/resources/develop-contribute/introduction/architecture#block)写入和读取。
+对于每个块，会依次记录行数、列数、列名和类型，以及该块中各列的部分数据。
+
+这是原生接口中用于服务器间交互、命令行客户端以及 C++ 客户端的格式。
+
+<Tip>
+  你可以使用这种格式快速生成只能由 ClickHouse DBMS 读取的转储。
+  但这种格式通常不适合手动处理。
+</Tip>
+
+<div id="data-types-wire-format">
+  ## 数据类型传输格式
+</div>
+
+数据在线上传输时采用列式格式，这意味着每一列都会单独发送，
+并且一列中的所有值会作为一个数组一起发送。
+
+块中的每一列都包含一个头部，类似于 [RowBinaryWithNamesAndTypes](/zh/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)。
+
+<Note>
+  使用原生 TCP 二进制协议时 (或者当 HTTP 端点接收到 `?client_protocol_version=<n>` 时) ，
+  会在列数和行数之前写入一个 `BlockInfo` 结构。本节中的示例使用的是
+  不带协议版本的普通 HTTP 接口，因此会省略 `BlockInfo`。
+</Note>
+
+<div id="block-structure">
+  ### 块结构
+</div>
+
+以下查询返回两列：`number` 和 `str`，共 3 行：
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" --data-binary "SELECT number, toString(number) AS str FROM system.numbers LIMIT 3" > out.bin
+```
+
+输出数据可放入单个 ClickHouse 块中，形式如下：
+
+```js
+const data = new Uint8Array([
+  // --- 块头 ---
+  0x02,                   // 2 列
+  0x03,                   // 3 行
+  // -- 第 1 列头 --
+  0x06,                   // LEB128 - 列名 'number' 占 6 字节
+  0x6e, 0x75, 0x6d,       
+  0x62, 0x65, 0x72,       // 列名：'number'
+  0x06,                   // LEB128 - 列类型 'UInt64' 占 6 字节
+  0x55, 0x49, 0x6e,
+  0x74, 0x36, 0x34,       // 'UInt64'
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // UInt64 值 0
+  0x01, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // UInt64 值 1
+  0x02, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // UInt64 值 2
+  0x03,                   // LEB128 - 列名 'str' 占 3 字节
+  0x73, 0x74, 0x72,       // 列名：'str'
+  0x06,                   // LEB128 - 列类型 'String' 占 6 字节
+  0x53, 0x74, 0x72, 
+  0x69, 0x6e, 0x67,       // 'String'
+  0x01,                   // LEB128 - 字符串长度为 1 字节
+  0x30,                   // String 值 '0'
+  0x01,                   // LEB128 - 字符串长度为 1 字节
+  0x31,                   // String 值 '1'
+  0x01,                   // LEB128 - 字符串长度为 1 字节
+  0x32,                   // String 值 '2'
+])
+```
+
+<div id="multiple-blocks">
+  ### 多个块
+</div>
+
+不过，在很多情况下，数据无法放入单个块中，ClickHouse 会以多个块的形式发送数据。
+请看下面这个查询：它会拉取两行数据，并通过减小块大小来强制将数据拆分为每块一行：
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" --data-binary "SELECT number, toString(number) AS str                FROM system.numbers LIMIT 2                 SETTINGS max_block_size=1" \  > out.bin
+```
+
+输出结果：
+
+```js
+const data = new Uint8Array([
+ 
+  // ----- 块 1 ----- 
+  0x02,                   // 2 列
+  0x01,                   // 1 行
+  0x06,                   // LEB128 - 列名 'number' 占 6 字节
+  0x6E, 0x75, 0x6D, 
+  0x62, 0x65, 0x72,       // 列名: 'number' 
+  0x06,                   // LEB128 - 列类型 'UInt64' 占 6 字节
+  0x55, 0x49, 0x6E, 
+  0x74, 0x36, 0x34,       // 'UInt64' 
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // UInt64 类型的 0
+  0x03,                   // LEB128 - 列名 'str' 占 3 字节
+  0x73, 0x74, 0x72,       // 列名: 'str'
+  0x06,                   // LEB128 - 列类型 'String' 占 6 字节
+  0x53, 0x74, 0x72, 
+  0x69, 0x6E, 0x67,       // 'String'
+  0x01,                   // LEB128 - 该字符串占 1 字节
+  0x30,                   // String 类型的 '0'
+  
+  // ----- 块 2 -----
+  0x02,                   // 2 列
+  0x01,                   // 1 行
+  0x06,                   // LEB128 - 列名 'number' 占 6 字节
+  0x6E, 0x75, 0x6D,  
+  0x62, 0x65, 0x72,       // 列名: 'number'
+  0x06,                   // LEB128 - 列类型 'UInt64' 占 6 字节
+  0x55, 0x49, 0x6E,  
+  0x74, 0x36, 0x34,       // 'UInt64'
+  0x01, 0x00, 0x00, 0x00,  
+  0x00, 0x00, 0x00, 0x00, // UInt64 类型的 1
+  0x03,                   // LEB128 - 列名 'str' 占 3 字节
+  0x73, 0x74, 0x72,       // 列名: 'str'
+  0x06,                   // LEB128 - 列类型 'String' 占 6 字节
+  0x53, 0x74, 0x72,  
+  0x69, 0x6E, 0x67,       // 'String'
+  0x01,                   // LEB128 - 该字符串占 1 字节
+  0x31,                   // String 类型的 '1'
+]);
+```
+
+<div id="simple-data-types">
+  ### 简单数据类型
+</div>
+
+这些较简单的数据类型中，单个值的传输格式与 `RowBinary`/`RowBinaryWithNamesAndTypes` 类似。
+符合这一描述的完整类型列表包括：
+
+* (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256
+* Float32, Float64
+* Bool
+* String
+* FixedString(N)
+* Date
+* Date32
+* DateTime
+* DateTime64
+* IPv4
+* IPv6
+* UUID
+
+更多详情，请参阅[&quot;RowBinary 数据类型传输格式&quot;](/zh/reference/formats/RowBinary/RowBinary#data-types-wire-format)中上述类型的说明。
+
+<div id="complex-data-types">
+  ### 复杂数据类型
+</div>
+
+以下类型的编码格式与 `RowBinary` 和 `RowBinaryWithNamesAndTypes` 不同。
+
+* Nullable
+* LowCardinality
+* Array
+* Map
+* Variant
+* Dynamic
+* JSON
+
+<div id="nullable">
+  #### Nullable
+</div>
+
+在 `Native` 格式中，可空列在实际数据之前会有一段字节数据，其字节数等于块中的行数。每个字节都表示对应的值是否为 `NULL`。例如，在这个查询中，每个奇数都会改为 `NULL`：
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" \  --data-binary "SELECT if(number % 2 = 0, number, NULL) :: Nullable(UInt64) AS maybe_null                 FROM system.numbers LIMIT 5" \  > out.bin
+```
+
+输出如下所示：
+
+```js
+const data = new Uint8Array([
+  // --- 块头 ---
+  0x01,                         // LEB128 - 1 列
+  0x05,                         // LEB128 - 5 行
+  
+  // -- 列头 --
+  0x0A,                         // LEB128 - 列名长度为 10 字节
+  0x6D, 0x61, 0x79, 0x62, 0x65, 
+  0x5F, 0x6E, 0x75, 0x6C, 0x6C, // 列名：'maybe_null'
+  
+  0x10,                         // LEB128 - 列类型长度为 16 字节
+  0x4E, 0x75, 0x6C, 0x6C, 
+  0x61, 0x62, 0x6C, 0x65, 
+  0x28, 0x55, 0x49, 0x6E, 
+  0x74, 0x36, 0x34, 0x29,       // 列类型：'Nullable(UInt64)'
+  
+  // -- Nullable 掩码 --
+  0x00,                         // 第 0 行不为 NULL
+  0x01,                         // 第 1 行为 NULL
+  0x00,                         // 第 2 行不为 NULL
+  0x01,                         // 第 3 行为 NULL
+  0x00,                         // 第 4 行不为 NULL
+  
+  // -- UInt64 值 --
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // 第 0 行：UInt64 类型的 0
+
+  // 即使该数字在块中存有实际值，
+  // 最终仍应向用户返回 NULL！
+  0x01, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,       // 第 1 行：NULL
+  
+  0x02, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,       // 第 2 行：UInt64 类型的 2
+  
+  0x03, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // 第 3 行：NULL，与第 1 行相同
+  
+  0x04, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // 第 4 行：UInt64 类型的 4
+]);
+```
+
+`Nullable(String)` 的工作方式也类似。NULL 指示始终来自 nullable 掩码字节——
+掩码值为 `0x01` 表示该行是 `NULL`，与字符串内容无关。对于 `NULL` 行，
+底层字符串存储为空字符串 (LEB128 长度为 `0`) 。请注意，非 `NULL` 的空
+字符串其 LEB128 长度也为 `0`，因此只有掩码字节才能区分这两种情况。例如，以下查询：
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" \  --data-binary "SELECT if(number % 2 = 0, toString(number), NULL) :: Nullable(String) AS maybe_str                 FROM system.numbers LIMIT 5" \  > out.bin
+```
+
+输出将类似如下：
+
+```js
+const data = new Uint8Array([
+  // --- 块头 ---
+  0x01, // LEB128 - 1 列
+  0x05, // LEB128 - 5 行
+
+  // -- 列头 --
+  0x09, // LEB128 - 列名占 9 字节
+  0x6d,
+  0x61,
+  0x79,
+  0x62,
+  0x65,
+  0x5f,
+  0x73,
+  0x74,
+  0x72, // 列名: 'maybe_str'
+
+  0x10, // LEB128 - 列类型占 16 字节
+  0x4e,
+  0x75,
+  0x6c,
+  0x6c,
+  0x61,
+  0x62,
+  0x6c,
+  0x65,
+  0x28,
+  0x53,
+  0x74,
+  0x72,
+  0x69,
+  0x6e,
+  0x67,
+  0x29, // 列类型: 'Nullable(String)'
+
+  // -- Nullable 掩码 --
+  0x00, // 第 0 行不为 NULL
+  0x01, // 第 1 行为 NULL
+  0x00, // 第 2 行不为 NULL
+  0x01, // 第 3 行为 NULL
+  0x00, // 第 4 行不为 NULL
+
+  // -- String 值 --
+  0x01,
+  0x30, // 第 0 行: LEB128 == 1，'0' 作为 String
+  0x00, // 第 1 行: LEB128 == 0，NULL
+  0x01,
+  0x32, // 第 2 行: LEB128 == 1，'2' 作为 String
+  0x00, // 第 3 行: LEB128 == 0，NULL
+  0x01,
+  0x34, // 第 4 行: LEB128 == 1，'4' 作为 String
+])
+```
+
+<div id="lowcardinality">
+  #### LowCardinality
+</div>
+
+不同于在 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#lowcardinality) 中 `LowCardinality` 是透明的，Native format 使用基于字典的列式编码。一个列会被编码为版本前缀，随后是唯一值字典，以及一个指向该字典的整数索引数组。
+
+<Note>
+  列可以定义为 `LowCardinality(Nullable(T))`，但不能定义为 `Nullable(LowCardinality(T))` —— 这始终会导致 server 返回错误。
+</Note>
+
+版本前缀是一个值为 `1` 的 `UInt64(LE)`，每列只写入一次。随后，每个块会写入以下内容：
+
+* `UInt64(LE)` — `IndexesSerializationType` 位字段。位 0–7 表示索引宽度 (0 = UInt8，1 = UInt16，2 = UInt32，3 = UInt64) 。位 8 (`NeedGlobalDictionaryBit`) 在 Native format 中永远不会被设置 (如果遇到，server 会抛出异常) 。位 9 表示存在额外的 Dictionary key。位 10 表示应重置字典。
+* `UInt64(LE)` — 字典键的数量，随后使用内部类型编码对这些键进行批量序列化。
+* `UInt64(LE)` — 行数，随后使用相应的 UInt 宽度对索引值进行批量序列化。
+
+字典始终在索引 0 处包含一个默认值 (例如，`String` 的空字符串、数值类型的 0) 。对于 `LowCardinality(Nullable(T))`，索引 0 表示 `NULL`，并且这些键在序列化时不带 `Nullable` 包装。
+
+例如，`LowCardinality(String)` 有 5 行 `['foo', 'bar', 'baz', 'foo', 'bar']`：
+
+```text
+// 版本前缀
+01 00 00 00 00 00 00 00    // UInt64(LE) = 1
+
+// IndexesSerializationType：UInt8 索引，包含键，更新字典
+00 06 00 00 00 00 00 00    // UInt64(LE) = 0x0600
+
+04 00 00 00 00 00 00 00    // 4 个字典键
+00                          // 键 0: ""（默认值）
+03 66 6f 6f                 // 键 1: "foo"
+03 62 61 72                 // 键 2: "bar"
+03 62 61 7a                 // 键 3: "baz"
+
+05 00 00 00 00 00 00 00    // 5 行
+01 02 03 01 02              // 索引 → "foo", "bar", "baz", "foo", "bar"
+```
+
+对于 `LowCardinality(Nullable(String))`，`NULL` 对应的索引为 0：
+
+```text
+01 00 00 00 00 00 00 00    // 版本
+00 06 00 00 00 00 00 00    // IndexesSerializationType
+03 00 00 00 00 00 00 00    // 3 个字典键
+00                          // 键 0: NULL
+00                          // 键 1: ""（默认值）
+03 79 65 73                 // 键 2: "yes"
+05 00 00 00 00 00 00 00    // 5 行
+02 00 02 00 02              // 索引 → "yes", NULL, "yes", NULL, "yes"
+```
+
+<div id="array">
+  #### Array
+</div>
+
+与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#array) 为每个数组都添加 LEB128 元素计数前缀不同，Native format 会将数组编码为两个列式子流：
+
+* N 个累计的 `UInt64` 偏移量 (小端序，每个 8 字节) 。第 `i` 行有 `offset[i] - offset[i-1]` 个元素，其中 `offset[-1]` 默认视为 0。
+* 所有行中的全部嵌套元素会被连续地批量序列化。
+
+例如，`Array(UInt32)` 有 3 行 `[[0, 10], [1, 11], [2, 12]]`：
+
+```text
+// 偏移量
+02 00 00 00 00 00 00 00    // 2（第 0 行：2 个元素）
+04 00 00 00 00 00 00 00    // 4（第 1 行：2 个元素）
+06 00 00 00 00 00 00 00    // 6（第 2 行：2 个元素）
+
+// 嵌套的 UInt32 值（共 6 个）
+00 00 00 00                 // 0
+0a 00 00 00                 // 10
+01 00 00 00                 // 1
+0b 00 00 00                 // 11
+02 00 00 00                 // 2
+0c 00 00 00                 // 12
+```
+
+空数组与前一行的偏移量相同。例如，包含 4 行 `[[], ['0'], ['0','1'], ['0','1','2']]` 的 `Array(String)`：
+
+```text
+00 00 00 00 00 00 00 00    // 0（空）
+01 00 00 00 00 00 00 00    // 1
+03 00 00 00 00 00 00 00    // 3
+06 00 00 00 00 00 00 00    // 6
+01 30                       // "0"
+01 30                       // "0"
+01 31                       // "1"
+01 30                       // "0"
+01 31                       // "1"
+01 32                       // "2"
+```
+
+<div id="map">
+  #### Map
+</div>
+
+`Map(K, V)` 编码为 `Array(Tuple(K, V))`——先是数组偏移量，接着是所有键，最后是所有值。这与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#map) 不同，后者会按每个条目交错存储键和值。
+
+例如，`Map(String, UInt64)` 有 3 行：`[{'a':0,'b':10}, {'a':1,'b':11}, {'a':2,'b':12}]`
+
+```text
+// 数组偏移量
+02 00 00 00 00 00 00 00    // 2
+04 00 00 00 00 00 00 00    // 4
+06 00 00 00 00 00 00 00    // 6
+
+// 所有键（6 个 String）
+01 61                       // "a"
+01 62                       // "b"
+01 61                       // "a"
+01 62                       // "b"
+01 61                       // "a"
+01 62                       // "b"
+
+// 所有值（6 个 UInt64）
+00 00 00 00 00 00 00 00    // 0
+0a 00 00 00 00 00 00 00    // 10
+01 00 00 00 00 00 00 00    // 1
+0b 00 00 00 00 00 00 00    // 11
+02 00 00 00 00 00 00 00    // 2
+0c 00 00 00 00 00 00 00    // 12
+```
+
+<div id="variant">
+  #### Variant
+</div>
+
+与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#variant) 不同，后者每一行都会携带各自的判别字节，并在后面内联存放对应的值；而 Native format 会将判别值与数据分开存储。
+
+<Warning>
+  与 RowBinary 一样，定义中的类型始终按字母顺序排序，判别值则是该有序列表中的索引。`0xFF` (255) 表示 `NULL`。
+</Warning>
+
+`Variant` 列的编码方式如下：
+
+* `UInt64(LE)` 判别值模式前缀 (`0` = BASIC，`1` = COMPACT) 。Native format 输出通常使用 BASIC (`0`) ；读取启用了 `use_compact_variant_discriminators_serialization` 的已存储数据时，可能会出现 COMPACT 模式。
+* N 个 `UInt8` 判别值，每行一个。
+* 每个 Variant 类型的数据都会编码为单独的批量列，其中仅包含与其匹配的行，并按判别值顺序排列。
+
+例如，`Variant(String, UInt32)` 有 5 行 `[0::UInt32, 'hello', NULL, 3::UInt32, 'hello']` (排序后：`String` = 0，`UInt32` = 1) ：
+
+```text
+00 00 00 00 00 00 00 00    // 判别值模式 = BASIC
+01 00 ff 01 00              // UInt32, String, NULL, UInt32, String
+
+// String（2 个值，第 1 行和第 4 行）
+05 68 65 6c 6c 6f          // \"hello\"
+05 68 65 6c 6c 6f          // \"hello\"
+
+// UInt32（2 个值，第 0 行和第 3 行）
+00 00 00 00                 // 0
+03 00 00 00                 // 3
+```
+
+<div id="dynamic">
+  #### Dynamic
+</div>
+
+与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#dynamic) 中每个值都是自描述的 (类型前缀 + 值) 不同，Native format 会将 `Dynamic` 序列化为结构前缀，后接一个 [Variant](#variant) 列。
+
+结构前缀包含一个 `UInt64(LE)` 序列化版本，随后是动态类型的数量 (以 VarUInt 表示) ，再后面是以字符串形式表示的类型名称。在 V1 版本中，出于兼容性考虑，类型数量会写入两次。后续数据是一个 `Variant` 列，其类型列表由这些动态类型以及一个内部 `SharedVariant` 类型组成，并按字母顺序排序。
+
+例如，包含 5 行 `[0::UInt32, 'hello', NULL, 3::UInt32, 'hello']` 的 `Dynamic`：
+
+```text
+// 结构前缀 (V1)
+01 00 00 00 00 00 00 00    // 版本 = V1
+02                          // 类型数量（V1 写入两次）
+02                          // 类型数量
+06 53 74 72 69 6e 67       // \"String\"
+06 55 49 6e 74 33 32       // \"UInt32\"
+
+// Variant 数据：Variant(SharedVariant, String, UInt32)
+// 判别值：SharedVariant=0, String=1, UInt32=2
+00 00 00 00 00 00 00 00    // 判别值模式 = BASIC
+02 01 ff 02 01              // UInt32, String, NULL, UInt32, String
+// SharedVariant：0 个值
+05 68 65 6c 6c 6f          // String：\"hello\"
+05 68 65 6c 6c 6f          // String：\"hello\"
+00 00 00 00                 // UInt32：0
+03 00 00 00                 // UInt32：3
+```
+
+<div id="json">
+  #### JSON
+</div>
+
+与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary#json) 不同，后者的每一行都包含路径名和值，因此是自描述的；而 Native format 会以列式结构来序列化 `JSON`。这种编码较为复杂，并且依赖于版本：它由一个结构前缀组成，其中包含序列化版本、动态路径名称和共享数据布局；随后依次是类型化路径 (每个都作为一整列) 、动态路径 (每个都作为一个 [Dynamic](#dynamic) 列) ，以及用于溢出路径的共享数据。
+
+为了获得更简单的互操作性，可以考虑使用设置 `output_format_native_write_json_as_string=1`，它会将 JSON 列序列化为普通的 JSON 文本字符串 (每行一个 `String`) 。

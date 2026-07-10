@@ -1,0 +1,242 @@
+---
+description: '在 Debian/Ubuntu Linux 上安装 ClickHouse'
+keywords: ['ClickHouse', '安装', 'Docker']
+sidebarTitle: 'Docker'
+slug: /install/docker
+title: '使用 Docker 安装 ClickHouse'
+hide_title: true
+doc_type: 'guide'
+---
+
+为方便阅读，下面摘录了 [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/)
+上的指南。可用的 Docker 镜像使用了
+官方的 ClickHouse deb 软件包。
+
+Docker pull 命令：
+
+```bash
+docker pull clickhouse/clickhouse-server
+```
+
+<div id="versions">
+  ## 版本
+</div>
+
+* `latest` 标签指向最新稳定分支的最新发布版本。
+* `22.2` 这类分支标签指向对应分支的最新发布版本。
+* `22.2.3` 和 `22.2.3.5` 这类完整版本标签指向对应的发布版本。
+* `head` 标签基于默认分支上的最新 commit 构建。
+* 每个标签都可附带一个可选的 `-alpine` 后缀，表示它是基于 `alpine` 构建的。
+
+<div id="compatibility">
+  ### 兼容性
+</div>
+
+* amd64 镜像要求支持 [SSE3 指令集](https://en.wikipedia.org/wiki/SSE3)。
+  几乎所有 2005 年之后的 x86 CPU 都支持 SSE3。
+* arm64 镜像要求支持 [ARMv8.2-A 架构](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A)，并且
+  还需要支持 Load-Acquire RCpc 寄存器。该寄存器在 ARMv8.2-A 中是可选的，而在
+  [ARMv8.3-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.3-A) 中则是必需的。Graviton &gt;=2、Azure 和 GCP 实例均支持此特性。
+  不受支持的设备示例包括 Raspberry Pi 4 (ARMv8.0-A) 和 Jetson AGX Xavier/Orin (ARMv8.2-A) 。
+* 从 ClickHouse 24.11 开始，Ubuntu 镜像已改为使用 `ubuntu:22.04` 作为基础镜像。它要求 docker 版本 &gt;= `20.10.10`，
+  且包含该 [patch](https://github.com/moby/moby/commit/977283509f75303bc6612665a04abf76ff1d2468)。作为临时变通方案，你也可以
+  改用 `docker run --security-opt seccomp=unconfined`，但这会带来安全风险。
+
+<div id="how-to-use-image">
+  ## 如何使用此镜像
+</div>
+
+<div id="start-server-instance">
+  ### 启动服务器实例
+</div>
+
+```bash
+docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+```
+
+默认情况下，ClickHouse 只能通过 Docker 网络访问。请参阅下方的网络部分。
+
+默认情况下，上述服务器实例将以无密码的 `default` 用户身份运行。
+
+<div id="connect-to-it-from-native-client">
+  ### 使用原生客户端连接
+</div>
+
+```bash
+docker run -it --rm --network=container:some-clickhouse-server --entrypoint clickhouse-client clickhouse/clickhouse-server
+# OR
+docker exec -it some-clickhouse-server clickhouse-client
+```
+
+有关 ClickHouse 客户端的更多信息，请参阅 [ClickHouse 客户端](/zh/concepts/features/interfaces/cli)。
+
+<div id="connect-to-it-using-curl">
+  ### 使用 curl 进行连接
+</div>
+
+```bash
+echo "SELECT 'Hello, ClickHouse!'" | docker run -i --rm --network=container:some-clickhouse-server buildpack-deps:curl curl 'http://localhost:8123/?query=' -s --data-binary @-
+```
+
+有关 HTTP 接口的更多信息，请参阅 [ClickHouse HTTP Interface](/zh/concepts/features/interfaces/http)。
+
+<div id="stopping-removing-container">
+  ### 停止 / 删除容器
+</div>
+
+```bash
+docker stop some-clickhouse-server
+docker rm some-clickhouse-server
+```
+
+<div id="networking">
+  ### 网络
+</div>
+
+<Note>
+  预定义用户 `default` 默认不具备网络访问权限，除非为其设置了密码，
+  请参见下方的“如何在启动时创建默认数据库和用户”和“管理 `default` 用户”
+</Note>
+
+你可以通过[映射特定端口](https://docs.docker.com/config/containers/container-networking/)，
+使用主机端口将容器内部的端口暴露出来，从而访问在 docker 中运行的 ClickHouse：
+
+```bash
+docker run -d -p 18123:8123 -p19000:9000 -e CLICKHOUSE_PASSWORD=changeme --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+echo 'SELECT version()' | curl 'http://localhost:18123/?password=changeme' --data-binary @-
+```
+
+或者通过 `--network=host` 让容器[直接使用主机端口](https://docs.docker.com/network/host/)
+(也有助于获得更好的网络性能) ：
+
+```bash
+docker run -d --network=host --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+echo 'SELECT version()' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+<Note>
+  上述示例中的 default 用户仅可用于来自 localhost 的请求
+</Note>
+
+<div id="volumes">
+  ### 存储卷
+</div>
+
+通常，为实现持久化，你可能需要在容器中挂载以下文件夹：
+
+* `/var/lib/clickhouse/` - ClickHouse 存储数据的主要目录
+* `/var/log/clickhouse-server/` - 日志
+
+```bash
+docker run -d \
+    -v "$PWD/ch_data:/var/lib/clickhouse/" \
+    -v "$PWD/ch_logs:/var/log/clickhouse-server/" \
+    --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+```
+
+你可能还需要挂载：
+
+* `/etc/clickhouse-server/config.d/*.xml` - 包含服务器配置调整的文件
+* `/etc/clickhouse-server/users.d/*.xml` - 包含用户设置调整的文件
+* `/docker-entrypoint-initdb.d/` - 包含数据库初始化脚本的文件夹 (见下文) 。
+
+<div id="linear-capabilities">
+  ## Linux 能力
+</div>
+
+ClickHouse 提供一些高级功能，使用这些功能需要启用若干 [Linux 能力](https://man7.org/linux/man-pages/man7/capabilities.7.html)
+
+这些能力是可选的，可以通过以下 [docker 命令行参数](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities) 启用：
+
+```bash
+docker run -d \
+    --cap-add=SYS_NICE --cap-add=NET_ADMIN --cap-add=IPC_LOCK \
+    --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+```
+
+更多信息，请参见[&quot;在 Docker 中配置 CAP&#95;IPC&#95;LOCK 和 CAP&#95;SYS&#95;NICE 能力&quot;](/zh/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker)
+
+<div id="configuration">
+  ## 配置
+</div>
+
+该容器开放 8123 端口用于 [HTTP 接口](/zh/concepts/features/interfaces/http)，开放 9000 端口用于 [原生客户端](/zh/concepts/features/interfaces/tcp)。
+
+ClickHouse 的配置通过文件 &quot;config.xml&quot; 表示 ([文档](/zh/concepts/features/configuration/server-config/configuration-files))
+
+<div id="start-server-instance-with-custom-config">
+  ### 以自定义配置启动服务器实例
+</div>
+
+```bash
+docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 -v /path/to/your/config.xml:/etc/clickhouse-server/config.xml clickhouse/clickhouse-server
+```
+
+<div id="start-server-custom-user">
+  ### 以自定义用户身份启动 服务器
+</div>
+
+```bash
+# $PWD/data/clickhouse should exist and be owned by current user
+docker run --rm --user "${UID}:${GID}" --name some-clickhouse-server --ulimit nofile=262144:262144 -v "$PWD/logs/clickhouse:/var/log/clickhouse-server" -v "$PWD/data/clickhouse:/var/lib/clickhouse" clickhouse/clickhouse-server
+```
+
+当你使用挂载了本地目录的镜像时，通常需要指定用户，以保持正确的文件所有权。请使用 `--user` 参数，并将 `/var/lib/clickhouse` 和 `/var/log/clickhouse-server` 挂载到容器内。否则，镜像会报错并无法启动。
+
+<div id="start-server-from-root">
+  ### 以 root 身份启动服务器
+</div>
+
+当启用用户命名空间时，以 root 身份启动服务器会很有帮助。
+为此，请运行：
+
+```bash
+docker run --rm -e CLICKHOUSE_RUN_AS_ROOT=1 --name clickhouse-server-userns -v "$PWD/logs/clickhouse:/var/log/clickhouse-server" -v "$PWD/data/clickhouse:/var/lib/clickhouse" clickhouse/clickhouse-server
+```
+
+<div id="how-to-create-default-db-and-user">
+  ### 如何在启动时创建默认数据库和用户
+</div>
+
+有时，你可能希望在容器启动时创建数据库和用户 (默认使用名为 `default` 的用户) 。你可以通过环境变量 `CLICKHOUSE_DB`、`CLICKHOUSE_USER`、`CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` 和 `CLICKHOUSE_PASSWORD` 来实现：
+
+```bash
+docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 -e CLICKHOUSE_PASSWORD=password -p 9000:9000/tcp clickhouse/clickhouse-server
+```
+
+<div id="managing-default-user">
+  #### 管理 `default` 用户
+</div>
+
+如果未设置 `CLICKHOUSE_USER`、`CLICKHOUSE_PASSWORD` 或 `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT`，则 `default` 用户默认会禁用网络访问。
+
+还有一种方法可以通过将环境变量 `CLICKHOUSE_SKIP_USER_SETUP` 设置为 1，以不安全的方式启用 `default` 用户：
+
+```bash
+docker run --rm -e CLICKHOUSE_SKIP_USER_SETUP=1 -p 9000:9000/tcp clickhouse/clickhouse-server
+```
+
+<div id="how-to-extend-image">
+  ## 如何扩展此镜像
+</div>
+
+如果要在基于此镜像派生的镜像中执行额外的初始化，请在 `/docker-entrypoint-initdb.d` 目录下添加一个或多个 `*.sql`、`*.sql.gz` 或 `*.sh` 脚本。入口点调用 `initdb` 后，会运行所有 `*.sql` 文件、执行所有可执行的 `*.sh` 脚本，并 source 该目录中找到的所有不可执行 `*.sh` 脚本，以便在服务启动前完成进一步的初始化。
+
+<Note>
+  `/docker-entrypoint-initdb.d` 目录下的脚本会按文件名字母顺序**依次执行**。如果这些脚本之间存在依赖关系 (例如，创建视图的脚本必须在创建其引用表的脚本之后运行) ，请确保文件名的排序顺序正确。
+</Note>
+
+此外，你还可以提供环境变量 `CLICKHOUSE_USER` 和 `CLICKHOUSE_PASSWORD`，初始化期间 `clickhouse-client` 会使用它们。
+
+例如，要添加另一个用户和数据库，请将以下内容添加到 `/docker-entrypoint-initdb.d/init-db.sh`：
+
+```bash
+#!/bin/bash
+set -e
+
+clickhouse client -n <<-EOSQL
+    CREATE DATABASE docker;
+    CREATE TABLE docker.docker (x Int32) ENGINE = MergeTree
+    ORDER BY ();
+EOSQL
+```

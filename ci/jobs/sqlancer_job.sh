@@ -240,6 +240,22 @@ else
     RESULT_INFO="Server is not responding before SQLancer run"
 fi
 
+# On failure, attach the per-database reproducer logs as an artifact. With
+# `--log-each-select true` SQLancer writes every statement of each generated
+# database to `logs/<dbms>/databaseN.log` (+ `databaseN-cur.log` for the
+# in-progress one), so the failing database's log is the exact
+# CREATE/INSERT/.../SELECT sequence needed to reproduce the bug - far easier
+# than reconstructing it from the interleaved, multi-threaded stdout. Only on
+# failure and as a single `.tar` (write_result gzips it if it exceeds 10 MB),
+# to avoid uploading a multi-hundred-MB log on clean runs.
+SQLANCER_LOG_DIR="/sqlancer/sqlancer-main/logs"
+if [ "$OVERALL_STATUS" != "OK" ] && [ -d "$SQLANCER_LOG_DIR" ]; then
+    reproducer_archive="$OUTPUT_PATH/sqlancer_reproducer_logs.tar"
+    if tar -C "$(dirname "$SQLANCER_LOG_DIR")" -cf "$reproducer_archive" "$(basename "$SQLANCER_LOG_DIR")"; then
+        ATTACHED_FILES_ARRAY+=("$reproducer_archive")
+    fi
+fi
+
 ls "$OUTPUT_PATH"
 
 if [ -f "$PID_FILE" ]; then

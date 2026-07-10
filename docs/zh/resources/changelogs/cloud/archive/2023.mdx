@@ -1,0 +1,765 @@
+---
+slug: /whats-new/cloud/2023
+sidebarTitle: '2023'
+title: 'Cloud 更新日志 - 2023'
+description: 'ClickHouse Cloud 2023 年更新日志'
+doc_type: 'changelog'
+keywords: ['更新日志', '发布说明', '更新', '新功能', 'Cloud 变更', '2023']
+---
+
+<div id="december-18-2023">
+  ## 2023年12月18日
+</div>
+
+此版本新增了 GCP 区域 (us-east1) 、支持以自助方式配置安全端点连接、增加了对更多集成 (包括 DBT 1.7) 的支持，并包含大量缺陷修复和安全增强。
+
+<div id="general-changes-1">
+  ### 常规变更
+</div>
+
+* ClickHouse Cloud 现已在 GCP us-east1 (South Carolina) 区域上线
+* 现已支持通过 OpenAPI 配置 AWS Private Link 和 GCP Private Service Connect
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 拥有 Developer 角色的用户现可无缝登录 SQL 控制台
+* 简化了在引导配置期间设置闲置控制的流程
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* DBT 连接器：新增对截至 v1.7 的 DBT 版本支持
+* Metabase：新增对 Metabase v0.48 的支持
+* PowerBI 连接器：新增对在 PowerBI Cloud 上运行的支持
+* ClickPipes 内部用户的权限现已支持配置
+* Kafka Connect
+  * 改进了去重逻辑以及对 Nullable 类型的摄取。
+  * 新增对文本格式 (CSV、TSV) 的支持
+* Apache Beam：新增对 Boolean 和 LowCardinality 类型的支持
+* Node.js 客户端：新增对 Parquet 格式的支持
+
+<div id="security-announcements">
+  ### 安全通知
+</div>
+
+* 已修复 3 个安全漏洞 - 详情请参阅[安全更新日志](/zh/resources/changelogs/security-changelog)：
+  * CVE 2023-47118 (CVSS 7.0) - 影响默认在 9000/tcp 端口运行的原生接口的堆缓冲区溢出漏洞
+  * CVE-2023-48704 (CVSS 7.0) - 影响默认在 9000/tcp 端口运行的原生接口的堆缓冲区溢出漏洞
+  * CVE 2023-48298 (CVSS 5.9) - FPC 压缩编解码器中的整数下溢漏洞
+
+<div id="november-22-2023">
+  ## 2023 年 11 月 22 日
+</div>
+
+此版本升级了核心数据库版本，改进了登录和身份验证流程，并为 Kafka Connect Sink 增加了代理支持。
+
+<div id="clickhouse-version-upgrade-2">
+  ### ClickHouse 版本升级
+</div>
+
+* 大幅提升了读取 Parquet 文件的性能。详见 [23.8 版本博客](https://clickhouse.com/blog/clickhouse-release-23-08)。
+* 新增了对 JSON 的类型推断支持。详见 [23.9 版本博客](https://clickhouse.com/blog/clickhouse-release-23-09)。
+* 引入了面向分析师的强大函数，例如 `ArrayFold`。详见 [23.10 版本博客](https://clickhouse.com/blog/clickhouse-release-23-10)。
+* **面向用户的不向后兼容变更**：默认禁用设置 `input_format_json_try_infer_numbers_from_strings`，以避免在 JSON 格式中从字符串推断出数字。否则，当样本数据包含类似数字的字符串时，可能会造成解析错误。
+* 包含数十项新功能、性能提升和缺陷修复。详见 [核心数据库更新日志](/zh/resources/changelogs/oss/2026)。
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 优化了登录和身份验证流程。
+* 优化了基于 AI 的查询建议，使其能更好地支持大型 schema。
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* Kafka Connect Sink：新增代理支持、`topic-tablename` 映射，以及对 Keeper 的 *exactly-once* 传递属性的配置支持。
+* Node.js client：新增对 Parquet 格式的支持。
+* Metabase：新增对 `datetimeDiff` 函数的支持。
+* Python client：新增对列名中特殊字符的支持，并修复了时区参数绑定问题。
+
+<div id="november-2-2023">
+  ## 2023 年 11 月 2 日
+</div>
+
+此次发布为亚洲的 Development 服务增加了更多区域支持，为客户管理的加密密钥引入了密钥轮换功能，进一步细化了计费控制台中的税务设置，并修复了各受支持语言客户端中的多项缺陷。
+
+<div id="general-updates-1">
+  ### 常规更新
+</div>
+
+* AWS 现已在 `ap-south-1` (孟买) 和 `ap-southeast-1` (新加坡) 区域提供开发服务
+* 客户自管加密密钥 (CMEK) 现已支持密钥轮换
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 新增了在添加信用卡时配置更细化税务设置的功能
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* MySQL
+  * 通过 MySQL 改进了对 Tableau Online 和 QuickSight 的支持
+* Kafka Connector
+  * 引入了新的 StringConverter，以支持基于文本的格式 (CSV、TSV)
+  * 新增了对 Bytes 和 Decimal 数据类型的支持
+  * 调整了可重试异常的处理方式，现在始终会重试 (即使在 errors.tolerance=all 时也是如此)
+* Node.js client
+  * 修复了以流方式传输大型数据集时结果损坏的问题
+* Python 客户端
+  * 修复了大批量插入时的超时问题
+  * 修复了 NumPy/Pandas 的 Date32 问题
+    ​​- Golang client
+  * 修复了将空 map 插入 JSON 列、压缩缓冲区清理、查询转义，以及 IPv4 和 IPv6 在 zero/nil 情况下触发 panic 的问题
+  * 为已取消的插入添加了 watchdog
+* DBT
+  * 改进了分布式表支持，并添加了相关测试
+
+<div id="october-19-2023">
+  ## 2023年10月19日
+</div>
+
+此版本改进了 SQL 控制台的易用性和性能，优化了 Metabase 连接器中对 IP 数据类型的处理，并为 Java 和 Node.js 客户端新增了功能。
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 提升了 SQL 控制台的易用性 (例如，在多次执行查询之间保留列宽)
+* 提升了 SQL 控制台的性能
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* Java 客户端：
+  * 切换默认网络库，以提升性能并复用已建立的连接
+  * 添加了代理支持
+  * 支持使用 Trust Store 的安全连接
+* Node.js 客户端：修复了 insert 查询的 keep-alive 行为
+* Metabase：修复了 IPv4/IPv6 列的序列化问题
+
+<div id="september-28-2023">
+  ## 2023 年 9 月 28 日
+</div>
+
+此版本带来了 ClickPipes for Kafka、Confluent Cloud 和亚马逊 MSK，以及 Kafka Connect ClickHouse Sink 的正式可用；还提供了通过 IAM 角色安全访问亚马逊 S3 的自助工作流，以及 AI 辅助查询建议 (私有预览) 。
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 新增了自助式工作流，以通过 [IAM 角色安全访问亚马逊 S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)
+* 推出了 AI 辅助查询建议的私有预览版 (如需试用，请[联系 ClickHouse Cloud 支持团队](https://console.clickhouse.cloud/support)。)
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* 宣布 ClickPipes (一项开箱即用的数据摄取服务) 已面向 Kafka、Confluent Cloud 和亚马逊 MSK 正式发布 (请参阅[发布博客](https://clickhouse.com/blog/clickpipes-is-generally-available))
+* Kafka Connect ClickHouse Sink 已正式发布
+  * 扩展了对通过 `clickhouse.settings` 属性自定义 ClickHouse 设置的支持
+  * 改进去重行为，以适应动态字段
+  * 新增对 `tableRefreshInterval` 的支持，用于从 ClickHouse 重新拉取表变更
+* 修复了 [PowerBI](/zh/integrations/connectors/data-visualization/powerbi-and-clickhouse) 与 ClickHouse 数据类型之间的 SSL 连接问题及类型映射问题
+
+<div id="september-7-2023">
+  ## 2023 年 9 月 7 日
+</div>
+
+此次发布带来了 PowerBI Desktop 官方连接器的 Beta 版、对印度地区信用卡支付处理的改进，以及对各受支持语言客户端的多项改进。
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 新增剩余额度和支付重试功能，以支持印度地区收费
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* Kafka Connector：新增对 ClickHouse 设置配置的支持，并新增 error.tolerance 配置选项
+* PowerBI Desktop：发布了官方连接器的 Beta 版本
+* Grafana：新增对 Point Geo 类型的支持，修复了 Data Analyst 仪表板中的面板问题，并修复了 timeInterval 宏
+* Python 客户端：兼容 Pandas 2.1.0，移除了对 Python 3.7 的支持，并新增对 Nullable JSON 类型的支持
+* Node.js 客户端：新增对 default&#95;format 设置的支持
+* Golang client：修复了 bool 类型处理问题，移除了字符串限制
+
+<div id="aug-24-2023">
+  ## 2023 年 8 月 24 日
+</div>
+
+此版本为 ClickHouse 数据库增加了对 MySQL interface 的支持，推出了新的官方 PowerBI 连接器，在 Cloud 控制台 中新增了“运行中的查询”视图，并将 ClickHouse 版本更新到 23.7。
+
+<div id="general-updates-1">
+  ### 常规更新
+</div>
+
+* 新增了对 [MySQL wire 协议](/zh/concepts/features/interfaces/mysql) 的支持，这项功能 (除其他用途外) 还可兼容许多现有的 BI 工具。请联系支持团队，为你的组织启用此功能。
+* 推出了新的官方 PowerBI 连接器
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 新增了对 SQL 控制台中“运行中的查询”视图的支持
+
+<div id="clickhouse-237-version-upgrade">
+  ### ClickHouse 23.7 版本升级
+</div>
+
+* 新增对 Azure 表函数的支持，将 Geo 数据类型提升为生产可用，并改进了 JOIN 性能——详情请参见 23.5 release [博客](https://clickhouse.com/blog/clickhouse-release-23-05)
+* 将 MongoDB 集成支持扩展到 6.0 版本——详情请参见 23.6 release [博客](https://clickhouse.com/blog/clickhouse-release-23-06)
+* 将写入 Parquet 格式的性能提升了 6 倍，新增对 PRQL 查询语言的支持，并改进了 SQL 兼容性——详情请参见 23.7 release [演示文稿](https://presentations.clickhouse.com/release_23.7/)
+* 包含数十项新功能、性能提升和缺陷修复——23.5、23.6、23.7 的详细内容请参见[更新日志](/zh/resources/changelogs/oss/2026)
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* Kafka Connector：新增对 Avro 的 Date 和 Time 类型的支持
+* JavaScript 客户端：发布了适用于 Web 环境的稳定版本
+* Grafana：改进了过滤器逻辑和数据库名称处理，并新增了对具有子秒级精度的 TimeInteval 的支持
+* Golang Client：修复了多个批次和异步数据加载问题
+* Metabase：支持 v0.47，新增连接模拟身份功能，并修复了数据类型映射
+
+<div id="july-27-2023">
+  ## 2023 年 7 月 27 日
+</div>
+
+此次发布带来了 ClickPipes for Kafka 的私有预览、全新的数据加载体验，以及可通过 Cloud 控制台 从 URL 加载文件的功能。
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* 推出了面向 Kafka 的 [ClickPipes](https://clickhouse.com/cloud/clickpipes) 私有预览。这是一个云原生集成引擎，只需点击几下按钮，即可轻松从 Kafka 和 Confluent Cloud 摄取海量数据。请在[此处](https://clickhouse.com/cloud/clickpipes#joinwaitlist)加入候补名单。
+* JavaScript 客户端：发布了对 Web 环境 (浏览器、Cloudflare workers) 的支持。代码已重构，便于社区为自定义环境创建连接器。
+* Kafka Connector：新增对内联 schema 以及 Kafka 的 Timestamp 和 Time 类型的支持
+* Python 客户端：修复了插入压缩和 LowCardinality 读取问题
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 新增了数据加载体验，并提供更多表创建配置选项
+* 支持通过 Cloud 控制台从 URL 加载文件
+* 改进了邀请流程，新增了加入其他组织和查看所有待处理邀请的选项
+
+<div id="july-14-2023">
+  ## 2023 年 7 月 14 日
+</div>
+
+此版本支持创建 Dedicated Services，新增澳大利亚 AWS 区域，并支持使用您自己的密钥对磁盘上的数据进行加密。
+
+<div id="general-updates-1">
+  ### 常规更新
+</div>
+
+* 新增 AWS 澳大利亚区域：悉尼 (ap-southeast-2)
+* 面向高要求、低延迟敏感型工作负载的专用层级服务 (如需设置，请联系 [支持](https://console.clickhouse.cloud/support))
+* 自带密钥 (BYOK) ，用于加密磁盘上的数据 (如需设置，请联系 [支持](https://console.clickhouse.cloud/support))
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 改进了异步插入的可观测性指标仪表板
+* 改进了聊天机器人在支持集成中的行为
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* Node.js 客户端：修复了因套接字超时导致连接失败的问题
+* Python 客户端：为插入查询添加了 QuerySummary，并支持数据库名称中的特殊字符
+* Metabase：更新了 JDBC 驱动版本，新增了对 DateTime64 的支持，并进行了性能优化。
+
+<div id="core-database-changes">
+  ### 核心数据库变更
+</div>
+
+* [查询缓存](/zh/concepts/features/performance/caches/query-cache) 可在 ClickHouse Cloud 中启用。启用后，成功的查询结果默认会缓存 1 分钟，后续查询将使用该缓存结果。
+
+<div id="june-20-2023">
+  ## 2023 年 6 月 20 日
+</div>
+
+此次发布宣布 ClickHouse Cloud on GCP 正式发布，新增适用于 Cloud API 的 Terraform provider，并将 ClickHouse 版本更新到 23.4。
+
+<div id="general-updates-1">
+  ### 常规更新
+</div>
+
+* ClickHouse Cloud on GCP 现已正式发布 (GA) ，并带来 GCP Marketplace 集成、对 Private Service Connect 的支持以及自动备份 (详见[博客](https://clickhouse.com/blog/clickhouse-cloud-on-google-cloud-platform-gcp-is-generally-available)和[新闻稿](https://clickhouse.com/blog/clickhouse-cloud-expands-choice-with-launch-on-google-cloud-platform))
+* 用于 Cloud API 的 [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 现已推出
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 为服务新增了一个整合后的设置页面
+* 调整了存储和计算资源的计量精度
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* Python 客户端：提升了 insert 性能，并重构了内部依赖以支持多进程
+* Kafka Connector：现已支持上传并安装到 Confluent Cloud，新增了对临时连接问题的重试机制，并会自动重置错误的 connector 状态
+
+<div id="clickhouse-234-version-upgrade">
+  ### ClickHouse 23.4 版本升级
+</div>
+
+* 为并行副本新增了 JOIN 支持 (请联系[支持团队](https://console.clickhouse.cloud/support)完成设置)
+* 提升了轻量级删除的性能
+* 优化了处理大批量插入时的缓存机制
+
+<div id="administration-changes-1">
+  ### 管理变更
+</div>
+
+* 现已支持非“default”用户创建本地字典
+
+<div id="may-30-2023">
+  ## 2023 年 5 月 30 日
+</div>
+
+此次发布正式公开了用于控制平面操作的 ClickHouse Cloud 编程 API (详见[博客](https://clickhouse.com/blog/using-the-new-clickhouse-cloud-api-to-automate-deployments)) ，并新增了通过 IAM 角色访问 S3 的支持以及更多扩缩容选项。
+
+<div id="general-changes-1">
+  ### 常规变更
+</div>
+
+* 支持 ClickHouse Cloud API。借助新的 Cloud API，您可以将服务管理无缝集成到现有的 CI/CD 管道中，并通过编程方式管理服务
+* 使用 IAM 角色访问 S3。您现在可以利用 IAM 角色安全地访问您的私有亚马逊简单存储服务 (S3) 存储桶 (请联系支持团队进行配置)
+
+<div id="scaling-changes">
+  ### 扩缩容变更
+</div>
+
+* [横向扩缩容](/zh/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)。现在，需要更高并行能力的工作负载最多可配置 10 个副本 (请联系支持团队进行设置)
+* [基于 CPU 的自动扩缩容](/zh/products/cloud/features/autoscaling/overview)。CPU 密集型工作负载现在可受益于自动扩缩容策略中新增的触发条件
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 将 Dev 服务迁移到 Production 服务 (需联系支持团队启用)
+* 在实例创建流程中新增了扩缩容配置控制项
+* 修复了内存中不存在默认密码时连接字符串的问题
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* Golang client：修复了原生协议中导致连接不均衡的问题，并新增了对原生协议中自定义设置的支持
+* Node.js 客户端：不再支持 nodejs v14，新增对 v20 的支持
+* Kafka Connector：新增对 LowCardinality 类型的支持
+* Metabase：修复了按时间范围分组的问题，并修复了 Metabase 内置问题对整数的支持
+
+<div id="performance-and-reliability">
+  ### 性能与可靠性
+</div>
+
+* 提高了写入密集型工作负载的效率和性能
+* 采用增量备份策略，提升了备份速度和效率
+
+<div id="may-11-2023">
+  ## 2023 年 5 月 11 日
+</div>
+
+此次发布推出了 ClickHouse Cloud on GCP 的 Public Beta
+(详情请参阅[博客](https://clickhouse.com/blog/clickhouse-cloud-on-gcp-available-in-public-beta)) ，
+扩展了管理员授予终止查询权限的权限，
+并让 Cloud 控制台中 MFA 用户状态的显示更加清晰。
+
+<Info>
+  **更新**
+
+  ClickHouse Cloud on GCP 现已 GA，请参阅上方 6 月 20 日的条目。
+</Info>
+
+<div id="clickhouse-cloud-on-gcp-is-now-available-in-public-beta-now-ga-see-june-20th-entry-above">
+  ### ClickHouse Cloud on GCP 现已开放 Public Beta
+</div>
+
+<Note>
+  ClickHouse Cloud on GCP 现已 GA，请参见上方的 [6 月 20 日](#june-20-2023)条目。
+</Note>
+
+* 推出完全托管、存储与计算分离的 ClickHouse 产品，基于 Google Compute 和 Google Cloud Storage 运行
+* 现已在爱荷华 (us-central1) 、荷兰 (europe-west4) 和新加坡 (asia-southeast1) 区域提供
+* 在以上三个初始区域中，均支持 Development 和 Production 服务
+* 默认提供强大的安全保障：传输中的端到端加密、静态数据加密、IP 允许列表
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* Golang client：新增对代理环境变量的支持
+* Grafana：在 Grafana 数据源设置中，新增了指定 ClickHouse 自定义设置和代理环境变量的功能
+* Kafka Connector：改进了空记录的处理
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 在用户列表中新增了是否启用多因素身份验证 (MFA) 的标识
+
+<div id="performance-and-reliability">
+  ### 性能与可靠性
+</div>
+
+* 为管理员新增了对终止查询权限的更细粒度控制
+
+<div id="may-4-2023">
+  ## 2023 年 5 月 4 日
+</div>
+
+此版本新增了热力图图表类型，优化了计费使用情况页面，并缩短了服务启动时间。
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* SQL 控制台新增热力图图表类型
+* 优化了计费用量页面，可显示各计费维度下消耗的额度
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* Kafka 连接器：新增针对临时连接错误的重试机制
+* Python 客户端：新增 `max_connection_age` 设置，确保 HTTP 连接不会被无限期复用。这有助于解决某些负载均衡问题
+* Node.js 客户端：新增对 Node.js v20 的支持
+* Java 客户端：改进了客户端证书身份验证支持，并新增了对嵌套 Tuple/Map/Nested 类型的支持
+
+<div id="performance-and-reliability">
+  ### 性能与可靠性
+</div>
+
+* 在存在大量 parts 的情况下，服务启动时间得到改善
+* 优化了 SQL 控制台中长时间运行查询的取消逻辑
+
+<div id="bug-fixes">
+  ### 缺陷修复
+</div>
+
+* 修复了导致“蜂窝基站”样本数据集导入失败的问题
+
+<div id="april-20-2023">
+  ## 2023 年 4 月 20 日
+</div>
+
+此版本将 ClickHouse 升级至 23.3，显著提升了冷读取速度，并新增了与支持团队实时聊天的功能。
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 新增了与支持团队实时聊天的选项
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* Kafka 连接器：新增对 Nullable 类型的支持
+* Golang client：新增对外部表的支持，并支持布尔值和指针类型的参数绑定
+
+<div id="configuration-changes">
+  ### 配置变更
+</div>
+
+* 新增了删除大型表的功能，可通过覆盖 `max_table_size_to_drop` 和 `max_partition_size_to_drop` 设置来实现
+
+<div id="performance-and-reliability">
+  ### 性能与可靠性
+</div>
+
+* 通过 `allow_prefetched_read_pool_for_remote_filesystem` 设置启用 S3 预取，以提升冷读速度
+
+<div id="clickhouse-233-version-upgrade">
+  ### ClickHouse 23.3 版本升级
+</div>
+
+* 轻量级删除已可用于生产环境——详情请参阅 23.3 版本的[博客](https://clickhouse.com/blog/clickhouse-release-23-03)
+* 新增了对多阶段 PREWHERE 的支持——详情请参阅 23.2 版本的[博客](https://clickhouse.com/blog/clickhouse-release-23-03)
+* 包含数十项新功能、性能提升和缺陷修复——23.3 和 23.2 的详细信息请参阅[更新日志](/zh/resources/changelogs/oss/2026)
+
+<div id="april-6-2023">
+  ## 2023 年 4 月 6 日
+</div>
+
+此版本新增了用于获取云端点的 API、用于设置最小空闲超时的高级扩缩容控制，以及 Python client 查询方法对外部数据的支持。
+
+<div id="api-changes">
+  ### API 变更
+</div>
+
+* 新增了可通过 [Cloud Endpoints API](/zh/products/cloud/guides/sql-console/query-endpoints) 以编程方式查询 ClickHouse Cloud 端点的功能
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 在高级扩缩容设置中新增了“最小空闲超时”设置
+* 在数据加载模态框中，schema 推断新增了尽力识别日期时间的功能
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* [Metabase](/zh/integrations/connectors/data-visualization/metabase-and-clickhouse): 新增了对多个 schema 的支持
+* [Go client](/zh/integrations/language-clients/go/index): 修复了 TLS 连接中空闲连接的存活检查问题
+* [Python 客户端](/zh/integrations/language-clients/python/index)
+  * 在查询方法中新增了对外部数据的支持
+  * 为查询结果新增了时区支持
+  * 新增了对 `no_proxy`/`NO_PROXY` 环境变量的支持
+  * 修复了服务器端为 Nullable 类型绑定 NULL 值参数的问题
+
+<div id="bug-fixes">
+  ### 缺陷修复
+</div>
+
+* 修复了在 SQL 控制台中运行 `INSERT INTO ... SELECT ...` 时，错误套用与 select 查询相同行数限制的问题
+
+<div id="march-23-2023">
+  ## 2023年3月23日
+</div>
+
+本次发布带来了数据库密码复杂度规则、大型备份恢复速度的显著提升，以及在 Grafana Trace View 中显示链路追踪的支持。
+
+<div id="security-and-reliability">
+  ### 安全与可靠性
+</div>
+
+* 核心数据库端点现已强制实施密码复杂度规则
+* 优化了大型备份的恢复时间
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 简化了引导式配置流程，引入了新的默认设置和更紧凑的界面视图
+* 缩短了注册和登录的延迟
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* Grafana:
+  * 新增支持在 Trace View 中显示存储于 ClickHouse 的 trace 数据
+  * 改进了时间范围过滤器，并新增对表名中特殊字符的支持
+* Superset: 新增对 ClickHouse 的原生支持
+* Kafka Connect Sink: 新增自动日期转换和 Null 列处理支持
+* Metabase: 实现了与 v0.46 的兼容
+* Python 客户端: 修复了临时表中的插入操作，并新增对 Pandas Null 的支持
+* Golang client: 对带时区的 Date 类型进行了归一化
+* Java client
+  * 在 SQL parser 中新增对 compression、infile 和 outfile 关键字的支持
+  * 新增凭据重载方法
+  * 修复了对 `ON CLUSTER` 的批次支持
+* Node.js client
+  * 新增对 JSONStrings、JSONCompact、JSONCompactStrings、JSONColumnsWithMetadata 格式的支持
+  * 现在可为所有主要客户端方法提供 `query_id`
+
+<div id="bug-fixes">
+  ### 缺陷修复
+</div>
+
+* 修复了一个会导致新服务初始预配和启动耗时过长的缺陷
+* 修复了一个因缓存配置错误而导致查询性能变慢的缺陷
+
+<div id="march-9-2023">
+  ## 2023 年 3 月 9 日
+</div>
+
+此版本改进了可观测性仪表盘，优化了创建大型备份的耗时，并新增了删除大型表和分区所需的配置。
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 新增高级可观测性仪表盘 (预览)
+* 在可观测性仪表盘中新增了内存分配图表
+* 改进了 SQL 控制台电子表格视图中的间距和换行处理
+
+<div id="reliability-and-performance">
+  ### 可靠性和性能
+</div>
+
+* 优化了备份计划，仅在数据发生修改时才执行备份
+* 提升了大型备份的完成速度
+
+<div id="configuration-changes">
+  ### 配置变更
+</div>
+
+* 新增支持在查询级别或连接级别覆盖设置 `max_table_size_to_drop` 和 `max_partition_size_to_drop`，以提高删除表和分区的限制
+* 查询日志中新增了源 IP，用于基于源 IP 强制执行配额和访问控制
+
+<div id="integrations">
+  ### 集成
+</div>
+
+* [Python 客户端](/zh/integrations/language-clients/python/index)：增强了对 Pandas 的支持，并修复了与时区相关的问题
+* [Metabase](/zh/integrations/connectors/data-visualization/metabase-and-clickhouse)：兼容 Metabase 0.46.x，并支持 SimpleAggregateFunction
+* [Kafka-Connect](/zh/integrations/connectors/data-ingestion/kafka/index)：支持隐式日期转换，并改进了对空值列的处理
+* [Java 客户端](https://github.com/ClickHouse/clickhouse-java)：支持将嵌套结构转换为 Java Map
+
+<div id="february-23-2023">
+  ## 2023 年 2 月 23 日
+</div>
+
+此版本启用了 ClickHouse 23.1 核心发布中的部分功能，新增了与亚马逊托管的 Apache Kafka 流服务 (MSK) 的兼容性，并在活动日志中提供了高级扩缩容和空闲状态调整选项。
+
+<div id="clickhouse-231-version-upgrade">
+  ### ClickHouse 23.1 版本升级
+</div>
+
+新增了对 ClickHouse 23.1 中部分特性的支持，例如：
+
+* 支持对 Map 类型使用 ARRAY JOIN
+* SQL 标准的十六进制和二进制字面量
+* 新增函数，包括 `age()`, `quantileInterpolatedWeighted()`, `quantilesInterpolatedWeighted()`
+* 可在 `generateRandom` 无参数时使用插入表的结构
+* 改进了数据库创建和重命名逻辑，允许重新使用先前的名称
+* 更多详情请参见 23.1 版本的[网络研讨会幻灯片](https://presentations.clickhouse.com/release_23.1/#cover)和[23.1 版本更新日志](#clickhouse-231-version-upgrade)
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* [Kafka-Connect](/zh/integrations/connectors/data-ingestion/kafka/index)：新增对亚马逊 MSK 的支持
+* [Metabase](/zh/integrations/connectors/data-visualization/metabase-and-clickhouse)：首个稳定版本 1.0.0
+  * 该连接器现已可在 [Metabase Cloud](https://www.metabase.com/start/) 上使用
+  * 新增了浏览所有可用数据库的功能
+  * 修复了 AggregationFunction 类型数据库的同步问题
+* [DBT-clickhouse](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index)：新增对最新 DBT 版本 v1.4.1 的支持
+* [Python client](/zh/integrations/language-clients/python/index)：改进了代理和 SSH 隧道支持，并针对 Pandas DataFrame 增加了多项修复和性能优化
+* [Node.js 客户端](/zh/integrations/language-clients/js)：新增了可为查询结果附加 `query_id` 的功能，可用于从 `system.query_log` 中检索查询指标
+* [Golang client](/zh/integrations/language-clients/go/index)：优化了与 ClickHouse Cloud 之间的网络连接
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 活动日志中新增了高级扩缩容和空闲设置调整记录
+* 重置密码邮件中新增了 User-Agent 和 IP 信息
+* 改进了 Google OAuth 注册流程
+
+<div id="reliability-and-performance-1">
+  ### 可靠性与性能
+</div>
+
+* 加快大型服务从空闲状态恢复的速度
+* 降低拥有大量表和分区的服务的读取延迟
+
+<div id="bug-fixes">
+  ### 缺陷修复
+</div>
+
+* 修复了重置服务密码时未遵循密码策略的问题
+* 组织邀请电子邮件的验证现已不区分大小写
+
+<div id="february-2-2023">
+  ## 2023 年 2 月 2 日
+</div>
+
+此次发布带来了官方支持的 Metabase 集成、重要的 Java 客户端 / JDBC 驱动发布，以及 SQL 控制台对视图和 materialized views 的支持。
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* [Metabase](/zh/integrations/connectors/data-visualization/metabase-and-clickhouse) 插件：成为由 ClickHouse 官方维护的解决方案
+* [dbt](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index) 插件：新增对[多线程](https://github.com/ClickHouse/dbt-clickhouse/blob/main/CHANGELOG.md)的支持
+* [Grafana](/zh/integrations/connectors/data-visualization/grafana/index) 插件：更好地处理连接错误
+* [Python](/zh/integrations/language-clients/python/index) 客户端：为插入操作新增[流式支持](/zh/integrations/language-clients/python/advanced-querying#streaming-queries)
+* [Go](/zh/integrations/language-clients/go/index) 客户端：[缺陷修复](https://github.com/ClickHouse/clickhouse-go/blob/main/CHANGELOG.md)：关闭已取消的连接，并更好地处理连接错误
+* [JS](/zh/integrations/language-clients/js) 客户端：[exec/insert 的破坏性变更](https://github.com/ClickHouse/clickhouse-js/releases/tag/0.0.12)；在返回类型中暴露了 query&#95;id
+* [Java](https://github.com/ClickHouse/clickhouse-java#readme) 客户端 / JDBC 驱动重大版本发布
+  * [破坏性变更](https://github.com/ClickHouse/clickhouse-java/releases)：移除了已弃用的方法、类和包
+  * 新增 R2DBC 驱动以及文件插入支持
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* SQL 控制台现已支持视图和 materialized views
+
+<div id="performance-and-reliability">
+  ### 性能与可靠性
+</div>
+
+* 加快了已停止/空闲实例的密码重置速度
+* 通过更准确地跟踪活动情况，改进了缩容行为
+* 修复了 SQL 控制台 CSV 导出被截断的问题
+* 修复了导致示例数据上传间歇性失败的问题
+
+<div id="january-12-2023">
+  ## 2023 年 1 月 12 日
+</div>
+
+此版本将 ClickHouse 升级至 22.12 版本，为许多新增数据源启用了字典，并提升了查询性能。
+
+<div id="general-changes-1">
+  ### 常规变更
+</div>
+
+* 已为更多来源启用字典，包括外部 ClickHouse、Cassandra、MongoDB、MySQL、PostgreSQL 和 Redis
+
+<div id="clickhouse-2212-version-upgrade">
+  ### ClickHouse 22.12 版本升级
+</div>
+
+* 扩展了对 Grace Hash Join 的 JOIN 支持
+* 新增了对读取 BSON (二进制 JSON) 文件的支持
+* 新增了对 GROUP BY ALL 标准 SQL 语法的支持
+* 新增了用于固定精度 Decimal 运算的数学函数
+* 完整变更列表请参阅 [22.12 发布博客](https://clickhouse.com/blog/clickhouse-release-22-12) 和[详细的 22.12 更新日志](#clickhouse-2212-version-upgrade)
+
+<div id="console-changes-7">
+  ### 控制台变更
+</div>
+
+* 改进了 SQL 控制台的自动补全功能
+* 默认区域现在会根据所在大洲的地理位置进行选择
+* 改进了 Billing Usage 页面，可同时显示计费单位和网站单位
+
+<div id="integrations-changes-7">
+  ### 集成变更
+</div>
+
+* DBT 版本 [v1.3.2](https://github.com/ClickHouse/dbt-clickhouse/blob/main/CHANGELOG.md#release-132-2022-12-23)
+  * 新增对 delete+insert 增量策略的 Experimental 支持
+  * 新增 s3source 宏
+* Python 客户端 [v0.4.8](https://github.com/ClickHouse/clickhouse-connect/blob/main/CHANGELOG.md#048-2023-01-02)
+  * 支持 File 表引擎插入
+  * 服务端查询[参数绑定](/zh/concepts/features/interfaces/client#cli-queries-with-parameters)
+* Go 客户端 [v2.5.0](https://github.com/ClickHouse/clickhouse-go/releases/tag/v2.5.0)
+  * 降低压缩时的内存占用
+  * 服务端查询[参数绑定](/zh/concepts/features/interfaces/client#cli-queries-with-parameters)
+
+<div id="reliability-and-performance-1">
+  ### 可靠性与性能
+</div>
+
+* 提升了查询从对象存储拉取大量小文件时的读取性能
+* 对于新创建的服务，将 [compatibility](/zh/reference/settings/session-settings#compatibility) 设置为该服务首次启动时使用的版本
+
+<div id="bug-fixes">
+  ### 缺陷修复
+</div>
+
+使用“高级扩缩容”滑块预留资源后，现在会立即生效。

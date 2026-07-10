@@ -1,0 +1,40 @@
+---
+title: ODBC authentication failed error when using the Power BI ClickHouse connector
+description: "ODBC authentication failed error when using the Power BI ClickHouse connector"
+date: 2024-07-10
+tags: ['Native Clients and Interfaces', 'Errors and Exceptions']
+keywords: ['ODBC', 'Power BI Connector', 'Authentication Failed']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+{frontMatter.description}
+{/* truncate */}
+
+## Question {#question}
+When trying to connect from PowerBI to ClickHouse using the connector, you receive a authentication error.
+
+This error usually looks like the following:
+
+```
+We encountered an error while trying to connect.
+Details: "ODBC: ERROR [HY000] HTTP status code: 403
+Received error:
+Code: 516. DB::Exception: default: Authentication failed: password is incorrect, or there is no user with such name.
+If you have installed ClickHouse and forgot password you can reset it in the configuration file.
+The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml and deleting this file will reset the password.
+See also /etc/clickhouse-server/users.ml on the server where
+ClickHouse is installed.
+```
+<Image img="/images/knowledgebase/powerbi_odbc_authentication_error.webp" size="md" alt="Power BI ODBC authentication error dialog" border />
+
+## Answer {#answer}
+Update the ClickHouse ODBC Driver to version [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523).
+
+If updating is not possible, check whether the password contains a tilde (~), as this can cause issues in versions prior to [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523).
+
+We recommend using a dedicated user for the connection and setting the password manually.  If you're using ClickHouse Cloud and require admin-level access equivalent of the `default` user, then create a new user and assign the `default_role` to it.
+
+For more information:  
+https://clickhouse.com/docs/operations/access-rights#user-account-management
+https://clickhouse.com/docs/cloud/security/cloud-access-management#database-roles
