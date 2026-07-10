@@ -2403,3 +2403,35 @@ def test_namespace_prefix_mysql_init_db(started_cluster):
         assert int(count) == 2, f"COM_INIT_DB namespace lost: {count}"
     finally:
         conn.close()
+
+
+def test_namespace_prefix_user_default_database(started_cluster):
+    """
+    A user's DEFAULT DATABASE may be "catalog.namespace"; login must select the
+    catalog with the namespace prefix.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_userdb_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "userdb_test_table"
+    user = f"user_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+    iceberg_table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"DROP USER IF EXISTS {user}")
+    node.query(
+        f"CREATE USER {user} DEFAULT DATABASE `{CATALOG_NAME}.{namespace}`"
+    )
+    try:
+        node.query(f"GRANT SHOW DATABASES ON *.* TO {user}")
+        node.query(f"GRANT SELECT ON {CATALOG_NAME}.`{namespace}.{table_name}` TO {user}")
+        count = int(node.query(f"SELECT count() FROM {table_name}", user=user))
+        assert count == 3, f"user default database lost the namespace: {count}"
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")

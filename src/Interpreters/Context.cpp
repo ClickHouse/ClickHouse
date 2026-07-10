@@ -2108,8 +2108,12 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     setExternalRolesWithLock(external_roles_, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
+    /// "db.namespace" selects a namespace inside a DataLakeCatalog database.
     if (!database.empty())
-        setCurrentDatabaseWithLock(database, /*table_prefix*/ {}, lock);
+    {
+        const auto [database_name, table_prefix] = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(database);
+        setCurrentDatabaseWithLock(database_name, table_prefix, lock);
+    }
 }
 
 std::shared_ptr<const User> Context::getUser() const
