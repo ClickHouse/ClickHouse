@@ -4414,7 +4414,8 @@ def test_network_activity_with_system_tables(started_cluster):
 
     query_id = f"{table_name}_query"
     instance.query(
-        f"SELECT * FROM system.tables WHERE name = '{table_name}'", query_id=query_id
+        f"SELECT database, name, engine FROM system.tables WHERE name = '{table_name}'",
+        query_id=query_id,
     )
 
     instance.query("SYSTEM FLUSH LOGS text_log")
