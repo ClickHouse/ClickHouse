@@ -749,16 +749,11 @@ TEST(RemoveSettingsFromQuery, StripsRepeatedOverrides)
     /// Each clause repeats a safety setting (direct `= value`, `= DEFAULT`, or a mix). Covers SELECT,
     /// SELECT-UNION (ASTQueryWithOutput), INSERT and a subquery.
     const std::vector<String> queries = {
-        "SELECT sum(number) FROM numbers(100) "
-        "SETTINGS max_rows_to_read = 0, max_rows_to_read = 0, read_overflow_mode = 'throw'",
-        "SELECT 1 UNION ALL SELECT 2 "
-        "SETTINGS max_rows_to_read = 0, max_execution_time = 0, max_rows_to_read = DEFAULT",
-        "INSERT INTO t SELECT number FROM numbers(100) "
-        "SETTINGS read_overflow_mode = 'throw', max_rows_to_read = 0, read_overflow_mode = DEFAULT",
-        "INSERT INTO t SELECT number FROM numbers(100) RETURNING (SELECT 1) "
-        "SETTINGS max_rows_to_read = 0, max_rows_to_read = DEFAULT",
-        "SELECT * FROM (SELECT number FROM numbers(100) "
-        "SETTINGS max_rows_to_read = 0, max_rows_to_read = DEFAULT) SETTINGS max_execution_time = 0",
+        "SELECT sum(number) FROM numbers(100) SETTINGS max_rows_to_read = 0, max_rows_to_read = 0, read_overflow_mode = 'throw'",
+        "SELECT 1 UNION ALL SELECT 2 SETTINGS max_rows_to_read = 0, max_execution_time = 0, max_rows_to_read = DEFAULT",
+        "INSERT INTO t SELECT number FROM numbers(100) SETTINGS read_overflow_mode = 'throw', max_rows_to_read = 0, read_overflow_mode = DEFAULT",
+        "INSERT INTO t SELECT number FROM numbers(100) RETURNING (SELECT 1) SETTINGS max_rows_to_read = 0, max_rows_to_read = DEFAULT",
+        "SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0, max_rows_to_read = DEFAULT) SETTINGS max_execution_time = 0",
     };
 
     for (const auto & query : queries)
