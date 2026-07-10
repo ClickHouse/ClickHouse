@@ -13,7 +13,11 @@ CREATE TABLE t_final_arr
     val AggregateFunction(sum, UInt64)
 )
 ENGINE = AggregatingMergeTree
-ORDER BY key;
+ORDER BY key
+-- `arr` is intentionally a dimension outside the sorting key; master rejects this by
+-- default since `allow_dimensions_outside_sorting_key` flipped to `false`. Both inserts
+-- write the same `arr` per key, so the value is deterministic after the FINAL collapse.
+SETTINGS allow_dimensions_outside_sorting_key = 1;
 
 -- Two parts per key so that FINAL has something to merge.
 -- The smallest keys (0..4) have an empty array, so ARRAY JOIN removes them;
