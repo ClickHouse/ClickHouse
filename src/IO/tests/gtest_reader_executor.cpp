@@ -8,6 +8,12 @@
 #include <IO/PrefetchThreadPool.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/LocalSourceReader.h>
+#include <IO/PipelineReadBuffer.h>
+
+/// The tests adopted from master build `ReaderExecutor::Options` with designated
+/// initializers for the few fields they care about; this branch's Options has more.
+#pragma clang diagnostic ignored "-Wmissing-designated-field-initializers"
+
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/ReadSettings.h>
@@ -85,6 +91,7 @@ using namespace DB;
 namespace ProfileEvents
 {
     extern const Event ReaderExecutorLongConnectionOpened;
+    extern const Event ReaderExecutorLongConnectionHits;
     extern const Event ReaderExecutorLongConnectionFallbacks;
     extern const Event ReaderExecutorBytesPushedToCacheSync;
     extern const Event ReaderExecutorBytesFromSource;
@@ -1354,7 +1361,7 @@ TEST(ReaderExecutorDecryptor, ConcurrentDecryptIsReentrant)
     }
 
     DB::ReaderExecutorDecryptor decryptor;
-    decryptor.addLayer("/r", 0, [&](UInt128 got_fp, const String &)
+    decryptor.addLayer("/r", [&](UInt128 got_fp, const String &)
     {
         EXPECT_EQ(got_fp, FileEncryption::calculateKeyFingerprint(key));
         return key;
@@ -6547,6 +6554,12 @@ TEST(ReaderExecutor, LongConnectionSpansAdvancingExtent)
     EXPECT_EQ(got, content.substr(0, 5 * window));      /// [0,500) served byte-exact
 }
 
+/// Byte value at logical offset `i` within a file: deterministic pattern.
+static unsigned char patternByte(size_t i)
+{
+    return static_cast<unsigned char>(i % 256);
+}
+
 class ReaderExecutorTest : public ::testing::Test
 {
 protected:
@@ -6614,7 +6627,7 @@ protected:
     {
         TestThreadGroup tg;
         auto ex = std::make_unique<ReaderExecutor>(
-            std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+            std::make_shared<LocalSourceReader>(), objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{
                 .min_bytes_for_seek = 64 * 1024, .block_size = block,
                 .max_tail_for_drain = 64 * 1024, .long_connection_limit = std::move(limit)});
         PipelineReadBuffer buf(std::move(ex));
@@ -6645,7 +6658,7 @@ TEST_F(ReaderExecutorTest, IncompleteConnectionOnAbandonedDrop)
     auto limit = std::make_shared<LongConnectionLimit>(4);
     /// max_tail_for_drain = 0: a connection dropped before its bound is never drained, so it
     /// is abandoned mid-response and must count as incomplete.
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{
         .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024,
         .max_tail_for_drain = 0, .long_connection_limit = limit});
 
@@ -6681,7 +6694,7 @@ TEST_F(ReaderExecutorTest, DrainFailureDoesNotAbortQuery)
     /// which reads the remaining tail up to the bound -- crosses it and throws. A fresh connection
     /// (opened for the backward read) starts with a full budget again.
     ReaderExecutor ex(std::make_shared<FaultBudgetSourceReader>(data, /*budget=*/block + block / 2),
-        StoredObjects{obj}, ReaderExecutor::Options{
+        StoredObjects{obj}, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{
             .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = block,
             .max_tail_for_drain = size, .long_connection_limit = limit});
 
@@ -6697,7 +6710,7 @@ TEST_F(ReaderExecutorTest, DrainFailureDoesNotAbortQuery)
     ASSERT_NO_THROW(w = ex.readNextWindow());
     ASSERT_FALSE(w.atEnd());
     const auto span = w.peek();
-    ASSERT_EQ(span.logical_offset, 0u);
+    ASSERT_EQ(span.offset, 0u);
     ASSERT_GE(span.size, block);
     for (size_t i = 0; i < block; ++i)
         ASSERT_EQ(static_cast<unsigned char>(span.data[i]), patternByte(i)) << "at " << i;
@@ -6725,7 +6738,7 @@ TEST_F(ReaderExecutorTest, BridgeDoesNotClobberServedWindow)
     TestThreadGroup tg;
     auto limit = std::make_shared<LongConnectionLimit>(4);
     ReaderExecutor ex(std::make_shared<ExternalBufferSourceReader>(data), StoredObjects{obj},
-        ReaderExecutor::Options{.min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024, .long_connection_limit = limit});
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{.min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024, .long_connection_limit = limit});
 
     /// Read until a long connection opens, and hold that connection's first served window.
     ChainedBuffers held;
@@ -6738,7 +6751,7 @@ TEST_F(ReaderExecutorTest, BridgeDoesNotClobberServedWindow)
     }
     ASSERT_FALSE(held.atEnd()) << "expected a long connection to open";
     const auto span = held.peek();
-    const size_t off = span.logical_offset;
+    const size_t off = span.offset;
 
     /// A small forward gap on the open connection -> serveFromLongConnection bridges via skipForward.
     ex.seek(off + span.size + 4096);
@@ -6754,50 +6767,9 @@ TEST_F(ReaderExecutorTest, BridgeDoesNotClobberServedWindow)
 
 #if USE_SSL
 
-/// Encrypt `plaintext` with the given key/iv at stream offset 0 using AES_128_CTR. CTR is
-/// symmetric -- encryption and decryption are the same operation.
-String aesCtrEncrypt(const String & key, FileEncryption::InitVector iv, const String & plaintext)
-{
-    FileEncryption::Encryptor enc(FileEncryption::Algorithm::AES_128_CTR, key, iv);
-    enc.setOffset(0);
-    String out(plaintext.size(), '\0');
-    enc.decrypt(plaintext.data(), plaintext.size(), out.data());
-    return out;
-}
-
-/// Same as `aesCtrEncrypt` but keyed at an arbitrary stream offset -- needed when reproducing a
-/// legacy stacked-encryption write where an outer layer's keystream covers `[inner_header (64),
-/// inner_ciphertext]` at offsets `[0, inner_ciphertext_size + 64)`. CTR is position-addressable, so
-/// encrypting two contiguous chunks at adjacent offsets equals encrypting the concatenation.
-String aesCtrEncryptAt(const String & key, FileEncryption::InitVector iv,
-    size_t stream_offset, const char * data, size_t size)
-{
-    FileEncryption::Encryptor enc(FileEncryption::Algorithm::AES_128_CTR, key, iv);
-    enc.setOffset(stream_offset);
-    String out(size, '\0');
-    enc.decrypt(data, size, out.data());
-    return out;
-}
-
-/// Build the on-disk encrypted byte stream: Header(64 bytes) + ciphertext.
-String makeEncryptedFile(const String & key, FileEncryption::InitVector iv, const String & plaintext)
-{
-    String file_bytes;
-    {
-        WriteBufferFromString wb(file_bytes);
-        FileEncryption::Header header;
-        header.algorithm = FileEncryption::Algorithm::AES_128_CTR;
-        header.key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
-        header.init_vector = iv;
-        header.write(wb);
-        wb.finalize();
-    }
-    file_bytes += aesCtrEncrypt(key, iv, plaintext);
-    return file_bytes;
-}
 
 /// Write raw `bytes` to `dir/name` and return the matching StoredObject (physical size).
-StoredObject writeBytesObject(const std::filesystem::path & dir, const std::string & name, const String & bytes)
+static StoredObject writeBytesObject(const std::filesystem::path & dir, const std::string & name, const String & bytes)
 {
     auto path = dir / name;
     std::ofstream f(path, std::ios::binary);
@@ -6818,7 +6790,7 @@ TEST_F(ReaderExecutorTest, DecryptsSmallPayload)
     const String plaintext = "Hello, encrypted world!";
     StoredObjects objects{writeBytesObject(tmp_dir, "small.enc", makeEncryptedFile(key, iv, plaintext))};
 
-    ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{});
+    ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{});
     executor.addDecryptionLayer("/t", [&](UInt128, const String &) { return key; });
     executor.initDecryption();
 
@@ -6844,7 +6816,7 @@ TEST_F(ReaderExecutorTest, DecryptsAcrossManyWindows)
 
     /// A small block forces several windows (3 full + a partial tail).
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.block_size = 4096});
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{.block_size = 4096});
     executor.addDecryptionLayer("/t",
         [&](UInt128 got_fp, const String &)
         {
@@ -6880,7 +6852,7 @@ TEST_F(ReaderExecutorTest, DecryptsAcrossBlobBoundary)
 
     /// A small block forces windows to reach and cross the object boundary.
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.block_size = 1024});
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{.block_size = 1024});
     executor.addDecryptionLayer("/m", [&](UInt128, const String &) { return key; });
     executor.initDecryption();
 
@@ -6943,7 +6915,7 @@ TEST_F(ReaderExecutorTest, DecryptsMultiLayer)
     StoredObjects objects{writeBytesObject(tmp_dir, "layered.enc", file_bytes)};
 
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.block_size = 4096});
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{.block_size = 4096});
     /// Layers are added outermost-first, innermost-last -- the order the stacked-disk prepareRead
     /// chain produces (each layer recurses into its delegate before appending its `needDecryption`).
     executor.addDecryptionLayer("/outer", [&](UInt128, const String &) { return key_outer; });
@@ -6961,7 +6933,7 @@ TEST_F(ReaderExecutorTest, TotalSizeIsZeroForEmptyEncryptedSource)
     /// `data_start_offset` set, so `totalSize()` must report 0, not underflow `physical - data_start_offset`.
     StoredObjects objects{makeFile("empty.bin", 0)};
 
-    ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{});
+    ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{});
     executor.addDecryptionLayer("layer0", [](UInt128, const String &) { return String{}; });
     executor.addDecryptionLayer("layer1", [](UInt128, const String &) { return String{}; });
     executor.initDecryption();
@@ -6975,7 +6947,7 @@ TEST_F(ReaderExecutorTest, UndersizedEncryptedSourceThrowsOnInit)
     /// as CANNOT_READ_ALL_DATA (so `totalSize()` is never reached with 0 < physical < data_start_offset).
     StoredObjects objects{makeFile("tiny.bin", 10)};   // 10 bytes < 128-byte two-layer header
 
-    ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{});
+    ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{});
     executor.addDecryptionLayer("layer0", [](UInt128, const String &) { return String{}; });
     executor.addDecryptionLayer("layer1", [](UInt128, const String &) { return String{}; });
 
@@ -6996,7 +6968,7 @@ TEST_F(ReaderExecutorTest, EncryptedEofReleasesLongConnectionSlot)
 
     auto limit = std::make_shared<LongConnectionLimit>(4);
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.min_bytes_for_seek = 64, .block_size = 512, .long_connection_limit = limit});
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{.min_bytes_for_seek = 64, .block_size = 512, .long_connection_limit = limit});
     executor.addDecryptionLayer("/t", [&](UInt128, const String &) { return key; });
     executor.initDecryption();
 
@@ -7021,7 +6993,7 @@ TEST_F(ReaderExecutorTest, EncryptionHeaderCacheServesRepeatedOpens)
     auto read_once = [&]
     {
         ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-            ReaderExecutor::Options{.block_size = 4096, .encryption_header_cache = cache});
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, ReaderExecutor::Options{.block_size = 4096, .encryption_header_cache = cache});
         ex.addDecryptionLayer("/c", key_finder);
         ex.initDecryption();
         auto out = drain(ex);
@@ -7036,92 +7008,4 @@ TEST_F(ReaderExecutorTest, EncryptionHeaderCacheServesRepeatedOpens)
     EXPECT_EQ(read_once(), plaintext);
 }
 
-TEST(ReaderExecutorDecryptor, ConcurrentDecryptIsReentrant)
-{
-    /// `ReaderExecutorDecryptor::decrypt` must be reentrant: it builds fresh per-call encryptors, so
-    /// several threads decrypting DISTINCT logical offsets concurrently must not cross-talk through a
-    /// shared keystream offset. Parse a known single-layer header, then have N threads each decrypt a
-    /// distinct chunk; every chunk must match a single-threaded reference decrypt of the same chunk.
-    String key(16, 'r');
-    const FileEncryption::InitVector iv(UInt128{0xabcdef0123456789ULL});
-
-    const size_t chunk_size = 4096;
-    const size_t num_threads = 8;
-    const size_t plaintext_size = chunk_size * num_threads;
-    String plaintext(plaintext_size, '\0');
-    for (size_t i = 0; i < plaintext_size; ++i)
-        plaintext[i] = static_cast<char>((i * 37 + 11) & 0xFF);
-
-    const String ciphertext = aesCtrEncrypt(key, iv, plaintext);
-
-    String header_str;
-    {
-        WriteBufferFromString wb(header_str);
-        FileEncryption::Header header;
-        header.algorithm = FileEncryption::Algorithm::AES_128_CTR;
-        header.key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
-        header.init_vector = iv;
-        header.write(wb);
-        wb.finalize();
-    }
-    ASSERT_EQ(header_str.size(), FileEncryption::Header::kSize);
-
-    ChainedBuffers header_chain;
-    {
-        auto buf = std::make_shared<OwnedChainedBuffer>(header_str.size());
-        memcpy(buf->data(), header_str.data(), header_str.size());
-        header_chain.append(ChainedBufferNode{buf, 0, header_str.size(), 0});
-    }
-
-    ReaderExecutorDecryptor decryptor;
-    decryptor.addLayer("/r", [&](UInt128 got_fp, const String &)
-    {
-        EXPECT_EQ(got_fp, FileEncryption::calculateKeyFingerprint(key));
-        return key;
-    });
-    decryptor.parseHeaders(header_chain);
-    ASSERT_TRUE(decryptor.initialized());
-
-    /// Single-threaded reference: decrypt each chunk in isolation.
-    std::vector<String> reference(num_threads);
-    for (size_t t = 0; t < num_threads; ++t)
-    {
-        const size_t off = t * chunk_size;
-        String chunk = ciphertext.substr(off, chunk_size);
-        decryptor.decrypt(chunk.data(), chunk.size(), off);
-        reference[t] = std::move(chunk);
-        EXPECT_EQ(reference[t], plaintext.substr(off, chunk_size));
-    }
-
-    /// Concurrent: N threads decrypt distinct offsets at once through the same const decryptor.
-    std::vector<String> got(num_threads);
-    std::latch start{static_cast<std::ptrdiff_t>(num_threads)};
-    std::vector<std::thread> threads;
-    threads.reserve(num_threads);
-    for (size_t t = 0; t < num_threads; ++t)
-    {
-        threads.emplace_back([&, t]
-        {
-            const size_t off = t * chunk_size;
-            start.arrive_and_wait();
-            for (int rep = 0; rep < 64; ++rep)
-            {
-                String c = ciphertext.substr(off, chunk_size);
-                decryptor.decrypt(c.data(), c.size(), off);
-                if (rep == 0)
-                    got[t] = std::move(c);
-                else
-                    EXPECT_EQ(c, reference[t]) << "thread " << t << " rep " << rep;
-            }
-        });
-    }
-    for (auto & th : threads)
-        th.join();
-
-    for (size_t t = 0; t < num_threads; ++t)
-        EXPECT_EQ(got[t], reference[t]) << "concurrent decrypt mismatch at thread " << t;
-}
-
 #endif
-
-}

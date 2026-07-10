@@ -1603,7 +1603,7 @@ TEST_F(ReaderExecutorCacheChain, EncryptionHeaderGoesThroughTheCacheChain)
     const size_t src_before_cold = sourceRequestsSoFar();
     {
         ReaderExecutor cold(source, objects, caches, opts);
-        cold.addDecryptionLayer("/t", 0, key_finder);
+        cold.addDecryptionLayer("/t", key_finder);
         cold.initDecryption();
         EXPECT_EQ(drainAll(cold), plaintext) << "cold encrypted scan serves all plaintext";
     }
@@ -1612,7 +1612,7 @@ TEST_F(ReaderExecutorCacheChain, EncryptionHeaderGoesThroughTheCacheChain)
     const size_t src_before_warm = sourceRequestsSoFar();
     {
         ReaderExecutor warm(source, objects, caches, opts);
-        warm.addDecryptionLayer("/t", 0, key_finder);
+        warm.addDecryptionLayer("/t", key_finder);
         warm.initDecryption();
         EXPECT_EQ(drainAll(warm), plaintext) << "warm encrypted scan serves all plaintext";
     }
