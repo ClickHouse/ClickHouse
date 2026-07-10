@@ -40,10 +40,14 @@ static constexpr size_t MAX_POINTS_IN_POLYGONAL_STATE = 10'000'000;
 /// count of a `Polygon`) are deliberately not capped on their own: any shape the aggregate can
 /// produce within the point budget must round-trip through serialization, and a union of many
 /// disjoint polygons can legitimately hold far more than a few thousand components. This
-/// cumulative cap bounds the total metadata allocation instead: it is charged before every
-/// container is read, and the containers are filled incrementally, so a metadata-only payload
-/// (every ring of size `0`) is rejected before it can amplify into a huge allocation while the
-/// point budget stays at zero.
+/// cumulative cap is a cheap early guard: it is charged before every container is read, and the
+/// containers are filled incrementally. It is not the primary bound, though — on its own it would
+/// still let a metadata-only payload (every ring of size `0`) push up to this many empty rings
+/// while the point budget stays at zero. The primary bound is that `deserializeGeoRing` rejects a
+/// zero-point ring on sight: a valid state never serializes one, so every allocated ring must
+/// carry at least one point and is therefore charged against the point budget. That ties the
+/// number of allocatable rings back to `MAX_POINTS_IN_POLYGONAL_STATE`, so ring metadata cannot be
+/// amplified from a relatively small payload.
 static constexpr size_t MAX_RINGS_IN_POLYGONAL_STATE = 10'000'000;
 
 /// Cumulative allocation budget threaded through polygonal-state deserialization.
@@ -216,6 +220,23 @@ inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_
 {
     UInt64 size = 0;
     readVarUInt(size, buf);
+
+    /// A valid polygonal state never serializes an empty ring: the add path skips empty polygons
+    /// and rejects a polygon with an empty outer ring but non-empty inner rings, and the output of
+    /// `boost::geometry::union_` / `intersection` is OGC-valid, so every serialized ring has at
+    /// least four points. An empty ring can therefore only come from a crafted state, where it is
+    /// pure metadata carrying no points. Reject it eagerly, before it is materialized: otherwise a
+    /// payload advertising a large polygon or inner-ring count with every ring of size `0` would
+    /// push millions of empty `CartesianRing` objects — bounded only by the ring budget, which the
+    /// point budget never charges — before `validateDeserializedMultiPolygon` runs. Requiring every
+    /// ring to carry at least one point ties the number of allocatable rings back to the point
+    /// budget, so ring metadata can no longer be amplified from a relatively small payload.
+    if (size == 0)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Corrupted state of aggregate function {}: ring has zero points",
+            function_name);
+
     if (size > MAX_POINTS_PER_RING)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
