@@ -1166,7 +1166,7 @@ def test_concurrent_different_queries(started_cluster):
     for t in threads:
         t.join(timeout=60)
 
-    assert not errors, f"Concurrent query errors:\n" + "\n".join(errors)
+    assert not errors, "Concurrent query errors:\n" + "\n".join(errors)
 
     # All 20 queries should have their own cache entries.
     cache_count = r.dbsize()
