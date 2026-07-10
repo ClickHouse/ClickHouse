@@ -2064,6 +2064,58 @@ TYPED_TEST(CoordinationTest, TestSnapshotOrphanedNodesThrowsWhenRunning)
     EXPECT_NO_THROW(manager.deserializeSnapshotFromBuffer(debuf_startup));
 }
 
+/// Test that TTL bookkeeping is cleaned up when orphaned TTL nodes are removed.
+/// Without this fix, an orphaned TTL node would leave a phantom entry in ttl_paths
+/// and an inflated committed_ttl_nodes counter after removal.
+TYPED_TEST(CoordinationTest, TestSnapshotOrphanedTTLCleanup)
+{
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
+
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    Storage storage(500, "", this->keeper_context);
+    addNode(storage, "/hello1", "world");
+
+    /// Insert orphaned TTL node directly (parent /missing does not exist)
+    using Node = typename Storage::Node;
+    Node orphan;
+    orphan.setData("ttl_orphan_data");
+    orphan.stats.setTTL(5000);
+    storage.container.insertOrReplace("/missing/ttl_node", orphan);
+
+    /// Register it in TTL tracking (as snapshot deserialization would have done)
+    storage.ttl_paths.insert("/missing/ttl_node");
+    storage.committed_ttl_nodes.fetch_add(1);
+
+    const auto ttl_count_before = storage.committed_ttl_nodes.load();
+
+    /// Serialize with V8 (required for TTL nodes)
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V8);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Deserialize with orphan removal enabled
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
+    const auto & restored_storage = deser_result.storage;
+
+    /// Orphaned TTL node should be removed
+    EXPECT_EQ(restored_storage->container.find("/missing/ttl_node"), restored_storage->container.end());
+
+    /// TTL tracking should be cleaned up: no phantom entries
+    EXPECT_FALSE(restored_storage->containsTTLPath("/missing/ttl_node"));
+    EXPECT_EQ(restored_storage->committed_ttl_nodes.load(), ttl_count_before - 1);
+
+    /// Normal nodes should survive
+    EXPECT_NE(restored_storage->container.find("/hello1"), restored_storage->container.end());
+}
+
 TYPED_TEST(CoordinationTest, TestStorageSnapshotTTLRoundTrip)
 {
     using namespace Coordination;

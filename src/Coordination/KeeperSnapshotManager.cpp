@@ -717,6 +717,13 @@ void KeeperStorageSnapshot::deserialize(
                         }
                     }
 
+                    /// Clean up TTL tracking
+                    if (node_it->value.stats.isTTL())
+                    {
+                        storage.ttl_paths.erase(orphan);
+                        storage.committed_ttl_nodes.fetch_sub(1);
+                    }
+
                     storage.container.erase(orphan);
                 }
 
