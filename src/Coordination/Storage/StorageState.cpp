@@ -348,7 +348,7 @@ void StorageState::recalculateWriteThrottling()
         if (current < limit)
             return;
         limit_reached = true;
-        excess += double(current) / double(limit) - 1.0;
+        excess += double(current) / std::max(1.0, double(limit)) - 1.0;
     };
 
     consider(immutable_memtables.size(), settings[DB::CoordinationSetting::unflushed_memtables_soft_limit]);
@@ -359,11 +359,12 @@ void StorageState::recalculateWriteThrottling()
     {
         const uint64_t max_delay_us = settings[DB::CoordinationSetting::write_throttling_max_delay_us];
         const uint64_t min_delay_us = settings[DB::CoordinationSetting::write_throttling_min_delay_us];
-        const float factor = settings[DB::CoordinationSetting::write_throttling_factor];
+        double factor = double(settings[DB::CoordinationSetting::write_throttling_factor]);
+        factor = std::max(1.0, factor);
 
         /// Exponential backoff, clamped to max_delay_us. If `excess` is very large, pow overflows
         /// to +inf, and min() clamps it back to max_delay_us, so delay stays finite.
-        delay_us = int64_t(std::min(double(max_delay_us), double(min_delay_us) * std::pow(double(factor), excess)));
+        delay_us = int64_t(std::min(double(max_delay_us), double(min_delay_us) * std::pow(factor, excess)));
     }
 
     int64_t prev = write_throttling_us.exchange(delay_us);

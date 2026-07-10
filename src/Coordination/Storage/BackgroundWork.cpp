@@ -259,7 +259,7 @@ void BackgroundWork::mergeThread()
 
         auto unlock_files = [&]()
         {
-            chassert(!mutex.try_lock());
+            std::lock_guard lock(mutex);
             for (uint32_t seqno : seqnos_to_lock)
             {
                 size_t erased = merges_in_progress.erase(seqno);
@@ -431,10 +431,7 @@ void BackgroundWork::mergeThread()
                 duration);
 
             publish_results(/*is_final=*/ true);
-            {
-                std::lock_guard lock(mutex);
-                unlock_files();
-            }
+            unlock_files();
             maybeStartMerge();
         }
         catch (...)
@@ -444,7 +441,6 @@ void BackgroundWork::mergeThread()
             /// Don't retry immediately.
             std::this_thread::sleep_for(std::chrono::seconds(1));
 
-            std::lock_guard lock(mutex);
             unlock_files();
             continue;
         }
@@ -453,9 +449,6 @@ void BackgroundWork::mergeThread()
 
 bool BackgroundWork::pickRunsToMerge(std::vector<SortedRunPtr> & out_inputs, SortedRunPtr & out_partial_output, std::vector<uint32_t> & out_seqnos_to_lock)
 {
-    chassert(!mutex.try_lock());
-    chassert(!storage->storage_mutex->try_lock());
-
     const auto & runs = storage->sorted_runs;
 
     /// Look for interrupted merge to resume.
