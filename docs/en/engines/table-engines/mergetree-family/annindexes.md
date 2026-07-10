@@ -157,7 +157,8 @@ SET allow_experimental_scann_index = 1;
 ```
 :::
 
-ScaNN indexes are created with three or four arguments:
+ScaNN indexes are created with either three or five arguments. The optional
+`<precision>` and `<num_leaves>` parameters must be specified together:
 
 ```sql
 SET allow_experimental_scann_index = 1;
@@ -166,7 +167,7 @@ CREATE TABLE table
 (
   [...],
   vectors Array(Float32),
-  INDEX index_name vectors TYPE vector_similarity('scann', <distance_function>, <dimensions>[, <precision>]) [GRANULARITY N]
+  INDEX index_name vectors TYPE vector_similarity('scann', <distance_function>, <dimensions>[, <precision>, <num_leaves>]) [GRANULARITY N]
 )
 ENGINE = MergeTree
 ORDER BY [...];
@@ -175,15 +176,27 @@ ORDER BY [...];
 The supported distance functions for ScaNN are `L2Distance`, `cosineDistance`, and `dotProduct`.
 Unlike HNSW, ScaNN supports only `Array(Float32)` and `Array(Float64)` columns — `Array(BFloat16)` is not supported.
 
-This ScaNN-specific parameter is available:
+These ScaNN-specific build parameters are available:
 - `<precision>` controls the on-disk precision of the exact-reordering vectors. Possible values are `f32` (float32), `bf16` (bfloat16), or `i8` (scalar-quantized int8). The default value is `f32`. The index is always trained in full float precision (the asymmetric-hashing codebook and IVF centroids are unaffected); only the reordering vectors are stored at the chosen precision. Lower precision shrinks the index on disk and speeds up cold loads (`bf16` roughly halves it, `i8` roughly quarters it) at a small recall cost, which can be recovered by raising `scann_candidate_pool_size`.
+- `<num_leaves>` controls the number of IVF partitions created in each index granule. It must be a positive integer. When the parameter is omitted, ClickHouse chooses `sqrt(num_vectors)` for each granule, with a minimum of `1`. More leaves produce finer partitions, but also increase index training work. The query-time default for `scann_num_leaves_to_search` is `sqrt(num_leaves)`.
+
+For example, the following definition stores exact-reordering vectors as `bf16`
+and creates `1024` IVF partitions per index granule:
+
+```sql
+INDEX index_name vectors TYPE vector_similarity('scann', 'cosineDistance', 768, 'bf16', 1024)
+```
+
+If only `<precision>` needs to be customized, `<num_leaves>` must still be
+specified. To retain the automatically selected number of leaves, omit both
+parameters and use the three-argument form.
 
 **ScaNN-specific query settings**
 
 Two settings allow per-query tuning of the recall/latency trade-off:
 
 - `scann_num_leaves_to_search` (default: `0`) — number of IVF partitions to probe at query time.
-  Value `0` uses the index's built-in default, which is approximately `num_leaves^0.5` where `num_leaves = num_vectors^0.5`.
+  Value `0` uses the index's build-time default, `sqrt(num_leaves)`. If `<num_leaves>` was omitted from the index definition, `num_leaves` is `sqrt(num_vectors)` for the granule.
   Higher values increase recall at the cost of query latency.
 
 - `scann_candidate_pool_size` (default: `0`) — size of the asymmetric-hashing candidate pool fed into the exact reranker.

@@ -658,8 +658,11 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snaps
         ScannIndexParams p;
         p.distance_name = args[1].safeGet<String>();
         p.dimensions    = args[2].safeGet<UInt64>();
-        if (args.size() == 4)
+        if (args.size() == 5)
+        {
             p.precision = args[3].safeGet<String>();
+            p.num_leaves = args[4].safeGet<UInt64>();
+        }
         return std::make_shared<MergeTreeIndexVectorSimilarityScann>(std::move(metadata_snapshot), index, p);
     }
 #endif
@@ -718,10 +721,10 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         static const std::unordered_set<String> scann_distances = {"L2Distance", "cosineDistance", "dotProduct"};
         static const std::unordered_set<String> scann_precisions = {"f32", "bf16", "i8"};
 
-        if (args.size() != 3 && args.size() != 4)
+        if (args.size() != 3 && args.size() != 5)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "vector_similarity index with method 'scann' requires three or four arguments: "
-                "method, distance_function, dimensions[, precision]");
+                "vector_similarity index with method 'scann' requires three or five arguments: "
+                "method, distance_function, dimensions[, precision, num_leaves]");
 
         const String & dist = args[1].safeGet<String>();
         if (!scann_distances.contains(dist))
@@ -733,7 +736,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Third argument (dimensions) of vector_similarity index must be > 0");
 
-        if (args.size() == 4)
+        if (args.size() == 5)
         {
             if (args[3].getType() != Field::Types::String)
                 throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -742,6 +745,12 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Fourth argument (precision) of vector_similarity index with method 'scann' is not supported. "
                     "Supported precisions are: f32, bf16, i8");
+            if (args[4].getType() != Field::Types::UInt64)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "Fifth argument (num_leaves) of vector_similarity index with method 'scann' must be of type UInt64");
+            if (args[4].safeGet<UInt64>() == 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Fifth argument (num_leaves) of vector_similarity index with method 'scann' must be > 0");
         }
 
         if (index.column_names.size() != 1 || index.data_types.size() != 1)

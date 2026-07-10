@@ -547,9 +547,11 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
         use_residual = true;
     }
 
-    /// Auto-tune partitioning parameters based on dataset size.
-    const size_t num_leaves = std::max(size_t(1),
-        static_cast<size_t>(std::sqrt(static_cast<double>(num_vectors))));
+    /// Auto-tune partitioning parameters based on dataset size unless the index definition
+    /// explicitly provides the build-time number of IVF leaves.
+    const size_t num_leaves = params.num_leaves != 0
+        ? static_cast<size_t>(params.num_leaves)
+        : std::max(size_t(1), static_cast<size_t>(std::sqrt(static_cast<double>(num_vectors))));
 
     const size_t num_leaves_to_search = std::max(size_t(1), static_cast<size_t>(std::sqrt(static_cast<double>(num_leaves))));
     const size_t training_sample_size = std::min(num_vectors, num_leaves * 75);
@@ -786,8 +788,9 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
         use_residual = true;
     }
 
-    const size_t num_leaves = std::max(size_t(1),
-        static_cast<size_t>(std::sqrt(static_cast<double>(num_vectors))));
+    const size_t num_leaves = params.num_leaves != 0
+        ? static_cast<size_t>(params.num_leaves)
+        : std::max(size_t(1), static_cast<size_t>(std::sqrt(static_cast<double>(num_vectors))));
     const size_t num_leaves_to_search = std::max(size_t(1),
         static_cast<size_t>(std::sqrt(static_cast<double>(num_leaves))));
     const size_t training_sample_size = std::min(num_vectors, num_leaves * 75);

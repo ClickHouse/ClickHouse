@@ -271,7 +271,17 @@ SELECT '7. too few arguments';
 CREATE TABLE tab_scann_too_few (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance')) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
 SELECT '8. too many arguments';
-CREATE TABLE tab_scann_too_many (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'extra')) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+CREATE TABLE tab_scann_too_many (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'f32', 16, 17)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+CREATE TABLE tab_scann_four_args (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'f32')) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
+DROP TABLE IF EXISTS tab_scann_num_leaves_arg;
+CREATE TABLE tab_scann_num_leaves_arg (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'f32', 16)) ENGINE = MergeTree ORDER BY tuple();
+DROP TABLE tab_scann_num_leaves_arg;
+
+CREATE TABLE tab_scann_bad_precision_with_num_leaves (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'bad', 16)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
+CREATE TABLE tab_scann_bad_num_leaves_type (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'f32', '16')) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+CREATE TABLE tab_scann_zero_num_leaves (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'f32', 0)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
 
 SELECT '9. dimensions must be > 0';
 CREATE TABLE tab_scann_zero_dim (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 0)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
@@ -353,7 +363,7 @@ DROP TABLE tab_scann_f64_overflow;
 -- Test 15: index survives DETACH/ATTACH (serialization round-trip).
 SELECT '16. Serialization round-trip (DETACH/ATTACH)';
 DROP TABLE IF EXISTS tab_scann_detach;
-CREATE TABLE tab_scann_detach (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+CREATE TABLE tab_scann_detach (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'f32', 64))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 INSERT INTO tab_scann_detach VALUES
     (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]),

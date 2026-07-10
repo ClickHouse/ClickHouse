@@ -23,6 +23,8 @@ struct ScannIndexParams
     /// On-disk precision of the exact-reordering vectors: "f32" (default), "bf16", or "i8".
     /// Lower precision shrinks the index at a small recall cost (recoverable with a larger pool).
     String precision = "f32";
+    /// Build-time number of IVF leaves. 0 means auto (sqrt(number of vectors in the granule)).
+    UInt64 num_leaves = 0;
 };
 
 /// Opaque wrapper so ScaNN heavy headers stay out of this header.
