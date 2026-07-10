@@ -1,0 +1,109 @@
+---
+title: 'AWS 自定义配置'
+slug: /cloud/reference/byoc/onboarding/customization-aws
+sidebarTitle: 'AWS 自定义配置'
+keywords: ['BYOC', '云', '自备 Cloud', '引导配置', 'AWS', 'VPC']
+description: '将 ClickHouse BYOC 部署到您现有的 AWS VPC 中'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="customer-managed-vpc-aws">
+  ## 适用于 AWS 的客户管理的 VPC (BYO-VPC)
+</div>
+
+如果您希望使用现有 VPC 部署 ClickHouse BYOC，而不是由 ClickHouse Cloud 预配新的 VPC，请按照以下步骤操作。这样做可以让您更好地掌控网络配置，并将 ClickHouse BYOC 集成到现有的网络基础设施中。
+
+<Steps>
+  <Step>
+    ### 配置现有 VPC
+
+    1. 为 VPC 添加标签 `clickhouse-byoc="true"`。
+    2. 在 3 个不同的可用区中，至少分配 3 个私有子网供 ClickHouse Cloud 使用。
+    3. 确保每个子网的最小 CIDR 范围为 `/23` (例如 `10.0.0.0/23`) 以便为 ClickHouse 部署提供足够的 IP 地址。
+    4. 为每个子网添加标签 `kubernetes.io/role/internal-elb=1` 和 `clickhouse-byoc="true"`，以启用正确的负载均衡器配置。
+
+    <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="BYOC VPC 子网" />
+
+    <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="BYOC VPC 子网标签" />
+  </Step>
+
+  <Step>
+    ### 配置 S3 Gateway Endpoint
+
+    如果您的 VPC 尚未配置 S3 Gateway Endpoint，则需要创建一个，以便在 VPC 与 Amazon S3 之间启用安全的私有通信。此端点可让您的 ClickHouse 服务在不经过公共互联网的情况下访问 S3。示例配置请参见下方截图。
+
+    <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="BYOC S3 端点" />
+  </Step>
+
+  <Step>
+    ### 确保网络连通性
+
+    **出站互联网访问**
+    您的 VPC 至少必须允许出站互联网访问，以便 ClickHouse BYOC 组件能够与 Tailscale 控制平面通信。Tailscale 用于为私有管理操作提供安全的零信任网络。通过 Tailscale 完成初始注册和设置需要公共互联网连通性，可通过直接访问或经由 NAT gateway 实现。此连通性对于保障 BYOC 部署的隐私性和安全性都是必需的。
+
+    **DNS 解析**
+    确保您的 VPC 具备正常工作的 DNS 解析能力，且不会阻止、干扰或覆盖标准 DNS 名称。ClickHouse BYOC 依赖 DNS 来解析 Tailscale 控制服务器和 ClickHouse 服务端点。如果 DNS 不可用或配置不正确，BYOC 服务可能无法正常连接或运行。
+  </Step>
+
+  <Step>
+    ### 配置 AWS 账号
+
+    初始 BYOC 设置会创建一个高权限 IAM 角色 (`ClickHouseManagementRole`)，使来自 ClickHouse Cloud 的 BYOC 控制器能够管理您的基础设施。这可以通过 [CloudFormation 模板](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) 或 [Terraform 模块](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz) 完成。
+
+    部署 `BYO-VPC` 设置时，请将 `IncludeVPCWritePermissions` 参数设置为 `false`，以确保 ClickHouse Cloud 不会获得修改您客户管理的 VPC 的权限。
+
+    <Note>
+      运行 ClickHouse 所需的存储桶、Kubernetes 集群和计算资源不包含在此初始设置中。它们将在后续步骤中预配。虽然 VPC 由您自行控制，但 ClickHouse Cloud 仍需要 IAM 权限来创建和管理 Kubernetes 集群、服务账号的 IAM 角色、S3 bucket 以及 AWS 账号中的其他必要资源。
+    </Note>
+
+    #### Terraform 模块替代方案
+
+    如果您希望使用 Terraform 而不是 CloudFormation，请使用以下模块：
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source                     = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
+      byoc_env                   = "production"
+      include_vpc_write_permissions = false
+    }
+    ```
+  </Step>
+
+  <Step>
+    ### 设置 BYOC 基础设施
+
+    在 ClickHouse Cloud 控制台中，设置新基础设施时请配置以下内容：
+
+    1. 在 **VPC configuration** 下，选择 **Use existing VPC**。
+    2. 输入您的 **VPC ID** (例如 `vpc-0bb751a5b888ad123`)。
+    3. 输入您之前配置的 3 个子网对应的 **Private subnet IDs**。
+    4. 如果您的配置需要面向公网的负载均衡器，可选填 **Public subnet IDs**。
+    5. 点击 **Set up Infrastructure** 开始预配。
+
+    <Image img="/images/cloud/reference/byoc-aws-existing-vpc-ui.webp" size="lg" alt="已选择 Use existing VPC 的 ClickHouse Cloud BYOC 设置界面" />
+
+    <Note>
+      新区域的设置最多可能需要 40 分钟。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="customer-managed-iam-roles">
+  ## 客户管理的 IAM 角色
+</div>
+
+对于具有高级安全要求或严格合规政策的组织，您可以提供自己的 IAM 角色，而不是由 ClickHouse Cloud 为您创建。这种方式可让您完全掌控 IAM 权限，并执行组织内部的安全策略。
+
+<Info>
+  客户管理的 IAM 角色目前处于私有预览阶段。如果您需要此能力，请联系 ClickHouse 支持团队，讨论您的具体需求和时间安排。
+
+  该功能可用后，您将能够：
+
+  * 提供预先配置好的 IAM 角色供 ClickHouse Cloud 使用
+  * 移除用于跨账户访问的 `ClickHouseManagementRole` 在 IAM 相关权限中所需的写权限
+  * 完全掌控角色权限和信任关系
+</Info>
+
+有关 ClickHouse Cloud 默认创建的 IAM 角色的信息，请参阅 [BYOC Privilege Reference](/zh/products/bring-your-own-cloud/reference/privilege)。

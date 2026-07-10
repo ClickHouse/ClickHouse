@@ -1,0 +1,92 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hierarchical
+title: 'Diccionarios jerárquicos'
+sidebarTitle: 'Jerárquico'
+description: 'Configure diccionarios jerárquicos con relaciones de claves padre-hijo.'
+doc_type: 'reference'
+---
+
+<div id="hierarchical-dictionaries">
+  ## Diccionarios jerárquicos
+</div>
+
+ClickHouse admite diccionarios jerárquicos con una [clave numérica](/es/reference/statements/create/dictionary/attributes#numeric-key).
+
+Considere la siguiente estructura jerárquica:
+
+```text
+0 (Common parent)
+│
+├── 1 (United States of America)
+│   │
+│   └── 2 (California)
+│       │
+│       └── 3 (San Francisco)
+│
+└── 4 (Great Britain)
+    │
+    └── 5 (London)
+```
+
+Esta jerarquía puede expresarse como la siguiente tabla del diccionario.
+
+| region&#95;id | parent&#95;region | region&#95;name           |
+| ------------- | ----------------- | ------------------------- |
+| 1             | 0                 | Estados Unidos de América |
+| 2             | 1                 | California                |
+| 3             | 2                 | San Francisco             |
+| 4             | 0                 | Great Britain             |
+| 5             | 4                 | London                    |
+
+Esta tabla contiene una columna `parent_region` que almacena la clave del padre inmediato del elemento.
+
+ClickHouse admite la propiedad jerárquica para los atributos de diccionarios externos. Esta propiedad permite configurar el diccionario jerárquico de forma similar a la descrita anteriormente.
+
+La función [dictGetHierarchy](/es/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) permite obtener la cadena de padres de un elemento.
+
+En nuestro ejemplo, la estructura del diccionario puede ser la siguiente:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY regions_dict
+    (
+        region_id UInt64,
+        parent_region UInt64 DEFAULT 0 HIERARCHICAL,
+        region_name String DEFAULT ''
+    )
+    PRIMARY KEY region_id
+    SOURCE(...)
+    LAYOUT(HASHED())
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <dictionary>
+        <structure>
+            <id>
+                <name>region_id</name>
+            </id>
+
+            <attribute>
+                <name>parent_region</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+                <hierarchical>true</hierarchical>
+            </attribute>
+
+            <attribute>
+                <name>region_name</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+
+        </structure>
+    </dictionary>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

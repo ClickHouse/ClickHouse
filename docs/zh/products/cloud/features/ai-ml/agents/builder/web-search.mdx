@@ -1,0 +1,45 @@
+---
+sidebarTitle: '网页搜索'
+slug: /cloud/features/ai-ml/agents/builder/web-search
+title: '网页搜索'
+description: '供 ClickHouse 智能体使用的外部网页搜索工具'
+keywords: ['AI', 'ClickHouse Cloud', '智能体', '网页搜索']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+网页搜索可让智能体在对话过程中从公共互联网获取信息。对于那些答案需要保持最新的问题，可使用此功能——例如最新发行版、服务外部的文档，或快速查证权威来源。
+
+<div id="enable-it">
+  ## 启用它
+</div>
+
+在智能体构建器中，启用 **Capabilities** 部分里的 **网页搜索**。启用后，智能体会根据用户的问题和自身指令，自行判断何时发起搜索。系统会执行搜索、抓取结果，并将最相关的内容传回模型上下文。
+
+<Image img="/images/cloud/agent-builder/web-search/web-search.webp" alt="高亮显示“网页搜索”部分的 Capabilities 面板，其中显示了“网页搜索”复选框" size="sm" />
+
+<div id="how-a-search-round-works">
+  ## 搜索轮次的工作原理
+</div>
+
+每次搜索都会经历三个阶段，这些阶段在 Cloud 中都会由系统为你管理：
+
+1. **搜索** - 智能体的请求会发送给搜索提供商，并返回候选 URL。
+2. **抓取** - 抓取相关页面并提取其中有实际意义的文本。
+3. **重排序** - 重排序器会对结果进行打分，让模型优先看到最有用的内容。
+
+智能体的回复会附上它实际使用过的 URL 引用。
+
+<div id="when-to-use-it">
+  ## 何时使用它
+</div>
+
+* 查找你的服务中没有的发布说明或更新日志。
+* 用模型可能不了解的来源核实某个事实。
+* 将公开的博客文章或文档引入对话中进行分析。
+
+如果问题可以根据你的数据或模型自身的知识来回答，就跳过它。每进行一轮搜索都会增加延迟。

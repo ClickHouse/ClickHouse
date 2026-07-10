@@ -89,7 +89,7 @@ private:
 
     void initMinMaxIndexExpression();
 
-    HiveFiles collectHiveFiles(
+    HiveFilesWithSkipSplits collectHiveFiles(
         size_t max_threads,
         const ActionsDAG * filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
@@ -97,7 +97,7 @@ private:
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    HiveFiles collectHiveFilesFromPartition(
+    HiveFilesWithSkipSplits collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition,
         const ActionsDAG * filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
@@ -105,7 +105,7 @@ private:
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    HiveFilePtr getHiveFileIfNeeded(
+    HiveFileWithSkipSplits getHiveFileIfNeeded(
         const FileInfo & file_info,
         const FieldVector & fields,
         const ActionsDAG * filter_actions_dag,

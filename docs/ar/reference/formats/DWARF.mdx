@@ -1,0 +1,92 @@
+---
+alias: []
+description: 'توثيق تنسيق DWARF'
+input_format: true
+keywords: ['DWARF']
+output_format: false
+slug: /interfaces/formats/DWARF
+title: 'DWARF'
+doc_type: 'reference'
+---
+
+| إدخال | إخراج | الاسم المستعار |
+| ----- | ----- | -------------- |
+| ✔     | ✗     |                |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يقوم تنسيق `DWARF` بتحليل رموز تصحيح DWARF من ملف ELF (ملف تنفيذي أو مكتبة أو object file).
+وهو مشابه لـ `dwarfdump`، لكنه أسرع بكثير (مئات الميغابايت/الثانية) ويدعم SQL.
+وينتج صفًا واحدًا لكل Debug Information Entry ‏(DIE) في القسم `.debug_info`
+ويتضمن إدخالات &quot;null&quot; التي يستخدمها ترميز DWARF لإنهاء قوائم العناصر الفرعية في الشجرة.
+
+<Info>
+  يتألف `.debug_info` من *وحدات*، وهي تقابل وحدات الترجمة:
+
+  * كل وحدة عبارة عن شجرة من *DIE*s، ويكون DIE من نوع `compile_unit` هو جذرها.
+  * لكل DIE *tag* وقائمة من *attributes*.
+  * ولكل attribute *name* و *value* (وله أيضًا *form* يحدد كيفية ترميز القيمة).
+
+  تمثل DIEs عناصر من source code، ويحدد *tag* الخاص بها نوع العنصر. على سبيل المثال، هناك:
+
+  * دوال (tag = `subprogram`)
+  * أصناف/structs/enums (`class_type`/`structure_type`/`enumeration_type`)
+  * متغيرات (`variable`)
+  * معاملات الدالة (`formal_parameter`).
+
+  تعكس بنية الشجرة بنية source code المقابل. على سبيل المثال، يمكن أن يحتوي DIE من نوع `class_type` على DIEs من نوع `subprogram` تمثل methods الخاصة بالصنف.
+</Info>
+
+يُخرج تنسيق `DWARF` الأعمدة التالية:
+
+* `offset` - موضع DIE في القسم `.debug_info`
+* `size` - عدد البايتات في DIE المُرمَّز (بما في ذلك attributes)
+* `tag` - نوع DIE؛ تُحذف البادئة الاصطلاحية &quot;DW&#95;TAG&#95;&quot;
+* `unit_name` - اسم وحدة الترجمة التي تحتوي على هذا DIE
+* `unit_offset` - موضع وحدة الترجمة التي تحتوي على هذا DIE في القسم `.debug_info`
+* `ancestor_tags` - Array من tags الخاصة بأسلاف DIE الحالي في الشجرة، بالترتيب من الأعمق إلى الأبعد
+* `ancestor_offsets` - offsets الخاصة بالأسلاف، على التوازي مع `ancestor_tags`
+* بعض attributes الشائعة المكررة من مصفوفة attributes للتسهيل:
+  * `name`
+  * `linkage_name` - الاسم الكامل المؤهل بعد التشويه؛ ويكون عادةً موجودًا للدوال فقط (ولكن ليس كل الدوال)
+  * `decl_file` - اسم ملف source code الذي أُعلن فيه هذا entity
+  * `decl_line` - رقم السطر في source code الذي أُعلن فيه هذا entity
+* Arrays متوازية تصف attributes:
+  * `attr_name` - اسم attribute؛ تُحذف البادئة الاصطلاحية &quot;DW&#95;AT&#95;&quot;
+  * `attr_form` - كيفية ترميز attribute وتفسيره؛ تُحذف البادئة الاصطلاحية DW&#95;FORM&#95;
+  * `attr_int` - القيمة الصحيحة للـ attribute؛ وتكون 0 إذا لم تكن للـ attribute قيمة رقمية
+  * `attr_str` - القيمة النصية للـ attribute؛ وتكون فارغة إذا لم تكن للـ attribute قيمة نصية
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+يمكن استخدام تنسيق `DWARF` للعثور على وحدات الترجمة التي تضم أكبر عدد من تعريفات الدوال (بما في ذلك تجسيدات Template والدوال من ملفات الترويسة المضمّنة):
+
+```sql title="Query"
+SELECT
+    unit_name,
+    count() AS c
+FROM file('programs/clickhouse', DWARF)
+WHERE tag = 'subprogram' AND NOT has(attr_name, 'declaration')
+GROUP BY unit_name
+ORDER BY c DESC
+LIMIT 3
+```
+
+```text title="Response"
+┌─unit_name──────────────────────────────────────────────────┬─────c─┐
+│ ./src/Core/Settings.cpp                                    │ 28939 │
+│ ./src/AggregateFunctions/AggregateFunctionSumMap.cpp       │ 23327 │
+│ ./src/AggregateFunctions/AggregateFunctionUniqCombined.cpp │ 22649 │
+└────────────────────────────────────────────────────────────┴───────┘
+
+3 rows in set. Elapsed: 1.487 sec. Processed 139.76 million rows, 1.12 GB (93.97 million rows/s., 752.77 MB/s.)
+Peak memory usage: 271.92 MiB.
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>

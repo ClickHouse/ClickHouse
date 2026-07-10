@@ -1,0 +1,145 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schema/map-vs-json
+description: 'When to use the Map type vs the JSON type for attributes in ClickStack'
+sidebarTitle: 'Map vs JSON type'
+title: 'Map vs JSON type for ClickStack'
+doc_type: 'reference'
+keywords: ['clickstack', 'json', 'map', 'attributes', 'schema', 'observability']
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
+ClickStack's [default schema](/clickstack/ingesting-data/schemas) stores resource, scope, log, and span attributes as `Map(LowCardinality(String), String)` columns. ClickHouse also supports a strongly typed [`JSON` type](/reference/formats/JSON/JSON), and ClickStack has beta support for using it in place of `Map`.
+
+**For typical observability workloads we recommend keeping the [default `Map`-based schema](/clickstack/ingesting-data/schemas).** The JSON type is available for users who want to evaluate it on workloads with a small, stable set of attribute keys, but it isn't the recommended schema for general use.
+
+## Why Map is the recommended default {#why-map}
+
+Observability data is dominated by attributes such as resource attributes, scope attributes, and span and log attributes. These sets are typically large, high-cardinality, and ingested at high throughput. The schema you pick for those attributes is the dominant factor in ingest cost and storage layout.
+
+`Map(LowCardinality(String), String)` stores keys and values as a single structure. The historical disadvantage of `Map` was that reading a single key required reading the entire map column. That's no longer true: ClickHouse now supports [bucketed map serialization](/reference/data-types/map#bucketed-map-serialization), which splits the map into buckets so queries only read the buckets they need. Combined with [text indexes](/reference/engines/table-engines/mergetree-family/textindexes) on map keys and values, which is how [ClickStack's default schema](/clickstack/ingesting-data/schemas) is configured, this makes `Map` selective and fast at read time without paying any ingest penalty for new keys.
+
+In practice this means:
+
+- **Stable ingest cost as keys grow.** Adding a new attribute key doesn't change the on-disk column layout or create new column files. Ingest cost is bounded by the data volume, not the key cardinality.
+- **No metadata explosion.** The number of column files on disk doesn't track the number of unique attribute keys.
+- **Selective lookups via indexes.** Text indexes on map keys and values give point lookups without scanning every row.
+- **Predictable behavior at high throughput.** Map handles bursty, schemaless attribute sets, which are common in tracing and logs, without per-key overhead.
+
+## Why not JSON by default {#why-not-json}
+
+The `JSON` type takes a different approach: at insert time, ClickHouse dynamically creates a dedicated, strongly typed subcolumn for each path it sees. At read time this is attractive, since only the requested subcolumns are read, types are preserved, and no query-time casting is needed.
+
+The tradeoff lands at ingest time. Creating and managing many dynamic subcolumns introduces write-time overhead and metadata complexity. On observability workloads, which routinely have very large or highly dynamic attribute sets and high ingest throughput, that overhead is significant. The [`max_dynamic_paths`](/reference/data-types/newjson#reading-json-paths-as-sub-columns) limit can cap the damage by spilling extra paths into a shared column, but accessing the shared column is slower than dedicated subcolumns, which erodes the read-time advantage that motivated using JSON in the first place.
+
+With bucketed map serialization removing most of the historical read-time overhead of `Map`, the read-time advantage of `JSON` no longer outweighs its ingest-time cost for typical observability workloads.
+
+## When you might still consider JSON {#when-to-consider-json}
+
+The JSON type can be a reasonable fit when *all* of the following hold:
+
+- Your attribute key-set is **small and stable**, meaning you aren't seeing thousands of unique keys, and new keys appear rarely.
+- Ingest throughput is **modest** relative to the attribute cardinality.
+- You want **strongly typed access** to attributes without query-time casts (numbers stay numbers, booleans stay booleans).
+- You are willing to operate a **beta feature** in ClickStack and accept that the integration may change.
+
+If those conditions don't all hold, stay on the [default `Map`-based schema](/clickstack/ingesting-data/schemas).
+
+## Beta status {#beta-status}
+
+<BetaBadge/>
+
+<Warning>
+**Beta feature, not production ready**
+
+JSON type support in **ClickStack** is a **beta feature**. While the JSON type itself is production-ready in ClickHouse 25.3+, its integration within ClickStack is still under active development and may have limitations, change in the future, or contain bugs.
+</Warning>
+
+ClickStack has beta support for the JSON type from version `2.0.4`.
+
+## Enabling JSON support {#enabling-json-support}
+
+To use JSON-typed schemas instead of the [default `Map`-based schemas](/clickstack/ingesting-data/schemas), set the following environment variables.
+
+| Variable | Set on | Purpose |
+|----------|--------|---------|
+| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector | Creates schemas in ClickHouse using the JSON type. |
+| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` | HyperDX (ClickStack UI) | Enables the application layer to query JSON-typed schemas. ClickStack Open Source only. |
+
+### Managed ClickStack {#managed-clickstack}
+
+To enable JSON support in Managed ClickStack, contact support@clickhouse.com prior to configuring the collector. The feature must also be enabled in the ClickStack UI (HyperDX) in ClickHouse Cloud.
+
+Set `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` on the collector. For example:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+### Open source ClickStack {#oss-clickstack}
+
+Set `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` on any deployment that includes the collector, and `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` on the HyperDX application layer so it can query the JSON-typed schemas.
+
+For example:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+## Migrating from a Map-based schema to JSON {#migrating-from-map-to-json}
+
+<Warning>
+**Backwards compatibility**
+
+The [JSON type](/reference/formats/JSON/JSON) is **not backwards compatible** with existing map-based schemas. Enabling this feature creates new tables using the `JSON` type and requires manual data migration.
+</Warning>
+
+To migrate from the [default Map-based schemas](/clickstack/ingesting-data/schemas), follow these steps:
+
+<Steps>
+<Step>
+### Stop the OTel collector {#stop-the-collector}
+</Step>
+<Step>
+### Rename existing tables and update sources {#rename-existing-tables-sources}
+
+Rename existing tables and update data sources in HyperDX.
+
+For example:
+
+```sql
+RENAME TABLE otel_logs TO otel_logs_map;
+RENAME TABLE otel_metrics TO otel_metrics_map;
+```
+</Step>
+<Step>
+### Deploy the collector {#deploy-the-collector}
+
+Deploy the collector with `OTEL_AGENT_FEATURE_GATE_ARG` set.
+</Step>
+<Step>
+### Restart the HyperDX container with JSON schema support {#restart-the-hyperdx-container}
+
+```shell
+export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
+```
+</Step>
+<Step>
+### Create new data sources {#create-new-data-sources}
+
+Create new data sources in HyperDX pointing to the JSON tables.
+</Step>
+</Steps>
+
+### Migrating existing data (optional) {#migrating-existing-data}
+
+To move old data into the new JSON tables:
+
+```sql
+INSERT INTO otel_logs SELECT * FROM otel_logs_map;
+INSERT INTO otel_metrics SELECT * FROM otel_metrics_map;
+```
+
+<Warning>
+Recommended only for datasets smaller than ~10 billion rows. Data previously stored with the Map type didn't preserve type precision (all values were strings). As a result, this old data will appear as strings in the new schema until it ages out, requiring some casting on the frontend. Type for new data will be preserved with the JSON type.
+</Warning>

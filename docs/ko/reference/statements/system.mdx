@@ -1,0 +1,934 @@
+---
+description: 'SYSTEM SQL 문에 대한 문서'
+sidebarTitle: 'SYSTEM'
+slug: /sql-reference/statements/system
+title: 'SYSTEM SQL 문'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="reload-embedded-dictionaries">
+  ## SYSTEM RELOAD EMBEDDED DICTIONARIES
+</div>
+
+모든 [내부 딕셔너리](/ko/reference/statements/create/dictionary)를 다시 불러옵니다.
+기본적으로 내부 딕셔너리는 비활성화되어 있습니다.
+내부 딕셔너리 업데이트 결과와 무관하게 항상 `Ok.`를 반환합니다.
+
+<div id="reload-dictionaries">
+  ## SYSTEM RELOAD DICTIONARIES
+</div>
+
+`SYSTEM RELOAD DICTIONARIES` 쿼리는 상태가 `LOADED`인 딕셔너리, 즉 이전에 성공적으로 로드된 딕셔너리를 다시 로드합니다([`system.dictionaries`](/ko/reference/system-tables/dictionaries)의 `status` 컬럼 참조).
+기본적으로 딕셔너리는 지연 로드됩니다([dictionaries&#95;lazy&#95;load](/ko/reference/settings/server-settings/settings#dictionaries_lazy_load) 참조). 따라서 시작 시 자동으로 로드되지 않으며, [`dictGet`](/ko/reference/functions/regular-functions/ext-dict-functions#dictGet) 함수를 사용하거나 `ENGINE = Dictionary`인 테이블에서 `SELECT`를 실행해 처음 접근할 때 초기화됩니다.
+
+**구문**
+
+```sql
+SYSTEM RELOAD DICTIONARIES [ON CLUSTER cluster_name]
+```
+
+<div id="reload-dictionary">
+  ## SYSTEM RELOAD DICTIONARY
+</div>
+
+딕셔너리의 상태(LOADED / NOT&#95;LOADED / FAILED)와 관계없이 딕셔너리 `dictionary_name`을 완전히 다시 로드합니다.
+딕셔너리 업데이트 결과와 무관하게 항상 `Ok.`를 반환합니다.
+
+```sql
+SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
+```
+
+`system.dictionaries` 테이블(table)을 쿼리하여 딕셔너리 상태를 확인할 수 있습니다.
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+<div id="reload-models">
+  ## SYSTEM RELOAD MODELS
+</div>
+
+<Note>
+  이 statement와 `SYSTEM RELOAD MODEL`은 clickhouse-library-bridge에서 catboost 모델을 제거만 합니다. 함수 `catboostEvaluate()`
+  는 모델이 아직 로드되지 않은 경우 처음 접근할 때 해당 모델을 로드합니다.
+</Note>
+
+모든 CatBoost 모델을 제거합니다.
+
+**구문**
+
+```sql
+SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
+```
+
+<div id="reload-model">
+  ## SYSTEM RELOAD MODEL
+</div>
+
+`model_path`에 있는 CatBoost 모델의 로드를 해제합니다.
+
+**구문**
+
+```sql
+SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
+```
+
+<div id="reload-functions">
+  ## SYSTEM RELOAD FUNCTIONS
+</div>
+
+설정 파일에서 등록된 모든 [실행형 사용자 정의 함수](/ko/reference/functions/regular-functions/udf#executable-user-defined-functions) 또는 특정 함수를 다시 로드합니다.
+
+**구문**
+
+```sql
+SYSTEM RELOAD FUNCTIONS [ON CLUSTER cluster_name]
+SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
+```
+
+<div id="reload-asynchronous-metrics">
+  ## SYSTEM RELOAD ASYNCHRONOUS METRICS
+</div>
+
+모든 [비동기 메트릭](/ko/reference/system-tables/asynchronous_metrics)을 다시 계산합니다. 비동기 메트릭은 설정 [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ko/reference/settings/server-settings/settings)에 따라 주기적으로 갱신되므로, 일반적으로는 이 구문을 사용해 수동으로 갱신할 필요가 없습니다.
+
+```sql
+SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
+```
+
+<div id="drop-dns-cache">
+  ## SYSTEM CLEAR|DROP DNS CACHE
+</div>
+
+ClickHouse의 내부 DNS 캐시를 비웁니다. 경우에 따라(이전 ClickHouse 버전에서는) 인프라가 변경될 때(다른 ClickHouse 서버의 IP 주소를 변경하거나 Dictionaries 기능에서 사용하는 서버를 변경할 때) 이 명령을 사용해야 합니다.
+
+캐시를 더 편리하게(자동으로) 관리하려면 `disable_internal_dns_cache`, `dns_cache_max_entries`, `dns_cache_update_period` 매개변수를 참조하십시오.
+
+<div id="drop-mark-cache">
+  ## SYSTEM CLEAR|DROP MARK CACHE
+</div>
+
+마크 캐시를 비웁니다.
+
+<div id="drop-iceberg-metadata-cache">
+  ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
+</div>
+
+Iceberg 메타데이터 캐시를 삭제합니다.
+
+<div id="drop-avro-schema-cache">
+  ## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE
+</div>
+
+`AvroConfluent` 포맷에서 사용하는 URL별 Confluent 스키마 레지스트리 캐시를 지웁니다. 이렇게 하면 스키마 가져오기(fetch) 캐시(id → schema)와 스키마 등록 캐시(subject + schema → id)가 모두 삭제되므로, 이후 읽기 및 쓰기는 레지스트리 서버를 다시 사용합니다. 레지스트리 측에서 스키마가 삭제되었거나 다시 작성된 경우에 유용하며, 테스트에서 레지스트리의 멱등성을 확인하는 데에도 사용할 수 있습니다.
+
+<div id="drop-parquet-metadata-cache">
+  ## SYSTEM DROP PARQUET METADATA CACHE
+</div>
+
+Parquet 메타데이터 캐시를 비웁니다.
+
+<div id="drop-text-index-caches">
+  ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
+</div>
+
+텍스트 인덱스의 헤더, 딕셔너리 및 포스팅 캐시를 지웁니다.
+
+이 캐시들 중 하나만 개별적으로 삭제하려면 다음을 실행할 수 있습니다.
+
+* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
+* `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`, 또는
+* `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+<div id="drop-replica">
+  ## SYSTEM DROP REPLICA
+</div>
+
+다음 구문을 사용하여 `ReplicatedMergeTree` 테이블의 죽은 레플리카를 삭제할 수 있습니다:
+
+```sql
+SYSTEM DROP REPLICA 'replica_name' FROM TABLE database.table;
+SYSTEM DROP REPLICA 'replica_name' FROM DATABASE database;
+SYSTEM DROP REPLICA 'replica_name';
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
+```
+
+쿼리는 ZooKeeper에서 `ReplicatedMergeTree` 레플리카 경로를 제거합니다. 이 기능은 레플리카가 더 이상 동작하지 않고, 해당 테이블이 이미 존재하지 않아 `DROP TABLE`로 ZooKeeper에서 메타데이터를 제거할 수 없을 때 유용합니다. 비활성 상태이거나 오래된 레플리카만 삭제할 수 있으며, 로컬 레플리카는 삭제할 수 없으므로 이 경우에는 `DROP TABLE`을 사용하십시오. `DROP REPLICA`는 어떤 테이블도 삭제하지 않으며, 디스크의 데이터나 메타데이터도 제거하지 않습니다.
+
+첫 번째는 `database.table` 테이블의 `'replica_name'` 레플리카 메타데이터를 제거합니다.
+두 번째는 데이터베이스의 모든 복제된 테이블에 대해 동일한 작업을 수행합니다.
+세 번째는 로컬 서버의 모든 복제된 테이블에 대해 동일한 작업을 수행합니다.
+네 번째는 테이블의 다른 모든 레플리카가 삭제된 경우, 더 이상 동작하지 않는 레플리카의 메타데이터를 제거할 때 유용합니다. 이 경우 테이블 경로를 명시적으로 지정해야 합니다. 이 경로는 테이블 생성 시 `ReplicatedMergeTree` 엔진의 첫 번째 인수로 전달한 경로와 동일해야 합니다.
+
+<div id="drop-database-replica">
+  ## SYSTEM DROP DATABASE REPLICA
+</div>
+
+`Replicated` 데이터베이스의 더 이상 동작하지 않는 레플리카는 다음 구문으로 삭제할 수 있습니다:
+
+```sql
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM DATABASE database;
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'];
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPATH '/path/to/table/in/zk';
+```
+
+`SYSTEM DROP REPLICA`와 유사하지만, `DROP DATABASE`를 실행할 데이터베이스가 없을 때 ZooKeeper에서 `Replicated` 데이터베이스의 레플리카 경로를 제거합니다. 다만 `ReplicatedMergeTree` 레플리카는 제거하지 않으므로(`SYSTEM DROP REPLICA`도 필요할 수 있음) 유의하십시오. 세그먼트 및 레플리카 이름은 데이터베이스를 생성할 때 `Replicated` 엔진 인수에 지정한 이름입니다. 또한 이러한 이름은 `system.clusters`의 `database_shard_name` 및 `database_replica_name` 컬럼에서 확인할 수 있습니다. `FROM SHARD` 절이 없으면 `replica_name`은 `shard_name|replica_name` 포맷의 전체 레플리카 이름이어야 합니다.
+
+<div id="drop-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP UNCOMPRESSED CACHE
+</div>
+
+비압축 데이터 캐시를 지웁니다.
+비압축 데이터 캐시는 쿼리/사용자/profile 수준 설정인 [`use_uncompressed_cache`](/ko/reference/settings/session-settings#use_uncompressed_cache)로 활성화하거나 비활성화할 수 있습니다.
+크기는 서버 수준 설정인 [`uncompressed_cache_size`](/ko/reference/settings/server-settings/settings#uncompressed_cache_size)로 구성할 수 있습니다.
+
+<div id="drop-compiled-expression-cache">
+  ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE
+</div>
+
+컴파일된 표현식 캐시를 비웁니다.
+컴파일된 표현식 캐시는 쿼리/사용자/프로필 수준의 설정인 [`compile_expressions`](/ko/reference/settings/session-settings#compile_expressions)로 활성화하거나 비활성화할 수 있습니다.
+
+<div id="drop-query-condition-cache">
+  ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
+</div>
+
+쿼리 조건 캐시를 삭제합니다.
+
+<div id="drop-query-cache">
+  ## SYSTEM CLEAR|DROP QUERY CACHE
+</div>
+
+```sql
+SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '<tag>'
+```
+
+[쿼리 캐시](/ko/concepts/features/performance/caches/query-cache)를 비웁니다.
+태그를 지정하면 해당 태그가 있는 쿼리 캐시 엔트리만 삭제됩니다.
+
+<div id="system-drop-schema-format">
+  ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
+</div>
+
+[`format_schema_path`](/ko/reference/settings/server-settings/settings#format_schema_path)에서 로드된 스키마 캐시를 지웁니다.
+
+지원되는 대상:
+
+* Protobuf: 메모리에서 가져온 Protobuf 메시지 정의를 제거합니다.
+* Files: `format_schema_source`가 `query`로 설정된 경우 [`format_schema_path`](/ko/reference/settings/server-settings/settings#format_schema_path)에 로컬로 저장된 캐시된 스키마 파일을 삭제합니다.
+  참고: 대상을 지정하지 않으면 두 캐시가 모두 지워집니다.
+
+```sql
+SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE [FOR Protobuf/Files]
+```
+
+<div id="flush-logs">
+  ## SYSTEM FLUSH LOGS
+</div>
+
+버퍼링된 로그 메시지를 시스템 테이블(system tables)(예: system.query&#95;log)에 플러시합니다. 대부분의 시스템 테이블은 기본 플러시 인터벌이 7.5초이므로, 주로 디버깅에 유용합니다.
+메시지 큐가 비어 있더라도 시스템 테이블을 생성합니다.
+
+```sql
+SYSTEM FLUSH LOGS [ON CLUSTER cluster_name] [log_name|[database.table]] [, ...]
+```
+
+모두 플러시하고 싶지 않다면, 이름이나 대상 테이블(target table)을 지정해 개별 로그를 하나 이상 플러시할 수 있습니다:
+
+```sql
+SYSTEM FLUSH LOGS query_log, system.query_views_log;
+```
+
+<div id="reload-config">
+  ## SYSTEM RELOAD CONFIG
+</div>
+
+ClickHouse 구성을 다시 로드합니다. 구성 정보가 ZooKeeper에 저장된 경우에 사용합니다. `SYSTEM RELOAD CONFIG`는 ZooKeeper에 저장된 `USER` 구성을 다시 로드하지 않으며, `users.xml`에 저장된 `USER` 구성만 다시 로드합니다. 모든 `USER` 구성을 다시 로드하려면 `SYSTEM RELOAD USERS`를 사용하십시오.
+
+```sql
+SYSTEM RELOAD CONFIG [ON CLUSTER cluster_name]
+```
+
+<div id="reload-users">
+  ## SYSTEM RELOAD USERS
+</div>
+
+users.xml, 로컬 디스크 액세스 스토리지, 복제된(ZooKeeper의) 액세스 스토리지를 포함한 모든 액세스 스토리지를 다시 로드합니다.
+
+```sql
+SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
+```
+
+<div id="shutdown">
+  ## 시스템 종료
+</div>
+
+<CloudNotSupportedBadge />
+
+일반적으로 ClickHouse를 정상 종료합니다(`service clickhouse-server stop` / `kill {$pid_clickhouse-server}`와 유사)
+
+<div id="kill">
+  ## SYSTEM KILL
+</div>
+
+ClickHouse 프로세스를 강제 종료합니다(예: `kill -9 {$ pid_clickhouse-server}`)
+
+<div id="instrument">
+  ## SYSTEM INSTRUMENT
+</div>
+
+`ENABLE_XRAY=1`로 ClickHouse를 빌드한 경우 사용할 수 있는 LLVM의 XRay 기능을 통해 계측 지점을 관리합니다.
+이를 통해 소스 코드를 수정하지 않고도 최소한의 오버헤드로 프로덕션 환경에서 디버깅과 프로파일링을 수행할 수 있습니다.
+계측 지점을 추가하지 않은 경우 성능 저하는 무시할 수 있는 수준입니다. 이는 200개 이상의 명령어로 이루어진 함수의 프롤로그와 에필로그에
+가까운 주소로 점프하는 추가 명령만 삽입되기 때문입니다.
+
+<div id="instrument-add">
+  ### SYSTEM INSTRUMENT ADD
+</div>
+
+새 계측 지점을 추가합니다. 계측된 함수는 [`system.instrumentation`](/ko/reference/system-tables/instrumentation) 시스템 테이블(system table)에서 확인할 수 있습니다. 동일한 함수에 핸들러를 둘 이상 추가할 수 있으며, 추가된 순서대로 실행됩니다.
+계측할 함수는 [`system.symbols`](/ko/reference/system-tables/symbols) 시스템 테이블에서 가져올 수 있습니다.
+
+함수에 추가할 수 있는 핸들러는 세 가지 종류가 있습니다:
+
+**구문**
+
+```sql
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [ARGUMENTS]
+```
+
+여기서 `FUNCTION`은 `QueryMetricLog::startQuery`와 같은 함수 또는 함수 이름의 일부(부분 문자열)이며, handler는 다음 중 하나입니다
+
+<div id="instrument-add-log">
+  #### LOG
+</div>
+
+인수로 제공된 텍스트와 함수의 `ENTRY` 또는 `EXIT` 시점에 스택 트레이스를 출력합니다.
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'this is a log printed at entry'
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'this is a log printed at exit'
+```
+
+<div id="instrument-add-sleep">
+  #### SLEEP
+</div>
+
+`ENTRY` 또는 `EXIT`에서 지정된 초 수만큼 대기합니다:
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5
+```
+
+또는 공백으로 구분된 최소값과 최대값을 지정해, 그 사이에서 균등 분포를 따르는 임의의 초 단위 값을 사용할 수 있습니다:
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0 1
+```
+
+<div id="instrument-add-profile">
+  #### PROFILE
+</div>
+
+함수의 `ENTRY`와 `EXIT` 사이에 걸린 시간을 측정합니다.
+프로파일링 결과는 [`system.trace_log`](/ko/reference/system-tables/trace_log)에 저장되며
+[Chrome Event Trace Format](/ko/reference/system-tables/trace_log#chrome-event-trace-format)으로 변환할 수 있습니다.
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' PROFILE
+```
+
+<div id="instrument-remove">
+  ### SYSTEM INSTRUMENT REMOVE
+</div>
+
+다음을 사용하여 계측 지점 하나를 제거할 수 있습니다:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ID
+```
+
+모두 `ALL` 키워드를 사용하여:
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+서브쿼리에서 가져온 ID 집합:
+
+```sql
+SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation WHERE handler = 'log')
+```
+
+또는 지정한 function&#95;name과 일치하는 모든 계측 지점:
+
+```sql
+SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
+```
+
+계측 지점 정보는 [`system.instrumentation`](/ko/reference/system-tables/instrumentation) 시스템 테이블(system table)에서 조회할 수 있습니다.
+
+<div id="managing-distributed-tables">
+  ## 분산 테이블 관리
+</div>
+
+ClickHouse에서는 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블을 관리할 수 있습니다. 사용자가 이러한 테이블에 데이터를 삽입하면 ClickHouse는 먼저 클러스터(cluster) 노드로 전송할 데이터 큐를 만든 다음, 이를 비동기적으로 전송합니다. [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), [`START DISTRIBUTED SENDS`](#start-distributed-sends) 쿼리를 사용해 큐 처리를 관리할 수 있습니다. 또한 [`distributed_foreground_insert`](/ko/reference/settings/session-settings#distributed_foreground_insert) 설정을 사용하면 분산 데이터를 동기적으로 삽입할 수도 있습니다.
+
+<div id="stop-distributed-sends">
+  ### SYSTEM STOP DISTRIBUTED SENDS
+</div>
+
+분산 테이블에 데이터를 삽입할 때 백그라운드에서 데이터를 분산 전송하는 기능을 비활성화합니다.
+
+```sql
+SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+```
+
+<Note>
+  [`prefer_localhost_replica`](/ko/reference/settings/session-settings#prefer_localhost_replica)가 활성화되어 있으면(기본값) 데이터는 어쨌든 로컬 세그먼트에 삽입됩니다.
+</Note>
+
+<div id="flush-distributed">
+  ### SYSTEM FLUSH DISTRIBUTED
+</div>
+
+ClickHouse가 데이터를 클러스터 노드로 동기식으로 전송하도록 강제합니다. 사용 불가능한 노드가 하나라도 있으면 ClickHouse는 예외를 발생시키고 쿼리 실행을 중단합니다. 모든 노드가 다시 온라인 상태가 되면 쿼리가 성공하므로, 성공할 때까지 쿼리를 재시도할 수 있습니다.
+
+`SETTINGS` 절을 통해 일부 설정을 재정의할 수도 있습니다. 이는 `max_concurrent_queries_for_all_users` 또는 `max_memory_usage`와 같은 일시적인 제한을 우회하는 데 유용할 수 있습니다.
+
+```sql
+SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name] [SETTINGS ...]
+```
+
+<Note>
+  각 대기 중인 블록은 최초 INSERT 쿼리의 설정과 함께 디스크에 저장되므로, 경우에 따라 설정을 재정의해야 할 수 있습니다.
+</Note>
+
+<div id="start-distributed-sends">
+  ### SYSTEM START DISTRIBUTED SENDS
+</div>
+
+분산 테이블에 데이터를 삽입할 때 백그라운드에서 데이터 분산 전송이 이루어지도록 활성화합니다.
+
+```sql
+SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+```
+
+<div id="stop-listen">
+  ### SYSTEM STOP LISTEN
+</div>
+
+지정된 프로토콜과 포트의 소켓을 닫고, 해당 포트로 서버에 연결된 기존 연결을 정상적으로 종료합니다.
+
+단, 해당 프로토콜 설정이 clickhouse-server 구성에 지정되어 있지 않으면 이 명령은 아무런 효과가 없습니다.
+
+```sql
+SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
+* `CUSTOM 'protocol'` 수정자가 지정되면 서버 구성의 protocols 섹션에 정의된 해당 이름의 사용자 지정 프로토콜이 중지됩니다.
+* `QUERIES ALL [EXCEPT .. [,..]]` 수정자가 지정되면 `EXCEPT` 절로 지정한 항목을 제외한 모든 프로토콜이 중지됩니다.
+* `QUERIES DEFAULT [EXCEPT .. [,..]]` 수정자가 지정되면 `EXCEPT` 절로 지정한 항목을 제외한 모든 기본 프로토콜이 중지됩니다.
+* `QUERIES CUSTOM [EXCEPT .. [,..]]` 수정자가 지정되면 `EXCEPT` 절로 지정한 항목을 제외한 모든 사용자 지정 프로토콜이 중지됩니다.
+
+<div id="start-listen">
+  ### SYSTEM START LISTEN
+</div>
+
+지정된 프로토콜에서 새 연결이 설정될 수 있도록 합니다.
+
+하지만 지정된 포트와 프로토콜의 server가 SYSTEM STOP LISTEN 명령으로 중지되지 않았다면, 이 명령은 아무런 효과가 없습니다.
+
+```sql
+SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
+<div id="managing-mergetree-tables">
+  ## MergeTree 테이블 관리
+</div>
+
+ClickHouse는 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블에서 실행되는 백그라운드 프로세스를 관리할 수 있습니다.
+
+<div id="stop-merges">
+  ### SYSTEM STOP MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+MergeTree 엔진 계열에 속한 테이블의 백그라운드 머지를 중지할 수 있습니다:
+
+```sql
+SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
+```
+
+<Note>
+  `DETACH / ATTACH` 테이블은 이전에 모든 MergeTree 테이블의 머지가 중지된 상태였더라도 해당 테이블의 백그라운드 머지를 시작합니다.
+</Note>
+
+<div id="start-merges">
+  ### SYSTEM START MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+MergeTree 엔진 계열 테이블에서 백그라운드 머지를 시작할 수 있습니다:
+
+```sql
+SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
+```
+
+<div id="stop-ttl-merges">
+  ### SYSTEM STOP TTL MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+MergeTree 엔진 계열 테이블에서 [TTL 표현식](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)에 따라 오래된 데이터를 삭제하는 백그라운드 작업을 중지할 수 있습니다.
+테이블이 존재하지 않거나 MergeTree 엔진 테이블이 아니어도 `Ok.`를 반환합니다. 데이터베이스가 존재하지 않으면 오류를 반환합니다:
+
+```sql
+SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="start-ttl-merges">
+  ### SYSTEM START TTL MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+MergeTree 엔진 계열 테이블에서 [TTL 표현식](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)에 따라 오래된 데이터를 백그라운드에서 삭제하는 작업을 시작할 수 있습니다.
+테이블이 존재하지 않아도 `Ok.`를 반환합니다. 데이터베이스가 존재하지 않으면 오류를 반환합니다:
+
+```sql
+SYSTEM START TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="stop-moves">
+  ### SYSTEM STOP MOVES
+</div>
+
+MergeTree 엔진 계열 테이블에서 [TO VOLUME 또는 TO DISK 절이 포함된 TTL 테이블 표현식](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-table-ttl)에 따른 백그라운드 데이터 이동 작업을 중지할 수 있습니다:
+테이블이 존재하지 않아도 `Ok.`를 반환합니다. 데이터베이스가 존재하지 않으면 오류를 반환합니다:
+
+```sql
+SYSTEM STOP MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="start-moves">
+  ### SYSTEM START MOVES
+</div>
+
+MergeTree 엔진 계열의 테이블에 대해 [TO VOLUME 및 TO DISK 절이 포함된 TTL 테이블 표현식](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-table-ttl)에 따라 백그라운드 데이터 이동 작업을 시작합니다:
+테이블이 존재하지 않아도 `Ok.`를 반환합니다. 데이터베이스가 존재하지 않으면 오류를 반환합니다:
+
+```sql
+SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="query_language-system-unfreeze">
+  ### SYSTEM UNFREEZE
+</div>
+
+지정된 이름의 동결된 백업을 모든 디스크에서 삭제합니다. 개별 파트의 동결을 해제하는 방법은 [ALTER TABLE table&#95;name UNFREEZE WITH NAME ](/ko/reference/statements/alter/partition#unfreeze-partition)에서 자세히 확인하십시오.
+
+```sql
+SYSTEM UNFREEZE WITH NAME <backup_name>
+```
+
+<div id="wait-loading-parts">
+  ### SYSTEM WAIT LOADING PARTS
+</div>
+
+테이블에서 비동기적으로 로딩되는 모든 데이터 파트(data part)(오래된 데이터 파트)가 로딩될 때까지 기다립니다.
+
+```sql
+SYSTEM WAIT LOADING PARTS [ON CLUSTER cluster_name] [db.]merge_tree_family_table_name
+```
+
+<div id="managing-replicatedmergetree-tables">
+  ## ReplicatedMergeTree 테이블 관리
+</div>
+
+ClickHouse는 [ReplicatedMergeTree](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블의 복제 관련 백그라운드 프로세스를 관리할 수 있습니다.
+
+<div id="stop-fetches">
+  ### SYSTEM STOP FETCHES
+</div>
+
+<CloudNotSupportedBadge />
+
+`ReplicatedMergeTree` 계열의 테이블에서 삽입된 파트의 백그라운드 페치를 중지할 수 있습니다:
+테이블 엔진과 무관하게, 테이블이나 데이터베이스가 존재하지 않아도 항상 `Ok.`를 반환합니다.
+
+```sql
+SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-fetches">
+  ### SYSTEM START FETCHES
+</div>
+
+<CloudNotSupportedBadge />
+
+`ReplicatedMergeTree` 계열 테이블의 삽입된 파트에 대한 백그라운드 페치를 시작할 수 있습니다.
+테이블 엔진과 무관하게, 테이블이나 데이터베이스가 존재하지 않아도 항상 `Ok.`를 반환합니다.
+
+```sql
+SYSTEM START FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="stop-replicated-sends">
+  ### SYSTEM STOP REPLICATED SENDS
+</div>
+
+`ReplicatedMergeTree` 계열 테이블에서 새로 삽입된 파트를 클러스터의 다른 레플리카로 백그라운드에서 전송하는 작업을 중지할 수 있습니다:
+
+```sql
+SYSTEM STOP REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-replicated-sends">
+  ### SYSTEM START REPLICATED SENDS
+</div>
+
+`ReplicatedMergeTree` 계열 테이블에서 새로 삽입된 파트를 클러스터 내 다른 레플리카로 보내는 백그라운드 작업을 시작할 수 있습니다:
+
+```sql
+SYSTEM START REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="stop-replication-queues">
+  ### SYSTEM STOP REPLICATION QUEUES
+</div>
+
+`ReplicatedMergeTree` 계열 테이블에서는 Zookeeper에 저장된 복제 큐의 백그라운드 fetch 작업을 중지할 수 있습니다. 가능한 백그라운드 작업 유형은 merges, fetches, mutation, 그리고 ON CLUSTER 절이 포함된 DDL SQL 문입니다:
+
+```sql
+SYSTEM STOP REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-replication-queues">
+  ### SYSTEM START REPLICATION QUEUES
+</div>
+
+`ReplicatedMergeTree` 계열 테이블의 경우 Zookeeper에 저장된 복제 큐에서 백그라운드 fetch 작업을 시작할 수 있습니다. 가능한 백그라운드 작업 유형은 머지, fetch, mutation, ON CLUSTER 절이 포함된 DDL SQL 문입니다:
+
+```sql
+SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="stop-pulling-replication-log">
+  ### SYSTEM STOP PULLING REPLICATION LOG
+</div>
+
+`ReplicatedMergeTree` 테이블에서 복제 로그의 새 항목을 복제 큐로 가져오는 작업을 중지합니다.
+
+```sql
+SYSTEM STOP PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-pulling-replication-log">
+  ### SYSTEM START PULLING REPLICATION LOG
+</div>
+
+`SYSTEM STOP PULLING REPLICATION LOG`을 해제합니다.
+
+```sql
+SYSTEM START PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="sync-replica">
+  ### SYSTEM SYNC REPLICA
+</div>
+
+`ReplicatedMergeTree` 테이블이 클러스터의 다른 레플리카와 동기화될 때까지 기다리며, 대기 시간은 `receive_timeout`초를 넘지 않습니다.
+
+```sql
+SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [IF EXISTS] [STRICT | LIGHTWEIGHT [FROM 'srcReplica1'[, 'srcReplica2'[, ...]]] | PULL]
+```
+
+이 구문을 실행하면 `[db.]replicated_merge_tree_family_table_name`은 공통 복제 로그에서 자체 복제 큐로 명령을 가져오고, 이어서 쿼리는 레플리카가 가져온 모든 명령을 처리할 때까지 대기합니다. 다음 수정자를 지원합니다:
+
+* `IF EXISTS`를 함께 사용하면(25.6부터 사용 가능) 테이블이 존재하지 않더라도 쿼리에서 오류가 발생하지 않습니다. 이는 새 레플리카를 클러스터에 추가할 때 유용합니다. 이 경우 해당 레플리카는 이미 클러스터 구성에 포함되어 있지만, 아직 테이블을 생성하고 동기화하는 중일 수 있습니다.
+* `STRICT` 수정자를 지정하면 쿼리는 복제 큐가 빌 때까지 대기합니다. 복제 큐에 새 항목이 계속 추가되면 `STRICT` 버전은 영원히 성공하지 못할 수 있습니다.
+* `LIGHTWEIGHT` 수정자를 지정하면 쿼리는 `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE`, `DROP_PART` 항목만 처리될 때까지 대기합니다.
+  또한 `LIGHTWEIGHT` 수정자는 선택적 `FROM 'srcReplicas'` 절을 지원하며, 여기서 `'srcReplicas'`는 쉼표로 구분된 소스 레플리카 이름 목록입니다. 이 확장 기능을 사용하면 지정된 소스 레플리카에서 시작된 복제 작업에만 집중하여 더 정밀하게 동기화할 수 있습니다.
+* `PULL` 수정자를 지정하면 쿼리는 ZooKeeper에서 새 복제 큐 항목을 가져오지만, 어떤 항목도 처리될 때까지 대기하지는 않습니다.
+
+<div id="sync-database-replica">
+  ### SYNC DATABASE REPLICA
+</div>
+
+지정된 [복제된 데이터베이스](/ko/reference/engines/database-engines/replicated)가 해당 데이터베이스의 DDL 큐에 있는 모든 스키마 변경 사항을 적용할 때까지 대기합니다.
+
+**구문**
+
+```sql
+SYSTEM SYNC DATABASE REPLICA replicated_database_name;
+```
+
+<div id="restart-replica">
+  ### SYSTEM RESTART REPLICA
+</div>
+
+`ReplicatedMergeTree` 테이블의 ZooKeeper 세션 상태를 다시 초기화할 수 있습니다. 현재 상태를 기준 정보인 ZooKeeper와 비교한 뒤, 필요하면 ZooKeeper 큐에 작업을 추가합니다.
+ZooKeeper 데이터를 기반으로 한 복제 큐 초기화는 `ATTACH TABLE` 문과 동일한 방식으로 수행됩니다. 이 과정에서 짧은 시간 동안 테이블을 사용할 수 없습니다.
+
+```sql
+SYSTEM RESTART REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+```
+
+<div id="restore-replica">
+  ### SYSTEM RESTORE REPLICA
+</div>
+
+데이터는 [있을 수도 있지만] Zookeeper 메타데이터가 손실된 경우 레플리카를 복원합니다.
+
+읽기 전용 `ReplicatedMergeTree` 테이블에서만 작동합니다.
+
+다음과 같은 경우 이 쿼리를 실행할 수 있습니다:
+
+* ZooKeeper 루트 `/` 손실.
+* 레플리카 경로 `/replicas` 손실.
+* 개별 레플리카 경로 `/replicas/replica_name/` 손실.
+
+레플리카는 로컬에서 찾은 파트를 ATTACH하고, 해당 정보를 Zookeeper에 전송합니다.
+메타데이터 손실 전에 레플리카에 있던 파트는 `outdated` 상태가 아닌 한 다른 레플리카에서 다시 가져오지 않습니다(즉, 레플리카 복원은 네트워크를 통해 모든 데이터를 다시 다운로드한다는 뜻이 아닙니다).
+
+<Note>
+  모든 상태의 파트는 `detached/` 폴더로 이동됩니다. 데이터 손실 전에 활성 상태였던(커밋된) 파트는 ATTACH됩니다.
+</Note>
+
+<div id="restore-database-replica">
+  ### SYSTEM RESTORE DATABASE REPLICA
+</div>
+
+데이터가 [남아 있을 수 있지만] Zookeeper 메타데이터가 손실된 경우 레플리카를 복원합니다.
+
+**구문**
+
+```sql
+SYSTEM RESTORE DATABASE REPLICA repl_db [ON CLUSTER cluster]
+```
+
+**예시**
+
+```sql
+CREATE DATABASE repl_db
+ENGINE=Replicated("/clickhouse/repl_db", shard1, replica1);
+
+CREATE TABLE repl_db.test_table (n UInt32)
+ENGINE = ReplicatedMergeTree
+ORDER BY n PARTITION BY n % 10;
+
+-- zookeeper_delete_path("/clickhouse/repl_db", recursive=True) <- 루트 손실.
+
+SYSTEM RESTORE DATABASE REPLICA repl_db;
+```
+
+**구문**
+
+```sql
+SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
+```
+
+대체 구문:
+
+```sql
+SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+```
+
+**예시**
+
+여러 서버에 테이블을 생성합니다. ZooKeeper에 저장된 레플리카 메타데이터가 손실되면 메타데이터가 없기 때문에 해당 테이블은 읽기 전용으로 ATTACH됩니다. 마지막 쿼리는 모든 레플리카에서 실행해야 합니다.
+
+```sql
+CREATE TABLE test(n UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
+ORDER BY n PARTITION BY n % 10;
+
+INSERT INTO test SELECT * FROM numbers(1000);
+
+-- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- 루트 손실.
+
+SYSTEM RESTART REPLICA test;
+SYSTEM RESTORE REPLICA test;
+```
+
+또 다른 방법:
+
+```sql
+SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
+```
+
+<div id="restart-replicas">
+  ### SYSTEM RESTART REPLICAS
+</div>
+
+모든 `ReplicatedMergeTree` 테이블의 Zookeeper 세션 상태를 다시 초기화할 수 있습니다. 현재 상태를 기준 정보인 Zookeeper와 비교한 뒤, 필요하면 Zookeeper 큐에 작업을 추가합니다.
+
+<div id="drop-filesystem-cache">
+  ### SYSTEM CLEAR|DROP FILESYSTEM CACHE
+</div>
+
+파일 시스템 캐시를 비울 수 있습니다.
+
+```sql
+SYSTEM CLEAR FILESYSTEM CACHE [ON CLUSTER cluster_name]
+```
+
+<div id="sync-file-cache">
+  ### SYSTEM SYNC FILE CACHE
+</div>
+
+<Note>
+  부하가 너무 크고 오용될 소지가 있습니다.
+</Note>
+
+sync 시스템 호출을 수행합니다.
+
+```sql
+SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
+```
+
+<div id="load-primary-key">
+  ### SYSTEM LOAD PRIMARY KEY
+</div>
+
+지정한 테이블(table) 또는 모든 테이블의 기본 키(primary key)를 로드합니다.
+
+```sql
+SYSTEM LOAD PRIMARY KEY [db.]name
+```
+
+```sql
+SYSTEM LOAD PRIMARY KEY
+```
+
+<div id="unload-primary-key">
+  ### SYSTEM UNLOAD PRIMARY KEY
+</div>
+
+지정한 테이블이나 모든 테이블의 기본 키를 언로드합니다.
+
+```sql
+SYSTEM UNLOAD PRIMARY KEY [db.]name
+```
+
+```sql
+SYSTEM UNLOAD PRIMARY KEY
+```
+
+<div id="managing-refreshable-materialized-views">
+  ## 갱신 가능 구체화 뷰 관리
+</div>
+
+[갱신 가능 구체화 뷰](/ko/reference/statements/create/view#refreshable-materialized-view)가 수행하는 백그라운드 작업을 제어하는 명령입니다.
+
+사용하는 동안에는 [`system.view_refreshes`](/ko/reference/system-tables/view_refreshes)를 주기적으로 확인하십시오.
+
+<div id="stop-view-stop-views">
+  ### SYSTEM STOP [REPLICATED] VIEW, STOP VIEWS
+</div>
+
+지정한 뷰 또는 모든 갱신 가능한 뷰의 주기적 갱신을 중지합니다. 갱신이 진행 중인 경우 해당 작업도 취소합니다.
+
+뷰가 Replicated 또는 Shared 데이터베이스에 있는 경우, `STOP VIEW`는 현재 레플리카에만 영향을 미치고, `STOP REPLICATED VIEW`는 모든 레플리카에 영향을 미칩니다.
+
+<Note>
+  중지된 상태는 서버를 재시작해도 유지되지 않습니다. 재시작 후에는 뷰가 구성된 갱신 일정에 따라 다시 갱신됩니다.
+  Replicated 또는 Shared 데이터베이스에서 `SYSTEM STOP VIEW`는 현재 레플리카에만 영향을 미칩니다. 모든 레플리카의 갱신을 중지하려면 `SYSTEM STOP REPLICATED VIEW`를 사용하십시오.
+</Note>
+
+```sql
+SYSTEM STOP VIEW [db.]name
+```
+
+```sql
+SYSTEM STOP VIEWS
+```
+
+<div id="start-view-start-views">
+  ### SYSTEM START [REPLICATED] VIEW, START VIEWS
+</div>
+
+지정한 뷰 또는 모든 갱신 가능한 뷰에 대해 주기적 갱신을 활성화합니다. 즉시 갱신되지는 않습니다.
+
+뷰가 Replicated 또는 Shared 데이터베이스에 있는 경우, `START VIEW`는 `STOP VIEW`의 효과를 취소하고, `START REPLICATED VIEW`는 `STOP REPLICATED VIEW`의 효과를 취소합니다. `START VIEW`는 `PAUSE VIEW`의 효과도 취소합니다.
+
+```sql
+SYSTEM START VIEW [db.]name
+```
+
+```sql
+SYSTEM START VIEWS
+```
+
+<div id="pause-view-pause-views">
+  ### SYSTEM PAUSE VIEW, PAUSE VIEWS
+</div>
+
+지정된 뷰 또는 모든 갱신 가능한 뷰의 주기적 갱신을 일시 중지합니다.
+`SYSTEM STOP VIEW`와 달리 `SYSTEM PAUSE VIEW`는 이미 진행 중인 갱신을 중단하지 않습니다. 현재 실행 중인 갱신은 끝까지 완료되며, 그 이후의 갱신만 중지됩니다.
+
+`SYSTEM START VIEW` 또는 `SYSTEM START VIEWS`를 사용해 다시 시작할 수 있습니다.
+
+<Note>
+  일시 중지 상태는 server가 재시작되면 유지되지 않습니다. 재시작 후에는 뷰가 구성된 갱신 일정에 따라 다시 갱신됩니다.
+  Replicated 또는 Shared 데이터베이스에서는 `SYSTEM PAUSE VIEW`가 현재 레플리카에만 적용됩니다.
+</Note>
+
+```sql
+SYSTEM PAUSE VIEW [db.]name
+```
+
+```sql
+SYSTEM PAUSE VIEWS
+```
+
+<div id="refresh-view">
+  ### SYSTEM REFRESH VIEW
+</div>
+
+주어진 뷰에 대해 예약되지 않은 즉시 갱신을 실행합니다.
+
+```sql
+SYSTEM REFRESH VIEW [db.]name
+```
+
+<div id="wait-view">
+  ### SYSTEM WAIT VIEW
+</div>
+
+현재 실행 중인 갱신이 완료될 때까지 기다립니다. 실행 중인 갱신이 없으면 즉시 반환됩니다. 가장 최근 갱신 시도가 실패한 경우 오류를 보고합니다.
+
+새 갱신 가능 구체화 뷰를 생성한 직후(`EMPTY` 키워드 없이) 초기 갱신이 완료될 때까지 기다리는 데 사용할 수 있습니다.
+
+뷰가 `Replicated` 또는 `Shared` 데이터베이스에 있고 다른 레플리카에서 갱신이 실행 중인 경우, 해당 갱신이 완료될 때까지 기다립니다.
+
+```sql
+SYSTEM WAIT VIEW [db.]name
+```
+
+<div id="cancel-view">
+  ### SYSTEM CANCEL VIEW
+</div>
+
+현재 레플리카에서 지정된 뷰의 갱신이 진행 중이면 이를 중단하고 취소합니다. 그렇지 않으면 아무 작업도 하지 않습니다.
+
+```sql
+SYSTEM CANCEL VIEW [db.]name
+```
+
+<div id="flush-object-storage-queue">
+  ## SYSTEM FLUSH OBJECT STORAGE QUEUE
+</div>
+
+지정된 [S3Queue](/ko/reference/engines/table-engines/integrations/s3queue) 또는 [AzureQueue](/ko/reference/engines/table-engines/integrations/azure-queue) 테이블이 지정된 파일을 처리하거나 해당 파일의 영구적 실패를 확정할 때까지 대기합니다. 파일이 이미 처리된 경우에는 즉시 반환됩니다. 파일이 영구적으로 실패한 경우(모든 재시도를 소진한 경우) 오류를 발생시킵니다.
+
+```sql
+SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
+```

@@ -1,0 +1,184 @@
+---
+sidebarTitle: 'Amazon Glue'
+slug: /integrations/glue
+description: 'Integra ClickHouse con Amazon Glue'
+keywords: ['clickhouse', 'amazon', 'aws', 'glue', 'migración', 'datos', 'spark']
+title: 'Integración de Amazon Glue con ClickHouse y Spark'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Amazon Glue](https://aws.amazon.com/glue/) es un servicio de integración de datos sin servidor y totalmente gestionado de Amazon Web Services (AWS). Simplifica el proceso de descubrir, preparar y transformar datos para tareas de análisis, aprendizaje automático y desarrollo de aplicaciones.
+
+<div id="installation">
+  ## Instalación
+</div>
+
+Para integrar su código de Glue con ClickHouse, puede usar nuestro Spark conector oficial en Glue de una de las siguientes maneras:
+
+* Instalar el conector de ClickHouse Glue desde AWS Marketplace (recomendado).
+* Añadir manualmente los JARs del Spark Connector a su job de Glue.
+
+<Tabs>
+  <Tab title="AWS Marketplace">
+    1. <h3 id="subscribe-to-the-connector">Suscribirse al conector</h3>
+       Para acceder al conector en su cuenta, suscríbase al ClickHouse AWS Glue Conector desde AWS Marketplace.
+
+    2. <h3 id="grant-required-permissions">Conceder los permisos necesarios</h3>
+       Asegúrese de que el IAM role de su job de Glue tenga los permisos necesarios, como se describe en la [guía](https://docs.aws.amazon.com/glue/latest/dg/getting-started-min-privs-job.html#getting-started-min-privs-connectors) de privilegios mínimos.
+
+    3. <h3 id="activate-the-connector">Activar el conector y crear una conexión</h3>
+       Puede activar el conector y crear una conexión directamente haciendo clic en [este enlace](https://console.aws.amazon.com/gluestudio/home#/connector/add-connection?connectorName="ClickHouse%20AWS%20Glue%20Connector"\&connectorType="Spark"\&connectorUrl=https://709825985650.dkr.ecr.us-east-1.amazonaws.com/clickhouse/clickhouse-glue:1.0.0\&connectorClassName="com.clickhouse.spark.ClickHouseCatalog"), que abre la página de creación de conexiones de Glue con los campos clave ya rellenados. Asigne un nombre a la conexión y haga clic en Create (no es necesario proporcionar los detalles de conexión de ClickHouse en esta etapa).
+
+    4. <h3 id="use-in-glue-job">Usarlo en un job de Glue</h3>
+       En su job de Glue, seleccione la pestaña `Job details` y expanda la ventana `Advanced properties`. En la sección `Connections`, seleccione la conexión que acaba de crear. El conector inyecta automáticamente los JARs necesarios en el entorno de ejecución del job.
+
+    <Image img="/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp" size="md" alt="Configuración de conexiones de Notebook de Glue" force="true" />
+
+    <Note>
+      Los JARs usados en el conector de Glue están compilados para `Spark 3.3`, `Scala 2` y `Python 3`. Asegúrese de seleccionar estas versiones al configurar su job de Glue.
+    </Note>
+  </Tab>
+
+  <Tab title="Instalación manual">
+    Para añadir manualmente los JARs necesarios, siga estos pasos:
+
+    1. Cargue los siguientes JARs en un bucket de S3: `clickhouse-jdbc-0.6.X-all.jar` y `clickhouse-spark-runtime-3.X_2.X-0.8.X.jar`.
+    2. Asegúrese de que el job de Glue tenga acceso a este bucket.
+    3. En la pestaña `Job details`, desplácese hacia abajo, expanda el menú desplegable `Advanced properties` y complete la ruta de los JARs en `Dependent JARs path`:
+
+    <Image img="/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp" size="md" alt="Opciones de ruta de JAR del Notebook de Glue" force="true" />
+  </Tab>
+</Tabs>
+
+<div id="example">
+  ## Ejemplos
+</div>
+
+<Tabs>
+  <Tab title="Scala">
+    ```java
+    import com.amazonaws.services.glue.GlueContext
+    import com.amazonaws.services.glue.util.GlueArgParser
+    import com.amazonaws.services.glue.util.Job
+    import com.clickhouseScala.Native.NativeSparkRead.spark
+    import org.apache.spark.sql.SparkSession
+
+    import scala.collection.JavaConverters._
+    import org.apache.spark.sql.types._
+    import org.apache.spark.sql.functions._
+
+    object ClickHouseGlueExample {
+      def main(sysArgs: Array[String]) {
+        val args = GlueArgParser.getResolvedOptions(sysArgs, Seq("JOB_NAME").toArray)
+
+        val sparkSession: SparkSession = SparkSession.builder
+          .config("spark.sql.catalog.clickhouse", "com.clickhouse.spark.ClickHouseCatalog")
+          .config("spark.sql.catalog.clickhouse.host", "<your-clickhouse-host>")
+          .config("spark.sql.catalog.clickhouse.protocol", "https")
+          .config("spark.sql.catalog.clickhouse.http_port", "<your-clickhouse-port>")
+          .config("spark.sql.catalog.clickhouse.user", "default")
+          .config("spark.sql.catalog.clickhouse.password", "<your-password>")
+          .config("spark.sql.catalog.clickhouse.database", "default")
+          // para ClickHouse Cloud
+          .config("spark.sql.catalog.clickhouse.option.ssl", "true")
+          .config("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
+          .getOrCreate
+
+        val glueContext = new GlueContext(sparkSession.sparkContext)
+        Job.init(args("JOB_NAME"), glueContext, args.asJava)
+        import sparkSession.implicits._
+
+        val url = "s3://{path_to_cell_tower_data}/cell_towers.csv.gz"
+
+        val schema = StructType(Seq(
+          StructField("radio", StringType, nullable = false),
+          StructField("mcc", IntegerType, nullable = false),
+          StructField("net", IntegerType, nullable = false),
+          StructField("area", IntegerType, nullable = false),
+          StructField("cell", LongType, nullable = false),
+          StructField("unit", IntegerType, nullable = false),
+          StructField("lon", DoubleType, nullable = false),
+          StructField("lat", DoubleType, nullable = false),
+          StructField("range", IntegerType, nullable = false),
+          StructField("samples", IntegerType, nullable = false),
+          StructField("changeable", IntegerType, nullable = false),
+          StructField("created", TimestampType, nullable = false),
+          StructField("updated", TimestampType, nullable = false),
+          StructField("averageSignal", IntegerType, nullable = false)
+        ))
+
+        val df = sparkSession.read
+          .option("header", "true")
+          .schema(schema)
+          .csv(url)
+
+        // Escribir en ClickHouse
+        df.writeTo("clickhouse.default.cell_towers").append()
+
+        // Leer desde ClickHouse
+        val dfRead = spark.sql("select * from clickhouse.default.cell_towers")
+        Job.commit()
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```python
+    import sys
+    from awsglue.transforms import *
+    from awsglue.utils import getResolvedOptions
+    from pyspark.context import SparkContext
+    from awsglue.context import GlueContext
+    from awsglue.job import Job
+    from pyspark.sql import Row
+
+    ## @params: [JOB_NAME]
+    args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+
+    sc = SparkContext()
+    glueContext = GlueContext(sc)
+    logger = glueContext.get_logger()
+    spark = glueContext.spark_session
+    job = Job(glueContext)
+    job.init(args['JOB_NAME'], args)
+
+    spark.conf.set("spark.sql.catalog.clickhouse", "com.clickhouse.spark.ClickHouseCatalog")
+    spark.conf.set("spark.sql.catalog.clickhouse.host", "<your-clickhouse-host>")
+    spark.conf.set("spark.sql.catalog.clickhouse.protocol", "https")
+    spark.conf.set("spark.sql.catalog.clickhouse.http_port", "<your-clickhouse-port>")
+    spark.conf.set("spark.sql.catalog.clickhouse.user", "default")
+    spark.conf.set("spark.sql.catalog.clickhouse.password", "<your-password>")
+    spark.conf.set("spark.sql.catalog.clickhouse.database", "default")
+    spark.conf.set("spark.clickhouse.write.format", "json")
+    spark.conf.set("spark.clickhouse.read.format", "arrow")
+    # para ClickHouse Cloud
+    spark.conf.set("spark.sql.catalog.clickhouse.option.ssl", "true")
+    spark.conf.set("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
+
+    # Crear DataFrame
+    data = [Row(id=11, name="John"), Row(id=12, name="Doe")]
+    df = spark.createDataFrame(data)
+
+    # Escribir DataFrame en ClickHouse
+    df.writeTo("clickhouse.default.example_table").append()
+
+    # Leer DataFrame desde ClickHouse
+    df_read = spark.sql("select * from clickhouse.default.example_table")
+    logger.info(str(df.take(10)))
+
+    job.commit()
+    ```
+  </Tab>
+</Tabs>
+
+Para obtener más información, consulte nuestra [documentación de Spark](/es/integrations/connectors/data-ingestion/apache-spark/index).

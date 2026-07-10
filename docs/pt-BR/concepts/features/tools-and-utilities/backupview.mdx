@@ -1,0 +1,53 @@
+---
+description: 'Documentação para clickhouse_backupview {#clickhouse_backupview}'
+slug: /operations/utilities/backupview
+title: 'clickhouse_backupview'
+doc_type: 'reference'
+---
+
+Módulo em Python para ajudar na análise de backups feitos pelo comando [BACKUP](/pt-BR/concepts/features/backup-restore/overview).
+A principal motivação foi permitir obter algumas informações de um backup sem precisar restaurá-lo de fato.
+
+Este módulo fornece funções para
+
+* listar os arquivos contidos em um backup
+* ler arquivos de um backup
+* obter informações úteis em formato legível sobre bancos de dados, tabelas e partes contidas em um backup
+* verificar a integridade de um backup
+
+<div id="example">
+  ## Exemplo:
+</div>
+
+```python
+from clickhouse_backupview import open_backup, S3, FileInfo
+
+# Abrir um backup. Também é possível usar um caminho local:
+# backup = open_backup("/backups/my_backup_1/")
+backup = open_backup(S3("uri", "access_key_id", "secret_access_key"))
+
+# Obter uma lista de bancos de dados dentro do backup.
+print(backup.get_databases()))
+
+# Obter uma lista de tabelas dentro do backup,
+# e para cada tabela sua consulta de criação e uma lista de partes e partições.
+for db in backup.get_databases():
+    for tbl in backup.get_tables(database=db):
+        print(backup.get_create_query(database=db, table=tbl))
+        print(backup.get_partitions(database=db, table=tbl))
+        print(backup.get_parts(database=db, table=tbl))
+
+# Extrair tudo do backup.
+backup.extract_all(table="mydb.mytable", out='/tmp/my_backup_1/all/')
+
+# Extrair os dados de uma tabela específica.
+backup.extract_table_data(table="mydb.mytable", out='/tmp/my_backup_1/mytable/')
+
+# Extrair uma única partição.
+backup.extract_table_data(table="mydb.mytable", partition="202201", out='/tmp/my_backup_1/202201/')
+
+# Extrair uma única parte.
+backup.extract_table_data(table="mydb.mytable", part="202201_100_200_3", out='/tmp/my_backup_1/202201_100_200_3/')
+```
+
+Para ver mais exemplos, consulte o [teste](https://github.com/ClickHouse/ClickHouse/blob/master/utils/backupview/test/test.py).
