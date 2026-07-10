@@ -683,6 +683,9 @@ String BackupInfo::toStringForLogging() const
 
 String BackupInfo::toNormalizedString() const
 {
+    if (frozen_named_collection)
+        return toNormalizedString(ContextPtr{});
+
     validateBackupInfoShapeForNormalizedIdentity(*this, nullptr);
     return toNormalizedStringImpl(*this);
 }

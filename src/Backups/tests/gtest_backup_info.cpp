@@ -391,6 +391,8 @@ TEST(BackupInfo, NormalizedStringUsesFrozenS3NamedCollectionWithoutContext)
     second.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/base"}});
 
     EXPECT_EQ(first.toNormalizedString(ContextPtr{}), second.toNormalizedString(ContextPtr{}));
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_EQ(first.toNormalizedString(), first.toNormalizedString(ContextPtr{}));
 }
 
 #if USE_AWS_S3
