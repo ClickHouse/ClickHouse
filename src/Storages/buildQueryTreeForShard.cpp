@@ -880,7 +880,12 @@ public:
 
     static bool needChildVisit(const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
     {
-        return child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION;
+        /// Table/table-function argument lists are not expression scopes whose names need translating, and they may
+        /// contain unresolved identifiers (e.g. the `key = value` named-collection overrides of `s3`/`oss`/`url`) that
+        /// `calculateActionNodeName` cannot name. Skip them, like the nested QUERY/UNION scopes above.
+        auto child_type = child->getNodeType();
+        return child_type != QueryTreeNodeType::QUERY && child_type != QueryTreeNodeType::UNION
+            && child_type != QueryTreeNodeType::TABLE_FUNCTION && child_type != QueryTreeNodeType::TABLE;
     }
 
 private:

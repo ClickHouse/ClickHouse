@@ -23,6 +23,7 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheLockKeyMicroseconds;
     extern const Event FilesystemCacheLockMetadataMicroseconds;
+    extern const Event FilesystemCacheLockOriginPoolMicroseconds;
     extern const Event FilesystemCacheCreatedKeyDirectories;
 }
 
@@ -66,18 +67,20 @@ size_t FileSegmentMetadata::size() const
 
 KeyMetadata::KeyMetadata(
     const Key & key_,
-    const OriginInfo & origin_,
+    OriginInfoPtr origin_,
     const CacheMetadata * cache_metadata_,
     bool created_base_directory_)
     : key(key_)
-    , origin(origin_)
+    , origin(std::move(origin_))
     , cache_metadata(cache_metadata_)
     , created_base_directory(created_base_directory_)
 {
-    if (origin_ == FileCache::getInternalOrigin())
+    chassert(origin);
+
+    if (*origin == FileCache::getInternalOrigin())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata with internal user id");
 
-    if (!origin_.weight.has_value())
+    if (!origin->weight.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata without user weight");
 
     chassert(!created_base_directory || fs::exists(getPath()));
@@ -85,7 +88,7 @@ KeyMetadata::KeyMetadata(
 
 bool KeyMetadata::checkAccess(const UserID & user_id_) const
 {
-    return user_id_ == origin.user_id || user_id_ == FileCache::getInternalOrigin().user_id;
+    return user_id_ == origin->user_id || user_id_ == FileCache::getInternalOrigin().user_id;
 }
 
 void KeyMetadata::assertAccess(const UserID & user_id_) const
@@ -96,6 +99,18 @@ void KeyMetadata::assertAccess(const UserID & user_id_) const
                         "Metadata for key {} belongs to another user",
                         key.toString());
     }
+}
+
+CacheMetadata::OriginInfoPtr CacheMetadata::getOrCreateSharedOrigin(const OriginInfo & origin)
+{
+    OriginPoolKey pool_key{origin.user_id, origin.weight, origin.segment_type};
+    return origins.withShard(pool_key, [&](auto & map) -> OriginInfoPtr
+    {
+        auto it = map.find(pool_key);
+        if (it == map.end())
+            it = map.emplace(pool_key, std::make_shared<const OriginInfo>(origin)).first;
+        return it->second;
+    });
 }
 
 LockedKeyPtr KeyMetadata::lock()
@@ -157,12 +172,12 @@ std::error_code KeyMetadata::createBaseDirectory()
 
 std::string KeyMetadata::getPath() const
 {
-    return cache_metadata->getKeyPath(key, origin);
+    return cache_metadata->getKeyPath(key, *origin);
 }
 
 std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) const
 {
-    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), origin);
+    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), *origin);
 }
 
 LoggerPtr KeyMetadata::logger() const
@@ -180,6 +195,7 @@ CacheMetadata::CacheMetadata(
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
     , write_cache_per_user_directory(write_cache_per_user_directory_)
     , log(getLogger("CacheMetadata"))
+    , origins(ProfileEvents::FilesystemCacheLockOriginPoolMicroseconds)
     , download_threads_num(background_download_threads_)
 {
 }
@@ -293,7 +309,7 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
             return nullptr;
 
         it = bucket.emplace(
-            key, std::make_shared<KeyMetadata>(key, origin, this, is_initial_load)).first;
+            key, std::make_shared<KeyMetadata>(key, getOrCreateSharedOrigin(origin), this, is_initial_load)).first;
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
     }
@@ -569,7 +585,7 @@ CacheMetadata::removeEmptyKey(
 
     LOG_TEST(log, "Key {} is removed from metadata", key);
 
-    const fs::path key_directory = getKeyPath(key, locked_key.getKeyMetadata()->origin);
+    const fs::path key_directory = getKeyPath(key, *locked_key.getKeyMetadata()->origin);
     const fs::path key_prefix_directory = key_directory.parent_path();
 
     try
@@ -1093,6 +1109,11 @@ KeyMetadata::iterator LockedKey::removeFileSegmentIfExists(size_t offset, bool c
     if (it == key_metadata->end())
         return {};
 
+    /// A segment still in use (e.g. being downloaded or read) must not be detached out from
+    /// under its holder; only releasable segments can be dropped unless removal is forced.
+    if (!can_be_broken && !it->second->releasable())
+        return {};
+
     auto file_segment = it->second->file_segment;
     return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, invalidate_queue_entry);
 }
@@ -1102,6 +1123,11 @@ KeyMetadata::iterator LockedKey::removeFileSegment(size_t offset, bool can_be_br
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no offset {}", offset);
+
+    /// A segment still in use (e.g. being downloaded or read) must not be detached out from
+    /// under its holder; only releasable segments can be dropped unless removal is forced.
+    if (!can_be_broken && !it->second->releasable())
+        return {};
 
     auto file_segment = it->second->file_segment;
     return removeFileSegmentImpl(it, file_segment->lock(), can_be_broken, invalidate_queue_entry);

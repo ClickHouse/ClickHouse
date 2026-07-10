@@ -351,15 +351,13 @@ We note that setting `vector_search_index_fetch_multiplier` can mitigate the pro
 
 Skip indexes in ClickHouse generally filter at the granule level, i.e. a lookup in a skip index (internally) returns a list of potentially matching granules which reduces the number of read data in the subsequent scan.
 This works well for skip indexes in general but in the case of vector similarity indexes, it creates a "granularity mismatch".
-In more detail, the vector similarity index determines the row numbers of the N most similar vectors for a given reference vector.
-With setting `vector_search_with_rescoring = 1`, ClickHouse reads the original full-precision vectors for candidate rows and computes the final distance in the regular SQL pipeline.
-When the query plan allows it, ClickHouse filters the scan to the candidate rows returned by the vector index before the final distance computation.
-This step is called rescoring and can improve accuracy, especially with quantized vector indexes, because the final ranking uses the stored vectors instead of index distances.
-If additional filters remove too many candidates or more recall is needed, increase setting `vector_search_index_fetch_multiplier` so the vector index returns more candidate rows for rescoring.
+In more detail, the vector similarity index determines the row numbers of the N most similar vectors for a given reference vector, but it then needs to extrapolate these row numbers to granule numbers.
+ClickHouse will then load these granules from disk, and repeat the distance calculation for all vectors in these granules.
+This step is called rescoring and while it can theoretically improve accuracy - remember the vector similarity index returns only an _approximate_ result, it is obvious not optimal in terms of performance.
 
 ClickHouse therefore provides an optimization which disables rescoring and returns the most similar vectors and their distances directly from the index.
 The optimization is enabled by default, see setting [vector_search_with_rescoring](../../../operations/settings/settings#vector_search_with_rescoring).
-The way it works at a high level is that ClickHouse makes the most similar vectors and their distances available as a virtual column `_distance`.
+The way it works at a high level is that ClickHouse makes the most similar vectors and their distances available as a virtual column `_distances`.
 To see this, run a vector search query with `EXPLAIN header = 1`:
 
 ```sql
@@ -572,16 +570,15 @@ When a user defines a vector similarity index on a column, ClickHouse internally
 The sub-index is "local" in the sense that it only knows about the rows of its containing index block.
 In the previous example and assuming that a column has 65536 rows, we obtain four index blocks (spanning eight granules) and a vector similarity sub-index for each index block.
 A sub-index is theoretically able to return the rows with the N closest points within its index block directly.
-For queries with `vector_search_with_rescoring = 1`, ClickHouse can use these row positions to filter rows before computing the final distance from the stored vectors when the query plan allows this optimization.
-Without rescoring, ClickHouse uses the distances from the vector index directly through the virtual column `_distance`.
-Both modes still use the surrounding granule ranges to schedule reads, which is different from regular skipping indexes that skip data at the granularity of index blocks.
+However, since ClickHouse loads data from disk to memory at the granularity of granules, sub-indexes extrapolate matching rows to granule granularity.
+This is different from regular skipping indexes which skip data at the granularity of index blocks.
 
 The `GRANULARITY` parameter determines how many vector similarity sub-indexes are created.
 Bigger `GRANULARITY` values mean fewer but larger vector similarity sub-indexes, up to the point where a column (or a column's data part) has only a single sub-index.
 In that case, the sub-index has a "global" view of all column rows and can directly return all granules of the column (part) with relevant rows (there are at most `LIMIT [N]`-many such granules).
-With `vector_search_with_rescoring = 1`, ClickHouse can then read the matching row positions and compute the exact distance for those rows.
-With a small `GRANULARITY` value, each sub-index can return up to `LIMIT N` candidate rows.
-As a result, more candidate rows may need to be read and post-filtered.
+In a second step, ClickHouse will load these granules and identify the actually best rows by performing a brute-force distance calculation over all rows of the granules.
+With a small `GRANULARITY` value, each of the sub-indexes returns up to `LIMIT N`-many granules.
+As a result, more granules need to be loaded and post-filtered.
 Note that the search accuracy is with both cases equally good, only the processing performance differs.
 It is generally recommended to use a large `GRANULARITY` for vector similarity indexes and fall back to a smaller `GRANULARITY` values only in case of problems like excessive memory consumption of the vector similarity structures.
 If no `GRANULARITY` was specified for vector similarity indexes, the default value is 100 million.
@@ -633,12 +630,13 @@ This is achieved by storing data in a bit-grouped format (meaning all i-th bits 
 To declare a column of `QBit` type, use the following syntax:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 Where:
 * `element_type` – the type of each vector element. Supported types are `Int8`, `BFloat16`, `Float32`, and `Float64`
 * `dimension` – the number of elements in each vector
+* `stride` – optional. A divisor of `dimension` that partitions the dimensions into `dimension / stride` contiguous groups stored in separate streams, so a search over only the leading dimensions reads fewer streams (useful for Matryoshka embeddings). Defaults to `dimension`, in which case the type is byte-identical to a non-strided `QBit`. See the [`QBit` data type page](/sql-reference/data-types/qbit) for details.
 
 #### Creating a `QBit` Table and Adding Data {#qbit-create}
 

@@ -1,0 +1,24 @@
+---
+title: Prise en charge du JSON
+---
+
+<div id="json-type-support">
+  ## Prise en charge du type JSON
+</div>
+
+<BetaBadge />
+
+<Warning>
+  **Fonctionnalité bêta - non prête pour la production**
+
+  La prise en charge du type JSON dans **ClickStack** est une **fonctionnalité bêta**. Bien que le type JSON lui-même soit prêt pour la production dans ClickHouse 25.3+, son intégration à ClickStack est encore en cours de développement et peut présenter des limitations, évoluer à l&#39;avenir ou contenir des bugs.
+</Warning>
+
+ClickStack prend en charge le [type JSON](/fr/reference/formats/JSON/JSON) en bêta à partir de la version `2.0.4`.
+
+Pour en savoir plus sur les avantages de ce type, consultez [Avantages du type JSON](/fr/clickstack/ingesting-data/schema/map-vs-json).
+
+Pour activer la prise en charge du type JSON, vous devez définir les variables d&#39;environnement suivantes :
+
+* `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` - active la prise en charge dans l&#39;OTel collector afin que les schémas soient créés à l&#39;aide du type JSON.
+* `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` (ClickStack Open Source uniquement) - active la prise en charge dans l&#39;interface ClickStack UI, ce qui permet d&#39;interroger les données JSON.

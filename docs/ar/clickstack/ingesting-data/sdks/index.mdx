@@ -1,0 +1,85 @@
+---
+slug: /use-cases/observability/clickstack/sdks
+description: 'حِزم SDK الخاصة باللغات لـ ClickStack - ClickHouse Observability Stack'
+title: 'حِزم SDK الخاصة باللغات'
+doc_type: 'guide'
+keywords: ['حِزم SDK لـ ClickStack', 'حِزم SDK الخاصة باللغات لـ ClickStack', 'حِزم OpenTelemetry SDKs لـ ClickStack', 'حِزم SDK لأدوات رصد التطبيق
+', 'حِزم SDK لجمع القياس عن بُعد']
+---
+
+تُرسَل البيانات عادةً إلى ClickStack عبر **OpenTelemetry (OTel) collector**، إما مباشرةً من حِزم SDK الخاصة باللغات أو من خلال OpenTelemetry collector وسيط يعمل كـ agent، مثل جمع metrics وlogs الخاصة بالبنية التحتية.
+
+تتولى حِزم SDK الخاصة باللغات مسؤولية جمع القياس عن بُعد من داخل تطبيقك، ولا سيما **traces** و**logs**، ثم تصدير هذه البيانات إلى OpenTelemetry collector عبر OTLP endpoint، الذي يتولى إدخالها إلى ClickHouse.
+
+في البيئات المستندة إلى المتصفح، قد تتولى حِزم SDK أيضًا مسؤولية جمع **بيانات الجلسات**، بما في ذلك أحداث UI والنقرات والتنقل، مما يتيح إعادة تشغيل جلسات المستخدمين.
+
+<div id="how-it-works">
+  ## كيف يعمل
+</div>
+
+1. يستخدم تطبيقك إحدى حزم SDK الخاصة بـ ClickStack (مثل Node.js أو بايثون أو Go). وتعتمد هذه الحزم على OpenTelemetry SDKs مع مزايا إضافية وتحسينات في سهولة الاستخدام.
+2. تجمع حزمة SDK التتبعات والسجلات وتُصدّرها عبر OTLP ‏(HTTP أو gRPC).
+3. يتلقى OpenTelemetry Collector بيانات القياس عن بُعد ويكتبها إلى ClickHouse عبر exporterات المُعدّة.
+
+<div id="supported-languages">
+  ## اللغات المدعومة
+</div>
+
+<Info>
+  **التوافق مع OpenTelemetry**
+
+  في حين يوفّر ClickStack حِزم SDK خاصة به للغات المختلفة مع إمكانات وبيانات القياس عن بُعد محسّنة، يمكنك أيضًا استخدام OpenTelemetry SDKs الحالية لديك بسلاسة.
+</Info>
+
+<br />
+
+| اللغة        | الوصف                                         | الرابط                                                  |
+| ------------ | --------------------------------------------- | ------------------------------------------------------- |
+| AWS Lambda   | أضف أدوات الرصد إلى AWS Lambda functions لديك | [الوثائق](/ar/clickstack/ingesting-data/sdks/aws-lambda)   |
+| Browser      | JavaScript SDK للتطبيقات المستندة إلى المتصفح | [الوثائق](/ar/clickstack/ingesting-data/sdks/browser)      |
+| Elixir       | تطبيقات Elixir                                | [الوثائق](/ar/clickstack/ingesting-data/sdks/elixir)       |
+| Go           | تطبيقات Go والخدمات المصغّرة                  | [الوثائق](/ar/clickstack/ingesting-data/sdks/golang)       |
+| Java         | تطبيقات Java                                  | [الوثائق](/ar/clickstack/ingesting-data/sdks/java)         |
+| NestJS       | تطبيقات NestJS                                | [الوثائق](/ar/clickstack/ingesting-data/sdks/nestjs)       |
+| Next.js      | تطبيقات Next.js                               | [الوثائق](/ar/clickstack/ingesting-data/sdks/nextjs)       |
+| Node.js      | بيئة تشغيل JavaScript للتطبيقات من جهة الخادم | [الوثائق](/ar/clickstack/ingesting-data/sdks/nodejs)       |
+| Deno         | تطبيقات Deno                                  | [الوثائق](/ar/clickstack/ingesting-data/sdks/deno)         |
+| Python       | تطبيقات بايثون وخدمات الويب                   | [الوثائق](/ar/clickstack/ingesting-data/sdks/python)       |
+| React Native | تطبيقات React Native للأجهزة المحمولة         | [الوثائق](/ar/clickstack/ingesting-data/sdks/react-native) |
+| Ruby         | تطبيقات Ruby on Rails وخدمات الويب            | [الوثائق](/ar/clickstack/ingesting-data/sdks/ruby)         |
+
+<div id="securing-api-key">
+  ## التأمين باستخدام مفتاح API
+</div>
+
+<Info>
+  **غير مطلوب لـ Managed ClickStack**
+
+  لا يلزم مفتاح API في Managed ClickStack.
+</Info>
+
+لإرسال البيانات إلى ClickStack عبر OTel collector، ستحتاج SDKs إلى تحديد مفتاح API للإدخال. ويمكن ضبط ذلك إما باستخدام دالة `init` في SDK أو عبر متغير البيئة `OTEL_EXPORTER_OTLP_HEADERS`:
+
+```shell
+OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
+
+يُنشأ مفتاح API هذا بواسطة تطبيق ClickStack UI ‏(HyperDX)، وهو متاح من خلال التطبيق ضمن `Team Settings → API Keys`.
+
+بالنسبة إلى معظم [حِزم SDK الخاصة باللغات](/ar/clickstack/ingesting-data/sdks/index) ومكتبات القياس عن بُعد التي تدعم OpenTelemetry، يمكنك ببساطة تعيين متغير البيئة `OTEL_EXPORTER_OTLP_ENDPOINT` في تطبيقك أو تحديده أثناء تهيئة الـ SDK:
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+<div id="kubernetes-integration">
+  ## تكامل Kubernetes
+</div>
+
+تدعم جميع SDKs الربط التلقائي ببيانات Kubernetes الوصفية (اسم الكبسولة، ومساحة الاسم، وما إلى ذلك) عند التشغيل ضمن بيئة Kubernetes. يتيح لك ذلك ما يلي:
+
+* عرض مقاييس Kubernetes للكبسولات والعُقد المرتبطة بخدماتك
+* ربط سجلات التطبيق والتتبعات بمقاييس البنية التحتية
+* تتبّع استخدام الموارد والأداء على مستوى عنقود Kubernetes لديك
+
+لتمكين هذه الميزة، اضبط OpenTelemetry Collector لإعادة توجيه وسوم الموارد إلى الكبسولات. راجع [دليل تكامل Kubernetes](/ar/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) للحصول على إرشادات إعداد مفصلة.

@@ -43,6 +43,12 @@ TEST_CONFIGS = [
     ),
     TC("test_random_inserts/", False, "standard replicated inserts test; cluster is fully isolated"),
     TC("test_server_overload/", True, "uses taskset to pin ClickHouse to specific CPU cores; sensitive to concurrent CPU load"),
+    TC(
+        "test_keeper_snapshot_chunked_transfer/",
+        False,
+        "18-node Keeper+S3 cluster; concurrent --dist=each copies OOM the ASAN runner",
+        dist_each_sequential=True,
+    ),
     TC("test_storage_kafka/", False, "each cluster has its own Kafka container and Docker network"),
     TC("test_storage_rabbitmq/", False, "each cluster has its own RabbitMQ container; tests use unique exchange/db names"),
     TC("test_storage_kerberized_kafka/", False, "each cluster has its own Kafka container and Docker network"),

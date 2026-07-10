@@ -1,0 +1,76 @@
+---
+sidebarTitle: 'SAML SSO 제거'
+slug: /cloud/security/saml-removal
+title: 'SAML SSO 제거'
+description: 'ClickHouse Cloud에서 SAML SSO를 제거하는 방법'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'single sign-on', 'IdP']
+---
+
+IdP(Identity Provider)를 변경하는 등의 이유로 조직에서 SAML 통합을 제거해야 할 수 있습니다. SAML 사용자는 다른 유형의 사용자와는 별도의 아이덴티티입니다. 다른 인증 메서드로 전환하려면 아래 지침을 따르십시오.
+
+<Warning>
+  이 작업은 되돌릴 수 없습니다. SAML 통합을 제거하면 SAML 사용자가 무효화되며, 이후에는 복구할 수 없습니다. 조직에 대한 액세스 권한을 유지할 수 있도록 아래 지침을 주의 깊게 따르십시오.
+</Warning>
+
+<div id="before-you-begin">
+  ## 시작하기 전에
+</div>
+
+SAML이 제거된 후 사용자를 조직에 다시 초대할 수 있도록, 조직에는 대체 인증 메서드를 사용하는 관리자 사용자 1명이 있어야 합니다. 이 단계를 수행하려면 관리자 권한이 있는 ClickHouse Cloud 사용자가 필요합니다.
+
+<Steps>
+  <Step>
+    ### 초대 활성화
+
+    [ClickHouse Cloud](https://console.clickhouse.cloud)에 로그인한 후 제목을 `Enable invitations for SAML organization`으로 하여 지원 티켓을 제출하십시오. 이는 SAML 이외의 방법으로 사용자를 추가할 수 있도록 요청하기 위한 것입니다.
+  </Step>
+
+  <Step>
+    ### 다시 초대할 사용자 확인
+
+    왼쪽 하단에서 조직 이름을 클릭한 다음 `Users and Roles`를 선택하십시오. 각 사용자의 `Provider` 컬럼을 확인하십시오. `Signed in with SSO`로 표시된 사용자는 SAML이 제거된 후 조직에 다시 초대해야 합니다.
+
+    SAML이 제거되면 계정에 다시 접근하기 전에 새 초대를 수락해야 한다는 점을 사용자에게 미리 안내하십시오.
+  </Step>
+</Steps>
+
+<div id="add-non-saml-users">
+  ## 조직에 SAML을 사용하지 않는 사용자 추가
+</div>
+
+<Steps>
+  <Step>
+    ### 사용자 초대
+
+    왼쪽 하단의 조직 이름을 클릭한 다음 `Users and Roles`를 선택합니다. [사용자 초대](/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users)의 안내를 따르십시오.
+  </Step>
+
+  <Step>
+    ### 사용자가 초대 수락
+
+    사용자는 초대를 수락하기 전에 모든 SAML 연결에서 완전히 로그아웃해야 합니다. Google 또는 Microsoft 소셜 로그인을 사용해 초대를 수락하는 경우 `Continue with Google` 또는 `Continue with Microsoft` 버튼을 클릭해야 합니다. 이메일과 비밀번호를 사용하는 경우 https://console.clickhouse.cloud/?with=email 에서 로그인한 후 초대를 수락해야 합니다.
+
+    <Note>
+      SAML 구성으로 인해 자동으로 리디렉션되지 않게 하려면, 초대 수락 링크를 복사해 별도의 브라우저 또는 비공개 브라우징/시크릿 세션에 붙여 넣은 뒤 초대를 수락하는 것이 가장 좋습니다.
+    </Note>
+  </Step>
+
+  <Step>
+    ### 쿼리 및 대시보드 저장
+
+    새 아이덴티티로 로그인한 후에는 로그아웃한 다음 SAML 계정으로 다시 로그인하여 저장된 쿼리 또는 대시보드를 새 아이덴티티와 공유해야 합니다. 절차를 완료하려면 새 아이덴티티로 사본을 저장해야 합니다.
+  </Step>
+</Steps>
+
+<div id="remove-saml">
+  ## SAML 제거
+</div>
+
+다음 항목이 모두 완료되었는지 주의 깊게 확인하십시오:
+
+* 조직에 SAML이 아닌 로그인으로 인증하는 사용자 중 관리자 역할이 할당된 사용자가 최소 1명 있습니다
+* 필요한 모든 사용자를 다른 인증 메서드로 다시 초대했습니다
+* 저장된 모든 쿼리와 대시보드가 SAML이 아닌 사용자에게 모두 이전되었습니다
+
+위 항목이 모두 완료되었다면 Organization settings 탭으로 이동하여 `Enable SAML single sign-on` 설정을 끄십시오. 그러면 경고가 표시됩니다. `Disable`을 클릭하십시오. 그런 다음 Users and roles 탭으로 이동하여 SAML 사용자를 제거하십시오.

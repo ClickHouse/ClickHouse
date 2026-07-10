@@ -82,7 +82,7 @@ public:
     std::string toString() const;
 
     /// Keep `usage` alive so a concurrent `cache_usage.snapshot` cannot destroy
-    /// the user's per-client priority while we hold raw pointers into it.
+    /// the user's per-user priority while we hold raw pointers into it.
     /// `shared_ptr` value dedupes: same user across iterations is stored once.
     void addCacheUsage(CacheUsagePtr usage) { kept_alive_cache_usage.insert(std::move(usage)); }
 

@@ -1,0 +1,15 @@
+---
+title: 2 连接
+---
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_step2.webp" alt="填写连接信息" size="lg" border />
+
+* **身份验证方法**：S3 ClickPipe 支持 [IAM 凭证](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#iam-credentials) (`Credentials`) 和 [基于 IAM role 的身份验证](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role) (`IAM role`) 。有关身份验证和权限的说明，请参阅[参考文档](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#access-control)。
+
+  * **S3 文件路径**：S3 ClickPipe 要求使用 [virtual-hosted-style URI](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#virtual-hosted-style-access)。
+
+    ```bash
+    https://bucket-name.s3.region-code.amazonaws.com/key-name
+    ```
+
+    您可以使用 POSIX 通配符来匹配多个文件或前缀。有关支持的匹配模式，请参阅[参考文档](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#file-pattern-matching)。

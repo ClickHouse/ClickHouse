@@ -1,0 +1,21 @@
+{
+  "item": "Agentic Data Stack",
+  "icon": "/images/icons/icon-agentic-data-stack.svg",
+  "groups": [
+    {
+      "group": "Get started",
+      "pages": [
+        "products/agentic-data-stack/overview",
+        "products/agentic-data-stack/docker-setup"
+      ]
+    },
+    {
+      "group": "Components",
+      "pages": [
+        "products/agentic-data-stack/components/librechat",
+        "products/agentic-data-stack/components/mcp-server",
+        "products/agentic-data-stack/components/langfuse"
+      ]
+    }
+  ]
+}
