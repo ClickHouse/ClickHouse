@@ -6,6 +6,8 @@
 #include <Common/formatReadable.h>
 #include <Common/UTF8Helpers.h>
 
+#include <array>
+
 
 static constexpr const char * GRAY_COLOR = "\033[90m";
 static constexpr const char * RED_COLOR = "\033[31m";
@@ -111,20 +113,37 @@ String highlightDigitGroups(String source)
 }
 
 
+namespace
+{
+
+/// Non-printable C0 control characters (0x00..0x1F) and DEL (0x7F). Unlike C-style escape sequences
+/// (\0, \t, ...), the Unicode "Control Pictures" of these bytes cannot be confused with the literal
+/// characters they represent, so the "pretty" Vertical format displays them to make the bytes
+/// visible instead of letting the terminal silently swallow them.
+/// See https://en.wikipedia.org/wiki/Control_Pictures
+bool isControlCharacter(unsigned char byte)
+{
+    return byte < 0x20 || byte == 0x7F;
+}
+
+/// UTF-8 encoding of the Unicode "Control Picture" for a control byte: the code point is
+/// U+2400 + byte for 0x00..0x1F, and U+2421 for DEL (0x7F). All of these lie in U+2400..U+2421,
+/// whose UTF-8 encoding is 0xE2 0x90 (0x80 + low 6 bits).
+std::array<char, 3> controlCharacterPicture(unsigned char byte)
+{
+    const unsigned char code = (byte == 0x7F) ? 0x21 : byte;
+    return {static_cast<char>(0xE2), static_cast<char>(0x90), static_cast<char>(0x80 + code)};
+}
+
+}
+
+
 String replaceControlCharactersWithPictures(String source)
 {
-    /// Replace non-printable C0 control characters (0x00..0x1F) and DEL (0x7F) with the
-    /// corresponding Unicode "Control Pictures" (U+2400..U+2421), so they become visible in the
-    /// "pretty" Vertical format instead of being silently swallowed by the terminal.
-    /// Unlike C-style escape sequences (\0, \t, ...), these graphical symbols cannot be confused
-    /// with the literal characters they represent, so the backslash needs no extra escaping and
-    /// the output stays "pretty". See https://en.wikipedia.org/wiki/Control_Pictures
-
     bool has_control_characters = false;
     for (char c : source)
     {
-        const auto byte = static_cast<unsigned char>(c);
-        if (byte < 0x20 || byte == 0x7F)
+        if (isControlCharacter(static_cast<unsigned char>(c)))
         {
             has_control_characters = true;
             break;
@@ -141,14 +160,10 @@ String replaceControlCharactersWithPictures(String source)
     for (char c : source)
     {
         const auto byte = static_cast<unsigned char>(c);
-        if (byte < 0x20 || byte == 0x7F)
+        if (isControlCharacter(byte))
         {
-            /// The code point is U+2400 + byte for 0x00..0x1F, and U+2421 for DEL (0x7F).
-            /// All of these lie in U+2400..U+2421, whose UTF-8 encoding is 0xE2 0x90 (0x80 + low 6 bits).
-            const unsigned char code = (byte == 0x7F) ? 0x21 : byte;
-            result += static_cast<char>(0xE2);
-            result += static_cast<char>(0x90);
-            result += static_cast<char>(0x80 + code);
+            const auto picture = controlCharacterPicture(byte);
+            result.append(picture.data(), picture.size());
         }
         else
         {
@@ -157,6 +172,47 @@ String replaceControlCharactersWithPictures(String source)
     }
 
     return result;
+}
+
+
+WriteBufferReplacingControlCharacters::WriteBufferReplacingControlCharacters(WriteBuffer & out_)
+    : out(out_)
+{
+}
+
+WriteBufferReplacingControlCharacters::~WriteBufferReplacingControlCharacters()
+{
+    if (!finalized && !canceled)
+        cancel();
+}
+
+void WriteBufferReplacingControlCharacters::nextImpl()
+{
+    if (!offset())
+        return;
+
+    const char * const begin = working_buffer.begin();
+    const char * const end = begin + offset();
+
+    /// Forward runs of ordinary bytes in bulk, expanding each control byte to its Control Picture.
+    const char * run_begin = begin;
+    for (const char * pos = begin; pos != end; ++pos)
+    {
+        const auto byte = static_cast<unsigned char>(*pos);
+        if (isControlCharacter(byte))
+        {
+            if (pos != run_begin)
+                out.write(run_begin, pos - run_begin);
+
+            const auto picture = controlCharacterPicture(byte);
+            out.write(picture.data(), picture.size());
+
+            run_begin = pos + 1;
+        }
+    }
+
+    if (end != run_begin)
+        out.write(run_begin, end - run_begin);
 }
 
 

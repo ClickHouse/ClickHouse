@@ -81,7 +81,11 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
         constexpr size_t indent = 0;
         serialization.serializeTextJSONPretty(column, row_num, out, format_settings, indent);
     }
-    else
+    /// Highlighting inspects the whole serialized value, so it has to be materialized first.
+    /// This only happens in interactive (color) mode, where values are display-sized.
+    else if (color
+        && ((format_settings.pretty.highlight_digit_groups && is_number[field_number])
+            || format_settings.pretty.highlight_trailing_spaces))
     {
         String serialized_value;
         {
@@ -94,14 +98,27 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
             serialized_value = replaceControlCharactersWithPictures(serialized_value);
 
         /// Highlight groups of thousands.
-        if (color && format_settings.pretty.highlight_digit_groups && is_number[field_number])
+        if (format_settings.pretty.highlight_digit_groups && is_number[field_number])
             serialized_value = highlightDigitGroups(serialized_value);
 
         /// Highlight trailing spaces.
-        if (color && format_settings.pretty.highlight_trailing_spaces)
+        if (format_settings.pretty.highlight_trailing_spaces)
             serialized_value = highlightTrailingSpaces(serialized_value);
 
         out.write(serialized_value.data(), serialized_value.size());
+    }
+    else if (format_settings.pretty.vertical_display_control_characters)
+    {
+        /// Make non-printable control characters visible instead of being silently swallowed.
+        /// Stream through a decorator so large values are not fully buffered in memory.
+        WriteBufferReplacingControlCharacters buf(out);
+        serialization.serializeText(column, row_num, buf, format_settings);
+        buf.finalize();
+    }
+    else
+    {
+        /// No post-processing: stream directly, keeping the extra memory cost O(1).
+        serialization.serializeText(column, row_num, out, format_settings);
     }
 
     /// Write a tip.
@@ -237,10 +254,24 @@ x: 1
 y: ᴺᵁᴸᴸ
 ```
 
-Rows are not escaped in Vertical format:
+By default, non-printable control characters (C0 controls `0x00`–`0x1F` and `DEL` `0x7F`) are displayed as the corresponding Unicode "Control Pictures" (`U+2400`–`U+2421`), so they stay visible instead of being silently swallowed by the terminal. For example, a tab is shown as `␉` and a line feed as `␊`:
 
 ```sql
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+test: string with 'quotes' and ␉ with some special ␊ characters
+```
+
+To print control characters verbatim instead, disable [`output_format_vertical_display_control_characters`](/operations/settings/formats#output_format_vertical_display_control_characters):
+
+```sql
+SELECT 'string with \'quotes\' and \t with some special \n characters' AS test
+FORMAT Vertical
+SETTINGS output_format_vertical_display_control_characters = 0
 ```
 
 ```response
