@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_PARSE_TEXT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -98,10 +99,12 @@ public:
 class FunctionReadWKTCommon final : public IFunction
 {
 public:
+    /// Must match the global discriminators of the Geometry Variant type.
     enum class WKTTypes
     {
         LineString,
         MultiLineString,
+        MultiPoint,
         MultiPolygon,
         Point,
         Polygon,
@@ -133,6 +136,7 @@ public:
         const auto & column_string = checkAndGetColumn<ColumnString>(*arguments[0].column);
 
         PointSerializer<CartesianPoint> point_serializer;
+        MultiPointSerializer<CartesianPoint> multipoint_serializer;
         LineStringSerializer<CartesianPoint> linestring_serializer;
         PolygonSerializer<CartesianPoint> polygon_serializer;
         MultiLineStringSerializer<CartesianPoint> multilinestring_serializer;
@@ -216,12 +220,16 @@ public:
                     str, "ring", WKTTypes::Ring))
                 continue;
 
+            if (boost::to_lower_copy(str).starts_with("multipoint"))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parsing MULTIPOINT WKT values is not implemented yet");
+
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect WKT format value: {}", str);
         }
 
         Columns result_columns;
         result_columns.push_back(linestring_serializer.finalize());
         result_columns.push_back(multilinestring_serializer.finalize());
+        result_columns.push_back(multipoint_serializer.finalize());
         result_columns.push_back(multipolygon_serializer.finalize());
         result_columns.push_back(point_serializer.finalize());
         result_columns.push_back(polygon_serializer.finalize());

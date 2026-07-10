@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
@@ -172,6 +173,8 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count)
             return readLineWKB(in_buffer, endian_to_read, limit);
         case WKBGeometry::Polygon:
             return readPolygonWKB(in_buffer, endian_to_read, limit);
+        case WKBGeometry::MultiPoint:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parsing MultiPoint WKB values is not implemented yet");
         case WKBGeometry::MultiLineString:
             return readMultiLineStringWKB(in_buffer, endian_to_read, limit);
         case WKBGeometry::MultiPolygon:

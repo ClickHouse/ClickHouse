@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 #if USE_ARROW
@@ -263,6 +264,8 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsin
         return parseWKTMultiLineString(in_buffer, precise_float_parsing);
     if (type == "MULTIPOLYGON")
         return parseWKTMultiPolygon(in_buffer, precise_float_parsing);
+    if (type == "MULTIPOINT")
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parsing MULTIPOINT WKT values is not implemented yet");
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: type {}", type);
 }
@@ -335,12 +338,12 @@ static void appendMultiPolygonToGeoColumn(const MultiPolygon<CartesianPoint> & m
 }
 
 /// Global discriminators for the Geometry type (Variant sorted alphabetically by type name):
-/// LineString=0, MultiLineString=1, MultiPolygon=2, Point=3, Polygon=4, Ring=5
+/// LineString=0, MultiLineString=1, MultiPoint=2, MultiPolygon=3, Point=4, Polygon=5, Ring=6
 static constexpr ColumnVariant::Discriminator kLineStringDiscriminator = 0;
 static constexpr ColumnVariant::Discriminator kMultiLineStringDiscriminator = 1;
-static constexpr ColumnVariant::Discriminator kMultiPolygonDiscriminator = 2;
-static constexpr ColumnVariant::Discriminator kPointDiscriminator = 3;
-static constexpr ColumnVariant::Discriminator kPolygonDiscriminator = 4;
+static constexpr ColumnVariant::Discriminator kMultiPolygonDiscriminator = 3;
+static constexpr ColumnVariant::Discriminator kPointDiscriminator = 4;
+static constexpr ColumnVariant::Discriminator kPolygonDiscriminator = 5;
 
 void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColumn & col)
 {

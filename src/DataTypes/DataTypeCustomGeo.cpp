@@ -41,6 +41,24 @@ SELECT p, toTypeName(p) FROM geo_point;
 └─────────┴───────────────┘
 ```
 
+## MultiPoint {#multipoint}
+
+`MultiPoint` is a set of points stored as an array of points: [Array](array.md)([Point](#point)).
+
+**Example**
+
+```sql title="Query"
+CREATE TABLE geo_multipoint (mp MultiPoint) ENGINE = Memory();
+INSERT INTO geo_multipoint VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
+SELECT mp, toTypeName(mp) FROM geo_multipoint;
+```
+
+```text title="Response"
+┌─mp────────────────────────────┬─toTypeName(mp)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ MultiPoint     │
+└───────────────────────────────┴────────────────┘
+```
+
 ## Ring {#ring}
 
 `Ring` is a simple polygon without holes stored as an array of points: [Array](array.md)([Point](#point)).
@@ -188,6 +206,18 @@ SELECT * FROM geo_dst;
         .related = {"Ring", "Polygon", "LineString"},
     });
 
+    // Custom type for a set of points stored as Array(Point)
+    factory.registerSimpleDataTypeCustom("MultiPoint", []
+    {
+        return std::make_pair(DataTypeFactory::instance().get("Array(Point)"),
+            std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeMultiPointName>()));
+    }, DataTypeFactory::Case::Sensitive, Documentation{
+        .description = R"DOCS_MD(A `MultiPoint` is a set of points, stored as an `Array(Point)`.)DOCS_MD",
+        .syntax = "MultiPoint",
+        .examples = {},
+        .related = {"Point"},
+    });
+
     // Custom type for simple line which consists from several segments.
     factory.registerSimpleDataTypeCustom("LineString", []
     {
@@ -252,18 +282,19 @@ SELECT * FROM geo_dst;
     factory.registerSimpleDataTypeCustom("Geometry", []
     {
         auto point_type = DataTypeFactory::instance().get(DataTypePointName().getName());
+        auto multipoint_type = DataTypeFactory::instance().get(DataTypeMultiPointName().getName());
         auto linestring_type = DataTypeFactory::instance().get(DataTypeLineStringName().getName());
         auto polygon_type = DataTypeFactory::instance().get(DataTypePolygonName().getName());
         auto multipolygon_type = DataTypeFactory::instance().get(DataTypeMultiPolygonName().getName());
         auto ring_type = DataTypeFactory::instance().get(DataTypeRingName().getName());
         auto multi_linestring_type = DataTypeFactory::instance().get(DataTypeMultiLineStringName().getName());
 
-        auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{point_type, linestring_type, polygon_type, multipolygon_type, ring_type, multi_linestring_type});
+        auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{point_type, multipoint_type, linestring_type, polygon_type, multipolygon_type, ring_type, multi_linestring_type});
 
         return std::make_pair(variant_type,
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeGeometryName>()));
     }, DataTypeFactory::Case::Sensitive, Documentation{
-        .description = R"DOCS_MD(`Geometry` is a `Variant` type that can hold any of the geometric data types: `Point`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`, or `Ring`.)DOCS_MD",
+        .description = R"DOCS_MD(`Geometry` is a `Variant` type that can hold any of the geometric data types: `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`, or `Ring`.)DOCS_MD",
         .syntax = "Geometry",
         .examples = {},
         .related = {"Point"},

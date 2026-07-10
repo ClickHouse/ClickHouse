@@ -2460,6 +2460,17 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
     switch (imp)
     {
         case GeoTypes::Point: ret = nextGeoPoint(rg); break;
+        case GeoTypes::MultiPoint:
+            /// Set of points, no closure requirement
+            ret += "[";
+            for (uint32_t i = 0; i < limit; i++)
+            {
+                if (i != 0)
+                    ret += ", ";
+                ret += nextGeoPoint(rg);
+            }
+            ret += "]";
+            break;
         case GeoTypes::Ring:
             /// Closed ring: array of points where first == last
             ret = nextGeoRing(rg, limit);

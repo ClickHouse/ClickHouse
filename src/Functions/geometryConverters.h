@@ -25,12 +25,16 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// Use AllocatorWithMemoryTracking so that building geometries (in particular parsing untrusted
 /// WKB/WKT, where element counts come straight off the wire) charges the MemoryTracker through its
 /// throwing path. Otherwise a declared-but-absent element count drives a large `reserve` that
 /// `max_memory_usage` does not bound (the default container tracking is non-throwing).
+template <typename Point>
+using MultiPoint = boost::geometry::model::multi_point<Point, std::vector, AllocatorWithMemoryTracking>;
+
 template <typename Point>
 using LineString = boost::geometry::model::linestring<Point, std::vector, AllocatorWithMemoryTracking>;
 
@@ -47,6 +51,7 @@ template <typename Point>
 using MultiPolygon = boost::geometry::model::multi_polygon<Polygon<Point>, std::vector, AllocatorWithMemoryTracking>;
 
 using CartesianPoint = boost::geometry::model::d2::point_xy<Float64>;
+using CartesianMultiPoint = MultiPoint<CartesianPoint>;
 using CartesianLineString = LineString<CartesianPoint>;
 using CartesianMultiLineString = MultiLineString<CartesianPoint>;
 using CartesianRing = Ring<CartesianPoint>;
@@ -55,6 +60,7 @@ using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
 
 using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
 using SphericalPointInRadians = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::radian>>;
+using SphericalMultiPoint = MultiPoint<SphericalPoint>;
 using SphericalLineString = LineString<SphericalPoint>;
 using SphericalMultiLineString = MultiLineString<SphericalPoint>;
 using SphericalRing = Ring<SphericalPoint>;
@@ -267,6 +273,38 @@ private:
     ColumnFloat64::Container & second_container;
 };
 
+/// Serialize Point, MultiPoint as MultiPoint
+template <typename Point>
+class MultiPointSerializer
+{
+public:
+    MultiPointSerializer()
+        : offsets(ColumnUInt64::create())
+    {}
+
+    explicit MultiPointSerializer(size_t n)
+        : offsets(ColumnUInt64::create(n))
+    {}
+
+    void add(const MultiPoint<Point> & multipoint)
+    {
+        size += multipoint.size();
+        offsets->insertValue(size);
+        for (const auto & point : multipoint)
+            point_serializer.add(point);
+    }
+
+    ColumnPtr finalize()
+    {
+        return ColumnArray::create(point_serializer.finalize(), std::move(offsets));
+    }
+
+private:
+    size_t size = 0;
+    PointSerializer<Point> point_serializer;
+    ColumnUInt64::MutablePtr offsets;
+};
+
 /// Serialize Point, LineString as LineString
 template <typename Point>
 class LineStringSerializer
@@ -468,6 +506,11 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
     /// There is no Point type, because for most of geometry functions it is useless.
     if (factory.get("Point")->equals(*type))
         return f(ConverterType<ColumnToPointsConverter<Point>>());
+
+    /// MultiPoint is resolved to the same Array(Tuple(Point)) as Ring and LineString,
+    /// so it must be rejected by name before the Ring fallback below.
+    if (factory.get("MultiPoint")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "MultiPoint")
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Geometry functions are not implemented for the MultiPoint type yet");
 
     /// We should take the name into consideration to avoid ambiguity.
     /// Because for example both Ring and LineString are resolved to Array(Tuple(Point)).

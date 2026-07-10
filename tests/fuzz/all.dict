@@ -558,6 +558,7 @@
 "Map"
 "Merge"
 "MultiLineString"
+"MultiPoint"
 "MultiPolygon"
 "N"
 "NAME"

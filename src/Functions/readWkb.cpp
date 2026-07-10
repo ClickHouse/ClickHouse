@@ -122,10 +122,12 @@ struct ReadWKBMultiPolygonNameHolder
 class FunctionReadWKBCommon final : public IFunction
 {
 public:
+    /// Must match the global discriminators of the Geometry Variant type.
     enum class WKBTypes
     {
         LineString,
         MultiLineString,
+        MultiPoint,
         MultiPolygon,
         Point,
         Polygon,
@@ -162,6 +164,7 @@ public:
         auto column = arguments[0].column;
 
         PointSerializer<CartesianPoint> point_serializer;
+        MultiPointSerializer<CartesianPoint> multipoint_serializer;
         LineStringSerializer<CartesianPoint> linestring_serializer;
         PolygonSerializer<CartesianPoint> polygon_serializer;
         MultiLineStringSerializer<CartesianPoint> multilinestring_serializer;
@@ -211,6 +214,7 @@ public:
         Columns result_columns;
         result_columns.push_back(linestring_serializer.finalize());
         result_columns.push_back(multilinestring_serializer.finalize());
+        result_columns.push_back(multipoint_serializer.finalize());
         result_columns.push_back(multipolygon_serializer.finalize());
         result_columns.push_back(point_serializer.finalize());
         result_columns.push_back(polygon_serializer.finalize());

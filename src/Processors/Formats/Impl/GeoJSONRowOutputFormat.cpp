@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -126,6 +127,14 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
         /// `enable_nullable_tuple_type` is set), so match the type after removing that wrapper.
         const auto geo_type = removeNullable(column.type);
         const String type_name = geo_type->getName();
+
+        /// A MultiPoint value cannot be written yet, so reject the column instead of
+        /// silently emitting it as a property.
+        if (type_name == "MultiPoint")
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The GeoJSON output format does not support the MultiPoint type yet (column '{}')",
+                column.name);
 
         /// `geometryKindFor` returns nullopt for the `Geometry` variant (handled separately below) and
         /// for non-geo columns.
@@ -278,6 +287,11 @@ void GeoJSONRowOutputFormat::writeGeometry(const IColumn & column, size_t row_nu
             writeCString("null", *ostr);
             return;
         }
+        /// The only Geometry alternative without an emission kind is MultiPoint.
+        if (!variant_kind[discr].geojson_type)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The GeoJSON output format does not support writing MultiPoint geometries yet");
         writeGeometryObject(variant_kind[discr], variant.getVariantByGlobalDiscriminator(discr), variant.offsetAt(row_num));
     }
     else

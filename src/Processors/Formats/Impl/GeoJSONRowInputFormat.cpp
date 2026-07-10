@@ -854,7 +854,8 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
     String raw_geometries;
     readGeometryMembers(buf, format_settings.json, geo_type, raw_coordinates, raw_geometries);
 
-    /// Valid GeoJSON geometry types that cannot be represented in ClickHouse's Geometry type.
+    /// Valid GeoJSON geometry types the input format cannot materialize. GeometryCollection has no
+    /// Geometry alternative and parsing MultiPoint is not implemented yet.
     static constexpr std::array<std::string_view, 2> unrepresentable_geojson_types = {"GeometryCollection", "MultiPoint"};
 
     if (!isOneOf(geo_type, supported_geojson_geometry_types))
@@ -875,7 +876,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
             }
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "GeoJSON: geometry type '{}' cannot be represented in ClickHouse's Geometry type. "
+                "GeoJSON: geometry type '{}' is not supported by the GeoJSON input format. "
                 "Set input_format_geojson_unsupported_geometry_handling = 'null' to insert NULL "
                 "for such geometries instead of throwing.",
                 geo_type);

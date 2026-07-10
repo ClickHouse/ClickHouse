@@ -27,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename Point>
@@ -101,10 +102,11 @@ enum class GeometryColumnType
 {
     Linestring = 0,
     MultiLinestring = 1,
-    MultiPolygon = 2,
-    Point = 3,
-    Polygon = 4,
-    Ring = 5,
+    MultiPoint = 2,
+    MultiPolygon = 3,
+    Point = 4,
+    Polygon = 5,
+    Ring = 6,
     Null = 255
 };
 
@@ -118,6 +120,7 @@ inline std::optional<GeometryColumnType> getGeometryColumnTypeFromDataType(const
 
     /// Check custom type names first.
     if (type_name == "Point") return GeometryColumnType::Point;
+    if (type_name == "MultiPoint") return GeometryColumnType::MultiPoint;
     if (type_name == "Ring") return GeometryColumnType::Ring;
     if (type_name == "LineString") return GeometryColumnType::Linestring;
     if (type_name == "Polygon") return GeometryColumnType::Polygon;
@@ -284,6 +287,10 @@ private:
                 MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
                 res_data.push_back(FunctionToCalculate()(multilinestring));
                 break;
+            }
+            case GeometryColumnType::MultiPoint:
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented for the MultiPoint type yet", getName());
             }
             case GeometryColumnType::MultiPolygon:
             {

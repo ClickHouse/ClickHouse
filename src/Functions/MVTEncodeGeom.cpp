@@ -30,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -46,10 +47,11 @@ namespace GeoDisc
 {
     constexpr UInt8 LineString = 0;
     constexpr UInt8 MultiLineString = 1;
-    constexpr UInt8 MultiPolygon = 2;
-    constexpr UInt8 Point = 3;
-    constexpr UInt8 Polygon = 4;
-    constexpr UInt8 Ring = 5;
+    constexpr UInt8 MultiPoint = 2;
+    constexpr UInt8 MultiPolygon = 3;
+    constexpr UInt8 Point = 4;
+    constexpr UInt8 Polygon = 5;
+    constexpr UInt8 Ring = 6;
 }
 
 /// The Web Mercator projection spans 2^32 units on each axis (the standard XYZ tile scheme).
@@ -213,6 +215,7 @@ Ring<BPoint> clipRingToBox(const Ring<BPoint> & ring, Float64 lo_x, Float64 lo_y
 struct GeometryVariantBuilder
 {
     PointSerializer<BPoint> point;
+    MultiPointSerializer<BPoint> multi_point;
     LineStringSerializer<BPoint> line_string;
     MultiLineStringSerializer<BPoint> multi_line_string;
     PolygonSerializer<BPoint> polygon;
@@ -245,10 +248,11 @@ struct GeometryVariantBuilder
         Columns columns;
         columns.push_back(line_string.finalize());        /// 0 LineString
         columns.push_back(multi_line_string.finalize());  /// 1 MultiLineString
-        columns.push_back(multi_polygon.finalize());      /// 2 MultiPolygon
-        columns.push_back(point.finalize());              /// 3 Point
-        columns.push_back(polygon.finalize());            /// 4 Polygon
-        columns.push_back(ring.finalize());               /// 5 Ring
+        columns.push_back(multi_point.finalize());        /// 2 MultiPoint
+        columns.push_back(multi_polygon.finalize());      /// 3 MultiPolygon
+        columns.push_back(point.finalize());              /// 4 Point
+        columns.push_back(polygon.finalize());            /// 5 Polygon
+        columns.push_back(ring.finalize());               /// 6 Ring
         return ColumnVariant::create(std::move(discriminators), columns);
     }
 };
@@ -575,6 +579,8 @@ public:
                     case GeoDisc::Point: dispatch(points[off], projection, box, clip); break;
                     case GeoDisc::LineString: dispatch_line(lines[off], projection, box, clip); break;
                     case GeoDisc::MultiLineString: dispatch_mline(mlines[off], projection, box, clip); break;
+                    case GeoDisc::MultiPoint:
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented for the MultiPoint type yet", getName());
                     case GeoDisc::Ring: dispatch_ring(rings[off], projection, box, clip); break;
                     case GeoDisc::Polygon: dispatch_polygon(polygons[off], projection, box, clip); break;
                     case GeoDisc::MultiPolygon: dispatch_mpolygon(mpolygons[off], projection, box, clip); break;
