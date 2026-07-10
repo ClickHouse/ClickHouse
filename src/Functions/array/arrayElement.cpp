@@ -3,6 +3,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/ColumnNumbers.h>
@@ -10,6 +11,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -20,6 +22,10 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
+
+#include <bit>
+#include <cstring>
+#include <optional>
 
 namespace DB
 {
@@ -161,6 +167,14 @@ private:
      *  However, optimizations are possible.
      */
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
+    /** For a QBit, reconstructs the n-th vector element from its bit planes. Only the planes of the single
+      * stride group that contains the element are read.
+      */
+    ColumnPtr executeQBit(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+
+    template <typename T>
+    ColumnPtr executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
     using Offsets = ColumnArray::Offsets;
 
@@ -2103,6 +2117,205 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 }
 
 template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeQBit(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+{
+    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*arguments[0].type);
+
+    switch (qbit_type.getElementType()->getTypeId())
+    {
+        case TypeIndex::Int8:
+            return executeQBitImpl<Int8>(arguments, input_rows_count);
+        case TypeIndex::BFloat16:
+            return executeQBitImpl<BFloat16>(arguments, input_rows_count);
+        case TypeIndex::Float32:
+            return executeQBitImpl<Float32>(arguments, input_rows_count);
+        case TypeIndex::Float64:
+            return executeQBitImpl<Float64>(arguments, input_rows_count);
+        default:
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Unexpected QBit element type {} in function {}", qbit_type.getElementType()->getName(), getName());
+    }
+}
+
+/** A QBit stores each vector bit-transposed: tuple column `group * element_size + bit` is a FixedString bit plane
+  * holding bit `bit` (MSB first) of the `stride` dimensions of stride group `group`. Within a plane each byte holds
+  * one octet of 8 dimensions, high octets at low byte offsets, LSB-first within a byte (see
+  * SerializationQBit::transposeBits). Reconstructing element `e` therefore reads exactly one bit from each of the
+  * `element_size` planes of the single stride group containing `e`; the planes of all other stride groups are not
+  * touched.
+  *
+  * Out-of-range indices follow the Array semantics: the default value (zero) for arrayElement, NULL for
+  * arrayElementOrNull, and negative indices count from the end of the vector.
+  */
+template <ArrayElementExceptionMode mode>
+template <typename T>
+ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+{
+    /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t`).
+    using Word = std::conditional_t<
+        sizeof(T) == 1,
+        uint8_t,
+        std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
+
+    const auto & qbit_type = assert_cast<const DataTypeQBit &>(*arguments[0].type);
+    const size_t dimension = qbit_type.getDimension();
+    const size_t stride = qbit_type.getStride();
+    const size_t element_size = qbit_type.getElementSize();
+    const size_t bytes_per_group = DataTypeQBit::bitsToBytes(stride);
+
+    /// The QBit column stays constant when only the index is a full column (useDefaultImplementationForConstants
+    /// unwraps constants only when every argument is constant).
+    const bool qbit_is_const = isColumnConst(*arguments[0].column);
+    const auto & qbit_col = assert_cast<const ColumnQBit &>(
+        qbit_is_const ? assert_cast<const ColumnConst &>(*arguments[0].column).getDataColumn() : *arguments[0].column);
+    const auto & tuple = qbit_col.getNestedData();
+
+    auto res = ColumnVector<T>::create(input_rows_count);
+    auto & res_data = res->getData();
+    /// Out-of-range rows keep the default (zero) value, so start from an all-zero buffer that bits are ORed into.
+    memset(res_data.data(), 0, input_rows_count * sizeof(T));
+
+    ColumnUInt8::MutablePtr null_map;
+    if constexpr (is_null_mode)
+        null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+
+    auto plane_chars = [&](size_t group, size_t bit) -> const UInt8 *
+    {
+        return reinterpret_cast<const UInt8 *>(
+            assert_cast<const ColumnFixedString &>(tuple.getColumn(group * element_size + bit)).getChars().data());
+    };
+
+    /// Resolve a 1-based index into a 0-based element position, or nullopt when out of range.
+    auto resolve_signed = [dimension](Int64 index) -> std::optional<size_t>
+    {
+        if (index > 0 && static_cast<UInt64>(index) <= dimension)
+            return static_cast<size_t>(index - 1);
+        if (index < 0)
+        {
+            /// Compute |index| in the unsigned domain: -INT64_MIN does not fit in Int64.
+            const UInt64 abs_index = UInt64(0) - static_cast<UInt64>(index);
+            if (abs_index <= dimension)
+                return dimension - static_cast<size_t>(abs_index);
+        }
+        return std::nullopt;
+    };
+    auto resolve_unsigned = [dimension](UInt64 index) -> std::optional<size_t>
+    {
+        if (index >= 1 && index <= dimension)
+            return static_cast<size_t>(index - 1);
+        return std::nullopt;
+    };
+
+    auto set_out_of_range = [&](size_t row)
+    {
+        if constexpr (is_null_mode)
+            null_map->getData()[row] = 1;
+        /// res_data[row] stays the default (zero).
+    };
+
+    auto extract_into = [&](size_t row, size_t element)
+    {
+        const size_t group = element / stride;
+        const size_t within_group = element % stride;
+        const size_t byte_offset = bytes_per_group - 1 - within_group / 8;
+        const size_t bit_in_byte = within_group % 8;
+        const size_t qbit_row = qbit_is_const ? 0 : row;
+
+        Word word = 0;
+        for (size_t bit = 0; bit < element_size; ++bit)
+        {
+            const UInt8 byte = plane_chars(group, bit)[qbit_row * bytes_per_group + byte_offset];
+            word |= static_cast<Word>(static_cast<Word>((byte >> bit_in_byte) & 1) << (element_size - 1 - bit));
+        }
+        res_data[row] = std::bit_cast<T>(word);
+    };
+
+    const IColumn & index_column = *arguments[1].column;
+
+    if (isColumnConst(index_column))
+    {
+        const Field index = index_column[0];
+
+        if constexpr (!is_null_mode)
+        {
+            /// Mirror the Array behaviour: a constant index 0 is an error while a non-constant index 0 returns the default value.
+            if (index == 0u)
+                throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Array indices are 1-based");
+        }
+
+        std::optional<size_t> element;
+        if (index.getType() == Field::Types::UInt64)
+            element = resolve_unsigned(index.safeGet<UInt64>());
+        else if (index.getType() == Field::Types::Int64)
+            element = resolve_signed(index.safeGet<Int64>());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
+
+        if (!element)
+        {
+            for (size_t row = 0; row < input_rows_count; ++row)
+                set_out_of_range(row);
+        }
+        else
+        {
+            /// The bit position is the same for every row, so read the planes one by one for cache friendliness.
+            const size_t group = *element / stride;
+            const size_t within_group = *element % stride;
+            const size_t byte_offset = bytes_per_group - 1 - within_group / 8;
+            const size_t bit_in_byte = within_group % 8;
+
+            Word * words = reinterpret_cast<Word *>(res_data.data());
+            for (size_t bit = 0; bit < element_size; ++bit)
+            {
+                const UInt8 * src = plane_chars(group, bit) + byte_offset;
+                const size_t shift = element_size - 1 - bit;
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    const size_t qbit_row = qbit_is_const ? 0 : row;
+                    words[row] |= static_cast<Word>(static_cast<Word>((src[qbit_row * bytes_per_group] >> bit_in_byte) & 1) << shift);
+                }
+            }
+        }
+    }
+    else
+    {
+        auto execute_index_type = [&]<typename IndexType>() -> bool
+        {
+            const auto * col_index = checkAndGetColumn<ColumnVector<IndexType>>(&index_column);
+            if (!col_index)
+                return false;
+
+            const auto & indices = col_index->getData();
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                std::optional<size_t> element;
+                if constexpr (std::is_signed_v<IndexType>)
+                    element = resolve_signed(indices[row]);
+                else
+                    element = resolve_unsigned(indices[row]);
+
+                if (element)
+                    extract_into(row, *element);
+                else
+                    set_out_of_range(row);
+            }
+            return true;
+        };
+
+        if (!(execute_index_type.template operator()<UInt8>() || execute_index_type.template operator()<UInt16>()
+              || execute_index_type.template operator()<UInt32>() || execute_index_type.template operator()<UInt64>()
+              || execute_index_type.template operator()<Int8>() || execute_index_type.template operator()<Int16>()
+              || execute_index_type.template operator()<Int32>() || execute_index_type.template operator()<Int64>()))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
+    }
+
+    if constexpr (is_null_mode)
+        return ColumnNullable::create(std::move(res), std::move(null_map));
+
+    return res;
+}
+
+template <ArrayElementExceptionMode mode>
 String FunctionArrayElement<mode>::getName() const
 {
     return name;
@@ -2115,6 +2328,22 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
     {
         auto value_type = map_type->getValueType();
         return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
+    }
+
+    if (const auto * qbit_type = checkAndGetDataType<DataTypeQBit>(arguments[0].get()))
+    {
+        if (!isNativeInteger(arguments[1]))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function '{}' must be integer, got '{}' instead",
+                getName(),
+                arguments[1]->getName());
+        }
+
+        /// The n-th element of a QBit vector is reconstructed at the full precision of the element type.
+        const auto & element_type = qbit_type->getElementType();
+        return is_null_mode ? makeNullable(element_type) : element_type;
     }
 
     const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
@@ -2144,6 +2373,9 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    if (checkAndGetDataType<DataTypeQBit>(arguments[0].type.get()))
+        return executeQBit(arguments, input_rows_count);
+
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
 
@@ -2340,10 +2572,12 @@ Arrays in ClickHouse are one-indexed.
 Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `arr[-1]` is the last item in the array.
 
 Operator `[n]` provides the same functionality.
+
+The first argument may also be a [QBit](/sql-reference/data-types/qbit): the n-th vector element is reconstructed at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array) or [`QBit`](/sql-reference/data-types/qbit)."},
         {"n", "Position of the element to get. [`(U)Int*`](/sql-reference/data-types/int-uint)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a single combined array from the provided array arguments", {"Array(T)"}};

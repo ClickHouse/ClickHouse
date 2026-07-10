@@ -243,6 +243,22 @@ The number of accessible subcolumns depends on the element type (and, when strid
 
 The subcolumns follow a group-major order: in general `vec.N` reads bit plane `(N-1) % element_size` of stride group `(N-1) / element_size`. For example, with `QBit(BFloat16, 4096, 1024)` the 4096 dimensions are split into 4 groups of 1024, so there are 64 subcolumns: `vec.1` … `vec.16` are the bit planes of the first stride group (dimensions 1–1024), `vec.17` … `vec.32` belong to the second group (dimensions 1025–2048), and so on.
 
+## Element access and slicing {#qbit-element-access}
+
+[`arrayElement`](../functions/array-functions.md#arrayElement) (and the `vec[n]` operator) returns the `n`-th vector element, reconstructed at the full precision of the element type. Only the bit planes of the stride group containing the element are read. [`arraySlice`](../functions/array-functions.md#arraySlice) returns a `QBit` over the selected dimensions (a projection to a subset of dimensions); the offset and length must be constants, because the dimension of a `QBit` is part of its type. A slice aligned to stride-group boundaries keeps the stride and reuses the stored bit-plane streams without copying:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]);
+SELECT vec[3], arraySlice(vec, 2, 3) FROM test;
+```
+
+```text
+┌─arrayElement(vec, 3)─┬─arraySlice(vec, 2, 3)─┐
+│                    3 │ [2,3,4]               │
+└──────────────────────┴───────────────────────┘
+```
+
 ## Vector search functions {#vector-search-functions}
 
 These are the distance functions for vector similarity search that use `QBit` data type:
