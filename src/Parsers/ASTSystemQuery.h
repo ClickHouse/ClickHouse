@@ -5,6 +5,8 @@
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
 
+#include <base/EnumReflection.h>
+
 #include "config.h"
 
 #if USE_XRAY
@@ -268,3 +270,12 @@ protected:
 
 
 }
+
+/// ASTSystemQuery::Type has more than 128 values, which is outside the default magic_enum range [-128, 127].
+/// ParserSystemQuery relies on magic_enum::enum_values to match keywords, so the range must cover every value;
+/// otherwise commands whose enum value exceeds the range silently fail to parse.
+template <> struct magic_enum::customize::enum_range<DB::ASTSystemQuery::Type>
+{
+    static constexpr int min = 0;
+    static constexpr int max = 512;
+};
