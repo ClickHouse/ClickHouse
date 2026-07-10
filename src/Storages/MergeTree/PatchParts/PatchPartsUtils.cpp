@@ -359,6 +359,32 @@ Names getKeyColumnsRequiredForPatch(const PatchPartInfoForReader & patch)
     return columns;
 }
 
+static NameSet getSortingKeyColumnsImpl(const KeyDescription & sorting_key)
+{
+    NameSet columns(sorting_key.column_names.begin(), sorting_key.column_names.end());
+
+    if (sorting_key.expression)
+    {
+        for (const auto & name : sorting_key.expression->getRequiredColumns())
+            columns.insert(name);
+    }
+
+    return columns;
+}
+
+NameSet getSortingKeyColumnsInPatch(const PatchPartInfoForReader & patch)
+{
+    if (!patch.sorting_key)
+        return {};
+
+    return getSortingKeyColumnsImpl(*patch.sorting_key);
+}
+
+NameSet getSortingKeyColumnsInPatch(const StorageMetadataPtr & patch_metadata)
+{
+    return getSortingKeyColumnsImpl(patch_metadata->getSortingKey());
+}
+
 bool isPatchPartitionId(const String & partition_id)
 {
     return partition_id.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX) && partition_id.size() > MergeTreePartInfo::PATCH_PART_PREFIX_SIZE;

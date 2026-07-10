@@ -55,6 +55,12 @@ std::pair<UInt64, UInt64> getPartNameOffsetRange(
 /// Returns virtual columns that should be read from the regular part to apply the patch.
 Names getKeyColumnsRequiredForPatch(const PatchPartInfoForReader & patch);
 
+/// Returns the sort-key columns physically stored in the patch part (only v2 patches store them).
+/// These columns identify updated rows and are never updated themselves,
+/// so they must not be treated as updated columns.
+NameSet getSortingKeyColumnsInPatch(const PatchPartInfoForReader & patch);
+NameSet getSortingKeyColumnsInPatch(const StorageMetadataPtr & patch_metadata);
+
 /// Partition id of patch part is 'patch-<hash of column names in patch part>-<original_partition_id>.
 /// Functions below help to check and extract original_partition_id from partition id of patch part.
 bool isPatchPartitionId(const String & partition_id);

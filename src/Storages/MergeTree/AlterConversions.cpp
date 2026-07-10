@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MutationCommands.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
@@ -224,9 +225,13 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
 void AlterConversions::addPatchPart(PatchPartInfoForReader patch_part)
 {
+    /// Sort-key columns are stored in v2 patch parts to identify updated rows.
+    /// They are never updated themselves, so they must not be reported as updated columns.
+    auto sorting_key_columns = getSortingKeyColumnsInPatch(patch_part);
+
     for (const auto & column : patch_part.part->getColumns())
     {
-        if (isPatchPartSystemColumn(column.name))
+        if (isPatchPartSystemColumn(column.name) || sorting_key_columns.contains(column.name))
             continue;
 
         String updated_column_name = column.name;
@@ -426,6 +431,10 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
         }
         else
         {
+            /// Sort-key columns are stored in v2 patch parts to identify updated rows.
+            /// They are never updated themselves, so reading them must not trigger applying the patch.
+            auto sorting_key_columns = getSortingKeyColumnsInPatch(patch);
+
             has_column_in_patch = std::ranges::any_of(read_columns, [&](const auto & column)
             {
                 if (isPatchPartSystemColumn(column.name))
@@ -435,6 +444,9 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
 
                 if (patch_conversions && patch_conversions->isColumnRenamed(name_in_storage))
                     name_in_storage = patch_conversions->getColumnOldName(name_in_storage);
+
+                if (sorting_key_columns.contains(name_in_storage))
+                    return false;
 
                 return patch.part->getColumnsDescription().hasPhysical(name_in_storage);
             });
