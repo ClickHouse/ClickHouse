@@ -1,0 +1,461 @@
+---
+title: 'ClickHouse에서 JOIN 사용하기'
+description: 'ClickHouse에서 JOIN을 사용하는 방법을 소개하는 입문 가이드'
+keywords: ['조인', 'SQL', 'INNER JOIN', 'OUTER JOIN', 'CROSS JOIN', 'SEMI JOIN', 'ANTI JOIN', 'ANY JOIN', 'ASOF JOIN']
+sidebarTitle: 'ClickHouse에서 JOIN 사용하기'
+slug: /guides/working-with-joins
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse는 표준 SQL 조인을 완벽하게 지원하여 효율적인 데이터 분석이 가능합니다.
+이 가이드에서는 벤 다이어그램과 [relational dataset repository](https://relational.fit.cvut.cz/dataset/IMDb)에서 가져온 정규화된 [IMDB](https://en.wikipedia.org/wiki/IMDb) 데이터셋에 대한 예시 쿼리를 통해, 일반적으로 자주 사용되는 조인 유형 몇 가지와 그 사용 방법을 살펴봅니다.
+
+<div id="test-data-and-resources">
+  ## 테스트 데이터 및 리소스
+</div>
+
+테이블을 생성하고 로드하는 방법은 [여기](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/guides)에서 확인할 수 있습니다.
+로컬에서 테이블을 생성하고 로드하지 않으려면 [Playground](https://sql.clickhouse.com?query_id=AACTS8ZBT3G7SSGN8ZJBJY)에서도 데이터셋을 사용할 수
+있습니다.
+
+다음 4개의 테이블을 예시 데이터셋에서 사용합니다:
+
+<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="IMDB 스키마" />
+
+이 4개 테이블의 데이터는 하나 이상의 장르를 가질 수 있는 영화를 나타냅니다.
+영화 속 배역은 배우가 연기합니다.
+
+위 다이어그램의 화살표는 [외래 키와 프라이머리 키 간의 관계](https://en.wikipedia.org/wiki/Foreign_key)를 나타냅니다. 예를 들어 `genres` 테이블의 한 행에 있는 `movie_id` 컬럼에는 `movies` 테이블의 한 행에 있는 `id` 값이 들어 있습니다.
+
+영화와 배우 사이에는 [다대다 관계](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\))가 있습니다.
+이 다대다 관계는 `roles` 테이블을 사용해 두 개의 [일대다 관계](https://en.wikipedia.org/wiki/One-to-many_\(data_model\))로 정규화됩니다.
+`roles` 테이블의 각 행에는 `movies` 테이블과 `actors` 테이블의 `id` 컬럼 값이 들어 있습니다.
+
+<div id="join-types-supported-in-clickhouse">
+  ## ClickHouse에서 지원하는 JOIN 유형
+</div>
+
+ClickHouse는 다음과 같은 JOIN 유형을 지원합니다:
+
+* [INNER JOIN](#inner-join)
+* [OUTER JOIN](#left--right--full-outer-join)
+* [CROSS JOIN](#cross-join)
+* [SEMI JOIN](#left--right-semi-join)
+* [ANTI JOIN](#left--right-anti-join)
+* [ANY JOIN](#left--right--inner-any-join)
+* [ASOF JOIN](#asof-join)
+
+다음 섹션에서는 위 각 JOIN 유형에 대한 예시 쿼리를 작성해 보겠습니다.
+
+<div id="inner-join">
+  ## INNER JOIN
+</div>
+
+`INNER JOIN`은 조인 키(join keys)가 일치하는 각 행 쌍에 대해 왼쪽 테이블 행의 컬럼 값과 오른쪽 테이블 행의 컬럼 값을 결합해 반환합니다.
+한 행에 일치하는 항목이 둘 이상 있으면 해당하는 모든 항목이 반환됩니다(즉, 조인 키가 일치하는 행에 대해서는 [카테시안 곱](https://en.wikipedia.org/wiki/Cartesian_product)이 생성됩니다).
+
+<Image img="/images/starter_guides/joins/inner_join.webp" alt="Inner Join" />
+
+이 쿼리는 `movies` 테이블과 `genres` 테이블을 조인하여 각 영화의 장르를 찾습니다:
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+INNER JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─name───────────────────────────────────┬─genre─────┐
+│ Harry Potter and the Half-Blood Prince │ Action    │
+│ Harry Potter and the Half-Blood Prince │ Adventure │
+│ Harry Potter and the Half-Blood Prince │ Family    │
+│ Harry Potter and the Half-Blood Prince │ Fantasy   │
+│ Harry Potter and the Half-Blood Prince │ Thriller  │
+│ DragonBall Z                           │ Action    │
+│ DragonBall Z                           │ Adventure │
+│ DragonBall Z                           │ Comedy    │
+│ DragonBall Z                           │ Fantasy   │
+│ DragonBall Z                           │ Sci-Fi    │
+└────────────────────────────────────────┴───────────┘
+```
+
+<Note>
+  `INNER` 키워드는 생략할 수 있습니다.
+</Note>
+
+다음의 다른 JOIN 유형 중 하나를 사용하면 `INNER JOIN`의 동작을 확장하거나 변경할 수 있습니다.
+
+<div id="left--right--full-outer-join">
+  ## (LEFT / RIGHT / FULL) OUTER JOIN
+</div>
+
+`LEFT OUTER JOIN`은 `INNER JOIN`처럼 동작하지만, 여기에 더해 왼쪽 테이블에서 일치하는 행이 없는 경우 ClickHouse는 오른쪽 테이블의 컬럼에 [기본값](/ko/reference/statements/create/table#default_values)을 반환합니다.
+
+`RIGHT OUTER JOIN` 쿼리도 비슷하며, 오른쪽 테이블에서 일치하는 행이 없는 값과 함께 왼쪽 테이블 컬럼의 기본값도 반환합니다.
+
+`FULL OUTER JOIN` 쿼리는 `LEFT`와 `RIGHT OUTER JOIN`을 결합한 것으로, 왼쪽 및 오른쪽 테이블에서 일치하는 행이 없는 값을 각각 반대쪽 테이블 컬럼의 기본값과 함께 반환합니다.
+
+<Image img="/images/starter_guides/joins/outer_join.webp" alt="외부 조인" />
+
+<Note>
+  ClickHouse는 기본값 대신 [NULL](/ko/reference/syntax#null)을 반환하도록 [구성](/ko/reference/settings/session-settings#join_use_nulls)할 수 있습니다(다만 [성능상의 이유](/ko/reference/data-types/nullable#storage-features)로 권장되지 않습니다).
+</Note>
+
+이 쿼리는 `genres` 테이블에 일치하는 항목이 없는 `movies` 테이블의 모든 행을 조회하여 장르가 없는 모든 영화를 찾습니다. 따라서 `movie_id` 컬럼에는 쿼리 시점에 기본값 0이 적용됩니다:
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT JOIN genres AS g ON m.id = g.movie_id
+WHERE g.movie_id = 0
+ORDER BY
+    m.year DESC,
+    m.name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<Note>
+  `OUTER` 키워드는 생략해도 됩니다.
+</Note>
+
+<div id="cross-join">
+  ## CROSS JOIN
+</div>
+
+`CROSS JOIN`은 조인 키를 고려하지 않고 두 테이블의 전체 카테시안 곱을 생성합니다.
+왼쪽 테이블의 각 행은 오른쪽 테이블의 각 행 각각과 결합됩니다.
+
+<Image img="/images/starter_guides/joins/cross_join.webp" alt="크로스 조인" />
+
+따라서 다음 쿼리는 `movies` 테이블의 각 행을 `genres` 테이블의 각 행과 결합합니다:
+
+```sql
+SELECT
+    m.name,
+    m.id,
+    g.movie_id,
+    g.genre
+FROM movies AS m
+CROSS JOIN genres AS g
+LIMIT 10;
+```
+
+```response
+┌─name─┬─id─┬─movie_id─┬─genre───────┐
+│ #28  │  0 │        1 │ Documentary │
+│ #28  │  0 │        1 │ Short       │
+│ #28  │  0 │        2 │ Comedy      │
+│ #28  │  0 │        2 │ Crime       │
+│ #28  │  0 │        5 │ Western     │
+│ #28  │  0 │        6 │ Comedy      │
+│ #28  │  0 │        6 │ Family      │
+│ #28  │  0 │        8 │ Animation   │
+│ #28  │  0 │        8 │ Comedy      │
+│ #28  │  0 │        8 │ Short       │
+└──────┴────┴──────────┴─────────────┘
+```
+
+이전의 예시 쿼리만으로는 큰 의미가 없지만, 각 영화의 장르를 찾기 위해 일치하는 행을 연결해 `INNER JOIN` 동작을 재현할 수 있도록 `WHERE` 절을 추가해 확장할 수 있습니다:
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+`CROSS JOIN`의 대체 구문에서는 `FROM` 절에 여러 테이블을 쉼표로 구분해 지정합니다.
+
+ClickHouse는 쿼리의 `WHERE` 절에 조인 표현식이 있으면 `CROSS JOIN`을 `INNER JOIN`으로 [재작성](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/Core/Settings.h#L896)합니다.
+
+예시 쿼리의 경우 [EXPLAIN SYNTAX](/ko/reference/statements/explain#explain-syntax)를 통해 이를 확인할 수 있습니다(이 구문은 쿼리가 [실행](https://youtu.be/hP6G2Nlz_cA)되기 전에 재작성되는 구문적으로 최적화된 버전을 반환합니다):
+
+```sql
+EXPLAIN SYNTAX
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─explain─────────────────────────────────────┐
+│ SELECT                                      │
+│     name AS name,                           │
+│     genre AS genre                          │
+│ FROM movies AS m                            │
+│ ALL INNER JOIN genres AS g ON id = movie_id │
+│ WHERE id = movie_id                         │
+│ ORDER BY                                    │
+│     year DESC,                              │
+│     name ASC,                               │
+│     genre ASC                               │
+│ LIMIT 10                                    │
+└─────────────────────────────────────────────┘
+```
+
+구문적으로 최적화된 `CROSS JOIN` 쿼리 버전의 `INNER JOIN` 절에는 `ALL` 키워드가 포함됩니다. 이는 `INNER JOIN`으로 다시 작성되더라도 `CROSS JOIN`의 카테시안 곱 의미를 유지하기 위해 명시적으로 추가된 것입니다. `INNER JOIN`에서는 카테시안 곱을 [비활성화](/ko/reference/settings/session-settings#join_default_strictness)할 수 있습니다.
+
+```sql
+ALL
+```
+
+또한 앞서 언급했듯이 `RIGHT OUTER JOIN`에서는 `OUTER` 키워드를 생략할 수 있고 선택적 `ALL` 키워드를 추가할 수도 있으므로, `ALL RIGHT JOIN`이라고 작성해도 정상적으로 동작합니다.
+
+<div id="left--right-semi-join">
+  ## (LEFT / RIGHT) SEMI JOIN
+</div>
+
+`LEFT SEMI JOIN` 쿼리는 오른쪽 테이블에서 조인 키가 하나 이상 일치하는 왼쪽 테이블의 각 행에 대해 컬럼 값을 반환합니다.
+첫 번째로 찾은 일치 항목만 반환됩니다(카테시안 곱은 비활성화됨).
+
+`RIGHT SEMI JOIN` 쿼리도 이와 비슷하며, 왼쪽 테이블에서 하나 이상 일치하는 오른쪽 테이블의 모든 행에 대한 값을 반환하지만, 첫 번째로 찾은 일치 항목만 반환됩니다.
+
+<Image img="/images/starter_guides/joins/semi_join.webp" alt="Semi Join" />
+
+이 쿼리는 2023년에 영화에 출연한 모든 배우를 찾습니다.
+일반적인 (`INNER`) 조인을 사용하면, 2023년에 역할이 2개 이상인 동일한 배우가 여러 번 표시될 수 있다는 점에 유의하십시오:
+
+```sql
+SELECT
+    a.first_name,
+    a.last_name
+FROM actors AS a
+LEFT SEMI JOIN roles AS r ON a.id = r.actor_id
+WHERE toYear(created_at) = '2023'
+ORDER BY id ASC
+LIMIT 10;
+```
+
+```response
+┌─first_name─┬─last_name──────────────┐
+│ Michael    │ 'babeepower' Viera     │
+│ Eloy       │ 'Chincheta'            │
+│ Dieguito   │ 'El Cigala'            │
+│ Antonio    │ 'El de Chipiona'       │
+│ José       │ 'El Francés'           │
+│ Félix      │ 'El Gato'              │
+│ Marcial    │ 'El Jalisco'           │
+│ José       │ 'El Morito'            │
+│ Francisco  │ 'El Niño de la Manola' │
+│ Víctor     │ 'El Payaso'            │
+└────────────┴────────────────────────┘
+```
+
+<div id="left--right-anti-join">
+  ## (LEFT / RIGHT) ANTI JOIN
+</div>
+
+`LEFT ANTI JOIN`은 왼쪽 테이블에서 일치하는 항목이 없는 모든 행의 컬럼 값을 반환합니다.
+
+마찬가지로 `RIGHT ANTI JOIN`은 오른쪽 테이블에서 일치하는 항목이 없는 모든 행의 컬럼 값을 반환합니다.
+
+<Image img="/images/starter_guides/joins/anti_join.webp" alt="안티 조인" />
+
+앞의 외부 조인 예시 쿼리는 anti join을 사용해 데이터셋에 장르가 없는 영화를 찾는 방식으로도 표현할 수 있습니다:
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT ANTI JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    year DESC,
+    name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<div id="left--right--inner-any-join">
+  ## (LEFT / RIGHT / INNER) ANY JOIN
+</div>
+
+`LEFT ANY JOIN`은 `LEFT OUTER JOIN`과 `LEFT SEMI JOIN`을 결합한 형태입니다. 즉, ClickHouse는 왼쪽 테이블의 각 행에 대해 오른쪽 테이블에서 일치하는 행이 있으면 해당 행의 컬럼 값과 결합된 결과를 반환하고, 일치하는 행이 없으면 오른쪽 테이블의 기본 컬럼 값과 결합된 결과를 반환합니다.
+왼쪽 테이블의 한 행이 오른쪽 테이블에서 둘 이상의 행과 일치하는 경우, ClickHouse는 처음 찾은 일치 항목과 결합된 컬럼 값만 반환합니다(카테시안 곱은 비활성화됨).
+
+마찬가지로 `RIGHT ANY JOIN`은 `RIGHT OUTER JOIN`과 `RIGHT SEMI JOIN`을 결합한 형태입니다.
+
+또한 `INNER ANY JOIN`은 카테시안 곱이 비활성화된 `INNER JOIN`입니다.
+
+<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+
+다음 예시는 [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [테이블 함수](/ko/reference/functions/table-functions/index)로 생성한 두 개의 임시 테이블(`left_table` 및 `right_table`)을 사용해 `LEFT ANY JOIN`을 추상적인 예로 보여줍니다:
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+LEFT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   1 │   0 │
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+다음은 `RIGHT ANY JOIN`을 사용한 동일한 쿼리입니다:
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+RIGHT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   2 │   2 │
+│   3 │   3 │
+│   3 │   3 │
+│   0 │   4 │
+└─────┴─────┘
+```
+
+`INNER ANY JOIN`을 사용한 쿼리는 다음과 같습니다:
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+INNER ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+<div id="asof-join">
+  ## ASOF JOIN
+</div>
+
+`ASOF JOIN`은 정확히 일치하지 않는 값도 매칭할 수 있습니다.
+왼쪽 테이블의 행에 대해 오른쪽 테이블에서 정확히 일치하는 값이 없으면, 대신 오른쪽 테이블에서 가장 가까운 행을 매칭에 사용합니다.
+
+이는 특히 시계열(time-series) 분석에 유용하며, 쿼리 복잡도를 크게 줄일 수 있습니다.
+
+<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+
+다음 예시는 주식 시장 데이터에 대해 시계열 분석을 수행합니다.
+`quotes` 테이블에는 하루 중 특정 시각의 주식 심볼 시세가 저장됩니다.
+예시 데이터에서는 가격이 10초마다 갱신됩니다.
+`trades` 테이블에는 심볼 거래 내역이 있으며, 특정 시각에 특정 수량의 심볼이 매수됩니다:
+
+<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+
+각 거래의 실제 비용을 계산하려면 각 거래를 가장 가까운 시세 시각과 매칭해야 합니다.
+
+이 작업은 `ASOF JOIN`을 사용하면 쉽고 간결하게 처리할 수 있습니다. `ON` 절은 정확히 일치하는 조건을 지정하고, `AND` 절은 가장 가까운 값을 찾는 조건을 지정합니다. 즉, 특정 심볼(정확 일치)에 대해 해당 심볼의 거래 시각과 같거나 그보다 이전인 시각(비정확 일치)을 가진 `quotes` 테이블의 행 중에서 시간이 가장 가까운 행을 찾습니다:
+
+```sql
+SELECT
+    t.symbol,
+    t.volume,
+    t.time AS trade_time,
+    q.time AS closest_quote_time,
+    q.price AS quote_price,
+    t.volume * q.price AS final_price
+FROM trades t
+ASOF LEFT JOIN quotes q ON t.symbol = q.symbol AND t.time >= q.time
+FORMAT Vertical;
+```
+
+```response
+Row 1:
+──────
+symbol:             ABC
+volume:             200
+trade_time:         2023-02-22 14:09:05
+closest_quote_time: 2023-02-22 14:09:00
+quote_price:        32.11
+final_price:        6422
+
+Row 2:
+──────
+symbol:             ABC
+volume:             300
+trade_time:         2023-02-22 14:09:28
+closest_quote_time: 2023-02-22 14:09:20
+quote_price:        32.15
+final_price:        9645
+```
+
+<Note>
+  `ASOF JOIN`의 `ON` 절은 필수이며, `AND` 절의 비정확 일치 조건에 더해 정확 일치 조건을 지정합니다.
+</Note>
+
+<div id="summary">
+  ## 요약
+</div>
+
+이 가이드에서는 ClickHouse가 모든 표준 SQL JOIN 유형은 물론, 분석 쿼리를 위한 특화된 조인도 지원하는 방식을 설명합니다.
+조인에 대한 자세한 내용은 [JOIN](/ko/reference/statements/select/join) SQL 문 설명서를 참조하십시오.

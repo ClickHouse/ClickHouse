@@ -1,0 +1,167 @@
+---
+title: 'Connexion à un catalogue de données'
+sidebarTitle: 'Connexion aux catalogues'
+slug: /use-cases/data-lake/getting-started/connecting-catalogs
+toc_max_heading_level: 3
+description: 'Connectez ClickHouse à des catalogues de données externes à l’aide du moteur de base de données DataLakeCatalog afin d’exposer les tables du catalogue sous forme de bases de données ClickHouse natives.'
+keywords: ['lac de données', 'lakehouse', 'catalogue', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+Dans la [section précédente](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly), vous avez interrogé des formats de table ouverts en indiquant directement les chemins de stockage. En pratique, la plupart des organisations gèrent les métadonnées des tables via un **catalogue de données** — un registre central qui recense les emplacements des tables, les schémas et les partitions. Lorsque vous connectez ClickHouse à un catalogue à l’aide du moteur de base de données [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake), l’ensemble du catalogue est exposé sous la forme d’une base de données ClickHouse. Chaque table du catalogue apparaît automatiquement et peut être interrogée avec l’ensemble de ClickHouse SQL — nul besoin de connaître le chemin de chaque table ni de gérer des identifiants distincts pour chacune d’elles.
+
+Ce guide explique comment se connecter à [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog). ClickHouse prend également en charge les catalogues suivants — consultez chaque guide de référence pour obtenir les instructions de configuration complètes :
+
+| Catalogue              | Guide de référence                                                            |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| AWS Glue               | [catalogue AWS Glue](/fr/guides/use-cases/data-warehousing/glue-catalog)         |
+| Catalogue REST Iceberg | [catalogue REST](/fr/guides/use-cases/data-warehousing/rest-catalog)             |
+| Lakekeeper             | [catalogue Lakekeeper](/fr/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| Project Nessie         | [catalogue Nessie](/fr/guides/use-cases/data-warehousing/nessie-catalog)         |
+| Microsoft OneLake      | [Fabric OneLake](/fr/guides/use-cases/data-warehousing/onelake-catalog)          |
+
+<div id="connecting-to-unity-catalog">
+  ## Se connecter à Unity Catalog
+</div>
+
+<BetaBadge />
+
+À titre d’exemple, nous utiliserons Unity Catalog.
+
+[Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) fournit une gouvernance centralisée des données lakehouse de Databricks.
+
+Databricks prend en charge plusieurs formats de données pour son lakehouse. Avec ClickHouse, vous pouvez interroger les tables de Unity Catalog au format Delta comme au format Iceberg.
+
+<Note>
+  L’intégration avec Unity Catalog fonctionne pour les tables gérées et les tables externes.
+  Cette intégration est actuellement prise en charge uniquement sur AWS.
+</Note>
+
+<div id="configuring-unity-in-databricks">
+  ### Configuration de Unity Catalog dans Databricks
+</div>
+
+Pour permettre à ClickHouse d’interagir avec Unity Catalog, vous devez vous assurer que celui-ci est configuré pour autoriser l’interaction avec un lecteur externe. Pour cela, suivez le guide [« Enable external data access to Unity Catalog »](https://docs.databricks.com/aws/en/external-access/admin).
+
+En plus d’activer l’accès externe, assurez-vous que le principal qui configure l’intégration dispose du [privilège](https://docs.databricks.com/aws/en/external-access/admin#external-schema) `EXTERNAL USE SCHEMA` sur le schéma contenant les tables.
+
+Une fois votre catalogue configuré, vous devez générer des informations d’identification pour ClickHouse. Deux méthodes différentes peuvent être utilisées, selon votre mode d’interaction avec Unity :
+
+* Pour les clients Iceberg, authentifiez-vous avec un [service principal](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m).
+
+* Pour les clients Delta, utilisez un jeton d’accès personnel ([PAT](https://docs.databricks.com/aws/en/dev-tools/auth/pat)).
+
+<div id="connect-catalog">
+  ### Se connecter au catalogue
+</div>
+
+À l’aide de ces informations d’identification, vous pouvez vous connecter à l’endpoint approprié pour interroger les tables Iceberg ou Delta.
+
+<Tabs>
+  <Tab title="Delta">
+    Le [Unity catalog](/fr/guides/use-cases/data-warehousing/unity-catalog) doit être utilisé pour accéder aux données au format Delta.
+
+    ```sql
+    SET allow_experimental_database_unity_catalog = 1;
+
+    CREATE DATABASE unity
+    ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog')
+    SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type = 'unity';
+    ```
+  </Tab>
+
+  <Tab title="Iceberg">
+    ```sql
+    SET allow_database_iceberg = 1;
+
+    CREATE DATABASE unity
+    ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest')
+    SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret>', warehouse = 'workspace',
+    oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql';
+    ```
+  </Tab>
+</Tabs>
+
+<div id="list-tables">
+  ### Lister les tables
+</div>
+
+Une fois la connexion à votre catalogue établie, vous pouvez afficher la liste des tables.
+
+```sql
+SHOW TABLES FROM unity
+```
+
+```response
+┌─name───────────────────────────────────────────────┐
+│ unity.logs                                         │
+│ unity.single_day_log                               │
+└────────────────────────────────────────────────────┘
+
+31 rows in set.
+```
+
+<div id="exploring-table-schemas">
+  ### Exploration des schémas des tables
+</div>
+
+Nous pouvons utiliser la commande standard `SHOW CREATE TABLE` pour voir comment les tables ont été créées.
+
+<Info>
+  **Backticks requis**
+
+  Notez qu’il est nécessaire de préciser l’espace de noms et le nom de la table, entourés de backticks : ClickHouse ne prend pas en charge plusieurs espaces de noms.
+</Info>
+
+La suite suppose l’interrogation du catalogue REST Iceberg :
+
+```sql
+SHOW CREATE TABLE unity.`icebench.single_day_log`
+
+CREATE TABLE unity.`icebench.single_day_log`
+(
+    `pull_request_number` Nullable(Int64),
+    `commit_sha` Nullable(String),
+    `check_start_time` Nullable(DateTime64(6, 'UTC')),
+    `check_name` Nullable(String),
+    `instance_type` Nullable(String),
+    `instance_id` Nullable(String),
+    `event_date` Nullable(Date32),
+    `event_time` Nullable(DateTime64(6, 'UTC')),
+    `event_time_microseconds` Nullable(DateTime64(6, 'UTC')),
+    `thread_name` Nullable(String),
+    `thread_id` Nullable(Decimal(20, 0)),
+    `level` Nullable(String),
+    `query_id` Nullable(String),
+    `logger_name` Nullable(String),
+    `message` Nullable(String),
+    `revision` Nullable(Int64),
+    `source_file` Nullable(String),
+    `source_line` Nullable(Decimal(20, 0)),
+    `message_format_string` Nullable(String)
+)
+ENGINE = Iceberg('s3://...')
+```
+
+<div id="querying-a-table">
+  ### Interroger une table
+</div>
+
+Toutes les fonctions ClickHouse sont prises en charge. Là encore, l’espace de noms et le nom de la table doivent être délimités par des backticks.
+
+```sql
+SELECT count()
+FROM unity.`icebench.single_day_log`
+```
+
+```response
+┌───count()─┐
+│ 282634391 │ -- 282.63 million
+└───────────┘
+
+1 row in set. Elapsed: 1.265 sec.
+```
+
+Pour des instructions de configuration complètes, consultez le [guide de référence sur Unity Catalog](/fr/guides/use-cases/data-warehousing/unity-catalog).

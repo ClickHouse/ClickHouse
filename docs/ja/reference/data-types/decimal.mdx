@@ -1,0 +1,133 @@
+---
+description: '設定可能な精度で固定小数点演算を提供する ClickHouse の Decimal データ型に関するドキュメント'
+sidebarTitle: 'Decimal'
+slug: /sql-reference/data-types/decimal
+title: 'Decimal, Decimal(P), Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S),
+  Decimal256(S)'
+doc_type: 'reference'
+---
+
+加算、減算、乗算では精度を維持する符号付き固定小数点数です。除算では最下位桁が切り捨てられ、丸めは行われません。
+
+<div id="parameters">
+  ## パラメータ
+</div>
+
+* P - 精度。有効範囲: [ 1 : 76 ]。数値が持てる10進の桁数 (小数部を含む) を決定します。デフォルトの精度は 10 です。
+* S - スケール。有効範囲: [ 0 : P ]。小数部が持てる10進の桁数を決定します。
+
+Decimal(P) は Decimal(P, 0) と同等です。同様に、構文 Decimal は Decimal(10, 0) と同等です。
+
+P パラメータの値に応じて、Decimal(P, S) は次の型の別名になります。
+
+* P が [ 1 : 9 ] の場合 - Decimal32(S)
+* P が [ 10 : 18 ] の場合 - Decimal64(S)
+* P が [ 19 : 38 ] の場合 - Decimal128(S)
+* P が [ 39 : 76 ] の場合 - Decimal256(S)
+
+<div id="decimal-value-ranges">
+  ## Decimal の値の範囲
+</div>
+
+* Decimal(P, S) - ( -1 * 10^(P - S), 1 * 10^(P - S) )
+* Decimal32(S) - ( -1 * 10^(9 - S), 1 * 10^(9 - S) )
+* Decimal64(S) - ( -1 * 10^(18 - S), 1 * 10^(18 - S) )
+* Decimal128(S) - ( -1 * 10^(38 - S), 1 * 10^(38 - S) )
+* Decimal256(S) - ( -1 * 10^(76 - S), 1 * 10^(76 - S) )
+
+たとえば、Decimal32(4) では、-99999.9999 から 99999.9999 までの数値を 0.0001 刻みで格納できます。
+
+<div id="internal-representation">
+  ## 内部表現
+</div>
+
+内部的には、データはそれぞれのビット幅に応じた通常の符号付き整数として表現されます。メモリに格納できる実際の値の範囲は、上で示した範囲よりわずかに広くなっていますが、これは文字列から変換する場合にのみチェックされます。
+
+現在の CPU は 128 ビット整数および 256 ビット整数をネイティブにサポートしていないため、Decimal128 と Decimal256 の演算はエミュレートされます。そのため、Decimal128 と Decimal256 は Decimal32/Decimal64 よりも大幅に低速です。
+
+<div id="operations-and-result-type">
+  ## 演算と結果型
+</div>
+
+Decimal に対する二項演算の結果型は、引数の順序に関係なく、より広い型になります。
+
+* `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+* `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+* `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
+* `Decimal256(S1) <op> Decimal<32|64|128>(S2) -> Decimal256(S)`
+
+スケール の規則:
+
+* 加算、減算: S = max(S1, S2)。
+* 乗算: S = S1 + S2。
+* 除算: S = S1。
+
+Decimal と整数の間で同様の演算を行う場合、結果は引数と同じサイズの Decimal になります。
+
+Decimal と Float32/Float64 の間の演算は定義されていません。必要な場合は、toDecimal32、toDecimal64、toDecimal128、または toFloat32、toFloat64 の組み込み関数を使って、引数のいずれか一方を明示的にキャストできます。ただし、結果では精度が失われ、型変換は計算コストの高い処理である点に注意してください。
+
+Decimal に対する一部の関数は、結果を Float64 として返します (たとえば、var や stddev) 。中間計算自体は Decimal で実行される場合があるため、同じ値の Float64 入力と Decimal 入力でも結果が異なることがあります。
+
+<div id="overflow-checks">
+  ## オーバーフローチェック
+</div>
+
+Decimal の計算中には、整数オーバーフローが発生することがあります。小数部の桁数が多すぎる場合、その超過分は切り捨てられます (丸めは行われません) 。整数部の桁数が多すぎる場合は、例外が発生します。
+
+<Warning>
+  Decimal128 および Decimal256 では、オーバーフローチェックは実装されていません。オーバーフローが発生した場合、誤った結果が返され、例外はスローされません。
+</Warning>
+
+```sql
+SELECT toDecimal32(2, 4) AS x, x / 3
+```
+
+```text
+┌──────x─┬─divide(toDecimal32(2, 4), 3)─┐
+│ 2.0000 │                       0.6666 │
+└────────┴──────────────────────────────┘
+```
+
+```sql
+SELECT toDecimal32(4.2, 8) AS x, x * x
+```
+
+```text
+DB::Exception: Scale is out of bounds.
+```
+
+```sql
+SELECT toDecimal32(4.2, 8) AS x, 6 * x
+```
+
+```text
+DB::Exception: Decimal math overflow.
+```
+
+オーバーフローチェックを行うと、処理が遅くなります。オーバーフローが発生しないことが分かっている場合は、`decimal_check_overflow` 設定を使ってチェックを無効にするのが適切です。チェックを無効にした状態でオーバーフローが発生すると、結果は不正確になります:
+
+```sql
+SET decimal_check_overflow = 0;
+SELECT toDecimal32(4.2, 8) AS x, 6 * x
+```
+
+```text
+┌──────────x─┬─multiply(6, toDecimal32(4.2, 8))─┐
+│ 4.20000000 │                     -17.74967296 │
+└────────────┴──────────────────────────────────┘
+```
+
+オーバーフローチェックは、算術演算だけでなく、値の比較でも行われます。
+
+```sql
+SELECT toDecimal32(1, 8) < 100
+```
+
+```text
+DB::Exception: Can't compare.
+```
+
+**関連項目**
+
+* [isDecimalOverflow](/ja/reference/functions/regular-functions/other-functions#isDecimalOverflow)
+* [countDigits](/ja/reference/functions/regular-functions/other-functions#countDigits)

@@ -1,0 +1,91 @@
+---
+description: 'El motor de base de datos DataLakeCatalog le permite conectar ClickHouse a catálogos de datos externos y consultar datos en formatos de tabla abiertos'
+sidebarTitle: 'DataLakeCatalog'
+slug: /engines/database-engines/datalakecatalog
+title: 'DataLakeCatalog'
+doc_type: 'reference'
+---
+
+El motor de base de datos `DataLakeCatalog` le permite conectar ClickHouse a catálogos de datos externos
+y consultar datos en formatos de tabla abiertos sin necesidad de duplicarlos.
+Esto transforma a ClickHouse en un potente motor de consultas que se integra perfectamente con
+la infraestructura existente de su lago de datos.
+
+<div id="supported-catalogs">
+  ## Catálogos compatibles
+</div>
+
+El motor `DataLakeCatalog` es compatible con los siguientes catálogos de datos:
+
+* **AWS Glue Catalog** - Para tablas Iceberg en entornos de AWS
+* **Databricks Unity Catalog** - Para tablas Delta Lake e Iceberg
+* **Hive Metastore** - Catálogo tradicional del ecosistema Hadoop
+* **Catálogos REST** - Cualquier catálogo compatible con la especificación REST de Iceberg
+
+<div id="creating-a-database">
+  ## Crear una base de datos
+</div>
+
+Deberá habilitar la configuración correspondiente que se indica a continuación para usar el motor `DataLakeCatalog`:
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_database_unity_catalog = 1;
+SET allow_experimental_database_glue_catalog = 1;
+SET allow_experimental_database_hms_catalog = 1;
+SET allow_experimental_database_paimon_rest_catalog = 1;
+```
+
+Las bases de datos con el motor `DataLakeCatalog` pueden crearse con la siguiente sintaxis:
+
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog(catalog_endpoint[, user, password])
+SETTINGS
+catalog_type,
+[...]
+```
+
+Se admiten los siguientes ajustes:
+
+| Configuración           | Descripción                                                                                                                  |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `catalog_type`          | Tipo de catálogo: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg)                                     |
+| `warehouse`             | Nombre del almacén/base de datos que se usará en el catálogo.                                                                |
+| `catalog_credential`    | Credencial de autenticación para el catálogo (p. ej., API key o token)                                                       |
+| `auth_header`           | HTTP header personalizado para la autenticación con el servicio de catálogo                                                  |
+| `auth_scope`            | Scope de OAuth2 para la autenticación (si se usa OAuth)                                                                      |
+| `storage_endpoint`      | URL del endpoint del almacenamiento subyacente                                                                               |
+| `oauth_server_uri`      | URI del servidor de autorización de OAuth2 para la autenticación                                                             |
+| `vended_credentials`    | Valor booleano que indica si se deben usar las credenciales proporcionadas por el catálogo (admite AWS S3 y Azure ADLS Gen2) |
+| `aws_access_key_id`     | ID de la clave de acceso de AWS para acceder a S3/Glue (si no se usan credenciales proporcionadas)                           |
+| `aws_secret_access_key` | Clave de acceso secreta de AWS para acceder a S3/Glue (si no se usan credenciales proporcionadas)                            |
+| `region`                | Región de AWS para el servicio (p. ej., `us-east-1`)                                                                         |
+| `dlf_access_key_id`     | ID de la clave de acceso para acceder a DLF                                                                                  |
+| `dlf_access_key_secret` | Clave de acceso secreta para acceder a DLF                                                                                   |
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Consulte las secciones siguientes para ver ejemplos de uso del motor `DataLakeCatalog`:
+
+* [Unity Catalog](/es/guides/use-cases/data-warehousing/unity-catalog)
+* [Glue Catalog](/es/guides/use-cases/data-warehousing/glue-catalog)
+* OneLake Catalog
+  Puede usarse habilitando `allow_experimental_database_iceberg` o `allow_database_iceberg`.
+
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog(catalog_endpoint)
+SETTINGS
+    catalog_type = 'onelake',
+    warehouse = warehouse,
+    onelake_tenant_id = tenant_id,
+    oauth_server_uri = server_uri,
+    auth_scope = auth_scope,
+    onelake_client_id = client_id,
+    onelake_client_secret = client_secret;
+SHOW TABLES IN database_name;
+SELECT count() from database_name.table_name;
+```

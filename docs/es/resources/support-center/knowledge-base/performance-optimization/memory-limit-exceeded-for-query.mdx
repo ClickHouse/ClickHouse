@@ -1,0 +1,80 @@
+---
+title: 'Se ha superado el límite de memoria de la consulta'
+description: 'Solución de problemas de errores de límite de memoria superado en una consulta'
+date: 2025-07-25
+tags: ['Errores y excepciones']
+keywords: ['OOM', 'límite de memoria superado']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="troubleshooting-out-of-memory-issues">
+  ## Límite de memoria superado para la consulta
+</div>
+
+Como usuario nuevo, ClickHouse a menudo puede parecer magia: todas las consultas son rapidísimas,
+incluso con los conjuntos de datos más grandes y las consultas más ambiciosas. Sin embargo,
+el uso en el mundo real acaba poniendo a prueba incluso los límites de ClickHouse. Las consultas que superan el límite de memoria
+pueden deberse a varias causas. Lo más habitual es que veamos JOIN grandes o
+agregaciones sobre campos de alta cardinalidad. Si el rendimiento es crítico y estas
+consultas son necesarias, a menudo recomendamos a los usuarios simplemente ampliar recursos, algo que
+ClickHouse Cloud hace de forma automática y sin esfuerzo para garantizar que sus consultas
+sigan respondiendo con agilidad. No obstante, entendemos que, en entornos autogestionados,
+esto a veces no es trivial, y puede que ni siquiera se necesite un rendimiento óptimo.
+En ese caso, los usuarios tienen varias opciones.
+
+<div id="aggregations">
+  ### Agregaciones
+</div>
+
+Para escenarios de agregación u ordenación que consumen mucha memoria, los usuarios pueden usar los ajustes
+[`max_bytes_before_external_group_by`](/es/reference/settings/session-settings#max_bytes_before_external_group_by)
+y [`max_bytes_before_external_sort`](/es/reference/settings/session-settings#max_bytes_ratio_before_external_sort), respectivamente.
+El primero de ellos se analiza en detalle [aquí](/es/reference/statements/select/group-by#group-by-in-external-memory).
+
+En resumen, esto garantiza que cualquier agregación pueda volcarse a disco si se supera un
+umbral de memoria. Esto inevitablemente afectará al rendimiento de la consulta, pero
+ayudará a garantizar que las consultas no provoquen OOM. El segundo ajuste de ordenación ayuda a resolver problemas similares
+con ordenaciones que consumen mucha memoria. Esto puede ser especialmente importante en
+entornos distribuidos donde un nodo coordinador recibe respuestas ordenadas
+de segmentos secundarios. En este caso, se puede pedir al
+servidor coordinador que ordene un
+conjunto de datos más grande que la memoria disponible. Con [`max_bytes_before_external_sort`](/es/reference/settings/session-settings#max_bytes_ratio_before_external_sort),
+se puede permitir que la ordenación se vuelque a disco. Esta configuración también es útil en
+casos en los que el usuario tiene un `ORDER BY` después de un `GROUP BY` con un `LIMIT`,
+especialmente cuando la consulta es distribuida.
+
+<div id="joins">
+  ### Joins
+</div>
+
+En los joins, los usuarios pueden seleccionar distintos algoritmos de `JOIN`, lo que puede ayudar a
+reducir la memoria necesaria. De forma predeterminada, los joins usan hash join, que suele ofrecer
+la mayor cobertura de funcionalidades y, a menudo, el mejor rendimiento.
+Este algoritmo carga la tabla del lado derecho del `JOIN` en una tabla hash en memoria,
+sobre la que luego se evalúa la tabla del lado izquierdo. Para minimizar el uso de memoria,
+los usuarios deben, por tanto, colocar la tabla más pequeña en el lado derecho. Sin embargo, este enfoque
+sigue teniendo limitaciones en escenarios con restricciones de memoria. En esos casos, se puede
+habilitar el join `partial_merge` mediante la configuración [`join_algorithm`](/es/reference/settings/session-settings#join_algorithm).
+Esta variante del [algoritmo sort-merge](https://en.wikipedia.org/wiki/Sort-merge_join)
+primero ordena la tabla derecha en bloques y crea un índice min-max para ellos.
+Luego ordena partes de la tabla izquierda por la clave del join y las combina con la
+tabla derecha. El índice min-max se utiliza para omitir bloques innecesarios de la tabla derecha.
+Este método consume menos memoria, a costa del rendimiento. Llevando este concepto
+un paso más allá, el algoritmo `full_sorting_merge` permite realizar un `JOIN` cuando
+el lado derecho es muy grande y no cabe en memoria y las operaciones de lookup son
+imposibles, por ejemplo, en una subconsulta compleja. En este caso, tanto el lado derecho como el izquierdo
+se ordenan en disco si no caben en memoria, lo que permite unir tablas grandes.
+
+<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="Algoritmos de JOIN" />
+
+Desde la versión 20.3, ClickHouse admite un valor auto para la configuración `join_algorithm`.
+Esto indica a ClickHouse que aplique un enfoque adaptativo de join, en el que se prioriza el algoritmo
+hash join hasta que se superan los límites de memoria, momento en el que se
+intenta el algoritmo partial&#95;merge. Por último, en lo que respecta a los joins, animamos
+a los lectores a familiarizarse con el comportamiento de los distributed joins y con cómo minimizar
+su consumo de memoria. Puede encontrarse más información [aquí](/es/reference/statements/in#distributed-subqueries).

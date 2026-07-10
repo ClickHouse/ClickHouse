@@ -1,0 +1,58 @@
+---
+alias: []
+description: 'Vertical 格式文档'
+input_format: false
+keywords: ['Vertical']
+output_format: true
+slug: /interfaces/formats/Vertical
+title: 'Vertical'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✗  | ✔  |    |
+
+<div id="description">
+  ## 说明
+</div>
+
+每个值都会单独输出一行，并附带指定的列名。如果每一行都包含大量列，这种格式很适合只输出一行或少量几行数据。
+
+请注意，[`NULL`](/zh/reference/syntax) 会输出为 `ᴺᵁᴸᴸ`，以便更容易区分字符串值 `NULL` 和空值。JSON 列会以 Pretty 格式输出，而 `NULL` 会输出为 `null`，因为它是有效的 JSON 值，并且很容易与 `"null"` 区分。
+
+<div id="example-usage">
+  ## 使用示例
+</div>
+
+示例：
+
+```sql
+SELECT * FROM t_null FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+x: 1
+y: ᴺᵁᴸᴸ
+```
+
+在 Vertical 格式中，行内容不会被转义：
+
+```sql
+SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+test: string with 'quotes' and      with some special
+ characters
+```
+
+这种格式仅适用于输出查询结果，不适用于解析 (读取要插入表中的数据) 。
+
+<div id="format-settings">
+  ## 格式设置
+</div>

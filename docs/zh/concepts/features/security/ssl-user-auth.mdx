@@ -1,0 +1,155 @@
+---
+sidebarTitle: 'SSL 用户证书身份验证'
+slug: /guides/sre/ssl-user-auth
+title: '配置用于身份验证的 SSL 用户证书'
+description: '本指南提供最简配置，说明如何使用 SSL 用户证书进行身份验证。'
+doc_type: 'guide'
+keywords: ['ssl', '身份验证', '安全', '证书', '用户管理']
+---
+
+import SelfManaged from '/snippets/zh/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+本指南介绍如何以最少的配置，使用 SSL 用户证书来设置身份验证。本教程基于 [配置 TLS 指南](/zh/concepts/features/security/tls/configuring-tls)。
+
+<Note>
+  使用 `https`、`native`、`mysql` 和 `postgresql` 接口时，支持 SSL 用户身份验证。
+
+  为实现安全身份验证，ClickHouse 节点需要设置 `<verificationMode>strict</verificationMode>` (不过在测试场景下，`relaxed` 也可用) 。
+
+  如果你将 AWS NLB 与 MySQL 接口一起使用，则需要联系 AWS 支持以启用以下未公开的选项：
+
+  > 我希望能够按如下方式配置我们的 NLB proxy protocol v2：`proxy_protocol_v2.client_to_server.header_placement,Value=on_first_ack`。
+</Note>
+
+<div id="1-create-ssl-user-certificates">
+  ## 1. 创建 SSL 用户证书
+</div>
+
+<Note>
+  此示例使用由自签名 CA 签发的自签名证书。对于生产环境，请创建 CSR 并提交给你的 PKI 团队或证书提供商，以获取正式证书。
+</Note>
+
+1. 生成证书签名请求 (CSR) 和密钥。基本格式如下：
+   ```bash
+   openssl req -newkey rsa:2048 -nodes -subj "/CN=<my_host>:<my_user>"  -keyout <my_cert_name>.key -out <my_cert_name>.csr
+   ```
+   在此示例中，对于此示例环境中使用的域名和用户，可使用以下命令：
+   ```bash
+   openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode1.marsnet.local:cert_user"  -keyout chnode1_cert_user.key -out chnode1_cert_user.csr
+   ```
+
+<Note>
+  CN 是任意的，可以使用任何字符串作为证书的标识符。在后续步骤中创建用户时会用到它。
+</Note>
+
+2. 生成并签署将用于身份验证的新用户证书。基本格式如下：
+   ```bash
+   openssl x509 -req -in <my_cert_name>.csr -out <my_cert_name>.crt -CA <my_ca_cert>.crt -CAkey <my_ca_cert>.key -days 365
+   ```
+   在此示例中，对于此示例环境中使用的域名和用户，可使用以下命令：
+   ```bash
+   openssl x509 -req -in chnode1_cert_user.csr -out chnode1_cert_user.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365
+   ```
+
+<div id="2-create-a-sql-user-and-grant-permissions">
+  ## 2. 创建 SQL 用户并授予权限
+</div>
+
+<Note>
+  有关如何启用 SQL 用户并设置角色的详细信息，请参阅 [定义 SQL 用户和角色](/zh/concepts/features/security/access-rights) 用户指南。
+</Note>
+
+1. 创建一个配置为使用证书进行身份验证的 SQL 用户：
+   ```sql
+   CREATE USER cert_user IDENTIFIED WITH ssl_certificate CN 'chnode1.marsnet.local:cert_user';
+   ```
+
+2. 为新的证书用户授予权限：
+   ```sql
+   GRANT ALL ON *.* TO cert_user WITH GRANT OPTION;
+   ```
+
+<Note>
+  为便于演示，本练习中为该用户授予了完整的管理员权限。有关权限设置，请参阅 ClickHouse 的 [RBAC 文档](/zh/concepts/features/security/access-rights)。
+</Note>
+
+<Note>
+  我们建议使用 SQL 来定义用户和角色。不过，如果你当前是在配置文件中定义用户和角色，用户配置将如下所示：
+
+  ```xml
+  <users>
+      <cert_user>
+          <ssl_certificates>
+              <common_name>chnode1.marsnet.local:cert_user</common_name>
+          </ssl_certificates>
+          <networks>
+              <ip>::/0</ip>
+          </networks>
+          <profile>default</profile>
+          <access_management>1</access_management>
+          {/* 附加选项*/}
+      </cert_user>
+  </users>
+  ```
+</Note>
+
+<div id="3-testing">
+  ## 3. 测试
+</div>
+
+1. 将用户证书、用户密钥和 CA 证书复制到远程节点。
+
+2. 在 ClickHouse 的[客户端配置](/zh/concepts/features/interfaces/client#configuration_files)中配置 OpenSSL，并指定证书及其路径。
+
+   ```xml
+   <openSSL>
+       <client>
+           <certificateFile>my_cert_name.crt</certificateFile>
+           <privateKeyFile>my_cert_name.key</privateKeyFile>
+           <caConfig>my_ca_cert.crt</caConfig>
+       </client>
+   </openSSL>
+   ```
+
+3. 运行 `clickhouse-client`。
+   ```bash
+   clickhouse-client --user <my_user> --query 'SHOW TABLES'
+   ```
+
+<Note>
+  请注意，如果在配置中指定了证书，则传递给 clickhouse-client 的密码会被忽略。
+</Note>
+
+<div id="4-testing-http">
+  ## 4. 测试 HTTP
+</div>
+
+1. 将用户证书、用户密钥和 CA 证书复制到远程节点。
+
+2. 使用 `curl` 测试示例 SQL 命令。基本格式如下：
+   ```bash
+   echo 'SHOW TABLES' | curl 'https://<clickhouse_node>:8443' --cert <my_cert_name>.crt --key <my_cert_name>.key --cacert <my_ca_cert>.crt -H "X-ClickHouse-SSL-Certificate-Auth: on" -H "X-ClickHouse-User: <my_user>" --data-binary @-
+   ```
+   例如：
+   ```bash
+   echo 'SHOW TABLES' | curl 'https://chnode1:8443' --cert chnode1_cert_user.crt --key chnode1_cert_user.key --cacert marsnet_ca.crt -H "X-ClickHouse-SSL-Certificate-Auth: on" -H "X-ClickHouse-User: cert_user" --data-binary @-
+   ```
+   输出将类似如下：
+   ```response
+   INFORMATION_SCHEMA
+   default
+   information_schema
+   system
+   ```
+
+<Note>
+  请注意，这里未指定密码；证书将替代密码，ClickHouse 会使用证书对用户进行身份验证。
+</Note>
+
+<div id="summary">
+  ## 摘要
+</div>
+
+本文介绍了为 SSL 证书身份验证创建和配置用户的基本方法。此方法可用于 `clickhouse-client`，也适用于任何支持 `https` 接口且可设置 HTTP 请求头的客户端。生成的证书和私钥应妥善保管并严格限制访问，因为证书用于对用户进行身份验证和授权，以执行 ClickHouse 数据库上的操作。请像保护密码一样保护证书和私钥。
