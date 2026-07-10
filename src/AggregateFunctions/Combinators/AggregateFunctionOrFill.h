@@ -37,7 +37,7 @@ public:
         , inner_nullable{nested_function->getResultType()->isNullable()}
         , result_is_nullable{createResultType(nested_function_->getResultType())->isNullable()}
     {
-        // nothing
+        nested_function->throwIfCannotProduceFinalizedResult();
     }
 
     String getName() const override
@@ -366,10 +366,7 @@ public:
             }
         }
         else
-        {
-            nested_function->throwIfCannotProduceFinalizedResult();
             to.insertDefault();
-        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override

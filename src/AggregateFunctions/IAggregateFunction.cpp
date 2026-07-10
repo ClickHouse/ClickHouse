@@ -87,9 +87,6 @@ bool IAggregateFunction::haveSameStateRepresentation(const IAggregateFunction & 
     const auto & lhs_base = getBaseAggregateFunctionWithSameStateRepresentation();
     const auto & rhs_base = rhs.getBaseAggregateFunctionWithSameStateRepresentation();
 
-    if (!lhs_base.hasSameStateRepresentationDetails(rhs_base))
-        return false;
-
     return lhs_base.haveSameStateRepresentationImpl(rhs_base);
 }
 

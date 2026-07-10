@@ -34,6 +34,30 @@ The `-State` combinator is required to obtain the Bloom filter state for use wit
 
 The parameter form is selected by the second parameter: if it is a `Float64` value in `(0, 1)`, the parameters are interpreted as `expected_elements` and `false_positive_rate`; otherwise, they are interpreted as `filter_size_bytes` and `num_hashes`.
 
+## Supported combinators {#supported-combinators}
+
+`groupBloomFilter` supports the `-State`, `-MergeState`, `-If`, and `-ArrayIf` combinators. Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, including the condition, must not be `Nullable`.
+
+To aggregate a nullable value conditionally, exclude `NULL` values explicitly and unwrap the value:
+
+```sql
+SELECT groupBloomFilterIfState(
+    assumeNotNull(value),
+    isNotNull(value) AND ifNull(condition, 0))
+FROM source
+```
+
+Calling `groupBloomFilterState` directly with a `Nullable` value remains supported; `NULL` values are skipped.
+
+The `-OrNull` and `-OrDefault` combinators are not supported, including state-only chains such as:
+
+```sql
+groupBloomFilterOrNullState(value)
+groupBloomFilterOrDefaultState(value)
+```
+
+These combinators require a meaningful finalized result, while `groupBloomFilter` intentionally only produces an aggregate state.
+
 ## Parameters {#parameters}
 
 | Parameter | Description | Default |

@@ -1,47 +1,31 @@
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionGroupBloomFilterData.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionIf.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 
 #include <Common/VectorWithMemoryTracking.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <absl/container/inlined_vector.h>
-
-#include <optional>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static std::optional<DataTypePtr> tryGetNormalizedStateTypeWithoutIfFilter(const AggregateFunctionPtr & nested_function)
+static bool hasGroupBloomFilterState(const AggregateFunctionPtr & function)
 {
-    const auto nested_normalized_state = nested_function->getNormalizedStateType();
-    const auto & nested_aggregate_state = assert_cast<const DataTypeAggregateFunction &>(*nested_normalized_state);
+    if (function->getName() == AggregateFunctionGroupBloomFilterData::name)
+        return true;
 
-    if (nested_aggregate_state.getFunctionName() != AggregateFunctionGroupBloomFilterData::name)
-        return std::nullopt;
-
-    const auto normalized_arguments = nested_aggregate_state.getArgumentsDataTypes();
-
-    AggregateFunctionProperties properties;
-    return std::make_shared<DataTypeAggregateFunction>(
-        AggregateFunctionFactory::instance().get(
-            nested_aggregate_state.getFunctionName(),
-            NullsAction::EMPTY,
-            normalized_arguments,
-            nested_aggregate_state.getParameters(),
-            properties),
-        normalized_arguments,
-        nested_aggregate_state.getParameters());
+    const auto nested_function = function->getNestedFunction();
+    return nested_function && hasGroupBloomFilterState(nested_function);
 }
 
 class AggregateFunctionCombinatorIf final : public IAggregateFunctionCombinator
@@ -125,14 +109,6 @@ public:
     String getName() const override
     {
         return name;
-    }
-
-    DataTypePtr getNormalizedStateType() const override
-    {
-        if (auto normalized_state_type = tryGetNormalizedStateTypeWithoutIfFilter(this->nested_function))
-            return *normalized_state_type;
-
-        return Base::getNormalizedStateType();
     }
 
     AggregateFunctionIfNullUnary(const String & name_, AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
@@ -297,17 +273,6 @@ public:
     String getName() const override
     {
         return Base::getName();
-    }
-
-    DataTypePtr getNormalizedStateType() const override
-    {
-        if (auto normalized_state_type = tryGetNormalizedStateTypeWithoutIfFilter(this->nested_function))
-            return *normalized_state_type;
-
-        return AggregateFunctionNullBase<
-            result_is_nullable,
-            serialize_flag,
-            AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag>>::getNormalizedStateType();
     }
 
     AggregateFunctionIfNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
@@ -513,6 +478,12 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     const Array & params, const AggregateFunctionProperties & properties) const
 {
     chassert(!arguments.empty());
+
+    if (hasGroupBloomFilterState(nested_func))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Aggregate function {} does not support Nullable arguments with the If combinator",
+            nested_function->getName());
 
     /// Nullability of the last argument (condition) does not affect the nullability of the result (NULL is processed as false).
     /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).
