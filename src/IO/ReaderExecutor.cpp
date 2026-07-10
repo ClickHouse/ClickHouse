@@ -1840,7 +1840,17 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     if (base >= horizon_end)
         return;
     const size_t capacity = horizon_end - base;
-    const size_t chunk = std::min({r.range.end() - base, capacity, fetchAllowance(base)});
+    /// The allowance is CELL-QUANTIZED: consumption prediction decides which cells to
+    /// fetch, not which bytes. An extent/reach cut mid-cell fills the touched cache cell
+    /// in fragments - one small cache write per fragment and a fresh source request for
+    /// the remainder (identity for bypass jobs - their grids are 1). A horizon- or
+    /// tail-bound cut needs no ceil: the next top-up continues the same job and completes
+    /// the cell. Zero stays zero - the ceil must not resurrect an exhausted allowance.
+    const size_t tail_grid = std::max<size_t>(r.fetch_tail_grid, 1);
+    size_t allowance = fetchAllowance(base);
+    if (allowance)
+        allowance = std::min(r.range.end(), (base + allowance + tail_grid - 1) / tail_grid * tail_grid) - base;
+    const size_t chunk = std::min({r.range.end() - base, capacity, allowance});
     if (chunk == 0)
         return;
     /// Refill hysteresis: a launch costs a machine round-trip (and, on the stateless arm, its
