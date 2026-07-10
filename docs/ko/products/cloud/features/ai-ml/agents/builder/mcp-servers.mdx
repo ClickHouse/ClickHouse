@@ -1,0 +1,46 @@
+---
+sidebarTitle: 'MCP 서버'
+slug: /cloud/features/ai-ml/agents/builder/mcp-servers
+title: 'MCP 서버'
+description: '타사 MCP 서버를 ClickHouse Agent에 연결'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'MCP', 'Model Context Protocol']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Model Context Protocol(MCP)은 AI 모델에 도구와 데이터 소스를 제공하기 위한 개방형 표준입니다. ClickHouse Agent에 MCP 서버를 연결하면 에이전트가 해당 서버에서 노출하는 모든 기능에 접근할 수 있습니다. 여기에는 이슈 추적기, 관측성 백엔드, 내부 API, 서드파티 SaaS, 그 밖에 MCP 엔드포인트를 제공하는 모든 것이 포함됩니다.
+
+<div id="attach-an-mcp-server">
+  ## MCP 서버 연결
+</div>
+
+Agent Builder에서 **MCP 서버** 섹션을 열고 **Add server**를 클릭하세요. 서버 URL과 인증 설정을 입력한 다음, 해당 에이전트가 사용할 서버 도구를 선택하세요. 에이전트를 저장하세요.
+
+하나의 에이전트에 여러 서버를 연결할 수 있습니다. 에이전트가 호출한 각 도구는 대화에 기록되므로 사용자는 에이전트가 수행한 작업을 확인할 수 있습니다.
+
+<div id="transport">
+  ## 전송
+</div>
+
+ClickHouse Agents는 운영 환경에 적합한 MCP 전송 방식인 Streamable HTTP를 사용합니다. 연결할 서버는 ClickHouse Cloud에서 HTTP(S)를 통해 접근할 수 있어야 합니다.
+
+<div id="authentication">
+  ## 인증
+</div>
+
+MCP 서버는 자격 증명을 요구할 수 있습니다. ClickHouse Agents는 다음을 지원합니다.
+
+* **Bearer tokens** 및 기타 정적 헤더 - 서버를 구성할 때 제공하는 고정 값입니다.
+* **OAuth 2.0** - 대화형 인증 흐름입니다. 서버에서 도구를 처음 호출하면(또는 액세스 권한이 있는 다른 사용자가 처음 호출하면) 브라우저에서 로그인 창이 열리며, 토큰은 자동으로 관리되고 갱신됩니다.
+* **사용자별 자격 증명** - 서버 구성의 변수를 호출한 사용자의 프로필 값으로 대체하므로, 각 사용자는 공유 서비스 계정이 아니라 자신의 아이덴티티로 인증합니다.
+
+사용자가 제공한 자격 증명은 암호화되어 저장되며, 입력한 사용자에게만 적용됩니다. 한 사용자의 자격 증명은 다른 사용자의 에이전트 실행에 절대 표시되지 않습니다.
+
+<div id="limits">
+  ## 제한 사항
+</div>
+
+단일 에이전트 실행에서는 요청당 서로 다른 MCP 서버 대상은 최대 50개, 확장된 도구 구성은 최대 100개까지만 참조할 수 있습니다. 이보다 더 많이 필요하면 [서브에이전트](/ko/products/cloud/features/ai-ml/agents/builder/subagents)를 사용해 에이전트를 분할해야 합니다.

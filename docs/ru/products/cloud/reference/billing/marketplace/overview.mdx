@@ -1,0 +1,117 @@
+---
+slug: /cloud/marketplace/marketplace-billing
+title: 'Оплата через маркетплейс'
+description: 'Оформите подписку на ClickHouse Cloud через маркетплейсы AWS, GCP и Azure.'
+keywords: ['aws', 'azure', 'gcp', 'google cloud', 'маркетплейс', 'биллинг']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Вы можете оформить подписку на ClickHouse Cloud через маркетплейсы AWS, GCP и Azure. Это позволяет оплачивать ClickHouse Cloud через биллинг вашего текущего облачного провайдера.
+
+Вы можете либо использовать модель pay-as-you-go (PAYG), либо оформить контракт с ClickHouse Cloud через маркетплейс. Биллинг будет выполняться облачным провайдером, и вы будете получать единый счет за все ваши облачные сервисы.
+
+* [AWS Marketplace PAYG](/ru/products/cloud/reference/billing/marketplace/aws-marketplace-payg)
+* [AWS Marketplace Committed Contract](/ru/products/cloud/reference/billing/marketplace/aws-marketplace-committed)
+* [GCP Marketplace PAYG](/ru/products/cloud/reference/billing/marketplace/gcp-marketplace-payg)
+* [GCP Marketplace Committed Contract](/ru/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)
+* [Azure Marketplace PAYG](/ru/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [Azure Marketplace Committed Contract](/ru/products/cloud/reference/billing/marketplace/azure-marketplace-committed)
+
+<div id="faqs">
+  ## Часто задаваемые вопросы
+</div>
+
+<div id="how-can-i-verify-that-my-organization-is-connected-to-marketplace-billing">
+  ### Как проверить, что моя организация подключена к биллингу через маркетплейс?​
+</div>
+
+В консоли ClickHouse Cloud перейдите в раздел **Billing**. В разделе **Payment details** должны отображаться название маркетплейса и ссылка.
+
+<div id="i-am-an-existing-clickhouse-cloud-user-what-happens-when-i-subscribe-to-clickhouse-cloud-via-aws--gcp--azure-marketplace">
+  ### Я уже пользователь ClickHouse Cloud. Что произойдет, если я оформлю подписку на ClickHouse Cloud через маркетплейс AWS / GCP / Azure?​
+</div>
+
+Оформление ClickHouse Cloud через маркетплейс облачного провайдера — это двухэтапный процесс:
+
+1. Сначала вы оформляете подписку на ClickHouse Cloud на портале маркетплейса облачного провайдера. После этого нажмите &quot;Pay Now&quot; или &quot;Manage on Provider&quot; (в зависимости от маркетплейса). Вы будете перенаправлены в ClickHouse Cloud.
+2. В ClickHouse Cloud вы либо регистрируете новую учетную запись, либо входите в существующую. В любом случае для вас будет создана новая организация ClickHouse Cloud, привязанная к биллингу через маркетплейс.
+
+ПРИМЕЧАНИЕ: Ваши существующие сервисы и организации, созданные при предыдущих регистрациях в ClickHouse Cloud, сохранятся и не будут связаны с биллингом через маркетплейс. ClickHouse Cloud позволяет использовать одну и ту же учетную запись для управления несколькими организациями, у каждой из которых может быть свой биллинг.
+
+Вы можете переключаться между организациями в меню в левом нижнем углу консоли ClickHouse Cloud.
+
+<div id="i-am-an-existing-clickhouse-cloud-user-what-should-i-do-if-i-want-my-existing-services-to-be-billed-via-marketplace">
+  ### Я уже пользуюсь ClickHouse Cloud. Что делать, если я хочу, чтобы мои существующие сервисы оплачивались через маркетплейс?​
+</div>
+
+Вам нужно оформить подписку на ClickHouse Cloud через маркетплейс облачного провайдера. После завершения подписки в маркетплейсе и перенаправления в ClickHouse Cloud у вас будет возможность привязать существующую организацию ClickHouse Cloud к биллингу через маркетплейс. После этого ваши существующие ресурсы будут оплачиваться через маркетплейс.
+
+<Image img="/images/cloud/manage/billing/marketplace/marketplace_signup_and_org_linking.webp" size="md" alt="Регистрация в маркетплейсе и привязка организации" border />
+
+Проверить, что биллинг действительно привязан к маркетплейсу, можно на странице billing организации. Если у вас возникнут какие-либо проблемы, обратитесь в [службу поддержки ClickHouse Cloud](https://clickhouse.com/support/program).
+
+<Note>
+  Ваши существующие сервисы и организации из всех предыдущих регистраций в ClickHouse Cloud сохранятся и не будут подключены к биллингу через маркетплейс.
+</Note>
+
+<div id="i-subscribed-to-clickhouse-cloud-as-a-marketplace-user-how-can-i-unsubscribe">
+  ### Я оформил подписку на ClickHouse Cloud через маркетплейс. Как отменить подписку?​
+</div>
+
+Обратите внимание: вы можете просто перестать пользоваться ClickHouse Cloud и удалить все существующие сервисы ClickHouse Cloud. Даже если подписка останется активной, вы ничего не будете платить, поскольку в ClickHouse Cloud нет периодической платы.
+
+Если вы хотите отменить подписку, перейдите в консоль Cloud Provider и отмените там продление подписки.
+
+<div id="i-subscribed-to-clickhouse-cloud-as-a-marketplace-user-and-then-unsubscribed-now-i-want-to-subscribe-back-what-is-the-process">
+  ### Я оформил подписку на ClickHouse Cloud через маркетплейс, а затем отменил её. Теперь хочу подписаться снова — как это сделать?​
+</div>
+
+В этом случае просто оформите подписку на ClickHouse Cloud как обычно (см. разделы о подписке на ClickHouse Cloud через маркетплейс).
+
+* Для AWS маркетплейса будет создана новая организация ClickHouse Cloud и привязана к маркетплейсу.
+* Для GCP маркетплейса ваша прежняя организация будет повторно активирована.
+
+Если у вас возникнут проблемы с повторной активацией организации в маркетплейсе, обратитесь в [ClickHouse Cloud Support](https://clickhouse.com/support/program).
+
+<div id="how-do-i-access-my-invoice-for-my-marketplace-subscription-to-the-clickhouse-cloud-service">
+  ### Как получить счёт по моей подписке через маркетплейс на сервис ClickHouse Cloud?​
+</div>
+
+* [Консоль биллинга AWS](https://us-east-1.console.aws.amazon.com/billing/home)
+* [Заказы в маркетплейсе GCP](https://console.cloud.google.com/marketplace/orders) (выберите платёжный аккаунт, который использовали для подписки)
+
+<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
+  ### Почему даты в отчётах об использовании не совпадают с датами в моём счёте маркетплейса?​
+</div>
+
+В маркетплейсе выставление счетов идёт по календарным месяцам. Например, за использование в период с 1 декабря по 1 января счёт будет сформирован в период с 3 по 5 января.
+
+Отчёты об использовании ClickHouse Cloud следуют другому расчётному периоду: использование учитывается и отражается за 30 дней, начиная со дня регистрации.
+
+Если эти даты не совпадают, даты использования и даты в счёте будут различаться. Поскольку отчёты об использовании показывают использование по дням для конкретного сервиса, их можно использовать, чтобы увидеть детализацию затрат.
+
+<div id="where-can-i-find-general-billing-information">
+  ### Где найти общую информацию о биллинге​?
+</div>
+
+См. [страницу с обзором биллинга](/ru/products/cloud/reference/billing/index).
+
+<div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
+  ### Есть ли разница в стоимости ClickHouse Cloud при оплате через маркетплейс облачного провайдера или напрямую в ClickHouse?
+</div>
+
+Разницы в стоимости между биллингом через маркетплейс и оформлением подписки напрямую в ClickHouse нет. В обоих случаях использование ClickHouse Cloud отслеживается в ClickHouse Cloud Credits (CHCs), которые учитываются одинаково и тарифицируются соответствующим образом.
+
+<div id="multiple-organizations-to-bill-to-single-cloud-marketplace-account">
+  ### Можно ли настроить несколько организаций ClickHouse так, чтобы счета выставлялись на один аккаунт биллинга в облачном маркетплейсе (AWS, GCP или Azure)?
+</div>
+
+Да. Несколько организаций ClickHouse можно настроить так, чтобы использование постфактум тарифицировалось через один и тот же аккаунт биллинга в облачном маркетплейсе (AWS, GCP или Azure). Однако предоплаченные кредиты по умолчанию не распределяются между организациями. Если вам нужно распределять кредиты между организациями, обратитесь в [ClickHouse Cloud Support](https://clickhouse.com/support/program).
+
+<div id="automatically-move-to-PAYG-when-running-out-of-credit">
+  ### Если для моей организации ClickHouse используется биллинг через соглашение cloud маркетплейс committed spend, будет ли она автоматически переведена на тарификацию PAYG, когда закончатся кредиты?
+</div>
+
+Если ваш контракт маркетплейс committed spend активен и у вас заканчиваются кредиты, мы автоматически переведем вашу организацию на тарификацию PAYG. Однако когда срок действия текущего контракта истечет, вам нужно будет привязать к организации новый контракт маркетплейса или перейти на прямой биллинг с помощью кредитной карты.

@@ -1,0 +1,108 @@
+---
+sidebarTitle: 'Supabase Postgres'
+description: '将 Supabase 实例设为 ClickPipes 的数据源'
+slug: /integrations/clickpipes/postgres/source/supabase
+title: 'Supabase 数据源设置指南'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'PostgreSQL', 'CDC', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+这是一份介绍如何配置 Supabase Postgres 以供 ClickPipes 使用的指南。
+
+<Note>
+  ClickPipes 原生支持通过 IPv6 接入 Supabase，实现无缝复制。
+</Note>
+
+<div id="creating-a-user-with-permissions-and-replication-slot">
+  ## 创建具有权限和 replication slot 的用户
+</div>
+
+以管理员用户身份连接到你的 Supabase 实例，并执行以下命令：
+
+1. 为 ClickPipes 创建一个专用用户：
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 为你在上一步创建的用户授予 schema 级只读权限。以下示例展示了 `public` schema 的权限。对于每个包含你要复制的表的 schema，都重复执行这些命令：
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 向该用户授予复制权限：
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. 使用你要复制的表创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。我们强烈建议只在 publication 中包含所需的表，以避免额外的性能开销。
+
+<Warning>
+  publication 中包含的任何表都必须**定义主键**，&#95;或者&#95;将其**副本标识**配置为 `FULL`。有关范围界定的指导，请参阅 [Postgres FAQ](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+</Warning>
+
+* 为特定表创建 publication：
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 为特定 schema 中的所有表创建 publication：
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication 将包含由指定表生成的一组变更事件，后续会用于摄取复制流。
+
+<div id="increase-max_slot_wal_keep_size">
+  ## 增加 `max_slot_wal_keep_size`
+</div>
+
+<Warning>
+  此步骤会重启你的 Supabase 数据库，并可能导致短暂中断。
+
+  你可以按照 [Supabase Docs](https://supabase.com/docs/guides/database/custom-postgres-config#cli-supported-parameters) 中的说明，将 Supabase 数据库的 `max_slot_wal_keep_size` parameter 调高到更大的值 (至少为 100GB 或 `102400`) 。
+
+  如需获取关于该值的更合适建议，你可以联系 ClickPipes 团队。
+</Warning>
+
+<div id="connection-details-to-use-for-supabase">
+  ## 用于 Supabase 的连接详细信息
+</div>
+
+前往你的 Supabase 项目的 `Project Settings` -&gt; `Database` (位于 `Configuration` 下) 。
+
+**重要**：在此页面上关闭 `Display connection pooler`，然后前往 `Connection parameters` 部分，记录或复制这些参数。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg" size="lg" border alt="找到 Supabase 连接详细信息" border />
+
+<Info>
+  基于 CDC 的复制不支持连接池器，因此需要将其关闭。
+</Info>
+
+<div id="note-on-rls">
+  ## 关于 RLS 的说明
+</div>
+
+ClickPipes 的 Postgres 用户不得受到 RLS 策略的限制，否则可能会导致数据缺失。你可以运行以下命令，为该用户禁用 RLS 策略：
+
+```sql
+ALTER USER clickpipes_user BYPASSRLS;
+```
+
+<div id="whats-next">
+  ## 接下来做什么？
+</div>
+
+您现在可以[创建 ClickPipe](/zh/integrations/clickpipes/postgres/index)，并开始将 Postgres 实例中的数据摄取到 ClickHouse Cloud。
+请务必记下您在设置 Postgres 实例时使用的连接详细信息，因为在创建 ClickPipe 的过程中会用到这些信息。

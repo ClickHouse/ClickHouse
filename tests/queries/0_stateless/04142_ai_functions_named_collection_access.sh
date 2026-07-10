@@ -32,13 +32,13 @@ function check_access_both()
 {
     $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --multiquery --ignore-error -q "
         SET allow_experimental_ai_functions = 1;
-        SELECT aiGenerate('$collection_name', 'hi') FORMAT Null;
+        SELECT aiGenerate('hi', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
-        SELECT aiEmbed('$collection_name', 'hi') FORMAT Null;
+        SELECT aiEmbed('hi', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
-        SELECT aiGenerate('$collection_name', x) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+        SELECT aiGenerate(x, map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
         SELECT 'SEP';
-        SELECT aiEmbed('$collection_name', x) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+        SELECT aiEmbed(x, map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
     " 2>&1 | awk '
         /ACCESS_DENIED/ { denied = 1; next }
         /^SEP$/ { print (denied ? "ACCESS_DENIED" : "OK"); denied = 0; next }

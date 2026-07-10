@@ -1,0 +1,122 @@
+---
+title: MacOS
+---
+
+import Recommendations from '/snippets/ar/recommendations.mdx';
+
+<div id="install-clickhouse-using-homebrew">
+  # تثبيت ClickHouse باستخدام Homebrew
+</div>
+
+<Warning>
+  أصبح التثبيت باستخدام صيغ Homebrew الآن مهجورًا وسيتم تعطيله في 2026-09-01.
+  نوصي بدلًا من ذلك باستخدام طريقة [التثبيت السريع](/ar/get-started/setup/self-managed/quick-install) التي تعمل على أي منصة.
+</Warning>
+
+<Steps>
+  <Step>
+    ## راجع التوصيات
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## التثبيت باستخدام صيغة Homebrew المجتمعية
+
+    لتثبيت ClickHouse على macOS باستخدام [Homebrew](https://brew.sh/)، يمكنك استخدام
+    [صيغة Homebrew](https://formulae.brew.sh/cask/clickhouse) المجتمعية الخاصة بـ ClickHouse.
+
+    ```bash
+    brew install --cask clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## إصلاح خطأ تعذّر التحقق من المطوّر في macOS
+
+    إذا ثبّتَّ ClickHouse باستخدام `brew`، فقد تواجه خطأً من macOS.
+    بشكل افتراضي، لا يشغّل macOS التطبيقات أو الأدوات التي أنشأها مطوّر لا يمكن التحقق منه.
+
+    عند محاولة تشغيل أي أمر `clickhouse`، قد يظهر لك هذا الخطأ:
+
+    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="sm" alt="مربع حوار خطأ تعذّر التحقق من المطوّر في macOS" border />
+
+    لتجاوز خطأ التحقق هذا، تحتاج إلى إزالة التطبيق من quarantine bin في macOS، إما بالعثور على الإعداد المناسب في نافذة System Settings، أو باستخدام الطرفية، أو عبر إعادة تثبيت ClickHouse.
+
+    ### عملية إعدادات النظام
+
+    أسهل طريقة لإزالة الملف التنفيذي `clickhouse` من quarantine bin هي:
+
+    1. افتح **System Settings**.
+
+    2. انتقل إلى **Privacy &amp; Security**:
+
+       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="العرض الافتراضي لإعدادات Privacy & Security في macOS" border />
+
+    3. مرّر إلى أسفل النافذة للعثور على رسالة تفيد بأن *&quot;clickhouse-macos-aarch64&quot;* تم حظره لأنه ليس من مطوّر معروف.
+
+    4. انقر على **Allow Anyway**.
+
+       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="إعدادات Privacy & Security في macOS التي تعرض زر Allow Anyway" border />
+
+    5. أدخل كلمة مرور مستخدم macOS الخاصة بك.
+
+    يجب أن تتمكن الآن من تشغيل أوامر `clickhouse` في الطرفية.
+
+    ### عملية الطرفية
+
+    أحيانًا لا يؤدي الضغط على زر `Allow Anyway` إلى حل هذه المشكلة، وفي هذه الحالة يمكنك أيضًا تنفيذ هذه العملية باستخدام سطر الأوامر.
+    أو ربما تفضّل فقط استخدام سطر الأوامر!
+
+    أولًا، اعرف أين ثبّت Homebrew الملف التنفيذي `clickhouse`:
+
+    ```shell
+    which clickhouse
+    ```
+
+    يجب أن يُظهر هذا شيئًا مثل:
+
+    ```shell
+    /opt/homebrew/bin/clickhouse
+    ```
+
+    أزل `clickhouse` من quarantine bin عبر تشغيل `xattr -d com.apple.quarantine` متبوعًا بالمسار من الأمر السابق:
+
+    ```shell
+    xattr -d com.apple.quarantine /opt/homebrew/bin/clickhouse
+    ```
+
+    يجب أن تتمكن الآن من تشغيل الملف التنفيذي `clickhouse`:
+
+    ```shell
+    clickhouse
+    ```
+
+    يجب أن يُظهر هذا شيئًا مثل:
+
+    ```bash
+    Use one of the following commands:
+    clickhouse local [args]
+    clickhouse client [args]
+    clickhouse benchmark [args]
+    ```
+  </Step>
+
+  <Step>
+    ## إصلاح المشكلة بإعادة تثبيت ClickHouse
+
+    يوفّر Brew خيارًا في سطر الأوامر يتجنب وضع binaries المثبّتة في quarantine bin من الأساس.
+
+    أولًا، أزل تثبيت ClickHouse:
+
+    ```shell
+    brew uninstall clickhouse
+    ```
+
+    الآن أعد تثبيت ClickHouse باستخدام `--no-quarantine`:
+
+    ```shell
+    brew install --no-quarantine clickhouse
+    ```
+  </Step>
+</Steps>

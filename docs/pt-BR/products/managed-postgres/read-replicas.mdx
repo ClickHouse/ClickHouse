@@ -1,0 +1,93 @@
+---
+slug: /cloud/managed-postgres/read-replicas
+sidebarTitle: 'Réplicas de leitura'
+title: 'Réplicas de leitura'
+description: 'Escale cargas de trabalho com muita leitura usando réplicas de leitura no ClickHouse Managed Postgres'
+keywords: ['réplicas de leitura', 'escalabilidade', 'escalabilidade de leitura', 'réplicas do Postgres', 'escalabilidade horizontal']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
+
+As réplicas de leitura permitem criar uma ou mais cópias do seu banco de dados primário do Managed Postgres. Essas réplicas acompanham continuamente o banco de dados primário usando a replicação nativa do PostgreSQL para permanecerem atualizadas com as alterações.
+
+Para gerenciar réplicas de leitura, clique no ícone de edição no seu warehouse:
+
+<Image img="/images/managed-postgres/warehouse-view.webp" alt="Visualização do warehouse com ícone de edição" size="md" border />
+
+Isso abre a caixa de diálogo do warehouse, onde você pode ver os serviços existentes e criar novas réplicas de leitura:
+
+<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Caixa de diálogo de gerenciamento de réplicas de leitura" size="md" border />
+
+<div id="managing-read-replicas">
+  ## Gerenciando réplicas de leitura
+</div>
+
+A página de **réplicas de leitura** oferece duas visualizações, alternadas pelos controles **Flow** e **Table** no canto superior direito.
+
+A visualização **Flow** exibe a topologia de replicação — sua **instância primária** no topo, com setas descendo até cada réplica associada, mostrando tier, região e status de forma resumida:
+
+<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="Visualização Flow de réplicas de leitura mostrando a topologia da primária e das réplicas" size="lg" border />
+
+A visualização **Table** lista cada réplica com seu nome de serviço, provedor de Cloud e região, status do serviço, horário de criação e uma ação **Detach service**:
+
+<Image img="/images/managed-postgres/read-replicas-table.webp" alt="Visualização Table de réplicas de leitura" size="lg" border />
+
+Para criar uma nova réplica, clique em **Create read replica** no canto superior direito de qualquer uma das visualizações.
+
+<div id="why-use-read-replicas">
+  ## Por que usar réplicas de leitura
+</div>
+
+<div id="scalability">
+  ### Escalabilidade
+</div>
+
+As réplicas de leitura permitem escalar seu banco de dados horizontalmente, distribuindo cargas de trabalho com muitas leituras entre várias instâncias dedicadas. Isso é particularmente valioso para consultas de relatórios, processamento analítico e painéis em tempo real que, de outra forma, competiriam por recursos com o tráfego de produção.
+
+<div id="isolation">
+  ### Isolamento
+</div>
+
+Ao direcionar consultas analíticas e de inteligência de negócios para réplicas de leitura, você mantém sua instância primária focada e responsiva para operações de gravação e cargas de trabalho transacionais críticas. Essa separação melhora o desempenho geral do sistema e sua previsibilidade. Isso também significa que você não precisa conceder acesso de gravação a ferramentas analíticas ou de relatórios — elas podem operar com segurança em uma réplica, sem risco de modificação acidental dos dados.
+
+<div id="business-continuity">
+  ### Continuidade dos negócios
+</div>
+
+As réplicas de leitura podem desempenhar um papel fundamental na recuperação de desastres. Se o seu banco de dados primário falhar, uma réplica de leitura pode ser promovida a primária, minimizando o tempo de indisponibilidade e a perda de dados. Isso oferece uma camada adicional de resiliência além das suas instâncias de standby de alta disponibilidade.
+
+<div id="how-read-replicas-work">
+  ## Como as réplicas de leitura funcionam
+</div>
+
+As réplicas de leitura no Managed Postgres usam uma arquitetura de WAL shipping em vez de replicação por streaming. Essa opção de arquitetura prioriza minimizar o impacto no banco de dados primário.
+
+<div id="wal-shipping-from-object-storage">
+  ### WAL shipping a partir do armazenamento de objetos
+</div>
+
+Quando seu banco de dados primário processa transações, ele gera registros de Write-Ahead Log (WAL). Esses segmentos de WAL são continuamente arquivados no armazenamento de objetos (S3). As réplicas de leitura buscam e reaplicam esses segmentos de WAL do armazenamento de objetos para permanecer sincronizadas com o primário.
+
+Essa arquitetura difere dos [standbys de alta disponibilidade](/pt-BR/products/managed-postgres/high-availability), que usam replicação por streaming com uma conexão direta ao primário.
+
+<div id="why-we-chose-this-approach">
+  ### Por que escolhemos esta abordagem
+</div>
+
+Projetamos intencionalmente as réplicas de leitura para consumir o WAL do armazenamento de objetos, em vez de se conectarem diretamente ao primário como standbys em streaming. Essa abordagem garante isolamento completo entre as réplicas de leitura e seu banco de dados primário:
+
+* **Sobrecarga zero de replicação no primário**: As réplicas de leitura não mantêm conexões de streaming com o primário, portanto não adicionam carga de CPU, memória nem rede às suas cargas de trabalho de missão crítica.
+* **Escalonamento independente**: Você pode adicionar ou remover réplicas de leitura sem qualquer impacto no desempenho do primário.
+* **Isolamento de rede**: As réplicas de leitura operam em seu próprio ambiente de rede, com endpoints de conexão separados.
+
+<div id="replication-lag-characteristics">
+  ### Características da defasagem de replicação
+</div>
+
+A contrapartida dessa arquitetura é a defasagem de replicação. Os segmentos do WAL são arquivados a partir do primário em intervalos regulares (normalmente a cada 60 segundos ou quando um segmento atinge sua capacidade máxima, o que ocorrer primeiro). Isso significa que as réplicas de leitura podem ficar defasadas em relação ao primário em até algumas dezenas de segundos em condições normais.
+
+Para a maioria dos casos de uso de escalabilidade de leitura — relatórios, análises, dashboards — essa defasagem é aceitável. Se a sua aplicação exige leituras quase em tempo real, considere se as consultas podem ser direcionadas ao primário ou se a consistência eventual dentro dessa janela atende aos seus requisitos.

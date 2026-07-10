@@ -1,0 +1,6 @@
+--- control: direct file() forwards the optimization, so count() does not parse the malformed column ---
+3
+--- ENGINE = URL('file://...') forwards supportsTrivialCountOptimization: count() uses the optimized path (=3) ---
+3
+--- with the optimization disabled, the malformed column is read and parsing fails (documents the mechanism) ---
+full-read-parses-and-fails

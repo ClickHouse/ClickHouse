@@ -1,0 +1,146 @@
+---
+slug: /use-cases/observability/clickstack/notebooks
+title: 'ClickStack용 AI Notebooks'
+sidebarTitle: 'AI Notebooks'
+description: 'ClickStack용 AI 기반 문제 조사 노트북'
+doc_type: 'guide'
+keywords: ['ClickStack', 'AI Notebooks', '문제 조사', '관측성', 'HyperDX']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+AI Notebooks는 ClickStack에서 AI 에이전트와 수동 분석을 결합한 대화형 조사 도구입니다. 일반적인 언어로 문제를 설명하면 AI 에이전트가 대신 로그, 트레이스, 메트릭을 쿼리하여 관련 데이터, 차트, 요약을 일련의 타일로 보여줍니다. 또한 AI가 생성한 출력과 함께 자체 타일(차트, 테이블, 검색, 마크다운 노트)을 추가하여 조사 과정의 전체 기록을 만들 수 있습니다.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-hero.webp" alt="Visa 캐시 포화 장애를 조사하는 AI Notebook" size="lg" />
+
+<Info>
+  **Managed ClickStack 전용**
+
+  AI Notebooks는 Managed ClickStack 배포에서만 사용할 수 있습니다.
+</Info>
+
+<div id="setup">
+  ## 설정
+</div>
+
+AI Notebooks는 현재 ClickHouse Cloud에서 베타로 제공됩니다. AI 모델과 provider는 플랫폼에서 자동으로 관리됩니다.
+
+AI Notebooks를 사용하기 전에 다음 사항을 확인하십시오:
+
+1. **Generative AI enabled** — 팀 관리자가 Generative AI 동의 토글을 활성화해야 합니다. [Generative AI 활성화](#enabling-generative-ai)를 참조하십시오.
+2. **노트북 액세스** — 역할(Role)에 노트북에 대한 읽기/쓰기 권한이 있어야 합니다.
+
+활성화되면 적절한 역할을 가진 모든 사용자에게 왼쪽 사이드바에 **노트북** 항목이 표시됩니다.
+
+<div id="enabling-generative-ai">
+  ## Generative AI 활성화
+</div>
+
+노트북(및 기타 AI 기능)을 사용하려면 팀 관리자가 먼저 Generative AI 동의 토글을 활성화해야 합니다.
+
+1. **Team Settings &gt; Security Policies**로 이동하세요.
+2. **Generative AI**를 켜세요.
+3. 동의 대화 상자를 검토한 후 수락하세요.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-ai-consent.webp" alt="Team Settings의 Generative AI 토글" size="lg" />
+
+<div id="using-notebooks">
+  ## AI Notebooks 사용하기
+</div>
+
+<div id="creating-a-notebook">
+  ### 노트북 만들기
+</div>
+
+1. 왼쪽 사이드바에서 **노트북**을 선택합니다.
+2. **새 비공개 노트북**(본인에게만 표시) 또는 **새 공유 노트북**(팀원에게 표시)을 클릭합니다.
+
+노트북 목록 페이지에는 접근 권한이 있는 모든 노트북이 표시됩니다. 이름이나 태그로 필터링하거나 **내 노트북**과 **모든 노트북** 사이를 전환할 수 있습니다.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-list.webp" alt="노트북 목록 페이지" size="lg" />
+
+<div id="running-investigation">
+  ### AI 조사 실행하기
+</div>
+
+노트북 하단에서 조사하려는 내용을 설명하는 프롬프트를 입력하십시오. 예를 들어, *&quot;지난 1시간 동안 checkout service의 오류율이 왜 급증했습니까?&quot;* 와 같습니다.
+
+**Send**를 누르거나 Enter 키를 누르십시오. 그러면 AI 에이전트가 다음을 수행합니다.
+
+1. 사용 가능한 데이터 소스를 검토합니다.
+2. logs, traces, metrics에 대해 검색 및 집계 쿼리를 실행합니다.
+3. 추론 과정, 실행한 쿼리, 중간 차트, 그리고 결론이 담긴 최종 요약을 보여주는 일련의 타일을 생성합니다.
+
+각 단계는 노트북에서 하나의 타일로 표시됩니다. **Thought process** 타일에는 각 쿼리의 추론 과정이 표시되고, **Output** 타일에는 에이전트의 결론과 선택적 차트가 포함됩니다. 일반적인 AI 채팅과 달리, 노트북에서는 각 단계마다 AI가 정확히 어떤 데이터를 바탕으로 작업하는지 확인할 수 있습니다. 따라서 추론을 검증하고, AI가 놓쳤을 수 있는 흥미로운 단서를 발견하고, 조사를 다른 방향으로 이끌기 위해 [브랜치](#branching)할 수 있습니다.
+
+조사가 실행 중일 때는 **Stop**을 클릭하여 취소할 수 있습니다.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-tiles.webp" alt="AI가 생성한 타일이 있는 노트북" size="lg" />
+
+<div id="branching">
+  ### 조사 브랜치하기
+</div>
+
+AI가 조사를 진행하는 동안 중간 단계에서 흥미로운 내용을 발견할 수 있지만, AI가 다른 경로로 계속 진행하는 경우가 있습니다. **브랜치**를 사용하면 원래 조사 경로를 유지한 채 해당 지점에서 다른 프롬프트로 다시 시작할 수 있습니다.
+
+브랜치를 만들려면 다음과 같이 하십시오:
+
+1. 추론 과정 타일을 펼친 다음 **Restart from Here**를 클릭합니다.
+2. 대화 상자에서 조사를 새로운 방향으로 이끌 수정된 프롬프트를 입력합니다.
+3. **Interrupt &amp; Create Branch**를 클릭합니다. 그러면 AI가 해당 지점에서 새 조사 브랜치를 시작합니다.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-branch-modal.webp" alt="새 브랜치 생성 대화 상자" size="md" />
+
+타일에 브랜치가 여러 개 생기면, 타일 헤더에 왼쪽 및 오른쪽 화살표 버튼이 표시되며 브랜치 수를 나타내는 배지(예: **1/2**)도 함께 표시됩니다. 화살표를 클릭하여 브랜치 간에 전환합니다.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-branching.webp" alt="타일의 브랜치 탐색 화살표와 1/2 배지" size="lg" />
+
+<div id="manual-tiles">
+  ### 수동 타일 추가하기
+</div>
+
+AI가 생성한 타일 외에도 노트북 하단의 버튼을 사용해 직접 분석 블록을 추가할 수 있습니다.
+
+| Button       | Shortcut | Description                                                                           |
+| ------------ | -------- | ------------------------------------------------------------------------------------- |
+| **Search**   | `S`      | 검색 페이지와 동일한 로그/트레이스 검색 뷰입니다.                                                          |
+| **Chart**    | `L`      | [Dashboards](/ko/clickstack/features/dashboards/overview)와 동일한 시각화 빌더를 사용하는 시계열 선 차트입니다. |
+| **Table**    | `T`      | 표 형식의 집계 뷰입니다.                                                                        |
+| **Markdown** | `M`      | 메모, 가설 또는 결론을 작성할 수 있는 자유 형식 텍스트입니다.                                                  |
+
+타일을 추가하면 인라인 편집 모드로 열리며, 여기서 데이터 소스, 필터, 집계를 구성할 수 있습니다. 이는 [dashboard visualizations](/ko/clickstack/features/dashboards/overview#creating-visualizations)를 만들 때 사용하는 것과 동일한 인터페이스입니다. 타일을 확정하려면 **Save**를 클릭하십시오.
+
+수동 타일은 현재 브랜치에서 마지막으로 표시된 타일 아래에 추가됩니다. 타일 하단 가장자리를 끌어 세로 크기를 조정할 수 있습니다.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-manual-tiles.webp" alt="노트북 하단의 수동 타일 버튼" size="lg" />
+
+<Note>
+  현재 AI 조사가 실행 중이면 수동 타일을 추가하거나 편집할 때 해당 조사가 취소됩니다. 계속하기 전에 확인 대화상자가 표시됩니다.
+</Note>
+
+<div id="sharing-organizing">
+  ### 공유 및 정리
+</div>
+
+* **비공개 vs. 공유** — 노트북 헤더의 자물쇠 아이콘을 전환해 비공개(본인만 볼 수 있음)와 공유(팀에 표시됨) 사이를 전환합니다. 이 설정은 노트북 생성자만 변경할 수 있습니다.
+* **태그** — 목록 페이지에서 쉽게 필터링할 수 있도록 노트북에 태그를 추가합니다.
+* **이름 지정** — 노트북 제목을 클릭해 이름을 변경합니다. 제목이 없는 노트북에서 조사를 시작하면 AI가 자동으로 이름을 제안합니다.
+
+<div id="custom-agent-context">
+  ### 사용자 지정 에이전트 컨텍스트
+</div>
+
+팀 관리자는 팀의 모든 AI 노트북 조사에 포함될 추가 컨텍스트를 제공할 수 있습니다. 이는 시스템 아키텍처, 명명 규칙 또는 알려진 문제에 대한 배경 정보를 AI에 제공할 때 유용합니다.
+
+구성 방법은 다음과 같습니다:
+
+1. 왼쪽 사이드바에서 **노트북**로 이동합니다.
+2. **Agent Settings**를 엽니다(팀 관리자만 사용할 수 있습니다).
+3. 사용자 지정 컨텍스트를 입력하고(최대 50,000자) 저장합니다.
+
+이 컨텍스트는 팀 전체의 모든 노트북 조사에 대해 AI의 system prompt에 추가됩니다.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-agent-context.webp" alt="사용자 지정 컨텍스트를 위한 Agent Settings 패널" size="lg" />
