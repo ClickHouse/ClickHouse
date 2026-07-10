@@ -29,7 +29,7 @@ CREATE TABLE lazy_mat_uc_cache_large_scan
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 256, index_granularity_bytes = 0;
+SETTINGS index_granularity = 256, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 -- 100000 rows / 256 = 391 marks for the first-phase scan, well above the 100-mark cache
 -- threshold (25600 / 256). `score` is uncorrelated with the primary key, so ORDER BY forces
