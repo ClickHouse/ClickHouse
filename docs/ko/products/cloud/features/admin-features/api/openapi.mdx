@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'API Key 관리'
+slug: /cloud/manage/openapi
+title: 'API Key 관리'
+description: 'ClickHouse Cloud는 OpenAPI 기반 API를 제공하며, 이를 통해 계정과 서비스의 여러 측면을 프로그래밍 방식으로 관리할 수 있습니다.'
+doc_type: 'guide'
+keywords: ['api', 'openapi', 'rest api', 'documentation', 'Cloud 관리']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse Cloud는 OpenAPI 기반 API를 제공하며, 이를 통해 계정과 서비스의 여러 측면을 프로그래밍 방식으로 관리할 수 있습니다.
+
+<Note>
+  이 문서는 ClickHouse Cloud API를 다룹니다. 데이터베이스 API 엔드포인트에 대해서는 [Cloud Endpoints API](/ko/products/cloud/guides/sql-console/query-endpoints)를 참조하십시오.
+</Note>
+
+1. 왼쪽 메뉴의 **API Key** 탭에서 API Key를 생성하고 관리할 수 있습니다.
+
+<Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="API Key 탭" border />
+
+2. **API Key** 페이지에는 처음에 아래와 같이 첫 번째 API Key를 생성하라는 안내가 표시됩니다. 첫 번째 키를 생성한 후에는 오른쪽 상단에 표시되는 `New API Key` 버튼을 사용해 새 키를 생성할 수 있습니다.
+
+<Image img="/images/cloud/manage/openapi2.webp" size="md" alt="API Key 페이지" border />
+
+3. API Key를 생성하려면 키 이름, 키에 부여할 권한, 만료 시간을 지정한 다음 `Generate API Key`를 클릭하십시오.
+
+<br />
+
+<Note>
+  권한은 ClickHouse Cloud의 [사전 정의된 역할](/ko/products/cloud/reference/security/console-roles)에 맞춰 부여됩니다. developer 역할에는 할당된 서비스에 대한 읽기 전용 권한이 있으며, admin 역할에는 전체 읽기 및 쓰기 권한이 있습니다.
+</Note>
+
+<Tip>
+  **Query API endpoint**
+
+  [Query API endpoint](/ko/products/cloud/guides/sql-console/query-endpoints)와 함께 API Key를 사용하려면 Organization Role을 최소 `Member`로 설정하고, Service Role에 `Query Endpoints` 접근 권한을 부여하십시오.
+</Tip>
+
+<Image img="/images/cloud/manage/openapi3.png" size="md" alt="API Key 생성 양식" border />
+
+4. 다음 화면에 Key ID와 Key secret이 표시됩니다. 이 값은 복사하여 vault와 같은 안전한 곳에 보관하십시오. 이 화면을 벗어나면 더 이상 표시되지 않습니다.
+
+<Image img="/images/cloud/manage/openapi4.webp" size="md" alt="API Key 세부 정보" border />
+
+5. ClickHouse Cloud API는 [HTTP Basic Authentication](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication)을 사용하여 API Key의 유효성을 확인합니다. 다음은 `curl`을 사용해 API Key로 ClickHouse Cloud API에 요청을 보내는 예시입니다.
+
+```bash
+$ KEY_ID=mykeyid
+$ KEY_SECRET=mykeysecret
+
+$ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
+```
+
+6. **API Key** 페이지로 돌아가면 키 이름, Key ID의 마지막 4자리, 권한, 상태, 만료일, 생성자를 확인할 수 있습니다. 이 화면에서 키 이름, 권한, 만료일을 수정할 수 있으며, 키를 비활성화하거나 삭제할 수도 있습니다.
+
+<br />
+
+<Note>
+  API Key 삭제는 영구적으로 적용됩니다. 해당 키를 사용하는 모든 서비스는 즉시 ClickHouse Cloud에 대한 액세스 권한을 잃습니다.
+</Note>
+
+<Image img="/images/cloud/manage/openapi5.webp" size="md" alt="API Key 관리 페이지" border />
+
+<div id="endpoints">
+  ## 엔드포인트
+</div>
+
+엔드포인트에 대한 자세한 내용은 [API 참조](/ko/api-reference/organization/get-list-of-available-organizations)를 참조하십시오.
+API Key와 API Secret은 기준 URL `https://api.clickhouse.cloud/v1`과 함께 사용하십시오.

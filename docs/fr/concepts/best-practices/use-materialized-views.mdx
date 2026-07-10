@@ -1,0 +1,87 @@
+---
+slug: /best-practices/use-materialized-views
+sidebarTitle: 'Utiliser les vues matérialisées'
+title: 'Utiliser les vues matérialisées'
+description: 'Page consacrée aux vues matérialisées'
+keywords: ['vues matérialisées', 'architecture medallion']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickHouse prend en charge deux types de vues matérialisées : [**incrémentales**](/fr/concepts/features/materialized-views/incremental-materialized-view) et [**actualisables**](/fr/concepts/features/materialized-views/refreshable-materialized-view). Bien qu’elles soient toutes deux conçues pour accélérer les requêtes en précalculant et en stockant les résultats, elles diffèrent sensiblement par la manière et le moment dont les requêtes sous-jacentes sont exécutées, les charges de travail auxquelles elles conviennent et la façon dont l’actualisation des données est gérée.
+
+**Vous devriez envisager d’utiliser des vues matérialisées pour certains schémas de requête à accélérer, à condition que les bonnes pratiques préalables [en matière de type](/fr/concepts/best-practices/select-data-type) et [d’optimisation de la clé primaire](/fr/concepts/best-practices/choosing-a-primary-key) aient déjà été appliquées.**
+
+Les **vues matérialisées incrémentales** sont mises à jour en temps réel. À mesure que de nouvelles données sont insérées dans la table source, ClickHouse applique automatiquement la requête de la vue matérialisée au nouveau bloc de données et écrit les résultats dans une table cible distincte. Au fil du temps, ClickHouse fusionne ces résultats partiels pour produire une vue complète et à jour. Cette approche est très efficace, car elle reporte le coût de calcul au moment de l’insertion et ne traite que les nouvelles données. Par conséquent, les requêtes `SELECT` sur la table cible sont rapides et légères. Les vues incrémentales prennent en charge toutes les fonctions d’agrégation et passent bien à l’échelle — jusqu’à des pétaoctets de données — car chaque requête s’exécute sur un petit sous-ensemble récent du jeu de données en cours d’insertion.
+
+<Image img="/images/bestpractices/incremental_materialized_view.webp" size="lg" alt="Vues matérialisées" />
+
+Les **vues matérialisées actualisables**, en revanche, sont mises à jour selon une planification. Ces vues réexécutent périodiquement leur requête complète et remplacent le résultat dans la table cible. Cela ressemble au fonctionnement des vues matérialisées dans les bases de données OLTP traditionnelles comme Postgres.
+
+<Image img="/images/bestpractices/refreshable_materialized_view.webp" size="lg" alt="Schéma d’une vue matérialisée rafraîchissable" />
+
+Le choix entre les vues matérialisées incrémentales et actualisables dépend en grande partie de la nature de la requête, de la fréquence à laquelle les données changent et du fait que les mises à jour de la vue doivent refléter chaque ligne au moment de son insertion, ou si une actualisation périodique est acceptable. Comprendre ces compromis est essentiel pour concevoir des vues matérialisées performantes et évolutives dans ClickHouse.
+
+<div id="when-to-use-incremental-materialized-views">
+  ## Quand utiliser les vues matérialisées incrémentales
+</div>
+
+Les vues matérialisées incrémentales sont généralement à privilégier, car elles se mettent à jour automatiquement en temps réel chaque fois que les tables source reçoivent de nouvelles données. Elles prennent en charge toutes les fonctions d’agrégation et sont particulièrement efficaces pour les agrégations sur une seule table. En calculant les résultats de manière incrémentale au moment de l’insertion, les requêtes s’exécutent sur des sous-ensembles de données nettement plus petits, ce qui permet à ces vues de monter en charge sans effort, même jusqu’à des pétaoctets de données. Dans la plupart des cas, elles n’ont pas d’impact perceptible sur les performances globales du cluster.
+
+Utilisez les vues matérialisées incrémentales lorsque :
+
+* Vous avez besoin de résultats de requête en temps réel, mis à jour à chaque insertion.
+* Vous effectuez fréquemment des agrégations ou des filtrages sur de grands volumes de données.
+* Vos requêtes impliquent des transformations ou des agrégations simples sur une seule table.
+
+Pour des exemples de vues matérialisées incrémentales, consultez [cette page](/fr/concepts/features/materialized-views/incremental-materialized-view).
+
+<div id="when-to-use-refreshable-materialized-views">
+  ## Quand utiliser les vues matérialisées actualisables
+</div>
+
+Les vues matérialisées actualisables exécutent leurs requêtes périodiquement plutôt que de manière incrémentielle, en stockant le jeu de résultats pour une récupération rapide.
+
+Elles sont particulièrement utiles lorsque les performances des requêtes sont critiques (par ex. une latence inférieure à la milliseconde) et que des résultats légèrement obsolètes sont acceptables. Comme la requête est réexécutée intégralement, les vues actualisables conviennent surtout aux requêtes qui sont soit relativement rapides à calculer, soit exécutables à des intervalles espacés (par ex. toutes les heures), comme la mise en cache de résultats de « top N » ou de tables de correspondance.
+
+La fréquence d&#39;exécution doit être ajustée avec soin pour éviter une charge excessive sur le système. Les requêtes extrêmement complexes qui consomment des ressources importantes doivent être planifiées avec prudence — elles peuvent dégrader les performances globales du cluster en affectant les caches et en consommant du CPU et de la mémoire. La requête doit s&#39;exécuter assez rapidement par rapport à l&#39;intervalle d&#39;actualisation afin d&#39;éviter de surcharger votre cluster. Par exemple, ne planifiez pas la mise à jour d&#39;une vue toutes les 10 secondes si la requête elle-même met au moins 10 secondes à s&#39;exécuter.
+
+<div id="summary">
+  ## Résumé
+</div>
+
+En résumé, utilisez des vues matérialisées actualisables lorsque :
+
+* Vous avez besoin de résultats de requête mis en cache et disponibles instantanément, et que de légers retards d’actualisation sont acceptables.
+* Vous avez besoin du top N pour un jeu de résultats de requête.
+* La taille du jeu de résultats ne croît pas sans limite au fil du temps. Dans le cas contraire, les performances de la vue cible se dégraderont.
+* Vous effectuez des jointures complexes ou une dénormalisation impliquant plusieurs tables, nécessitant des mises à jour chaque fois qu’une table source change.
+* Vous mettez en place des workflows par lots, des tâches de dénormalisation ou des dépendances entre vues similaires aux DAG de dbt.
+
+Pour des exemples de vues matérialisées actualisables, consultez [ici](/fr/concepts/features/materialized-views/refreshable-materialized-view).
+
+<div id="append-vs-replace-mode">
+  ### Mode `APPEND` vs `REPLACE`
+</div>
+
+Les vues matérialisées actualisables prennent en charge deux modes d&#39;écriture des données dans la table cible : `APPEND` et `REPLACE`. Ces modes définissent la manière dont le résultat de la requête de la vue est écrit lors de son actualisation.
+
+`REPLACE` est le comportement par défaut. Chaque fois que la vue est actualisée, le contenu précédent de la table cible est entièrement remplacé par le dernier résultat de la requête. Ce mode convient aux cas d&#39;usage où la vue doit toujours refléter l&#39;état le plus récent, par exemple pour mettre en cache un jeu de résultats.
+
+À l&#39;inverse, `APPEND` permet d&#39;ajouter de nouvelles lignes à la fin de la table cible au lieu d&#39;en remplacer le contenu. Cela permet d&#39;autres cas d&#39;usage, comme la capture d&#39;instantanés périodiques. `APPEND` est particulièrement utile lorsque chaque actualisation représente un point dans le temps distinct ou lorsqu&#39;il est souhaitable d&#39;accumuler les résultats dans le temps.
+
+Choisissez le mode `APPEND` lorsque :
+
+* Vous souhaitez conserver un historique des actualisations passées.
+* Vous créez des instantanés ou des rapports périodiques.
+* Vous devez collecter de manière incrémentielle les résultats actualisés au fil du temps.
+
+Choisissez le mode `REPLACE` lorsque :
+
+* Vous n&#39;avez besoin que du résultat le plus récent.
+* Les données obsolètes doivent être entièrement supprimées.
+* La vue représente un état actuel ou une table de correspondance.
+
+Vous trouverez un exemple d&#39;utilisation de la fonctionnalité `APPEND` dans la création d&#39;une [architecture Medallion](https://clickhouse.com/blog/building-a-medallion-architecture-for-bluesky-json-data-with-clickhouse).

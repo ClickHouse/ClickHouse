@@ -1,0 +1,105 @@
+---
+description: 'توثيق خاص بمحرك الجدول StripeLog'
+slug: /engines/table-engines/log-family/stripelog
+toc_priority: 32
+toc_title: 'StripeLog'
+title: 'محرك الجدول StripeLog'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+ينتمي هذا المحرك إلى عائلة محركات Log. اطّلع على الخصائص المشتركة لمحركات Log والفروق بينها في مقال [عائلة محركات Log](/ar/reference/engines/table-engines/log-family/index).
+
+استخدم هذا المحرك عندما تحتاج إلى الكتابة إلى عدد كبير من الجداول مع كمية صغيرة من البيانات (أقل من مليون صف). على سبيل المثال، يمكن استخدام هذا الجدول لتخزين دفعات البيانات الواردة تمهيدًا لتحويلها عندما تكون معالجتها بشكل ذري مطلوبة. ويمكن لخادم ClickHouse التعامل عمليًا مع 100 ألف مثيل من هذا النوع من الجداول. يُفضَّل استخدام محرك الجدول هذا بدلًا من [Log](/ar/reference/engines/table-engines/log-family/log) عند الحاجة إلى عدد كبير من الجداول، وإن كان ذلك على حساب كفاءة القراءة.
+
+<div id="table_engines-stripelog-creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = StripeLog
+```
+
+اطّلع على الوصف المفصّل لعبارة [CREATE TABLE](/ar/reference/statements/create/table).
+
+<div id="table_engines-stripelog-writing-the-data">
+  ## كتابة البيانات
+</div>
+
+يخزّن المحرّك `StripeLog` جميع الأعمدة في ملف واحد. ولكل استعلام `INSERT`، يُلحِق ClickHouse كتلة البيانات بنهاية ملف الجدول، ويكتب الأعمدة واحدًا تلو الآخر.
+
+لكل جدول، يكتب ClickHouse الملفات التالية:
+
+* `data.bin` — ملف البيانات.
+* `index.mrk` — ملف العلامات. تحتوي العلامات على إزاحات لكل عمود في كل كتلة بيانات تم إدراجها.
+
+لا يدعم المحرّك `StripeLog` العمليتين `ALTER UPDATE` و`ALTER DELETE`.
+
+<div id="table_engines-stripelog-reading-the-data">
+  ## قراءة البيانات
+</div>
+
+يتيح الملف الذي يحتوي على العلامات لـ ClickHouse قراءة البيانات بالتوازي. وهذا يعني أن استعلام `SELECT` يعرض الصفوف بترتيب غير متوقع. استخدم عبارة `ORDER BY` لفرز الصفوف.
+
+<div id="table_engines-stripelog-example-of-use">
+  ## مثال للاستخدام
+</div>
+
+إنشاء جدول:
+
+```sql
+CREATE TABLE stripe_log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = StripeLog
+```
+
+إدراج البيانات:
+
+```sql
+INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+استخدمنا استعلامَي `INSERT` لإنشاء كتلتَي بيانات داخل الملف `data.bin`.
+
+يستخدم ClickHouse عدة خيوط تنفيذ عند استعلام البيانات. يقرأ كل خيط تنفيذ كتلة بيانات منفصلة ويُرجع الصفوف الناتجة بشكل مستقل فور انتهائه. ونتيجةً لذلك، لا يتطابق ترتيب كتل الصفوف في المخرجات، في معظم الحالات، مع ترتيب الكتل نفسها في المدخلات. على سبيل المثال:
+
+```sql
+SELECT * FROM stripe_log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+┌───────────timestamp─┬─message_type─┬─message───────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message │
+└─────────────────────┴──────────────┴───────────────────────────┘
+```
+
+فرز النتائج (ترتيب تصاعدي افتراضيًا):
+
+```sql
+SELECT * FROM stripe_log_table ORDER BY timestamp
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```

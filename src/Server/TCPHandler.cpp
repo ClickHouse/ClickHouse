@@ -15,6 +15,7 @@
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -97,6 +98,7 @@ namespace Setting
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
+    extern const SettingsBool discard_query_data;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
@@ -784,19 +786,42 @@ void TCPHandler::runImpl()
                 }
             });
 
-            query_state->query_context->setMergeTreeAllRangesCallback([this, &query_state](InitialAllRangesAnnouncement announcement)
-            {
-                Stopwatch watch;
-                CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
+            query_state->query_context->setMergeTreeAllRangesCallback(
+                [this, &query_state](InitialAllRangesAnnouncement announcement) -> std::optional<InitialAllRangesAnnouncementResponse>
+                {
+                    Stopwatch watch;
+                    CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
 
-                std::lock_guard lock(*callback_mutex);
+                    std::lock_guard lock(*callback_mutex);
 
-                checkIfQueryCanceled(*query_state);
+                    checkIfQueryCanceled(*query_state);
 
-                sendMergeTreeAllRangesAnnouncement(*query_state, announcement);
-                ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
-                ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
-            });
+                    try
+                    {
+                        const auto announcement_mode = announcement.mode;
+                        sendMergeTreeAllRangesAnnouncement(*query_state, std::move(announcement));
+                        ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
+                        ProfileEvents::increment(
+                            ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+
+                        /// Older initiators (protocol < ANNOUNCEMENT_RESPONSE) don't send a response.
+                        if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+                            return std::nullopt;
+
+                        /// `Default` mode callers discard the response; the initiator side skips
+                        /// sending it (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`).
+                        /// Don't block on a packet that will never arrive.
+                        if (announcement_mode == CoordinationMode::Default)
+                            return std::nullopt;
+
+                        return receiveAllRangesAnnouncementResponse(*query_state);
+                    }
+                    catch (...)
+                    {
+                        query_state->stop_query = true;
+                        throw;
+                    }
+                });
 
             query_state->query_context->setMergeTreeReadTaskCallback(
                 [this, &query_state](ParallelReadRequest request) -> std::optional<ParallelReadResponse>
@@ -1482,6 +1507,9 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 {
     auto & pipeline = state.io.pipeline;
 
+    const bool discard_query_data = state.query_context->getSettingsRef()[Setting::discard_query_data]
+        && state.query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+
     /// Send header-block, to allow client to prepare output format for data to send.
     {
         const auto & header = pipeline.getHeader();
@@ -1528,7 +1556,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     sendLogs(state);
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
-                    if (!block.empty() && !state.io.null_format)
+                    if (!block.empty() && !state.io.null_format && !discard_query_data)
                         sendData(state, block);
                 }
             }
@@ -1552,8 +1580,11 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
         receivePacketsExpectCancel(state);
 
-        sendTotals(state, executor.getTotalsBlock());
-        sendExtremes(state, executor.getExtremesBlock());
+        if (!discard_query_data)
+        {
+            sendTotals(state, executor.getTotalsBlock());
+            sendExtremes(state, executor.getExtremesBlock());
+        }
         sendProfileInfo(state, executor.getProfileInfo());
         sendProgress(state);
         sendLogs(state);
@@ -2257,6 +2288,29 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
 }
 
 
+InitialAllRangesAnnouncementResponse TCPHandler::receiveAllRangesAnnouncementResponse(QueryState & state)
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+
+    switch (packet_type)
+    {
+        case Protocol::Client::Cancel:
+            processCancel(state);
+            return {};
+
+        case Protocol::Client::MergeTreeAllRangesAnnouncementResponse:
+            return InitialAllRangesAnnouncementResponse::deserialize(*in, client_parallel_replicas_protocol_version);
+
+        default:
+            throw Exception(
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "Received {} packet after sending an initial parallel-replicas announcement",
+                Protocol::Client::toString(packet_type));
+    }
+}
+
+
 void TCPHandler::processClusterNameAndSalt()
 {
     readStringBinary(cluster, *in, MAX_HELLO_STRING_SIZE);
@@ -2448,6 +2502,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 #endif
     }
 
+    /// `client_info` is what the upstream sent us about itself; the parallel-replicas protocol
+    /// version, however, is negotiated at hello time per-connection — not over the wire as part of
+    /// `ClientInfo`. Stamp it locally so downstream code (e.g. `ReadFromMergeTree`) can recognise
+    /// when the upstream is too old to speak features added in newer protocol versions and degrade
+    /// gracefully instead of triggering rolling-upgrade incompatibilities.
+    client_info.connection_parallel_replicas_protocol_version = client_parallel_replicas_protocol_version;
+
     state->query_context = session->makeQueryContext(client_info);
 
     /// Sets the default database if it wasn't set earlier for the session context.
@@ -2597,7 +2658,8 @@ bool TCPHandler::receiveQueryPlan(QueryState & state)
     bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
     auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
 
-    auto plan_and_sets = QueryPlan::deserialize(*in, context);
+    /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
+    auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));
     LOG_TRACE(log, "Received query plan");
 
     if (!state.skipping_data && unexpected_packet)

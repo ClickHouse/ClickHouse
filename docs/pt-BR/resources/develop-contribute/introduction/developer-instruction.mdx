@@ -1,0 +1,226 @@
+---
+description: 'Pré-requisitos e instruções de configuração para o desenvolvimento do ClickHouse'
+sidebarTitle: 'Pré-requisitos'
+slug: /development/developer-instruction
+title: 'Pré-requisitos para desenvolvedores'
+doc_type: 'guide'
+---
+
+O ClickHouse pode ser compilado em Linux, FreeBSD e macOS.
+Se você usa Windows, ainda pode compilar o ClickHouse em uma máquina virtual com Linux, por exemplo, [VirtualBox](https://www.virtualbox.org/) com Ubuntu.
+
+<div id="create-a-repository-on-github">
+  ## Crie um repositório no GitHub
+</div>
+
+Para começar a desenvolver para o ClickHouse, você precisará de uma conta no [GitHub](https://www.github.com/).
+Gere também uma chave SSH localmente (caso ainda não tenha uma) e envie a chave pública para o GitHub, pois isso é um pré-requisito para contribuir com patches.
+
+Em seguida, faça um fork do [repositório do ClickHouse](https://github.com/ClickHouse/ClickHouse/) na sua conta pessoal clicando no botão &quot;fork&quot; no canto superior direito.
+
+Para contribuir com alterações, por exemplo, uma correção para um problema ou uma funcionalidade, primeiro faça commit das suas alterações em uma branch do seu fork e, em seguida, crie um &quot;Pull Request&quot; com essas alterações para o repositório principal.
+
+Para trabalhar com repositórios Git, instale o Git. Por exemplo, no Ubuntu, execute:
+
+```sh
+sudo apt update
+sudo apt install git
+```
+
+Uma folha de referência do Git pode ser encontrada [aqui](https://education.github.com/git-cheat-sheet-education.pdf).
+Um manual detalhado do Git está disponível [aqui](https://git-scm.com/book/en/v2).
+
+<div id="clone-the-repository-to-your-development-machine">
+  ## Clone o repositório na sua máquina de desenvolvimento
+</div>
+
+Primeiro, baixe os arquivos-fonte para sua máquina de trabalho, ou seja, clone o repositório:
+
+```sh
+git clone git@github.com:your_github_username/ClickHouse.git  # substitua o placeholder pelo seu nome de usuário do GitHub
+cd ClickHouse
+```
+
+Este comando cria um diretório `ClickHouse/` contendo o código-fonte, os testes e outros arquivos.
+Você pode especificar um diretório personalizado para o checkout após a URL, mas é importante que esse caminho não contenha espaços em branco, pois isso pode quebrar a build mais adiante.
+
+O repositório Git do ClickHouse usa submódulos para incluir bibliotecas de terceiros.
+Os submódulos não são incluídos no checkout por padrão.
+Você pode
+
+* executar `git clone` com a opção `--recurse-submodules`,
+
+* se `git clone` for executado sem `--recurse-submodules`, execute `git submodule update --init --jobs <N>` para fazer explicitamente o checkout de todos os submódulos. (`<N>` pode ser definido, por exemplo, como `12` para paralelizar o download.)
+
+* se `git clone` for executado sem `--recurse-submodules` e você quiser usar [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) checkout de submódulos para omitir o histórico nos submódulos e economizar espaço, execute `./contrib/update-submodules.sh`. Essa alternativa é usada pela CI, mas não é recomendada para desenvolvimento local, pois torna o trabalho com submódulos menos prático e mais lento.
+
+Para verificar o status dos submódulos do Git, execute `git submodule status`.
+
+Se você receber a seguinte mensagem de erro
+
+```bash
+Permission denied (publickey).
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+```
+
+as chaves SSH para se conectar ao GitHub estão faltando.
+Essas chaves normalmente ficam em `~/.ssh`.
+Para que as chaves SSH sejam aceitas, você precisa adicioná-las nas configurações do GitHub.
+
+Você também pode clonar o repositório via HTTPS:
+
+```sh
+git clone https://github.com/ClickHouse/ClickHouse.git
+```
+
+Isso, no entanto, não permitirá que você envie suas alterações para o servidor.
+Ainda assim, você pode usá-lo temporariamente e adicionar as chaves SSH depois, substituindo o endereço remoto do repositório com o comando `git remote`.
+
+Você também pode adicionar o endereço do repositório original do ClickHouse ao seu repositório local para obter atualizações de lá:
+
+```sh
+git remote add upstream git@github.com:ClickHouse/ClickHouse.git
+```
+
+Depois de executar este comando com sucesso, você poderá puxar atualizações do repositório principal do ClickHouse executando `git pull upstream master`.
+
+<Tip>
+  Não use apenas `git push`; você pode acabar enviando para o remoto errado e/ou para o branch errado.
+  É melhor especificar explicitamente os nomes do remoto e do branch, por exemplo, `git push origin my_branch_name`.
+</Tip>
+
+<div id="writing-code">
+  ## Escrevendo código
+</div>
+
+Abaixo estão alguns links rápidos que podem ser úteis ao escrever código para o ClickHouse:
+
+* [Arquitetura do ClickHouse](/pt-BR/resources/develop-contribute/introduction/architecture).
+* [Guia de estilo de código](/pt-BR/resources/develop-contribute/contribute/style).
+* [Bibliotecas de terceiros](/pt-BR/resources/develop-contribute/contribute/contrib#adding-and-maintaining-third-party-libraries)
+* [Como escrever testes](/pt-BR/resources/develop-contribute/contribute/tests)
+* [Issues abertas](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
+
+<div id="ide">
+  ### IDE
+</div>
+
+[Visual Studio Code](https://code.visualstudio.com/) e [Neovim](https://neovim.io/) são duas opções que já funcionaram bem para desenvolver o ClickHouse. Se você usa o VS Code, recomendamos a [extensão clangd](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) para substituir o IntelliSense, pois ela oferece desempenho muito superior.
+
+[CLion](https://www.jetbrains.com/clion/) é outra ótima alternativa. No entanto, ele pode ser mais lento em projetos maiores, como o ClickHouse. Alguns pontos a ter em mente ao usar o CLion:
+
+* O CLion cria um caminho `build` por conta própria e seleciona automaticamente `debug` como tipo de build
+* Ele usa uma versão do CMake definida no CLion, e não a que você instalou
+* O CLion usa `make` para executar tarefas de build em vez de `ninja` (isso é normal)
+
+Outras IDEs que você pode usar são [Sublime Text](https://www.sublimetext.com/), [Qt Creator](https://www.qt.io/product/development-tools) ou [Kate](https://kate-editor.org/).
+
+<div id="create-a-pull-request">
+  ## Crie um pull request
+</div>
+
+Acesse o repositório do seu fork na UI do GitHub.
+Se você estiver desenvolvendo em uma branch, precisará selecionar essa branch.
+Haverá um botão &quot;Pull request&quot; na tela.
+Em essência, isso significa &quot;criar uma solicitação para que minhas alterações sejam aceitas no repositório principal&quot;.
+
+Um pull request pode ser criado mesmo que o trabalho ainda não esteja concluído.
+Nesse caso, coloque a palavra &quot;WIP&quot; (trabalho em andamento) no início do título; ela poderá ser alterada depois.
+Isso é útil para revisão colaborativa e discussão das alterações, bem como para executar todos os testes disponíveis.
+É importante que você forneça uma breve descrição das suas alterações, pois ela será usada posteriormente para gerar o changelog da versão.
+
+Os testes começarão assim que os funcionários da ClickHouse adicionarem ao seu PR a tag &quot;can be tested&quot;.
+Os resultados de algumas verificações iniciais (por exemplo, estilo de código) chegarão em alguns minutos.
+Os resultados da verificação de builds chegarão em cerca de meia hora.
+O conjunto principal de testes apresentará resultados em até uma hora.
+
+O sistema preparará builds binárias do ClickHouse especificamente para o seu pull request.
+Para obter essas builds, clique no link &quot;Details&quot; ao lado da entrada &quot;Builds&quot; na lista de verificações.
+Lá você encontrará links diretos para os pacotes .deb gerados do ClickHouse, que pode instalar até mesmo nos seus servidores de produção (se não tiver medo).
+
+<div id="write-documentation">
+  ## Escreva a documentação
+</div>
+
+Todo pull request que adicionar um novo recurso deve vir acompanhado da documentação adequada.
+Se você quiser visualizar as alterações na documentação, as instruções de como gerar a página de documentação localmente estão disponíveis no arquivo README.md [aqui](https://github.com/ClickHouse/clickhouse-docs).
+Ao adicionar uma nova função ao ClickHouse, você pode usar o modelo abaixo como guia:
+
+````markdown
+# newFunctionName
+
+A short description of the function goes here. It should describe briefly what it does and a typical usage case.
+
+**Syntax**
+
+\```sql
+newFunctionName(arg1, arg2[, arg3])
+\```
+
+**Arguments**
+
+- `arg1` — Description of the argument. [DataType](../data-types/float.md)
+- `arg2` — Description of the argument. [DataType](../data-types/float.md)
+- `arg3` — Description of optional argument (optional). [DataType](../data-types/float.md)
+
+**Implementation Details**
+
+A description of implementation details if relevant.
+
+**Returned value**
+
+- Returns {insert what the function returns here}. [DataType](../data-types/float.md)
+
+**Example**
+
+\```sql title="Query"
+SELECT 'write your example query here';
+\```
+
+\```response title="Response"
+┌───────────────────────────────────┐
+│ the result of the query           │
+└───────────────────────────────────┘
+\```
+````
+
+<div id="using-test-data">
+  ## Usando dados de teste
+</div>
+
+Ao desenvolver o ClickHouse, muitas vezes é necessário carregar conjuntos de dados realistas.
+Isso é particularmente importante para testes de desempenho.
+Temos um conjunto especialmente preparado de dados anonimizados de análise de tráfego da web.
+Isso requer cerca de 3 GB adicionais de espaço livre em disco.
+
+```sh
+    sudo apt install wget xz-utils
+
+    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
+
+    xz -v -d hits_v1.tsv.xz
+    xz -v -d visits_v1.tsv.xz
+
+    clickhouse-client
+```
+
+No clickhouse-client:
+
+```sql
+CREATE DATABASE IF NOT EXISTS test;
+
+CREATE TABLE test.hits ( WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8,  FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8,  UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8,  SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8,  IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8,  HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16,  SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32,  DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32,  NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8,  SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64,  ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String,  UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  `ParsedParams.Key1` Array(String),  `ParsedParams.Key2` Array(String),  `ParsedParams.Key3` Array(String),  `ParsedParams.Key4` Array(String),  `ParsedParams.Key5` Array(String),  `ParsedParams.ValueDouble` Array(Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime);
+
+CREATE TABLE test.visits ( CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew UInt8,  VisitID UInt64,  UserID UInt64,  StartTime DateTime,  Duration UInt32,  UTCStartTime DateTime,  PageViews Int32,  Hits Int32,  IsBounce UInt8,  Referer String,  StartURL String,  RefererDomain String,  StartURLDomain String,  EndURL String,  LinkURL String,  IsDownload UInt8,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  PlaceID Int32,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32),  RefererRegions Array(UInt32),  IsYandex UInt8,  GoalReachesDepth Int32,  GoalReachesURL Int32,  GoalReachesAny Int32,  SocialSourceNetworkID UInt8,  SocialSourcePage String,  MobilePhoneModel String,  ClientEventTime DateTime,  RegionID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  IPNetworkID UInt32,  SilverlightVersion3 UInt32,  CodeVersion UInt32,  ResolutionWidth UInt16,  ResolutionHeight UInt16,  UserAgentMajor UInt16,  UserAgentMinor UInt16,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  SilverlightVersion2 UInt8,  SilverlightVersion4 UInt16,  FlashVersion3 UInt16,  FlashVersion4 UInt16,  ClientTimeZone Int16,  OS UInt8,  UserAgent UInt8,  ResolutionDepth UInt8,  FlashMajor UInt8,  FlashMinor UInt8,  NetMajor UInt8,  NetMinor UInt8,  MobilePhone UInt8,  SilverlightVersion1 UInt8,  Age UInt8,  Sex UInt8,  Income UInt8,  JavaEnable UInt8,  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8,  BrowserLanguage UInt16,  BrowserCountry UInt16,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16),  Params Array(String),  `Goals.ID` Array(UInt32),  `Goals.Serial` Array(UInt32),  `Goals.EventTime` Array(DateTime),  `Goals.Price` Array(Int64),  `Goals.OrderID` Array(String),  `Goals.CurrencyID` Array(UInt32),  WatchIDs Array(UInt64),  ParamSumPrice Int64,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  ClickLogID UInt64,  ClickEventID Int32,  ClickGoodEvent Int32,  ClickEventTime DateTime,  ClickPriorityID Int32,  ClickPhraseID Int32,  ClickPageID Int32,  ClickPlaceID Int32,  ClickTypeID Int32,  ClickResourceID Int32,  ClickCost UInt32,  ClickClientIP UInt32,  ClickDomainID UInt32,  ClickURL String,  ClickAttempt UInt8,  ClickOrderID UInt32,  ClickBannerID UInt32,  ClickMarketCategoryID UInt32,  ClickMarketPP UInt32,  ClickMarketCategoryName String,  ClickMarketPPName String,  ClickAWAPSCampaignName String,  ClickPageName String,  ClickTargetType UInt16,  ClickTargetPhraseID UInt64,  ClickContextType UInt8,  ClickSelectType Int8,  ClickOptions String,  ClickGroupBannerID Int32,  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String,  UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  FirstVisit DateTime,  PredLastVisit Date,  LastVisit Date,  TotalVisits UInt32,  `TraficSource.ID` Array(Int8),  `TraficSource.SearchEngineID` Array(UInt16),  `TraficSource.AdvEngineID` Array(UInt8),  `TraficSource.PlaceID` Array(UInt16),  `TraficSource.SocialSourceNetworkID` Array(UInt8),  `TraficSource.Domain` Array(String),  `TraficSource.SearchPhrase` Array(String),  `TraficSource.SocialSourcePage` Array(String),  Attendance FixedString(16),  CLID UInt32,  YCLID UInt64,  NormalizedRefererHash UInt64,  SearchPhraseHash UInt64,  RefererDomainHash UInt64,  NormalizedStartURLHash UInt64,  StartURLDomainHash UInt64,  NormalizedEndURLHash UInt64,  TopLevelDomain UInt64,  URLScheme UInt64,  OpenstatServiceNameHash UInt64,  OpenstatCampaignIDHash UInt64,  OpenstatAdIDHash UInt64,  OpenstatSourceIDHash UInt64,  UTMSourceHash UInt64,  UTMMediumHash UInt64,  UTMCampaignHash UInt64,  UTMContentHash UInt64,  UTMTermHash UInt64,  FromHash UInt64,  WebVisorEnabled UInt8,  WebVisorActivity UInt32,  `ParsedParams.Key1` Array(String),  `ParsedParams.Key2` Array(String),  `ParsedParams.Key3` Array(String),  `ParsedParams.Key4` Array(String),  `ParsedParams.Key5` Array(String),  `ParsedParams.ValueDouble` Array(Float64),  `Market.Type` Array(UInt8),  `Market.GoalID` Array(UInt32),  `Market.OrderID` Array(String),  `Market.OrderPrice` Array(Int64),  `Market.PP` Array(UInt32),  `Market.DirectPlaceID` Array(UInt32),  `Market.DirectOrderID` Array(UInt32),  `Market.DirectBannerID` Array(UInt32),  `Market.GoodID` Array(String),  `Market.GoodName` Array(String),  `Market.GoodQuantity` Array(Int32),  `Market.GoodPrice` Array(Int64),  IslandID FixedString(16)) ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) SAMPLE BY intHash32(UserID) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID);
+```
+
+Importe os dados:
+
+```bash
+clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
+clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
+```

@@ -1,0 +1,7 @@
+ClickHouse <span class="accent">Reference</span>
+const DOCS_PAGE_ROUTE = {
+'syntax': '/sql-reference/syntax',
+'type-conversion-functions': '/sql-reference/functions/type-conversion-functions',
+if (DOCS_PAGE_ROUTE[head]) return base + DOCS_PAGE_ROUTE[head] + tail + suffix;
+1
+1

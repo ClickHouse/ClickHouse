@@ -1,3 +1,4 @@
+#include <limits>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Columns/ColumnDecimal.h>
@@ -107,12 +108,12 @@ public:
         typename ResultDataType::ColumnType::MutablePtr result_col;
         if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
-            /// result_type is the DataTypeDateTime64 this function returns (the input type for a
-            /// DateTime64 input, or DateTime64(default_scale) for a Date32 input), so its scale is
-            /// the scale the result column must carry. The result data is already computed at this
-            /// scale below; the column object must declare the same scale, otherwise it is
-            /// structurally inconsistent with its type (a scale-3 column labelled DateTime64(8)).
-            const auto scale = typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale();
+            /// result_type is the DateTime64 this function returns; its scale is the scale the
+            /// result column must carry (the values below are computed at this scale). The previous
+            /// guard `is_same_v<InputDataType, DateTime64>` was always false (InputDataType is a
+            /// DataType class while DateTime64 is a value-type alias), so the column was built at the
+            /// hardcoded default_scale 3 and a DateTime64(N != 3) result was structurally inconsistent.
+            const auto scale = static_cast<UInt8>(typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale());
             result_col = ResultDataType::ColumnType::create(input_rows_count, scale);
         }
         else
@@ -138,9 +139,20 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Int64 time = date_lut.toNumYYYYMMDDhhmmss(date_time_col_data[i] / deg);
+                /// Split into whole seconds and a non-negative fraction, rounding the whole-seconds part
+                /// toward negative infinity. Plain '/' and '%' truncate toward zero, which for pre-epoch
+                /// sub-second values would attribute the last fractional second to the next calendar boundary
+                /// (for example, '1969-12-31 23:59:59.500' would decompose as '1970-01-01 00:00:00' minus
+                /// 500 ms), shifting the untouched calendar fields of the result.
+                Int64 whole_seconds = date_time_col_data[i] / deg;
                 Int64 fraction = date_time_col_data[i] % deg;
+                if (fraction < 0)
+                {
+                    fraction += deg;
+                    --whole_seconds;
+                }
 
+                Int64 time = date_lut.toNumYYYYMMDDhhmmss(whole_seconds);
                 result_col_data[i] = getChangedDate(time, value_col_data[i], result_type, date_lut, scale, fraction);
             }
         }
@@ -235,10 +247,17 @@ public:
             Int64 deg = 1;
             for (Int64 j = 0; j < scale; ++j)
                 deg *= 10;
-            max_date = DecimalUtils::dateTimeFromComponents(
-                date_lut.makeDateTime(2299, 12, 31, 23, 59, 59),
-                static_cast<Int64>(deg - 1),
-                static_cast<UInt32>(scale));
+            DateTime64 max_date_val;
+            if (DecimalUtils::tryGetDateTimeFromComponents(
+                    date_lut.makeDateTime(2299, 12, 31, 23, 59, 59),
+                    static_cast<Int64>(deg - 1),
+                    static_cast<UInt32>(scale),
+                    max_date_val))
+                max_date = max_date_val;
+            else
+                /// At scale 9 the year-2299 boundary does not fit into Int64; clamp to the
+                /// maximum representable DateTime64 value (2262-04-11 23:47:16.854775807).
+                max_date = std::numeric_limits<Int64>::max();
             min_year = 1900;
             max_year = 2299;
         }
@@ -285,20 +304,26 @@ public:
         else if (isDateTime(result_type))
             result = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
         else
+        {
+            const Int64 whole_seconds = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
 #ifndef __clang_analyzer__
             /// ^^ This looks funny. It is the least terrible suppression of a false positive reported by clang-analyzer (a sub-class
             /// of clang-tidy checks) deep down in 'decimalFromComponents'. Usual suppressions of the form NOLINT* don't work here (they
             /// would only affect code in _this_ file), and suppressing the issue in 'decimalFromComponents' may suppress true positives.
-            result = DecimalUtils::dateTimeFromComponents(
-                date_lut.makeDateTime(year, month, day, hours, minutes, seconds),
-                fraction,
-                static_cast<UInt32>(scale));
+            DateTime64 result_val;
+            if (DecimalUtils::tryGetDateTimeFromComponents(whole_seconds, fraction, static_cast<UInt32>(scale), result_val))
+                result = result_val;
+            else
+                /// The requested components do not fit into DateTime64 at this scale (for example, a year close to 2299 at
+                /// scale 9, where seconds * 10^9 overflows Int64). Clamp to the nearest representable boundary; the min/max
+                /// checks below finish the clamp. Overflow direction follows the sign of the whole-seconds value.
+                result = whole_seconds < 0 ? min_date : max_date;
 #else
-        {
             UNUSED(fraction);
+            UNUSED(whole_seconds);
             result = 0;
-        }
 #endif
+        }
 
         if (result < min_date)
             return min_date;
