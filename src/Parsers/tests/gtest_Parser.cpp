@@ -144,6 +144,28 @@ TEST(ParserExecuteAsQuery, OutputOptionChildOrderIsCanonical)
     }
 }
 
+TEST(ParserCreateDatabaseQuery, MaskDataLakeCatalogStorageCredentials)
+{
+    /// Both the `aws_*` and the backward-compatible `storage_aws_*` static credentials must be hidden
+    /// in `SHOW CREATE DATABASE` for the `DataLakeCatalog` engine, otherwise secrets leak.
+    const String query =
+        "CREATE DATABASE test_unity ENGINE = DataLakeCatalog('http://localhost:8181') "
+        "SETTINGS aws_access_key_id = 'AKIA_PLAIN', aws_secret_access_key = 'plain_secret', "
+        "storage_aws_access_key_id = 'AKIA_STORAGE', storage_aws_secret_access_key = 'storage_secret'";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    /// formatForLogging always hides secrets.
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_secret"), String::npos);
+    EXPECT_EQ(masked.find("storage_secret"), String::npos);
+    EXPECT_EQ(masked.find("AKIA_PLAIN"), String::npos);
+    EXPECT_EQ(masked.find("AKIA_STORAGE"), String::npos);
+    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+}
+
 TEST_P(ParserTest, parseQuery)
 {
     const auto & parser = std::get<0>(GetParam());
@@ -372,6 +394,44 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateDatabaseQuery, ParserTest,
         {
             "CREATE DATABASE db ENGINE = Foo() SETTINGS a = 1, b = 2 COMMENT 'db comment' TABLE OVERRIDE a (ORDER BY (id, version))",
             "CREATE DATABASE db\nENGINE = Foo\nSETTINGS a = 1, b = 2\nTABLE OVERRIDE a\n(\n    ORDER BY (id, version)\n)\nCOMMENT 'db comment'"
+        }
+})));
+
+INSTANTIATE_TEST_SUITE_P(ParserCreateTableQuery_SQL_SECURITY, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserCreateQuery>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory SQL SECURITY INVOKER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nSQL SECURITY INVOKER"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory SQL SECURITY NONE",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nSQL SECURITY NONE"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory DEFINER = alice SQL SECURITY DEFINER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = alice SQL SECURITY DEFINER"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory DEFINER = CURRENT_USER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = CURRENT_USER SQL SECURITY DEFINER"
+        },
+        {
+            "CREATE TABLE t (x UInt8) ENGINE = Memory SQL SECURITY DEFINER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = CURRENT_USER SQL SECURITY DEFINER"
+        },
+        {
+            "CREATE TABLE db.t ON CLUSTER c (x UInt8) ENGINE = MergeTree ORDER BY x SQL SECURITY INVOKER",
+            "CREATE TABLE db.t ON CLUSTER c\n(\n    `x` UInt8\n)\nENGINE = MergeTree\nORDER BY x\nSQL SECURITY INVOKER"
+        },
+        {
+            "ATTACH TABLE t UUID '123e4567-e89b-12d3-a456-426614174000' (x UInt8) ENGINE = Memory SQL SECURITY INVOKER",
+            "ATTACH TABLE t UUID '123e4567-e89b-12d3-a456-426614174000'\n(\n    `x` UInt8\n)\nENGINE = Memory\nSQL SECURITY INVOKER"
+        },
+        {
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = alice SQL SECURITY DEFINER",
+            "CREATE TABLE t\n(\n    `x` UInt8\n)\nENGINE = Memory\nDEFINER = alice SQL SECURITY DEFINER"
         }
 })));
 

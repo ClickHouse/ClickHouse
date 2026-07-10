@@ -1,0 +1,46 @@
+---
+slug: /native-protocol/hash
+title: 'CityHash'
+description: 'Hachage du protocole natif'
+doc_type: 'référence'
+keywords: ['CityHash', 'hachage du protocole natif', 'fonction de hachage', 'Google CityHash', 'hachage de protocole']
+---
+
+ClickHouse utilise **une ancienne version** de [CityHash de Google](https://github.com/google/cityhash).
+
+<Info>
+  CityHash a modifié l&#39;algorithme après son intégration dans ClickHouse.
+
+  La documentation de CityHash précise explicitement que l&#39;utilisateur ne doit pas se fier à des
+  valeurs de hachage spécifiques, ni les enregistrer quelque part, ni les utiliser comme clé de sharding.
+
+  Mais comme nous avons exposé cette fonction aux utilisateurs, nous avons dû figer la version de CityHash (à la 1.0.2). Nous garantissons désormais que le comportement des fonctions CityHash disponibles en SQL ne changera pas.
+
+  — Alexey Milovidov
+</Info>
+
+<Info>
+  **Remarque**
+
+  La version actuelle de CityHash de Google [diffère](https://github.com/ClickHouse/ClickHouse/issues/8354) de la variante `cityHash64` de ClickHouse.
+
+  N&#39;utilisez pas `farmHash64` pour obtenir la valeur de CityHash de Google ! [FarmHash](https://opensource.googleblog.com/2014/03/introducing-farmhash.html) est le successeur de CityHash, mais ils ne sont pas entièrement compatibles.
+
+  | String                                                     | ClickHouse64         | CityHash64          | FarmHash64           |
+  | ---------------------------------------------------------- | -------------------- | ------------------- | -------------------- |
+  | `Moscow`                                                   | 12507901496292878638 | 5992710078453357409 | 5992710078453357409  |
+  | `How can you write a big system without C++?  -Paul Glick` | 6237945311650045625  | 749291162957442504  | 11716470977470720228 |
+</Info>
+
+Voir aussi [Introducing CityHash](https://opensource.googleblog.com/2011/04/introducing-cityhash.html) pour une description et
+les raisons de sa création. En bref : un hachage **non cryptographique** plus rapide que [MurmurHash](http://en.wikipedia.org/wiki/MurmurHash), mais plus complexe.
+
+<div id="implementations">
+  ## Implémentations
+</div>
+
+<div id="go">
+  ### Go
+</div>
+
+Vous pouvez utiliser le paquet Go [go-faster/city](https://github.com/go-faster/city), qui implémente les deux variantes.

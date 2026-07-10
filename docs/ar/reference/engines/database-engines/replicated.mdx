@@ -1,0 +1,194 @@
+---
+description: 'يعتمد هذا المحرك على محرك Atomic. وهو يدعم النسخ المتماثل للبيانات الوصفية عبر سجل DDL الذي يُكتَب في ZooKeeper ويُنفَّذ على جميع النسخ المتماثلة لقاعدة بيانات معيّنة.'
+sidebarTitle: 'Replicated'
+slug: /engines/database-engines/replicated
+title: 'Replicated'
+doc_type: 'reference'
+---
+
+يعتمد هذا المحرك على محرك [Atomic](/ar/reference/engines/database-engines/atomic). وهو يدعم النسخ المتماثل للبيانات الوصفية عبر سجل DDL الذي يُكتَب في ZooKeeper ويُنفَّذ على جميع النسخ المتماثلة لقاعدة بيانات معيّنة.
+
+يمكن لخادم ClickHouse واحد تشغيل عدة قواعد بيانات من نوع Replicated وتحديثها في الوقت نفسه. لكن لا يمكن وجود عدة نسخ متماثلة لقاعدة بيانات Replicated نفسها.
+
+<div id="creating-a-database">
+  ## إنشاء قاعدة بيانات
+</div>
+
+```sql
+CREATE DATABASE testdb [UUID '...'] ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
+```
+
+**معلمات المحرك**
+
+* `zoo_path` — مسار ZooKeeper. يشير مسار ZooKeeper نفسه إلى قاعدة البيانات نفسها.
+* `shard_name` — اسم الـ shard. تُجمَّع نُسخ قاعدة البيانات المتماثلة ضمن shards حسب `shard_name`.
+* `replica_name` — اسم الـ نسخة متماثلة. يجب أن تكون أسماء الـ النسخ المتماثلة مختلفة بين جميع النسخ المتماثلة التابعة للـ shard نفسه.
+
+يمكن حذف المعلمات، وفي هذه الحالة تُستبدل المعلمات غير الموجودة بالقيم الافتراضية.
+
+إذا كان `zoo_path` يحتوي على الماكرو `{uuid}`، فيلزم تحديد UUID صريح أو إضافة [ON CLUSTER](/ar/reference/statements/distributed-ddl) إلى تعليمة CREATE لضمان أن تستخدم جميع الـ النسخ المتماثلة قيمة UUID نفسها لقاعدة البيانات هذه.
+
+بالنسبة إلى جداول [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/replication)، إذا لم يتم توفير أي arguments، فستُستخدم arguments الافتراضية التالية: `/clickhouse/tables/{uuid}/{shard}` و `{replica}`. ويمكن تغييرها في server settings [default&#95;replica&#95;path](/ar/reference/settings/server-settings/settings#default_replica_path) و [default&#95;replica&#95;name](/ar/reference/settings/server-settings/settings#default_replica_name). ويُوسَّع الماكرو `{uuid}` إلى uuid الخاص بالجدول، بينما يُوسَّع `{shard}` و `{replica}` إلى القيم الموجودة في config الخادم، وليس إلى arguments الخاصة بمحرك قاعدة البيانات. ولكن في المستقبل، سيكون من الممكن استخدام `shard_name` و `replica_name` لقاعدة بيانات Replicated.
+
+كما أن auxiliary ZooKeeper عنقود مدعوم أيضًا لتخزين البيانات الوصفية الخاصة بقاعدة بيانات replicated بدلًا من استخدام ZooKeeper عنقود الافتراضي. ويمكن استخدام SQL لإنشاء قاعدة البيانات replicated باستخدام auxiliary ZooKeeper عنقود كما يلي:
+
+```sql
+CREATE DATABASE database_name ENGINE = Replicated('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'shard_name', 'replica_name')
+```
+
+<div id="specifics-and-recommendations">
+  ## تفاصيل وتوصيات
+</div>
+
+تعمل استعلامات DDL مع قاعدة بيانات `Replicated` بطريقة مشابهة لاستعلامات [ON CLUSTER](/ar/reference/statements/distributed-ddl)، ولكن مع اختلافات طفيفة.
+
+أولًا، يحاول طلب DDL التنفيذ على العقدة البادئة (المضيف الذي استقبل الطلب أصلًا من المستخدم). وإذا لم يُنفَّذ الطلب، فسيتلقى المستخدم خطأً فورًا، ولن تحاول المضيفات الأخرى تنفيذه. أما إذا اكتمل الطلب بنجاح على العقدة البادئة، فستعيد جميع المضيفات الأخرى المحاولة تلقائيًا حتى تُكمله. وستحاول العقدة البادئة انتظار اكتمال الاستعلام على المضيفات الأخرى (لمدة لا تتجاوز [distributed&#95;ddl&#95;task&#95;timeout](/ar/reference/settings/session-settings#distributed_ddl_task_timeout))، ثم تُعيد جدولًا يتضمن حالات تنفيذ الاستعلام على كل مضيف.
+
+يُنظَّم السلوك في حالة الأخطاء بواسطة الإعداد [distributed&#95;ddl&#95;output&#95;mode](/ar/reference/settings/session-settings#distributed_ddl_output_mode)، وبالنسبة إلى قاعدة بيانات `Replicated` فمن الأفضل ضبطه على `null_status_on_timeout` — أي إذا لم تتمكن بعض المضيفات من تنفيذ الطلب خلال [distributed&#95;ddl&#95;task&#95;timeout](/ar/reference/settings/session-settings#distributed_ddl_task_timeout)، فلا يُطرَح استثناء، بل تُعرَض لها الحالة `NULL` في الجدول.
+
+يحتوي جدول النظام [system.clusters](/ar/reference/system-tables/clusters) على عنقود يحمل اسمًا مطابقًا لاسم قاعدة بيانات Replicated، وتتكوّن من جميع النسخ المتماثلة لقاعدة البيانات. وتُحدَّث هذه العنقود تلقائيًا عند إنشاء النسخ المتماثلة أو حذفها، ويمكن استخدامها مع جداول [Distributed](/ar/reference/engines/table-engines/special/distributed).
+
+عند إنشاء نسخة متماثلة جديدة لقاعدة البيانات، تنشئ هذه النسخة الجداول بنفسها. وإذا كانت النسخة المتماثلة غير متاحة لفترة طويلة وتأخرت عن سجل النسخ المتماثل، فإنها تتحقق من البيانات الوصفية المحلية لديها بمقارنتها بالبيانات الوصفية الحالية في ZooKeeper، وتنقل الجداول الزائدة مع بياناتها إلى قاعدة بيانات منفصلة غير مكررة (حتى لا يُحذف أي شيء زائد عن طريق الخطأ)، وتنشئ الجداول المفقودة، وتحدّث أسماء الجداول إذا كانت قد أُعيدت تسميتها. ويتم النسخ المتماثل على مستوى `ReplicatedMergeTree`، أي إذا لم يكن الجدول نفسه مكررًا، فلن تُنسخ البيانات متماثلًا (إذ إن قاعدة البيانات مسؤولة فقط عن البيانات الوصفية).
+
+استعلامات [`ALTER TABLE FREEZE|ATTACH|FETCH|DROP|DROP DETACHED|DETACH PARTITION|PART`](/ar/reference/statements/alter/partition) مسموح بها، لكنها لا تُنسخ متماثلًا. سيقوم محرك قاعدة البيانات فقط بإضافة partition/part إلى النسخة المتماثلة الحالية أو جلبه أو إزالته منها. ومع ذلك، إذا كان الجدول نفسه يستخدم محرك جدول Replicated، فسيتم نسخ البيانات متماثلًا بعد استخدام `ATTACH`.
+
+إذا كنت تحتاج فقط إلى تهيئة عنقود من دون الحفاظ على النسخ المتماثل للجداول، فارجع إلى ميزة [Cluster Discovery](/ar/guides/oss/deployment-and-scaling/cluster-discovery).
+
+<div id="usage-example">
+  ## مثال استخدام
+</div>
+
+إنشاء عنقود يضم ثلاثة مضيفين:
+
+```sql
+node1 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','shard1','replica1');
+node2 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','shard1','other_replica');
+node3 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','{replica}');
+```
+
+إنشاء قاعدة بيانات على مستوى العنقود باستخدام معلمات ضمنية:
+
+```sql
+CREATE DATABASE r ON CLUSTER default ENGINE=Replicated;
+```
+
+تشغيل استعلام DDL:
+
+```sql
+CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
+```
+
+```text
+┌─────hosts────────────┬──status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ shard1|replica1      │    0    │       │          2          │        0         │
+│ shard1|other_replica │    0    │       │          1          │        0         │
+│ other_shard|r1       │    0    │       │          0          │        0         │
+└──────────────────────┴─────────┴───────┴─────────────────────┴──────────────────┘
+```
+
+إظهار جدول النظام:
+
+```sql
+SELECT cluster, shard_num, replica_num, host_name, host_address, port, is_local
+FROM system.clusters WHERE cluster='r';
+```
+
+```text
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
+│ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
+│ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
+└─────────┴───────────┴─────────────┴───────────┴──────────────┴──────┴──────────┘
+```
+
+إنشاء جدول موزّع وإدراج البيانات:
+
+```sql
+node2 :) CREATE TABLE r.d (n UInt64) ENGINE=Distributed('r','r','rmt', n % 2);
+node3 :) INSERT INTO r.d SELECT * FROM numbers(10);
+node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY host;
+```
+
+```text
+┌─hosts─┬─groupArray(n)─┐
+│ node3 │  [1,3,5,7,9]  │
+│ node2 │  [0,2,4,6,8]  │
+└───────┴───────────────┘
+```
+
+إضافة نسخة متماثلة على مضيف إضافي:
+
+```sql
+node4 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','r2');
+```
+
+إضافة نسخة متماثلة إلى مضيف آخر إذا استُخدم الماكرو `{uuid}` في `zoo_path`:
+
+```sql
+node1 :) SELECT uuid FROM system.databases WHERE database='r';
+node4 :) CREATE DATABASE r UUID '<uuid from previous query>' ENGINE=Replicated('some/path/{uuid}','other_shard','r2');
+```
+
+سيكون تكوين العنقود كما يلي:
+
+```text
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
+│ r       │     1     │      2      │   node4   │  127.0.0.1   │ 9003 │     0    │
+│ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
+│ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
+└─────────┴───────────┴─────────────┴───────────┴──────────────┴──────┴──────────┘
+```
+
+سيجلب الجدول الموزّع البيانات أيضًا من المضيف الجديد:
+
+```sql
+node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY host;
+```
+
+```text
+┌─hosts─┬─groupArray(n)─┐
+│ node2 │  [1,3,5,7,9]  │
+│ node4 │  [0,2,4,6,8]  │
+└───────┴───────────────┘
+```
+
+<div id="settings">
+  ## الإعدادات
+</div>
+
+الإعدادات التالية مدعومة:
+
+| Setting                                                                      | Default                        | Description                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `max_broken_tables_ratio`                                                    | 1                              | لا تُستعاد النسخة المتماثلة تلقائيًا إذا كانت نسبة الجداول القديمة إلى إجمالي الجداول أكبر من ذلك                                                                                                                                                                                                                                                      |
+| `max_replication_lag_to_enqueue`                                             | 50                             | ستُطلق النسخة المتماثلة استثناءً عند محاولة تنفيذ استعلام إذا كان تأخر النسخ المتماثل لديها أكبر من ذلك                                                                                                                                                                                                                                                |
+| `wait_entry_commited_timeout_sec`                                            | 3600                           | ستحاول النسخ المتماثلة إلغاء الاستعلام إذا تم تجاوز المهلة، لكن المضيف المُبادِر لم يكن قد نفّذه بعد                                                                                                                                                                                                                                                   |
+| `collection_name`                                                            |                                | اسم مجموعة معرّفة في إعدادات الخادم، حيث تُحدَّد جميع معلومات مصادقة العنقود                                                                                                                                                                                                                                                                           |
+| `check_consistency`                                                          | true                           | يتحقق من اتساق البيانات الوصفية المحلية والبيانات الوصفية الموجودة في Keeper، ويستعيد النسخة المتماثلة عند وجود تعارض                                                                                                                                                                                                                                  |
+| `max_retries_before_automatic_recovery`                                      | 10                             | الحد الأقصى لعدد محاولات تنفيذ عنصر من الطابور قبل اعتبار النسخة المتماثلة مفقودة واستعادتها من اللقطة snapshot ‏(0 تعني بلا حدود)                                                                                                                                                                                                                     |
+| `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | إذا كان مُمكّنًا، فعند معالجة DDLs في قواعد بيانات Replicated، يتم تخطي إنشاء وتبادل DDLs الخاصة بالجداول المؤقتة للعروض المادية القابلة للتحديث متى أمكن                                                                                                                                                                                              |
+| `logs_to_keep`                                                               | 1000                           | العدد الافتراضي من السجلات التي يجب الاحتفاظ بها في ZooKeeper لقاعدة بيانات Replicated.                                                                                                                                                                                                                                                                |
+| `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | المسار إلى قاعدة البيانات في ZooKeeper. يُستخدم أثناء إنشاء قاعدة البيانات إذا تم حذف الوسيطات.                                                                                                                                                                                                                                                        |
+| `default_replica_shard_name`                                                 | `{shard}`                      | اسم shard الخاص بالنسخة المتماثلة في قاعدة البيانات. يُستخدم أثناء إنشاء قاعدة البيانات إذا تم حذف الوسيطات.                                                                                                                                                                                                                                           |
+| `default_replica_name`                                                       | `{replica}`                    | اسم النسخة المتماثلة في قاعدة البيانات. يُستخدم أثناء إنشاء قاعدة البيانات إذا تم حذف الوسيطات.                                                                                                                                                                                                                                                        |
+| `internal_replication`                                                       | false                          | يحدد ما إذا كان جدول Distributed الذي أُنشئ باستخدام عنقود قاعدة بيانات Replicated هذه سيرسل البيانات إلى إحدى النسخ المتماثلة (يعني internal replication أن نسخ العنقود المتماثلة تتولى النسخ المتماثل بنفسها) أو إلى جميع النسخ المتماثلة (ويعني عدم وجود internal replication أن جدول Distributed سيرسل البيانات المُدرجة إلى جميع النسخ المتماثلة) |
+
+يمكن تجاوز القيم الافتراضية في ملف الإعدادات
+
+```xml
+<clickhouse>
+    <database_replicated>
+        <max_broken_tables_ratio>0.75</max_broken_tables_ratio>
+        <max_replication_lag_to_enqueue>100</max_replication_lag_to_enqueue>
+        <wait_entry_commited_timeout_sec>1800</wait_entry_commited_timeout_sec>
+        <collection_name>postgres1</collection_name>
+        <check_consistency>false</check_consistency>
+        <max_retries_before_automatic_recovery>5</max_retries_before_automatic_recovery>
+        <default_replica_path>/clickhouse/databases/{uuid}</default_replica_path>
+        <default_replica_shard_name>{shard}</default_replica_shard_name>
+        <default_replica_name>{replica}</default_replica_name>
+        <internal_replication>false</internal_replication>
+    </database_replicated>
+</clickhouse>
+```

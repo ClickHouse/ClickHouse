@@ -1,0 +1,343 @@
+---
+slug: /use-cases/observability/clickstack/integrations/kafka-logs
+title: '使用 ClickStack 监控 Kafka 日志'
+sidebarTitle: 'Kafka 日志'
+description: '使用 ClickStack 监控 Kafka 日志'
+doc_type: 'guide'
+keywords: ['Kafka', '日志', 'OTel', 'ClickStack', 'Kafka Broker 监控', 'Log4j']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **摘要**
+
+  使用 OTel `filelog` 接收器在 ClickStack 中采集并可视化 Kafka Broker 日志 (Log4j 格式) 。包含演示数据集和预置仪表盘。
+</Info>
+
+<div id="existing-kafka">
+  ## 与现有 Kafka 集成
+</div>
+
+本节介绍如何通过修改 ClickStack OTel collector 配置，将现有 Kafka 部署中的 broker 日志发送到 ClickStack。
+如果您想在配置自己的现有环境之前先测试 Kafka 日志集成，可以先在[“演示数据集”](/zh/clickstack/integration-examples/kafka-logs#demo-dataset)部分使用我们预先配置的环境和示例数据进行测试。
+
+<div id="prerequisites">
+  ### 前置条件
+</div>
+
+* ClickStack 实例正在运行
+* 已有 Kafka 安装 (2.0 或更高版本)
+* 可访问 Kafka 的日志文件 (`server.log`、`controller.log` 等)
+
+<Steps>
+  <Step>
+    #### 验证 Kafka 日志配置
+
+    Kafka 使用 Log4j，并将日志写入由系统属性 `kafka.logs.dir` 或环境变量 `LOG_DIR` 指定的目录。请检查日志文件的位置：
+
+    ```bash
+    # 默认位置
+    ls $KAFKA_HOME/logs/      # 标准 Apache Kafka（默认路径为 <install-dir>/logs/）
+    ls /var/log/kafka/        # RPM/DEB 软件包安装
+    ```
+
+    Kafka 的关键日志文件：
+
+    * **`server.log`**：通用 broker 日志 (启动、连接、复制、错误)
+    * **`controller.log`**：控制器相关事件 (leader 选举、分区重新分配)
+    * **`state-change.log`**：分区和副本的状态转换
+
+    Kafka 默认的 Log4j pattern 会生成类似下面这样的行：
+
+    ```text
+    [2026-03-09 14:23:45,123] INFO [KafkaServer id=0] started (kafka.server.KafkaServer)
+    ```
+
+    <Note>
+      对于基于 Docker 的 Kafka 部署 (例如 `confluentinc/cp-kafka`) ，默认的 Log4j 配置只包含控制台 appender，不包含文件 appender，因此日志只会写入 stdout。要使用 `filelog` receiver，需要将日志重定向到文件，可通过在 `log4j.properties` 中添加文件 appender，或将 stdout 通过管道写入文件 (例如 `| tee /var/log/kafka/server.log`) 。
+    </Note>
+  </Step>
+
+  <Step>
+    #### 为 Kafka 创建自定义 OTel collector 配置
+
+    ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。该自定义配置会与由 HyperDX 通过 OpAMP 管理的基础配置合并。
+
+    创建一个名为 `kafka-logs-monitoring.yaml` 的文件，内容如下：
+
+    ```yaml
+    receivers:
+      filelog/kafka:
+        include:
+          - /var/log/kafka/server.log
+          - /var/log/kafka/controller.log  # 可选，仅在 log4j 配置了独立文件 appender 时存在
+          - /var/log/kafka/state-change.log  # 可选，同上
+        start_at: beginning
+        multiline:
+          line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+        operators:
+          - type: regex_parser
+            regex: '^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)'
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%d %H:%M:%S,%L'
+            severity:
+              parse_from: attributes.severity
+
+          - type: move
+            from: attributes.message
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "kafka"
+
+          - type: add
+            field: resource["service.name"]
+            value: "kafka-production"
+
+    service:
+      pipelines:
+        logs/kafka:
+          receivers: [filelog/kafka]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    <Note>
+      * 你只需在自定义配置中定义新的 receiver 和 管道。处理器 (`memory_limiter`、`transform`、`batch`) 和 exporter (`clickhouse`) 已在基础 ClickStack 配置中预先定义好——你只需按名称引用它们。
+      * `multiline` 配置可确保将堆栈跟踪捕获为一条日志记录。
+      * 此配置使用 `start_at: beginning`，以便在采集器启动时读取所有现有日志。对于生产环境中的部署，请改为 `start_at: end`，以避免在采集器重启时重复摄取日志。
+    </Note>
+  </Step>
+
+  <Step>
+    #### 配置 ClickStack 以加载自定义配置
+
+    要在现有的 ClickStack 部署中启用自定义 collector 配置，您需要：
+
+    1. 将自定义配置文件挂载到 `/etc/otelcol-contrib/custom.config.yaml`
+    2. 设置环境变量 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+    3. 挂载 Kafka 日志目录，以便 collector 能够读取日志
+
+    <Tabs>
+      <Tab title="Docker Compose">
+        更新 ClickStack 部署配置：
+
+        ```yaml
+        services:
+          clickstack:
+            # ... 现有配置 ...
+            environment:
+              - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+              # ... 其他环境变量 ...
+            volumes:
+              - ./kafka-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+              - /var/log/kafka:/var/log/kafka:ro
+              # ... 其他卷 ...
+        ```
+      </Tab>
+
+      <Tab title="Docker Run（All-in-One 镜像）">
+        如果您使用的是 Docker 的 all-in-one 镜像，请运行：
+
+        ```bash
+        docker run --name clickstack \
+          -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+          -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+          -v "$(pwd)/kafka-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+          -v /var/log/kafka:/var/log/kafka:ro \
+          clickhouse/clickstack-all-in-one:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      请确保 ClickStack collector 具有读取 Kafka 日志文件的相应权限。在生产环境中，请使用只读挂载 (`:ro`) ，并遵循最小权限原则。
+    </Note>
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证日志
+
+    配置完成后，登录 HyperDX，确认日志已开始流入：
+
+    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="搜索视图" />
+
+    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="日志视图" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## 演示数据集
+</div>
+
+在配置生产系统之前，先用预生成的样本数据集测试 Kafka 日志集成。
+
+<Steps>
+  <Step>
+    #### 下载样本数据集
+
+    下载样本日志文件：
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/server.log
+    ```
+  </Step>
+
+  <Step>
+    #### 创建测试用 collector 配置
+
+    创建一个名为 `kafka-logs-demo.yaml` 的文件，内容如下：
+
+    ```yaml
+    cat > kafka-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/kafka:
+        include:
+          - /tmp/kafka-demo/server.log
+        start_at: beginning
+        multiline:
+          line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+        operators:
+          - type: regex_parser
+            regex: '^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)'
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%d %H:%M:%S,%L'
+            severity:
+              parse_from: attributes.severity
+
+          - type: move
+            from: attributes.message
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "kafka-demo"
+
+          - type: add
+            field: resource["service.name"]
+            value: "kafka-demo"
+
+    service:
+      pipelines:
+        logs/kafka-demo:
+          receivers: [filelog/kafka]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### 使用演示配置运行 ClickStack
+
+    使用演示日志和配置运行 ClickStack：
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/kafka-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/server.log:/tmp/kafka-demo/server.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    ## 在 HyperDX 中验证日志
+
+    ClickStack 运行后：
+
+    1. 打开 [HyperDX](http://localhost:8080/) 并登录账户 (你可能需要先创建一个账户)
+    2. 进入搜索视图，并将数据源设为 `Logs`
+    3. 将时间范围设置为包含 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
+
+    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="搜索视图" />
+
+    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="日志视图" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## 仪表盘与可视化
+</div>
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+  </Step>
+
+  <Step>
+    #### 导入预构建仪表盘
+
+    1. 打开 HyperDX，进入“仪表盘”部分。
+    2. 点击右上角省略号下方的“导入仪表盘”。
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘" />
+
+    3. 上传 kafka-logs-dashboard.json 文件，然后点击“完成导入”。
+
+    <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="完成导入 Kafka 日志仪表盘" />
+  </Step>
+
+  <Step>
+    #### 仪表盘创建后，所有可视化均已预先配置
+
+    对于演示数据集，请将时间范围设置为 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**。
+
+    <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Kafka 日志示例仪表盘" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+**确认生效的配置中包含您的 filelog 接收器：**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+**检查 collector 错误：**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log
+```
+
+**验证 Kafka 日志格式是否符合预期模式：**
+
+```bash
+tail -1 /var/log/kafka/server.log
+```
+
+如果你的 Kafka 安装使用了自定义的 Log4j 格式，请相应调整 `regex_parser` 中的正则表达式。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* 为关键事件 (broker 故障、复制错误、消费者组问题) 设置[告警](/zh/clickstack/features/alerts)
+* 结合 [Kafka Metrics](/zh/clickstack/integration-examples/kafka-metrics) 进行全面的 Kafka 监控
+* 针对特定场景 (controller 事件、分区重新分配) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
+
+<div id="going-to-production">
+  ## 进入生产环境
+</div>
+
+本指南是在 ClickStack 内置的 OpenTelemetry Collector 基础上进行扩展，以便快速完成设置。对于生产部署，我们建议运行您自己的 OTel collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

@@ -1,0 +1,50 @@
+---
+description: 'ClickHouse の Date データ型に関するドキュメント'
+sidebarTitle: 'Date'
+slug: /sql-reference/data-types/date
+title: 'Date'
+doc_type: 'reference'
+---
+
+日付です。1970-01-01 からの日数を 2 バイトで格納します (符号なし) 。Unix エポックの開始直後から、コンパイル時に定数で定義された上限値までの値を格納できます (現在は 2149 年までですが、完全対応している最終年は 2148 年です) 。
+
+サポートされる値の範囲: [1970-01-01, 2149-06-06]。
+
+日付の値は time zone を含まずに格納されます。
+
+**例**
+
+`Date` 型のカラムを持つテーブルを作成し、そこにデータを挿入する例:
+
+```sql
+CREATE TABLE dt
+(
+    `timestamp` Date,
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parse Date
+-- - from string,
+-- - from 'small' integer interpreted as number of days since 1970-01-01, and
+-- - from 'big' integer interpreted as number of seconds since 1970-01-01.
+INSERT INTO dt VALUES ('2019-01-01', 1), (17897, 2), (1546300800, 3);
+
+SELECT * FROM dt;
+```
+
+```text
+┌──timestamp─┬─event_id─┐
+│ 2019-01-01 │        1 │
+│ 2019-01-01 │        2 │
+│ 2019-01-01 │        3 │
+└────────────┴──────────┘
+```
+
+**関連項目**
+
+* [日付と時刻を扱う関数](/ja/reference/functions/regular-functions/date-time-functions)
+* [日付と時刻を扱う演算子](/ja/reference/operators/index#operators-for-working-with-dates-and-times)
+* [`DateTime` データ型](/ja/reference/data-types/datetime)
