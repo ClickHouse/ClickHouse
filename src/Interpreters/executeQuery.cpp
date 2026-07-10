@@ -1048,6 +1048,22 @@ void logExceptionBeforeStart(
         auditLog(elem, context, ast);
 }
 
+/// Walk the AST and pass every referenced table (as database, table) to `append`. Only
+/// `ASTTableIdentifier` nodes are collected — plain column identifiers are `ASTIdentifier` and are
+/// skipped, and table functions carry an `ASTFunction` (not a stored object) and are skipped too.
+template <typename AppendFn>
+static void collectTableIdentifiers(const IAST & ast, AppendFn && append)
+{
+    if (const auto * table_identifier = ast.as<ASTTableIdentifier>())
+    {
+        append(table_identifier->getDatabaseName(), table_identifier->shortName());
+        return;
+    }
+    for (const auto & child : ast.children)
+        if (child)
+            collectTableIdentifiers(*child, append);
+}
+
 /// Extract affected object names (as `database.table`) directly from the AST.
 /// Used for queries that fail before `logQueryStart` populates `elem.query_tables`
 /// (EXCEPTION_BEFORE_START), so a failed DDL/DML statement still records which object it
@@ -1084,6 +1100,12 @@ static String extractObjectNamesFromAST(const IAST & ast)
     /// dynamic type) to handle the whole family through the common base.
     else if (const auto * with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(&ast))
         append(with_table->getDatabase(), with_table->getTable());
+    /// Select-like statements (`SELECT`, `WITH ... SELECT`, and data-modifying `DELETE`/`UPDATE`)
+    /// have no single top-level target and reference their tables through nested
+    /// `ASTTableIdentifier` nodes. Walk the AST so a query that fails before `logQueryStart`
+    /// (e.g. `SELECT * FROM missing_table`) still records the objects it targeted.
+    else
+        collectTableIdentifiers(ast, append);
 
     return result;
 }
