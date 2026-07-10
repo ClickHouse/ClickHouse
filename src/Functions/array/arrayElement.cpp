@@ -2225,6 +2225,12 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const ColumnsWithTypeA
 {
     if (const auto * object_type = checkAndGetDataType<DataTypeObject>(arguments[0].type.get()))
     {
+        if constexpr (is_null_mode)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} is not supported for JSON type, use arrayElement instead",
+                getName());
+
         const auto * key_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
         if (!key_col)
             throw Exception(
@@ -2259,7 +2265,15 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const auto * col_const_object = checkAndGetColumnConst<ColumnObject>(arguments[0].column.get());
 
     if (col_object || col_const_object)
+    {
+        if constexpr (is_null_mode)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} is not supported for JSON type, use arrayElement instead",
+                name);
+
         return executeJSON(arguments, result_type, input_rows_count);
+    }
 
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());

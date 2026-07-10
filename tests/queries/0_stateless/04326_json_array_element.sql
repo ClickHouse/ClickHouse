@@ -169,6 +169,12 @@ SELECT '{"a" : 42}'::JSON(a UInt32) AS json, json['a'];
 SELECT '{"a" : {"b" : "hello"}}'::JSON AS json, json['a']['b'];
 
 -- ============================================
+-- 11. arrayElementOrNull is not supported for JSON
+-- ============================================
+SELECT arrayElementOrNull(json, 'a') FROM test_json; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayElementOrNull('{"a" : 42}'::JSON, 'a'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- ============================================
 -- Cleanup
 -- ============================================
 DROP TABLE test_json;
