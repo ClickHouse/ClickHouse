@@ -1,0 +1,396 @@
+---
+slug: /use-cases/observability/clickstack/deployment/clickstack-clickhouse-cloud
+title: 'مُدار'
+toc_max_heading_level: 2
+description: 'نشر ClickStack المُدار'
+doc_type: 'guide'
+keywords: ['ClickStack', 'النشر', 'الإعداد', 'التهيئة', 'Observability']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+import JSONSupport from '/snippets/ar/_json_support.mdx';
+import ExampleOTelConfig from '/snippets/ar/clickstack/_config_example_otel.mdx';
+
+import SetupManagedIngestion from '/snippets/ar/clickstack/_setup_managed_ingestion.mdx';
+import NavigateClickStackUI from '/snippets/ar/clickstack/_navigate_managed.mdx';
+import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
+
+هذا **الدليل موجّه لمستخدمي ClickHouse Cloud الحاليين**. إذا كنت جديدًا على ClickHouse Cloud، فنوصي بدليل [البدء](/ar/clickstack/getting-started/managed) الخاص بـ ClickStack المُدار.
+
+في نمط النشر هذا، تتم استضافة كلٍّ من ClickHouse وواجهة مستخدم ClickStack ‏(HyperDX) على ClickHouse Cloud، مما يقلّل عدد المكوّنات التي يحتاج المستخدم إلى استضافتها ذاتيًا.
+
+إلى جانب تقليل عبء إدارة البنية التحتية، يضمن نمط النشر هذا تكامل المصادقة مع ClickHouse Cloud SSO/SAML. وعلى عكس عمليات النشر المستضافة ذاتيًا، لا حاجة أيضًا إلى توفير مثيل MongoDB لتخزين حالة التطبيق — مثل لوحات المعلومات، وعمليات البحث المحفوظة، وإعدادات المستخدم، والتنبيهات. كما يستفيد المستخدمون من:
+
+* التوسّع التلقائي لقدرات الحوسبة بشكل مستقل عن التخزين
+* احتفاظ منخفض التكلفة وعمليًا غير محدود بالاعتماد على تخزين الكائنات
+* القدرة على عزل أحمال عمل القراءة والكتابة بشكل مستقل باستخدام Warehouses.
+* مصادقة مدمجة
+* نُسخ احتياطية مؤتمتة
+* ميزات الأمان والامتثال
+* ترقيات سلسة
+
+في هذا الوضع، تُترك عملية إدخال البيانات بالكامل للمستخدم. يمكنك إدخال البيانات إلى ClickStack المُدار باستخدام OpenTelemetry Collector المستضاف لديك، أو الإدخال المباشر من مكتبات العميل، أو محركات الجداول الأصلية في ClickHouse ‏(مثل Kafka أو S3)، أو مسارات ETL، أو ClickPipes — خدمة الإدخال المُدارة في ClickHouse Cloud. يوفّر هذا النهج أبسط طريقة وأكثرها كفاءة لتشغيل ClickStack.
+
+<div id="suitable-for">
+  ### مناسب لـ
+</div>
+
+يُعد نمط النشر هذا مثاليًا في السيناريوهات التالية:
+
+1. لديك بالفعل بيانات observability في ClickHouse Cloud وترغب في عرضها بصريًا باستخدام ClickStack.
+2. تُشغّل عملية نشر واسعة النطاق لـ observability وتحتاج إلى الأداء المخصص وقابلية التوسع التي يوفّرها ClickStack عند تشغيله على ClickHouse Cloud.
+3. أنت تستخدم ClickHouse Cloud بالفعل لأغراض التحليلات وتريد تزويد تطبيقك بإمكانات instrumentation باستخدام مكتبات ClickStack — مع إرسال البيانات إلى cluster نفسه. في هذه الحالة، نوصي باستخدام [المستودعات](/ar/products/cloud/features/infrastructure/warehouses) لعزل موارد الحوسبة الخاصة بأعباء عمل observability.
+
+<div id="setup-steps">
+  ## خطوات الإعداد
+</div>
+
+يفترض هذا الدليل أنك أنشأت بالفعل خدمة ClickHouse Cloud. إذا لم تكن قد أنشأت خدمة بعد، فاتبع دليل [بدء الاستخدام](/ar/clickstack/getting-started/managed) الخاص بـ ClickStack المُدار. وبذلك ستحصل على خدمة بالحالة نفسها المفترضة في هذا الدليل، أي جاهزة لاستقبال بيانات observability مع تمكين ClickStack.
+
+<Tabs>
+  <Tab title="أنشئ خدمة جديدة">
+    <br />
+
+    <Steps>
+      <Step>
+        ### أنشئ خدمة جديدة
+
+        من الصفحة الرئيسية لـ ClickHouse Cloud، اختر `New service` لإنشاء خدمة جديدة.
+
+        <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="الخدمة" border />
+      </Step>
+
+      <Step>
+        ### حدّد المزوّد والمنطقة والموارد
+
+        <ProviderSelection />
+      </Step>
+
+      <Step>
+        ### إعداد الاستيعاب
+
+        بعد تجهيز خدمتك، تأكد من تحديدها ثم انقر على &quot;ClickStack&quot; من القائمة اليمنى.
+
+        <SetupManagedIngestion />
+      </Step>
+
+      <Step>
+        ### انتقل إلى واجهة مستخدم ClickStack
+
+        <NavigateClickStackUI />
+
+        <br />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="استخدم خدمة حالية">
+    <br />
+
+    <Steps>
+      <Step>
+        ### حدد خدمة
+
+        من الصفحة الرئيسية لـ ClickHouse Cloud، حدد الخدمة التي تريد تمكين ClickStack المُدار لها.
+
+        <Warning>
+          **تقدير الموارد**
+
+          يفترض هذا الدليل أنك قد وفّرت موارد كافية للتعامل مع حجم بيانات الأوبزرفابيليتي التي تخطط لاستيعابها والاستعلام عنها باستخدام ClickStack. لتقدير الموارد المطلوبة، راجع دليل [تقدير الموارد](/ar/clickstack/managing/estimating-resources).
+
+          إذا كانت خدمة ClickHouse لديك تستضيف بالفعل أعباء عمل قائمة، مثل تحليلات التطبيقات في الوقت الفعلي، فنوصي بإنشاء خدمة فرعية باستخدام [ميزة warehouses في ClickHouse Cloud](/ar/products/cloud/features/infrastructure/warehouses) لعزل عبء عمل الأوبزرفابيليتي. يضمن ذلك عدم تأثر تطبيقاتك الحالية، مع إبقاء مجموعات البيانات متاحة من كلتا الخدمتين.
+        </Warning>
+
+        <Image img="/images/clickstack/select_service.webp" alt="حدد خدمة" size="lg" />
+      </Step>
+
+      <Step>
+        ### انتقل إلى واجهة ClickStack
+
+        حدّد &#39;ClickStack&#39; من قائمة التنقل اليسرى. ستتم إعادة توجيهك إلى واجهة ClickStack وستتم مصادقتك تلقائيًا استنادًا إلى أذونات ClickHouse Cloud الخاصة بك.
+
+        إذا كانت هناك أي جداول OpenTelemetry موجودة بالفعل في خدمتك، فسيتم اكتشافها تلقائيًا وإنشاء مصادر البيانات المقابلة لها.
+
+        <Info>
+          **الاكتشاف التلقائي لمصادر البيانات**
+
+          يعتمد الاكتشاف التلقائي على مخطط جداول OpenTelemetry القياسي الذي توفّره توزيعة ClickStack الخاصة بـ OpenTelemetry Collector. يتم إنشاء المصادر لقاعدة البيانات التي تضم المجموعة الأكثر اكتمالًا من الجداول. ويمكن إضافة جداول إضافية [كمصادر بيانات منفصلة](/ar/clickstack/managing/config#datasource-settings) عند الحاجة.
+        </Info>
+
+        إذا نجح الاكتشاف التلقائي، فمن المفترض أن يتم توجيهك إلى عرض البحث حيث يمكنك البدء فورًا في استكشاف بياناتك.
+
+        <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="واجهة ClickStack" />
+
+        إذا نجحت هذه الخطوة، فهذا كل ما في الأمر — أنت جاهز تمامًا 🎉، وإلا فانتقل إلى إعداد إدخال البيانات.
+      </Step>
+
+      <Step>
+        ### إعداد الاستيعاب
+
+        إذا فشل الاكتشاف التلقائي، أو لم تكن لديك جداول موجودة، سيُطلب منك إعداد الاستيعاب.
+
+        <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="إعداد الاستيعاب في واجهة ClickStack" size="lg" />
+
+        حدد &quot;Start Ingestion&quot; وستظهر لك مطالبة باختيار مصدر استيعاب. يدعم Managed ClickStack كلًّا من OpenTelemetry و[Vector](https://vector.dev/) بوصفهما مصدرَي الاستيعاب الرئيسيين. غير أن المستخدمين أحرار أيضًا في إرسال البيانات مباشرةً إلى ClickHouse وفق مخططهم الخاص، باستخدام أيٍّ من [تكاملات ClickHouse Cloud المدعومة](/ar/integrations/home).
+
+        <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="اختر المصدر - واجهة ClickStack" border />
+
+        <Info>
+          **يُوصى باستخدام OpenTelemetry**
+
+          يُنصح بشدة باستخدام OpenTelemetry كصيغة للإدخال.
+          فهو يوفّر أبسط تجربة وأكثرها كفاءة، مع مخططات جاهزة صُممت خصيصًا للعمل بكفاءة مع ClickStack.
+        </Info>
+
+        <Tabs>
+          <Tab title="OpenTelemetry">
+            لإرسال بيانات OpenTelemetry إلى Managed ClickStack، يُنصح باستخدام OpenTelemetry Collector. يعمل الـ collector كبوابة تستقبل بيانات OpenTelemetry من تطبيقاتك (ومن collectors أخرى) ثم تُمرّرها إلى ClickHouse Cloud.
+
+            إذا لم يكن لديك collector قيد التشغيل بالفعل، فابدأ بتشغيل واحد باتباع الخطوات أدناه. وإذا كانت لديك collectors موجودة، فستجد أيضًا مثالًا على التهيئة.
+
+            ### بدء تشغيل collector
+
+            يفترض ما يلي المسار الموصى به، وهو استخدام **توزيعة ClickStack من OpenTelemetry Collector**، التي تتضمن معالجة إضافية ومُحسّنة خصيصًا لـ ClickHouse Cloud. إذا كنت تريد استخدام OpenTelemetry Collector الخاص بك، فراجع [&quot;تهيئة collectors الموجودة.&quot;](#configure-existing-collectors)
+
+            للبدء بسرعة، انسخ أمر Docker الموضّح وشغّله.
+
+            <Image img="/images/clickstack/otel-collector-start-clickstack-ui.webp" size="md" alt="مصدر OTel collector" />
+
+            **عدّل هذا الأمر باستخدام بيانات اعتماد الخدمة الخاصة بك، التي دوّنتها عند إنشاء خدمتك.**
+
+            <Info>
+              **النشر إلى بيئة production**
+
+              رغم أن هذا الأمر يستخدم المستخدم `default` للاتصال بـ Managed ClickStack، ينبغي إنشاء مستخدم مخصّص عند [الانتقال إلى بيئة production](/ar/clickstack/managing/production#create-a-database-ingestion-user-managed) وتعديل التهيئة.
+            </Info>
+
+            يؤدي تشغيل هذا الأمر الواحد إلى بدء ClickStack collector مع إتاحة نقاط نهاية OTLP على المنفذين 4317 ‏(gRPC) و4318 ‏(HTTP). إذا كانت لديك بالفعل إعدادات instrumentation ووكلاء OpenTelemetry، فيمكنك البدء فورًا في إرسال بيانات القياس عن بُعد إلى نقاط النهاية هذه.
+
+            ### تهيئة collectors الموجودة
+
+            يمكنك أيضًا تهيئة OpenTelemetry Collectors الموجودة لديك أو استخدام التوزيعة الخاصة بك من الـ collector.
+
+            <Info>
+              **مطلوب ClickHouse exporter**
+
+              إذا كنت تستخدم التوزيعة الخاصة بك، مثل [contrib image](https://github.com/open-telemetry/opentelemetry-collector-contrib)، فتأكّد من أنها تتضمن [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+            </Info>
+
+            ولهذا الغرض، يتوفر مثال على تهيئة OpenTelemetry Collector يستخدم ClickHouse exporter مع الإعدادات المناسبة ويُعرّض OTLP receivers. تتطابق هذه التهيئة مع الواجهات والسلوك المتوقعَين من توزيعة ClickStack.
+
+            <ExampleOTelConfig />
+
+            <Image img="/images/clickstack/advanced-otel-collector-clickstack-ui.webp" size="lg" alt="مصدر OTel collector المتقدم" />
+
+            لمزيد من التفاصيل حول تهيئة OpenTelemetry Collectors، راجع [&quot;إدخال البيانات باستخدام OpenTelemetry.&quot;](/ar/clickstack/ingesting-data/opentelemetry)
+
+            ### بدء إدخال البيانات (اختياري)
+
+            إذا كانت لديك تطبيقات أو بنية تحتية قائمة وتريد تزويدها بـ OpenTelemetry، فانتقل إلى الأدلة ذات الصلة المرتبطة من &quot;ربط تطبيق&quot;.
+
+            لتزويد تطبيقاتك بما يمكّنها من جمع traces وlogs، استخدم [language SDKs المدعومة](/ar/clickstack/ingesting-data/sdks/index) التي ترسل البيانات إلى OpenTelemetry Collector الخاص بك، والذي يعمل كبوابة لإدخالها إلى Managed ClickStack.
+
+            ويمكن [جمع السجلات باستخدام OpenTelemetry Collectors](/ar/clickstack/integration-examples/host-logs) التي تعمل في وضع agent، مع إعادة توجيه البيانات إلى الـ collector نفسه. ولمراقبة Kubernetes، اتبع [الدليل المخصص](/ar/clickstack/integration-examples/kubernetes). أما للتكاملات الأخرى، فراجع [أدلة quickstart](/ar/clickstack/integration-examples/index) الخاصة بنا.
+
+            <br />
+          </Tab>
+
+          <Tab title="Vector">
+            [Vector](https://vector.dev) هو خط أنابيب عالي الأداء ومحايد للمورّدين لبيانات observability، ويشتهر خصوصًا في ingest السجلات بفضل مرونته وانخفاض استهلاك الموارد.
+
+            عند استخدام Vector مع ClickStack، يكون المستخدمون مسؤولين عن تحديد المخططات الخاصة بهم. وقد تتبع هذه المخططات اصطلاحات OpenTelemetry، لكنها قد تكون أيضًا مخصّصة بالكامل لتمثيل بنى أحداث يحدّدها المستخدم.
+
+            <Info>
+              **الطابع الزمني مطلوب**
+
+              الشرط الصارم الوحيد في Managed ClickStack هو أن تتضمن البيانات **عمود طابع زمني** (أو حقل وقت مكافئ)، ويمكن تعريفه عند تهيئة مصدر البيانات في ClickStack UI.
+            </Info>
+
+            يفترض ما يلي أن لديك مثيلًا من Vector قيد التشغيل ومُهيّأ مسبقًا باستخدام ingest pipelines ويقوم بإرسال البيانات.
+
+            ### أنشئ قاعدة بيانات وجدولًا
+
+            يتطلب Vector تحديد جدول ومخطط قبل ingest البيانات.
+
+            أنشئ أولًا قاعدة بيانات. ويمكن القيام بذلك عبر [ClickHouse Cloud console](/ar/products/cloud/features/sql-console-features/sql-console).
+
+            على سبيل المثال، أنشئ قاعدة بيانات للسجلات:
+
+            ```sql
+            CREATE DATABASE IF NOT EXISTS logs
+            ```
+
+            ثم أنشئ جدولًا يتطابق مخططه مع بنية بيانات السجل. يفترض المثال أدناه تنسيق سجل وصول Nginx الكلاسيكي:
+
+            ```sql
+            CREATE TABLE logs.nginx_logs
+            (
+                `time_local` DateTime,
+                `remote_addr` IPv4,
+                `remote_user` LowCardinality(String),
+                `request` String,
+                `status` UInt16,
+                `body_bytes_sent` UInt64,
+                `http_referer` String,
+                `http_user_agent` String,
+                `http_x_forwarded_for` LowCardinality(String),
+                `request_time` Float32,
+                `upstream_response_time` Float32,
+                `http_host` String
+            )
+            ENGINE = MergeTree
+            ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+            ```
+
+            يجب أن يتوافق جدولك مع مخطط المخرجات الذي يُنشئه Vector. عدّل المخطط حسب الحاجة لبياناتك، مع اتباع [أفضل ممارسات المخطط](/ar/concepts/best-practices/select-data-type) الموصى بها.
+
+            نوصي بشدة بفهم كيفية عمل [المفاتيح الأساسية](/ar/concepts/core-concepts/primary-indexes) في ClickHouse واختيار مفتاح ترتيب استنادًا إلى أنماط الوصول لديك. راجع الإرشادات [الخاصة بـ ClickStack](/ar/clickstack/managing/performance-tuning#choosing-a-primary-key) حول اختيار مفتاح أساسي.
+
+            بمجرد إنشاء الجدول، انسخ مقتطف الإعدادات الظاهر. عدّل المُدخل لاستهلاك مسارات المعالجة الحالية لديك، وكذلك الجدول الهدف وقاعدة البيانات إذا لزم الأمر. يجب أن تكون بيانات الاعتماد مُعبأة مسبقًا.
+
+            <Image img="/images/clickstack/vector-config-clickstack-ui.webp" size="lg" alt="إعداد Vector" />
+
+            للمزيد من أمثلة إدخال البيانات باستخدام Vector، راجع [&quot;الإدخال باستخدام Vector&quot;](/ar/clickstack/ingesting-data/vector) أو [توثيق مصبّ ClickHouse في Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) للاطلاع على الخيارات المتقدمة.
+
+            <br />
+          </Tab>
+        </Tabs>
+      </Step>
+
+      <Step>
+        ### الانتقال إلى واجهة مستخدم ClickStack
+
+        بعد إكمال إعداد إدخال البيانات والبدء في إرسالها، حدِّد &quot;التالي&quot;.
+
+        <Tabs>
+          <Tab title="OpenTelemetry">
+            إذا كنت قد أدخلت بيانات OpenTelemetry باستخدام هذا الدليل، فسيتم إنشاء مصادر البيانات تلقائيًا، ولن تحتاج إلى أي إعداد إضافي. يمكنك البدء في استكشاف ClickStack فورًا. سيتم توجيهك إلى عرض البحث مع تحديد مصدر تلقائيًا، بحيث يمكنك بدء الاستعلام مباشرةً.
+
+            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="واجهة مستخدم ClickStack" />
+
+            هذا كل ما في الأمر — أصبحت جاهزًا 🎉.
+
+            <br />
+          </Tab>
+
+          <Tab title="Vector">
+            إذا كنت قد أدخلت البيانات عبر Vector أو أي مصدر آخر، فسيُطلب منك تهيئة مصدر البيانات.
+
+            <Image img="/images/clickstack/create-vector-datasource.webp" alt="إنشاء مصدر بيانات - vector" size="lg" />
+
+            يفترض الإعداد أعلاه مخططًا بأسلوب Nginx، مع استخدام العمود `time_local` كطابع زمني. ويُفضَّل، متى أمكن، أن يكون هذا هو عمود الطابع الزمني المعرَّف ضمن المفتاح الأساسي. **هذا العمود إلزامي**.
+
+            نوصي أيضًا بتحديث `Default SELECT` لتحديد الأعمدة التي تُعرض صراحةً في عرض السجلات. وإذا كانت هناك حقول إضافية متاحة، مثل اسم الخدمة أو مستوى السجل أو عمود `body`، فيمكن تهيئتها أيضًا. ويمكن أيضًا تعيين عمود مختلف لعرض الطابع الزمني إذا كان يختلف عن العمود المستخدم في المفتاح الأساسي للجدول والمُهيأ أعلاه.
+
+            في المثال أعلاه، لا يوجد عمود `Body` في البيانات. وبدلًا من ذلك، يُعرَّف باستخدام تعبير SQL يعيد تكوين سطر سجل Nginx من الحقول المتاحة.
+
+            للاطلاع على خيارات أخرى ممكنة، راجع [مرجع الإعدادات](/ar/clickstack/managing/config#hyperdx).
+
+            بعد تهيئة المصدر، انقر فوق &quot;حفظ&quot; وابدأ في استكشاف بياناتك.
+
+            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="واجهة مستخدم ClickStack" />
+
+            <br />
+          </Tab>
+        </Tabs>
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="additional-tasks">
+  ## مهام إضافية
+</div>
+
+<div id="configure-access">
+  ### منح حق الوصول إلى ClickStack المُدار
+</div>
+
+1. انتقل إلى الخدمة الخاصة بك في وحدة تحكم ClickHouse Cloud
+2. انتقل إلى **Settings** → **SQL Console Access**
+3. عيّن مستوى الأذونات المناسب لكل مستخدم:
+   * **Service Admin → Full Access** - مطلوب لتمكين التنبيهات
+   * **Service Read Only → Read Only** - يمكنه عرض بيانات observability وإنشاء dashboards
+   * **No access** - لا يمكنه الوصول إلى HyperDX
+
+<Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud للقراءة فقط" size="md" />
+
+<Warning>
+  **تتطلب التنبيهات وصول Admin**
+
+  لتمكين التنبيهات، يجب أن يسجّل الدخول إلى HyperDX مرة واحدة على الأقل مستخدم واحد لديه أذونات **Service Admin** (المعيّنة إلى **Full Access** في القائمة المنسدلة **SQL Console Access**). يؤدي ذلك إلى تهيئة مستخدم مخصص في قاعدة البيانات لتشغيل استعلامات التنبيهات.
+</Warning>
+
+<div id="clickstack-read-only-compute">
+  ### استخدام ClickStack مع حوسبة للقراءة فقط
+</div>
+
+يمكن لواجهة مستخدم ClickStack أن تعمل بالكامل على خدمة ClickHouse Cloud للقراءة فقط. ويُوصى بهذا الإعداد عندما تريد عزل أحمال الإدخال والاستعلام.
+
+<div id="how-clickstack-selects-compute">
+  #### كيف يختار ClickStack موارد الحوسبة
+</div>
+
+تتصل واجهة مستخدم ClickStack دائمًا بخدمة ClickHouse التي يتم تشغيلها منها في وحدة تحكم ClickHouse Cloud.
+
+وهذا يعني:
+
+* إذا فتحت ClickStack من خدمة للقراءة فقط، فستُشغَّل جميع الاستعلامات التي تصدرها واجهة مستخدم ClickStack على موارد الحوسبة المخصّصة للقراءة فقط.
+* إذا فتحت ClickStack من خدمة للقراءة والكتابة، فسيستخدم ClickStack موارد الحوسبة الخاصة بها بدلًا من ذلك.
+
+لا يلزم إجراء أي تهيئة إضافية داخل ClickStack لفرض وضع القراءة فقط.
+
+<div id="recommended-setup">
+  #### الإعداد الموصى به
+</div>
+
+لتشغيل ClickStack على موارد compute للقراءة فقط:
+
+1. أنشئ أو حدِّد خدمة ClickHouse Cloud ضمن الـ warehouse ومُهيأة للقراءة فقط.
+2. في وحدة تحكم ClickHouse Cloud، حدِّد الخدمة المهيأة للقراءة فقط.
+3. شغِّل ClickStack من قائمة التنقل اليسرى.
+
+بمجرد تشغيله، سترتبط واجهة مستخدم ClickStack تلقائيًا بهذه الخدمة المهيأة للقراءة فقط.
+
+<div id="adding-data-sources">
+  ### إضافة المزيد من مصادر البيانات
+</div>
+
+يدعم ClickStack ‏OpenTelemetry دعمًا أصيلًا، لكنه لا يقتصر عليه فقط — يمكنك استخدام مخططات الجداول الخاصة بك إذا رغبت.
+
+يوضح ما يلي كيف يمكن للمستخدمين إضافة مصادر بيانات إضافية بخلاف تلك التي تُضبط تلقائيًا.
+
+<div id="using-otel-schemas">
+  #### استخدام مخططات OpenTelemetry
+</div>
+
+إذا كنت تستخدم OTel collector لإنشاء قاعدة البيانات والجداول داخل ClickHouse، فاترك جميع القيم الافتراضية كما هي في نموذج إنشاء المصدر، واملأ الحقل `Table` بالقيمة `otel_logs` لإنشاء مصدر سجلات. ينبغي اكتشاف جميع الإعدادات الأخرى تلقائيًا، ما يتيح لك النقر على `Save New Source`.
+
+<Image img="/images/use-cases/observability/hyperdx_cloud_datasource.webp" alt="مصدر بيانات HyperDX في ClickHouse Cloud" size="lg" />
+
+لإنشاء مصادر للتتبعات ومقاييس OTel، يمكنك اختيار `Create New Source` من القائمة العلوية.
+
+<Image img="/images/use-cases/observability/hyperdx_create_new_source.webp" alt="ClickStack: إنشاء مصدر جديد" size="lg" />
+
+من هنا، حدِّد نوع المصدر المطلوب ثم الجدول المناسب. على سبيل المثال، للتتبعات، حدِّد الجدول `otel_traces`. ينبغي اكتشاف جميع الإعدادات تلقائيًا.
+
+<Image img="/images/use-cases/observability/hyperdx_create_trace_datasource.webp" alt="ClickStack: إنشاء مصدر تتبعات" size="lg" />
+
+<Info>
+  **ربط المصادر**
+
+  لاحظ أن مصادر البيانات المختلفة في ClickStack—مثل السجلات والتتبعات—يمكن ربطها ببعضها البعض. ولتمكين ذلك، يلزم إجراء إعدادات إضافية في كل مصدر. على سبيل المثال، في مصدر السجلات يمكنك تحديد مصدر التتبعات المقابل، والعكس صحيح في مصدر التتبعات. راجع [&quot;المصادر المترابطة&quot;](/ar/clickstack/managing/config#correlated-sources) لمزيد من التفاصيل.
+</Info>
+
+<div id="using-custom-schemas">
+  #### استخدام المخططات المخصصة
+</div>
+
+يمكن للمستخدمين الذين يرغبون في ربط ClickStack بخدمة حالية تحتوي على بيانات إكمال إعدادات قاعدة البيانات والجدول حسب الحاجة. سيتم اكتشاف الإعدادات تلقائيًا إذا كانت الجداول متوافقة مع مخططات OpenTelemetry لـ ClickHouse.
+
+إذا كنت تستخدم مخططًا خاصًا بك، فنوصي بإنشاء مصدر للسجلات مع التأكد من تحديد الحقول المطلوبة — راجع [&quot;إعدادات مصدر السجل&quot;](/ar/clickstack/managing/config#logs) لمزيد من التفاصيل.
+
+<JSONSupport />

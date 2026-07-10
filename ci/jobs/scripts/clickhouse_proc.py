@@ -353,6 +353,7 @@ profiles:
             return False
         commands = [
             f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {temp_dir}/users.d",
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/limit-recursion-settings.xml {temp_dir}/users.d",
         ]
 
         c1 = """

@@ -1,0 +1,19 @@
+---
+slug: /faq/use-cases/time-series
+title: 'Posso usar o ClickHouse como um banco de dados de séries temporais?'
+toc_hidden: true
+toc_priority: 101
+description: 'Página que descreve como usar o ClickHouse como um banco de dados de séries temporais'
+doc_type: 'guide'
+keywords: ['séries temporais', 'dados temporais', 'caso de uso', 'análises baseadas em tempo', 'timeseries']
+---
+
+*Nota: consulte o post do blog [Working with Time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse) para ver exemplos adicionais de uso do ClickHouse na análise de séries temporais.*
+
+O ClickHouse é uma solução genérica de armazenamento de dados para cargas de trabalho de [OLAP](/pt-BR/resources/support-center/knowledge-base/general-faqs/olap), enquanto existem muitos [sistemas especializados de gerenciamento de bancos de dados de séries temporais](https://clickhouse.com/engineering-resources/what-is-time-series-database). Ainda assim, o [foco do ClickHouse na velocidade de execução de consultas](/pt-BR/get-started/about/why-clickhouse-is-so-fast) permite que ele supere sistemas especializados em muitos casos. Existem muitos benchmarks independentes sobre esse tema, então não vamos fazer um aqui. Em vez disso, vamos focar nos recursos do ClickHouse que são importantes para esse caso de uso.
+
+Antes de mais nada, há **[codecs especializados](/pt-BR/reference/statements/create/table#specialized-codecs)** que funcionam bem para séries temporais típicas. Tanto algoritmos comuns, como `DoubleDelta` e `Gorilla`, quanto algoritmos específicos do ClickHouse, como `T64`.
+
+Em segundo lugar, consultas de séries temporais geralmente acessam apenas dados recentes, como os de um dia ou de uma semana atrás. Faz sentido usar servidores com unidades NVMe/SSD rápidas e unidades HDD de alta capacidade. O recurso [TTL](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) do ClickHouse permite configurar a manutenção de dados novos e quentes em unidades rápidas e movê-los gradualmente para unidades mais lentas à medida que envelhecem. Também é possível fazer rollup ou remover dados ainda mais antigos, caso seus requisitos exijam isso.
+
+Embora isso vá contra a filosofia do ClickHouse de armazenar e processar dados brutos, você pode usar [visões materializadas](/pt-BR/reference/statements/create/view) para atender a requisitos ainda mais rigorosos de latência ou custo.
