@@ -19,8 +19,7 @@ In this mode, the GCS ClickPipe does an initial load of **all files** in the sel
 Various types of failures can occur when ingesting data, which can result in partial inserts or duplicate data. Object Storage ClickPipes are resilient to insert failures and provide exactly-once semantics using temporary staging tables. Data is first inserted into a staging table; if something goes wrong, the staging table is truncated and the insert is retried from a clean state. Only once an insert completes successfully are the partitions moved to the target table.
 
 <Steps>
-<Step>
-## Create a Google Cloud Pub/Sub topic {#create-pubsub-topic}
+<Step title="Create a Google Cloud Pub/Sub topic" id="create-pubsub-topic">
 
 **1.** In the Google Cloud Console, navigate to **Pub/Sub > Topics > Create topic**. Create a new topic with a default subscription and note the **Topic Name**.
 
@@ -39,8 +38,7 @@ Various types of failures can occur when ingesting data, which can result in par
   gcloud storage buckets notifications describe
   ```
 </Step>
-<Step>
-## Configure a service account {#configure-service-account}
+<Step title="Configure a service account" id="configure-service-account">
 
 **1.** Configure a [service account](http://docs.cloud.google.com/iam/docs/keys-create-delete) with the [required permissions](/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions) to allow ClickPipes to list and fetch objects in the specified bucket, as well as consume and monitor notifications from the Pub/Sub subscription.
 
@@ -63,8 +61,7 @@ Various types of failures can occur when ingesting data, which can result in par
     --role="roles/pubsub.viewer"
   ```
 </Step>
-<Step>
-## Create a ClickPipe with unordered mode {#create-clickpipe}
+<Step title="Create a ClickPipe with unordered mode" id="create-clickpipe">
 
 **1.** In the ClickHouse Cloud console, navigate to **Data Sources > Create ClickPipe** and select **Google Cloud Storage**. Enter the details to connect to your GCS bucket. Under **Authentication method**, choose **Service Account** and provide the `.json` service account key.
 
