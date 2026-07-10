@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Parsers/parseQuery.h>
+#include <Common/Exception.h>
 
 #include <string>
 #include <vector>
@@ -22,7 +23,7 @@ namespace
 using namespace DB;
 
 /// Call the real `splitMultipartQuery` with the parser limits used in production callers.
-std::pair<std::vector<std::string>, bool> split(const std::string & queries)
+std::pair<std::vector<std::string>, bool> split(const std::string & queries, bool allow_pipe_syntax = false)
 {
     std::vector<std::string> queries_list;
     auto res = splitMultipartQuery(
@@ -33,7 +34,7 @@ std::pair<std::vector<std::string>, bool> split(const std::string & queries)
         /* max_parser_backtracks */ 1000000,
         /* allow_settings_after_format_in_insert */ false,
         /* implicit_select */ false,
-        /* allow_pipe_syntax */ false);
+        allow_pipe_syntax);
     return {queries_list, res.second};
 }
 
@@ -87,6 +88,26 @@ TEST(SplitMultipartQuery, MultipleQueriesWithTrailingComment)
     const auto [queries, all_parsed] = split("SELECT 1; SELECT 2; /* tail */");
     EXPECT_TRUE(all_parsed);
     EXPECT_EQ(queries, (std::vector<std::string>{"SELECT 1;", "SELECT 2; /* tail */"}));
+}
+
+TEST(SplitMultipartQuery, PipeSyntaxSettingIsSnapshotForWholeBatch)
+{
+    /// `splitMultipartQuery` parses the whole batch up front with a single `allow_pipe_syntax`
+    /// snapshot, unlike `clickhouse-client`, which parses and executes one statement at a time and
+    /// re-reads the setting between statements. So a `SET allow_experimental_pipe_syntax = 1` at the
+    /// start of the batch cannot enable pipe parsing for a later statement in the same batch: the flag
+    /// passed to the splitter governs the whole input. This is the documented limitation of the
+    /// PostgreSQL wire-protocol handler (`PostgreSQLHandler`) and `clickhouse benchmark` script mode.
+    const std::string batch = "SET allow_experimental_pipe_syntax = 1; FROM numbers(3) |> WHERE number > 0;";
+
+    /// With the setting off (session default) the `|>` statement is a syntax error even though the
+    /// batch begins with `SET allow_experimental_pipe_syntax = 1` — that `SET` has not run yet.
+    EXPECT_THROW(split(batch, /* allow_pipe_syntax */ false), DB::Exception);
+
+    /// Enabling the setting at the session/connection level (so the splitter receives it) parses fine.
+    const auto [queries, all_parsed] = split(batch, /* allow_pipe_syntax */ true);
+    EXPECT_TRUE(all_parsed);
+    EXPECT_EQ(queries.size(), 2u);
 }
 
 TEST(SplitMultipartQuery, InsertWithInlineDataAndTrailingComment)
