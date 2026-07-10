@@ -1211,7 +1211,9 @@ static NameToNameVector collectFilesForRenames(
                 }
                 else
                 {
-                    /// Fallback for old parts without columns_substreams.txt.
+                    /// Fallback for parts without columns_substreams.txt (discarded due to corruption or old parts).
+                    /// Use getStreamNameForColumn with bidirectional fallback to find the actual file
+                    /// regardless of whether the part was written with a different escape_variant_subcolumn_filenames value.
                     String escaped_name_from = escapeForFileName(command.column_name);
                     String escaped_name_to = escapeForFileName(command.rename_to);
 
@@ -1222,13 +1224,13 @@ static NameToNameVector collectFilesForRenames(
                         String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
                         String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
 
-                        auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, ".bin", source_part->checksums);
+                        auto stream_from = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, storage_settings);
                         if (!stream_from)
                             return;
 
                         String stream_to = replaceFileNameToHashIfNeeded(full_stream_to, *storage_settings, &new_part->getDataPartStorage());
 
-                        if (stream_from != stream_to)
+                        if (*stream_from != stream_to)
                         {
                             add_rename(*stream_from + ".bin", stream_to + ".bin");
                             add_rename(*stream_from + mrk_extension, stream_to + mrk_extension);

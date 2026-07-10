@@ -52,3 +52,25 @@ CHECK TABLE:
 1
 Data:
 (3,4)	3	4
+Case 3: escaping 0 -> 1 with RENAME COLUMN, no columns_substreams.txt
+Before rename .bin files:
+v.Tuple(a UInt32, b UInt32)%2Ea.bin
+v.Tuple(a UInt32, b UInt32)%2Eb.bin
+v.variant_discr.bin
+After rename .bin files:
+w.Tuple%28a%20UInt32%2C%20b%20UInt32%29%2Ea.bin
+w.Tuple%28a%20UInt32%2C%20b%20UInt32%29%2Eb.bin
+w.variant_discr.bin
+Data:
+(5,6)	5	6
+Case 4: escaping 1 -> 0 with RENAME COLUMN, no columns_substreams.txt
+Before rename .bin files:
+v.Tuple%28a%20UInt32%2C%20b%20UInt32%29%2Ea.bin
+v.Tuple%28a%20UInt32%2C%20b%20UInt32%29%2Eb.bin
+v.variant_discr.bin
+After rename .bin files:
+w.Tuple(a UInt32, b UInt32)%2Ea.bin
+w.Tuple(a UInt32, b UInt32)%2Eb.bin
+w.variant_discr.bin
+Data:
+(7,8)	7	8
