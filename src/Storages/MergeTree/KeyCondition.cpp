@@ -2457,10 +2457,9 @@ static bool tryPrepareSetColumnsForIndex(
         if (!key_column_type->canBeInsideNullable())
             return false;
 
-        const NullMap * set_column_null_map = nullptr;
-
-        // Keep a reference to the original set_column to ensure the data remains valid
-        ColumnPtr original_set_column = set_column;
+        /// Marks the elements that are NULL in the set itself, e.g. the NULL in `notHas([1, NULL], x)`
+        /// or a NULL row of a subquery set. Stays nullptr when the set element type is not Nullable.
+        const NullMap * source_null_map = nullptr;
 
         if (isNullableOrLowCardinalityNullable(set_element_type))
         {
@@ -2472,48 +2471,34 @@ static bool tryPrepareSetColumnsForIndex(
 
             set_element_type = removeNullable(set_element_type);
 
-            // Obtain the nullable column without reassigning set_column immediately
-            const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
-            if (!set_column_nullable)
+            const auto * source_nullable_column = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
+            if (!source_nullable_column)
                 return false;
 
-            const NullMap & null_map_data = set_column_nullable->getNullMapData();
-            if (!null_map_data.empty())
-                set_column_null_map = &null_map_data;
-
-            ColumnPtr nested_column = set_column_nullable->getNestedColumnPtr();
-
-            // Reassign set_column after we have obtained necessary references
-            set_column = nested_column;
+            source_null_map = &source_nullable_column->getNullMapData();
+            set_column = source_nullable_column->getNestedColumnPtr();
         }
 
-        ColumnPtr nullable_set_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
-        const auto * nullable_set_column_typed = typeid_cast<const ColumnNullable *>(nullable_set_column.get());
-        if (!nullable_set_column_typed)
+        /// Cast to the key column type, writing NULL where the value cannot be represented in it
+        /// (e.g. 256 for a UInt8 key), so the null map of the result marks the cast failures.
+        ColumnPtr cast_column = castColumnAccurateOrNull({set_column, set_element_type, {}}, key_column_type);
+        const auto * cast_nullable_column = typeid_cast<const ColumnNullable *>(cast_column.get());
+        if (!cast_nullable_column)
             return false;
 
-        const NullMap & nullable_set_column_null_map = nullable_set_column_typed->getNullMapData();
-        size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
+        const NullMap & cast_failure_null_map = cast_nullable_column->getNullMapData();
+        size_t set_size = cast_failure_null_map.size();
 
-        if (set_column_null_map)
+        /// The key column type is not Nullable here (checked via canBeInsideNullable above), so a NULL
+        /// set element can never match any key value - under regular `IN`, `nullIn` and `has` semantics
+        /// alike. Drop NULL elements together with the values the accurate cast could not represent.
+        for (size_t i = 0; i < set_size; ++i)
         {
-            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-            {
-                if (nullable_set_column_null_map_size < set_column_null_map->size())
-                    filter[i] &= (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
-                else
-                    filter[i] &= !nullable_set_column_null_map[i];
-            }
-
-            set_column = nullable_set_column;
+            const bool null_in_source = source_null_map && (*source_null_map)[i];
+            if (null_in_source || cast_failure_null_map[i])
+                filter[i] = 0;
         }
-        else
-        {
-            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-                filter[i] &= !nullable_set_column_null_map[i];
-
-            set_column = nullable_set_column_typed->getNestedColumnPtr();
-        }
+        set_column = cast_nullable_column->getNestedColumnPtr();
         filter_used = true;
 
         transformed_set_columns[set_element_index] = std::move(set_column);
