@@ -766,8 +766,23 @@ def test_create_tables_under_same_namespace(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    for table_name in table_names:
-        create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    # Create every table with its own query id so the per-query ProfileEvents can
+    # be inspected below. The first CREATE also creates the namespace; the other
+    # nine find it already exists (the REST catalog answers HTTP 409 Conflict).
+    create_query_ids = []
+    for i, table_name in enumerate(table_names):
+        query_id = f"{test_ref}_create_{i}"
+        create_query_ids.append(query_id)
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) "
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', "
+            f"'{minio_access_key}', '{minio_secret_key}')",
+            settings={
+                "allow_experimental_database_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+            query_id=query_id,
+        )
 
     catalog = load_catalog_impl(started_cluster)
     tables = catalog.list_tables(root_namespace)
@@ -776,6 +791,36 @@ def test_create_tables_under_same_namespace(started_cluster):
     assert len(tables) == 10
     node.query("SYSTEM FLUSH LOGS")
     assert int(node.query(f"SELECT count() FROM system.text_log WHERE level = 'Debug' AND message LIKE '%{root_namespace}%already exists, skipping creation%'")) == 9
+
+    # The "already exists" log line alone does not prove the regression is fixed:
+    # the old code emitted it too, only after retrying the 409 `http_max_tries`
+    # times. Assert the retry layer directly. `createNamespaceIfNotExists` sends
+    # the "create namespace" request exactly once per CREATE, so the number of
+    # HTTP requests each CREATE makes must stay flat. If the 409 were retried
+    # again, the nine CREATEs that hit the existing namespace would each send
+    # `http_max_tries` requests for it, inflating their per-query counts by
+    # `http_max_tries - 1` compared with the first CREATE.
+    max_tries = int(
+        node.query("SELECT value FROM system.settings WHERE name = 'http_max_tries'")
+    )
+    requests_sent = [
+        int(
+            node.query(
+                f"SELECT ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] "
+                f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+        for query_id in create_query_ids
+    ]
+    assert requests_sent[0] > 0, (
+        f"expected the HTTP requests to the REST catalog to be attributed to the CREATE query, "
+        f"got {requests_sent}"
+    )
+    assert max(requests_sent) - min(requests_sent) < max_tries - 1, (
+        f"the 409 'namespace already exists' response is being retried instead of being treated "
+        f"as non-retriable: per-CREATE ReadWriteBufferFromHTTPRequestsSent counts {requests_sent} "
+        f"vary by at least http_max_tries-1={max_tries - 1}"
+    )
 
 
 
