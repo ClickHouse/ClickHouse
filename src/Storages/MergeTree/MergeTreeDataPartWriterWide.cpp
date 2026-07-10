@@ -228,7 +228,7 @@ void MergeTreeDataPartWriterWide::addStreams(
     };
 
     auto serialization = getSerialization(name_and_type.name);
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.getTypeInStorage()).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
@@ -471,7 +471,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const Nam
     };
 
     auto serialization = getSerialization(name_and_type.name);
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.getTypeInStorage()).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);
     return result;
@@ -507,7 +507,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
         column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
     };
 
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.getTypeInStorage()).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
@@ -609,7 +609,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
         if (is_offsets)
             offset_substreams.insert(getStreamName(name_and_type, substream_path));
     };
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.getTypeInStorage()).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
@@ -897,7 +897,7 @@ void MergeTreeDataPartWriterWide::writeFinalMark(const NameAndTypePair & name_an
             offset_substreams.insert(getStreamName(name_and_type, substream_path));
     };
     auto serialization = getSerialization(name_and_type.name);
-    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
+    auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.getTypeInStorage()).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }

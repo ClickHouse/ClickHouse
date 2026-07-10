@@ -2287,7 +2287,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
         ArrayImpl::NullMapBuilder<mode> builder;
         auto res = perform(arguments, removeNullable(result_type), builder, input_rows_count);
 
-        if (builder && canBeWrappedInNullableAllowingArray(*res))
+        if (builder && (result_type->isNullable() ? canBeWrappedInNullableAllowingArray(*res) : res->canBeInsideNullable()))
             return ColumnNullable::create(res, std::move(builder).getNullMapColumnPtr());
 
         return res;

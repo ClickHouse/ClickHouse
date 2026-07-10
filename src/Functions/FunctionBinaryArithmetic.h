@@ -2183,7 +2183,17 @@ class FunctionBinaryArithmetic : public IFunction
 
         if (is_swapped)
             std::swap(new_arguments[1], new_arguments[0]);
-        auto res = executeImpl2(new_arguments, result_array_type, rows_count, right_element_null_map);
+
+        ColumnPtr res;
+        if (!right_element_null_map)
+        {
+            if (auto function_builder = getFunctionForTupleArithmetic(new_arguments[0].type, new_arguments[1].type, context))
+                res = function_builder->build(new_arguments)->execute(new_arguments, result_array_type, rows_count, /* dry_run = */ false);
+            else if (auto tuple_number_function_builder = getFunctionForTupleAndNumberArithmetic(new_arguments[0].type, new_arguments[1].type, context))
+                res = executeTupleNumberOperator(new_arguments, result_array_type, rows_count, tuple_number_function_builder);
+        }
+        if (!res)
+            res = executeImpl2(new_arguments, result_array_type, rows_count, right_element_null_map);
 
         auto array_result = ColumnArray::create(res, left_array_col->getOffsetsPtr());
         return detail::wrapNullableArrayArithmeticResult(

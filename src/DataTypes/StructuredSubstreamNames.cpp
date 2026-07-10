@@ -25,7 +25,7 @@ bool pathContainsSubstreamInRange(const SubstreamPath & path, size_t begin, size
 {
     for (size_t i = begin; i < end && i < path.size(); ++i)
     {
-        if (path[i].type == type)
+        if (path[i].type == type || (type == Substream::NullMap && path[i].type == Substream::NullMapHidden))
             return true;
     }
     return false;
@@ -36,7 +36,7 @@ size_t countSubstreamsInRange(const SubstreamPath & path, size_t begin, size_t e
     size_t count = 0;
     for (size_t i = begin; i < end && i < path.size(); ++i)
     {
-        if (path[i].type == type)
+        if (path[i].type == type || (type == Substream::NullMap && path[i].type == Substream::NullMapHidden))
             ++count;
     }
     return count;
@@ -49,7 +49,9 @@ String getPathPrefixInRange(const SubstreamPath & path, size_t begin_index, size
     for (size_t i = begin_index; i < end_index && i < path.size(); ++i)
     {
         const auto & element = path[i];
-        if (element.type == Substream::TupleElement)
+        if (element.type == Substream::NullMapHidden)
+            stream_name += ".null";
+        else if (element.type == Substream::TupleElement)
             stream_name += escapeForFileName("." + element.name_of_substream);
         else if (element.type == Substream::VariantElement)
             stream_name += "." + escapeForFileName(element.variant_element_name);
@@ -126,7 +128,7 @@ std::optional<size_t> findLastSubstreamInRange(
     std::optional<size_t> last_index;
     for (size_t i = begin_index; i < end_index && i < path.size(); ++i)
     {
-        if (path[i].type == type)
+        if (path[i].type == type || (type == Substream::NullMap && path[i].type == Substream::NullMapHidden))
             last_index = i;
     }
     return last_index;
@@ -158,7 +160,7 @@ String buildStructuredSubstreamNameSuffix(const SubstreamPath & path)
     const bool has_array_sizes_before_end = pathContainsSubstreamInRange(path, 0, path_size, Substream::ArraySizes);
     const bool has_null_map_before_end = pathContainsSubstreamInRange(path, 0, path_size - 1, Substream::NullMap);
 
-    if (last_type == Substream::NullMap)
+    if (last_type == Substream::NullMap || last_type == Substream::NullMapHidden)
     {
         const String path_context = getStructuredPathPrefixInRange(path, 0, path_size - 1);
 
@@ -215,7 +217,7 @@ String getLegacySubstreamNameSuffix(
 
     for (auto it = begin; it != end; ++it)
     {
-        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
+        if (it->type == Substream::NullMap || it->type == Substream::NullMapHidden || it->type == Substream::SparseNullMap)
             stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
             stream_name += ".size" + toString(array_level);

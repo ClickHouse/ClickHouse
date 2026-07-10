@@ -698,6 +698,7 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
 
     size_t last_elem = prefix_len - 1;
     return path[last_elem].type == Substream::NullMap
+            || path[last_elem].type == Substream::NullMapHidden
             || path[last_elem].type == Substream::SparseNullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
