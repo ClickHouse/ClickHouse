@@ -1634,6 +1634,7 @@ static Coordination::Error preprocess(
     stat.aversion = 0;
     stat.cversion = 0;
     stat.ephemeralOwner = zk_request.is_ephemeral ? session_id : 0;
+    stat.dataLength = static_cast<int32_t>(zk_request.data.size());
 
     ACLId acl_id = storage.acl_map.convertACLs(node_acls);
 

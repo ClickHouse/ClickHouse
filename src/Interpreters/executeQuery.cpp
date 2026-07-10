@@ -243,6 +243,22 @@ namespace FailPoints
     extern const char terminate_with_exception[];
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
+    extern const char trigger_sanitizer_error[];
+}
+
+static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
+{
+#if defined(ADDRESS_SANITIZER)
+    const auto data = std::make_unique_for_overwrite<char[]>(16);
+    [[maybe_unused]] volatile char c = data[16];
+#elif defined(THREAD_SANITIZER)
+    std::mutex mutex;
+    mutex.unlock();
+#elif defined(MEMORY_SANITIZER)
+    const auto data = std::make_unique_for_overwrite<char[]>(16);
+    if (data[7] == 42)
+        __builtin_trap();
+#endif
 }
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
@@ -2379,6 +2395,11 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         {
             std::vector<int> v;
             (void)v[0];
+        });
+
+        fiu_do_on(FailPoints::trigger_sanitizer_error,
+        {
+            triggerSanitizerError();
         });
     }
 
