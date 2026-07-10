@@ -41,7 +41,7 @@ void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDesc
         const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
         if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
         {
-            ReplaceAliasToExprVisitor::Data data{columns};
+            ReplaceAliasToExprVisitor::Data data{columns, {}};
             ReplaceAliasToExprVisitor{data}.visit(func->arguments->children[1]);
         }
     }
@@ -177,7 +177,7 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     if (expr_list == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
 
-    ReplaceAliasToExprVisitor::Data data{columns};
+    ReplaceAliasToExprVisitor::Data data{columns, {}};
     ReplaceAliasToExprVisitor{data}.visit(expr_list);
 
     expression_list_ast = expr_list->clone();
