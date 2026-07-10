@@ -150,7 +150,7 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOverlay::getDetachedTablesIter
         for (; it->isValid(); it->next())
         {
             SnapshotDetachedTable snapshot_table;
-            snapshot_table.database = it->database();
+            snapshot_table.database = getDatabaseName();
             snapshot_table.table = it->table();
             snapshot_table.uuid = it->uuid();
             snapshot_table.metadata_path = it->metadataPath();
