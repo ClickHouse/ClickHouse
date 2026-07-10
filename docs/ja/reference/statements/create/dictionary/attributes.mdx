@@ -1,0 +1,182 @@
+---
+description: '辞書キーと属性の設定'
+sidebarTitle: '属性'
+slug: /sql-reference/statements/create/dictionary/attributes
+title: 'Dictionary 属性'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/ja/_snippet_dictionary_in_cloud.mdx';
+
+<CloudDetails />
+
+`structure` 句では、クエリで使用できる辞書キーとフィールドを定義します。
+
+XML の説明:
+
+```xml
+<dictionary>
+    <structure>
+        <id>
+            <name>Id</name>
+        </id>
+
+        <attribute>
+            <!-- attributeのパラメータ -->
+        </attribute>
+
+        ...
+
+    </structure>
+</dictionary>
+```
+
+属性は次の要素で表されます:
+
+* `<id>` — キーカラム
+* `<attribute>` — データカラム: 属性は複数指定できます。
+
+DDLクエリ:
+
+```sql
+CREATE DICTIONARY dict_name (
+    Id UInt64,
+    -- 属性
+)
+PRIMARY KEY Id
+...
+```
+
+属性はクエリのボディ内で記述します：
+
+* `PRIMARY KEY` — キーカラム
+* `AttrName AttrType` — データカラム。属性は複数指定できます。
+
+<div id="key">
+  ## キー
+</div>
+
+ClickHouse は、次の種類のキーをサポートしています。
+
+* 数値キー。`UInt64`。`<id>` タグ、または `PRIMARY KEY` キーワードで定義します。
+* 複合キー。異なる型の値の集合。`<key>` タグ、または `PRIMARY KEY` キーワードで定義します。
+
+XML 構造には `<id>` と `<key>` のどちらか一方のみを含めることができます。DDLクエリには `PRIMARY KEY` を1つだけ含める必要があります。
+
+<Note>
+  キーを 属性 として記述してはいけません。
+</Note>
+
+<div id="numeric-key">
+  ### 数値キー
+</div>
+
+型: `UInt64`。
+
+設定例:
+
+```xml
+<id>
+    <name>Id</name>
+</id>
+```
+
+設定項目:
+
+* `name` – キーを含むカラム名。
+
+DDLクエリの場合:
+
+```sql
+CREATE DICTIONARY (
+    Id UInt64,
+    ...
+)
+PRIMARY KEY Id
+...
+```
+
+* `PRIMARY KEY` – キーとなるカラムの名前。
+
+<div id="composite-key">
+  ### 複合キー
+</div>
+
+キーには、任意の型のフィールドからなる`tuple`を指定できます。この場合、[layout](/ja/reference/statements/create/dictionary/layouts/overview)は`complex_key_hashed`または`complex_key_cache`である必要があります。
+
+<Tip>
+  複合キーは、単一の要素から構成することもできます。これにより、たとえば文字列をキーとして使用できます。
+</Tip>
+
+キーの構造は`<key>`要素で設定します。キーのフィールドは、Dictionaryの[属性](#attributes)と同じ形式で指定します。例:
+
+```xml
+<structure>
+    <key>
+        <attribute>
+            <name>field1</name>
+            <type>String</type>
+        </attribute>
+        <attribute>
+            <name>field2</name>
+            <type>UInt32</type>
+        </attribute>
+        ...
+    </key>
+...
+```
+
+または
+
+```sql
+CREATE DICTIONARY (
+    field1 String,
+    field2 UInt32
+    ...
+)
+PRIMARY KEY field1, field2
+...
+```
+
+`dictGet*` 関数へのクエリでは、キーとしてタプルを渡します。例: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
+
+<div id="attributes">
+  ## 属性
+</div>
+
+設定例:
+
+```xml
+<structure>
+    ...
+    <attribute>
+        <name>Name</name>
+        <type>ClickHouseDataType</type>
+        <null_value></null_value>
+        <expression>rand64()</expression>
+        <hierarchical>true</hierarchical>
+        <injective>true</injective>
+        <is_object_id>true</is_object_id>
+    </attribute>
+</structure>
+```
+
+または
+
+```sql
+CREATE DICTIONARY somename (
+    Name ClickHouseDataType DEFAULT '' EXPRESSION rand64() HIERARCHICAL INJECTIVE IS_OBJECT_ID
+)
+```
+
+設定フィールド:
+
+| タグ                                                 | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 必須  |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| `name`                                             | カラム名。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | はい  |
+| `type`                                             | ClickHouseのデータ型: [UInt8](/ja/reference/data-types/int-uint), [UInt16](/ja/reference/data-types/int-uint), [UInt32](/ja/reference/data-types/int-uint), [UInt64](/ja/reference/data-types/int-uint), [Int8](/ja/reference/data-types/int-uint), [Int16](/ja/reference/data-types/int-uint), [Int32](/ja/reference/data-types/int-uint), [Int64](/ja/reference/data-types/int-uint), [Float32](/ja/reference/data-types/float), [Float64](/ja/reference/data-types/float), [UUID](/ja/reference/data-types/uuid), [Decimal32](/ja/reference/data-types/decimal), [Decimal64](/ja/reference/data-types/decimal), [Decimal128](/ja/reference/data-types/decimal), [Decimal256](/ja/reference/data-types/decimal),[Date](/ja/reference/data-types/date), [Date32](/ja/reference/data-types/date32), [DateTime](/ja/reference/data-types/datetime), [DateTime64](/ja/reference/data-types/datetime64), [String](/ja/reference/data-types/string), [Array](/ja/reference/data-types/array).<br />ClickHouseは、Dictionaryの値を指定されたデータ型にCASTしようとします。たとえばMySQLでは、MySQLのソーステーブル内のフィールドが `TEXT`、`VARCHAR`、または `BLOB` であっても、ClickHouseでは `String` として取り込めます。<br />[Nullable](/ja/reference/data-types/nullable) は現在、[Flat](/ja/reference/statements/create/dictionary/layouts/flat), [Hashed](/ja/reference/statements/create/dictionary/layouts/hashed), [ComplexKeyHashed](/ja/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed), [Direct](/ja/reference/statements/create/dictionary/layouts/direct), [ComplexKeyDirect](/ja/reference/statements/create/dictionary/layouts/direct#complex_key_direct), [RangeHashed](/ja/reference/statements/create/dictionary/layouts/range-hashed), Polygon, [Cache](/ja/reference/statements/create/dictionary/layouts/cache), [ComplexKeyCache](/ja/reference/statements/create/dictionary/layouts/cache), [SSDCache](/ja/reference/statements/create/dictionary/layouts/ssd-cache), [SSDComplexKeyCache](/ja/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache) Dictionaryでサポートされています。[IPTrie](/ja/reference/statements/create/dictionary/layouts/ip-trie) Dictionaryでは、`Nullable` 型はサポートされていません。 | はい  |
+| `null_value`                                       | 存在しない要素に対するデフォルト値。<br />この例では空文字列です。[NULL](/ja/reference/syntax#null) 値を使用できるのは `Nullable` 型のみです (型の説明がある前の行を参照してください) 。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | はい  |
+| `expression`                                       | ClickHouseが値に対して実行する[Expression](/ja/reference/syntax#expressions)。<br />この式には、リモートSQLデータベース内のカラム名を指定できます。そのため、リモートカラムの alias を作成するために使用できます。<br /><br />デフォルト値: 式なし。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | いいえ |
+| <a name="hierarchical-dict-attr" /> `hierarchical` | `true` の場合、この属性には現在のキーに対応する親キーの値が含まれます。[Hierarchical Dictionaries](/ja/reference/statements/create/dictionary/layouts/hierarchical) を参照してください。<br /><br />デフォルト値: `false`。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | いいえ |
+| `injective`                                        | `id -> attribute` の写像が[injective](https://en.wikipedia.org/wiki/Injective_function)であるかどうかを示すフラグ。<br />`true` の場合、ClickHouseは injective な Dictionary に対するリクエストを `GROUP BY` clause の後に自動的に配置できます。通常、これによりそのようなリクエスト数を大幅に減らせます。<br /><br />デフォルト値: `false`。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | いいえ |
+| `is_object_id`                                     | MongoDBドキュメントに対するクエリが `ObjectID` によって実行されるかどうかを示すフラグ。<br /><br />デフォルト値: `false`。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |     |

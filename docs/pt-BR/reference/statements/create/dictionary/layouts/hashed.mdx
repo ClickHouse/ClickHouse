@@ -1,0 +1,174 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hashed
+title: 'tipos de layout hashed para dicionários'
+sidebarTitle: 'hashed'
+description: 'Armazene um dicionário na memória usando tabelas hash: hashed, sparse_hashed, complex_key_hashed, complex_key_sparse_hashed'
+doc_type: 'reference'
+---
+
+<div id="hashed">
+  ## hashed
+</div>
+
+O dicionário é armazenado inteiramente na memória na forma de uma tabela hash. O dicionário pode conter qualquer quantidade de elementos com quaisquer identificadores. Na prática, o número de chaves pode chegar a dezenas de milhões de itens.
+
+A chave do dicionário é do tipo [UInt64](/pt-BR/reference/data-types/int-uint).
+
+Todos os tipos de fontes são compatíveis. Ao atualizar, os dados (de um arquivo ou de uma tabela) são lidos por inteiro.
+
+Exemplo de configuração:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED())
+    ```
+  </Tab>
+
+  <Tab title="Arquivo de configuração">
+    ```xml
+    <layout>
+      <hashed />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Exemplo de configuração com parâmetros:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="Arquivo de configuração">
+    ```xml
+    <layout>
+      <hashed>
+        <!-- Se shards for maior que 1 (o padrão é `1`), o dicionário carregará
+             os dados em paralelo, o que é útil se você tiver uma quantidade muito grande de elementos em um
+             único dicionário. -->
+        <shards>10</shards>
+
+        <!-- Tamanho do backlog de blocos na fila paralela.
+
+             Como o gargalo no carregamento em paralelo é o rehash, para evitar
+             paralisações enquanto uma thread executa o rehash, é necessário ter algum
+             backlog.
+
+             10000 é um bom equilíbrio entre memória e velocidade.
+             Mesmo para 10e10 elementos, consegue lidar com toda a carga sem starvation. -->
+        <shard_load_queue_backlog>10000</shard_load_queue_backlog>
+
+        <!-- Fator de carga máximo da tabela hash; com valores maiores, a memória
+             é usada com mais eficiência (menos memória é desperdiçada), mas o desempenho de leitura
+             pode piorar.
+
+             Valores válidos: [0.5, 0.99]
+             Padrão: 0.5 -->
+        <max_load_factor>0.5</max_load_factor>
+      </hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="sparse_hashed">
+  ## sparse_hashed
+</div>
+
+Semelhante a `hashed`, mas usa menos memória em troca de maior uso de CPU.
+
+A chave do dicionário é do tipo [UInt64](/pt-BR/reference/data-types/int-uint).
+
+Exemplo de configuração:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="Arquivo de configuração">
+    ```xml
+    <layout>
+      <sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Também é possível usar `shards` com esse tipo de dicionário e, novamente, isso é mais importante para `sparse_hashed` do que para `hashed`, já que `sparse_hashed` é mais lento.
+
+<div id="complex_key_hashed">
+  ## complex_key_hashed
+</div>
+
+Esse tipo de armazenamento é usado com [chaves compostas](/pt-BR/reference/statements/create/dictionary/attributes#composite-key). Semelhante a `hashed`.
+
+Exemplo de configuração:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="Arquivo de configuração">
+    ```xml
+    <layout>
+      <complex_key_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_sparse_hashed">
+  ## complex_key_sparse_hashed
+</div>
+
+Este tipo de armazenamento é usado com [chaves](/pt-BR/reference/statements/create/dictionary/attributes#composite-key) compostas. É semelhante a [sparse&#95;hashed](#sparse_hashed).
+
+Exemplo de configuração:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="Arquivo de configuração">
+    ```xml
+    <layout>
+      <complex_key_sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

@@ -1,0 +1,151 @@
+---
+title: Parquet ファイルを CSV または JSON に変換するにはどうすればよいですか？
+description: "ClickHouse の `clickhouse-local` ツールを使って、Parquet ファイルを CSV または JSON フォーマットに簡単に変換する方法を学びます。"
+date: 2023-03-22
+tags: ['データソース', 'データフォーマット']
+keywords: ['変換', 'Parquet', 'CSV', 'JSON']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="converting-files-from-parquet-to-csv-or-json">
+  ## Parquet から CSV または JSON へのファイル変換
+</div>
+
+`clickhouse-local` を使うと、ClickHouse がサポートする任意の [入出力フォーマット](/ja/reference/formats/index) 間でファイルを変換できます (サポートされているフォーマットは 70 種類以上あります) 。この記事では、S3 上の Parquet ファイルを CSV ファイルと JSON ファイルに変換します。
+
+では、最初から見ていきましょう。ClickHouse には、ファイル、データベース、その他のリソースからデータを読み込み、それをテーブルとして扱えるようにする [テーブル関数](/ja/reference/functions/table-functions/index) が用意されています。例として、S3 に Parquet ファイルがあるとします。これを読み込むには `s3` テーブル関数を使います (ClickHouse はファイル名に基づいて、それが Parquet ファイルであることを認識します) 。
+
+その前に、`clickhouse` バイナリをダウンロードしましょう:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+<div id="accessing-the-data-using-a-table-function">
+  ## テーブル関数を使用してデータにアクセスする
+</div>
+
+`s3` テーブル関数が作成する結果のテーブルに対して `DESCRIBE` を実行し、ファイルを読み取れることを確認しましょう。
+
+```bash
+./clickhouse local -q "DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')"
+```
+
+このファイルには、英国で売買された物件の住宅価格データが含まれています。レスポンスは次のようになります。
+
+```response
+price	Nullable(Int64)
+date	Nullable(UInt16)
+postcode1	Nullable(String)
+postcode2	Nullable(String)
+type	Nullable(String)
+is_new	Nullable(UInt8)
+duration	Nullable(String)
+addr1	Nullable(String)
+addr2	Nullable(String)
+street	Nullable(String)
+locality	Nullable(String)
+town	Nullable(String)
+district	Nullable(String)
+county	Nullable(String)
+```
+
+このデータに対して、任意のクエリを実行できます。たとえば、住宅の平均価格が最も高い町を見てみましょう。
+
+```bash
+./clickhouse local -q "SELECT
+   town,
+   avg(price) AS avg_price
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')
+GROUP BY town
+ORDER BY avg_price DESC
+LIMIT 10"
+```
+
+レスポンスは次のようになります。
+
+```bash
+GATWICK	16818750
+CHALFONT ST GILES	938090.0985915493
+VIRGINIA WATER	789301.1320224719
+COBHAM	699874.7111622555
+BEACONSFIELD	677247.5483146068
+ESHER	616004.6888297872
+KESTON	607585.8597560975
+GERRARDS CROSS	566330.2959086584
+ASCOT	551491.2975753123
+WEYBRIDGE	548974.828692494
+```
+
+<div id="convert-the-parquet-file-to-a-csv">
+  ## ParquetファイルをCSVに変換する
+</div>
+
+任意のSQLクエリの結果はファイルに出力できます。S3上のParquetファイルからすべてのカラムを取得し、その結果を新しいCSVファイルに出力してみましょう。出力ファイルの拡張子が`.csv`で終わっているため、ClickHouseは`CSV`出力フォーマットを使用します:
+
+```bash
+./clickhouse local -q "SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')
+INTO OUTFILE 'house_prices.csv'"
+```
+
+正しくできたことを確認しましょう:
+
+```response
+$ tail house_prices.csv
+70000,10508,"YO8","9XN","detached",0,"freehold","7","","POPPY CLOSE","SELBY","SELBY","SELBY","NORTH YORKSHIRE"
+130000,14274,"YO8","9XP","detached",0,"freehold","10","","HEATHER CLOSE","","SELBY","SELBY","NORTH YORKSHIRE"
+150000,18180,"YO8","9XP","detached",0,"freehold","11","","HEATHER CLOSE","","SELBY","SELBY","NORTH YORKSHIRE"
+157000,18088,"YO8","9XP","detached",0,"freehold","12","","HEATHER CLOSE","","SELBY","SELBY","NORTH YORKSHIRE"
+134000,17333,"YO8","9XP","semi-detached",0,"freehold","16","","HEATHER CLOSE","","SELBY","SELBY","NORTH YORKSHIRE"
+250000,13405,"YO8","9YA","detached",0,"freehold","6","","YORKDALE COURT","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
+59500,11166,"YO8","9YB","semi-detached",0,"freehold","4","","YORKDALE DRIVE","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
+142500,17648,"YO8","9YB","semi-detached",0,"freehold","4A","","YORKDALE DRIVE","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
+230000,15125,"YO8","9YD","detached",0,"freehold","1","","ONE ACRE GARTH","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
+250000,15950,"YO8","9YD","detached",0,"freehold","3","","ONE ACRE GARTH","HAMBLETON","SELBY","SELBY","NORTH YORKSHIRE"
+```
+
+<div id="convert-the-parquet-file-to-a-json">
+  ## ParquetファイルをJSONに変換する
+</div>
+
+ParquetファイルをJSONに変換するには、出力ファイル名の拡張子を変更するだけで済みます。
+
+```bash
+./clickhouse local -q "SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')
+INTO OUTFILE 'house_prices.ndjson'"
+```
+
+うまくいったか確認しましょう：
+
+```response
+ $ tail house_prices.ndjson
+{"price":"70000","date":10508,"postcode1":"YO8","postcode2":"9XN","type":"detached","is_new":0,"duration":"freehold","addr1":"7","addr2":"","street":"POPPY CLOSE","locality":"SELBY","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"130000","date":14274,"postcode1":"YO8","postcode2":"9XP","type":"detached","is_new":0,"duration":"freehold","addr1":"10","addr2":"","street":"HEATHER CLOSE","locality":"","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"150000","date":18180,"postcode1":"YO8","postcode2":"9XP","type":"detached","is_new":0,"duration":"freehold","addr1":"11","addr2":"","street":"HEATHER CLOSE","locality":"","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"157000","date":18088,"postcode1":"YO8","postcode2":"9XP","type":"detached","is_new":0,"duration":"freehold","addr1":"12","addr2":"","street":"HEATHER CLOSE","locality":"","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"134000","date":17333,"postcode1":"YO8","postcode2":"9XP","type":"semi-detached","is_new":0,"duration":"freehold","addr1":"16","addr2":"","street":"HEATHER CLOSE","locality":"","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"250000","date":13405,"postcode1":"YO8","postcode2":"9YA","type":"detached","is_new":0,"duration":"freehold","addr1":"6","addr2":"","street":"YORKDALE COURT","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"59500","date":11166,"postcode1":"YO8","postcode2":"9YB","type":"semi-detached","is_new":0,"duration":"freehold","addr1":"4","addr2":"","street":"YORKDALE DRIVE","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"142500","date":17648,"postcode1":"YO8","postcode2":"9YB","type":"semi-detached","is_new":0,"duration":"freehold","addr1":"4A","addr2":"","street":"YORKDALE DRIVE","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"230000","date":15125,"postcode1":"YO8","postcode2":"9YD","type":"detached","is_new":0,"duration":"freehold","addr1":"1","addr2":"","street":"ONE ACRE GARTH","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+{"price":"250000","date":15950,"postcode1":"YO8","postcode2":"9YD","type":"detached","is_new":0,"duration":"freehold","addr1":"3","addr2":"","street":"ONE ACRE GARTH","locality":"HAMBLETON","town":"SELBY","district":"SELBY","county":"NORTH YORKSHIRE"}
+```
+
+<div id="convert-csv-to-parquet">
+  ## CSVをParquetに変換
+</div>
+
+逆方向の変換も可能です。新しいCSVファイルを簡単に読み込み、Parquetファイルとして出力できます。ローカルファイル`house_prices.csv`は、`file`テーブル関数を使ってClickHouseで読み込めます。また、ClickHouseはファイル名の末尾が`.parquet`であれば、それに基づいてParquetフォーマットでファイルを出力します (または、`FORMAT Parquet`句を追加することもできます) 。
+
+```bash
+./clickhouse local -q "SELECT *
+FROM file('house_prices.csv')
+INTO OUTFILE 'house_prices.parquet'"
+```
+
+前述のように、`clickhouse local` と組み合わせて ClickHouse の任意の [入出力フォーマット](/ja/reference/formats/index) を使えば、ファイルを別のフォーマットに簡単に変換できます。

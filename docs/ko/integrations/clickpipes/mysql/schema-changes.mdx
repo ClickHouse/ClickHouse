@@ -1,0 +1,39 @@
+---
+title: '스키마 변경 전파 지원'
+slug: /integrations/clickpipes/mysql/schema-changes
+description: '원본 테이블에서 ClickPipes가 감지할 수 있는 스키마 변경 유형을 설명하는 페이지'
+doc_type: 'reference'
+keywords: ['clickpipes', 'mysql', 'cdc', '수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+MySQL용 ClickPipes는 원본 테이블의 스키마 변경을 감지할 수 있으며, 경우에 따라 이러한 변경 사항을 대상 테이블에 자동으로 전파할 수 있습니다. 각 DDL 작업이 어떻게 처리되는지는 아래에 설명되어 있습니다.
+
+[//]: # "TODO 이 페이지에 이름 변경, 데이터 타입 변경, TRUNCATE 동작, 그리고 호환되지 않는 스키마 변경을 처리하는 방법에 대한 안내를 추가합니다."
+
+| 스키마 변경 유형                                                  | 동작                                                                                   |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 새 컬럼 추가 (`ALTER TABLE ADD COLUMN ...`)                     | 자동으로 전파됩니다. 새 컬럼은 스키마 변경 이후 복제되는 모든 행에 채워집니다                                         |
+| 기본값이 있는 새 컬럼 추가 (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | 자동으로 전파됩니다. 새 컬럼은 스키마 변경 이후 복제되는 모든 행에 채워지지만, 기존 행에는 테이블 전체를 갱신하지 않으면 기본값이 표시되지 않습니다 |
+| 기존 컬럼 삭제 (`ALTER TABLE DROP COLUMN ...`)                   | 감지되지만 **전파되지는 않습니다**. 삭제된 컬럼은 스키마 변경 이후 복제되는 모든 행에서 `NULL`로 채워집니다                    |
+
+<Note>
+  현재 스냅샷 수행 중에는 컬럼 추가가 지원되지 않습니다. 권장되는 우회 방법은 계획된 스키마 변경 전이나 후에 스냅샷을 수행하는 것입니다. 또는 ClickPipe가 이미 실패한 상태라면 대상 테이블에 적절한 타입의 컬럼을 수동으로 추가하십시오.
+</Note>
+
+<div id="mysql-5-limitations">
+  ### MySQL 5.x 제한 사항
+</div>
+
+[8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/)보다 이전 버전의 MySQL은 binlog에 전체 컬럼 메타데이터(`binlog_row_metadata=FULL`)를 포함하지 않으므로, ClickPipes는 컬럼을 순서 위치(ordinal position) 기준으로 추적합니다. 이는 다음을 의미합니다.
+
+* **끝에 컬럼 추가** (`ALTER TABLE ADD COLUMN ...`)는 지원됩니다.
+* **컬럼 위치를 변경하는 모든 DDL**은 파이프에서 오류를 발생시킵니다. 순서 위치를 더 이상 안정적으로 매핑할 수 없기 때문입니다. 여기에는 다음이 포함됩니다.
+  * `ALTER TABLE DROP COLUMN ...`
+  * `ALTER TABLE ADD COLUMN ... AFTER ...` / `FIRST`
+  * `ALTER TABLE MODIFY COLUMN ... AFTER ...` / `FIRST`
+  * `ALTER TABLE CHANGE COLUMN ... AFTER ...` / `FIRST`
+
+이 오류가 발생하면 파이프를 resync해야 합니다.

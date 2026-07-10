@@ -1,0 +1,88 @@
+---
+slug: /use-cases/observability/clickstack/deployment/hyperdx-only
+title: 'HyperDX فقط'
+description: 'نشر HyperDX فقط'
+doc_type: 'دليل'
+keywords: ['نشر HyperDX بشكل مستقل', 'تكامل HyperDX مع ClickHouse', 'نشر HyperDX فقط', 'تثبيت HyperDX باستخدام Docker', 'أداة تصوّر لـ ClickHouse']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import JSONSupport from '/snippets/ar/_json_support.mdx';
+
+صُمِّم هذا الخيار للحالات التي يكون لديك فيها بالفعل مثيل ClickHouse قيد التشغيل ومملوء ببيانات observability أو بيانات الأحداث.
+
+يمكن استخدام HyperDX بشكل مستقل عن بقية المكدس، وهو متوافق مع أي مخطط بيانات، وليس OpenTelemetry (OTel) فقط. وهذا يجعله مناسبًا لخطوط أنابيب observability المخصّصة المبنية مسبقًا على ClickHouse.
+
+لتمكين الوظائف الكاملة، يجب عليك توفير مثيل MongoDB لتخزين حالة التطبيق، بما في ذلك لوحات المعلومات وعمليات البحث المحفوظة وإعدادات المستخدم والتنبيهات.
+
+في هذا الوضع، تُترك عملية إدخال البيانات بالكامل للمستخدم. يمكنك إدخال البيانات إلى ClickHouse باستخدام OpenTelemetry Collector المستضاف لديك، أو عبر الإدخال المباشر من مكتبات العميل، أو محركات الجداول الأصلية في ClickHouse (مثل Kafka أو S3)، أو خطوط أنابيب ETL، أو خدمات الإدخال المُدارة مثل ClickPipes. يوفّر هذا النهج أقصى قدر من المرونة، وهو مناسب للفرق التي تُشغّل ClickHouse بالفعل وتريد إضافة HyperDX فوقه لأغراض التصور والبحث والتنبيه.
+
+<div id="suitable-for">
+  ### مناسب لـ
+</div>
+
+* مستخدمو ClickHouse الحاليون
+* مسارات معالجة الأحداث المخصّصة
+
+<div id="deployment-steps">
+  ## خطوات النشر
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### النشر باستخدام Docker
+
+    شغّل الأمر التالي مع تعديل `YOUR_MONGODB_URI` حسب الحاجة.
+
+    ```shell
+    docker run -e MONGO_URI=mongodb://YOUR_MONGODB_URI -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx
+    ```
+  </Step>
+
+  <Step>
+    ### الانتقال إلى HyperDX UI
+
+    انتقل إلى [http://localhost:8080](http://localhost:8080) للوصول إلى HyperDX UI.
+
+    أنشئ مستخدمًا وأدخل اسم مستخدم وكلمة مرور يستوفيان المتطلبات.
+
+    عند النقر على `Create`، سيُطلب منك إدخال تفاصيل الاتصال.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="واجهة HyperDX" size="lg" />
+  </Step>
+
+  <Step>
+    ### إكمال تفاصيل الاتصال
+
+    اتصل بـ ClickHouse cluster خارجي خاص بك، مثل ClickHouse Cloud.
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="تسجيل الدخول إلى HyperDX" size="md" />
+
+    إذا طُلب منك إنشاء source، فاحتفظ بجميع القيم الافتراضية وأكمل الحقل `Table` بالقيمة `otel_logs`. ينبغي اكتشاف جميع الإعدادات الأخرى تلقائيًا، ما يتيح لك النقر على `Save New Source`.
+
+    <Info>
+      **إنشاء source**
+
+      يتطلب إنشاء source وجود جداول في ClickHouse. إذا لم تكن لديك بيانات، فنوصي بنشر ClickStack OpenTelemetry collector لإنشاء الجداول.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="using-docker-compose">
+  ## استخدام Docker Compose
+</div>
+
+يمكنك تعديل [إعداد Docker Compose](/ar/clickstack/deployment/docker-compose) لتحقيق النتيجة نفسها الواردة في هذا الدليل، مع إزالة OTel collector ومثيل ClickHouse من ملف الـmanifest.
+
+<div id="otel-collector">
+  ## ClickStack OpenTelemetry collector
+</div>
+
+حتى إذا كنت تدير OpenTelemetry Collector الخاص بك بصورة مستقلة عن بقية المكونات في المكدس، فإننا نوصي مع ذلك باستخدام توزيعة ClickStack من OpenTelemetry Collector. فهذا يضمن استخدام المخطط الافتراضي واتباع أفضل الممارسات لعملية إدخال البيانات.
+
+للاطلاع على تفاصيل نشر OpenTelemetry Collector مستقل وتهيئته، راجع [&quot;استيعاب البيانات باستخدام OpenTelemetry&quot;](/ar/clickstack/ingesting-data/collector#modifying-otel-collector-configuration).
+
+<JSONSupport />

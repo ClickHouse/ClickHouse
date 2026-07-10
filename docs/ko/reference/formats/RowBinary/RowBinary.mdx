@@ -1,0 +1,1327 @@
+---
+alias: []
+description: 'RowBinary 포맷 문서'
+input_format: true
+keywords: ['RowBinary']
+output_format: true
+slug: /interfaces/formats/RowBinary
+title: 'RowBinary'
+doc_type: '참고'
+---
+
+import RowBinaryFormatSettings from '/snippets/ko/common-row-binary-format-settings.mdx';
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+`RowBinary` 포맷은 데이터를 바이너리 형식으로 행 단위로 파싱합니다.
+행과 값은 구분자 없이 연속적으로 나열됩니다.
+데이터가 바이너리 형식이기 때문에 `FORMAT RowBinary` 뒤에 오는 구분자는 다음과 같이 엄격하게 지정됩니다.
+
+* 공백 문자는 개수 제한 없이 올 수 있습니다:
+  * `' '` (공백 - 코드 `0x20`)
+  * `'\t'` (탭 - 코드 `0x09`)
+  * `'\f'` (폼 피드 - 코드 `0x0C`)
+* 그 뒤에는 정확히 하나의 줄바꿈 시퀀스가 와야 합니다:
+  * Windows 형식 `"\r\n"`
+  * 또는 Unix 형식 `'\n'`
+* 그리고 그 직후에 바이너리 데이터가 와야 합니다.
+
+<Note>
+  이 포맷은 행 기반이므로 [Native](/ko/reference/formats/Native) 포맷보다 효율이 떨어집니다.
+</Note>
+
+<div id="data-types-wire-format">
+  ## 데이터 타입의 wire 형식
+</div>
+
+<Tip>
+  예시에 제공된 대부분의 쿼리는 `curl`을 사용해 파일로 출력되도록 실행할 수 있습니다.
+
+  ```bash
+  curl -XPOST "http://localhost:8123?default_format=RowBinary" \
+    --data-binary "SELECT 42 :: UInt32"  > out.bin
+  ```
+</Tip>
+
+그런 다음 헥스 에디터로 데이터를 확인할 수 있습니다.
+
+<div id="unsigned-leb128">
+  ### Unsigned LEB128 (리틀 엔디언 베이스 128)
+</div>
+
+`String`, `Array`, `Map`과 같은 가변 크기 데이터 타입의 길이를 인코딩하는 데 사용되는 **부호 없는 리틀 엔디언 방식의** 가변 길이 정수 인코딩입니다. 샘플 구현은 [LEB128 위키 페이지](https://en.wikipedia.org/wiki/LEB128#Decode_unsigned_integer)에서 확인할 수 있습니다.
+
+<div id="integer-types">
+  ### (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256
+</div>
+
+모든 정수 타입은 **리틀 엔디언**으로 적절한 수의 바이트를 사용해 인코딩됩니다. 부호 있는 타입(`Int8`부터 `Int256`까지)은 **2의 보수** 표현을 사용합니다. 대부분의 언어에서는 내장 도구 또는 널리 사용되는 라이브러리를 사용해 바이트 배열에서 이러한 정수를 추출할 수 있습니다. `Int128`/`Int256` 및 `UInt128`/`UInt256`는 대부분의 언어에서 지원하는 네이티브 정수 크기를 초과하므로, 사용자 정의 역직렬화가 필요할 수 있습니다.
+
+<div id="bool">
+  ### Bool
+</div>
+
+불리언 값은 1바이트로 인코딩되며, `UInt8`와 유사한 방식으로 역직렬화할 수 있습니다.
+
+* `0`은 `false`입니다
+* `1`은 `true`입니다
+
+<div id="float32-float64">
+  ### Float32, Float64
+</div>
+
+`Float32`는 4바이트, `Float64`는 8바이트로 인코딩되는 **리틀 엔디언** 부동소수점 값입니다. 정수와 마찬가지로 대부분의 언어는 이러한 값을 역직렬화할 수 있는 적절한 도구를 제공합니다.
+
+<div id="bfloat16">
+  ### BFloat16
+</div>
+
+[BFloat16](/ko/reference/data-types/float#bfloat16) (Brain Floating Point)은 Float32와 동일한 범위를 가지면서 정밀도는 낮춘 16비트 부동소수점 포맷으로, 기계 학습 워크로드에 유용합니다. wire 형식은 기본적으로 Float32 값의 상위 16비트입니다. 사용하는 언어가 이를 네이티브로 지원하지 않는다면, 가장 쉬운 방법은 UInt16으로 읽고 쓴 뒤 Float32로 변환하거나 Float32에서 변환하는 것입니다:
+
+BFloat16을 Float32로 변환(의사코드):
+
+```text
+// 리틀 엔디언 UInt16로 2바이트 읽기
+// 16비트 왼쪽 시프트하여 Float32 비트 얻기
+bfloat16Bits = readUInt16()
+float32Bits = bfloat16Bits << 16
+floatValue = reinterpretAsFloat32(float32Bits)
+```
+
+Float32를 BFloat16으로 변환하려면(의사코드):
+
+```text
+// Float32 비트를 오른쪽으로 16비트 시프트하여 BFloat16으로 잘라냄
+float32Bits = reinterpretAsUInt32(floatValue)
+bfloat16Bits = float32Bits >> 16
+writeUInt16(bfloat16Bits)
+```
+
+`BFloat16`의 내부 값 예시:
+
+```sql
+SELECT CAST(1.25, 'BFloat16')
+```
+
+```text
+0xA0, 0x3F, // BFloat16로 표현한 1.25
+```
+
+<div id="decimal">
+  ### Decimal32, Decimal64, Decimal128, Decimal256
+</div>
+
+Decimal 타입은 각 비트 폭에 맞는 **리틀 엔디언** 정수로 표현됩니다.
+
+* `Decimal32` - 4바이트 또는 `Int32`
+* `Decimal64` - 8바이트 또는 `Int64`
+* `Decimal128` - 16바이트 또는 `Int128`
+* `Decimal256` - 32바이트 또는 `Int256`
+
+Decimal 값을 역직렬화할 때 정수부와 소수부는 다음 의사 코드로 계산할 수 있습니다.
+
+```text
+let scale_multiplier = 10 ** scale
+let whole_part = trunc(value / scale_multiplier)  // 0 방향으로 절삭
+let fractional_part = value % scale_multiplier
+let result = Decimal(whole_part, fractional_part)
+```
+
+여기서 `trunc`는 0을 향해 버림을 수행하며(음수 값에서 결과가 달라지는 내림 나눗셈이 아닙니다), `scale`은 소수점 이하 자릿수입니다. 예를 들어 `Decimal(10, 2)`(`Decimal32(2)`와 동일함)의 경우 `scale`은 `2`이고, 값 `12345`는 `(123, 45)`로 표현됩니다.
+
+직렬화에는 이의 역연산이 필요합니다:
+
+```text
+let scale_multiplier = 10 ** scale
+let result = whole_part * scale_multiplier + fractional_part
+```
+
+자세한 내용은 [Decimal 타입에 대한 ClickHouse 문서](/ko/reference/data-types/decimal)를 참조하십시오.
+
+<div id="string">
+  ### String
+</div>
+
+ClickHouse 문자열은 **임의의 바이트 시퀀스**입니다. 반드시 유효한 UTF-8일 필요는 없습니다. 길이 프리픽스는 문자 수가 아니라 **바이트 길이**를 나타냅니다.
+
+다음 두 부분으로 인코딩됩니다:
+
+1. 문자열의 바이트 길이를 나타내는 가변 길이 정수(LEB128)
+2. 문자열의 실제 바이트 값
+
+예를 들어, 문자열 `foobar`는 다음과 같이 *7*바이트로 인코딩됩니다:
+
+```text
+0x06, // 문자열의 LEB128 길이 (6)
+0x66, // 'f'
+0x6f, // 'o'
+0x6f, // 'o'
+0x62, // 'b'
+0x61, // 'a'
+0x72, // 'r'
+```
+
+<div id="fixedstring">
+  ### FixedString
+</div>
+
+`String`과 달리 `FixedString`은 스키마(schema)에 정의된 고정 길이를 가집니다. 바이트 시퀀스로 인코딩되며, 값의 길이가 `N`보다 짧으면 뒤쪽을 0 바이트로 채웁니다.
+
+<Note>
+  `FixedString`을 읽을 때 뒤쪽의 0 바이트는 패딩일 수도 있고 데이터에 포함된 실제 `\0` 문자일 수도 있으며, wire 상에서는 이를 구분할 수 없습니다. ClickHouse는 `N` 바이트 전체를 있는 그대로 보존합니다.
+</Note>
+
+비어 있는 `FixedString(3)`에는 패딩용 0만 포함됩니다:
+
+```text
+0x00, 0x00, 0x00
+```
+
+문자열 `hi`가 들어 있는 비어 있지 않은 `FixedString(3)`:
+
+```text
+0x68, // 'h'
+0x69, // 'i'
+0x00, // 패딩 제로
+```
+
+문자열 `bar`가 들어 있는 비어 있지 않은 `FixedString(3)`:
+
+```text
+0x62, // 'b'
+0x61, // 'a'
+0x72, // 'r'
+```
+
+마지막 예시에서는 *세* 바이트를 모두 사용하므로 패딩이 필요하지 않습니다.
+
+<div id="date">
+  ### Date
+</div>
+
+`1970-01-01` ***이후*** 경과한 일수를 나타내는 `UInt16`(2바이트)로 저장됩니다.
+
+지원되는 값 범위: `[1970-01-01, 2149-06-06]`.
+
+`Date`의 예시 내부 값:
+
+```sql
+SELECT CAST('2024-01-15', 'Date') AS d
+```
+
+```text
+0x19, 0x4D, // UInt16(리틀 엔디언)로 표현된 19737 = 1970-01-01 이후 19737일
+```
+
+<div id="date32">
+  ### Date32
+</div>
+
+`1970-01-01`을 기준으로 ***이전 또는 이후***&#xC758; 날짜 수를 나타내는 `Int32`(4바이트)로 저장됩니다.
+
+지원되는 값 범위: `[1900-01-01, 2299-12-31]`.
+
+`Date32`의 내부 저장 값 예시:
+
+```sql
+SELECT CAST('2024-01-15', 'Date32') AS d
+```
+
+```text
+0x19, 0x4D, 0x00, 0x00, // Int32(리틀 엔디언)로 19737 = 1970-01-01 이후 19737일
+```
+
+epoch 이전 날짜:
+
+```sql
+SELECT CAST('1900-01-01', 'Date32') AS d
+```
+
+```text
+0x21, 0x9C, 0xFF, 0xFF, // Int32(리틀 엔디언)로 -25567 = 1970-01-01 기준 25567일 이전
+```
+
+<div id="datetime">
+  ### DateTime
+</div>
+
+`1970-01-01 00:00:00 UTC` ***이후부터***&#xC758; 초 수를 나타내는 `UInt32`(4바이트)로 저장됩니다.
+
+구문:
+
+```text
+DateTime([timezone])
+```
+
+예를 들어 `DateTime` 또는 `DateTime('UTC')`입니다.
+
+<Note>
+  바이너리 값은 항상 UTC epoch 오프셋입니다. 시간대는 인코딩을 바꾸지 않습니다. 하지만 시간대는 문자열 값을 삽입할 때 그 문자열이 해석되는 방식에 **실제로** 영향을 줍니다. 즉, `'2024-01-15 10:30:00'`을 `DateTime('America/New_York')` 컬럼에 삽입하면 같은 문자열을 `DateTime('UTC')` 컬럼에 삽입할 때와는 다른 epoch 값이 저장됩니다. 이는 해당 문자열이 컬럼의 시간대에 따른 현지 시간으로 해석되기 때문입니다. 전송 시에는 둘 다 단순히 `UInt32` epoch 초입니다.
+</Note>
+
+지원되는 값 범위: `[1970-01-01 00:00:00, 2106-02-07 06:28:15]`.
+
+`DateTime`의 내부 저장 값 예시:
+
+```sql
+SELECT CAST('2024-01-15 10:30:00', 'DateTime(\'UTC\')') AS d
+```
+
+```text
+0x28, 0x09, 0xA5, 0x65, // UInt32 형식의 1705314600 (리틀 엔디언)
+```
+
+<div id="datetime64">
+  ### DateTime64
+</div>
+
+`1970-01-01 00:00:00 UTC`를 기준으로 ***이전 또는 이후의*** **틱** 수를 나타내는 `Int64`(8바이트)로 저장됩니다. 틱의 해상도는 `precision` 매개변수로 정의되며, 아래 구문을 참조하십시오:
+
+```text
+DateTime64(precision, [timezone])
+```
+
+여기서 `precision`은 `0`부터 `9`까지의 정수입니다. 일반적으로는 다음 값만 사용합니다: `3`(밀리초), `6`(마이크로초),
+`9`(나노초).
+
+유효한 DateTime64 정의 예시는 다음과 같습니다: `DateTime64(0)`, `DateTime64(3)`, `DateTime64(6, 'UTC')`, `DateTime64(9, 'Europe/Amsterdam')`.
+
+<Note>
+  `DateTime`과 마찬가지로 바이너리 값은 항상 UTC epoch 기준 오프셋입니다. 시간대는 문자열 값을 삽입할 때 어떻게 해석할지에 영향을 주지만([DateTime](#datetime) 참고), 인코딩 자체는 항상 UTC epoch 이후의 `Int64` 틱입니다.
+</Note>
+
+`DateTime64` 유형의 내부 `Int64` 값은 UNIX epoch 이전 또는 이후의 다음 단위 수로 해석할 수 있습니다:
+
+* `DateTime64(0)` - 초.
+* `DateTime64(3)` - 밀리초.
+* `DateTime64(6)` - 마이크로초.
+* `DateTime64(9)` - 나노초.
+
+지원되는 값 범위: `[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]`.
+
+`DateTime64`의 내부 값 예시는 다음과 같습니다:
+
+* `DateTime64(3)`: 값 `1546300800000`은 `2019-01-01 00:00:00 UTC`를 나타냅니다.
+* `DateTime64(6)`: 값 `1705314600123456`은 `2024-01-15 10:30:00.123456 UTC`를 나타냅니다.
+* `DateTime64(9)`: 값 `1705314600123456789`은 `2024-01-15 10:30:00.123456789 UTC`를 나타냅니다.
+
+<Note>
+  최댓값의 `precision`은 8입니다. 최대 `precision`인 9자리(나노초)를 사용하면 지원되는 최댓값은 UTC 기준 2262-04-11 23:47:16입니다.
+</Note>
+
+<div id="time">
+  ### Time
+</div>
+
+초 단위의 시간 값을 나타내는 `Int32`로 저장됩니다. 음수 값도 유효합니다.
+
+지원되는 값 범위는 `[-999:59:59, 999:59:59]`(즉, `[-3599999, 3599999]`초)입니다.
+
+<Note>
+  현재 `Time` 또는 `Time64`를 사용하려면 `enable_time_time64_type` 설정을 `1`로 지정해야 합니다.
+</Note>
+
+`Time`의 내부 저장 값 예시:
+
+```sql
+SET enable_time_time64_type = 1;
+SELECT CAST('15:32:16', 'Time') AS t
+```
+
+```text
+0x80, 0xDA, 0x00, 0x00, // 55936초 = 15:32:16
+```
+
+<div id="time64">
+  ### Time64
+</div>
+
+내부적으로는 `Decimal64`(`Int64`로 저장됨)로 저장되며, 소수 초를 포함하는 시간 값을 나타냅니다. 정밀도는 구성할 수 있으며, 음수 값도 유효합니다.
+
+구문:
+
+```text
+Time64(precision)
+```
+
+여기서 `precision`은 `0`부터 `9`까지의 정수입니다. 일반적으로는 `3`(밀리초), `6`(마이크로초), `9`(나노초)를 사용합니다.
+
+지원되는 값 범위: `[-999:59:59.xxxxxxxxx, 999:59:59.xxxxxxxxx]`.
+
+<Note>
+  현재 `Time` 또는 `Time64`를 사용하려면 `enable_time_time64_type` 설정을 `1`로 지정해야 합니다.
+</Note>
+
+기본 `Int64` 값은 `10^precision` 배로 스케일된 초의 소수 부분을 나타냅니다.
+
+`Time64`의 내부 값 예시:
+
+```sql
+SET enable_time_time64_type = 1;
+SELECT CAST('15:32:16.123456', 'Time64(6)') AS t
+```
+
+```text
+0x40, 0x82, 0x0D, 0x06,
+0x0D, 0x00, 0x00, 0x00, // Int64로 표현된 55936123456
+// 55936123456 / 10^6 = 55936.123456 Seconds = 15:32:16.123456
+```
+
+<div id="interval-types">
+  ### 인터벌 타입
+</div>
+
+모든 인터벌 타입은 `Int64`(8바이트, 리틀 엔디언)로 저장됩니다. 값은 해당 시간 단위의 개수를 나타냅니다. 음수도 유효합니다.
+
+인터벌 타입은 다음과 같습니다: `IntervalNanosecond`, `IntervalMicrosecond`, `IntervalMillisecond`, `IntervalSecond`, `IntervalMinute`, `IntervalHour`, `IntervalDay`, `IntervalWeek`, `IntervalMonth`, `IntervalQuarter`, `IntervalYear`.
+
+<Note>
+  인터벌 타입 이름(예: `IntervalSecond` 또는 `IntervalDay`)이 저장된 값의 단위를 결정합니다. wire 인코딩은 항상 동일합니다.
+</Note>
+
+저장된 실제 값 예시:
+
+```sql
+SELECT INTERVAL 5 SECOND   AS a,
+     INTERVAL 10 DAY     AS b,
+     INTERVAL -7 DAY     AS c,
+     INTERVAL 3 YEAR     AS d,
+     INTERVAL 500 MICROSECOND AS e
+```
+
+```text
+// IntervalSecond: 5
+0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+// IntervalDay: 10
+0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+// IntervalDay: -7
+0xF9, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+// IntervalYear: 3
+0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+// IntervalMicrosecond: 500
+0xF4, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+```
+
+<div id="enum8-enum16">
+  ### Enum8, Enum16
+</div>
+
+enum 정의에서 enum 값의 인덱스를 나타내는 1바이트(`Enum8` == `Int8`) 또는 2바이트(`Enum16` == `Int16`)로 저장됩니다. 저장 유형은 **signed**이므로 enum 값은 음수일 수 있습니다(예: `Enum8('a' = -128, 'b' = 0)`).
+
+Enum은 다음과 같이 간단하게 정의할 수 있습니다:
+
+```sql
+SELECT 1 :: Enum8('hello' = 1, 'world' = 2) AS e;
+```
+
+```text
+   ┌─e─────┐
+1. │ hello │
+   └───────┘
+```
+
+위에서 정의한 Enum8은 클라이언트에서 다음 값으로 매핑됩니다:
+
+```text
+Map<Int8, String> {
+  1: 'hello',
+  2: 'world'
+}
+```
+
+또는 다음과 같이 더 복잡하게 할 수도 있습니다:
+
+```sql
+SELECT 42 :: Enum16('f\'' = 1, 'x =' = 2, 'b\'\'' = 3, '\'c=4=' = 42, '4' = 1234) AS e;
+```
+
+```text
+   ┌─e─────┐
+1. │ 'c=4= │
+   └───────┘
+```
+
+클라이언트에서는 위에서 정의한 Enum16이 다음 값으로 매핑됩니다:
+
+```text
+Map<Int16, String> {
+  1:    'f\'',
+  2:    'x =',
+  3:    'b\'',
+  42:   '\'c=4=',
+  1234: '4'
+}
+```
+
+데이터 타입 파서의 주요 과제는 enum 정의에서 `\'`와 같은 이스케이프된 기호와, 따옴표로 묶인 문자열 내부에 나타날 수 있는 `=`와 같은 특수 기호를 정확히 식별하는 것입니다.
+
+<div id="uuid">
+  ### UUID
+</div>
+
+16바이트 시퀀스로 표현됩니다. UUID는 **2개의 리틀 엔디언 `UInt64` 값**으로 저장됩니다. 즉, 표준 UUID 표현에서 처음 8바이트는 바이트 순서가 반전되어 저장되며, 다음 8바이트도 별도로 바이트 순서가 반전되어 저장됩니다.
+
+예를 들어 UUID `61f0c404-5cb3-11e7-907b-a6006ad3dba0`가 주어졌을 때:
+
+* 표준 바이트 표현: `61 f0 c4 04 5c b3 11 e7` | `90 7b a6 00 6a d3 db a0`
+* 앞쪽 절반 반전(LE UInt64): `e7 11 b3 5c 04 c4 f0 61`
+* 뒤쪽 절반 반전(LE UInt64): `a0 db d3 6a 00 a6 7b 90`
+
+`UUID`의 예시 내부 값:
+
+* `61f0c404-5cb3-11e7-907b-a6006ad3dba0`는 다음과 같이 표현됩니다:
+
+```text
+0xE7, 0x11, 0xB3, 0x5C, 0x04, 0xC4, 0xF0, 0x61,
+0xA0, 0xDB, 0xD3, 0x6A, 0x00, 0xA6, 0x7B, 0x90,
+```
+
+* 기본 UUID `00000000-0000-0000-0000-000000000000`은 0으로 채워진 16바이트로 표현됩니다:
+
+```text
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+```
+
+새 레코드가 삽입되었지만 UUID 값이 지정되지 않았을 때 사용할 수 있습니다.
+
+<div id="ipv4">
+  ### IPv4
+</div>
+
+4바이트의 `UInt32`로 **리틀 엔디언** 바이트 순서로 저장됩니다. 이는 IP 주소에 일반적으로 사용되는 기존 네트워크 바이트 순서(빅 엔디언)와 다릅니다. `IPv4`의 예시 내부 값은 다음과 같습니다:
+
+```sql
+SELECT    
+  CAST('0.0.0.0',         'IPv4') AS a,
+  CAST('127.0.0.1',       'IPv4') AS b,
+  CAST('192.168.0.1',     'IPv4') AS c,
+  CAST('255.255.255.255', 'IPv4') AS d,
+  CAST('168.212.226.204', 'IPv4') AS e
+```
+
+```text
+0x00, 0x00, 0x00, 0x00, // 0.0.0.0
+0x01, 0x00, 0x00, 0x7f, // 127.0.0.1
+0x01, 0x00, 0xa8, 0xc0, // 192.168.0.1
+0xff, 0xff, 0xff, 0xff, // 255.255.255.255
+0xcc, 0xe2, 0xd4, 0xa8, // 168.212.226.204
+```
+
+<div id="ipv6">
+  ### IPv6
+</div>
+
+**빅 엔디언 / 네트워크 바이트 순서**(MSB 우선)로 16바이트에 저장됩니다. `IPv6`의 예시 내부 값은 다음과 같습니다:
+
+```sql
+SELECT
+    CAST('2a02:aa08:e000:3100::2',        'IPv6') AS a,
+    CAST('2001:44c8:129:2632:33:0:252:2', 'IPv6') AS b,
+    CAST('2a02:e980:1e::1',               'IPv6') AS c
+```
+
+```text
+// 2a02:aa08:e000:3100::2
+0x2A, 0x02, 0xAA, 0x08, 0xE0, 0x00, 0x31, 0x00, 
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+// 2001:44c8:129:2632:33:0:252:2
+0x20, 0x01, 0x44, 0xC8, 0x01, 0x29, 0x26, 0x32, 
+0x00, 0x33, 0x00, 0x00, 0x02, 0x52, 0x00, 0x02,
+// 2a02:e980:1e::1
+0x2A, 0x02, 0xE9, 0x80, 0x00, 0x1E, 0x00, 0x00, 
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+```
+
+<div id="nullable">
+  ### 널 허용
+</div>
+
+널 허용 데이터 타입은 다음과 같이 인코딩됩니다.
+
+1. 값이 `NULL`인지 여부를 나타내는 1바이트:
+   * `0x00`은 값이 `NULL`이 아님을 의미합니다.
+   * `0x01`은 값이 `NULL`임을 의미합니다.
+2. 값이 `NULL`이 아니면 기반 데이터 타입이 평소와 같이 인코딩됩니다. 값이 `NULL`이면 기반 타입에는 **추가 바이트를 전혀** 기록하지 않습니다.
+
+예를 들어 `Nullable(UInt32)` 값은 다음과 같습니다.
+
+```sql
+SELECT    
+   CAST(42,   'Nullable(UInt32)') AS a,
+   CAST(NULL, 'Nullable(UInt32)') AS b
+```
+
+```text
+0x00,                   // NULL이 아님 - 값이 뒤따름
+0x2A, 0x00, 0x00, 0x00, // UInt32(42)
+0x01,                   // NULL - 뒤따르는 값 없음
+```
+
+<div id="lowcardinality">
+  ### LowCardinality
+</div>
+
+RowBinary format에서는 low-cardinality 마커가 wire 형식에 영향을 주지 않습니다. 예를 들어 `LowCardinality(String)`은 일반 `String`과 동일한 방식으로 인코딩됩니다.
+
+<Warning>
+  이는 RowBinary에만 적용됩니다. Native 형식에서는 `LowCardinality`가 딕셔너리 기반의 다른 인코딩을 사용합니다.
+</Warning>
+
+<Note>
+  컬럼은 `LowCardinality(Nullable(T))`로 정의할 수 있지만 `Nullable(LowCardinality(T))`로는 정의할 수 없습니다. 이렇게 정의하면 항상 서버에서 오류가 발생합니다.
+</Note>
+
+테스트 중에는 더 폭넓게 검증할 수 있도록 [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ko/reference/settings/session-settings#allow_suspicious_low_cardinality_types)를 `1`로 설정하여 `LowCardinality` 내부에서 대부분의 데이터 타입을 허용할 수 있습니다.
+
+<div id="array">
+  ### 배열
+</div>
+
+배열은 다음과 같은 방식으로 인코딩됩니다:
+
+1. 배열의 요소 개수를 나타내는 [가변 길이 정수(LEB128)](#unsigned-leb128)
+2. 기반 데이터 타입과 동일한 방식으로 인코딩된 배열의 요소
+
+예를 들어, `UInt32` 값으로 이루어진 배열은 다음과 같습니다:
+
+```sql
+SELECT CAST(array(1, 2, 3), 'Array(UInt32)') AS arr
+```
+
+```text
+0x03,                   // LEB128 - 배열에 요소가 3개 있음
+0x01, 0x00, 0x00, 0x00, // UInt32(1)
+0x02, 0x00, 0x00, 0x00, // UInt32(2)
+0x03, 0x00, 0x00, 0x00, // UInt32(3)
+```
+
+조금 더 복잡한 예시:
+
+```sql
+SELECT array('foobar', 'qaz') AS arr
+```
+
+```text
+0x02,             // LEB128 - 배열에 2개의 요소가 있음
+0x06,             // LEB128 - 첫 번째 문자열은 6바이트
+0x66, 0x6f, 0x6f, 
+0x62, 0x61, 0x72, // 'foobar'
+0x03,             // LEB128 - 두 번째 문자열은 3바이트
+0x71, 0x61, 0x7a, // 'qaz'
+```
+
+<Note>
+  배열에는 널 허용 값을 포함할 수 있지만, 배열 자체는 널 허용일 수 없습니다.
+</Note>
+
+다음은 유효한 예입니다:
+
+```sql
+SELECT CAST([NULL, 'foo'], 'Array(Nullable(String))') AS arr;
+```
+
+```text
+   ┌─arr──────────┐
+1. │ [NULL,'foo'] │
+   └──────────────┘
+```
+
+인코딩 결과는 다음과 같습니다:
+
+```text
+0x02,             // LEB128  - 배열에 요소가 2개 있음
+0x01,             // NULL임 - 이 요소에 대한 데이터 없음
+0x00,             // NULL이 아님 - 데이터가 뒤따름
+0x03,             // LEB128  - 문자열의 길이가 3바이트임
+0x66, 0x6f, 0x6f, // 'foo'
+```
+
+다차원 배열을 다루는 예시는 [Geo 섹션](#geo-types)에서 찾아볼 수 있습니다.
+
+<div id="tuple">
+  ### Tuple
+</div>
+
+Tuple은 추가적인 메타데이터나 구분 기호 없이, 각 요소가 해당하는 wire 형식으로 차례대로 이어져 인코딩됩니다.
+
+```sql
+CREATE OR REPLACE TABLE foo
+(
+    `t` Tuple(
+           UInt32,
+           String,
+           Array(UInt8)
+        )
+)
+ENGINE = Memory;
+INSERT INTO foo VALUES ((42, 'foo', array(99, 144)));
+```
+
+```text
+0x2a, 0x00, 0x00, 0x00, // UInt32로 표현한 42
+0x03,                   // LEB128 - 문자열의 길이는 3바이트
+0x66, 0x6f, 0x6f,       // 'foo'
+0x02,                   // LEB128 - 배열의 원소 개수는 2개
+0x63,                   // UInt8로 표현한 99
+0x90,                   // UInt8로 표현한 144
+```
+
+Tuple 데이터 타입을 문자열로 인코딩할 때는 [Enum type](#enum8-enum16)과 마찬가지로 이스케이프된 기호와 특수 문자를 처리하는 등 비슷한 어려움이 있습니다. 여기에 더해, Tuple에서는 여는 괄호와 닫는 괄호까지 함께 추적해야 합니다. 또한 가장 복잡한 튜플은 다른 중첩된 튜플, 배열, 맵, 심지어 enum까지 포함할 수 있다는 점에도 유의하십시오.
+
+예를 들어, 다음 표에서 튜플에는 이름에 작은따옴표와 괄호가 포함된 enum이 들어 있으며, 이를 적절히 처리하지 않으면 구문 분석 문제가 발생할 수 있습니다:
+
+```sql
+CREATE OR REPLACE TABLE foo
+(
+   `t` Tuple(
+          Enum8('f\'()' = 0),
+          Array(Nullable(Tuple(UInt32, String)))
+       )
+) ENGINE = Memory;
+```
+
+<div id="map">
+  ### 맵
+</div>
+
+맵은 `Array(Tuple(K, V))`로 볼 수 있으며, 여기서 `K`는 키 타입이고 `V`는 값 타입입니다. 맵은 다음과 같이 인코딩됩니다.
+
+1. 맵의 요소 개수를 나타내는 [가변 길이 정수(LEB128)](#unsigned-leb128)
+2. 각 타입에 따라 인코딩된 key-value 쌍 형태의 맵 요소
+
+예를 들어, 키가 `String`이고 값이 `UInt32`인 맵은 다음과 같습니다.
+
+```sql
+SELECT CAST(map('foo', 1, 'bar', 2), 'Map(String, UInt32)') AS m
+```
+
+```text
+0x02,                   // LEB128 - 맵의 요소 수: 2개
+0x03,                   // LEB128 - 첫 번째 키의 길이: 3바이트
+0x66, 0x6f, 0x6f,       // 'foo'
+0x01, 0x00, 0x00, 0x00, // UInt32(1)
+0x03,                   // LEB128 - 두 번째 키의 길이: 3바이트
+0x62, 0x61, 0x72,       // 'bar'
+0x02, 0x00, 0x00, 0x00, // UInt32(2)
+```
+
+<Note>
+  `Map(String, Map(Int32, Array(Nullable(String))))`와 같이 깊이 중첩된 구조의 맵도 가능하며, 위에서 설명한 것과 유사한 방식으로 인코딩됩니다.
+</Note>
+
+<div id="variant">
+  ### Variant
+</div>
+
+이 타입은 다른 데이터 타입의 union을 나타냅니다. 타입 `Variant(T1, T2, ..., TN)`은 이 타입의 각 행이 `T1`, `T2`, …, `TN` 중 하나의 타입 값을 가지거나, 어느 타입에도 속하지 않는 값(`NULL` 값)을 가질 수 있음을 의미합니다.
+
+<Warning>
+  최종 사용자에게는 `Variant(T1, T2)`와 `Variant(T2, T1)`가 정확히 동일한 의미이지만, wire 형식에서는 정의에 포함된 타입의 순서가 중요합니다. 정의에 포함된 타입은 항상 알파벳순으로 정렬되며, 이는 정확한 variant가 &quot;판별자&quot;, 즉 정의 내 데이터 타입 인덱스로 인코딩되기 때문에 중요합니다.
+</Warning>
+
+다음 예시를 살펴보겠습니다.
+
+```sql
+SET allow_experimental_variant_type = 1,
+    allow_suspicious_variant_types = 1;
+CREATE OR REPLACE TABLE foo
+(
+  -- 사용자 입력에서 타입의 순서는 중요하지 않습니다;
+  -- 타입은 wire 형식에서 항상 알파벳순으로 정렬됩니다.
+  `var` Variant(
+           Array(Int16),
+           Bool,
+           Date,
+           FixedString(6),
+           Float32, Float64,
+           Int128, Int16, Int32, Int64, Int8,
+           String,
+           UInt128, UInt16, UInt32, UInt64, UInt8
+       )
+)
+ENGINE = MergeTree
+ORDER BY ();
+INSERT INTO foo VALUES (true), ('foobar' :: FixedString(6)), (100.5 :: Float64), (100 :: Int128), ([1, 2, 3] :: Array(Int16));
+SELECT * FROM foo FORMAT RowBinary;
+```
+
+```text
+0x01,                               // 유형 인덱스 -> Bool
+ 0x01,                               // true
+ 0x03,                               // 유형 인덱스 -> FixedString(6)
+ 0x66, 0x6F, 0x6F, 0x62, 0x61, 0x72, // 'foobar' 
+ 0x05,                               // 유형 인덱스 -> Float64
+ 0x00, 0x00, 0x00, 0x00, 
+ 0x00, 0x20, 0x59, 0x40,             // Float64로 표현한 100.5
+ 0x06,                               // 유형 인덱스 -> Int128
+ 0x64, 0x00, 0x00, 0x00, 
+ 0x00, 0x00, 0x00, 0x00, 
+ 0x00, 0x00, 0x00, 0x00, 
+ 0x00, 0x00, 0x00, 0x00,             // Int128로 표현한 100
+ 0x00,                               // 유형 인덱스 -> Array(Int16)
+ 0x03,                               // LEB128 - 배열 원소 3개
+ 0x01, 0x00,                         // Int16로 표현한 1
+ 0x02, 0x00,                         // Int16로 표현한 2
+ 0x03, 0x00,                         // Int16로 표현한 3
+```
+
+`NULL` 값은 `0xFF` 판별자 바이트로 인코딩됩니다:
+
+```sql
+SELECT NULL :: Variant(UInt32, String)
+```
+
+```text
+0xFF, // 판별자 = NULL
+```
+
+[allow&#95;suspicious&#95;variant&#95;types](/ko/reference/settings/session-settings#allow_suspicious_variant_types) 설정을 사용하면 `Variant` 타입을 더 철저하게 테스트할 수 있습니다.
+
+<div id="dynamic">
+  ### Dynamic
+</div>
+
+`Dynamic` 타입은 런타임에 결정되는 임의의 타입의 값을 담을 수 있습니다. RowBinary format에서는 각 값이 자체적으로 타입 정보를 포함합니다. 즉, 첫 번째 부분에는 [이 포맷](/ko/reference/data-types/data-types-binary-encoding)으로 표현된 타입 지정이 들어갑니다. 그 뒤에는 이 문서에 설명된 방식으로 인코딩된 값의 내용이 이어집니다. 따라서 값을 파싱하려면 타입 인덱스를 사용해 적절한 parser를 결정한 다음, 이미 다른 곳에서 사용 중인 RowBinary 파싱 로직을 재사용하면 됩니다.
+
+```text
+[BinaryTypeIndex][type-specific parameters...][value]
+```
+
+여기서 `BinaryTypeIndex`는 타입을 식별하는 1바이트 값입니다. 타입 인덱스와 매개변수는 [여기](/ko/reference/data-types/data-types-binary-encoding)의 참고 문서를 확인하십시오.
+
+`NULL` Dynamic 값은 추가 바이트 없이 `BinaryTypeIndex` `0x00`(`Nothing` 타입)로 인코딩됩니다:
+
+```sql
+SELECT NULL::Dynamic
+```
+
+```text
+00                        # BinaryTypeIndex: Nothing (0x00), NULL을 나타냄
+```
+
+**예시:**
+
+```sql
+SELECT 42::Dynamic
+```
+
+```text
+0a                        # BinaryTypeIndex: Int64 (0x0A)
+2a 00 00 00 00 00 00 00   # Int64 값: 42
+```
+
+```sql
+SELECT toDateTime64('2024-01-15 10:30:00', 3, 'America/New_York')::Dynamic
+```
+
+```text
+14                        # BinaryTypeIndex: DateTime64WithTimezone (0x14)
+03                        # UInt8: precision (정밀도)
+10                        # VarUInt: 시간대 이름 길이
+41 6d 65 72 69 63 61 2f   # "America/"
+4e 65 77 5f 59 6f 72 6b   # "New_York"
+c0 6c be 0d 8d 01 00 00   # Int64: timestamps
+```
+
+<div id="json">
+  ### JSON
+</div>
+
+JSON 타입은 데이터를 두 가지 범주로 인코딩합니다:
+
+1. **타입이 명시된 경로** - 스키마에 타입을 명시해 선언한 경로(예: `JSON(user_id UInt32, name String)`)
+2. **동적 경로 한도를 초과했을 때의 Dynamic 경로/오버플로우 경로** - 런타임에 발견되어 `Dynamic` 유형으로 저장되는 경로입니다. 값 인코딩 앞에는 유형 정의가 먼저 옵니다.
+
+이 두 범주의 wire 형식과 규칙은 서로 다릅니다.
+
+| 경로 범주          | 직렬화에 포함            | 값 인코딩       | Variant/널 허용 가능 |
+| -------------- | ------------------ | ----------- | --------------- |
+| **유형이 지정된 경로** | 항상 포함됨(NULL인 경우에도) | 유형별 바이너리 형식 | 예               |
+| **동적 경로**      | NULL이 아닌 경우에만      | 동적          | 아니요             |
+
+경로는 세 개의 그룹으로 직렬화되어 순차적으로 기록됩니다: 타입이 지정된 경로(typed paths), 동적 경로(dynamic paths), 공유 데이터(shared data) 오버플로우 경로 순입니다. 타입이 지정된 경로와 동적 경로는 구현 정의 순서(내부 해시맵 반복에 의해 결정)로 기록되며, 공유 데이터 경로는 알파벳 순으로 기록됩니다. 특정 경로 순서에 의존해서는 안 됩니다. 역직렬화기는 각 경로를 위치가 아닌 이름을 기준으로 처리합니다.
+
+RowBinary 포맷에서 각 JSON 행은 다음과 같이 직렬화됩니다:
+
+```text
+[VarUInt: number_of_paths]
+[String: path_1][value_1]
+[String: path_2][value_2]
+...
+```
+
+**예시:**
+
+**1. 유형이 지정된 경로만 있는 단순 JSON:**
+
+스키마(Schema): `JSON(user_id UInt32, active Bool)`
+
+행: `{"user_id": 42, "active": true}`
+
+바이너리 인코딩(어노테이션이 포함된 16진수):
+
+```text
+02                              # VarUInt: 총 경로 2개
+
+# 타입 지정 경로 "active"
+06 61 63 74 69 76 65            # String: "active" (길이 6 + 바이트)
+01                              # Bool/UInt8 값: true (1)
+
+# 타입 지정 경로 "user_id"
+07 75 73 65 72 5F 69 64         # String: "user_id" (길이 7 + 바이트)
+2A 00 00 00                     # UInt32 값: 42 (리틀 엔디언)
+```
+
+**2. 유형이 지정된 경로와 동적 경로를 포함한 단순 JSON:**
+
+Schema: `JSON(user_id UInt32, active Bool)`
+
+행: `{"user_id": 42, "active": true, "name": "Alice"}`
+
+바이너리 인코딩 (어노테이션이 포함된 16진수):
+
+```text
+03                              # VarUInt: 총 경로 3개
+
+# 타입 지정 경로 "active"
+06 61 63 74 69 76 65            # String: "active" (길이 6 + 바이트)
+01                              # Bool/UInt8 값: true (1)
+
+# 동적 경로 "name"
+04 6E 61 6D 65                  # String: "name" (길이 4 + 바이트)
+15                              # BinaryTypeIndex: String (0x15)
+05 41 6C 69 63 65               # String 값: "Alice" (길이 5 + 바이트)
+
+# 타입 지정 경로 "user_id"
+07 75 73 65 72 5F 69 64         # String: "user_id" (길이 7 + 바이트)
+2A 00 00 00                     # UInt32 값: 42 (리틀 엔디언)
+```
+
+**3. NULL 처리:**
+
+유형이 지정된 널 허용(Nullable) 컬럼을 사용하면 null이 반환됩니다:
+
+스키마(Schema): `JSON(score Nullable(Int32))`
+
+행: `{"score": null }`
+
+바이너리 인코딩(어노테이션이 포함된 16진수):
+
+```text
+01                              # VarUInt: 경로 총 1개
+
+# 유형이 지정된 경로 "score" (널 허용)
+05 73 63 6f 72 65               # String: "score" (길이 5 + 바이트)
+01                              # 널 허용 플래그: 1 (NULL, 이후 값 없음)
+```
+
+타입이 지정된 널 비허용 컬럼에서는 기본값이 반환됩니다:
+
+Schema: `JSON(name String)`
+
+행: `{"name": null}`
+
+바이너리 인코딩:
+
+```text
+01                              # VarUInt: 경로 1개 (동적 NULL 경로는 건너뜁니다!)
+
+04 6e 61 6d 65  # "name"
+00              # String 길이 0 (빈 문자열)
+```
+
+동적 경로를 사용하면 무시됩니다:
+
+Schema: `JSON(id UInt64)`
+
+행: `{"id": 100, "metadata": null}`
+
+바이너리 인코딩:
+
+```text
+01                              # VarUInt: 경로 1개 (동적 NULL 경로는 건너뜁니다!)
+
+# 타입이 지정된 경로 "id"
+02 69 64                        # String: "id" (length 2 + bytes)
+64 00 00 00 00 00 00 00         # UInt64 값: 100 (리틀 엔디언)
+```
+
+참고: NULL 값을 가진 `metadata` 경로는 동적 경로가 null이 아닐 때만 직렬화되기 때문에 **포함되지 않습니다**. 이는 타입이 지정된 경로와의 핵심적인 차이점입니다.
+
+**4. 중첩된 JSON 객체(Nested JSON objects):**
+
+스키마: `JSON()`
+
+행: `{"user": {"name": "Bob", "age": 30}}`
+
+바이너리 인코딩(어노테이션 포함 16진수):
+
+```text
+02                              # VarUInt: 경로 2개 (중첩 객체는 평탄화됨)
+
+# 동적 경로 "user.age"
+08 75 73 65 72 2E 61 67 65      # String: "user.age" (길이 8 + 바이트)
+0A                              # BinaryTypeIndex: Int64 (0x0A)
+1E 00 00 00 00 00 00 00         # Int64 값: 30 (리틀 엔디언)
+
+# 동적 경로 "user.name"
+09 75 73 65 72 2E 6E 61 6D 65   # String: "user.name" (길이 9 + 바이트)
+15                              # BinaryTypeIndex: String (0x15)
+03 42 6F 62                     # String 값: "Bob" (길이 3 + 바이트)
+
+```
+
+참고: 중첩 객체는 중첩 구조 대신 점으로 구분된 경로(예: `user.name`)로 평탄화됩니다.
+
+**대안: JSON을 String으로 사용하는 모드**
+
+설정 `output_format_binary_write_json_as_string=1`을 사용하면 JSON 컬럼은 구조화된 바이너리 형식 대신 하나의 JSON 텍스트 문자열로 직렬화됩니다. JSON 컬럼에 쓸 때 사용하는 대응 설정 `input_format_binary_read_json_as_string`도 있습니다. 여기서 어떤 설정을 사용할지는 JSON을 클라이언트에서 파싱할지, 서버에서 파싱할지에 따라 달라집니다.
+
+<div id="geo-types">
+  ### Geo 타입
+</div>
+
+Geo는 지리 데이터를 나타내는 데이터 타입 범주입니다. 여기에는 다음이 포함됩니다.
+
+* `Point` - `Tuple(Float64, Float64)`로 표현됩니다.
+* `Ring` - `Array(Point)` 또는 `Array(Tuple(Float64, Float64))`로 표현됩니다.
+* `Polygon` - `Array(Ring)` 또는 `Array(Array(Tuple(Float64, Float64)))`로 표현됩니다.
+* `MultiPolygon` - `Array(Polygon)` 또는 `Array(Array(Array(Tuple(Float64, Float64))))`로 표현됩니다.
+* `LineString` - `Array(Point)` 또는 `Array(Tuple(Float64, Float64))`로 표현됩니다.
+* `MultiLineString` - `Array(LineString)` 또는 `Array(Array(Tuple(Float64, Float64)))`로 표현됩니다.
+
+Geo 값의 wire 형식은 Tuple 및 배열의 wire 형식과 완전히 동일합니다. `RowBinaryWithNamesAndTypes` 포맷 헤더에는 예를 들어 `Point`, `Ring`, `Polygon`, `MultiPolygon`, `LineString`, `MultiLineString`과 같은 이들 타입의 별칭이 포함됩니다.
+
+```sql
+SELECT    (1.0, 2.0)                                       :: Point           AS point,
+    [(3.0, 4.0), (5.0, 6.0)]                         :: Ring            AS ring,
+    [[(7.0, 8.0), (9.0, 10.0)], [(11.0, 12.0)]]      :: Polygon         AS polygon,
+    [[[(13.0, 14.0), (15.0, 16.0)], [(17.0, 18.0)]]] :: MultiPolygon    AS multi_polygon,
+    [(19.0, 20.0), (21.0, 22.0)]                     :: LineString      AS line_string,
+    [[(23.0, 24.0), (25.0, 26.0)], [(27.0, 28.0)]]   :: MultiLineString AS multi_line_string
+```
+
+```text
+// Point - 또는 Tuple(Float64, Float64)
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // Point.X
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // Point.Y
+// Ring - 또는 Array(Tuple(Float64, Float64))
+0x02, // LEB128 - "ring" 배열의 포인트 수: 2
+   // Ring - 포인트 #1
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x40, 
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x40, 
+   // Ring - 포인트 #2
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x40, 
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40, 
+// Polygon - 또는 Array(Array(Tuple(Float64, Float64)))
+0x02, // LEB128 - "polygon" 배열의 링 수: 2
+   0x02, // LEB128 - 첫 번째 링의 포인트 수: 2
+      // Polygon - Ring #1 - 포인트 #1
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1C, 0x40, 
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x40,
+      // Polygon - Ring #1 - 포인트 #2
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0x40, 
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24, 0x40, 
+  0x01, // LEB128 - 두 번째 링의 포인트 수: 1
+      // Polygon - Ring #2 - 포인트 #1 (유일한 포인트)
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x26, 0x40, 
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x28, 0x40, 
+// MultiPolygon - 또는 Array(Array(Array(Tuple(Float64, Float64))))
+0x01, // LEB128 - "multi_polygon" 배열의 폴리곤 수: 1
+   0x02, // LEB128 - 첫 번째 폴리곤의 링 수: 2
+      0x02, // LEB128 - 첫 번째 링의 포인트 수: 2
+         // MultiPolygon - Polygon #1 - Ring #1 - 포인트 #1
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2A, 0x40, 
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2C, 0x40,
+         // MultiPolygon - Polygon #1 - Ring #1 - 포인트 #2
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2E, 0x40, 
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 
+      0x01, // LEB128 - 두 번째 링의 포인트 수: 1
+        // MultiPolygon - Polygon #1 - Ring #2 - 포인트 #1 (유일한 포인트)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x31, 0x40, 
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x32, 0x40, 
+ // LineString - 또는 Array(Tuple(Float64, Float64))
+ 0x02, // LEB128 - LineString의 포인트 수: 2
+    // LineString - 포인트 #1
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x33, 0x40, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x34, 0x40,
+    // LineString - 포인트 #2
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x40, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x40, 
+ // MultiLineString - 또는 Array(Array(Tuple(Float64, Float64)))
+ 0x02, // LEB128 - MultiLineString의 LineString 수: 2
+   0x02, // LEB128 - 첫 번째 LineString의 포인트 수: 2
+     // MultiLineString - LineString #1 - 포인트 #1
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x37, 0x40, 
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x38, 0x40, 
+     // MultiLineString - LineString #1 - 포인트 #2
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x39, 0x40, 
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3A, 0x40, 
+   0x01, // LEB128 - 두 번째 LineString의 포인트 수: 1
+     // MultiLineString - LineString #2 - 포인트 #1 (유일한 포인트)
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3B, 0x40, 
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x40,
+```
+
+<div id="geometry">
+  ### Geometry
+</div>
+
+`Geometry`는 위에 나열된 모든 Geo 타입을 담을 수 있는 `Variant` 타입입니다. wire 형식에서는 뒤에 오는 geo 타입을 나타내는 판별자 바이트를 포함해 `Variant`와 완전히 동일한 방식으로 인코딩됩니다.
+
+Geometry의 판별자 인덱스는 다음과 같습니다:
+
+| 인덱스 | 유형              |
+| --- | --------------- |
+| 0   | LineString      |
+| 1   | MultiLineString |
+| 2   | MultiPolygon    |
+| 3   | Point           |
+| 4   | Polygon         |
+| 5   | Ring            |
+
+wire 형식 구조:
+
+```text
+// 1바이트 판별자 (0-5)
+// 이후 해당 지오 유형 데이터가 이어집니다
+```
+
+`Point`를 `Geometry`로 인코딩한 예:
+
+```sql
+SELECT ((1.0, 2.0)::Point)::Geometry
+```
+
+```text
+0x03,                                           // 판별자 = 3 (Point)
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // Point.X = 1.0 (Float64)
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // Point.Y = 2.0 (Float64)
+```
+
+`Ring`을 `Geometry`로 인코딩한 예입니다:
+
+```text
+0x05,       // 판별자 = 5 (Ring)
+0x02,       // LEB128 - 배열에 포인트 2개 포함
+// Point #1
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x40, // X = 3.0
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x40, // Y = 4.0
+// Point #2
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x40, // X = 5.0
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40, // Y = 6.0
+```
+
+<div id="nested">
+  ### Nested
+</div>
+
+`Nested`의 wire 형식은 `flatten_nested` 설정에 따라 달라집니다.
+
+<Warning>
+  하나의 행에 있는 모든 구성 요소 배열의 **길이는 반드시 같아야 합니다**. 이는 server에서 강제하는 제약 조건입니다. 길이가 서로 다르면 삽입 오류가 발생합니다.
+</Warning>
+
+<div id="nested-flattened">
+  #### `flatten_nested = 1` (기본값)
+</div>
+
+기본 설정에서는 `Nested`가 개별 배열로 평탄화됩니다. 각 하위 컬럼은 점(.)으로 구분된 이름의 별도 `Array` 컬럼이 됩니다:
+
+```sql
+CREATE OR REPLACE TABLE foo
+(
+    n Nested(a String, b Int32)
+) ENGINE = MergeTree ORDER BY ();
+-- flatten_nested=1이 기본값입니다
+INSERT INTO foo VALUES (['foo', 'bar'], [42, 144]);
+```
+
+`DESCRIBE TABLE foo`는 평탄화된 컬럼을 표시합니다:
+
+```text
+   ┌─name─┬─type──────────┐
+1. │ n.a  │ Array(String) │
+2. │ n.b  │ Array(Int32)  │
+   └──────┴───────────────┘
+```
+
+각 배열은 [배열](#array) 섹션에 설명된 것처럼 독립적으로 직렬화됩니다:
+
+```text
+0x02,                   // LEB128 - 첫 번째 배열(n.a)의 String 요소 2개
+ 0x03,                   // LEB128 - 첫 번째 문자열의 길이는 3바이트
+ 0x66, 0x6F, 0x6F,       // 'foo'
+ 0x03,                   // LEB128 - 두 번째 문자열의 길이는 3바이트
+ 0x62, 0x61, 0x72,       // 'bar'
+0x02,                   // LEB128 - 두 번째 배열(n.b)의 Int32 요소 2개
+ 0x2A, 0x00, 0x00, 0x00, // Int32로 표현한 42
+ 0x90, 0x00, 0x00, 0x00, // Int32로 표현한 144
+```
+
+<div id="nested-unflattened">
+  #### `flatten_nested = 0`
+</div>
+
+`flatten_nested = 0`으로 설정하면 `Nested`는 `Array(Tuple(...))` 유형의 단일 컬럼으로 유지됩니다. 컬럼 이름은 점으로 구분하지 않습니다:
+
+```sql
+SET flatten_nested = 0;
+CREATE OR REPLACE TABLE foo
+(
+    n Nested(a String, b Int32)
+) ENGINE = MergeTree ORDER BY ();
+INSERT INTO foo VALUES ([('foo', 42), ('bar', 144)]);
+```
+
+`DESCRIBE TABLE foo`는 컬럼 하나를 표시합니다:
+
+```text
+   ┌─name─┬─type───────────────────────┐
+1. │ n    │ Nested(a String, b Int32)  │
+   └──────┴────────────────────────────┘
+```
+
+인코딩은 `Array(Tuple(String, Int32))`입니다: 먼저 배열 길이 접두사가 오고, 그다음 각 요소의 튜플 필드가 순서대로 옵니다:
+
+```text
+0x02,                   // LEB128 - 배열의 요소 2개
+ 0x03,                   // LEB128 - 첫 번째 튜플, 필드 a: 3바이트
+ 0x66, 0x6F, 0x6F,       // 'foo'
+ 0x2A, 0x00, 0x00, 0x00, // 첫 번째 튜플, 필드 b: Int32 값 42
+ 0x03,                   // LEB128 - 두 번째 튜플, 필드 a: 3바이트
+ 0x62, 0x61, 0x72,       // 'bar'
+ 0x90, 0x00, 0x00, 0x00, // 두 번째 튜플, 필드 b: Int32 값 144
+```
+
+필드가 평탄화된 표현에서처럼 컬럼(a₁, a₂, b₁, b₂)별로 그룹화되는 것이 아니라, 요소별로 (a₁, b₁, a₂, b₂) 교차 배치된다는 점에 유의하십시오.
+
+<div id="simpleaggregatefunction">
+  ### SimpleAggregateFunction
+</div>
+
+`SimpleAggregateFunction(func, T)`는 기반 데이터 타입인 `T`와 동일한 방식으로 인코딩됩니다. 집계 함수 이름은 wire 형식에 영향을 주지 않습니다.
+
+예를 들어, `SimpleAggregateFunction(max, UInt32)`는 일반 `UInt32`와 동일한 방식으로 인코딩됩니다:
+
+```sql
+CREATE TABLE test_saf
+(
+    key UInt32,
+    val SimpleAggregateFunction(max, UInt32)
+) ENGINE = AggregatingMergeTree ORDER BY key;
+
+INSERT INTO test_saf VALUES (1, 42);
+SELECT val FROM test_saf;
+```
+
+RowBinaryWithNamesAndTypes 헤더는 타입을 `SimpleAggregateFunction(max, UInt32)`로 보고하지만, 실제 wire 형식의 값은 그냥 `UInt32`입니다:
+
+```text
+0x2A, 0x00, 0x00, 0x00, // UInt32로 표현한 42
+```
+
+<div id="aggregatefunction">
+  ### AggregateFunction
+</div>
+
+`AggregateFunction(func, T)`는 집계 함수의 전체 중간 상태를 저장합니다. 중간 상태를 저장하되 이를 기본 데이터 타입과 동일한 방식으로 인코딩하는 `SimpleAggregateFunction`과 달리, `AggregateFunction`은 각 집계 함수마다 포맷이 다른 불투명한 바이너리 blob을 저장합니다.
+
+<Warning>
+  집계 상태는 RowBinary에서 **길이 접두사(length prefix)가 없습니다**. 따라서 파서는 몇 바이트를 읽어야 하는지 알기 위해 각 집계 함수별 내부 직렬화 포맷을 이해해야 합니다. 실제로는 대부분의 클라이언트가 집계 상태를 불투명한 값으로 취급하고, 직렬화는 서버가 처리하도록 `*State` / `*Merge` combinator를 사용합니다.
+</Warning>
+
+내부 포맷은 함수마다 다릅니다. 몇 가지 간단한 예시는 다음과 같습니다.
+
+**`countState`** — count를 VarUInt(LEB128)로 저장합니다:
+
+```sql
+SELECT countState(number) FROM numbers(5)
+```
+
+```text
+0x05, // VarUInt: 5
+```
+
+**`sumState`** — 누적 합계를 고정 크기 정수에 저장합니다. 너비는 인수 유형에 따라 달라지며(정수 인수의 경우 `UInt64`):
+
+```sql
+SELECT sumState(toUInt32(number)) FROM numbers(5) -- 합계 = 0+1+2+3+4 = 10
+```
+
+```text
+0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // UInt64로 표현한 10
+```
+
+**`minState` / `maxState`** — 먼저 플래그 바이트를 저장한 다음, 기본 데이터 유형의 값을 저장합니다. 플래그는 빈 state(값이 없음)일 때 `0x00`, 값이 있을 때 `0x01`입니다:
+
+```sql
+SELECT maxState(toUInt32(number)) FROM numbers(5) -- 최댓값 = 4
+```
+
+```text
+0x01,                   // 플래그: 값 있음
+0x04, 0x00, 0x00, 0x00, // UInt32로 표현한 4
+```
+
+빈 상태(집계된 행이 없음):
+
+```sql
+SELECT minState(toUInt32(number)) FROM numbers(0)
+```
+
+```text
+0x00, // 플래그: 값 없음
+```
+
+<Note>
+  `uniq`, `quantile`, `groupArray`와 같은 더 복잡한 함수는 구현별 포맷을 사용합니다. 이러한 상태를 읽거나 써야 한다면, 해당 함수의 ClickHouse 소스 코드를 참조하십시오.
+</Note>
+
+<div id="qbit">
+  ### QBit
+</div>
+
+`QBit`은 다양한 수준의 정밀도로 효율적인 조회를 지원하는 벡터 타입입니다. 내부적으로는 전치된 포맷으로 저장됩니다. 전송 시 QBit은 단순히 기반 요소 타입(`Float32`, `Float64` 또는 `BFloat16`)의 `배열`입니다. 저장을 위한 비트 전치 최적화는 RowBinary 프로토콜이 아니라 server 측에서 수행됩니다.
+
+구문:
+
+```text
+QBit(element_type, dimension)
+```
+
+여기서 `element_type`은 `Float32`, `Float64` 또는 `BFloat16`이고, `dimension`은 고정된 벡터 차원입니다.
+
+wire 형식: `Array(element_type)`와 동일합니다:
+
+```text
+// LEB128 길이
+// 이후 `element_type` 타입의 요소 `length`개가 이어집니다
+```
+
+`QBit(Float32, 4)`로 `[1.0, 2.0, 3.0, 4.0]`를 인코딩한 예시는 다음과 같습니다:
+
+```sql
+SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
+```
+
+```text
+0x04,                   // LEB128 - 배열에 4개의 요소가 있음
+0x00, 0x00, 0x80, 0x3F, // Float32로 표현한 1.0
+0x00, 0x00, 0x00, 0x40, // Float32로 표현한 2.0
+0x00, 0x00, 0x40, 0x40, // Float32로 표현한 3.0
+0x00, 0x00, 0x80, 0x40, // Float32로 표현한 4.0
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>
+
+<RowBinaryFormatSettings />
