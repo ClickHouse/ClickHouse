@@ -984,6 +984,9 @@ struct AggregateFunctionProperties
 
     /// Indicates if it's actually window function.
     bool is_window_function = false;
+
+    /// Whether `Nullable` arguments with the `-If` combinator must be rejected.
+    bool rejects_nullable_arguments_with_if = false;
 };
 
 

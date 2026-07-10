@@ -491,7 +491,9 @@ WHERE number >= 100
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(AggregateFunctionGroupBloomFilterData::name, {createAggregateFunctionGroupBloomFilter, documentation});
+    factory.registerFunction(
+        AggregateFunctionGroupBloomFilterData::name,
+        {createAggregateFunctionGroupBloomFilter, documentation, {.rejects_nullable_arguments_with_if = true}});
 }
 
 }

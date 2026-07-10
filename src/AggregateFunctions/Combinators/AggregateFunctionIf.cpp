@@ -1,4 +1,3 @@
-#include <AggregateFunctions/AggregateFunctionGroupBloomFilterData.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionIf.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
@@ -17,15 +16,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-static bool hasGroupBloomFilterState(const AggregateFunctionPtr & function)
-{
-    if (function->getName() == AggregateFunctionGroupBloomFilterData::name)
-        return true;
-
-    const auto nested_function = function->getNestedFunction();
-    return nested_function && hasGroupBloomFilterState(nested_function);
 }
 
 class AggregateFunctionCombinatorIf final : public IAggregateFunctionCombinator
@@ -479,7 +469,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
 {
     chassert(!arguments.empty());
 
-    if (hasGroupBloomFilterState(nested_func))
+    if (properties.rejects_nullable_arguments_with_if)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Aggregate function {} does not support Nullable arguments with the If combinator",
