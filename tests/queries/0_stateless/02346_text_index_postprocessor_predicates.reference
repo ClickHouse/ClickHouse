@@ -58,3 +58,12 @@
 11. sparseGrams + postprocessor: needle compaction stays sound (no false positives in Exact direct read).
 0
 2
+12. ALIAS column + postprocessor: needle and stored tokens are postprocessed.
+1
+1
+1
+1
+1
+1
+1
+0

@@ -286,3 +286,28 @@ SELECT count() FROM tab WHERE hasAllTokens(val, 'utfub');   -- 0
 SELECT count() FROM tab WHERE hasAllTokens(val, 'etf');     -- 2
 
 DROP TABLE IF EXISTS tab;
+
+SELECT '12. ALIAS column + postprocessor: needle and stored tokens are postprocessed.';
+-- The index is on an ALIAS column and the postprocessor references the ALIAS by name.
+-- https://github.com/ClickHouse/ClickHouse/issues/95944
+
+CREATE TABLE tab
+(
+    provider Nullable(String),
+    name String ALIAS ifNull(provider, 'default_name'),
+    INDEX name_text_idx(name) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(name))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(provider) VALUES ('Hello World'), ('FOO bar'), (NULL);
+
+SELECT count() FROM tab WHERE hasToken(name, 'hello');
+SELECT count() FROM tab WHERE hasToken(name, 'HELLO'); -- search term is postprocessed too
+SELECT count() FROM tab WHERE hasToken(name, 'world');
+SELECT count() FROM tab WHERE hasToken(name, 'foo');
+SELECT count() FROM tab WHERE hasToken(name, 'bar');
+SELECT count() FROM tab WHERE hasToken(name, 'default'); -- from the ifNull default of the NULL row
+SELECT count() FROM tab WHERE hasToken(name, 'name');
+SELECT count() FROM tab WHERE hasToken(name, 'missing');
+
+DROP TABLE IF EXISTS tab;
