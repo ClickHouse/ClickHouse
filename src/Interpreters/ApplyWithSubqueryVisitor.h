@@ -35,6 +35,7 @@ private:
     void visit(ASTTableExpression & table, const Data & data);
     void visit(ASTFunction & func, const Data & data);
 
+    ContextPtr context;
     const bool use_analyzer;
 };
 

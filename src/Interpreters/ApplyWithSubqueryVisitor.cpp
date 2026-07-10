@@ -13,6 +13,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Common/checkStackSize.h>
 
 
@@ -83,26 +84,50 @@ void substituteWithLiterals(ASTPtr & ast, const std::map<String, ASTPtr> & liter
 /// SQL UDF with the same name in an ordinary expression context is left untouched - its arguments are
 /// resolved later by `QueryNormalizer`, which honours `prefer_column_name_to_alias`. Subqueries are
 /// skipped: they form a separate alias scope handled by the select-query traversal.
-void substituteWithLiteralsInEvalTableFunction(ASTPtr & ast, const std::map<String, ASTPtr> & literals)
+void substituteWithLiteralsInEvalTableFunction(
+    ASTPtr & ast,
+    const std::map<String, ASTPtr> & literals,
+    ContextPtr context)
 {
     if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSubquery>())
         return;
 
-    if (auto * function = ast->as<ASTFunction>(); function && function->name == "eval" && function->arguments)
+    auto * function = ast->as<ASTFunction>();
+    if (!function)
+        return;
+
+    auto table_function = TableFunctionFactory::instance().tryGet(function->name, context);
+    if (!table_function)
+    {
+        /// Named collection overrides wrap their table expression in a scalar function such as `equals`.
+        for (auto & child : function->children)
+            substituteWithLiteralsInEvalTableFunction(child, literals, context);
+        return;
+    }
+
+    if (!function->arguments)
+        return;
+
+    if (function->name == "eval")
     {
         for (auto & argument : function->arguments->children)
             substituteWithLiterals(argument, literals);
         return;
     }
 
-    for (auto & child : ast->children)
-        substituteWithLiteralsInEvalTableFunction(child, literals);
+    const auto table_expression_argument_indexes = table_function->getTableExpressionArgumentIndexes(ast, context);
+    for (const auto argument_index : table_expression_argument_indexes)
+    {
+        if (argument_index < function->arguments->children.size())
+            substituteWithLiteralsInEvalTableFunction(function->arguments->children[argument_index], literals, context);
+    }
 }
 
 }
 
 ApplyWithSubqueryVisitor::ApplyWithSubqueryVisitor(ContextPtr context_)
-    : use_analyzer(context_->getSettingsRef()[Setting::allow_experimental_analyzer])
+    : context(std::move(context_))
+    , use_analyzer(context->getSettingsRef()[Setting::allow_experimental_analyzer])
 {
 }
 
@@ -191,7 +216,7 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
     /// SELECT * FROM eval(q)`). This is restricted to the table-function position, so a scalar SQL UDF
     /// named `eval` used in an expression context is not rewritten and still honours `prefer_column_name_to_alias`.
     if (table.table_function)
-        substituteWithLiteralsInEvalTableFunction(table.table_function, data.literals);
+        substituteWithLiteralsInEvalTableFunction(table.table_function, data.literals, context);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)

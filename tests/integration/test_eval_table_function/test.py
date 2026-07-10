@@ -229,3 +229,33 @@ def test_remote_named_collection_eval_database_override_resolves_alias_on_initia
         )
         == "42\n"
     )
+
+
+def test_remote_sharding_key_preserves_scalar_eval_udf_argument():
+    initiator.query("DROP FUNCTION IF EXISTS eval")
+    initiator.query("CREATE FUNCTION eval AS x -> x + 1")
+    initiator.query("DROP TABLE IF EXISTS eval_sharding_key_source")
+    initiator.query("CREATE TABLE eval_sharding_key_source (q UInt64) ENGINE = Memory")
+    initiator.query("INSERT INTO eval_sharding_key_source VALUES (1)")
+    remote.query("DROP TABLE IF EXISTS remote_eval_sharding_key_result")
+    remote.query("CREATE TABLE remote_eval_sharding_key_result (q UInt64) ENGINE = Memory")
+
+    try:
+        initiator.query(
+            """
+            WITH 10 AS q
+            INSERT INTO FUNCTION remote(
+                'remote',
+                currentDatabase(),
+                remote_eval_sharding_key_result,
+                throwIf(eval(q) != 2))
+            SELECT q FROM eval_sharding_key_source
+            SETTINGS enable_analyzer = 0, prefer_column_name_to_alias = 1
+            """
+        )
+
+        assert remote.query("SELECT * FROM remote_eval_sharding_key_result") == "1\n"
+    finally:
+        initiator.query("DROP TABLE IF EXISTS eval_sharding_key_source")
+        remote.query("DROP TABLE IF EXISTS remote_eval_sharding_key_result")
+        initiator.query("DROP FUNCTION IF EXISTS eval")
