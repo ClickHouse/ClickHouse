@@ -332,6 +332,15 @@ bool ColumnStatistics::hasNullCount() const
     return false;
 }
 
+bool ColumnStatistics::hasMinMax() const
+{
+    if (stats.contains(StatisticsType::MinMax))
+        return true;
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+        return assert_cast<const StatisticsBasic &>(*it->second).hasNumericMinMax();
+    return false;
+}
+
 UInt64 ColumnStatistics::getNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())

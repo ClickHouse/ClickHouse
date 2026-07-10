@@ -76,6 +76,11 @@ TEST(Statistics, TDigestLessThan)
 
 TEST(Statistics, Estimator)
 {
+    /// `StatisticsTDigest::estimateLess` converts field values via `toFloat64` from
+    /// `FunctionFactory`. Register scalar functions so this test is self-contained and
+    /// does not rely on earlier tests in the binary having registered them.
+    tryRegisterFunctions();
+
     DataTypePtr data_type = std::make_shared<DataTypeInt32>();
     /// column a, distribution 1,2...,10000
     /// column b, distribution 500,600,500,600...
@@ -656,6 +661,71 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     auto eq0 = restored->estimateEqual(Field(Int64(0)));
     ASSERT_TRUE(eq0.has_value());
     EXPECT_DOUBLE_EQ(*eq0, 4.0);
+}
+
+/// Backward-compatibility: old `basic` blobs written before default-count tracking carry the
+/// `NumericMinMax` sub-statistic (bit 0) but not the `DefaultCount` field (bit 2 absent).
+/// After deserialization `has_default_count` must remain false so that `estimateEqual(0)` — or
+/// any default value — returns `std::nullopt` rather than `0`, which would incorrectly suppress
+/// `col = 0` / `col = ''` predicates.  The same invariant must hold after merging an old part
+/// into a new one, because the merged count would silently undercount.
+TEST(Statistics, BasicLegacyBlobNoDefaultCount)
+{
+    auto data_type = std::make_shared<DataTypeInt32>();
+    SingleStatisticsDescription desc(StatisticsType::Basic, nullptr, false);
+
+    /// Build and serialize a new-format blob (has_default_count = true), then clear bit 2 to
+    /// simulate a legacy blob produced by code that predates default-count tracking.
+    auto built = std::make_shared<StatisticsBasic>(desc, data_type);
+    {
+        MutableColumnPtr col = data_type->createColumn();
+        for (Int64 i = 1; i <= 100; ++i)
+            col->insert(Field(i));  /// values 1..100 — no zeros, so default_count = 0
+        built->build(std::move(col));
+    }
+    ASSERT_TRUE(built->hasDefaultCount());
+
+    WriteBufferFromOwnString wb;
+    built->serialize(wb);
+    String blob = wb.str();
+
+    /// The mask byte sits immediately after the 8-byte row_count field.
+    ASSERT_GT(blob.size(), sizeof(UInt64));
+    reinterpret_cast<UInt8 &>(blob[sizeof(UInt64)]) &= ~UInt8(1u << 2);  /// clear DefaultCount bit
+
+    /// Deserialize the modified blob — this is the legacy path.
+    auto legacy = std::make_shared<StatisticsBasic>(desc, data_type);
+    {
+        ReadBufferFromString rb(blob);
+        legacy->deserialize(rb, StatisticsFileVersion::V1);
+    }
+
+    /// has_default_count must be false: the blob predates default-count tracking.
+    EXPECT_FALSE(legacy->hasDefaultCount());
+
+    /// estimateEqual(0) must return nullopt — not 0.0 — so `col = 0` is not suppressed.
+    EXPECT_FALSE(legacy->estimateEqual(Field(Int64(0))).has_value());
+
+    /// estimateLess still works because the min/max payload is intact.
+    auto less = legacy->estimateLess(Field(Int64(51)));
+    ASSERT_TRUE(less.has_value());
+    EXPECT_NEAR(*less, 50.0, 2.0);
+
+    /// Merge: new-format part (has_default_count = true) merged with legacy (has_default_count = false).
+    /// The merged result must have has_default_count = false: one source cannot account for all defaults,
+    /// so summing counts from both would silently undercount.
+    auto fresh = std::make_shared<StatisticsBasic>(desc, data_type);
+    {
+        MutableColumnPtr col = data_type->createColumn();
+        for (Int64 i = 0; i < 50; ++i)
+            col->insert(Field(i));  /// 1 zero out of 50
+        fresh->build(std::move(col));
+    }
+    ASSERT_TRUE(fresh->hasDefaultCount());
+    fresh->merge(StatisticsPtr(legacy));
+
+    EXPECT_FALSE(fresh->hasDefaultCount());
+    EXPECT_FALSE(fresh->estimateEqual(Field(Int64(0))).has_value());
 }
 
 /// `basic` can be declared on any type; on a composite type it counts rows equal to the default

@@ -119,9 +119,8 @@ CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(minmax)) Engine = MergeTree
 CREATE TABLE tab (col UUID STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col IPv6 STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 
---   basic requires the column type to yield at least one usable single-value summary:
---   numeric min/max for value-by-number types, or string-length average for (Fixed)String.
---   Null count is always also tracked on top, when the column is Nullable / LowCardinality(Nullable).
+--   basic supports all column types: numeric types get min/max; String/FixedString get the
+--   average byte length; Nullable columns get a NULL count; all types get a default-value count.
 --     These types work:
 CREATE TABLE tab (col UInt8 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 CREATE TABLE tab (col UInt256 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
@@ -143,12 +142,11 @@ CREATE TABLE tab (col LowCardinality(UInt8) STATISTICS(basic)) Engine = MergeTre
 CREATE TABLE tab (col LowCardinality(String) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 CREATE TABLE tab (col LowCardinality(Nullable(UInt8)) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 CREATE TABLE tab (col LowCardinality(Nullable(String)) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
---     These types don't work:
-CREATE TABLE tab (col Array(Float64) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col Tuple(Float64, Float64) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col UUID STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col IPv6 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col Array(Float64) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Tuple(Float64, Float64) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col UUID STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col IPv6 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 
 -- CREATE TABLE was easy, ALTER is more fun
 
@@ -235,14 +233,13 @@ ALTER TABLE tab MODIFY STATISTICS f64 TYPE minmax; ALTER TABLE tab DROP STATISTI
 ALTER TABLE tab ADD STATISTICS a TYPE minmax; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab MODIFY STATISTICS a TYPE minmax; -- { serverError ILLEGAL_STATISTICS }
 --   basic
---     Works (on both a numeric and a string column — `basic` is the only stats type that handles both):
+--     Works on numeric, string, and all other column types:
 ALTER TABLE tab ADD STATISTICS f64 TYPE basic; ALTER TABLE tab DROP STATISTICS f64;
 ALTER TABLE tab MODIFY STATISTICS f64 TYPE basic; ALTER TABLE tab DROP STATISTICS f64;
 ALTER TABLE tab ADD STATISTICS s TYPE basic; ALTER TABLE tab DROP STATISTICS s;
 ALTER TABLE tab MODIFY STATISTICS s TYPE basic; ALTER TABLE tab DROP STATISTICS s;
---     Doesn't work:
-ALTER TABLE tab ADD STATISTICS a TYPE basic; -- { serverError ILLEGAL_STATISTICS }
-ALTER TABLE tab MODIFY STATISTICS a TYPE basic; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE tab ADD STATISTICS a TYPE basic; ALTER TABLE tab DROP STATISTICS a;
+ALTER TABLE tab MODIFY STATISTICS a TYPE basic; ALTER TABLE tab DROP STATISTICS a;
 ALTER TABLE tab MODIFY COLUMN f64_tdigest UInt64;
 
 -- Finally, do a full-circle test of a good case. Print table definition after each step.
