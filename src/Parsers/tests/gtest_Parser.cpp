@@ -144,6 +144,29 @@ TEST(ParserExecuteAsQuery, OutputOptionChildOrderIsCanonical)
     }
 }
 
+TEST(ParserInsertQuery, ReturningTrailingSettingsChildOrderIsCanonical)
+{
+    const std::vector<String> queries = {
+        "INSERT INTO t SELECT number FROM numbers(1) RETURNING (SELECT number FROM numbers(1)) SETTINGS max_result_rows = 1",
+        "INSERT INTO t SETTINGS max_threads = 1 SELECT number FROM numbers(1) RETURNING (SELECT number FROM numbers(1)) SETTINGS max_result_rows = 1",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        ASTPtr cloned = ast->clone();
+        EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false)) << "clone of: " << query;
+
+        String formatted = ast->formatWithSecretsOneLine();
+        ASTPtr reparsed = parseQuery(parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
+    }
+}
+
 TEST(ParserCreateDatabaseQuery, MaskDataLakeCatalogStorageCredentials)
 {
     /// Both the `aws_*` and the backward-compatible `storage_aws_*` static credentials must be hidden

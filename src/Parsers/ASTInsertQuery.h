@@ -72,20 +72,34 @@ public:
         auto res = make_intrusive<ASTInsertQuery>(*this);
         res->children.clear();
 
-        if (database) { res->database = database->clone(); res->children.push_back(res->database); }
-        if (table) { res->table = table->clone(); res->children.push_back(res->table); }
+        if (infile) { res->infile = infile->clone(); res->children.push_back(res->infile); }
+        if (compression) { res->compression = compression->clone(); res->children.push_back(res->compression); }
+
+        if (table_function)
+        {
+            res->table_function = table_function->clone();
+            res->children.push_back(res->table_function);
+            if (partition_by)
+            {
+                res->partition_by = partition_by->clone();
+                res->children.push_back(res->partition_by);
+            }
+        }
+        else
+        {
+            if (database) { res->database = database->clone(); res->children.push_back(res->database); }
+            if (table) { res->table = table->clone(); res->children.push_back(res->table); }
+        }
+
         if (columns) { res->columns = columns->clone(); res->children.push_back(res->columns); }
-        if (table_function) { res->table_function = table_function->clone(); res->children.push_back(res->table_function); }
-        if (partition_by) { res->partition_by = partition_by->clone(); res->children.push_back(res->partition_by); }
+        if (select) { res->select = select->clone(); res->children.push_back(res->select); }
+        if (returning_select) { res->returning_select = returning_select->clone(); res->children.push_back(res->returning_select); }
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
         if (source_select_settings_ast) { res->source_select_settings_ast = source_select_settings_ast->clone(); res->children.push_back(res->source_select_settings_ast); }
+
         if (source_select_settings_runtime_ast) { res->source_select_settings_runtime_ast = source_select_settings_runtime_ast->clone(); }
         if (source_select_settings_global_ast) { res->source_select_settings_global_ast = source_select_settings_global_ast->clone(); }
         if (source_select_settings_restore_ast) { res->source_select_settings_restore_ast = source_select_settings_restore_ast->clone(); }
-        if (select) { res->select = select->clone(); res->children.push_back(res->select); }
-        if (returning_select) { res->returning_select = returning_select->clone(); res->children.push_back(res->returning_select); }
-        if (infile) { res->infile = infile->clone(); res->children.push_back(res->infile); }
-        if (compression) { res->compression = compression->clone(); res->children.push_back(res->compression); }
 
         return res;
     }
