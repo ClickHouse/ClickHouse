@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <ranges>
+#include <unordered_set>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -78,6 +79,41 @@ auto collectVec(Range && range)
     return result;
 }
 
+/// The rewrite evaluates the `ORDER BY` key twice: once in the cloned subquery that selects the physical
+/// offsets of the top rows, and once in the outer query (with `LIMIT` removed) that reads those rows back
+/// and re-sorts them. A sort key that is not deterministic within the scope of a query, such as `rand()`,
+/// yields different values in the two evaluations, so the rewrite can return the rows in a different order
+/// (or, when the key ties, a different set) than the original `ORDER BY ... LIMIT`. Detect such a key so the
+/// rewrite can be rejected. Aggregate and window functions in `ORDER BY` are rejected before this check runs;
+/// for them `getFunction` returns null, which we conservatively treat as non-deterministic.
+bool orderByHasNonDeterministicFunction(const QueryTreeNodePtr & order_by_node)
+{
+    if (!order_by_node)
+        return false;
+
+    QueryTreeNodes nodes_to_process{order_by_node};
+    while (!nodes_to_process.empty())
+    {
+        auto node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (const auto * function_node = node->as<FunctionNode>())
+        {
+            const auto & function_base = function_node->getFunction();
+            if (!function_base || !function_base->isDeterministicInScopeOfQuery())
+                return true;
+        }
+
+        for (const auto & child : node->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child);
+        }
+    }
+
+    return false;
+}
+
 
 struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<OrderByLimitRewriteVisitor>
 {
@@ -145,6 +181,10 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
             if (const auto * sort = sort_node->as<SortNode>(); sort && sort->withFill())
                 return {};
         }
+        /// A non-deterministic sort key (e.g. `ORDER BY rand()`) would be evaluated twice by the rewrite
+        /// with diverging results, changing the order (or set) of the returned rows. Reject it.
+        if (orderByHasNonDeterministicFunction(query_node.getOrderByNode()))
+            return {};
         /// If the limit exceeds @limit_max_val, disable optimization
         if (auto * limit = query_node.getLimit()->as<ConstantNode>())
         {
@@ -198,25 +238,32 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
         return {};
     }
 
-    bool needChildVisit(QueryTreeNodePtr & /*parent*/, QueryTreeNodePtr & /*child*/) const { return need_child_visit; }
+    /// Do not descend into the children of a query node that was already selected for the rewrite: the
+    /// rewrite clones the whole node and replaces its projection, so rewriting a subquery nested inside it
+    /// is pointless. The decision is keyed on the parent node itself rather than a single shared flag, so
+    /// selecting one child — for example the first arm of a `UNION ALL` — does not stop the visitor from
+    /// descending into that node's other, equally eligible children.
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & /*child*/) const
+    {
+        return !selected_for_rewrite.contains(parent.get());
+    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        need_child_visit = true;
         if (auto * query_node = node->as<QueryNode>())
         {
             if (auto table_storage = checkSimpleOrderByLimitQueryAndReturnStorage(*query_node))
             {
                 if (table_storage->as<StorageMergeTree>())
                 {
-                    need_child_visit = false;
+                    selected_for_rewrite.insert(node.get());
                     order_by_limit_nodes.emplace_back(node, std::move(table_storage));
                 }
             }
         }
     }
 
-    bool need_child_visit = false;
+    std::unordered_set<const IQueryTreeNode *> selected_for_rewrite;
     size_t limit_max_val = DEFAULT_LIMIT_MAX_VAL;
     size_t min_columns_to_use_fetch = DEFAULT_MIN_COLUMNS_TO_USE_FETCH;
     std::vector<std::pair<QueryTreeNodePtr, StoragePtr>> order_by_limit_nodes;
