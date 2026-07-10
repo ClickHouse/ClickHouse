@@ -1,5 +1,6 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Poco/Util/MapConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
 #include <gtest/gtest.h>
@@ -120,6 +121,20 @@ key6:	6.6
     ASSERT_FALSE(NamedCollectionFactoryFriend::instance().exists("collection2_copy"));
 
     config.reset();
+}
+
+TEST(NamedCollections, DuplicatePreservesQueryOverriddenKeys)
+{
+    Poco::AutoPtr<Poco::Util::MapConfiguration> config(new Poco::Util::MapConfiguration);
+    config->setString("collection.key1", "value1");
+    config->setString("collection.key2", "value2");
+
+    auto collection = NamedCollectionFromConfig::create(*config, "collection", "collection", {"key1", "key2"})->duplicate();
+    collection->markQueryOverridden("key1");
+
+    auto copy = collection->duplicate();
+    ASSERT_TRUE(copy->isQueryOverridden("key1"));
+    ASSERT_FALSE(copy->isQueryOverridden("key2"));
 }
 
 TEST(NamedCollections, NestedConfig)

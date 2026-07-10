@@ -297,8 +297,10 @@ MutableNamedCollectionPtr NamedCollection::duplicate() const
 {
     std::lock_guard lock(mutex);
     auto impl = pimpl->createCopy(collection_name);
-    return std::unique_ptr<NamedCollection>(
+    auto copy = std::unique_ptr<NamedCollection>(
         new NamedCollection(std::move(impl), collection_name, true));
+    copy->query_overridden_keys = query_overridden_keys;
+    return copy;
 }
 
 NamedCollection::Keys NamedCollection::getKeys(ssize_t depth, const std::string & prefix) const
