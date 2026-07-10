@@ -1,0 +1,55 @@
+---
+alias: []
+description: 'توثيق تنسيق TemplateIgnoreSpaces'
+input_format: true
+keywords: ['TemplateIgnoreSpaces']
+output_format: false
+slug: /interfaces/formats/TemplateIgnoreSpaces
+title: 'TemplateIgnoreSpaces'
+doc_type: 'مرجع'
+---
+
+| إدخال | إخراج | الاسم المستعار |
+| ----- | ----- | -------------- |
+| ✔     | ✗     |                |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يشبه [`Template`]، لكنه يتجاوز أحرف المسافات البيضاء بين الفواصل والقيم في تدفق الإدخال.
+ومع ذلك، إذا كانت سلاسل التنسيق تحتوي على أحرف مسافات بيضاء، فسيُتوقع وجود هذه الأحرف في تدفق الإدخال.
+كما يتيح تحديد عناصر نائبة فارغة (`${}` أو `${:None}`) لتقسيم بعض الفواصل إلى أجزاء منفصلة بهدف تجاهل المسافات بينها.
+تُستخدم هذه العناصر النائبة فقط لتجاوز أحرف المسافات البيضاء.
+يمكن قراءة `JSON` باستخدام هذا التنسيق إذا كانت قيم الأعمدة تأتي بالترتيب نفسه في جميع الصفوف.
+
+<Note>
+  هذا التنسيق مناسب للإدخال فقط.
+</Note>
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+يمكن استخدام الطلب التالي لإدراج البيانات بالاستناد إلى مثال المخرجات الخاص بالتنسيق [JSON](/ar/reference/formats/JSON/JSON):
+
+```sql
+INSERT INTO table_name 
+SETTINGS
+    format_template_resultset = '/some/path/resultset.format',
+    format_template_row = '/some/path/row.format',
+    format_template_rows_between_delimiter = ','
+FORMAT TemplateIgnoreSpaces
+```
+
+```text title="/some/path/resultset.format"
+{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}
+```
+
+```text title="/some/path/row.format"
+{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>

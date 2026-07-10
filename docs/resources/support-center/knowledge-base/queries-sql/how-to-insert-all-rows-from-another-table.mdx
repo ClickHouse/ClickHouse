@@ -1,0 +1,128 @@
+---
+title: How to insert all rows from one table to another?
+description: "Knowledgebase article on how to insert all rows from one table to another."
+date: 2024-12-17
+tags: ['Data Ingestion']
+keywords: ['Insert from a table']
+---
+
+{frontMatter.description}
+{/* truncate */}
+
+## Introduction {#introduction}
+Sometimes you need to reingest all the data from one table to another.
+
+For example, you might want to reingest data from a staging table to a production table. This article shows how to do this using the `INSERT INTO` statement.
+
+## Example {#example}
+Below is a simple example on how it works and how to test:
+
+- Create a sample database
+
+```sql 
+CREATE DATABASE db1;
+```
+
+- Create a sample table
+
+```sql
+CREATE TABLE db1.source_table
+(
+    city VARCHAR,
+    country VARCHAR,
+    continent VARCHAR
+)
+engine = MergeTree()
+ORDER BY continent;
+```
+
+- Insert some data into the source table
+
+```sql
+INSERT INTO db1.source_table (city, country, continent)
+VALUES
+    ('New York', 'USA', 'North America'),
+    ('Tokyo', 'Japan', 'Asia'),
+    ('Berlin', 'Germany', 'Europe'),
+    ('Paris', 'France', 'Europe'),
+    ('Cairo', 'Egypt', 'Africa'),
+    ('Sydney', 'Australia', 'Australia');
+```
+
+- Check the number of rows in the source table
+
+```sql
+SELECT COUNT(*) FROM db1.source_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+- Create a new table with the same structure as the source table.
+
+```sql
+CREATE TABLE db1.target_table AS db1.source_table;
+```
+
+- Insert all rows from the source table to the target table.
+
+```sql
+INSERT INTO db1.target_table SELECT * FROM db1.source_table;
+```
+
+- Check the number of rows in the target table
+
+```sql
+SELECT COUNT(*) FROM db1.target_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+If you want to modify the structure of the new table, you can first display the structure of the source table.
+
+```sql
+SHOW CREATE TABLE db1.source_table;
+```
+
+Then create the new table with the modified structure. In our case we want to add a new column `population` to the target table.
+
+```sql
+CREATE TABLE db1.target_table_population
+(
+    `city` String,
+    `country` String,
+    `continent` String,
+    `population` UInt16,
+)
+ENGINE = MergeTree
+ORDER BY continent;
+```
+
+- Insert all rows from the source table to the target table, including the new column. The population field is set to 0 for all rows.
+
+```sql
+INSERT INTO db1.target_table_population (city, country, continent, population)
+SELECT city, country, continent, 0 FROM db1.source_table;
+```
+
+- Check the data in the target table
+
+```sql
+SELECT * FROM db1.target_table_population LIMIT 3;
+```
+
+```text
+┌─city──────┬─country───┬─continent──────┬─population─┐
+│ New York  │ USA       │ North America  │          0 │
+│ Tokyo     │ Japan     │ Asia           │          0 │
+│ Berlin    │ Germany   │ Europe         │          0 │
+└───────────┴───────────┴────────────────┴────────────┘
+```
+

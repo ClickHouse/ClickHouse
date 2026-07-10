@@ -1,0 +1,363 @@
+---
+sidebarTitle: '기술 참고'
+slug: /integrations/fivetran/reference
+description: 'Fivetran ClickHouse 대상에 대한 유형 매핑, 테이블 엔진 세부 정보, 메타데이터 컬럼, 디버깅 쿼리입니다.'
+title: '기술 참고'
+doc_type: 'guide'
+keywords: ['fivetran', 'ClickHouse 대상', '기술 참고']
+---
+
+<div id="setup-details">
+  ## 설정 상세 정보
+</div>
+
+<div id="user-and-role-management">
+  ### 사용자 및 역할 관리
+</div>
+
+`default` 사용자는 사용하지 않는 것이 좋습니다. 대신 이 Fivetran
+대상에만 사용할 전용 사용자를 생성하세요. 아래 명령을 `default` 사용자로 실행하면 필요한 권한이 있는 새 `fivetran_user`가
+생성됩니다.
+
+```sql
+CREATE USER fivetran_user IDENTIFIED BY '<password>'; -- 안전한 비밀번호 생성기를 사용하십시오
+
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+또한 `fivetran_user`의 특정 데이터베이스에 대한 접근 권한을 철회할 수 있습니다.
+예를 들어, 다음 구문을 실행하면 `default` 데이터베이스에 대한 접근이 제한됩니다:
+
+```sql
+REVOKE ALL ON default.* FROM fivetran_user;
+```
+
+이 SQL 문은 ClickHouse SQL 콘솔에서 실행할 수 있습니다.
+
+<div id="advanced-configuration">
+  ### 고급 구성
+</div>
+
+ClickHouse Cloud 대상은 고급 사용 사례를 위해 선택적으로 JSON 설정 파일을 지원합니다. 이 파일을 사용하면 배치 크기, 병렬 처리, 연결 풀, 요청 타임아웃을 제어하는 기본 설정을 재정의하여 대상 동작을 세밀하게 조정할 수 있습니다.
+
+<Note>
+  이 구성은 완전히 선택 사항입니다. 파일을 업로드하지 않으면 대상은 대부분의 사용 사례에 적합한 기본값을 사용합니다.
+</Note>
+
+이 파일은 유효한 JSON이어야 하며 아래에 설명된 스키마(schema)를 따라야 합니다.
+
+초기 설정 후 구성을 수정해야 하는 경우 Fivetran 대시보드에서 대상 구성을 편집하고 업데이트된 파일을 업로드할 수 있습니다.
+
+설정 파일에는 다음과 같은 최상위 섹션이 있습니다:
+
+```json
+{
+  "destination_configurations": { ... }
+}
+```
+
+여기에서 ClickHouse 대상 커넥터 자체의 내부 동작을 제어하는 다음 구성을 지정할 수 있습니다.
+이러한 구성은 커넥터가 데이터를 ClickHouse로 보내기 전에 처리하는 방식에 영향을 줍니다.
+
+| 설정                       | 유형 | 기본값      | 허용 범위           | 설명                                                                                |
+| ------------------------ | -- | -------- | --------------- | --------------------------------------------------------------------------------- |
+| `write_batch_size`       | 정수 | `100000` | 5,000 – 100,000 | 삽입, 업데이트, replace 작업의 배치당 행 수입니다.                                                 |
+| `select_batch_size`      | 정수 | `1500`   | 200 – 1,500     | 업데이트 시 사용되는 SELECT 쿼리의 배치당 행 수입니다.                                                |
+| `mutation_batch_size`    | 정수 | `1500`   | 200 – 1,500     | 히스토리 모드에서 ALTER TABLE UPDATE 뮤테이션의 배치당 행 수입니다. SQL 문이 너무 커지는 문제가 발생하면 이 값을 낮추십시오. |
+| `hard_delete_batch_size` | 정수 | `1500`   | 200 – 1,500     | 일반 동기화와 히스토리 모드에서 하드 삭제 작업의 배치당 행 수입니다. SQL 문이 너무 커지는 문제가 발생하면 이 값을 낮추십시오.        |
+
+모든 필드는 선택 사항입니다. 필드를 지정하지 않으면 기본값이 사용됩니다.
+값이 허용 범위를 벗어나면 동기화 중 대상 커넥터가 오류를 보고합니다.
+알 수 없는 필드는 자동으로 무시되며(경고는 기록됨) 오류를 발생시키지 않으므로, 새로운 설정이 추가되더라도 전방 호환성이 유지됩니다.
+
+예시:
+
+```json
+{
+  "destination_configurations": {
+    "write_batch_size": 50000,
+    "select_batch_size": 200
+  }
+}
+```
+
+<div id="type-mapping">
+  ## 타입 변환 매핑
+</div>
+
+Fivetran ClickHouse 대상은 [Fivetran data types](https://fivetran.com/docs/destinations#datatypes)를 다음과 같이 ClickHouse 타입에 매핑합니다:
+
+| Fivetran 타입   | ClickHouse 타입                                                    |
+| ------------- | ---------------------------------------------------------------- |
+| BOOLEAN       | [Bool](/ko/reference/data-types/boolean)                            |
+| SHORT         | [Int16](/ko/reference/data-types/int-uint)                          |
+| INT           | [Int32](/ko/reference/data-types/int-uint)                          |
+| LONG          | [Int64](/ko/reference/data-types/int-uint)                          |
+| BIGDECIMAL    | [Decimal(P, S)](/ko/reference/data-types/decimal)                   |
+| FLOAT         | [Float32](/ko/reference/data-types/float)                           |
+| DOUBLE        | [Float64](/ko/reference/data-types/float)                           |
+| LOCALDATE     | [Date32](/ko/reference/data-types/date32)                           |
+| LOCALDATETIME | [DateTime64(0, &#39;UTC&#39;)](/ko/reference/data-types/datetime64) |
+| INSTANT       | [DateTime64(9, &#39;UTC&#39;)](/ko/reference/data-types/datetime64) |
+| STRING        | [String](/ko/reference/data-types/string)                           |
+| LOCALTIME     | [String](/ko/reference/data-types/string) * **                      |
+| BINARY        | [String](/ko/reference/data-types/string) *                         |
+| XML           | [String](/ko/reference/data-types/string) *                         |
+| JSON          | [String](/ko/reference/data-types/string) *                         |
+
+<Note>
+  * BINARY, XML, LOCALTIME, JSON는 ClickHouse의 `String` 타입이 임의의 바이트 집합을 표현할 수 있으므로 [String](/ko/reference/data-types/string)으로 저장됩니다. 대상은 원래 데이터 타입을 나타내기 위해 컬럼 comment를 추가합니다. ClickHouse의 [JSON](/ko/reference/data-types/newjson) 데이터 타입은 더 이상 사용되지 않는 것으로 표시되었고 프로덕션 사용이 권장된 적도 없으므로 사용되지 않습니다.
+    ** 참고: LOCALTIME 타입 지원 추적 이슈: [clickhouse-fivetran-destination #15](https://github.com/ClickHouse/clickhouse-fivetran-destination/issues/15).
+</Note>
+
+<div id="date-and-time-value-ranges">
+  ### 날짜 및 시간 값 범위
+</div>
+
+Fivetran 소스는 [0001-01-01, 9999-12-31](https://fivetran.com/docs/destinations#dateandtimevaluerange) 범위의 날짜 및 시간 값을 전송할 수 있습니다.
+ClickHouse Cloud의 날짜 타입은 지원 범위가 더 좁으므로, 지원 범위를 벗어나는 값은 별도 알림 없이 가장 가까운 경계값으로 잘립니다.
+
+| Fivetran type | ClickHouse Cloud type        | Min value           | Max value           |
+| ------------- | ---------------------------- | ------------------- | ------------------- |
+| LOCALDATE     | Date32                       | 1900-01-01          | 2299-12-31          |
+| LOCALDATETIME | DateTime64(0, &#39;UTC&#39;) | 1900-01-01 00:00:00 | 2262-04-11 23:47:16 |
+| INSTANT       | DateTime64(9, &#39;UTC&#39;) | 1900-01-01 00:00:00 | 2262-04-11 23:47:16 |
+
+* INSTANT의 상한값이 2262-04-11 23:47:16인 이유는 DateTime64(9)가 epoch 이후의 나노초를 int64로 저장하고, 2^63 - 1 나노초가 이 날짜에 해당하기 때문입니다.
+  ClickHouse 자체는 precision &lt;= 9인 DateTime64를 2299-12-31 23:59:59까지 지원합니다.
+* LOCALDATETIME의 상한값 역시 Go ClickHouse driver의 [알려진 버그](https://github.com/ClickHouse/clickhouse-go/issues/1311)로 인해 2262-04-11 23:47:16으로 제한됩니다. 이 버그에서는 스케일링 전에 모든 DateTime64 precision에 대해 `time.Time.UnixNano()`를 호출하므로, precision이 0이어도 2262년 이후 날짜에서는 int64 오버플로우가 발생합니다.
+
+<div id="table-structure">
+  ## 대상 테이블
+</div>
+
+ClickHouse Cloud 대상은
+[SharedMergeTree](/ko/products/cloud/features/infrastructure/shared-merge-tree) 계열의
+[Replacing](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 엔진 유형
+(구체적으로는 `SharedReplacingMergeTree`)을 사용하며, `_fivetran_synced` 컬럼을 기준으로 버전이 관리됩니다.
+
+기본(정렬) 키와 Fivetran 메타데이터 컬럼을 제외한 모든 컬럼은
+[Nullable(T)](/ko/reference/data-types/nullable)로 생성되며,
+여기서 `T`는 [데이터 타입 매핑](#type-mapping)을 기반으로 하는
+ClickHouse Cloud 타입입니다.
+
+테이블 구조는 커넥터에 구성된 Fivetran
+[동기화 모드](https://fivetran.com/docs/using-fivetran/features#deletedrowhandling)에 따라 달라집니다. **소프트 삭제**(기본값) 또는 **히스토리 모드**(SCD Type 2)를 사용할 수 있습니다.
+
+<div id="soft-delete-mode">
+  ### 소프트 삭제 모드
+</div>
+
+소프트 삭제 모드에서는 모든 대상 테이블에 다음 메타데이터 컬럼이 포함됩니다.
+
+| 컬럼                  | 유형                     | 설명                                                                                |
+| ------------------- | ---------------------- | --------------------------------------------------------------------------------- |
+| `_fivetran_synced`  | `DateTime64(9, 'UTC')` | Fivetran이 레코드를 동기화한 시점을 나타내는 타임스탬프입니다. `SharedReplacingMergeTree`의 버전 컬럼으로 사용됩니다. |
+| `_fivetran_deleted` | `Bool`                 | 소프트 삭제 표시자입니다. 소스 레코드가 삭제되면 `true`로 설정됩니다.                                        |
+| `_fivetran_id`      | `String`               | 자동으로 생성되는 고유 식별자입니다. 소스 테이블에 기본 키가 없는 경우에만 존재합니다.                                 |
+
+<div id="single-pk">
+  #### 소스 테이블의 단일 기본 키
+</div>
+
+예를 들어, 소스 테이블 `users`에는 기본 키 컬럼 `id` (`INT`)와 일반 컬럼 `name` (`STRING`)이 있습니다.
+대상 테이블은 다음과 같이 정의됩니다.
+
+```sql
+CREATE TABLE `users`
+(
+    `id`                Int32,
+    `name`              Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY id
+SETTINGS index_granularity = 8192
+```
+
+이 경우 `id` 컬럼이 테이블의 정렬 키로 선택됩니다.
+
+<div id="multiple-pks">
+  #### 소스 테이블에 여러 기본 키가 있는 경우
+</div>
+
+소스 테이블에 여러 기본 키가 있으면 Fivetran 소스 테이블
+정의에 나오는 순서대로 사용됩니다.
+
+예를 들어, 소스 테이블 `items`에 기본 키 컬럼 `id` (`INT`)와 `name` (`STRING`)이 있고, 추가로
+일반 컬럼 `description` (`STRING`)이 있다고 가정하겠습니다. 대상 테이블은 다음과 같이 정의됩니다:
+
+```sql
+CREATE TABLE `items`
+(
+    `id`                Int32,
+    `name`              String,
+    `description`       Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name)
+SETTINGS index_granularity = 8192
+```
+
+이 경우 `id` 및 `name` 컬럼이 테이블의 정렬 키로 선택됩니다.
+
+<div id="no-pks">
+  #### 원본 테이블에 기본 키(primary key)가 없는 경우
+</div>
+
+원본 테이블에 기본 키가 없으면 Fivetran이 `_fivetran_id` 컬럼을 고유 식별자로 추가합니다.
+원본의 `events` 테이블에 `event` (`STRING`) 및 `timestamp` (`LOCALDATETIME`) 컬럼만 있다고 가정해 보겠습니다.
+이 경우 대상 테이블은 다음과 같습니다.
+
+```sql
+CREATE TABLE events
+(
+    `event`             Nullable(String),
+    `timestamp`         Nullable(DateTime),
+    `_fivetran_id`      String,
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY _fivetran_id
+SETTINGS index_granularity = 8192
+```
+
+`_fivetran_id`는 고유하고 다른 기본 키 옵션이 없으므로 테이블 정렬 키로 사용됩니다.
+
+<div id="history-mode">
+  ### 히스토리 모드 (SCD Type 2)
+</div>
+
+[히스토리 모드](https://fivetran.com/docs/using-fivetran/features#historymode)가 활성화되면,
+대상은 이전 값을 덮어쓰는 대신 각 레코드의 모든 버전을 보존합니다.
+이 기능은 [Slowly Changing Dimension Type 2](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row)(SCD Type 2)를 구현하며,
+모든 변경 사항에 대한 완전한 감사 이력을 유지합니다.
+
+히스토리 모드에서는 모든 대상 테이블에 다음 메타데이터 컬럼이 포함됩니다:
+
+| 컬럼                 | 유형                               | 설명                                                                           |
+| ------------------ | -------------------------------- | ---------------------------------------------------------------------------- |
+| `_fivetran_synced` | `DateTime64(9, 'UTC')`           | Fivetran이 레코드를 동기화한 시점의 타임스탬프입니다. `SharedReplacingMergeTree`의 버전 컬럼으로 사용됩니다. |
+| `_fivetran_start`  | `DateTime64(9, 'UTC')`           | 이 버전의 레코드가 활성 상태가 된 시점의 타임스탬프입니다. 테이블 정렬 키(정렬 키)의 일부입니다.              |
+| `_fivetran_end`    | `Nullable(DateTime64(9, 'UTC'))` | 이 버전이 대체된 시점의 타임스탬프입니다. 현재 활성 레코드에는 `2262-04-11 23:47:16`으로 설정됩니다.           |
+| `_fivetran_active` | `Nullable(Bool)`                 | 현재 활성 상태인 레코드 버전인지 여부입니다.                                                    |
+| `_fivetran_id`     | `String`                         | 자동 생성된 고유 식별자입니다. 원본 테이블에 기본 키가 없을 때만 존재합니다.                              |
+
+`_fivetran_start` 컬럼은 항상 복합 정렬 키의 마지막 요소로 `ORDER BY` 절에 포함됩니다.
+따라서 시작 시간이 서로 다른 동일 레코드의 여러 버전이 테이블에 함께 존재할 수 있습니다.
+
+레코드가 업데이트되면:
+
+* 이전 버전의 `_fivetran_end`는 새 버전의 `_fivetran_start`에서 1나노초를 뺀 값으로 설정되고, `_fivetran_active`는 `false`로 설정됩니다.
+* 새 버전은 `_fivetran_active`를 `true`로, `_fivetran_end`를 `2262-04-11 23:47:16.000000000`(`DateTime64(9)`의 최댓값)으로 설정한 상태로 삽입됩니다.
+
+<div id="history-single-pk">
+  #### 소스 테이블에 단일 기본 키가 있는 경우
+</div>
+
+예를 들어, 소스 테이블 `users`에는 기본 키 컬럼 `id`(`INT`)와 일반 컬럼 `name`(`STRING`), `status`(`STRING`)가 있습니다.
+히스토리 모드의 대상 테이블은 다음과 같이 정의됩니다:
+
+```sql
+CREATE TABLE `users`
+(
+    `id`               Int32,
+    `name`             Nullable(String),
+    `status`           Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+이 경우 `id`와 `_fivetran_start`가 복합 정렬 키(정렬 키)를 이룹니다.
+
+몇 차례 동기화가 이루어지면 테이블에는 다음과 같은 데이터가 포함될 수 있습니다.
+
+| id | name    | status | &#95;fivetran&#95;start       | &#95;fivetran&#95;end         | &#95;fivetran&#95;active |
+| -- | ------- | ------ | ----------------------------- | ----------------------------- | ------------------------ |
+| 1  | name 1  | TODO   | 2025-11-10 20:57:00.000000000 | 2025-11-11 20:56:59.999000000 | false                    |
+| 1  | name 11 | TODO   | 2025-11-11 20:57:00.000000000 | 2262-04-11 23:47:16.000000000 | true                     |
+| 2  | name 2  | TODO   | 2025-11-10 20:57:00.000000000 | 2262-04-11 23:47:16.000000000 | true                     |
+
+레코드 `id=1`에는 두 개의 버전이 있습니다. 원본(`name 1`, 비활성)과 업데이트된 버전(`name 11`, 활성)입니다.
+레코드 `id=2`에는 현재 활성 상태인 버전이 하나만 있습니다.
+
+<div id="history-multiple-pks">
+  #### 소스 테이블에 여러 개의 기본 키가 있는 경우
+</div>
+
+소스 테이블에 기본 키가 여러 개 있으면, 마지막 요소인 `_fivetran_start``와 함께 모두 `ORDER BY&#96;에 포함됩니다.
+
+예를 들어, 소스 테이블 `items`에 기본 키 컬럼 `id` (`INT`)와 `name` (`STRING`)이 있고, 추가적인 일반 컬럼 `description` (`STRING`)도 있다고 가정합니다. 히스토리 모드의 대상 테이블은 다음과 같이 정의됩니다:
+
+```sql
+CREATE TABLE `items`
+(
+    `id`               Int32,
+    `name`             String,
+    `description`      Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+이 경우 `id`, `name`, `_fivetran_start`가 복합 정렬 키를 이룹니다.
+
+<div id="history-no-pks">
+  #### 소스 테이블에 기본 키가 없는 경우
+</div>
+
+소스 테이블에 기본 키가 없으면 Fivetran이 `_fivetran_id` 컬럼을 고유 식별자로 추가하며,
+`_fivetran_start`를 정렬 키(정렬 키)에 덧붙입니다.
+소스에 `event` (`STRING`) 및 `timestamp` (`LOCALDATETIME`) 컬럼만 있는 `events` 테이블을 예로 들어보겠습니다.
+히스토리 모드의 대상 테이블은 다음과 같습니다:
+
+```sql
+CREATE TABLE events
+(
+    `event`            Nullable(String),
+    `timestamp`        Nullable(DateTime),
+    `_fivetran_id`     String,
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (_fivetran_id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+`_fivetran_id`와 `_fivetran_start`가 복합 정렬 키(정렬 키)를 이루므로.
+
+<div id="selecting-latest-version">
+  ### 중복 없는 최신 버전의 데이터 선택하기
+</div>
+
+`SharedReplacingMergeTree`는 백그라운드에서 데이터 중복 제거를 수행하지만,
+[머지(merge)가 발생하는 시점을 예측할 수 없을 때에만](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 수행됩니다.
+하지만 `FINAL` 키워드를 사용하면 필요할 때 중복이 제거된 최신 버전의 데이터를 조회할 수 있습니다:
+
+```sql
+SELECT *
+FROM example FINAL
+LIMIT 1000 
+```
+
+문제 해결 가이드의 [읽기 쿼리 최적화](/ko/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#optimizing-reading-queries)&quot; 섹션에서 쿼리 최적화 팁을 참고하십시오.
+
+<div id="retries-on-network-failures">
+  ## 네트워크 장애 발생 시 재시도
+</div>
+
+ClickHouse Cloud 대상은 일시적인 네트워크 오류가 발생하면 지수 백오프 알고리즘을 사용해 재시도합니다.
+대상이 데이터를 삽입하더라도 이는 안전하며, 발생할 수 있는 중복은
+`SharedReplacingMergeTree` 테이블 엔진에서 처리됩니다.
