@@ -2056,6 +2056,8 @@ Enable the bulk filtering algorithm for indices. It is expected to be always bet
     DECLARE(Bool, use_minmax_index_bulk_filtering, false, R"(
 Evaluate minmax skip indexes across every granule of a part in a single vectorized pass, instead of one granule at a time. Benefits queries with wide parts and fine-grained (e.g. `GRANULARITY 1`) minmax indexes, where per-granule evaluation cost dominates.
 
+The vectorized pass runs during query analysis, so it only takes effect when [use_skip_indexes_on_data_read](#use_skip_indexes_on_data_read) is disabled. When `use_skip_indexes_on_data_read` is enabled (the default), minmax indexes are evaluated during data reading and this setting has no effect.
+
 Some condition shapes (space-filling curves, polygon predicates, non-collapsed `IN`, relaxed predicates such as `match`) are not eligible for the vectorized path and fall back to per-granule evaluation.
 
 Composes with [use_skip_indexes_for_disjunctions](#use_skip_indexes_for_disjunctions) for the common observability shape `(time_range) AND (OR over another column)`. Queries where the index's own predicate contains an `OR` fall back to per-granule evaluation to preserve disjunction-merge precision.
