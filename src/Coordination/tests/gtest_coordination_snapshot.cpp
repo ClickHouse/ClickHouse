@@ -2079,20 +2079,16 @@ TYPED_TEST(CoordinationTest, TestSnapshotOrphanedTTLCleanup)
     Storage storage(500, "", this->keeper_context);
     addNode(storage, "/hello1", "world");
 
-    /// Insert orphaned TTL node directly (parent /missing does not exist)
+    /// Insert orphaned TTL node directly (parent /missing does not exist).
+    /// The TTL flag lives in the node stats; deserialization registers it in
+    /// ttl_paths and committed_ttl_nodes automatically, so we only set stats here.
     using Node = typename Storage::Node;
     Node orphan;
     orphan.setData("ttl_orphan_data");
     orphan.stats.setTTL(5000);
     storage.container.insertOrReplace("/missing/ttl_node", orphan);
 
-    /// Register it in TTL tracking (as snapshot deserialization would have done)
-    storage.ttl_paths.insert("/missing/ttl_node");
-    storage.committed_ttl_nodes.fetch_add(1);
-
-    const auto ttl_count_before = storage.committed_ttl_nodes.load();
-
-    /// Serialize with V8 (required for TTL nodes)
+    /// Serialize with V8 (required for TTL serialization)
     DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V8);
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 0);
@@ -2105,12 +2101,12 @@ TYPED_TEST(CoordinationTest, TestSnapshotOrphanedTTLCleanup)
     auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
     const auto & restored_storage = deser_result.storage;
 
-    /// Orphaned TTL node should be removed
+    /// Orphaned TTL node should be removed from the container
     EXPECT_EQ(restored_storage->container.find("/missing/ttl_node"), restored_storage->container.end());
 
-    /// TTL tracking should be cleaned up: no phantom entries
+    /// TTL tracking should be cleaned up: no phantom entries left behind
     EXPECT_FALSE(restored_storage->containsTTLPath("/missing/ttl_node"));
-    EXPECT_EQ(restored_storage->committed_ttl_nodes.load(), ttl_count_before - 1);
+    EXPECT_EQ(restored_storage->committed_ttl_nodes.load(), 0);
 
     /// Normal nodes should survive
     EXPECT_NE(restored_storage->container.find("/hello1"), restored_storage->container.end());
