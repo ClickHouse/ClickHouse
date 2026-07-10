@@ -27,6 +27,7 @@ function get_parse_error_counters()
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_fallback (x UInt64, s String, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY x"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_decimal (d Decimal32(2)) ENGINE = MergeTree ORDER BY d"
+$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 -q "CREATE TABLE t_values_dynamic (d Dynamic) ENGINE = Memory"
 
 counters_before=$(get_parse_error_counters)
 
@@ -40,6 +41,10 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
     "INSERT INTO t_values_decimal VALUES (1.23), (1.20 + 0.03), (divide(9, 3))"
 
+# Dynamic type inference must report a failed literal probe without throwing before SQL expression fallback.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_dynamic_type=1" --data-binary \
+    "INSERT INTO t_values_dynamic VALUES (toDate('2021-01-01')), (toIPv4('192.168.0.1'))"
+
 counters_after=$(get_parse_error_counters)
 
 echo '--- inserted data ---'
@@ -52,6 +57,9 @@ else
     echo 'parse error counters changed:'
     diff <(echo "$counters_before") <(echo "$counters_after")
 fi
+
+echo '--- dynamic data ---'
+$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 -q "SELECT d, dynamicType(d) FROM t_values_dynamic ORDER BY dynamicType(d)"
 
 # Decimal columns keep the old behavior: an overflowing decimal literal must fail the query
 # instead of being read as a Float64 expression that would silently lose precision.

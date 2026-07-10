@@ -6,6 +6,9 @@
 3	div	{}
 --- parse error counters ---
 no new parse errors
+--- dynamic data ---
+2021-01-01	Date
+192.168.0.1	IPv4
 --- decimal overflow still fails ---
 ARGUMENT_OUT_OF_BOUND
 --- decimal data ---

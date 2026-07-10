@@ -816,12 +816,11 @@ void SerializationDynamic::deserializeBinary(ColumnDynamic & dynamic_column, Rea
     dynamic_column.insertValueIntoSharedVariant(*tmp_variant_column, variant_type, variant_type_name, 0);
 }
 
-template <typename ReadFieldFunc, typename TryDeserializeVariantFunc, typename DeserializeVariant>
-static void deserializeTextImpl(
+template <typename TryDeserializeVariantFunc, typename DeserializeVariant>
+static void deserializeTextField(
     IColumn & column,
-    ReadBuffer & istr,
+    String field,
     const FormatSettings & settings,
-    ReadFieldFunc read_field,
     FormatSettings::EscapingRule escaping_rule,
     TryDeserializeVariantFunc try_deserialize_variant,
     DeserializeVariant deserialize_variant)
@@ -830,7 +829,6 @@ static void deserializeTextImpl(
     auto & variant_column = dynamic_column.getVariantColumn();
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-    String field = read_field(istr);
     JSONInferenceInfo json_info;
     auto variant_type = tryInferDataTypeByEscapingRule(field, settings, escaping_rule, &json_info);
     if (escaping_rule == FormatSettings::EscapingRule::JSON)
@@ -883,6 +881,20 @@ static void deserializeTextImpl(
     auto variant_type_name = variant_type->getName();
     deserialize_variant(*dynamic_column.getVariantSerialization(variant_type, variant_type_name), *tmp_variant_column, *field_buf);
     dynamic_column.insertValueIntoSharedVariant(*tmp_variant_column, variant_type, variant_type_name, 0);
+}
+
+template <typename ReadFieldFunc, typename TryDeserializeVariantFunc, typename DeserializeVariant>
+static void deserializeTextImpl(
+    IColumn & column,
+    ReadBuffer & istr,
+    const FormatSettings & settings,
+    ReadFieldFunc read_field,
+    FormatSettings::EscapingRule escaping_rule,
+    TryDeserializeVariantFunc try_deserialize_variant,
+    DeserializeVariant deserialize_variant)
+{
+    deserializeTextField(
+        column, read_field(istr), settings, escaping_rule, std::move(try_deserialize_variant), std::move(deserialize_variant));
 }
 
 template <typename NestedSerialize>
@@ -1027,7 +1039,22 @@ void SerializationDynamic::deserializeTextQuoted(IColumn & column, ReadBuffer & 
 
 bool SerializationDynamic::tryDeserializeTextQuoted(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
-    deserializeTextQuoted(column, istr, settings);
+    String field;
+    if (!tryReadQuotedField(field, istr))
+        return false;
+
+    auto try_deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
+    {
+        return serialization.tryDeserializeTextQuoted(col, buf, settings);
+    };
+
+    auto deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
+    {
+        serialization.deserializeTextQuoted(col, buf, settings);
+    };
+
+    deserializeTextField(
+        column, std::move(field), settings, FormatSettings::EscapingRule::Quoted, try_deserialize_variant, deserialize_variant);
     return true;
 }
 
