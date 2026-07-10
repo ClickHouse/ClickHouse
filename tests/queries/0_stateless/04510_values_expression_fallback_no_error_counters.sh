@@ -36,8 +36,9 @@ counters_before=$(get_parse_error_counters)
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
     "INSERT INTO t_values_fallback VALUES (1 + 1, 'a', {'k1' : 1}), (3, upper('b'), {}), (NULL, 'c', '{\'k2\' : 2}'), (DEFAULT, 'd', {}), (divide(9, 3), 'div', {})"
 
-# Decimal expression fallback must not construct exceptions either.
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "INSERT INTO t_values_decimal VALUES (1.23), (1.20 + 0.03)"
+# Decimal expression fallback, including an expression starting with 'd', must not construct exceptions either.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
+    "INSERT INTO t_values_decimal VALUES (1.23), (1.20 + 0.03), (divide(9, 3))"
 
 counters_after=$(get_parse_error_counters)
 

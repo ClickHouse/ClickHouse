@@ -413,8 +413,14 @@ std::optional<bool> ValuesBlockInputFormat::tryReadValueStreamingWithExceptions(
     try
     {
         bool read = true;
-        if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
+        if (!buf->eof() && (*buf->position() == 'D' || *buf->position() == 'd'))
         {
+            if (!checkStringCaseInsensitive("DEFAULT", *buf))
+            {
+                buf->rollbackToCheckpoint();
+                return std::nullopt;
+            }
+
             column.insertDefault();
             read = false;
         }
