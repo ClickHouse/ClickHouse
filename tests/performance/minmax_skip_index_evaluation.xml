@@ -15,7 +15,14 @@
          with `= 1` (the new vectorized, columnar path this PR adds). This both validates the
          PR's performance contract and tracks regressions in the new path. On a server that
          predates the setting, the `= 1` variants are reported as partial and measured only on
-         the side that supports them. -->
+         the side that supports them.
+
+         The bulk path lives in the analyze-time `filterMarksUsingIndex` code path, which is
+         only reached when `use_skip_indexes_on_data_read = 0`; with the default `= 1`, minmax
+         is evaluated during data reading and the bulk setting has no effect. Every query below
+         therefore sets `use_skip_indexes_on_data_read = 0` so both `bulk` variants exercise the
+         same (analyze-time) code path and the comparison isolates the scalar vs vectorized
+         evaluator. -->
 
     <substitutions>
         <substitution>
@@ -73,7 +80,7 @@
     <query><![CDATA[
         SELECT count() FROM minmax_bench_partitioned
         WHERE t BETWEEN toDateTime('2024-02-01 00:00:00') AND toDateTime('2024-09-30 23:59:59')
-        SETTINGS use_minmax_index_bulk_filtering = {bulk}
+        SETTINGS use_minmax_index_bulk_filtering = {bulk}, use_skip_indexes_on_data_read = 0
     ]]></query>
 
     <!-- Predicate on a non-partition-key minmax-indexed column spanning the whole table:
@@ -81,21 +88,21 @@
     <query><![CDATA[
         SELECT count() FROM minmax_bench_partitioned
         WHERE c BETWEEN 1000000000 AND 3000000000
-        SETTINGS use_minmax_index_bulk_filtering = {bulk}
+        SETTINGS use_minmax_index_bulk_filtering = {bulk}, use_skip_indexes_on_data_read = 0
     ]]></query>
 
     <!-- Single wide part, predicate that passes every granule: isolates evaluator cost
          from pruning effects. -->
     <query><![CDATA[
         SELECT count() FROM minmax_bench_wide WHERE c >= 0
-        SETTINGS use_minmax_index_bulk_filtering = {bulk}
+        SETTINGS use_minmax_index_bulk_filtering = {bulk}, use_skip_indexes_on_data_read = 0
     ]]></query>
 
     <!-- Single wide part, conjunction across two minmax indices. -->
     <query><![CDATA[
         SELECT count() FROM minmax_bench_wide
         WHERE c BETWEEN 1000000000 AND 3000000000 AND v < 9000000000000000000
-        SETTINGS use_minmax_index_bulk_filtering = {bulk}
+        SETTINGS use_minmax_index_bulk_filtering = {bulk}, use_skip_indexes_on_data_read = 0
     ]]></query>
 
     <drop_query>DROP TABLE IF EXISTS minmax_bench_partitioned</drop_query>
