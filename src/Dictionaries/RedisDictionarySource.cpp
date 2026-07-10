@@ -45,11 +45,11 @@ namespace DB
                 .port = static_cast<UInt16>(port),
                 .db_index = config.getUInt(redis_config_prefix + ".db_index", DEFAULT_REDIS_DB_INDEX),
                 .password = config.getString(redis_config_prefix + ".password", DEFAULT_REDIS_PASSWORD),
-                .storage_type = parseStorageType(config.getString(redis_config_prefix + ".storage_type", "")),
-                .pool_size = config.getUInt(redis_config_prefix + ".pool_size", DEFAULT_REDIS_POOL_SIZE),
                 .max_retries = config.getUInt(redis_config_prefix + ".max_retries", DEFAULT_REDIS_MAX_RETRIES),
                 .retry_delay_ms = config.getUInt(redis_config_prefix + ".retry_delay_ms", DEFAULT_REDIS_RETRY_DELAY_MS),
                 .startup_nodes = {},
+                .storage_type = parseStorageType(config.getString(redis_config_prefix + ".storage_type", "")),
+                .pool_size = config.getUInt(redis_config_prefix + ".pool_size", DEFAULT_REDIS_POOL_SIZE),
             };
 
             return std::make_unique<RedisDictionarySource>(dict_struct, configuration, std::make_shared<const Block>(std::move(sample_block)));
