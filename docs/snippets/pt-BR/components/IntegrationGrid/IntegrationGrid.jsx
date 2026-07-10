@@ -296,27 +296,6 @@ export const IntegrationGrid = () => {
       }
       const fetchIntegrations = async () => {
         try {
-          const base = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
-          const fallbackResponse = await fetch(base + "https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/integrations-fallback.json", {
-            cache: "force-cache"
-          })
-
-          if (fallbackResponse.ok) {
-            const fallbackData = await fallbackResponse.json()
-            const transformedData = transformCMSData(fallbackData.data || [])
-            setIntegrations(transformedData)
-            cacheIntegrations(transformedData)
-            setError(null)
-            setLoading(false)
-            console.log("Dados de integrações de fallback carregados")
-          } else {
-            console.warn("Arquivo de fallback não disponível, tentando apenas o CMS")
-          }
-        } catch (fallbackErr) {
-          console.error("Falha ao carregar dados de integrações de fallback:", fallbackErr)
-        }
-
-        try {
           const controller = new AbortController()
           const timeoutId = setTimeout(() => {
             controller.abort()
@@ -349,7 +328,7 @@ export const IntegrationGrid = () => {
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("A requisição ao CMS foi cancelada por timeout, usando dados de fallback")
+              console.log("A requisição ao CMS foi cancelada por timeout")
             } else {
               console.error("Erro ao carregar integrações do CMS:", cmsErr.message)
             }

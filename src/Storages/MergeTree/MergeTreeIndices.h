@@ -6,6 +6,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
@@ -325,10 +326,12 @@ using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
 struct MergeTreeIndexWithCondition
 {
     MergeTreeIndexPtr index;
-    MergeTreeIndexConditionPtr condition;
+    ConditionTemplate<MergeTreeIndexConditionPtr>::Ptr condition_template;
 
-    MergeTreeIndexWithCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
-        : index(std::move(index_)), condition(std::move(condition_))
+    MergeTreeIndexWithCondition(
+        MergeTreeIndexPtr index_,
+        ConditionTemplate<MergeTreeIndexConditionPtr>::Ptr condition_template_)
+        : index(std::move(index_)), condition_template(std::move(condition_template_))
     {
     }
 
