@@ -1,0 +1,502 @@
+---
+title: '데이터 관리'
+description: '관측성 데이터 관리'
+slug: /observability/managing-data
+keywords: ['관측성', '로그', '트레이스', '메트릭', 'OpenTelemetry', 'Grafana', 'OTel']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+관측성을 위한 ClickHouse 배포에서는 예외 없이 관리가 필요한 대규모 데이터셋을 다루게 됩니다. ClickHouse는 데이터 관리를 지원하는 여러 기능을 제공합니다.
+
+<Tip>
+  **ClickStack은 최적화된 기본 스키마(schema)를 제공합니다**
+
+  **ClickStack은 로그, 트레이스, 메트릭을 위한 즉시 사용 가능한 스키마를 제공합니다.** 여기에는 최신 ClickHouse 기능(전문 검색 및 맵 키 검색을 위한 text index, 직접 읽기 필터링을 위한 materialized 컬럼과 ALIAS 배열, block-number 행 조회)이 반영되어 있으며, 로깅 및 트레이스 워크로드에서 별도 튜닝 없이도 우수한 기본 성능을 제공하도록 벤치마크되었습니다. 자체 설계 시 기준점으로 활용하십시오.
+
+  * 표준 DDL: [ClickStack에서 사용하는 테이블 및 스키마](/ko/clickstack/ingesting-data/schemas).
+  * 최적화 레시피: [ClickStack 성능 튜닝](/ko/clickstack/managing/performance-tuning). 해당 페이지의 권장 사항 중 다수(materialized 컬럼, 스킵 인덱스, 기본 키 선택, 프로젝션, materialized view)는 직접 구축한 환경에도 그대로 적용됩니다.
+</Tip>
+
+<div id="partitions">
+  ## 파티션
+</div>
+
+ClickHouse의 파티셔닝은 컬럼 또는 SQL 표현식에 따라 디스크에서 데이터를 논리적으로 분리할 수 있게 해줍니다. 데이터를 논리적으로 분리하면 각 파티션을 독립적으로 작업할 수 있으며, 예를 들어 삭제도 가능합니다. 이를 통해 시간 기준으로 파티션, 즉 데이터의 하위 집합을 스토리지 계층 간에 효율적으로 이동하거나 [데이터를 만료하거나 클러스터에서 효율적으로 삭제할 수 있습니다](/ko/reference/statements/alter/partition).
+
+파티셔닝은 테이블(table)을 처음 정의할 때 `PARTITION BY` 절을 통해 지정합니다. 이 절에는 하나 이상의 컬럼에 대한 SQL 표현식을 포함할 수 있으며, 이 표현식의 결과에 따라 각 행이 어느 파티션으로 들어갈지가 결정됩니다.
+
+<Image img="/images/use-cases/observability/observability-14.webp" alt="파티션" size="md" />
+
+데이터 파트는 디스크에서 각 파티션과 논리적으로 연결되며(공통 폴더 이름 접두사를 통해), 각 파티션별로 분리해서 쿼리할 수 있습니다. 아래 예시에서 기본 `otel_logs` 스키마(schema)는 `toDate(Timestamp)` 표현식을 사용해 일 단위로 파티셔닝됩니다. 행이 ClickHouse에 삽입되면 이 표현식이 각 행에 대해 평가되며, 그 결과에 해당하는 파티션으로 라우팅됩니다(해당 날짜의 첫 번째 행이면 파티션이 생성됩니다).
+
+```sql
+CREATE TABLE default.otel_logs
+(
+...
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
+```
+
+파티션에 [여러 작업](/ko/reference/statements/alter/partition)을 수행할 수 있습니다. 여기에는 [백업](/ko/reference/statements/alter/partition#freeze-partition), [컬럼 작업](/ko/reference/statements/alter/partition#clear-column-in-partition), 행 단위로 데이터를 [변경](/ko/reference/statements/alter/partition#update-in-partition)/[삭제](/ko/reference/statements/alter/partition#delete-in-partition)하는 뮤테이션) 및 [인덱스 비우기(예: 보조 인덱스)](/ko/reference/statements/alter/partition#clear-index-in-partition)가 포함됩니다.
+
+예를 들어, `otel_logs` 테이블이 일 단위로 파티셔닝되어 있다고 가정하겠습니다. 구조화된 로그 데이터셋이 적재되어 있다면, 여러 날짜의 데이터가 포함됩니다:
+
+```sql
+SELECT Timestamp::Date AS day,
+         count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 2333977 │
+│ 2019-01-23 │ 2326694 │
+│ 2019-01-26 │ 1986456 │
+│ 2019-01-24 │ 1896255 │
+│ 2019-01-25 │ 1821770 │
+└────────────┴─────────┘
+
+5 rows in set. Elapsed: 0.058 sec. Processed 10.37 million rows, 82.92 MB (177.96 million rows/s., 1.42 GB/s.)
+Peak memory usage: 4.41 MiB.
+```
+
+현재 파티션은 간단한 시스템 테이블(system table) 쿼리로 확인할 수 있습니다:
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'otel_logs'
+```
+
+```response
+┌─partition──┐
+│ 2019-01-22 │
+│ 2019-01-23 │
+│ 2019-01-24 │
+│ 2019-01-25 │
+│ 2019-01-26 │
+└────────────┘
+
+5 rows in set. Elapsed: 0.005 sec.
+```
+
+오래된 데이터를 저장하는 데 사용하는 별도의 테이블(테이블) `otel_logs_archive`를 둘 수 있습니다. 데이터는 파티션 단위로 이 테이블로 효율적으로 이동할 수 있으며(이는 단순한 메타데이터 변경입니다).
+
+```sql
+CREATE TABLE otel_logs_archive AS otel_logs
+--아카이브 테이블로 데이터 이동
+ALTER TABLE otel_logs
+        (MOVE PARTITION tuple('2019-01-26') TO TABLE otel_logs_archive
+--데이터 이동 확인
+SELECT
+        Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 2333977 │
+│ 2019-01-23 │ 2326694 │
+│ 2019-01-24 │ 1896255 │
+│ 2019-01-25 │ 1821770 │
+└────────────┴─────────┘
+
+4 rows in set. Elapsed: 0.051 sec. Processed 8.38 million rows, 67.03 MB (163.52 million rows/s., 1.31 GB/s.)
+Peak memory usage: 4.40 MiB.
+```
+
+```sql
+SELECT Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs_archive
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-26 │ 1986456 │
+└────────────┴─────────┘
+
+1 row in set. Elapsed: 0.024 sec. Processed 1.99 million rows, 15.89 MB (83.86 million rows/s., 670.87 MB/s.)
+Peak memory usage: 4.99 MiB.
+```
+
+이는 `INSERT INTO SELECT`를 사용해 데이터를 새 대상 테이블에 다시 써야 하는 다른 기법과는 대조적입니다.
+
+<Info>
+  **파티션 이동**
+
+  [테이블 간 파티션 이동](/ko/reference/statements/alter/partition#move-partition-to-table)을 수행하려면 여러 조건을 충족해야 합니다. 특히 테이블의 구조, 파티션 키, 기본 키, 인덱스/프로젝션이 동일해야 합니다. `ALTER` DDL에서 파티션을 지정하는 방법에 대한 자세한 내용은 [여기](/ko/reference/statements/alter/partition#how-to-set-partition-expression)에서 확인할 수 있습니다.
+</Info>
+
+또한 데이터는 파티션 단위로 효율적으로 삭제할 수 있습니다. 이는 다른 기법(뮤테이션 또는 경량한 삭제)보다 리소스를 훨씬 적게 사용하므로 우선적으로 사용하는 것이 좋습니다.
+
+```sql
+ALTER TABLE otel_logs
+        (DROP PARTITION tuple('2019-01-25'))
+
+SELECT
+        Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 4667954 │
+│ 2019-01-23 │ 4653388 │
+│ 2019-01-24 │ 3792510 │
+└────────────┴─────────┘
+```
+
+<Note>
+  이 기능은 설정 [`ttl_only_drop_parts=1`](/ko/reference/settings/merge-tree-settings#ttl_only_drop_parts)을 사용할 때 TTL에서 사용됩니다. 자세한 내용은 [TTL을 사용한 데이터 관리](#data-management-with-ttl-time-to-live)를 참조하십시오.
+</Note>
+
+<div id="applications">
+  ### 활용 사례
+</div>
+
+위에서는 데이터를 파티션 단위로 효율적으로 이동하고 조작하는 방법을 설명했습니다. 실제로는 관측성 사용 사례에서 다음 두 가지 시나리오에 파티션 작업을 가장 자주 활용하게 됩니다.
+
+* **계층형 아키텍처** - 데이터를 스토리지 계층 간에 이동([스토리지 계층](#storage-tiers) 참조)하여 핫-콜드 아키텍처를 구축할 수 있습니다.
+* **효율적인 삭제** - 데이터가 지정된 TTL에 도달했을 때([TTL을 사용한 데이터 관리](#data-management-with-ttl-time-to-live) 참조)
+
+아래에서 이 두 가지를 모두 자세히 살펴보겠습니다.
+
+<div id="query-performance">
+  ### 쿼리 성능
+</div>
+
+파티션은 쿼리 성능 향상에 도움이 될 수 있지만, 이는 액세스 패턴에 크게 좌우됩니다. 쿼리가 소수의 파티션만 대상으로 하는 경우(이상적으로는 1개), 성능이 향상될 수 있습니다. 다만 이는 일반적으로 파티셔닝 키가 기본 키에 포함되어 있지 않고, 해당 키로 필터링할 때에만 유용합니다. 반면 많은 파티션을 아우르는 쿼리는 파티셔닝을 사용하지 않을 때보다 성능이 더 나빠질 수 있습니다(파트 수가 더 많아질 수 있기 때문입니다). 또한 파티셔닝 키가 이미 기본 키의 앞부분에 있다면, 단일 파티션만 대상으로 할 때의 이점은 훨씬 줄어들거나 사실상 없어집니다. 각 파티션의 값이 고유하다면, 파티셔닝은 [GROUP BY 쿼리 최적화](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key)에도 활용할 수 있습니다. 그러나 일반적으로는 먼저 기본 키가 최적화되어 있는지 확인하고, 액세스 패턴이 데이터의 예측 가능한 특정 하위 집합에만 접근하는 예외적인 경우에 한해 파티셔닝을 쿼리 최적화 기법으로 고려해야 합니다. 예를 들어, 하루 단위로 파티셔닝하고 대부분의 쿼리가 최근 1일치 데이터에 집중되는 경우가 이에 해당합니다. 이러한 동작의 예시는 [여기](https://medium.com/datadenys/using-partitions-in-clickhouse-3ea0decb89c4)에서 확인할 수 있습니다.
+
+<div id="data-management-with-ttl-time-to-live">
+  ## TTL(Time-to-live)을 사용한 데이터 관리
+</div>
+
+Time-to-Live(TTL)는 특히 대량의 데이터가 지속적으로 생성되는 환경에서 ClickHouse 기반 관측성 솔루션의 데이터 보존 및 관리를 효율적으로 수행하기 위한 핵심 기능입니다. ClickHouse에서 TTL을 적용하면 오래된 데이터가 자동으로 만료되고 삭제되므로, 수동으로 개입하지 않아도 스토리지를 최적으로 활용하면서 성능을 유지할 수 있습니다. 이 기능은 데이터베이스를 가볍게 유지하고 스토리지 비용을 절감하며, 가장 관련성이 높고 최신인 데이터에 집중해 쿼리 성능을 빠르고 효율적으로 유지하는 데 필수적입니다. 또한 데이터 수명 주기를 체계적으로 관리해 데이터 보존 정책 관련 컴플라이언스를 충족하는 데 도움이 되며, 그 결과 관측성 솔루션의 전반적인 지속 가능성과 확장성을 높일 수 있습니다.
+
+ClickHouse에서는 테이블 또는 컬럼 수준에서 TTL을 지정할 수 있습니다.
+
+<div id="table-level-ttl">
+  ### 테이블 수준 TTL
+</div>
+
+로그와 트레이스의 기본 스키마(schema)에는 지정된 기간이 지나면 데이터가 만료되도록 하는 TTL이 포함되어 있습니다. 이는 ClickHouse exporter의 `ttl` 키에서 지정합니다. 예:
+
+```yaml
+exporters:
+ clickhouse:
+   endpoint: tcp://localhost:9000?dial_timeout=10s&compress=lz4&async_insert=1
+   ttl: 72h
+```
+
+이 구문은 현재 [Golang Duration syntax](https://pkg.go.dev/time#ParseDuration)를 지원합니다. **`h` 사용을 권장하며, 값은 파티셔닝 기간에 맞춰 설정해야 합니다. 예를 들어 일(day) 단위로 파티셔닝하는 경우 24h, 48h, 72h처럼 일수의 배수로 지정하십시오.** 이렇게 하면 예를 들어 `ttl: 96h`로 설정한 경우 테이블에 TTL 절이 자동으로 추가됩니다.
+
+```sql
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId)
+TTL toDateTime(Timestamp) + toIntervalDay(4)
+SETTINGS ttl_only_drop_parts = 1
+```
+
+기본적으로 TTL이 만료된 데이터는 ClickHouse가 [데이터 파트를 머지](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)할 때 제거됩니다. ClickHouse가 데이터 만료를 감지하면 예정되지 않은 머지를 수행합니다.
+
+<Info>
+  **예약된 TTL**
+
+  위에서 설명한 것처럼 TTL은 즉시 적용되지 않고 일정에 따라 적용됩니다. MergeTree 테이블 설정 `merge_with_ttl_timeout`은 삭제 TTL이 있는 머지를 다시 수행하기 전까지의 최소 지연 시간을 초 단위로 설정합니다. 기본값은 14400초(4시간)입니다. 하지만 이는 최소 지연 시간일 뿐이며, TTL 머지가 트리거되기까지 더 오래 걸릴 수 있습니다. 값이 너무 낮으면 예정되지 않은 머지가 많이 수행되어 많은 리소스를 소비할 수 있습니다. TTL 만료는 `ALTER TABLE my_table MATERIALIZE TTL` 명령으로 강제할 수 있습니다.
+</Info>
+
+**중요: [`ttl_only_drop_parts=1`](/ko/reference/settings/merge-tree-settings#ttl_only_drop_parts) 설정 사용을 권장합니다 ** (기본 스키마에 적용됨). 이 설정이 활성화되면 ClickHouse는 그 안의 모든 행이 만료된 경우 파트 전체를 삭제합니다. TTL이 적용된 행을 부분적으로 정리하는 대신(`ttl_only_drop_parts=0`일 때 리소스를 많이 사용하는 뮤테이션을 통해 수행됨) 전체 파트를 삭제하면 `merge_with_ttl_timeout` 시간을 더 짧게 설정할 수 있고 시스템 성능에 미치는 영향도 줄일 수 있습니다. 예를 들어 TTL 만료를 수행하는 단위(예: 일)와 동일한 단위로 데이터를 파티션하면, 파트에는 자연스럽게 정의된 인터벌의 데이터만 포함됩니다. 이렇게 하면 `ttl_only_drop_parts=1`을 효율적으로 적용할 수 있습니다.
+
+<div id="column-level-ttl">
+  ### 컬럼 수준 TTL
+</div>
+
+위 예시는 테이블 수준에서 데이터를 만료합니다. 컬럼 수준에서도 데이터를 만료할 수 있습니다. 데이터가 오래될수록 문제 조사 시 해당 값의 활용도가 보관에 필요한 리소스 오버헤드를 정당화하지 못하는 컬럼은 삭제하는 데 이를 활용할 수 있습니다. 예를 들어, 삽입 시점에 아직 추출되지 않은 새로운 동적 메타데이터(예: 새로운 Kubernetes 레이블)가 추가될 수 있으므로 `Body` 컬럼은 유지하는 것을 권장합니다. 예를 들어 1개월이 지나면 이러한 추가 메타데이터가 유용하지 않다는 점이 분명해질 수 있으므로, `Body` 컬럼을 계속 유지할 가치도 제한될 수 있습니다.
+
+아래에서는 `Body` 컬럼을 30일 후에 삭제하는 방법을 보여줍니다.
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String TTL Timestamp + INTERVAL 30 DAY,
+        `Timestamp` DateTime,
+        ...
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Note>
+  컬럼 수준 TTL을 지정하려면 사용자 정의 스키마(schema)를 지정해야 합니다. 이 설정은 OTel collector에서는 지정할 수 없습니다.
+</Note>
+
+<div id="recompressing-data">
+  ## 데이터 재압축
+</div>
+
+일반적으로 관측성 데이터셋에는 `ZSTD(1)`를 권장하지만, `ZSTD(3)`처럼 다른 압축 알고리즘이나 더 높은 압축 수준을 시험해 볼 수도 있습니다. 이는 스키마(schema) 생성 시 지정할 수 있을 뿐만 아니라, 일정 기간이 지난 뒤 압축 설정이 변경되도록 구성할 수도 있습니다. 코덱 또는 압축 알고리즘이 압축 효율은 높이지만 쿼리 성능은 떨어뜨리는 경우, 이러한 방식이 적절할 수 있습니다. 이런 절충안은 쿼리 빈도가 낮은 오래된 데이터에는 수용 가능할 수 있지만, 문제 조사에서 더 자주 사용되는 최신 데이터에는 적합하지 않을 수 있습니다.
+
+아래는 그 예시로, 데이터를 삭제하는 대신 4일 후 `ZSTD(3)`로 압축하는 방법을 보여줍니다.
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+TTL Timestamp + INTERVAL 4 DAY RECOMPRESS CODEC(ZSTD(3))
+```
+
+<Info>
+  **성능 평가**
+
+  서로 다른 압축 수준과 알고리즘이 삽입 및 쿼리 성능에 미치는 영향을 항상 함께 평가하는 것이 좋습니다. 예를 들어, 델타 코덱은 타임스탬프 압축에 유용할 수 있습니다. 하지만 타임스탬프가 기본 키(primary key)의 일부이면 필터링 성능이 저하될 수 있습니다.
+</Info>
+
+TTL 구성에 관한 자세한 내용과 예시는 [여기](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)에서 확인할 수 있습니다. 테이블과 컬럼에 TTL을 추가하거나 수정하는 방법 등의 예시는 [여기](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)에서 확인할 수 있습니다. TTL이 hot-warm 아키텍처와 같은 스토리지 계층 구성을 어떻게 지원하는지는 [스토리지 계층](#storage-tiers)을 참조하십시오.
+
+<div id="storage-tiers">
+  ## 스토리지 계층
+</div>
+
+ClickHouse에서는 서로 다른 디스크에 스토리지 계층을 구성할 수 있습니다. 예를 들어, 최신 데이터와 자주 사용되는 데이터는 SSD에 두고, 오래된 데이터는 S3 기반 스토리지에 둘 수 있습니다. 이러한 아키텍처를 사용하면 조사 과정에서 자주 조회되지 않는 오래된 데이터에 더 저렴한 스토리지를 사용할 수 있으므로, 더 높은 쿼리 SLA가 요구되는 데이터와 구분해 운영할 수 있습니다.
+
+<Info>
+  **ClickHouse Cloud에는 해당되지 않음**
+
+  ClickHouse Cloud는 S3를 기반으로 하는 단일 데이터 사본을 사용하며, SSD 기반 노드 캐시를 함께 사용합니다. 따라서 ClickHouse Cloud에서는 스토리지 계층이 필요하지 않습니다.
+</Info>
+
+스토리지 계층을 생성하려면 먼저 디스크를 생성해야 하며, 생성한 디스크를 사용해 스토리지 정책을 구성합니다. 또한 테이블 생성 시 지정할 수 있는 볼륨도 함께 정의합니다. 데이터는 공간 사용률, 파트 크기, 볼륨 우선순위에 따라 디스크 간에 자동으로 이동할 수 있습니다. 자세한 내용은 [여기](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)에서 확인할 수 있습니다.
+
+데이터는 `ALTER TABLE MOVE PARTITION` 명령으로 디스크 간에 수동 이동할 수 있으며, 볼륨 간 데이터 이동은 TTL을 사용해 제어할 수도 있습니다. 전체 예시는 [여기](/ko/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture)에서 확인할 수 있습니다.
+
+<div id="managing-schema-changes">
+  ## 스키마 변경 관리
+</div>
+
+로그 및 trace 스키마는 시스템의 수명 주기 동안 필연적으로 변경됩니다. 예를 들어, 사용자가 서로 다른 메타데이터나 파드 레이블을 가진 새로운 시스템을 모니터링하기 시작할 수 있습니다. OTel 스키마를 사용해 데이터를 생성하고 원본 이벤트 데이터를 구조화된 포맷으로 보존하면 ClickHouse 스키마는 이러한 변화에 유연하게 대응할 수 있습니다. 하지만 새로운 메타데이터를 활용할 수 있게 되거나 쿼리 액세스 패턴이 바뀌면, 이러한 변화에 맞춰 스키마를 업데이트해야 합니다.
+
+스키마 변경 중 다운타임을 방지하기 위해 선택할 수 있는 몇 가지 방법이 있으며, 아래에서 이를 설명합니다.
+
+<div id="use-default-values">
+  ### 기본값 사용
+</div>
+
+[`DEFAULT` 값](/ko/reference/statements/create/table#default)을 사용해 스키마에 컬럼을 추가할 수 있습니다. INSERT 시 값이 지정되지 않으면 지정된 기본값이 사용됩니다.
+
+이 새 컬럼이 전송되도록 materialized view 변환 로직이나 OTel collector 구성을 수정하기 전에 스키마를 먼저 변경할 수 있습니다.
+
+스키마를 변경한 후에는 OTel collector를 다시 구성할 수 있습니다. 사용자가 [&quot;SQL로 구조 추출하기&quot;](/ko/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql)에서 설명한 권장 프로세스를 사용한다고 가정하겠습니다. 이 프로세스에서는 OTel collector가 데이터를 Null table engine으로 전송하고, materialized view가 대상 스키마를 추출한 뒤 그 결과를 저장할 대상 테이블로 전달합니다. 이 경우 뷰는 [`ALTER TABLE ... MODIFY QUERY` 구문](/ko/reference/statements/alter/view)을 사용해 수정할 수 있습니다. 예를 들어, OTel 구조화 로그에서 대상 스키마를 추출하기 위해 아래와 같은 대상 테이블과 그에 대응하는 materialized view(&quot;SQL로 구조 추출하기&quot;에서 사용한 것과 유사함)가 있다고 가정하겠습니다.
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT
+        Body,
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+`LogAttributes`에서 새 컬럼 `Size`를 추출하려는 경우를 가정해 보겠습니다. 기본값을 지정해 `ALTER TABLE`로 이를 스키마에 추가할 수 있습니다:
+
+```sql
+ALTER TABLE otel_logs_v2
+        (ADD COLUMN `Size` UInt64 DEFAULT JSONExtractUInt(Body, 'size'))
+```
+
+위 예시에서는 기본값을 `LogAttributes`의 `size` key로 지정합니다(존재하지 않으면 0이 됩니다). 즉, 값이 삽입되지 않은 행에서 이 컬럼에 접근하는 쿼리는 맵에 접근해야 하므로 더 느려집니다. 이 값은 상수(예: 0)로도 쉽게 지정할 수 있으며, 이렇게 하면 해당 값이 없는 행에 대한 후속 쿼리 비용을 줄일 수 있습니다. 이 테이블을 쿼리해 보면 값이 예상대로 맵에서 채워졌음을 확인할 수 있습니다:
+
+```sql
+SELECT Size
+FROM otel_logs_v2
+LIMIT 5
+```
+
+```response
+┌──Size─┐
+│ 30577 │
+│  5667 │
+│  5379 │
+│  1696 │
+│ 41483 │
+└───────┘
+
+5 rows in set. Elapsed: 0.012 sec.
+```
+
+앞으로 들어오는 모든 데이터에 이 값이 삽입되도록 하려면, 아래와 같이 `ALTER TABLE` 구문을 사용해 materialized view를 수정할 수 있습니다:
+
+```sql
+ALTER TABLE otel_logs_mv
+        MODIFY QUERY
+SELECT
+        Body,
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300,                 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+이후 삽입되는 행에는 `Size` 컬럼 값이 삽입 시점에 채워집니다.
+
+<div id="create-new-tables">
+  ### 새 테이블 생성
+</div>
+
+위 프로세스의 대안으로, 새 스키마(schema)를 적용한 새 대상 테이블(target table)을 간단히 생성할 수 있습니다. 그런 다음 모든 materialized view는 위의 `ALTER TABLE MODIFY QUERY.`를 사용해 새 테이블을 사용하도록 수정할 수 있습니다. 이 방식을 사용하면 예를 들어 `otel_logs_v3`처럼 테이블에 버전을 붙일 수 있습니다.
+
+이 방식을 사용하면 사용자가 쿼리해야 하는 테이블이 여러 개가 됩니다. 여러 테이블을 한꺼번에 쿼리하려면 테이블 이름에 와일드카드 패턴을 사용할 수 있는 [`merge` 함수](/ko/reference/functions/table-functions/merge)를 사용할 수 있습니다. 아래에서는 `otel_logs` 테이블의 v2와 v3를 쿼리하는 예를 보여줍니다:
+
+```sql
+SELECT Status, count() AS c
+FROM merge('otel_logs_v[2|3]')
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 38319300 │
+│   304  │  1360912 │
+│   302  │   799340 │
+│   404  │   420044 │
+│   301  │   270212 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.137 sec. Processed 41.46 million rows, 82.92 MB (302.43 million rows/s., 604.85 MB/s.)
+```
+
+`merge` 함수를 사용하지 않으면서 여러 테이블을 결합한 테이블을 최종 사용자에게 제공하려면 [Merge 테이블 엔진](/ko/reference/engines/table-engines/special/merge)을 사용할 수 있습니다. 아래에서 이를 설명합니다:
+
+```sql
+CREATE TABLE otel_logs_merged
+ENGINE = Merge('default', 'otel_logs_v[2|3]')
+
+SELECT Status, count() AS c
+FROM otel_logs_merged
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 38319300 │
+│   304  │  1360912 │
+│   302  │   799340 │
+│   404  │   420044 │
+│   301  │   270212 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.073 sec. Processed 41.46 million rows, 82.92 MB (565.43 million rows/s., 1.13 GB/s.)
+```
+
+새로운 테이블이 추가될 때마다 `EXCHANGE` 테이블 구문을 사용해 이를 업데이트할 수 있습니다. 예를 들어 v4 테이블을 추가하려면 새 테이블을 생성한 다음, 이를 이전 버전과 원자적으로 교체할 수 있습니다.
+
+```sql
+CREATE TABLE otel_logs_merged_temp
+ENGINE = Merge('default', 'otel_logs_v[2|3|4]')
+
+EXCHANGE TABLE otel_logs_merged_temp AND otel_logs_merged
+
+SELECT Status, count() AS c
+FROM otel_logs_merged
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 39259996 │
+│   304  │  1378564 │
+│   302  │   820118 │
+│   404  │   429220 │
+│   301  │   276960 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.068 sec. Processed 42.46 million rows, 84.92 MB (620.45 million rows/s., 1.24 GB/s.)
+```

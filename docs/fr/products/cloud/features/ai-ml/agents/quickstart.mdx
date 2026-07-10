@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'Démarrage rapide'
+slug: /cloud/features/ai-ml/agents/quickstart
+title: 'Démarrage rapide'
+description: 'Créez et exécutez votre premier ClickHouse Agent avec un service ClickHouse Cloud'
+keywords: ['IA', 'ClickHouse Cloud', 'agents', 'démarrage rapide', 'Agent Builder']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge />
+
+Créez un agent personnalisé dans la console Cloud et exécutez une requête en langage naturel sur votre service.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Un service ClickHouse Cloud que vous pouvez interroger.
+* L’option **Create agent** dans Agent Builder. Si elle n’apparaît pas, demandez à un administrateur de l’org d’autoriser la création d’agents via Admin Settings, comme indiqué dans [sharing and access](/fr/products/cloud/features/ai-ml/agents/sharing-and-access).
+
+<div id="build-the-agent">
+  ## Créer l’agent
+</div>
+
+<Steps>
+  <Step>
+    ### Lancer ClickHouse Agents
+
+    Depuis votre service Cloud, cliquez sur **ClickHouse agents** dans la barre latérale gauche pour ouvrir la page de lancement des agents. Cliquez sur **Launch ClickHouse agents** pour ouvrir l’Agent Builder.
+
+    <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="Navigation du service Cloud avec ClickHouse agents (Beta) sélectionné, affichant la page de lancement avec le bouton Launch ClickHouse agents" size="lg" />
+  </Step>
+
+  <Step>
+    ### Créer l’agent
+
+    Dans l’Agent Builder, cliquez sur **Create New Agent** en haut du panneau de gauche. Renseignez les champs principaux :
+
+    * **Name** - un identifiant court pour votre agent.
+    * **Description** - une description de l’objectif de l’agent, visible par vos coéquipiers.
+    * **Category** - une catégorie pour votre agent. Vous pouvez laisser `General`, sauf si votre org utilise des catégories personnalisées.
+    * **Instructions** - le system prompt, qui décrit le rôle de l’agent, les questions auxquelles il doit répondre et les règles métier qu’il doit suivre.
+    * **Model** - choisissez un modèle dans la liste déroulante.
+
+    <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="Panneau Agent Builder affichant le menu déroulant Create New Agent, les champs du formulaire (Name, Description, Category, Instructions, Model) et la section Capabilities" size="lg" />
+  </Step>
+
+  <Step>
+    ### Ajouter des capacités et des outils
+
+    Les capacités et les outils de l’agent se trouvent à deux endroits.
+
+    Les **Capabilities** du panneau principal — des fonctionnalités natives comme [Run Code](/fr/products/cloud/features/ai-ml/agents/builder/code-interpreter), [Web Search](/fr/products/cloud/features/ai-ml/agents/builder/web-search), File Context, Artifacts, [MCP Servers](/fr/products/cloud/features/ai-ml/agents/builder/mcp-servers) et [Skills](/fr/products/cloud/features/ai-ml/agents/builder/skills). Activez celles dont l’agent a besoin.
+
+    <Image img="/images/cloud/agent-builder/capabilities.webp" alt="Section Capabilities du panneau Agent Builder affichant les interrupteurs Run Code, Web Search, File Context, Artifacts, MCP Servers et Skills" size="sm" />
+
+    Les **Tools**, accessibles via le bouton **Add Tools** en bas du panneau — des intégrations tierces comme la [génération d’images](/fr/products/cloud/features/ai-ml/agents/builder/image-generation), [Vision](/fr/products/cloud/features/ai-ml/agents/builder/vision), des API de recherche et des services externes.
+
+    <Image img="/images/cloud/agent-builder/tools-button.webp" alt="Bas du panneau Agent Builder avec le bouton Add Tools mis en évidence" size="sm" />
+
+    Cliquez sur **Add Tools** pour parcourir le catalogue :
+
+    <Image img="/images/cloud/agent-builder/tools-modal.webp" alt="Fenêtre modale Agent Tools affichant une grille d’intégrations tierces, dont Google, OpenAI Image Tools, Wolfram, DALL-E-3, Tavily Search, Calculator et Stable Diffusion" size="lg" />
+
+    Les [Subagents](/fr/products/cloud/features/ai-ml/agents/builder/subagents) se configurent dans **Advanced settings** — consultez la page des subagents pour plus de détails.
+
+    Vous pouvez modifier les capacités et les outils associés à tout moment.
+  </Step>
+
+  <Step>
+    ### Exécuter une requête
+
+    Enregistrez l’agent, ouvrez une nouvelle conversation et sélectionnez votre agent dans le sélecteur d’agents. Saisissez une question — par exemple, *&quot;Quelles sont mes 10 principales tables par nombre de lignes cette semaine ?&quot;* — et l’agent planifie, appelle des outils si nécessaire, puis fournit une réponse.
+
+    <Image img="/images/cloud/agent-builder/chat-query.webp" alt="Échange dans le chat affichant la question 'Quelles sont mes 10 principales tables par nombre de lignes cette semaine ?' et la réponse de l’agent — un tableau Markdown classant les 10 principales tables de tous les services par nombre de lignes, avec Key Observations en dessous" size="lg" />
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* [Partagez l’agent](/fr/products/cloud/features/ai-ml/agents/sharing-and-access) avec vos collègues.
+* Publiez-le dans le [Marketplace](/fr/products/cloud/features/ai-ml/agents/marketplace) une fois l’agent stable.

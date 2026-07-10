@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Fivetran'
+slug: /integrations/fivetran
+description: 'Use Fivetran to move data from any source into ClickHouse Cloud with automated schema creation, deduplication, and History Mode (SCD Type 2).'
+title: 'Fivetran and ClickHouse Cloud'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://github.com/ClickHouse/clickhouse-fivetran-destination'
+keywords: ['fivetran', 'data movement', 'etl', 'clickhouse destination', 'automated data platform', 'history mode', 'SCD Type 2']
+---
+
+import ClickHouseSupportedBadge from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge/>
+
+## Overview {#overview}
+
+[Fivetran](https://www.fivetran.com) is the automated data movement platform moving data out of, into and across your cloud data platforms.
+
+[ClickHouse Cloud](https://clickhouse.com/cloud) is supported as a [Fivetran destination](https://fivetran.com/docs/destinations/clickhouse), allowing you to load data from various sources into ClickHouse. Open Source ClickHouse version isn't supported as a destination.
+
+The destination connector is developed and maintained together by ClickHouse and Fivetran. The source code is available on [GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination).
+
+<Note>
+[ClickHouse Cloud destination](https://fivetran.com/docs/destinations/clickhouse) is currently in **Beta** but we are working to make it generally available soon.
+</Note>
+
+<div class='vimeo-container'>
+  <Frame>
+<iframe src="//www.youtube.com/embed/sWe5JHW3lAs"
+    frameborder="0"
+    allow="autoplay;
+    fullscreen;
+    picture-in-picture"
+    allowfullscreen>
+  </iframe>
+</Frame>
+</div>
+
+## Key features {#key-features}
+- **ClickHouse Cloud compatible**: use your ClickHouse Cloud database as a Fivetran destination.
+- **SaaS deployment model**: fully managed by Fivetran, no need to manage your own infrastructure.
+- **History Mode (SCD Type 2)**: preserves complete history of all record versions for point-in-time analysis and audit trails.
+- **Configurable batch sizes**: You can adapt Fivetran to your particular use case by tuning write, select, mutation, and hard delete batch sizes via a JSON configuration file.
+
+## Limitations {#limitations}
+- Schema migrations are not supported yet, but we are working on it.
+- Adding, removing, or modifying primary key columns is not supported.
+- Custom ClickHouse settings on `CREATE TABLE` statements are not supported.
+- Role-based grants are not fully supported. The connector's grants check only queries direct user grants. Use [direct grants](/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants) instead.
+
+## Related pages {#related-pages}
+- [Technical Reference](/integrations/connectors/data-ingestion/etl-tools/fivetran/reference): type mappings, table engines, metadata columns and advanced configurations
+- [Troubleshooting & Best Practices](/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting): common errors and optimization tips and debugging queries
+- [ClickHouse Fivetran destination on GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination)
+
+## Setup guide {#setup-guide}
+- If you're looking for configurations and general technical details, please refer to the [technical reference](/integrations/connectors/data-ingestion/etl-tools/fivetran/reference).
+- For a comprehensive guide, check the [setup guide](https://fivetran.com/docs/destinations/clickhouse/setup-guide) in the Fivetran documentation.
+
+## Contact and support {#contact-us}
+
+The ClickHouse Fivetran destination has a split ownership model:
+
+- **ClickHouse** develops and maintains the destination connector code.
+- **Fivetran** hosts the connector and is responsible for data movement, pipeline scheduling, and source connectors.
+
+Both Fivetran and ClickHouse provide support for the Fivetran ClickHouse destination. For general inquiries, we recommend reaching out to Fivetran, as they are the experts on the Fivetran platform. For any ClickHouse-specific questions or issues, our support team is happy to help. Create a [support ticket](/resources/about/support) to ask a question or report an issue.

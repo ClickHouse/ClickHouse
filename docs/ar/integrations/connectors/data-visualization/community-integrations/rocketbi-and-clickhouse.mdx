@@ -1,0 +1,179 @@
+---
+sidebarTitle: 'Rocket BI'
+slug: /integrations/rocketbi
+keywords: ['ClickHouse', 'RocketBI', 'ربط', 'تكامل', 'واجهة المستخدم']
+description: 'RocketBI هي منصة ذكاء الأعمال ذاتية الخدمة، تساعدك على تحليل البيانات بسرعة، وإنشاء مرئيات بالسحب والإفلات، والتعاون مع الزملاء مباشرةً من متصفح الويب.'
+title: 'الهدف: أنشئ أول لوحة معلومات لك باستخدام Rocket.BI'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+في هذا الدليل، ستثبّت Rocket.BI وتنشئ لوحة معلومات بسيطة باستخدامه.
+هذه هي لوحة المعلومات:
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_01.webp" alt="لوحة معلومات Rocket BI تعرض مقاييس المبيعات مع مخططات ومؤشرات أداء رئيسية" border />
+
+<br />
+
+يمكنك الاطلاع على [لوحة المعلومات من خلال هذا الرابط.](https://demo.rocket.bi/dashboard/sales-dashboard-7?token=7eecf750-cbde-4c53-8fa8-8b905fec667e)
+
+<div id="install">
+  ## التثبيت
+</div>
+
+ابدأ تشغيل RocketBI باستخدام صور Docker الجاهزة.
+
+احصل على docker-compose.yml وملف التهيئة:
+
+```bash
+wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/docker-compose.yml
+wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.clickhouse.env
+```
+
+عدّل ملف `.clickhouse.env`، وأضف معلومات خادم ClickHouse.
+
+ابدأ RocketBI بتشغيل الأمر: `docker-compose up -d .`
+
+افتح المتصفح، ثم انتقل إلى `localhost:5050`، وسجّل الدخول باستخدام هذا الحساب: `hello@gmail.com/123456`
+
+للبناء من الشيفرة المصدرية أو لإعدادات متقدمة، يمكنك الاطلاع على التفاصيل هنا [ملف README الخاص بـ Rocket.BI](https://github.com/datainsider-co/rocket-bi/blob/main/README.md)
+
+<div id="lets-build-the-dashboard">
+  ## لننشئ لوحة المعلومات
+</div>
+
+في لوحة المعلومات، ستجد تقاريرك، ويمكنك بدء إنشاء تصوّر بالنقر على **+New**
+
+يمكنك إنشاء **عدد غير محدود من لوحات المعلومات** ورسم **عدد غير محدود من المخططات** في لوحة معلومات واحدة.
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_02.webp" alt="رسم متحرك يوضح عملية إنشاء مخطط جديد في Rocket BI" border />
+
+<br />
+
+شاهد الشرح عالي الدقة على YouTube: [https://www.youtube.com/watch?v=TMkdMHHfvqY](https://www.youtube.com/watch?v=TMkdMHHfvqY)
+
+<div id="build-the-chart-controls">
+  ### أنشئ عناصر التحكّم في المخطط
+</div>
+
+<div id="create-a-metrics-control">
+  #### أنشئ عنصر تحكم للمقاييس
+</div>
+
+في عامل تصفية Tab، حدِّد حقول المقاييس التي تريد استخدامها. تأكّد من إبقاء إعداد التجميع محددًا.
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_03.webp" alt="لوحة إعداد عنصر تحكم المقاييس في Rocket BI تعرض الحقول المحددة وإعدادات التجميع" border />
+
+<br />
+
+أعِد تسمية عوامل التصفية واحفظ عنصر التحكم في لوحة المعلومات
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_04.webp" alt="عنصر تحكم المقاييس مع عوامل تصفية أُعيدت تسميتها وجاهز للحفظ في لوحة المعلومات" border />
+
+<div id="create-a-date-type-control">
+  #### أنشئ عنصر تحكم من نوع التاريخ
+</div>
+
+اختر حقلاً من نوع Date كعمود التاريخ الرئيسي:
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_05.webp" alt="واجهة اختيار حقل Date في Rocket BI تعرض أعمدة التاريخ المتاحة" border />
+
+<br />
+
+أضف نُسخًا مكررة بنطاقات lookup مختلفة. على سبيل المثال: سنوي أو شهري أو يومي أو يوم من أيام الأسبوع.
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_06.webp" alt="تهيئة نطاق التاريخ التي تعرض خيارات مختلفة لفترة زمنية مثل السنة والشهر واليوم" border />
+
+<br />
+
+أعِد تسمية المرشحات واحفظ عنصر التحكم في لوحة المعلومات
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_07.webp" alt="عنصر تحكم في نطاق التاريخ مع مرشحات أُعيدت تسميتها وجاهز للحفظ في لوحة المعلومات" border />
+
+<div id="now-let-build-the-charts">
+  ### الآن، لننشئ الرسوم البيانية
+</div>
+
+<div id="pie-chart-sales-metrics-by-regions">
+  #### المخطط الدائري: مقاييس المبيعات حسب المناطق
+</div>
+
+اختر Adding new chart، ثم حدِّد المخطط الدائري
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_08.webp" alt="لوحة اختيار نوع المخطط مع تمييز خيار المخطط الدائري" border />
+
+<br />
+
+أولاً، اسحب العمود &quot;Region&quot; وأفلِته من Dataset إلى Legend Field
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_09.webp" alt="واجهة سحب وإفلات تُظهر إضافة عمود Region إلى حقل وسيلة الإيضاح" border />
+
+<br />
+
+بعد ذلك، انتقل إلى علامة التبويب Chart Control
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_10.webp" alt="واجهة علامة التبويب Chart Control التي تعرض خيارات ضبط التصور" border />
+
+<br />
+
+اسحب عنصر تحكم بالمقاييس وأفلِته في Value Field
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_11.webp" alt="إضافة عنصر التحكم بالمقاييس إلى حقل القيمة في المخطط الدائري" border />
+
+<br />
+
+(يمكنك أيضًا استخدام عنصر تحكم بالمقاييس للفرز)
+
+انتقل إلى Chart Setting لإجراء مزيد من التخصيص
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_12.webp" alt="لوحة إعدادات المخطط التي تعرض خيارات تخصيص المخطط الدائري" border />
+
+<br />
+
+على سبيل المثال، غيّر Data label إلى Percentage
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_13.webp" alt="تغيير إعدادات تسمية البيانات لعرض النسب المئوية على المخطط الدائري" border />
+
+<br />
+
+احفظ المخطط وأضِفه إلى لوحة المعلومات
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_14.webp" alt="عرض لوحة المعلومات ويظهر فيها المخطط الدائري المضاف حديثًا مع عناصر تحكم أخرى" border />
+
+<div id="use-date-control-in-a-time-series-chart">
+  #### استخدم عنصر التحكم بالتاريخ في مخطط زمني
+</div>
+
+لنستخدم مخطط أعمدة متراصًا
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_15.webp" alt="واجهة إنشاء مخطط أعمدة متراص مع بيانات زمنية" border />
+
+<br />
+
+في Chart Control، استخدم عنصر تحكم بالمقاييس للمحور Y وDate Range للمحور X
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_16.webp" alt="إعداد Chart Control يوضح المقاييس على المحور Y وDate Range على المحور X" border />
+
+<br />
+
+أضف عمود Region إلى Breakdown
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_17.webp" alt="إضافة عمود Region كبُعد تفصيلي في مخطط الأعمدة المتراص" border />
+
+<br />
+
+أضف Number Chart كمؤشرات أداء رئيسية وأضف لمسة جمالية إلى لوحة المعلومات
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_18.webp" alt="لوحة معلومات مكتملة تتضمن مخططات أرقام لمؤشرات الأداء الرئيسية ومخططًا دائريًا وتمثيلًا مرئيًا زمنيًا" border />
+
+<br />
+
+الآن، تكون قد نجحت في إنشاء أول لوحة معلومات لك باستخدام rocket.BI

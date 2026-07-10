@@ -1,0 +1,288 @@
+---
+slug: /guides/developer/ttl
+sidebarTitle: '有効期限 (TTL)'
+keywords: ['ttl', 'time to live', 'clickhouse', 'old', 'data']
+description: '有効期限 (TTL)とは、一定時間が経過した後に、行やカラムを移動、削除、またはロールアップできる機能を指します。'
+title: 有効期限 (TTL)でデータを管理する
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="overview-of-ttl">
+  ## 有効期限 (TTL) の概要
+</div>
+
+有効期限 (TTL) は、一定時間が経過した後に行やカラムを移動、削除、またはロールアップできる機能です。有効期限 という表現からは古いデータの削除だけを連想しがちですが、有効期限 (TTL) にはいくつかの用途があります。
+
+* 古いデータの削除: その名のとおり、指定した時間が経過した後に行やカラムを削除できます
+* データのディスク間移動: 一定時間が経過した後に、ストレージボリューム間でデータを移動できます。これは ホット／ウォーム／コールドアーキテクチャ の導入に役立ちます
+* データのロールアップ: 古いデータを削除する前に、さまざまな有用な集計や計算結果にロールアップできます
+
+<Note>
+  有効期限 (TTL) はテーブル全体にも、特定のカラムにも適用できます。
+</Note>
+
+<div id="ttl-syntax">
+  ## 有効期限 (TTL)の構文
+</div>
+
+`TTL` 句は、カラム定義の後ろやテーブル定義の末尾に記述できます。期間を定義するには `INTERVAL` 句を使用します (`Date` または `DateTime` データ型である必要があります) 。たとえば、次のテーブルには 2 つのカラムがあり、
+`TTL` 句が指定されています:
+
+```sql
+CREATE TABLE example1 (
+   timestamp DateTime,
+   x UInt32 TTL timestamp + INTERVAL 1 MONTH,
+   y String TTL timestamp + INTERVAL 1 DAY,
+   z String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+* x カラムの有効期限は、timestamp カラムから 1 か月です
+* y カラムの有効期限は、timestamp カラムから 1 日です
+* 期間が経過すると、そのカラムは期限切れになります。ClickHouse はそのカラムの値を、そのデータ型のデフォルト値に置き換えます。データパート内のそのカラムの値がすべて期限切れになると、ClickHouse はファイルシステム上のそのデータパートからそのカラムを削除します。
+
+<Note>
+  有効期限 (TTL) ルールは変更または削除できます。詳細は [テーブル TTL の操作](/ja/reference/statements/alter/ttl) ページを参照してください。
+</Note>
+
+<Tip>
+  **ベストプラクティス**
+
+  テーブルレベルの 有効期限 (TTL) を使って古い行を削除する場合は、有効期限 (TTL) 式で使用するのと同じ時間フィールドの日付または月で**テーブルをパーティション化する**ことを推奨します。
+
+  ClickHouse は、個々の行を削除するよりも、パーティション全体を削除するほうがはるかに効率的です。
+  パーティションキーが 有効期限 (TTL) 式に対応していれば、ClickHouse は期限切れの行を削除するためにデータパートを書き換える代わりに、期限切れになったパーティション全体をまとめて削除できます。
+
+  有効期限 (TTL) の期間に応じて、パーティションの粒度を選択してください。
+
+  * 日 / 週単位の 有効期限 (TTL): `toYYYYMMDD(date_field)` を使用して日単位でパーティション化します
+  * 月 / 年単位の 有効期限 (TTL): `toYYYYMM(date_field)` または `toStartOfMonth(date_field)` を使用して月単位でパーティション化します
+</Tip>
+
+<div id="triggering-ttl-events">
+  ## 有効期限 (TTL) イベントをトリガーする
+</div>
+
+有効期限切れの行の削除や集約はすぐには実行されず、テーブルのマージ時にのみ行われます。何らかの理由でテーブルのマージが活発に行われていない場合は、有効期限 (TTL) イベントをトリガーする設定が 2 つあります。
+
+* `merge_with_ttl_timeout`: delete 有効期限 (TTL) を伴うマージを再度実行するまでの最小待機時間 (秒) 。デフォルトは 14400 秒 (4 時間) です。
+* `merge_with_recompression_ttl_timeout`: recompression 有効期限 (TTL) (削除前にデータをロールアップするルール) を伴うマージを再度実行するまでの最小待機時間 (秒) 。デフォルト値は 14400 秒 (4 時間) です。
+
+つまり、デフォルトでは、少なくとも 4 時間に 1 回はテーブルに 有効期限 (TTL) ルールが適用されます。有効期限 (TTL) ルールをより高い頻度で適用したい場合は、上記の設定を変更してください。
+
+<Note>
+  最善の方法ではなく (頻繁な使用も推奨しませんが) 、`OPTIMIZE` を使ってマージを強制することもできます。
+
+  ```sql
+  OPTIMIZE TABLE example1 FINAL
+  ```
+
+  `OPTIMIZE` は、テーブルのパーツに対してスケジュールされていないマージを開始し、`FINAL` はテーブルがすでに単一のパーツである場合に再最適化を強制します。
+</Note>
+
+<div id="removing-rows">
+  ## 行の削除
+</div>
+
+一定時間が経過した後にテーブルから行全体を削除するには、テーブルレベルで有効期限 (TTL) ルールを定義します。
+
+```sql
+CREATE TABLE customers (
+timestamp DateTime,
+name String,
+balance Int32,
+address String
+)
+ENGINE = MergeTree
+ORDER BY timestamp
+TTL timestamp + INTERVAL 12 HOUR
+```
+
+さらに、レコードの値に基づいて有効期限 (TTL) ルールを定義することもできます。
+これは、where 条件を指定するだけで簡単に実装できます。
+複数の条件を指定できます。
+
+```sql
+CREATE TABLE events
+(
+    `event` String,
+    `time` DateTime,
+    `value` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (event, time)
+TTL time + INTERVAL 1 MONTH DELETE WHERE event != 'error',
+    time + INTERVAL 6 MONTH DELETE WHERE event = 'error'
+```
+
+<div id="removing-columns">
+  ## カラムの削除
+</div>
+
+行全体を削除するのではなく、`balance` と `address` のカラムだけを期限切れにしたいとします。`customers` テーブルを変更し、両方のカラムに 2 時間の有効期限 (TTL) を設定してみましょう。
+
+```sql
+ALTER TABLE customers
+MODIFY COLUMN balance Int32 TTL timestamp + INTERVAL 2 HOUR,
+MODIFY COLUMN address String TTL timestamp + INTERVAL 2 HOUR
+```
+
+<div id="implementing-a-rollup">
+  ## ロールアップの実装
+</div>
+
+一定期間の経過後に行を削除しつつ、レポート用に一部のデータは保持しておきたい場合を考えます。必要なのはすべての詳細ではなく、履歴データを集計した結果の一部だけです。これは、`TTL` 式に `GROUP BY` 句を追加し、あわせて集計結果を保存するためのカラムをテーブルに追加することで実装できます。
+
+たとえば、次の `hits` テーブルで古い行を削除しつつ、行を削除する前に `hits` カラムの合計値と最大値は保持しておきたいとします。その値を保存するためのフィールドが必要になり、さらに合計値と最大値をロールアップする `GROUP BY` 句を `TTL` 句に追加する必要があります。
+
+```sql
+CREATE TABLE hits (
+   timestamp DateTime,
+   id String,
+   hits Int32,
+   max_hits Int32 DEFAULT hits,
+   sum_hits Int64 DEFAULT hits
+)
+ENGINE = MergeTree
+PRIMARY KEY (id, toStartOfDay(timestamp), timestamp)
+TTL timestamp + INTERVAL 1 DAY
+    GROUP BY id, toStartOfDay(timestamp)
+    SET
+        max_hits = max(max_hits),
+        sum_hits = sum(sum_hits);
+```
+
+`hits` テーブルに関する補足:
+
+* `TTL` 句の `GROUP BY` カラムは `PRIMARY KEY` のプレフィックスである必要があり、結果を日単位の開始時刻でグループ化したいため、`toStartOfDay(timestamp)` を主キーに追加しました
+* 集計結果を保存するために、`max_hits` と `sum_hits` の 2 つのフィールドを追加しました
+* このロジックを機能させるには、`SET` 句の定義方法に従い、`max_hits` と `sum_hits` のデフォルト値を `hits` に設定する必要があります
+
+<div id="implementing-a-hotwarmcold-architecture">
+  ## ホット／ウォーム／コールドアーキテクチャの実装
+</div>
+
+<CloudNotSupportedBadge />
+
+<Note>
+  ClickHouse Cloud を使用している場合、このレッスンの手順は適用されません。ClickHouse Cloud では、古いデータの移動を気にする必要はありません。
+</Note>
+
+大量のデータを扱う際の一般的な方法は、データが古くなるにつれて保存先を移していくことです。ここでは、`TTL` コマンドの `TO DISK` 句と `TO VOLUME` 句を使用して、ClickHouse でホット／ウォーム／コールドアーキテクチャを実装する手順を説明します。 (ちなみに、必ずしもホット／コールドの構成である必要はありません。有効期限 (TTL) を使えば、どのようなユースケースでもデータを移動できます。)
+
+1. `TO DISK` および `TO VOLUME` オプションは、ClickHouse の設定ファイルで定義されたディスクまたはボリュームの名前を参照します。まず、ディスクを定義する `my_system.xml` という名前の新しいファイル (名前は任意) を作成し、続いてそのディスクを使用するボリュームを定義します。設定をシステムに適用するには、この XML ファイルを `/etc/clickhouse-server/config.d/` に配置します:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <default>
+            </default>
+           <hot_disk>
+              <path>./hot/</path>
+           </hot_disk>
+           <warm_disk>
+              <path>./warm/</path>
+           </warm_disk>
+           <cold_disk>
+              <path>./cold/</path>
+           </cold_disk>
+        </disks>
+        <policies>
+            <default>
+                <volumes>
+                    <default>
+                        <disk>default</disk>
+                    </default>
+                    <hot_volume>
+                        <disk>hot_disk</disk>
+                    </hot_volume>
+                    <warm_volume>
+                        <disk>warm_disk</disk>
+                    </warm_volume>
+                    <cold_volume>
+                        <disk>cold_disk</disk>
+                    </cold_volume>
+                </volumes>
+            </default>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+2. 上記のconfigurationでは、ClickHouseが読み書きできるフォルダを指す3つのディスクを参照しています。ボリュームには1つ以上のディスクを含めることができ、ここでは3つのディスクそれぞれに対してボリュームを定義しました。では、ディスクを見てみましょう。
+
+```sql
+SELECT name, path, free_space, total_space
+FROM system.disks
+```
+
+```response
+┌─name────────┬─path───────────┬───free_space─┬──total_space─┐
+│ cold_disk   │ ./data/cold/   │ 179143311360 │ 494384795648 │
+│ default     │ ./             │ 179143311360 │ 494384795648 │
+│ hot_disk    │ ./data/hot/    │ 179143311360 │ 494384795648 │
+│ warm_disk   │ ./data/warm/   │ 179143311360 │ 494384795648 │
+└─────────────┴────────────────┴──────────────┴──────────────┘
+```
+
+3. では、ボリュームを確認しましょう:
+
+```sql
+SELECT
+    volume_name,
+    disks
+FROM system.storage_policies
+```
+
+```response
+┌─volume_name─┬─disks─────────┐
+│ default     │ ['default']   │
+│ hot_volume  │ ['hot_disk']  │
+│ warm_volume │ ['warm_disk'] │
+│ cold_volume │ ['cold_disk'] │
+└─────────────┴───────────────┘
+```
+
+4. 次に、データをホット、ウォーム、コールドの各ボリューム間で移動させる `TTL` ルールを追加します。
+
+```sql
+ALTER TABLE my_table
+   MODIFY TTL
+      trade_date TO VOLUME 'hot_volume',
+      trade_date + INTERVAL 2 YEAR TO VOLUME 'warm_volume',
+      trade_date + INTERVAL 4 YEAR TO VOLUME 'cold_volume';
+```
+
+5. 新しい `TTL` ルールはマテリアライズされるはずですが、確実に反映させるため、強制的に実行することもできます:
+
+```sql
+ALTER TABLE my_table
+    MATERIALIZE TTL
+```
+
+6. `system.parts` テーブルを使用して、データが想定したディスクに移動していることを確認します。
+
+```sql
+system.parts テーブルを使用して、crypto_prices テーブルのパーツがどのディスクにあるかを確認します：
+
+SELECT
+    name,
+    disk_name
+FROM system.parts
+WHERE (table = 'my_table') AND (active = 1)
+```
+
+レスポンスは次のようになります。
+
+```response
+┌─name────────┬─disk_name─┐
+│ all_1_3_1_5 │ warm_disk │
+│ all_2_2_0   │ hot_disk  │
+└─────────────┴───────────┘
+```

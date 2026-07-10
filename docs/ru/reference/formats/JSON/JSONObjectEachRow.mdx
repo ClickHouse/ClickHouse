@@ -1,0 +1,257 @@
+---
+alias: []
+description: 'Документация по формату JSONObjectEachRow'
+input_format: true
+keywords: ['JSONObjectEachRow']
+output_format: true
+slug: /interfaces/formats/JSONObjectEachRow
+title: 'JSONObjectEachRow'
+doc_type: 'справочник'
+---
+
+| Входной | Выходной | Псевдоним |
+| ------- | -------- | --------- |
+| ✔       | ✔        |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+В этом формате все данные представлены в виде одного объекта JSON, а каждая строка — как отдельное поле этого объекта, аналогично формату [`JSONEachRow`](/ru/reference/formats/JSON/JSONEachRow).
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="basic-example">
+  ### Базовый пример
+</div>
+
+Предположим, есть такой JSON:
+
+```json
+{
+  "row_1": {"num": 42, "str": "hello", "arr":  [0,1]},
+  "row_2": {"num": 43, "str": "hello", "arr":  [0,1,2]},
+  "row_3": {"num": 44, "str": "hello", "arr":  [0,1,2,3]}
+}
+```
+
+Чтобы использовать имя объекта в качестве значения столбца, можно воспользоваться специальной настройкой [`format_json_object_each_row_column_for_object_name`](/ru/reference/settings/formats#format_json_object_each_row_column_for_object_name).
+В качестве значения этой настройки указывается имя столбца, которое используется как JSON-ключ для строки в результирующем объекте.
+
+<div id="output">
+  #### Результат
+</div>
+
+Допустим, у нас есть таблица `test` с двумя столбцами:
+
+```text
+┌─object_name─┬─number─┐
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ third_obj   │      3 │
+└─────────────┴────────┘
+```
+
+Давайте выведем это в формате `JSONObjectEachRow` и используем настройку `format_json_object_each_row_column_for_object_name`:
+
+```sql title="Query"
+SELECT * FROM test SETTINGS format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```json title="Response"
+{
+    "first_obj": {"number": 1},
+    "second_obj": {"number": 2},
+    "third_obj": {"number": 3}
+}
+```
+
+<div id="input">
+  #### Входные данные
+</div>
+
+Предположим, что мы сохранили результат из предыдущего примера в файл `data.json`:
+
+```sql title="Query"
+SELECT * FROM file('data.json', JSONObjectEachRow, 'object_name String, number UInt64') SETTINGS format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```response title="Response"
+┌─object_name─┬─number─┐
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ third_obj   │      3 │
+└─────────────┴────────┘
+```
+
+Это также работает и для автоматического определения схемы:
+
+```sql title="Query"
+DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```response title="Response"
+┌─name────────┬─type────────────┐
+│ object_name │ String          │
+│ number      │ Nullable(Int64) │
+└─────────────┴─────────────────┘
+```
+
+<div id="json-inserting-data">
+  ### Вставка данных
+</div>
+
+```sql title="Query"
+INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
+```
+
+ClickHouse допускает:
+
+* Любой порядок пар ключ-значение в объекте.
+* Пропуск некоторых значений.
+
+ClickHouse игнорирует пробелы между элементами и запятые после объектов. Все объекты можно передать в одной строке. Разделять их переводами строк не обязательно.
+
+<div id="omitted-values-processing">
+  #### Обработка пропущенных значений
+</div>
+
+ClickHouse заменяет пропущенные значения значениями по умолчанию для соответствующих [типов данных](/ru/reference/data-types/index).
+
+Если указано `DEFAULT expr`, ClickHouse использует разные правила подстановки в зависимости от настройки [input&#95;format&#95;defaults&#95;for&#95;omitted&#95;fields](/ru/reference/settings/formats#input_format_defaults_for_omitted_fields).
+
+Рассмотрим следующую таблицу:
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS example_table
+(
+    x UInt32,
+    a DEFAULT x * 2
+) ENGINE = Memory;
+```
+
+* Если `input_format_defaults_for_omitted_fields = 0`, то значение по умолчанию для `x` и `a` равно `0` (это значение по умолчанию для типа данных `UInt32`).
+* Если `input_format_defaults_for_omitted_fields = 1`, то значение по умолчанию для `x` равно `0`, а для `a` — `x * 2`.
+
+<Note>
+  При вставке данных с `input_format_defaults_for_omitted_fields = 1` ClickHouse потребляет больше вычислительных ресурсов по сравнению со вставкой данных с `input_format_defaults_for_omitted_fields = 0`.
+</Note>
+
+<div id="json-selecting-data">
+  ### Выборка данных
+</div>
+
+Рассмотрим таблицу `UserActivity` в качестве примера:
+
+```response
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+Запрос `SELECT * FROM UserActivity FORMAT JSONEachRow` возвращает:
+
+```response
+{"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
+{"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
+```
+
+В отличие от формата [JSON](/ru/reference/formats/JSON/JSON), недопустимые последовательности UTF-8 не подменяются. Значения экранируются так же, как в `JSON`.
+
+<Info>
+  В строки можно выводить любой набор байтов. Используйте формат [`JSONEachRow`](/ru/reference/formats/JSON/JSONEachRow), если уверены, что данные в таблице можно представить в формате JSON без потери информации.
+</Info>
+
+<div id="jsoneachrow-nested">
+  ### Использование вложенных структур
+</div>
+
+Если у вас есть таблица со столбцами типа [`Nested`](/ru/reference/data-types/nested-data-structures/index), вы можете вставлять JSON-данные с той же структурой. Чтобы включить эту возможность, используйте настройку [input&#95;format&#95;import&#95;nested&#95;json](/ru/reference/settings/formats#input_format_import_nested_json).
+
+Например, рассмотрим следующую таблицу:
+
+```sql title="Query"
+CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
+```
+
+Как видно из описания типа данных `Nested`, ClickHouse рассматривает каждый элемент вложенной структуры как отдельный столбец (`n.s` и `n.i` в нашей таблице). Вы можете вставить данные следующим образом:
+
+```sql title="Query"
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
+```
+
+Чтобы вставлять данные в виде иерархического объекта JSON, задайте [`input_format_import_nested_json=1`](/ru/reference/settings/formats#input_format_import_nested_json).
+
+```json
+{
+    "n": {
+        "s": ["abc", "def"],
+        "i": [1, 23]
+    }
+}
+```
+
+При отсутствии этой настройки ClickHouse генерирует исключение.
+
+```sql title="Query"
+SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
+```
+
+```response title="Response"
+┌─name────────────────────────────┬─value─┐
+│ input_format_import_nested_json │ 0     │
+└─────────────────────────────────┴───────┘
+```
+
+```sql title="Query"
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+```
+
+```response title="Response"
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
+```
+
+```sql title="Query"
+SET input_format_import_nested_json=1
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+SELECT * FROM json_each_row_nested
+```
+
+```response title="Response"
+┌─n.s───────────┬─n.i────┐
+│ ['abc','def'] │ [1,23] │
+└───────────────┴────────┘
+```
+
+<div id="format-settings">
+  ## Настройки формата
+</div>
+
+| Настройка                                                                                                                                                      | Описание                                                                                                                                                                                         | По умолчанию | Примечания                                                                                                                                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`input_format_import_nested_json`](/ru/reference/settings/formats#input_format_import_nested_json)                                                               | сопоставляет вложенные данные JSON с вложенными таблицами (работает для формата JSONEachRow).                                                                                                    | `false`      |                                                                                                                                                                                           |
+| [`input_format_json_read_bools_as_numbers`](/ru/reference/settings/formats#input_format_json_read_bools_as_numbers)                                               | разрешает разбирать логические значения как числа во входных форматах JSON.                                                                                                                      | `true`       |                                                                                                                                                                                           |
+| [`input_format_json_read_bools_as_strings`](/ru/reference/settings/formats#input_format_json_read_bools_as_strings)                                               | позволяет разбирать логические значения как строки в форматах ввода JSON.                                                                                                                        | `true`       |                                                                                                                                                                                           |
+| [`input_format_json_read_numbers_as_strings`](/ru/reference/settings/formats#input_format_json_read_numbers_as_strings)                                           | позволяет разбирать числа как строки в форматах ввода JSON.                                                                                                                                      | `true`       |                                                                                                                                                                                           |
+| [`input_format_json_read_arrays_as_strings`](/ru/reference/settings/formats#input_format_json_read_arrays_as_strings)                                             | позволяет разбирать JSON-массивы как строки в форматах ввода JSON.                                                                                                                               | `true`       |                                                                                                                                                                                           |
+| [`input_format_json_read_objects_as_strings`](/ru/reference/settings/formats#input_format_json_read_objects_as_strings)                                           | позволяет разбирать объекты JSON как строки в форматах ввода JSON.                                                                                                                               | `true`       |                                                                                                                                                                                           |
+| [`input_format_json_named_tuples_as_objects`](/ru/reference/settings/formats#input_format_json_named_tuples_as_objects)                                           | разбирать столбцы именованного кортежа как объекты JSON.                                                                                                                                         | `true`       |                                                                                                                                                                                           |
+| [`input_format_json_try_infer_numbers_from_strings`](/ru/reference/settings/formats#input_format_json_try_infer_numbers_from_strings)                             | пытаться определять числа в строковых полях при выводе схемы.                                                                                                                                    | `false`      |                                                                                                                                                                                           |
+| [`input_format_json_try_infer_named_tuples_from_objects`](/ru/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects)                   | пытаться определять именованный кортеж по объектам JSON при выводе схемы.                                                                                                                        | `true`       |                                                                                                                                                                                           |
+| [`input_format_json_infer_incomplete_types_as_strings`](/ru/reference/settings/formats#input_format_json_infer_incomplete_types_as_strings)                       | использовать тип String для ключей, которые при определении схемы в JSON input formats содержат только значения NULL или пустые объекты/массивы.                                                 | `true`       |                                                                                                                                                                                           |
+| [`input_format_json_defaults_for_missing_elements_in_named_tuple`](/ru/reference/settings/formats#input_format_json_defaults_for_missing_elements_in_named_tuple) | вставлять значения по умолчанию для отсутствующих элементов в объекте JSON при разборе именованного Tuple.                                                                                       | `true`       |                                                                                                                                                                                           |
+| [`input_format_json_ignore_unknown_keys_in_named_tuple`](/ru/reference/settings/formats#input_format_json_ignore_unknown_keys_in_named_tuple)                     | игнорировать неизвестные ключи в объекте JSON для именованных Tuple.                                                                                                                             | `false`      |                                                                                                                                                                                           |
+| [`input_format_json_compact_allow_variable_number_of_columns`](/ru/reference/settings/formats#input_format_json_compact_allow_variable_number_of_columns)         | разрешить переменное число столбцов в формате JSONCompact/JSONCompactEachRow, игнорировать лишние столбцы и использовать значения по умолчанию для отсутствующих столбцов.                       | `false`      |                                                                                                                                                                                           |
+| [`input_format_json_throw_on_bad_escape_sequence`](/ru/reference/settings/formats#input_format_json_throw_on_bad_escape_sequence)                                 | сгенерировать исключение, если строка JSON содержит некорректную escape-последовательность. Если этот параметр отключён, некорректные escape-последовательности останутся в данных как есть.     | `true`       |                                                                                                                                                                                           |
+| [`input_format_json_empty_as_default`](/ru/reference/settings/formats#input_format_json_empty_as_default)                                                         | считать пустые поля во входных JSON-данных значениями по умолчанию.                                                                                                                              | `false`.     | Для сложных выражений по умолчанию также должен быть включен параметр [`input_format_defaults_for_omitted_fields`](/ru/reference/settings/formats#input_format_defaults_for_omitted_fields). |
+| [`output_format_json_quote_64bit_integers`](/ru/reference/settings/formats#output_format_json_quote_64bit_integers)                                               | управляет заключением 64-битных целых чисел в кавычки в формате вывода JSON.                                                                                                                     | `true`       |                                                                                                                                                                                           |
+| [`output_format_json_quote_64bit_floats`](/ru/reference/settings/formats#output_format_json_quote_64bit_floats)                                                   | управляет заключением 64-битных чисел с плавающей точкой в кавычки в формате вывода JSON.                                                                                                        | `false`      |                                                                                                                                                                                           |
+| [`output_format_json_quote_denormals`](/ru/reference/settings/formats#output_format_json_quote_denormals)                                                         | включает вывод значений &#39;+nan&#39;, &#39;-nan&#39;, &#39;+inf&#39;, &#39;-inf&#39; в формате вывода JSON.                                                                                    | `false`      |                                                                                                                                                                                           |
+| [`output_format_json_quote_decimals`](/ru/reference/settings/formats#output_format_json_quote_decimals)                                                           | управляет заключением десятичных чисел в кавычки в формате вывода JSON.                                                                                                                          | `false`      |                                                                                                                                                                                           |
+| [`output_format_json_escape_forward_slashes`](/ru/reference/settings/formats#output_format_json_escape_forward_slashes)                                           | управляет экранированием прямых слешей в строковых значениях в формате вывода JSON.                                                                                                              | `true`       |                                                                                                                                                                                           |
+| [`output_format_json_named_tuples_as_objects`](/ru/reference/settings/formats#output_format_json_named_tuples_as_objects)                                         | сериализует столбцы именованных кортежей как объекты JSON.                                                                                                                                       | `true`       |                                                                                                                                                                                           |
+| [`output_format_json_array_of_rows`](/ru/reference/settings/formats#output_format_json_array_of_rows)                                                             | выводит JSON-массив всех строк в формате JSONEachRow(Compact).                                                                                                                                   | `false`      |                                                                                                                                                                                           |
+| [`output_format_json_validate_utf8`](/ru/reference/settings/formats#output_format_json_validate_utf8)                                                             | включает проверку последовательностей UTF-8 в выходных форматах JSON (обратите внимание, что это не влияет на форматы JSON/JSONCompact/JSONColumnsWithMetadata — в них utf8 всегда проверяется). | `false`      |                                                                                                                                                                                           |

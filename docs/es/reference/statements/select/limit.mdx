@@ -1,0 +1,168 @@
+---
+description: 'Documentación de la cláusula LIMIT'
+sidebarTitle: 'LIMIT'
+slug: /sql-reference/statements/select/limit
+title: 'Cláusula LIMIT'
+doc_type: 'reference'
+---
+
+La cláusula `LIMIT` controla cuántas filas se devuelven en los resultados de la consulta.
+
+<div id="basic-syntax">
+  ## Sintaxis básica
+</div>
+
+**Seleccionar las primeras filas:**
+
+```sql
+LIMIT m
+```
+
+Devuelve las primeras `m` filas del resultado, o todos los registros si hay menos de `m`.
+
+**Sintaxis alternativa de TOP (compatible con MS SQL Server):**
+
+```sql
+-- SELECT TOP número|porcentaje nombre_columna(s) FROM nombre_tabla
+SELECT TOP 10 * FROM numbers(100);
+SELECT TOP 0.1 * FROM numbers(100);
+```
+
+Esto equivale a `LIMIT m` y puede utilizarse por compatibilidad con consultas de Microsoft SQL Server.
+
+**Selección con OFFSET:**
+
+```sql
+LIMIT m OFFSET n
+-- o de manera equivalente:
+LIMIT n, m
+```
+
+Omite las primeras `n` filas y devuelve las siguientes `m`.
+
+En ambas formas, `n` y `m` deben ser enteros no negativos.
+
+<div id="negative-limits">
+  ## Límites negativos
+</div>
+
+Selecciona filas desde el *final* del conjunto de resultados utilizando valores negativos:
+
+| Sintaxis             | Resultado                                            |
+| -------------------- | ---------------------------------------------------- |
+| `LIMIT -m`           | Últimas `m` filas                                    |
+| `LIMIT -m OFFSET -n` | Últimas `m` filas tras omitir las últimas `n` filas  |
+| `LIMIT m OFFSET -n`  | Primeras `m` filas tras omitir las últimas `n` filas |
+| `LIMIT -m OFFSET n`  | Últimas `m` filas tras omitir las primeras `n` filas |
+
+La sintaxis `LIMIT -n, -m` equivale a `LIMIT -m OFFSET -n`.
+
+<div id="fractional-limits">
+  ## Límites fraccionarios
+</div>
+
+Usa valores decimales entre 0 y 1 para seleccionar un porcentaje de filas:
+
+| Sintaxis                | Resultado                                                            |
+| ----------------------- | -------------------------------------------------------------------- |
+| `LIMIT 0.1`             | El primer 10% de las filas                                           |
+| `LIMIT 1 OFFSET 0.5`    | La fila central                                                      |
+| `LIMIT 0.25 OFFSET 0.5` | El tercer cuartil (25% de las filas después de omitir el primer 50%) |
+
+<Note>
+  * Las fracciones deben ser valores [Float64](/es/reference/data-types/float) mayores que 0 y menores que 1.
+  * Los recuentos fraccionarios de filas se redondean al siguiente número entero.
+</Note>
+
+<div id="combining-limit-types">
+  ## Combinación de tipos de LIMIT
+</div>
+
+Puede combinar enteros estándar con OFFSET fraccionarios o negativos:
+
+```sql
+LIMIT 10 OFFSET 0.5    -- 10 filas comenzando desde el punto medio
+LIMIT 10 OFFSET -20    -- 10 filas después de omitir las últimas 20
+```
+
+<div id="limit--with-ties-modifier">
+  ## LIMIT ... WITH TIES
+</div>
+
+El modificador `WITH TIES` incluye filas adicionales que tienen los mismos valores de `ORDER BY` que la última fila incluida por el límite.
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+Con `WITH TIES`, también se incluyen todas las filas que coinciden con el último valor:
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+La fila 6 se incluye porque tiene el mismo valor (`2`) que la fila 5.
+
+Lo mismo ocurre cuando el OFFSET se especifica con la palabra clave `OFFSET`:
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 3 OFFSET 2 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+Al omitir las primeras 2 filas y tomar 3, normalmente se devolvería `1, 1, 2`, pero se incluye el segundo `2` porque empata con la última fila.
+
+<Note>
+  `WITH TIES` no es compatible con límites negativos.
+</Note>
+
+Este modificador puede combinarse con el modificador [`ORDER BY ... WITH FILL`](/es/reference/statements/select/order-by#order-by-expr-with-fill-modifier).
+
+<div id="considerations">
+  ## Consideraciones
+</div>
+
+**Resultados no deterministas:** Sin una cláusula [`ORDER BY`](/es/reference/statements/select/order-by), las filas devueltas pueden ser arbitrarias y variar de una ejecución de la consulta a otra.
+
+**Límite del servidor:** La cantidad de filas devueltas también puede verse afectada por la configuración [limit](/es/reference/settings/session-settings#limit).
+
+<div id="see-also">
+  ## Véase también
+</div>
+
+* [LIMIT BY](/es/reference/statements/select/limit-by) — Limita el número de filas por cada grupo de valores; resulta útil para obtener los N resultados principales dentro de cada categoría.

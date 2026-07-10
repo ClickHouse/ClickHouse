@@ -1,0 +1,80 @@
+---
+title: 如何验证两个查询是否返回相同的结果集
+description: 了解如何使用哈希函数和比较方法，验证两个 ClickHouse 查询是否返回完全相同的结果集。
+date: 2023-05-04
+tags: ['函数']
+keywords: ['验证', '结果集', '哈希函数']
+---
+
+<div id="question">
+  ## 问题
+</div>
+
+如何验证两个查询是否返回相同的结果集？
+
+<div id="answer">
+  ## 答案
+</div>
+
+你可以按以下方式操作：
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- 在此处填写您的查询 1
+            -- SELECT ...
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- 在此处填写您的查询 2
+            -- SELECT ...
+        )
+    ) AS q2_resultset_hash
+SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
+```
+
+该示例使用 [CTE](/zh/reference/statements/select/with) 计算这两个查询中每一行的 [cityHash](/zh/reference/functions/regular-functions/hash-functions#cityhash64) 值之和；如果两个结果集完全一致，则返回 `1`。
+
+使用一些整数序列数据，并采用较为美观的格式：
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number DESC
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number ASC
+        )
+    ) AS q2_resultset_hash
+SELECT q1_resultset_hash = q2_resultset_hash AS Q1_equals_Q2
+FORMAT Pretty
+```
+
+会返回：
+
+```
+┏━━━━━━━━━━━━━━┓
+┃ Q1_equals_Q2 ┃
+┡━━━━━━━━━━━━━━┩
+│            1 │
+└──────────────┘
+```
+
+虽然这在很多场景下都很方便，但它并不能算是验证所有类型的结果集是否相等的万能办法，而且使用时也有一些注意事项。例如，只要任意一行包含 `NULL` 值，上述方法就会失效。

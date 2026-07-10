@@ -1,0 +1,57 @@
+---
+slug: /cloud/managed-postgres/monitoring/dashboard
+sidebarTitle: 'Panel'
+title: 'Panel de Monitoring de Managed Postgres'
+description: 'Panel integrado de Cloud Console para los servicios de Managed Postgres'
+keywords: ['managed postgres', 'monitoring', 'dashboard', 'cloud console', 'cpu', 'memory', 'iops']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
+
+La pestaña **Monitoring** en la barra lateral izquierda de una instancia muestra
+gráficos en tiempo real del uso de recursos y de la actividad de la base de datos en el
+periodo seleccionado.
+
+<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="Panel de Monitoring que muestra IOPS, uso de CPU, memoria, disco, tráfico de red, tamaño de la base de datos, conexiones, rendimiento, transacciones, tasa de aciertos de caché e interbloqueos" size="lg" border />
+
+<div id="panels">
+  ## Paneles
+</div>
+
+El panel agrupa las métricas en los siguientes paneles:
+
+* **IOPS** — operaciones de lectura y escritura en disco por segundo
+* **Uso de CPU** — desglosado por `user`, `system`, `iowait`, `softirq`
+  y `steal`
+* **Uso de memoria** — memoria usada, caché y búferes como porcentaje
+  del total
+* **Uso de disco** — espacio del sistema de archivos utilizado como porcentaje del almacenamiento
+  asignado al servicio
+* **Tráfico de red** — bytes recibidos y transmitidos
+* **Tamaño de la base de datos** — bytes por base de datos (incluida la base de datos predeterminada `postgres`
+  y cualquier base de datos creada por el usuario)
+* **Recuento de conexiones** — conexiones activas e inactivas
+* **Rendimiento de las operaciones** — fetches, inserciones, actualizaciones y eliminaciones por
+  segundo
+* **Transacciones** — commits y rollbacks por segundo
+* **Tasa de aciertos de caché** — porcentaje de lecturas de bloques atendidas desde la
+  caché de búfer en lugar de desde el disco
+* **Interbloqueos** — interbloqueos detectados por el servidor
+
+<div id="time-period">
+  ## Periodo de tiempo
+</div>
+
+Usa el selector **Periodo de tiempo** para cambiar entre la última hora, el último día,
+la última semana o un rango personalizado.
+
+<div id="related">
+  ## Páginas relacionadas
+</div>
+
+* [Endpoint de Prometheus](/es/products/managed-postgres/monitoring/prometheus) — recopila las mismas métricas en tu propio stack de observabilidad
+* [Referencia de métricas](/es/products/managed-postgres/monitoring/metrics) — lista completa de métricas con tipos y etiquetas
