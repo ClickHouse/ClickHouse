@@ -7,10 +7,12 @@ SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;
 
--- One row per granule (index_granularity_bytes = 0 disables adaptive granularity) so the granule
--- counts asserted below are stable regardless of CI-randomized merge-tree settings.
+-- One row per granule (index_granularity = 1) so the granule counts asserted below are stable
+-- regardless of CI-randomized merge-tree settings. index_granularity_bytes must not be 0 (0 disables
+-- adaptive granularity, which warns to stderr when CI randomizes min_rows/min_bytes_for_wide_part and
+-- fails Fast test); a large value never caps granules below the index_granularity = 1 row limit.
 CREATE TABLE tab (id UInt32, s String, INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 10485760;
 
 INSERT INTO tab SELECT number, if(number = 42, 'the rare token here', concat('common filler ', toString(number))) FROM numbers(128);
 
