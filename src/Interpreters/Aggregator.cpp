@@ -1937,19 +1937,19 @@ void Aggregator::writeToTemporaryFileImpl(
     for (size_t i = 0; i < params.aggregates_size; ++i)
         header.insert({aggregate_state_types[i]->createColumn(), aggregate_state_types[i], params.aggregates[i].column_name});
 
-    auto to_block = [&](const AggregatedChunk & agg_chunk)
+    auto to_block = [&](AggregatedChunk && agg_chunk)
     {
         Block block = header.cloneEmpty();
-        block.setColumns(agg_chunk.chunk.getColumns());
         block.info.bucket_num = agg_chunk.bucket_num;
         block.info.is_overflows = agg_chunk.is_overflows;
+        block.setColumns(agg_chunk.chunk.detachColumns());
         return block;
     };
 
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
         auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket);
-        auto block = to_block(agg_chunk);
+        auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
     }
@@ -1957,7 +1957,7 @@ void Aggregator::writeToTemporaryFileImpl(
     if (params.overflow_row)
     {
         auto agg_chunk = prepareChunkAndFillWithoutKey(data_variants, false, true);
-        auto block = to_block(agg_chunk);
+        auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
     }

@@ -1,0 +1,125 @@
+---
+description: 'Amazon S3 内の Delta Lake テーブルに対する読み取り専用のテーブル形式インターフェイスを提供します。'
+sidebarTitle: 'deltaLake'
+slug: /sql-reference/table-functions/deltalake
+title: 'deltaLake'
+doc_type: 'reference'
+---
+
+Amazon S3、Azure Blob Storage、またはローカルにマウントされたファイルシステム上の [Delta Lake](https://github.com/delta-io/delta) テーブルに対するテーブル形式インターフェイスを提供し、読み取りと書き込みの両方に対応します (v25.10 以降)
+
+<div id="syntax">
+  ## 構文
+</div>
+
+互換性維持のため、`deltaLake` は `deltaLakeS3` のエイリアスとしてサポートされています。
+
+```sql
+deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+deltaLakeLocal(path, [,format])
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+このテーブル関数の引数は、それぞれ `s3`、`azureBlobStorage`、`HDFS`、`file` テーブル関数と同じです。
+`format` 引数は、Delta Lake テーブル内のデータファイルのフォーマットを表します。
+
+省略可能な `extra_credentials` パラメータを使用すると、ClickHouse Cloud でロールベースアクセスを行うための `role_arn` を渡せます。設定手順については、[Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+指定した Delta Lake テーブルのデータを読み書きするための、指定した構造のテーブルを返します。
+
+<div id="examples">
+  ## 例
+</div>
+
+<div id="reading-data">
+  ### データの読み取り
+</div>
+
+`https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/` にある S3 ストレージ上のテーブルについて考えてみましょう。
+ClickHouse でそのテーブルのデータを読み取るには、次を実行します。
+
+```sql title="Query"
+SELECT
+    URL,
+    UserAgent
+FROM deltaLake('https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/')
+WHERE URL IS NOT NULL
+LIMIT 2
+```
+
+```response title="Response"
+┌─URL───────────────────────────────────────────────────────────────────┬─UserAgent─┐
+│ http://auto.ria.ua/search/index.kz/jobinmoscow/detail/55089/hasimages │         1 │
+│ http://auto.ria.ua/search/index.kz/jobinmoscow.ru/gosushi             │         1 │
+└───────────────────────────────────────────────────────────────────────┴───────────┘
+```
+
+<div id="inserting-data">
+  ### データの挿入
+</div>
+
+S3ストレージの `s3://ch-docs-s3-bucket/people_10k/` にあるテーブルについて考えます。
+このテーブルにデータを挿入するには、まずこの実験的機能を有効にします。
+
+```sql title="Query"
+SET allow_experimental_delta_lake_writes=1
+```
+
+次に、以下のように記述します。
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>') VALUES (10001, 'John', 'Smith', 'Male', 30)
+```
+
+```response title="Response"
+Query id: 09069b47-89fa-4660-9e42-3d8b1dde9b17
+
+Ok.
+
+1 row in set. Elapsed: 3.426 sec.
+```
+
+テーブルを再度読み取ることで、挿入が成功したことを確認できます:
+
+```sql title="Query"
+SELECT *
+FROM deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>')
+WHERE (firstname = 'John') AND (lastname = 'Smith')
+```
+
+```response title="Response"
+Query id: 65032944-bed6-4d45-86b3-a71205a2b659
+
+   ┌────id─┬─firstname─┬─lastname─┬─gender─┬─age─┐
+1. │ 10001 │ John      │ Smith    │ Male   │  30 │
+   └───────┴───────────┴──────────┴────────┴─────┘
+```
+
+<div id="virtual-columns">
+  ## 仮想カラム
+</div>
+
+* `_path` — ファイルへのパス。型: `LowCardinality(String)`。
+* `_file` — ファイル名。型: `LowCardinality(String)`。
+* `_size` — ファイルのサイズ (バイト単位) 。型: `Nullable(UInt64)`。ファイルサイズが不明な場合、値は `NULL` です。
+* `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
+* `_etag` — ファイルの ETag。型: `LowCardinality(String)`。ETag が不明な場合、値は `NULL` です。
+
+<div id="related">
+  ## 関連
+</div>
+
+* [DeltaLake エンジン](/ja/reference/engines/table-engines/integrations/deltalake)
+* [DeltaLake クラスターテーブル関数](/ja/reference/functions/table-functions/deltalakeCluster)

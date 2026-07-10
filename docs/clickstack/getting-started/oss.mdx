@@ -1,0 +1,135 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/oss
+title: 'Getting started with open source ClickStack'
+sidebarTitle: 'Open source'
+description: 'Getting started with Open Source ClickStack'
+doc_type: 'guide'
+keywords: ['ClickStack Open Source', 'getting started', 'Docker deployment', 'HyperDX UI', 'local deployment']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+To deploy **ClickStack Open Source**, where you run and manage ClickHouse and the ClickStack UI yourself, we provide prebuilt Docker images that bundle the UI, an OpenTelemetry collector, and ClickHouse into a single container -  making local development, testing, and self-managed deployments straightforward to get started.
+
+<Tip>
+A managed version of ClickStack is also available — see [Managed ClickStack](/clickstack/getting-started/managed).
+</Tip>
+
+These images are based on the official ClickHouse Debian package and are available in multiple distributions to suit different use cases.
+
+The simplest option is a **single-image distribution** that includes all core components of the stack bundled together:
+
+- **HyperDX UI**
+- **OpenTelemetry (OTel) collector**
+- **ClickHouse**
+
+This all-in-one image allows you to launch the full stack with a single command, making it ideal for testing, experimentation, or quick local deployments.
+
+<Steps>
+<Step>
+## Deploy the stack with docker {#deploy-stack-with-docker}
+
+The following will run an OpenTelemetry collector (on port 4317 and 4318), the HyperDX UI (on port 8080) and ClickHouse (8123).
+
+```shell
+docker run --name clickstack -p 8123:8123 -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest clickstack
+```
+
+<Info>
+**Image Name Update**
+
+ClickStack images are now published as `clickhouse/clickstack-*` (previously `docker.hyperdx.io/hyperdx/*`).
+</Info>
+
+<Tip>
+**Persisting data and settings**
+
+To persist data and settings across restarts of the container, you can modify the above docker command to mount the paths `/data/db`, `/var/lib/clickhouse` and `/var/log/clickhouse-server`. 
+
+For example:
+
+```shell
+# modify command to mount paths
+docker run \
+  --name clickstack \
+  -p 8123:8123 \
+  -p 8080:8080 \
+  -p 4317:4317 \
+  -p 4318:4318 \
+  -v "$(pwd)/.volumes/db:/data/db" \
+  -v "$(pwd)/.volumes/ch_data:/var/lib/clickhouse" \
+  -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
+  clickhouse/clickstack-all-in-one:latest
+```
+</Tip>
+</Step>
+<Step>
+## Navigate to the ClickStack UI {#navigate-to-hyperdx-ui}
+
+Visit [http://localhost:8080](http://localhost:8080) to access the ClickStack UI (HyperDX).
+
+Create a user, providing a username and password that meets the complexity requirements. 
+
+<Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg"/>
+
+HyperDX will automatically connect to the local cluster and create data sources for the logs, traces, metrics, and sessions - allowing you to explore the product immediately.
+</Step>
+<Step>
+## Explore the product {#explore-the-product}
+
+With the stack deployed, try one of our same datasets.
+
+To continue using the local cluster:
+
+- [Example dataset](/clickstack/example-datasets/sample-data) - Load an example dataset from our public demo. Diagnose a simple issue.
+- [Local files and metrics](/clickstack/example-datasets/local-data) - Load local files and monitor system on OSX or Linux using a local OTel collector.
+
+<br/>
+Alternatively, you can connect to a demo cluster where you can explore a larger dataset: 
+
+- [Remote demo dataset](/clickstack/example-datasets/remote-demo-data) - Explore a demo dataset in our demo ClickHouse service.
+</Step>
+</Steps>
+
+## Alternative deployment models {#alternative-deployment-models}
+
+### Local mode {#local-mode}
+
+Local mode is a way to deploy HyperDX without needing to authenticate. 
+
+**Authentication isn't supported**. 
+
+This mode is intended to be used for quick testing, development, demos and debugging use cases where authentication and settings persistence isn't necessary.
+
+For further details on this deployment model, see ["Local Mode Only"](/clickstack/deployment/local-mode-only).
+
+### Hosted version {#hosted-version}
+
+You can use a hosted version of ClickStack in local mode available at [play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com).
+
+### Self-hosted version {#self-hosted-version}
+
+<Steps>
+<Step>
+### Run with docker {#run-local-with-docker}
+
+The self-hosted local mode image comes with an OpenTelemetry collector, the ClickStack UI and a ClickHouse server pre-configured as well. This makes it easy to consume telemetry data from your applications and visualize it with minimal external setup. To get started with the self-hosted version, simply run the Docker container with the appropriate ports forwarded:
+
+```shell
+docker run -p 8080:8080 clickhouse/clickstack-local:latest
+```
+
+Unlike the "All in one" image, you will not be prompted to create a user as **local mode does not include authentication**.
+</Step>
+<Step>
+### Complete connection credentials {#complete-connection-credentials}
+
+To connect to your own **external ClickHouse cluster**, you can manually enter your connection credentials.
+
+Alternatively, for a quick exploration of the product, you can also click **Connect to Demo Server** to access preloaded datasets and try ClickStack with no setup required.
+
+<Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Credentials" size="md"/>
+
+If connecting to the demo server, you can explore the dataset with the [demo dataset instructions](/clickstack/example-datasets/remote-demo-data).
+</Step>
+</Steps>

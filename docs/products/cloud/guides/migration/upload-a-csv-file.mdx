@@ -1,0 +1,105 @@
+---
+title: 'Upload files to Cloud'
+slug: /cloud/migrate/upload-a-csv-file
+description: 'Learn how to upload files to Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+ClickHouse Cloud provides an easy way to import your files and supports the
+following formats:
+
+| Format                          |
+|---------------------------------|
+| `CSV`                           |
+| `CSVWithNamesAndTypes`          |
+| `CSVWithNames`                  |
+| `JSONEachRow`                   |
+| `TabSeparated`                  |
+| `TabSeparatedWithNames`         |
+| `TabSeparatedWithNamesAndTypes` |
+
+<Steps>
+<Step>
+## Upload a file {#upload-file}
+
+From the Cloud homepage, select your service as shown below:
+
+<Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
+
+If your service is idle you will need to wake it.
+
+Select `Data sources` in the left hand tab as shown below:
+
+<Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
+
+Next select `Upload a file` on the right side of the data sources page:
+
+<Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
+
+A file dialogue will pop up allowing you to select the file that you wish to 
+use to insert data into a table on your Cloud service.
+
+<Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
+</Step>
+<Step>
+## Configure table {#configure-table}
+
+Once the file has uploaded you will be able to configure the table where you want 
+to insert the data to. A preview of the table with the first three rows is shown.
+
+<Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
+
+You can now select a destination table. The options are:
+
+- a new table
+- an existing table
+
+<br/>
+You can specify which database you want to upload the data to, and in the case of 
+a new table, the name of the table that will be created. You will also be able to select the sorting key:
+
+<Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
+
+Columns read from the file are shown as `Source field`s and for each field, you
+can change:
+- the inferred type
+- the default value
+- whether to make the column [Nullable](/reference/data-types/nullable) or not
+
+<Image img="/images/cloud/migrate/csv_06.webp" alt="upload_file_06" />
+
+<Info>
+**Excluding fields**
+
+You can also remove a field if you don't want to include it in the import
+</Info>
+
+You can specify the type of table engine that you want to use:
+
+- `MergeTree`
+- `ReplacingMergeTree`
+- `SummingMergeTree`
+- `Null`
+<br/>
+You can specify a partitioning key expression and primary
+key expression.
+
+<Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
+
+Click `Import to ClickHouse` (shown above) to import the data. The data import will be queued as
+indicated by the `queued` status badge in the `Status` column as shown below. You can also click
+`Open as query` (shown above) to open the insert query in the SQL console. The query will insert
+the file which was uploaded to an S3 bucket using the `URL` table function.
+
+<Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
+
+If the job fails you will see a `failed` status badge under the `Status` column of 
+the `Data upload history` tab. You can click `View Details` for more information 
+on why the upload failed. You may need to modify the table configuration or clean
+the data based on the error message for the failed insert.
+
+<Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
+</Step>
+</Steps>

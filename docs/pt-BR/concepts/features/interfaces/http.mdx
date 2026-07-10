@@ -1,0 +1,1264 @@
+---
+description: 'Documentação da interface HTTP do ClickHouse, que fornece acesso à API REST
+  do ClickHouse a partir de qualquer plataforma e linguagem de programação'
+sidebarTitle: 'interface HTTP'
+slug: /interfaces/http
+title: 'interface HTTP'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+Para os exemplos deste artigo, você precisará de:
+
+* uma instância do servidor ClickHouse em execução
+* ter o `curl` instalado. No Ubuntu ou Debian, execute `sudo apt install curl` ou consulte esta [documentação](https://curl.se/download.html) para ver as instruções de instalação.
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+A interface HTTP permite usar o ClickHouse em qualquer plataforma, com qualquer linguagem de programação, na forma de uma API REST. A interface HTTP é mais limitada do que a interface nativa, mas oferece melhor suporte a linguagens.
+
+Por padrão, o `clickhouse-server` escuta nas seguintes portas:
+
+* porta 8123 para HTTP
+* a porta 8443 para HTTPS pode ser habilitada
+
+Se você fizer uma solicitação `GET /` sem parâmetros, será retornado um código de resposta 200 junto com a string &quot;Ok.&quot;:
+
+```bash
+$ curl 'http://localhost:8123/'
+Ok.
+```
+
+&quot;Ok.&quot; é o valor padrão definido em [`http_server_default_response`](/pt-BR/reference/settings/server-settings/settings#http_server_default_response) e pode ser alterado, se desejar.
+
+Veja também: [Observações sobre códigos de resposta HTTP](#http_response_codes_caveats).
+
+<div id="web-ui">
+  ## Interface web
+</div>
+
+O ClickHouse inclui uma interface web, que pode ser acessada no seguinte endereço:
+
+```text
+http://localhost:8123/play
+```
+
+A interface web oferece suporte à exibição do progresso durante a execução da consulta, ao cancelamento de consultas e à transmissão de resultados.
+Ela tem um recurso oculto para exibir gráficos e diagramas de pipelines de consulta.
+
+Depois de executar uma consulta com sucesso, aparece um botão de download que permite baixar os resultados da consulta em vários formatos, incluindo CSV, TSV, JSON, JSONLines, Parquet, Markdown ou qualquer formato personalizado compatível com o ClickHouse. A funcionalidade de download usa o cache de consultas para recuperar os resultados com eficiência, sem reexecutar a consulta. Ela fará o download do conjunto completo de resultados mesmo que a UI exiba apenas uma das muitas páginas.
+
+A interface web foi projetada para profissionais como você.
+
+<Image img="/images/play.webp" size="md" alt="captura de tela da interface web do ClickHouse" />
+
+Em scripts de verificação de integridade, use a requisição `GET /ping`. Este handler sempre retorna &quot;Ok.&quot; (com uma quebra de linha no final). Disponível a partir da versão 18.12.13. Veja também `/replicas_status` para verificar o atraso da réplica.
+
+```bash
+$ curl 'http://localhost:8123/ping'
+Ok.
+$ curl 'http://localhost:8123/replicas_status'
+Ok.
+```
+
+<div id="querying">
+  ## Consultas por HTTP/HTTPS
+</div>
+
+Para fazer consultas por HTTP/HTTPS, há três opções:
+
+* enviar a solicitação como um parâmetro `query` na URL
+* usar o método POST.
+* enviar o início da consulta no parâmetro `query` e o restante usando POST
+
+<Note>
+  O tamanho da URL é limitado a 1 MiB por padrão, mas isso pode ser alterado com a configuração `http_max_uri_size`.
+</Note>
+
+Se a solicitação for bem-sucedida, você receberá o código de resposta 200 e o resultado no corpo da resposta.
+Se ocorrer um erro, você receberá o código de resposta 500 e um texto descritivo do erro no corpo da resposta.
+
+As solicitações que usam GET são &#39;somente leitura&#39;. Isso significa que, para consultas que modificam dados, você só pode usar o método POST.
+Você pode enviar a própria consulta tanto no corpo da requisição POST quanto como parâmetro na URL. Vamos ver alguns exemplos.
+
+No exemplo abaixo, `curl` é usado para enviar a consulta `SELECT 1`. Observe o uso de codificação de URL para o espaço: `%20`.
+
+```bash title="command"
+curl 'http://localhost:8123/?query=SELECT%201'
+```
+
+```response title="Response"
+1
+```
+
+Neste exemplo, o `wget` é usado com os parâmetros `-nv` (não detalhado) e `-O-` para exibir o resultado no terminal.
+Nesse caso, não é necessário usar codificação de URL para o espaço:
+
+```bash title="command"
+wget -nv -O- 'http://localhost:8123/?query=SELECT 1'
+```
+
+```response
+1
+```
+
+Neste exemplo, enviamos uma requisição HTTP bruta para o netcat:
+
+```bash title="command"
+echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
+```
+
+```response title="response"
+HTTP/1.0 200 OK
+X-ClickHouse-Summary: {"read_rows":"1","read_bytes":"1","written_rows":"0","written_bytes":"0","total_rows_to_read":"1","result_rows":"0","result_bytes":"0","elapsed_ns":"4505959","memory_usage":"1111711"}
+Date: Tue, 11 Nov 2025 18:16:01 GMT
+Connection: Close
+Content-Type: text/tab-separated-values; charset=UTF-8
+Access-Control-Expose-Headers: X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag
+X-ClickHouse-Server-Display-Name: MacBook-Pro.local
+X-ClickHouse-Query-Id: ec0d8ec6-efc4-4e1d-a14f-b748e01f5294
+X-ClickHouse-Format: TabSeparated
+X-ClickHouse-Timezone: Europe/London
+X-ClickHouse-Exception-Tag: dngjzjnxkvlwkeua
+
+1
+```
+
+Como você pode ver, o comando `curl` é um tanto inconveniente, já que os espaços precisam ser escapados na URL.
+Embora o `wget` faça esse escape automaticamente, não recomendamos usá-lo porque ele não funciona bem com HTTP 1.1 ao usar keep-alive e Transfer-Encoding: chunked.
+
+```bash
+$ echo 'SELECT 1' | curl 'http://localhost:8123/' --data-binary @-
+1
+
+$ echo 'SELECT 1' | curl 'http://localhost:8123/?query=' --data-binary @-
+1
+
+$ echo '1' | curl 'http://localhost:8123/?query=SELECT' --data-binary @-
+1
+```
+
+Se parte da consulta for enviada no parâmetro e outra parte no POST, uma quebra de linha será inserida entre essas duas partes de dados.
+Por exemplo, isto não funcionará:
+
+```bash
+$ echo 'ECT 1' | curl 'http://localhost:8123/?query=SEL' --data-binary @-
+Code: 59, e.displayText() = DB::Exception: Syntax error: failed at position 0: SEL
+ECT 1
+, expected One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE., e.what() = DB::Exception
+```
+
+Por padrão, os dados são retornados no formato [`TabSeparated`](/pt-BR/reference/formats/TabSeparated/TabSeparated).
+
+A cláusula `FORMAT` é usada na consulta para especificar qualquer outro formato. Por exemplo:
+
+```bash title="command"
+wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
+```
+
+```response title="Response"
+{
+    "meta":
+    [
+        {
+            "name": "1",
+            "type": "UInt8"
+        },
+        {
+            "name": "2",
+            "type": "UInt8"
+        },
+        {
+            "name": "3",
+            "type": "UInt8"
+        }
+    ],
+
+    "data":
+    [
+        {
+            "1": 1,
+            "2": 2,
+            "3": 3
+        }
+    ],
+
+    "rows": 1,
+
+    "statistics":
+    {
+        "elapsed": 0.000515,
+        "rows_read": 1,
+        "bytes_read": 1
+    }
+}
+```
+
+Você pode usar o parâmetro de URL `default_format` ou o cabeçalho `X-ClickHouse-Format` para especificar um formato padrão diferente de `TabSeparated`.
+
+```bash
+$ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
+┏━━━┓
+┃ 1 ┃
+┡━━━┩
+│ 1 │
+└───┘
+```
+
+Você pode usar o método POST com consultas parametrizadas. Os parâmetros são especificados entre chaves, com o nome e o tipo do parâmetro, como em `{name:Type}`. Os valores dos parâmetros são enviados com `param_name`:
+
+```bash
+$ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "param_p2=4" 'http://localhost:8123/'
+
+7
+```
+
+<div id="insert-queries">
+  ## Consultas `INSERT` via HTTP/HTTPS
+</div>
+
+O método `POST` de transmissão de dados é necessário para consultas `INSERT`. Nesse caso, você pode escrever o início da consulta no parâmetro da URL e usar o POST para enviar os dados a serem inseridos. Os dados a serem inseridos podem ser, por exemplo, um dump do MySQL separado por tabulações. Dessa forma, a consulta `INSERT` substitui o `LOAD DATA LOCAL INFILE` do MySQL.
+
+<div id="examples">
+  ### Exemplos
+</div>
+
+Para criar uma tabela:
+
+```bash
+$ echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+Para usar a consulta `INSERT`, já conhecida, para inserir dados:
+
+```bash
+$ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+Para enviar os dados separadamente da consulta:
+
+```bash
+$ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
+```
+
+É possível especificar qualquer formato de dados. Por exemplo, é possível especificar o formato &#39;Values&#39;, o mesmo formato usado ao escrever `INSERT INTO t VALUES`:
+
+```bash
+$ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
+```
+
+Para inserir dados de um dump com campos separados por tabulação, especifique o formato correspondente:
+
+```bash
+$ echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
+```
+
+Para ler o conteúdo da tabela:
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
+7
+8
+9
+10
+11
+12
+1
+2
+3
+4
+5
+6
+```
+
+<Note>
+  Os dados são exibidos em ordem aleatória devido ao processamento paralelo das consultas
+</Note>
+
+Para excluir a tabela:
+
+```bash
+$ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+Para solicitações bem-sucedidas que não retornam uma tabela de dados, retorna-se um corpo de resposta vazio.
+
+<div id="compression">
+  ## Compressão
+</div>
+
+A compressão pode ser usada para reduzir o tráfego de rede ao transmitir grandes volumes de dados ou para criar dumps já comprimidos.
+
+Ao transmitir dados, você pode usar o formato de compressão interno do ClickHouse. Os dados comprimidos têm um formato não padrão, e você precisa do programa `clickhouse-compressor` para trabalhar com eles. Ele é instalado por padrão com o pacote `clickhouse-client`.
+
+Para aumentar a eficiência da inserção de dados, desative a verificação de checksum no lado do servidor com a configuração [`http_native_compression_disable_checksumming_on_decompress`](/pt-BR/reference/settings/session-settings#http_native_compression_disable_checksumming_on_decompress).
+
+Se você especificar `compress=1` na URL, o servidor comprimirá os dados enviados para você. Se você especificar `decompress=1` na URL, o servidor descomprimirá os dados enviados no método `POST`.
+
+Você também pode optar por usar a [compressão HTTP](https://en.wikipedia.org/wiki/HTTP_compression). O ClickHouse oferece suporte aos seguintes [métodos de compressão](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens):
+
+* `gzip`
+* `br`
+* `deflate`
+* `xz`
+* `zstd`
+* `lz4`
+* `bz2`
+* `snappy`
+
+Para enviar uma solicitação `POST` comprimida, adicione o cabeçalho de solicitação `Content-Encoding: compression_method`.
+
+Para que o ClickHouse comprima a resposta, adicione o cabeçalho `Accept-Encoding: compression_method` à solicitação.
+
+Você pode configurar o nível de compressão dos dados usando a configuração [`http_zlib_compression_level`](/pt-BR/reference/settings/session-settings#http_zlib_compression_level) para todos os métodos de compressão.
+
+<Info>
+  Alguns clientes HTTP podem descomprimir por padrão os dados recebidos do servidor (com `gzip` e `deflate`), e você pode receber dados descomprimidos mesmo que use corretamente as configurações de compressão.
+</Info>
+
+<div id="examples-compression">
+  ## Exemplos
+</div>
+
+Para enviar dados compactados ao servidor:
+
+```bash
+echo "SELECT 1" | gzip -c | \
+curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
+```
+
+Para receber o arquivo compactado de dados do servidor:
+
+```bash
+curl -vsS "http://localhost:8123/?enable_http_compression=1" \
+-H 'Accept-Encoding: gzip' --output result.gz -d 'SELECT number FROM system.numbers LIMIT 3'
+
+zcat result.gz
+0
+1
+2
+```
+
+Para receber dados compactados do servidor, use `gunzip` para descompactá-los:
+
+```bash
+curl -sS "http://localhost:8123/?enable_http_compression=1" \
+-H 'Accept-Encoding: gzip' -d 'SELECT number FROM system.numbers LIMIT 3' | gunzip -
+0
+1
+2
+```
+
+<div id="default-database">
+  ## Banco de dados padrão
+</div>
+
+Você pode usar o parâmetro `database` na URL ou o cabeçalho `X-ClickHouse-Database` para especificar o banco de dados padrão.
+
+```bash
+echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?database=system' --data-binary @-
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+```
+
+Por padrão, o banco de dados registrado nas configurações do servidor é usado como banco de dados padrão. Por padrão, esse é o banco de dados chamado `default`. Como alternativa, você sempre pode especificar o banco de dados usando um ponto antes do nome da tabela.
+
+<div id="authentication">
+  ## Autenticação
+</div>
+
+O nome de usuário e a senha podem ser informados de uma destas três formas:
+
+1. Usando autenticação HTTP básica.
+
+Por exemplo:
+
+```bash
+echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
+```
+
+2. Nos parâmetros de URL `user` e `password`
+
+<Warning>
+  Não recomendamos usar esse método, pois o parâmetro pode ser registrado em log por um proxy web e armazenado em cache no navegador
+</Warning>
+
+Por exemplo:
+
+```bash
+echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
+```
+
+3. Usando os cabeçalhos &#39;X-ClickHouse-User&#39; e &#39;X-ClickHouse-Key&#39;
+
+Por exemplo:
+
+```bash
+echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: password' 'http://localhost:8123/' -d @-
+```
+
+Se o nome de usuário não for especificado, será usado o nome `default`. Se a senha não for especificada, será usada uma senha vazia.
+Você também pode usar os parâmetros de URL para especificar configurações para processar uma única consulta ou perfis inteiros de configurações.
+
+Por exemplo:
+
+```text
+http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
+```
+
+```bash
+$ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+```
+
+Para mais informações, consulte:
+
+* [Configurações](/pt-BR/reference/settings/session-settings)
+* [SET](/pt-BR/reference/statements/set)
+
+<div id="using-clickhouse-sessions-in-the-http-protocol">
+  ## Uso de sessões do ClickHouse no protocolo HTTP
+</div>
+
+Você também pode usar sessões do ClickHouse no protocolo HTTP. Para isso, é necessário adicionar o parâmetro `GET` `session_id` à requisição. Você pode usar qualquer string como ID da sessão.
+
+Por padrão, a sessão é encerrada após 60 segundos de inatividade. Para alterar esse timeout (em segundos), modifique a configuração `default_session_timeout` na configuração do servidor ou adicione o parâmetro `GET` `session_timeout` à requisição.
+
+Para verificar o status da sessão, use o parâmetro `session_check=1`. Apenas uma consulta por vez pode ser executada em uma única sessão.
+
+Você pode receber informações sobre o progresso de uma consulta nos cabeçalhos de resposta `X-ClickHouse-Progress`. Para isso, habilite [`send_progress_in_http_headers`](/pt-BR/reference/settings/session-settings#send_progress_in_http_headers).
+
+Abaixo está um exemplo da sequência de cabeçalhos:
+
+```text
+X-ClickHouse-Progress: {"read_rows":"261636","read_bytes":"2093088","total_rows_to_read":"1000000","elapsed_ns":"14050417","memory_usage":"22205975"}
+X-ClickHouse-Progress: {"read_rows":"654090","read_bytes":"5232720","total_rows_to_read":"1000000","elapsed_ns":"27948667","memory_usage":"83400279"}
+X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows_to_read":"1000000","elapsed_ns":"38002417","memory_usage":"80715679"}
+```
+
+Os possíveis campos de cabeçalho são:
+
+| Campo de cabeçalho   | Descrição                                                                 |
+| -------------------- | ------------------------------------------------------------------------- |
+| `read_rows`          | Número de linhas lidas.                                                   |
+| `read_bytes`         | Volume de dados lidos em bytes.                                           |
+| `total_rows_to_read` | Número total de linhas a serem lidas.                                     |
+| `written_rows`       | Número de linhas gravadas.                                                |
+| `written_bytes`      | Volume de dados gravados em bytes.                                        |
+| `elapsed_ns`         | Tempo de execução da consulta em nanossegundos.                           |
+| `memory_usage`       | Memória em bytes usada pela consulta. (**Disponível a partir da v25.11**) |
+
+As requisições em execução não param automaticamente se a conexão HTTP for perdida. A análise e a formatação dos dados são realizadas no lado do servidor, e o uso da rede pode ser ineficiente.
+
+Existem os seguintes parâmetros opcionais:
+
+| Parâmetros             | Descrição                                                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query_id` (opcional)  | Pode ser informado como o ID da consulta (qualquer string). [`replace_running_query`](/pt-BR/reference/settings/session-settings#replace_running_query) |
+| `quota_key` (opcional) | Pode ser informado como a chave de quota (qualquer string). [&quot;Quotas&quot;](/pt-BR/concepts/features/configuration/server-config/quotas)           |
+
+A interface HTTP permite passar dados externos (tabelas temporárias externas) para consulta. Para mais informações, consulte [&quot;Dados externos para processamento de consultas&quot;](/pt-BR/reference/engines/table-engines/special/external-data).
+
+<div id="response-buffering">
+  ## Bufferização de resposta
+</div>
+
+A bufferização de resposta pode ser habilitada no lado do servidor. Os seguintes parâmetros de URL são fornecidos para essa finalidade:
+
+* `buffer_size`
+* `wait_end_of_query`
+
+As seguintes configurações podem ser usadas:
+
+* [`http_response_buffer_size`](/pt-BR/reference/settings/session-settings#http_response_buffer_size)
+* [`http_wait_end_of_query`](/pt-BR/reference/settings/session-settings#http_wait_end_of_query)
+
+`buffer_size` determina o número de bytes do resultado a serem armazenados em buffer na memória do servidor. Se o corpo do resultado for maior que esse limite, o buffer será gravado no canal HTTP, e os dados restantes serão enviados diretamente para o canal HTTP.
+
+Para garantir que toda a resposta seja armazenada em buffer, defina `wait_end_of_query=1`. Nesse caso, os dados que não forem armazenados na memória serão armazenados em buffer em um arquivo temporário do servidor.
+
+Por exemplo:
+
+```bash
+curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wait_end_of_query=1' -d 'SELECT toUInt8(number) FROM system.numbers LIMIT 9000000 FORMAT RowBinary'
+```
+
+<Tip>
+  Use bufferização para evitar situações em que ocorra um erro no processamento da consulta depois que o código de resposta e os cabeçalhos HTTP forem enviados ao cliente. Nessa situação, uma mensagem de erro é gravada no final do corpo da resposta e, no lado do cliente, o erro só pode ser detectado na etapa de parsing.
+</Tip>
+
+<div id="setting-role-with-query-parameters">
+  ## Definindo uma role com parâmetros de consulta
+</div>
+
+Este recurso foi adicionado ao ClickHouse 24.4.
+
+Em cenários específicos, pode ser necessário definir primeiro a role concedida antes de executar a própria instrução.
+No entanto, não é possível enviar `SET ROLE` e a instrução juntos, pois múltiplas instruções não são permitidas:
+
+```bash
+curl -sS "http://localhost:8123" --data-binary "SET ROLE my_role;SELECT * FROM my_table;"
+```
+
+O comando acima resulta em um erro:
+
+```sql
+Code: 62. DB::Exception: Syntax error (Multi-statements are not allowed)
+```
+
+Para contornar essa limitação, use o parâmetro de consulta `role`:
+
+```bash
+curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_table;"
+```
+
+Isso equivale a executar `SET ROLE my_role` antes da instrução.
+
+Além disso, é possível especificar vários parâmetros de consulta `role`:
+
+```bash
+curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "SELECT * FROM my_table;"
+```
+
+Neste caso, `?role=my_role&role=my_other_role` equivale a executar `SET ROLE my_role, my_other_role` antes da instrução.
+
+<div id="http_response_codes_caveats">
+  ## Ressalvas sobre códigos de resposta HTTP
+</div>
+
+Devido às limitações do protocolo HTTP, um código de resposta HTTP 200 não garante que uma consulta tenha sido bem-sucedida.
+
+Veja um exemplo:
+
+```bash
+curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)"
+*   Trying 127.0.0.1:8123...
+...
+< HTTP/1.1 200 OK
+...
+Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(number, 2) :: 1) -> throwIf(equals(number, 2))
+```
+
+O motivo desse comportamento é a própria natureza do protocolo HTTP. O cabeçalho HTTP é enviado primeiro com o código HTTP 200, seguido pelo corpo HTTP, e então o erro é injetado no corpo como texto simples.
+
+Esse comportamento é independente do formato usado, seja `Native`, `TSV` ou `JSON`; a mensagem de erro sempre aparecerá no meio do fluxo de resposta.
+
+Você pode mitigar esse problema habilitando `wait_end_of_query=1` ([Buffering de resposta](#response-buffering)). Nesse caso, o envio do cabeçalho HTTP é adiado até que toda a consulta seja concluída. No entanto, isso não resolve completamente o problema, porque o resultado ainda precisa caber em [`http_response_buffer_size`](/pt-BR/reference/settings/session-settings#http_response_buffer_size), e outras configurações, como [`send_progress_in_http_headers`](/pt-BR/reference/settings/session-settings#send_progress_in_http_headers), podem interferir no atraso do cabeçalho.
+
+<Tip>
+  A única forma de capturar todos os erros é analisar o corpo HTTP antes de fazer o parsing usando o formato necessário.
+</Tip>
+
+Essas exceções no ClickHouse têm um formato consistente, como mostrado abaixo, independentemente do formato usado (por exemplo, `Native`, `TSV`, `JSON` etc.) quando `http_write_exception_in_output_format=0` (padrão). Isso facilita o parsing e a extração de mensagens de erro no lado do cliente.
+
+```text
+\r\n
+__exception__\r\n
+<TAG>\r\n
+<error message>\r\n
+<message_length> <TAG>\r\n
+__exception__\r\n
+
+```
+
+Onde `<TAG>` é uma tag aleatória de 16 bytes, a mesma tag enviada no header de resposta `X-ClickHouse-Exception-Tag`.
+A `<error message>` é a mensagem real da exceção (o comprimento exato pode ser encontrado em `<message_length>`). Todo o bloco de exceção descrito acima pode ter até 16 KiB.
+
+Aqui está um exemplo no formato `JSON`
+
+```bash
+$ curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)+FORMAT+JSON"
+...
+{
+    "meta":
+    [
+        {
+            "name": "sleepEachRow(0.001)",
+            "type": "UInt8"
+        },
+        {
+            "name": "throwIf(equals(number, 2))",
+            "type": "UInt8"
+        }
+    ],
+
+    "data":
+    [
+        {
+            "sleepEachRow(0.001)": 0,
+            "throwIf(equals(number, 2))": 0
+        },
+        {
+            "sleepEachRow(0.001)": 0,
+            "throwIf(equals(number, 2))": 0
+        }
+__exception__
+dmrdfnujjqvszhav
+Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(__table1.number, 2_UInt8) :: 1) -> throwIf(equals(__table1.number, 2_UInt8)) UInt8 : 0'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 25.11.1.1)
+262 dmrdfnujjqvszhav
+__exception__
+```
+
+Veja um exemplo semelhante, mas no formato `CSV`
+
+```bash
+$ curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)+FORMAT+CSV"
+...
+<
+0,0
+0,0
+
+__exception__
+rumfyutuqkncbgau
+Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(__table1.number, 2_UInt8) :: 1) -> throwIf(equals(__table1.number, 2_UInt8)) UInt8 : 0'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 25.11.1.1)
+262 rumfyutuqkncbgau
+__exception__
+```
+
+<div id="cli-queries-with-parameters">
+  ## Consultas com parâmetros
+</div>
+
+Você pode criar uma consulta com parâmetros e informar os valores deles por meio dos parâmetros correspondentes da solicitação HTTP. Para mais informações, consulte [Consultas com parâmetros para CLI](/pt-BR/concepts/features/interfaces/client#cli-queries-with-parameters).
+
+<div id="example-3">
+  ### Exemplo
+</div>
+
+```bash
+$ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
+```
+
+<div id="tabs-in-url-parameters">
+  ### Tabulações em parâmetros de URL
+</div>
+
+Os parâmetros de consulta são interpretados a partir do formato &quot;escaped&quot;. Isso traz alguns benefícios, como a possibilidade de interpretar valores nulos sem ambiguidade como `\N`. Isso significa que o caractere de tabulação deve ser codificado como `\t` (ou `\` seguido de uma tabulação). Por exemplo, o trecho a seguir contém uma tabulação real entre `abc` e `123`, e a string de entrada é dividida em dois valores:
+
+```bash
+curl -sS "http://localhost:8123" -d "SELECT splitByChar('\t', 'abc      123')"
+```
+
+```response
+['abc','123']
+```
+
+No entanto, se você tentar codificar um caractere de tabulação real usando `%09` em um parâmetro de URL, ele não será interpretado corretamente:
+
+```bash
+curl -sS "http://localhost:8123?param_arg1=abc%09123" -d "SELECT splitByChar('\t', {arg1:String})"
+Code: 457. DB::Exception: Value abc    123 cannot be parsed as String for query parameter 'arg1' because it isn't parsed completely: only 3 of 7 bytes was parsed: abc. (BAD_QUERY_PARAMETER) (version 23.4.1.869 (official build))
+```
+
+Se estiver usando parâmetros de URL, você precisará codificar `\t` como `%5C%09`. Por exemplo:
+
+```bash
+curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar('\t', {arg1:String})"
+```
+
+```response
+['abc','123']
+```
+
+<div id="predefined_http_interface">
+  ## Interface HTTP predefinida
+</div>
+
+O ClickHouse suporta consultas específicas por meio da interface HTTP. Por exemplo, você pode gravar dados em uma tabela da seguinte forma:
+
+```bash
+$ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
+```
+
+O ClickHouse também oferece suporte a uma Interface HTTP predefinida, o que pode facilitar a integração com ferramentas de terceiros, como o [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter). Vamos ver um exemplo.
+
+Antes de mais nada, adicione esta seção ao arquivo de configuração do servidor.
+
+`http_handlers` é configurado para conter várias `rule`. O ClickHouse faz a correspondência entre as requisições HTTP recebidas e o tipo predefinido em `rule`, e a primeira regra correspondente executa o handler. Em seguida, o ClickHouse executa a consulta predefinida correspondente se a correspondência for bem-sucedida.
+
+```yaml title="config.xml"
+<http_handlers>
+    <rule>
+        <url>/predefined_query</url>
+        <methods>POST,GET</methods>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT * FROM system.metrics LIMIT 5 FORMAT Template SETTINGS format_template_resultset = 'prometheus_template_output_format_resultset', format_template_row = 'prometheus_template_output_format_row', format_template_rows_between_delimiter = '\n'</query>
+        </handler>
+    </rule>
+    <rule>...</rule>
+    <rule>...</rule>
+</http_handlers>
+```
+
+Agora você pode fazer uma solicitação diretamente à URL para obter dados no formato Prometheus:
+
+```bash
+$ curl -v 'http://localhost:8123/predefined_query'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /predefined_query HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+>
+< HTTP/1.1 200 OK
+< Date: Tue, 28 Apr 2020 08:52:56 GMT
+< Connection: Keep-Alive
+< Content-Type: text/plain; charset=UTF-8
+< X-ClickHouse-Server-Display-Name: i-mloy5trc
+< Transfer-Encoding: chunked
+< X-ClickHouse-Query-Id: 96fe0052-01e6-43ce-b12a-6b7370de6e8a
+< X-ClickHouse-Format: Template
+< X-ClickHouse-Timezone: Asia/Shanghai
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
+<
+# HELP "Query" "Número de consultas em execução"
+# TYPE "Query" counter
+"Query" 1
+
+# HELP "Merge" "Número de merges em segundo plano em execução"
+# TYPE "Merge" counter
+"Merge" 0
+
+# HELP "PartMutation" "Número de mutações (ALTER DELETE/UPDATE)"
+# TYPE "PartMutation" counter
+"PartMutation" 0
+
+# HELP "ReplicatedFetch" "Número de partes de dados sendo obtidas da réplica"
+# TYPE "ReplicatedFetch" counter
+"ReplicatedFetch" 0
+
+# HELP "ReplicatedSend" "Número de partes de dados sendo enviadas para as réplicas"
+# TYPE "ReplicatedSend" counter
+"ReplicatedSend" 0
+
+* Connection #0 to host localhost left intact
+
+* Connection #0 to host localhost left intact
+```
+
+As opções de configuração de `http_handlers` funcionam da seguinte forma.
+
+`rule` pode configurar os seguintes parâmetros:
+
+* `method`
+* `headers`
+* `url`
+* `full_url`
+* `handler`
+
+Cada um deles é explicado abaixo:
+
+* `method` é responsável por corresponder à parte do método da requisição HTTP. `method` está totalmente em conformidade com a definição de [`method`]
+  (https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) no protocolo HTTP. É uma configuração opcional. Se não estiver definido no
+  arquivo de configuração, não fará correspondência com a parte do método da requisição HTTP.
+
+* `url` é responsável por corresponder à parte da URL (path e query string) da requisição HTTP.
+  Se `url` tiver o prefixo `regex:`, serão esperadas expressões regulares [RE2](https://github.com/google/re2).
+  É uma configuração opcional. Se não estiver definido no arquivo de configuração, não fará correspondência com a parte da URL da requisição HTTP.
+
+* `full_url` é igual a `url`, mas inclui a URL completa, isto é, `schema://host:port/path?query_string`.
+  Observe que o ClickHouse não oferece suporte a &quot;virtual hosts&quot;, portanto `host` é um endereço IP (e não o valor do cabeçalho `Host`).
+
+* `empty_query_string` - garante que não haja query string (`?query_string`) na requisição
+
+* `headers` são responsáveis por corresponder à parte dos cabeçalhos da requisição HTTP. É compatível com expressões regulares RE2. É uma configuração opcional
+  . Se não estiver definido no arquivo de configuração, não fará correspondência com a parte dos cabeçalhos da requisição HTTP.
+
+* `handler` contém a parte principal do processamento.
+
+  Ele pode ter o seguinte `type`:
+
+  * [`predefined_query_handler`](#predefined_query_handler)
+  * [`dynamic_query_handler`](#dynamic_query_handler)
+  * [`static`](#static)
+  * [`redirect`](#redirect)
+
+  E os seguintes parâmetros:
+
+  * `query` — use com o tipo `predefined_query_handler`; executa a consulta quando o handler é chamado.
+  * `query_param_name` — use com o tipo `dynamic_query_handler`; extrai e executa o valor correspondente a `query_param_name` nos parâmetros da requisição HTTP.
+  * `status` — use com o tipo `static`, código de status da resposta.
+  * `content_type` — use com qualquer tipo, [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type) da resposta.
+  * `http_response_headers` — use com qualquer tipo, map dos cabeçalhos da resposta. Também pode ser usado para definir o tipo de conteúdo.
+  * `response_content` — use com o tipo `static`, conteúdo da resposta enviado ao cliente; ao usar o prefixo &#39;file://&#39; ou &#39;config://&#39;, o conteúdo é obtido do arquivo ou da configuração e enviado ao cliente.
+  * `user` - usuário com o qual executar a consulta (o usuário padrão é `default`).
+    **Observação**, você não precisa especificar a senha desse usuário.
+
+Os métodos de configuração para diferentes `type`s são discutidos a seguir.
+
+<div id="predefined_query_handler">
+  ### predefined_query_handler
+</div>
+
+`predefined_query_handler` oferece suporte à definição de valores de `Settings` e `query_params`. Você pode configurar `query` para o tipo `predefined_query_handler`.
+
+O valor de `query` é uma consulta predefinida de `predefined_query_handler`, executada pelo ClickHouse quando uma requisição HTTP corresponde a ela, e o resultado da consulta é retornado. Essa configuração é obrigatória.
+
+O exemplo a seguir define os valores das configurações [`max_threads`](/pt-BR/reference/settings/session-settings#max_threads) e [`max_final_threads`](/pt-BR/reference/settings/session-settings#max_final_threads) e, em seguida, consulta a tabela de sistema para verificar se essas configurações foram definidas com sucesso.
+
+<Note>
+  Para manter os `handlers` padrão, como `query`, `play` e `ping`, adicione a regra `<defaults/>`.
+</Note>
+
+Por exemplo:
+
+```yaml
+<http_handlers>
+    <rule>
+        <url><![CDATA[regex:/query_param_with_url/(?P<name_1>[^/]+)]]></url>
+        <methods>GET</methods>
+        <headers>
+            <XXX>TEST_HEADER_VALUE</XXX>
+            <PARAMS_XXX><![CDATA[regex:(?P<name_2>[^/]+)]]></PARAMS_XXX>
+        </headers>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>
+                SELECT name, value FROM system.settings
+                WHERE name IN ({name_1:String}, {name_2:String})
+            </query>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers>
+```
+
+```bash
+curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_final_threads' 'http://localhost:8123/query_param_with_url/max_threads?max_threads=1&max_final_threads=2'
+max_final_threads    2
+max_threads    1
+```
+
+<div id="virtual-param-request-body">
+  #### Parâmetro virtual `_request_body`
+</div>
+
+Além dos parâmetros de URL, cabeçalhos e parâmetros de consulta, `predefined_query_handler` oferece suporte a um parâmetro virtual especial, `_request_body`.
+Ele contém o corpo bruto da requisição HTTP como uma string.
+Isso permite criar APIs REST flexíveis que podem aceitar formatos de dados arbitrários e processá-los nas suas consultas.
+
+Por exemplo, você pode usar `_request_body` para implementar um endpoint REST que aceita dados JSON em uma requisição POST e os insere em uma tabela:
+
+```yaml
+<http_handlers>
+    <rule>
+        <methods>POST</methods>
+        <url>/api/events</url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>
+                INSERT INTO events (id, data)
+                SELECT {id:UInt32}, {_request_body:String}
+            </query>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers>
+```
+
+Em seguida, você pode enviar dados para este endpoint:
+
+```bash
+curl -X POST 'http://localhost:8123/api/events?id=123' \
+  -H 'Content-Type: application/json' \
+  -d '{"user": "john", "action": "login", "timestamp": "2024-01-01T10:00:00Z"}'
+```
+
+<Note>
+  Em um `predefined_query_handler`, apenas uma `consulta` é compatível.
+</Note>
+
+<div id="dynamic_query_handler">
+  ### dynamic_query_handler
+</div>
+
+Em `dynamic_query_handler`, a consulta é escrita como um parâmetro da requisição HTTP. A diferença é que, em `predefined_query_handler`, a consulta é escrita no arquivo de configuração. `query_param_name` pode ser configurado em `dynamic_query_handler`.
+
+O ClickHouse extrai e executa o valor correspondente a `query_param_name` na URL da requisição HTTP. O valor padrão de `query_param_name` é `/query`. Essa é uma configuração opcional. Se não houver definição no arquivo de configuração, o parâmetro não será passado.
+
+Para testar essa funcionalidade, o exemplo a seguir define os valores de [`max_threads`](/pt-BR/reference/settings/session-settings#max_threads) e `max_final_threads` e consulta se as configurações foram definidas com sucesso.
+
+Exemplo:
+
+```yaml
+<http_handlers>
+    <rule>
+    <headers>
+        <XXX>TEST_HEADER_VALUE_DYNAMIC</XXX>    </headers>
+    <handler>
+        <type>dynamic_query_handler</type>
+        <query_param_name>query_param</query_param_name>
+    </handler>
+    </rule>
+    <defaults/>
+</http_handlers>
+```
+
+```bash
+curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_final_threads=2&param_name_1=max_threads&param_name_2=max_final_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+max_threads 1
+max_final_threads   2
+```
+
+<div id="static">
+  ### static
+</div>
+
+`static` pode retornar [`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) e `response_content`. `response_content` pode retornar o conteúdo especificado.
+
+Por exemplo, para retornar a mensagem &quot;Say Hi!&quot;:
+
+```yaml highlight={14}
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/hi</url>
+            <handler>
+                <type>static</type>
+                <status>402</status>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <http_response_headers>
+                    <Content-Language>en</Content-Language>
+                    <X-My-Custom-Header>43</X-My-Custom-Header>
+                </http_response_headers>
+                <response_content>Say Hi!</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+</http_handlers>
+```
+
+`http_response_headers` pode ser usado para definir o tipo de conteúdo em vez de `content_type`.
+
+```yaml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/hi</url>
+            <handler>
+                <type>static</type>
+                <status>402</status>
+                #begin-highlight
+                <http_response_headers>
+                    <Content-Type>text/html; charset=UTF-8</Content-Type>
+                    <Content-Language>en</Content-Language>
+                    <X-My-Custom-Header>43</X-My-Custom-Header>
+                </http_response_headers>
+                #end-highlight
+                <response_content>Say Hi!</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+</http_handlers>
+```
+
+```bash
+curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /hi HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 402 Payment Required
+< Date: Wed, 29 Apr 2020 03:51:26 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
+<
+* Connection #0 to host localhost left intact
+Say Hi!%
+```
+
+Encontre o conteúdo da configuração enviada ao cliente.
+
+```yaml
+<get_config_static_handler><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></get_config_static_handler>
+
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_config_static_handler</url>
+            <handler>
+                <type>static</type>
+                <response_content>config://get_config_static_handler</response_content>
+            </handler>
+        </rule>
+</http_handlers>
+```
+
+```bash
+$ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_config_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:01:24 GMT
+< Connection: Keep-Alive
+< Content-Type: text/plain; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
+<
+* Connection #0 to host localhost left intact
+<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
+```
+
+Para encontrar o conteúdo do arquivo enviado ao cliente:
+
+```yaml
+<http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_absolute_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <http_response_headers>
+                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
+                </http_response_headers>
+                <response_content>file:///absolute_path_file.html</response_content>
+            </handler>
+        </rule>
+        <rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/get_relative_path_static_handler</url>
+            <handler>
+                <type>static</type>
+                <content_type>text/html; charset=UTF-8</content_type>
+                <http_response_headers>
+                    <ETag>737060cd8c284d8af7ad3082f209582d</ETag>
+                </http_response_headers>
+                <response_content>file://./relative_path_file.html</response_content>
+            </handler>
+        </rule>
+</http_handlers>
+```
+
+```bash
+$ user_files_path='/var/lib/clickhouse/user_files'
+$ sudo echo "<html><body>Relative Path File</body></html>" > $user_files_path/relative_path_file.html
+$ sudo echo "<html><body>Absolute Path File</body></html>" > $user_files_path/absolute_path_file.html
+$ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_absolute_path_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:18:16 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
+<
+<html><body>Absolute Path File</body></html>
+* Connection #0 to host localhost left intact
+$ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
+*   Trying ::1...
+* Connected to localhost (::1) port 8123 (#0)
+> GET /get_relative_path_static_handler HTTP/1.1
+> Host: localhost:8123
+> User-Agent: curl/7.47.0
+> Accept: */*
+> XXX:xxx
+>
+< HTTP/1.1 200 OK
+< Date: Wed, 29 Apr 2020 04:18:31 GMT
+< Connection: Keep-Alive
+< Content-Type: text/html; charset=UTF-8
+< Transfer-Encoding: chunked
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334","memory_usage":"8451671"}
+<
+<html><body>Relative Path File</body></html>
+* Connection #0 to host localhost left intact
+```
+
+<div id="redirect">
+  ### redirect
+</div>
+
+`redirect` fará um redirecionamento `302` para `location`
+
+Por exemplo, veja como adicionar automaticamente set user ao `play` do ClickHouse:
+
+```xml
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/play</url>
+            <handler>
+                <type>redirect</type>
+                <location>/play?user=play</location>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>
+```
+
+<div id="http-response-headers">
+  ## Cabeçalhos de resposta HTTP
+</div>
+
+O ClickHouse permite configurar cabeçalhos de resposta HTTP personalizados que podem ser aplicados a qualquer tipo de handler configurável. Esses cabeçalhos podem ser definidos usando a configuração `http_response_headers`, que aceita pares chave-valor que representam nomes de cabeçalhos e seus respectivos valores. Esse recurso é especialmente útil para implementar cabeçalhos de segurança personalizados, políticas de CORS ou quaisquer outros requisitos de cabeçalhos HTTP em toda a interface HTTP do ClickHouse.
+
+Por exemplo, você pode configurar cabeçalhos para:
+
+* Endpoints de consulta regulares
+* UI da Web
+* Verificação de integridade.
+
+Também é possível especificar `common_http_response_headers`. Eles serão aplicados a todos os handlers HTTP definidos na configuração.
+
+Os cabeçalhos serão incluídos na resposta HTTP de cada handler configurado.
+
+No exemplo abaixo, toda resposta do servidor conterá dois cabeçalhos personalizados: `X-My-Common-Header` e `X-My-Custom-Header`.
+
+```xml
+<clickhouse>
+    <http_handlers>
+        <common_http_response_headers>
+            <X-My-Common-Header>Common header</X-My-Common-Header>
+        </common_http_response_headers>
+        <rule>
+            <methods>GET</methods>
+            <url>/ping</url>
+            <handler>
+                <type>ping</type>
+                <http_response_headers>
+                    <X-My-Custom-Header>Custom indeed</X-My-Custom-Header>
+                </http_response_headers>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>
+```
+
+<div id="valid-output-on-exception-http-streaming">
+  ## Resposta JSON/XML válida em caso de exceção durante HTTP streaming
+</div>
+
+Durante a execução da consulta por HTTP, pode ocorrer uma exceção quando parte dos dados já tiver sido enviada. Normalmente, a exceção é enviada ao cliente em texto simples.
+Mesmo que tenha sido usado um formato de dados específico para a saída, ela pode acabar se tornando inválida em relação ao formato especificado.
+Para evitar isso, você pode usar a configuração [`http_write_exception_in_output_format`](/pt-BR/reference/settings/session-settings#http_write_exception_in_output_format) (desabilitada por padrão), que faz com que o ClickHouse grave a exceção no formato especificado (atualmente compatível com os formatos XML e JSON*).
+
+Exemplos:
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>3)+from+system.numbers+format+JSON+settings+max_block_size=1&http_write_exception_in_output_format=1'
+{
+    "meta":
+    [
+        {
+            "name": "number",
+            "type": "UInt64"
+        },
+        {
+            "name": "throwIf(greater(number, 2))",
+            "type": "UInt8"
+        }
+    ],
+
+    "data":
+    [
+        {
+            "number": "0",
+            "throwIf(greater(number, 2))": 0
+        },
+        {
+            "number": "1",
+            "throwIf(greater(number, 2))": 0
+        },
+        {
+            "number": "2",
+            "throwIf(greater(number, 2))": 0
+        }
+    ],
+
+    "rows": 3,
+
+    "exception": "Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)"
+}
+```
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>2)+from+system.numbers+format+XML+settings+max_block_size=1&http_write_exception_in_output_format=1'
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+    <meta>
+        <columns>
+            <column>
+                <name>number</name>
+                <type>UInt64</type>
+            </column>
+            <column>
+                <name>throwIf(greater(number, 2))</name>
+                <type>UInt8</type>
+            </column>
+        </columns>
+    </meta>
+    <data>
+        <row>
+            <number>0</number>
+            <field>0</field>
+        </row>
+        <row>
+            <number>1</number>
+            <field>0</field>
+        </row>
+        <row>
+            <number>2</number>
+            <field>0</field>
+        </row>
+    </data>
+    <rows>3</rows>
+    <exception>Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)</exception>
+</result>
+```

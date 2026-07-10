@@ -1,0 +1,76 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-15
+title: '演示日 - 2026-05-15'
+sidebarTitle: '2026-05-15'
+description: '2026-05-15 的 ClickStack 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="alerts-from-notebooks">
+  ## 从笔记本创建告警
+</div>
+
+*演示者：[@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/HIxCMDmdZ8o" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在，笔记本也可以创建告警了。此前已经能够动态构建仪表盘的同一套笔记本流程，现在也会顺带为你配置告警，这样你就可以直接从“这是一个有意思的查询”过渡到“它一触发就通知我”，而无需离开笔记本。
+
+不过，有一个需要注意的地方。我们团队里预定义了不少 webhook，但目前笔记本还不会进一步追问，所以它只会选择看起来最相关的那个 webhook，而不是让你自己选择。已经有一个 PR 在推进中，准备让笔记本在缺少上下文时能够继续提问，因此这个问题应该很快就会补上。
+
+<div id="autocomplete-from-materialized-views">
+  ## 基于 materialized views 的自动补全
+</div>
+
+*由 [@knudtty](https://github.com/knudtty) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/iQf5EwktBW4" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+前段时间，我们引入了 materialized views 来支撑搜索栏中的属性自动补全，让候选值可以即时显示，而不再需要动态计算。现在我们也在用同样的 MV 来驱动侧边过滤器，这意味着在高负载实例上，过滤器的加载速度会快很多。
+
+这里有一项行为变化值得特别说明。由 MV 支持的过滤器会返回当前时间范围内所有可能的过滤值，而不是仅限于当前查询范围。你可以通过一个切换开关改回按搜索范围限定的过滤器；这种方式会针对实时结果执行较慢的聚合。默认的 `filterValueExpandedKeyLimit` 也提高了：没有 MV 时为 20 个键，使用 MV 时为 100 个键，并且可以按需配置到任意值 (我们测试到了 1000) 。
+
+这个 MV 的维护成本相对较低；它目前在我们的暂存实例上处理大量数据，运行表现良好。同一个 MV 还为属性自动补全和 map 列展开提供支持，因此一旦配置完成，你就能在多个地方获得性能提升。演示中还讨论了一个问题：用于在“按搜索范围限定”和“所有过滤器”之间切换的开关，是否应该提升为过滤器面板顶部的一级胶囊式开关，而不是放在设置里；这是我们后续正在考虑改进的方向。
+
+**相关 PR：** [#2272](https://github.com/hyperdxio/hyperdx/pull/2272) feat: 默认情况下过滤器不感知搜索；由 MV 加速
+
+<div id="table-column-ordering-and-per-series-formatting">
+  ## 表列顺序和按序列格式化
+</div>
+
+*演示：[ @pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/iEn8kzvERE8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+几个相关的表改进一并推出了。现在，group-by 列可以固定在表格左侧，而不再总是显示在右侧——这通常更符合 RED 风格仪表盘的使用习惯，因为你往往会纵向查看 service name 这一列。现在还提供了一个表级显示设置来控制这一行为。
+
+现在也支持按序列设置数值格式。旧行为是将同一种数值格式应用到整个表格，这意味着如果表中恰好有任何以毫秒格式显示的序列，Requests 列就可能显示成 `123ms`。现在你可以按列或按序列设置格式，这样请求数会保持为普通数字，而 latency 列则会按耗时格式显示。
+
+此外，格式推断现在也是按序列进行的。如果你对 Trace Duration 字段做聚合，只有该序列会被推断为毫秒格式；表中的其余部分不会仅仅因为某一列是耗时就都被带成毫秒格式。
+
+**相关 PR：** [#2149](https://github.com/hyperdxio/hyperdx/pull/2149) feat: Allow displaying group-by columns on LHS of table, [#2174](https://github.com/hyperdxio/hyperdx/pull/2174) feat: Add per-series number formats
+
+<div id="customizable-dashboard-linking">
+  ## 可自定义的仪表盘跳转
+</div>
+
+*由 [@pulpdrew](https://github.com/pulpdrew) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Stlz02xES40" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在，仪表盘中的表格支持在点击某一行时跳转到其他仪表盘 (或搜索) ，并且可为目标仪表盘以及传递过去的过滤器配置模板。在表格卡片的配置中，新增了一个“行点击操作”选项。选择“仪表盘”，选定要跳转到的仪表盘，然后将当前行中的过滤器映射到目标仪表盘上的过滤器。过滤器值采用 Handlebars 风格的模板，因此你可以将被点击行中的任意列值传入目标过滤器或 `WHERE` 子句中 (无论是 SQL 还是 Lucene) 。演示中的示例将服务列表接入了这一功能，因此点击某一行后会直接跳转到服务详情仪表盘，并且 `service.name` 已经设置好了过滤条件。
+
+你也可以不指定某个固定的目标仪表盘，而是直接对仪表盘名称进行模板化。因此，如果你为每个服务分别创建了仪表盘，名称类似 `${service.name} dashboard`，链接就会解析为与被点击行相匹配的那个仪表盘。如果模板生成的仪表盘不存在，也有相应的错误处理：系统会弹出通知，而不是跳转到无效页面。
+
+该功能支持多个变量，你可以将被点击行中的任意列组合传递到过滤器集合或模板化的仪表盘名称中。Handlebars 提供动态辅助函数和条件块，但目前其中大多数已被禁用，以保持功能范围尽可能小且行为可预测。导入流程也已更新：对于通过 ID 链接到其他仪表盘的仪表盘，现在在导入时可以将这些引用重新映射到目标账户中实际存在的仪表盘。
+
+**相关 PR：** [#2146](https://github.com/hyperdxio/hyperdx/pull/2146) feat: 为自定义仪表盘点击操作添加过滤器模板，[#2148](https://github.com/hyperdxio/hyperdx/pull/2148) feat: 支持仪表盘 onClick 的导入/导出，[#2156](https://github.com/hyperdxio/hyperdx/pull/2156) feat: 为外部仪表盘 API 添加自定义 onClick 字段，[#2273](https://github.com/hyperdxio/hyperdx/pull/2273) feat: 为 MCP schema 和提示词添加仪表盘表格 onClick
