@@ -71,18 +71,35 @@ def test_pin_survives_cache_drop(started_cluster):
     )
     expected = node.query(SCAN)
 
-    node.query("SYSTEM DROP FILESYSTEM CACHE")
-    node.query(f"SYSTEM ENABLE FAILPOINT {FP}")
-
+    # The pause fires when a read-ahead machine is collected with a partial
+    # in-flight segment pinned. On slow (sanitizer) builds the consumer can win
+    # the race and interrupt every machine below the cursor - those collects
+    # never pin - so retry the scan until one machine completes ahead. Each
+    # attempt re-colds the cache; every scan, paused or not, must be correct.
+    paused = False
     result = {}
-    scanner = threading.Thread(
-        target=lambda: result.update(got=node.query(SCAN, settings=SCAN_SETTINGS))
-    )
-    scanner.start()
-    try:
-        # Blocks until the scan is paused at the failpoint with the pin held.
-        node.query(f"SYSTEM WAIT FAILPOINT {FP} PAUSE", timeout=90)
+    scanner = None
+    for _ in range(5):
+        node.query("SYSTEM DROP FILESYSTEM CACHE")
+        node.query(f"SYSTEM ENABLE FAILPOINT {FP}")
+        result = {}
+        scanner = threading.Thread(
+            target=lambda: result.update(got=node.query(SCAN, settings=SCAN_SETTINGS))
+        )
+        scanner.start()
+        try:
+            # Blocks until the scan is paused at the failpoint with the pin held.
+            node.query(f"SYSTEM WAIT FAILPOINT {FP} PAUSE", timeout=30)
+            paused = True
+            break
+        except Exception:
+            node.query(f"SYSTEM DISABLE FAILPOINT {FP}")
+            scanner.join(timeout=120)
+            assert not scanner.is_alive(), "the unpaused scan must finish"
+            assert result["got"] == expected, "the unpaused scan must be correct"
+    assert paused, "the scan never paused at the pin failpoint in 5 attempts"
 
+    try:
         # While paused the in-flight segment is pinned: the drop must leave it.
         node.query("SYSTEM DROP FILESYSTEM CACHE")
         assert cached_segments() > 0, "the pinned segment must survive the mid-scan drop"
