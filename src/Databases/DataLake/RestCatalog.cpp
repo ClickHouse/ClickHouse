@@ -765,6 +765,16 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
     return {{"parent", parent_param}};
 }
 
+bool RestCatalog::hasFlatNamespaces() const
+{
+    /// Catalogs whose namespaces are single-level and which ignore the `parent` filter when listing
+    /// namespaces. For these, sub-namespace listing is skipped (see `parseNamespaces`) so that an echo
+    /// of the parent is not turned into a fake child, which would otherwise recurse without bound.
+    const auto type = getCatalogType();
+    return type == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+        || type == DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
+}
+
 RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & base_namespace) const
 {
     Poco::URI::QueryParameters base_params;
@@ -874,11 +884,13 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
             const int idx = static_cast<int>(current_namespace_array->size()) - 1;
             const auto current_namespace = current_namespace_array->get(idx).extract<String>();
-            /// BigLake does not support multi-level namespaces. When asked for sub-namespaces of
-            /// a non-empty parent (via ?parent=X), BigLake ignores the filter and returns other
-            /// top-level namespaces instead. Skip all sub-namespace results to avoid constructing
-            /// fake multi-level paths like "ns1.ns2" that BigLake will reject with HTTP 400.
-            if (getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE && !base_namespace.empty())
+            /// Some catalogs have flat (single-level) namespaces and do not support multi-level ones:
+            /// BigLake, and Databricks Delta Sharing (share -> namespace/schema -> table). When asked
+            /// for sub-namespaces of a non-empty parent (via ?parent=X) they ignore the filter and
+            /// return other top-level namespaces instead. Skip all sub-namespace results to avoid
+            /// constructing fake multi-level paths like "ns1.ns2" (and, for BigLake, an HTTP 400) and,
+            /// in turn, the unbounded recursion that fake children would cause in getNamespacesRecursive.
+            if (hasFlatNamespaces() && !base_namespace.empty())
             {
                 continue;
             }
@@ -892,17 +904,13 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
         /// Iceberg REST OpenAPI spec: response carries `next-page-token` (kebab-case).
         /// Empty / null / missing token all mean "no more pages".
         ///
-        /// BigLake-non-empty-base-namespace short-circuit: when the BigLake quirk
-        /// above drops every returned entry (because BigLake ignores `parent`
-        /// and returns unrelated top-level namespaces), continuing pagination
-        /// just burns O(pages) REST calls per parent namespace without ever
-        /// contributing to the result. Treat the first page as terminal by
-        /// leaving `next_page_token` empty (already cleared at function entry)
-        /// so the outer `listChildNamespaces` loop returns immediately.
-        const bool biglake_drops_all_entries
-            = getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
-            && !base_namespace.empty();
-        if (!biglake_drops_all_entries
+        /// Flat-namespace short-circuit: when the skip above drops every returned entry (because a
+        /// flat-namespace catalog ignores `parent` and returns unrelated top-level namespaces),
+        /// continuing pagination just burns O(pages) REST calls per parent namespace without ever
+        /// contributing to the result. Treat the first page as terminal by leaving `next_page_token`
+        /// empty (already cleared at function entry) so the outer `listChildNamespaces` loop returns immediately.
+        const bool flat_namespace_drops_all_entries = hasFlatNamespaces() && !base_namespace.empty();
+        if (!flat_namespace_drops_all_entries
             && object->has("next-page-token")
             && !object->isNull("next-page-token"))
         {

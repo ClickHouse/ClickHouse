@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"materialize_statistics_on_insert", false, true, "Materialize column statistics on INSERT by default for tables below materialize_statistics_on_insert_max_table_size, so cost-based join reordering has good estimates on freshly-loaded dimension tables."},
             {"materialize_statistics_on_insert_max_table_size", 0, 1073741824, "New setting: only materialize column statistics on INSERT for tables whose current size is below this threshold. previous_value=0 (no limit) so `compatibility` with versions before 26.7 restores the pre-existing behavior (before this PR there was no size cap, so users who explicitly re-enable `materialize_statistics_on_insert` keep materializing statistics regardless of table size)."},
+            {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},
             {"optimize_trivial_count_with_sparsity_filter", false, false, "New (experimental) setting to serve `SELECT count() FROM t WHERE <pred>` from per-column `num_defaults` / `num_rows` recorded in `serialization.json` when `<pred>` partitions rows into defaults vs non-defaults."},
             {"merge_tree_generic_exclusion_search_max_steps", 0, 0, "New setting to limit the number of steps of the generic exclusion search over the primary key index."},
@@ -310,7 +311,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"use_statistics", true, true, "Enable this optimization by default."},
             {"ignore_on_cluster_for_replicated_database", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."},
-            {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
+            {"input_format_binary_max_type_complexity", 0, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"distributed_index_analysis", false, false, "New experimental setting"},
             {"distributed_index_analysis_for_non_shared_merge_tree", false, false, "New setting"},
             {"distributed_cache_file_cache_name", "", "", "New setting."},

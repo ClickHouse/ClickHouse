@@ -151,6 +151,12 @@ protected:
         StopCondition stop_condition,
         ExecuteFunc func) const;
 
+    /// Whether this catalog has flat (single-level) namespaces and ignores the `parent` filter when
+    /// listing namespaces. Such catalogs (BigLake, Databricks Delta Sharing) echo the same namespaces
+    /// for any parent; treating those echoes as children would recurse without bound, so sub-namespace
+    /// listing is skipped for them (see `parseNamespaces`).
+    bool hasFlatNamespaces() const;
+
     /// List the immediate child namespaces directly under `base_namespace`
     /// (single level, not recursive). An empty base lists the root namespaces.
     Namespaces listChildNamespaces(const std::string & base_namespace) const;
@@ -255,6 +261,21 @@ private:
 
     AccessToken retrieveGoogleCloudAccessToken() const;
     AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;
+};
+
+/// Databricks Delta Sharing exposes an Iceberg REST catalog with a flat, single-level namespace model
+/// (share -> namespace/schema -> table) and ignores the `parent` filter when listing namespaces. It is
+/// otherwise a plain REST catalog, so it reuses RestCatalog's behaviour and only reports a distinct type
+/// so `hasFlatNamespaces()` applies the same top-level-only listing used for BigLake.
+class DeltaSharingCatalog : public RestCatalog
+{
+public:
+    using RestCatalog::RestCatalog;
+
+    DB::DatabaseDataLakeCatalogType getCatalogType() const override
+    {
+        return DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
+    }
 };
 
 }
