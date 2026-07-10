@@ -36,7 +36,7 @@ The parameter form is selected by the second parameter: if it is a `Float64` val
 
 ## Supported combinators {#supported-combinators}
 
-`groupBloomFilter` supports the `-State`, `-MergeState`, `-If`, and `-ArrayIf` combinators. Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, including the condition, must not be `Nullable`.
+`groupBloomFilter` supports the `-State` and `-MergeState` combinators. The `-State` combinator can be combined with `-If`, `-Array`, or `-ArrayIf`; the resulting states can be used with `bloomFilterContains`. Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, including the condition, must not be `Nullable`.
 
 To aggregate a nullable value conditionally, exclude `NULL` values explicitly and unwrap the value:
 
@@ -82,7 +82,7 @@ The maximum allowed filter size is 256 MB.
 
 ## Returned value {#returned-value}
 
-- With `-State` combinator: returns the Bloom filter state as [`AggregateFunction(1, groupBloomFilter, T)`](/sql-reference/data-types/aggregatefunction) for the default form, or as `AggregateFunction(1, groupBloomFilter(params...), T)` for parameterized forms, for example `AggregateFunction(1, groupBloomFilter(1000), String)`.
+- With `-State` combinator: returns the Bloom filter state as [`AggregateFunction(1, groupBloomFilter, T)`](/sql-reference/data-types/aggregatefunction) for the default form, or as `AggregateFunction(1, groupBloomFilter(params...), T)` for parameterized forms, for example `AggregateFunction(1, groupBloomFilter(1000), String)`. The `-If`, `-Array`, and `-ArrayIf` variants use the corresponding aggregate function name and argument types.
 - Without `-State` combinator: throws an exception. Use `groupBloomFilterState` or `groupBloomFilterMergeState` with `bloomFilterContains` instead.
 
 Parameterized state types must resolve to the same effective Bloom filter configuration: `filter_size_bytes`, `num_hashes`, and `seed`. Equivalent parameter forms, such as omitted default `seed`, are compatible when defining `AggregatingMergeTree` columns explicitly.

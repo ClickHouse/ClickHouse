@@ -422,6 +422,11 @@ Alternatively, you can specify filter parameters directly:
 
 The parameter form is selected by the second parameter: if it is a `Float64` value in `(0, 1)`,
 it is interpreted as `false_positive_rate`; otherwise, it is interpreted as `num_hashes`.
+
+`groupBloomFilter` supports the `-State` and `-MergeState` combinators. The `-State` combinator can be combined
+with `-If`, `-Array`, or `-ArrayIf`; the resulting states can be used with `bloomFilterContains`.
+Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, including the condition, must not be
+`Nullable`.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 groupBloomFilter(column)
@@ -451,9 +456,10 @@ groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
         "Returns the Bloom filter state as `AggregateFunction(1, groupBloomFilter, T)` (default form) or "
         "`AggregateFunction(1, groupBloomFilter(params...), T)` (parameterized form, e.g. `AggregateFunction(1, groupBloomFilter(1000), String)`) "
         "when using the `-State` combinator. "
+        "The `-If`, `-Array`, and `-ArrayIf` variants use the corresponding aggregate function name and argument types. "
         "Parameterized forms must resolve to the same effective `filter_size_bytes`, `num_hashes`, and `seed` when defining `AggregatingMergeTree` columns explicitly. "
         "The finalized form throws an exception because Bloom filters do not have a meaningful scalar result.",
-        {"AggregateFunction(1, groupBloomFilter[(parameters...)], T)"}
+        {"AggregateFunction"}
     };
     FunctionDocumentation::Examples examples = {
         {

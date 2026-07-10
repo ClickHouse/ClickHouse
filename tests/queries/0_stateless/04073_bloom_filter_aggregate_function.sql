@@ -25,6 +25,17 @@ WITH
     (SELECT groupBloomFilterIfState(1000)(number, 0) FROM numbers(100)) AS bf
 SELECT bloomFilterContains(bf, toUInt64(42));
 
+-- `bloomFilterContains` must accept `groupBloomFilterArrayIfState` because the `-Array` and `-If`
+-- combinators keep the same Bloom filter state representation as `groupBloomFilterState`.
+WITH
+    (SELECT groupBloomFilterArrayIfState(100)([toUInt64(42), toUInt64(43)], toUInt8(1)) FROM numbers(1)) AS included_bf,
+    (SELECT groupBloomFilterArrayIfState(100)([toUInt64(42)], toUInt8(0)) FROM numbers(1)) AS skipped_bf
+SELECT
+    bloomFilterContains(included_bf, toUInt64(42)),
+    bloomFilterContains(included_bf, toUInt64(43)),
+    bloomFilterContains(skipped_bf, toUInt64(42)),
+    toTypeName(included_bf) LIKE 'AggregateFunction(1, groupBloomFilterArrayIf%';
+
 -- groupBloomFilter without -State combinator has no meaningful scalar result.
 SELECT groupBloomFilter(1000)(number) AS result
 FROM numbers(100); -- { serverError BAD_ARGUMENTS }
