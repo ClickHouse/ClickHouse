@@ -76,15 +76,18 @@ bool pushedPredicateHelpsPruning(ActionsDAG candidate_dag, const PushDownPruning
     /// useful_indices is a planning-time candidate list; the read path additionally rejects an
     /// index per part when it depends on a column updated on the fly. Require at least one
     /// (part, index) pair that survives that check, otherwise no granule would be pruned
-    for (const auto & part_with_ranges : reading.getParts())
+    if (!indexes->skip_indexes.useful_indices.empty())
     {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
-            part_with_ranges.data_part, reading.getMutationsSnapshot(), reading.getContext());
-        const auto & updated_columns = alter_conversions->getAllUpdatedColumns();
-        for (const auto & index_with_condition : indexes->skip_indexes.useful_indices)
+        for (const auto & part_with_ranges : reading.getParts())
         {
-            if (MergeTreeDataSelectExecutor::canUseIndex(index_with_condition.index, reading.getStorageMetadata(), updated_columns))
-                return true;
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
+                part_with_ranges.data_part, reading.getMutationsSnapshot(), reading.getContext());
+            const auto & updated_columns = alter_conversions->getAllUpdatedColumns();
+            for (const auto & index_with_condition : indexes->skip_indexes.useful_indices)
+            {
+                if (MergeTreeDataSelectExecutor::canUseIndex(index_with_condition.index, reading.getStorageMetadata(), updated_columns))
+                    return true;
+            }
         }
     }
     /// pruning by _part / _partition_id and _part_offset virtual columns

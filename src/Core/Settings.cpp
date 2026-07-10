@@ -6360,13 +6360,15 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_filter_push_down_inferred_only_for_pruning, true, R"(
+    DECLARE(Bool, query_plan_filter_push_down_inferred_only_for_pruning, false, R"(
 During filter push-down across an equi-join, a condition on one side's join key can be inferred
 for the other side through key equivalence (`t1.id = t2.id AND t1.id < 10` infers `t2.id < 10`).
-Such an inferred condition is redundant for correctness; it pays off only when index analysis on
-the receiving side (primary key, partition key, skipping indexes) can use it for pruning. With
-this setting enabled the inferred copy is added only in that case, otherwise it is skipped as it
-would only re-evaluate the condition for every row. Only takes effect if `query_plan_enable_optimizations` is 1.
+Such an inferred condition is redundant for correctness. With this setting enabled the inferred
+copy is added only when index analysis on the receiving side (primary key, partition key,
+skipping indexes) can use it for pruning; otherwise it is skipped, avoiding a per-row filter
+that cannot prune anything. Note that even a non-pruning inferred condition can still help by
+reducing the number of rows entering the join when it is selective, which is why this is
+disabled by default. Only takes effect if `query_plan_enable_optimizations` is 1.
 )", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values

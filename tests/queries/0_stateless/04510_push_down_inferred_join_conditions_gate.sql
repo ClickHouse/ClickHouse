@@ -4,6 +4,8 @@ SET enable_join_runtime_filters = 0;
 -- The gate judges local MergeTree reads; under parallel replicas the plan reads through
 -- remote-replica steps and the gate correctly keeps the old behavior, changing EXPLAIN output
 SET enable_parallel_replicas = 0;
+-- The gate is opt-in: a selective inferred condition can reduce join input even without pruning
+SET query_plan_filter_push_down_inferred_only_for_pruning = 1;
 
 DROP TABLE IF EXISTS gate_src;
 DROP TABLE IF EXISTS gate_pk;
