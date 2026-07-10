@@ -1,0 +1,28 @@
+--- ArrowStream: Binary -> IPv6 ---
+000102030405060708090A0B0C0D0E0F
+101112131415161718191A1B1C1D1E1F
+native==library
+--- ArrowStream: Binary -> Int128 ---
+12345
+67890
+native==library
+--- ArrowStream: Array(Int128) nested ---
+[12345,67890]
+native==library
+--- ArrowStream: Tuple(ip IPv6) nested ---
+000102030405060708090A0B0C0D0E0F
+native==library
+--- Arrow: Binary -> IPv6 ---
+000102030405060708090A0B0C0D0E0F
+101112131415161718191A1B1C1D1E1F
+native==library
+--- Arrow: Binary -> Int128 ---
+12345
+67890
+native==library
+--- Arrow: Array(Int128) nested ---
+[12345,67890]
+native==library
+--- Arrow: Tuple(ip IPv6) nested ---
+000102030405060708090A0B0C0D0E0F
+native==library
