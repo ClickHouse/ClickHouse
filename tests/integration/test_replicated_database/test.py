@@ -94,12 +94,14 @@ def sync_and_assert_eq_with_retry(
     node, database, table, query, expected, retry_count=60, sleep_time=1
 ):
     # A replica that recovered from lost metadata converges its table structure
-    # asynchronously. recoverLostReplica does not rewrite matching-UUID
-    # ReplicatedMergeTree tables; their structure is picked up by table-level
-    # metadata replication, which enqueues the metadata-update entry during
-    # recovery (cloneMetadataIfNeeded). A single SYSTEM SYNC REPLICA before the
-    # read can return before that entry exists, so re-sync inside the retry loop
-    # until the structure converges.
+    # asynchronously. If the recovered replica's DDLWorker sees the ADD COLUMN
+    # DDL entry as "already executed by another replica of the same shard" it
+    # skips the local ALTER, and SYSTEM SYNC REPLICA does not re-read the table
+    # structure from ZooKeeper (it only syncs the replication queue), so the
+    # local table can stay on the old structure indefinitely. SYSTEM RESTART
+    # REPLICA re-runs the attach thread, which re-reads /metadata from ZooKeeper
+    # (checkTableStructure) and applies the up-to-date structure. Retry the
+    # restart + sync + read until the structure converges.
     #
     # While the structure is still the old one, the sync/query pair can also
     # raise (e.g. the read references a not-yet-applied column -> UNKNOWN_IDENTIFIER),
@@ -107,6 +109,7 @@ def sync_and_assert_eq_with_retry(
     # retrying, like assert_eq_with_retry, so a transient error does not exit early.
     for _ in range(retry_count):
         try:
+            node.query(f"SYSTEM RESTART REPLICA {database}.{table}")
             node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
             node.query(f"SYSTEM SYNC REPLICA {database}.{table}")
             if TSV(node.query(query)) == TSV(expected):
