@@ -85,8 +85,8 @@ struct MergeTreeSettings
     void set(std::string_view name, const Field & value);
 
     SettingsChanges changes() const;
-    void applyChanges(const SettingsChanges & changes);
-    void applyChange(const SettingChange & change);
+    void applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
+    void applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     std::vector<std::string_view> getAllAliasNames() const;
     std::string_view getDescription(std::string_view name) const;
@@ -96,7 +96,7 @@ struct MergeTreeSettings
     void applyCompatibilitySetting(const String & compatibility_value);
 
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
@@ -115,6 +115,10 @@ struct MergeTreeSettings
     static bool isReadonlySetting(const String & name);
     static void checkCanSet(std::string_view name, const Field & value);
     static bool isPartFormatSetting(const String & name);
+
+    static bool isDiskSettingChanged(const SettingsChanges & old_changes, const SettingsChanges & new_changes);
+    static void resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
+    static void resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database = false);
 
     /// Cloud only
     static bool isSMTReadonlySetting(const String & name);

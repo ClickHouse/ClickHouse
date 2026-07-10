@@ -1,0 +1,153 @@
+---
+sidebarTitle: '汎用 Postgres'
+description: '任意の Postgres インスタンスを ClickPipes のソースとして設定する'
+slug: /integrations/clickpipes/postgres/source/generic
+title: '汎用 Postgres ソース設定ガイド'
+doc_type: 'guide'
+keywords: ['postgres', 'clickpipes', '論理レプリケーション', 'pg_hba.conf', 'wal level']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+<Info>
+  サポート対象のプロバイダー (サイドバーに表示) のいずれかを使用している場合は、そのプロバイダー向けの個別ガイドを参照してください。
+</Info>
+
+ClickPipes は Postgres バージョン 12 以降をサポートしています。
+
+<div id="enable-logical-replication">
+  ## 論理レプリケーションを有効にする
+</div>
+
+1. Postgres インスタンスでレプリケーションを有効にするには、まず以下の設定になっていることを確認してください。
+
+   ```sql
+   wal_level = logical
+   ```
+
+   確認するには、次の SQL コマンドを実行します。
+
+   ```sql
+   SHOW wal_level;
+   ```
+
+   出力は `logical` である必要があります。そうでない場合は、次を実行します。
+
+   ```sql
+   ALTER SYSTEM SET wal_level = logical;
+   ```
+
+2. また、Postgres インスタンスでは以下の設定にしておくことを推奨します。
+
+   ```sql
+   max_wal_senders > 1
+   max_replication_slots >= 4
+   ```
+
+   確認するには、次の SQL コマンドを実行します。
+
+   ```sql
+   SHOW max_wal_senders;
+   SHOW max_replication_slots;
+   ```
+
+   値が推奨値を満たしていない場合は、次の SQL コマンドを実行して設定できます。
+
+   ```sql
+   ALTER SYSTEM SET max_wal_senders = 10;
+   ALTER SYSTEM SET max_replication_slots = 10;
+   ```
+
+3. 上記の設定を変更した場合、変更を反映するには Postgres インスタンスを再起動する必要があります。
+
+<div id="creating-a-user-with-permissions-and-publication">
+  ## 権限とパブリケーションを持つユーザーの作成
+</div>
+
+管理者ユーザーとして Postgres インスタンスに接続し、次のコマンドを実行します。
+
+1. ClickPipes 専用のユーザーを作成します。
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 前の手順で作成したユーザーに、スキーマレベルの読み取り専用アクセスを付与します。次の例は `public` スキーマに対する権限を示しています。レプリケートしたいテーブルを含む各スキーマに対して、これらのコマンドを繰り返してください。
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. ユーザーにレプリケーション権限を付与します。
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. レプリケートしたいテーブルを含む [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) を作成します。パフォーマンスのオーバーヘッドを避けるため、publication には必要なテーブルのみを含めることを強く推奨します。
+
+<Warning>
+  publication に含めるテーブルには、**主キー** が定義されているか、または **replica identity** が `FULL` に設定されている必要があります。スコープ設定に関するガイダンスについては、[Postgres よくある質問](/ja/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) を参照してください。
+</Warning>
+
+* 特定のテーブルに対する publication を作成するには:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 特定のスキーマ内のすべてのテーブルに対する publication を作成するには:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication には、指定したテーブルから生成された変更イベントの集合が含まれ、後でレプリケーションストリームを取り込むために使用されます。
+
+<div id="enabling-connections-in-pg_hbaconf-to-the-clickpipes-user">
+  ## pg_hba.conf で ClickPipes ユーザーへの接続を有効にする
+</div>
+
+セルフホスト環境では、以下の手順に従って、ClickPipes の IP アドレスから ClickPipes ユーザーへの接続を許可する必要があります。マネージドサービスを使用している場合も、プロバイダーのドキュメントに従って同様に設定できます。
+
+1. `pg_hba.conf` ファイルに必要な変更を加え、ClickPipes の IP アドレスから ClickPipes ユーザーへの接続を許可します。`pg_hba.conf` ファイルのエントリ例は次のとおりです。
+   ```response
+   host    all   clickpipes_user     0.0.0.0/0          scram-sha-256
+   ```
+
+2. 変更を反映するには、PostgreSQL インスタンスをリロードします。
+   ```sql
+   SELECT pg_reload_conf();
+   ```
+
+<div id="increase-max_slot_wal_keep_size">
+  ## `max_slot_wal_keep_size` を増やす
+</div>
+
+これは、大規模なトランザクションやコミットによってレプリケーションスロットが削除されるのを防ぐための推奨設定です。
+
+`postgresql.conf` ファイルを更新して、PostgreSQL インスタンスの `max_slot_wal_keep_size` パラメータをより大きな値 (少なくとも 100GB または `102400`) に引き上げることができます。
+
+```sql
+max_slot_wal_keep_size = 102400
+```
+
+変更を反映するには、Postgres インスタンスを再読み込みします：
+
+```sql
+SELECT pg_reload_conf();
+```
+
+<Note>
+  この値のより適切な推奨値については、ClickPipes チームにお問い合わせください。
+</Note>
+
+<div id="whats-next">
+  ## 次は？
+</div>
+
+これで、[ClickPipe を作成](/ja/integrations/clickpipes/postgres/index)して、Postgres インスタンスから ClickHouse Cloud へのデータの取り込みを開始できます。
+ClickPipe の作成時に必要になるため、Postgres インスタンスのセットアップ時に使用した接続情報は必ず控えておいてください。

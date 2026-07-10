@@ -1,0 +1,265 @@
+---
+title: 'Créer un rollup avec des vues matérialisées pour accélérer l’analyse de séries temporelles'
+slug: /knowledgebase/materialized-view-rollup-timeseries
+description: 'Exemple de bout en bout de création d’une table d’événements bruts, d’une table de rollup et d’une vue matérialisée pour des analyses à faible latence.'
+keywords: ['vue matérialisée', 'rollup', 'agrégation', 'séries temporelles', 'tutoriel']
+doc_type: 'guide'
+---
+
+> Ce tutoriel vous montre comment maintenir à jour des rollups pré-agrégés à partir d’une table d’événements à fort volume à l’aide de [**vues matérialisées**](/fr/concepts/features/materialized-views/index).
+> Vous créerez trois objets : une table d’événements bruts, une table de rollup et la vue matérialisée qui alimente automatiquement le rollup.
+
+<div id="when-to-use">
+  ## Quand utiliser ce modèle
+</div>
+
+Utilisez ce modèle lorsque :
+
+* Vous avez un **flux d’événements uniquement en ajout** (clics, vues de page, IoT, logs).
+* La plupart des requêtes sont des **agrégations** sur des intervalles de temps (par minute/heure/jour).
+* Vous voulez des **temps de lecture systématiquement inférieurs à une seconde** sans réanalyser toutes les lignes brutes.
+
+<Steps>
+  <Step>
+    ## Créer la table d’événements bruts
+
+    ```sql
+    CREATE TABLE events_raw
+    (
+        event_time   DateTime,
+        user_id      UInt64,
+        country      LowCardinality(String),
+        event_type   LowCardinality(String),
+        value        Float64
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMM(event_time)
+    ORDER BY (event_time, user_id)
+    TTL event_time + INTERVAL 90 DAY DELETE
+    ```
+
+    **Remarques**
+
+    * `PARTITION BY toYYYYMM(event_time)` permet de conserver des partitions de petite taille et faciles à supprimer.
+    * `ORDER BY (event_time, user_id)` prend en charge les requêtes bornées dans le temps + le filtre secondaire.
+    * `LowCardinality(String)` économise de la mémoire pour les dimensions catégorielles.
+    * `TTL` supprime les données brutes après 90 jours (à ajuster selon vos exigences de rétention).
+  </Step>
+
+  <Step>
+    ## Concevoir la table de rollup (agrégée)
+
+    Nous effectuerons une préagrégation à une granularité **horaire**.
+    Choisissez la granularité en fonction de la période d’analyse la plus courante.
+
+    ```sql
+    CREATE TABLE events_rollup_1h
+    (
+        bucket_start  DateTime,            -- start of the hour
+        country       LowCardinality(String),
+        event_type    LowCardinality(String),
+        users_uniq    AggregateFunction(uniqExact, UInt64),
+        value_sum     AggregateFunction(sum, Float64),
+        value_avg     AggregateFunction(avg, Float64),
+        events_count  AggregateFunction(count)
+    )
+    ENGINE = AggregatingMergeTree
+    PARTITION BY toYYYYMM(bucket_start)
+    ORDER BY (bucket_start, country, event_type)
+    ```
+
+    Nous stockons des **états d’agrégation** (par exemple, `AggregateFunction(sum, ...)`) qui représentent de façon compacte des agrégats partiels et peuvent être fusionnés ou finalisés ultérieurement.
+  </Step>
+
+  <Step>
+    ## Créer une vue matérialisée qui alimente le rollup
+
+    Cette vue matérialisée se déclenche automatiquement lors des insertions dans `events_raw` et écrit des **états d’agrégation** dans le rollup.
+
+    ```sql
+    CREATE MATERIALIZED VIEW mv_events_rollup_1h
+    TO events_rollup_1h
+    AS
+    SELECT
+        toStartOfHour(event_time) AS bucket_start,
+        country,
+        event_type,
+        uniqExactState(user_id)   AS users_uniq,
+        sumState(value)           AS value_sum,
+        avgState(value)           AS value_avg,
+        countState()              AS events_count
+    FROM events_raw
+    GROUP BY bucket_start, country, event_type;
+    ```
+  </Step>
+
+  <Step>
+    ## Insérer quelques données d’exemple
+
+    Insérez quelques données d’exemple :
+
+    ```sql
+    INSERT INTO events_raw VALUES
+        (now() - INTERVAL 4 SECOND, 101, 'US', 'view', 1),
+        (now() - INTERVAL 3 SECOND, 101, 'US', 'click', 1),
+        (now() - INTERVAL 2 SECOND, 202, 'DE', 'view', 1),
+        (now() - INTERVAL 1 SECOND, 101, 'US', 'view', 1);
+    ```
+  </Step>
+
+  <Step>
+    ## Interroger le rollup
+
+    Vous pouvez soit **fusionner** les états à la lecture, soit les **finaliser** :
+
+    <Tabs>
+      <Tab title="Fusionner à la lecture">
+        ```sql
+        SELECT
+            bucket_start,
+            country,
+            event_type,
+            uniqExactMerge(users_uniq) AS users,
+            sumMerge(value_sum)        AS value_sum,
+            avgMerge(value_avg)        AS value_avg,
+            countMerge(events_count)   AS events
+        FROM events_rollup_1h
+        WHERE bucket_start >= now() - INTERVAL 1 DAY
+        GROUP BY ALL
+        ORDER BY bucket_start, country, event_type;
+        ```
+      </Tab>
+
+      <Tab title="Finaliser avec -Final">
+        ```sql
+        SELECT
+            bucket_start,
+            country,
+            event_type,
+            uniqExactMerge(users_uniq) AS users,
+            sumMerge(value_sum)        AS value_sum,
+            avgMerge(value_avg)        AS value_avg,
+            countMerge(events_count)   AS events
+        FROM events_rollup_1h
+        WHERE bucket_start >= now() - INTERVAL 1 DAY
+        GROUP BY ALL
+        ORDER BY bucket_start, country, event_type
+        SETTINGS final = 1;  -- ou utilisez SELECT ... FINAL
+        ```
+      </Tab>
+    </Tabs>
+
+    <br />
+
+    <Tip>
+      Si vous prévoyez que les lectures porteront toujours sur le rollup, vous pouvez créer une **deuxième vue matérialisée** qui écrit des valeurs *finalisées* dans une table `MergeTree` « simple », avec la même granularité d’1 h.
+      Les états offrent plus de souplesse, tandis que les valeurs finalisées rendent les lectures légèrement plus simples.
+    </Tip>
+  </Step>
+
+  <Step>
+    ## Filtrez sur les champs de la clé primaire pour des performances optimales
+
+    Vous pouvez utiliser la commande `EXPLAIN` pour voir comment l’index est utilisé pour écarter des données :
+
+    ```sql title="Query"
+    EXPLAIN indexes=1
+    SELECT *
+    FROM events_rollup_1h
+    WHERE bucket_start BETWEEN now() - INTERVAL 3 DAY AND now()
+      AND country = 'US';
+    ```
+
+    ```response title="Response"
+            ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+        1.  │ Expression ((Project names + Projection))                                                                                          │
+        2.  │   Expression                                                                                                                       │
+        3.  │     ReadFromMergeTree (default.events_rollup_1h)                                                                                   │
+        4.  │     Indexes:                                                                                                                       │
+        5.  │       MinMax                                                                                                                       │
+        6.  │         Keys:                                                                                                                      │
+        7.  │           bucket_start                                                                                                             │
+        8.  │         Condition: and((bucket_start in (-Inf, 1758550242]), (bucket_start in [1758291042, +Inf)))                                 │
+        9.  │         Parts: 1/1                                                                                                                 │
+        10. │         Granules: 1/1                                                                                                              │
+        11. │       Partition                                                                                                                    │
+        12. │         Keys:                                                                                                                      │
+        13. │           toYYYYMM(bucket_start)                                                                                                   │
+        14. │         Condition: and((toYYYYMM(bucket_start) in (-Inf, 202509]), (toYYYYMM(bucket_start) in [202509, +Inf)))                     │
+        15. │         Parts: 1/1                                                                                                                 │
+        16. │         Granules: 1/1                                                                                                              │
+        17. │       PrimaryKey                                                                                                                   │
+        18. │         Keys:                                                                                                                      │
+        19. │           bucket_start                                                                                                             │
+        20. │           country                                                                                                                  │
+        21. │         Condition: and((country in ['US', 'US']), and((bucket_start in (-Inf, 1758550242]), (bucket_start in [1758291042, +Inf)))) │
+        22. │         Parts: 1/1                                                                                                                 │
+        23. │         Granules: 1/1                                                                                                              │
+            └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    ```
+
+    Le plan d’exécution de la requête ci-dessus montre que trois types d’index sont utilisés :
+    un index MinMax, un index de partition et un index de clé primaire.
+    Chaque index utilise des champs spécifiés dans notre clé primaire : `(bucket_start, country, event_type)`.
+    Pour obtenir les meilleures performances de filtrage, assurez-vous que vos requêtes utilisent les champs de la clé primaire afin d’écarter les données inutiles.
+  </Step>
+
+  <Step>
+    ## Variantes courantes
+
+    * **Granularités différentes** : ajoutez un rollup quotidien :
+
+    ```sql
+    CREATE TABLE events_rollup_1d
+    (
+        bucket_start Date,
+        country      LowCardinality(String),
+        event_type   LowCardinality(String),
+        users_uniq   AggregateFunction(uniqExact, UInt64),
+        value_sum    AggregateFunction(sum, Float64),
+        value_avg    AggregateFunction(avg, Float64),
+        events_count AggregateFunction(count)
+    )
+    ENGINE = AggregatingMergeTree
+    PARTITION BY toYYYYMM(bucket_start)
+    ORDER BY (bucket_start, country, event_type);
+    ```
+
+    Ensuite, une deuxième vue matérialisée :
+
+    ```sql
+    CREATE MATERIALIZED VIEW mv_events_rollup_1d
+    TO events_rollup_1d
+    AS
+    SELECT
+        toDate(event_time) AS bucket_start,
+        country,
+        event_type,
+        uniqExactState(user_id),
+        sumState(value),
+        avgState(value),
+        countState()
+    FROM events_raw
+    GROUP BY ALL;
+    ```
+
+    * **Compression** : appliquez des codecs aux colonnes volumineuses (exemple : `Codec(ZSTD(3))`) dans la table brute.
+    * **Contrôle des coûts** : concentrez la rétention la plus lourde sur la table brute et conservez des roll-ups de longue durée.
+    * **Backfilling** : lors du chargement de données historiques, insérez dans `events_raw` et laissez la vue matérialisée créer automatiquement les roll-ups. Pour les lignes existantes, utilisez `POPULATE` lors de la création de la vue matérialisée si cela s’y prête, ou `INSERT SELECT`.
+  </Step>
+
+  <Step>
+    ## Nettoyage et rétention
+
+    * Augmentez le TTL des données brutes (par ex., 30/90 jours), mais conservez les agrégats plus longtemps (par ex., 1 an).
+    * Vous pouvez également utiliser **TTL pour déplacer** les anciennes parts vers un stockage moins coûteux si la hiérarchisation par niveaux est activée.
+  </Step>
+
+  <Step>
+    ## Dépannage
+
+    * La vue matérialisée ne se met pas à jour ? Vérifiez que les insertions arrivent bien dans **events&#95;raw** (et non dans la table de rollup) et que la cible de la vue matérialisée est correcte (`TO events_rollup_1h`).
+    * Requêtes lentes ? Vérifiez qu&#39;elles utilisent bien le rollup (interrogez directement la table de rollup) et que les filtres temporels correspondent à sa granularité.
+    * Écarts après backfill ? Utilisez `SYSTEM FLUSH LOGS` et vérifiez `system.query_log` / `system.parts` pour confirmer les insertions et les fusions.
+  </Step>
+</Steps>

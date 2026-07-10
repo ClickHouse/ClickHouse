@@ -1,0 +1,157 @@
+---
+description: 'Dictionary layout types for storing dictionaries in memory'
+sidebarTitle: 'Overview'
+slug: /sql-reference/statements/create/dictionary/layouts
+title: 'Dictionary layouts'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/_snippet_dictionary_in_cloud.mdx';
+
+## Dictionary layout types {#storing-dictionaries-in-memory}
+
+There are a variety of ways to store dictionaries in memory, each with CPU and RAM-usage trade-offs.
+
+| Layout | Description |
+|---|---|
+| [flat](/reference/statements/create/dictionary/layouts/flat) | Stores data in flat arrays indexed by key. Fastest layout, but keys must be `UInt64` and bounded by `max_array_size`. |
+| [hashed](/reference/statements/create/dictionary/layouts/hashed) | Stores data in a hash table. No key size limit, supports any number of elements. |
+| [sparse_hashed](/reference/statements/create/dictionary/layouts/hashed#sparse_hashed) | Like `hashed`, but trades CPU for lower memory usage. |
+| [complex_key_hashed](/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed) | Like `hashed`, for composite keys. |
+| [complex_key_sparse_hashed](/reference/statements/create/dictionary/layouts/hashed#complex_key_sparse_hashed) | Like `sparse_hashed`, for composite keys. |
+| [hashed_array](/reference/statements/create/dictionary/layouts/hashed-array) | Attributes stored in arrays with a hash table mapping keys to array indices. Memory-efficient for many attributes. |
+| [complex_key_hashed_array](/reference/statements/create/dictionary/layouts/hashed-array#complex_key_hashed_array) | Like `hashed_array`, for composite keys. |
+| [range_hashed](/reference/statements/create/dictionary/layouts/range-hashed) | Hash table with ordered ranges. Supports lookups by key + date/time range. |
+| [complex_key_range_hashed](/reference/statements/create/dictionary/layouts/range-hashed#complex_key_range_hashed) | Like `range_hashed`, for composite keys. |
+| [cache](/reference/statements/create/dictionary/layouts/cache) | Fixed-size in-memory cache. Only frequently accessed keys are stored. |
+| [complex_key_cache](/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed) | Like `cache`, for composite keys. |
+| [ssd_cache](/reference/statements/create/dictionary/layouts/ssd-cache) | Like `cache`, but stores data on SSD with an in-memory index. |
+| [complex_key_ssd_cache](/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache) | Like `ssd_cache`, for composite keys. |
+| [direct](/reference/statements/create/dictionary/layouts/direct) | No in-memory storage — queries the source directly for each request. |
+| [complex_key_direct](/reference/statements/create/dictionary/layouts/direct#complex_key_direct) | Like `direct`, for composite keys. |
+| [ip_trie](/reference/statements/create/dictionary/layouts/ip-trie) | Trie structure for fast IP prefix lookups (CIDR-based). |
+
+<Tip>
+**Recommended layouts**
+
+[flat](/reference/statements/create/dictionary/layouts/flat), [hashed](/reference/statements/create/dictionary/layouts/hashed), and [complex_key_hashed](/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed) provide the best query performance.
+Caching layouts are not recommended due to potentially poor performance and difficulty tuning parameters — see [cache](/reference/statements/create/dictionary/layouts/cache) for details.
+</Tip>
+
+## Specify dictionary layout {#specify-dictionary-layout}
+
+<CloudDetails />
+
+You can configure a dictionary layout with the `LAYOUT` clause (for DDL) or the `layout` setting for configuration file definitions.
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+CREATE DICTIONARY (...)
+...
+LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
+...
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<clickhouse>
+    <dictionary>
+        ...
+        <layout>
+            <layout_type>
+                <!-- layout settings -->
+            </layout_type>
+        </layout>
+        ...
+    </dictionary>
+</clickhouse>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+See also [CREATE DICTIONARY](/reference/statements/create/dictionary) for the full DDL syntax.
+
+Dictionaries without word `complex-key*` in a layout have a key with [UInt64](/reference/data-types/int-uint) type, `complex-key*` dictionaries have a composite key (complex, with arbitrary types).
+
+**Numeric key example** (column key_column has [UInt64](/reference/data-types/int-uint) type):
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+CREATE DICTIONARY dict_name (
+    key_column UInt64,
+    ...
+)
+PRIMARY KEY key_column
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<structure>
+    <id>
+        <name>key_column</name>
+    </id>
+    ...
+</structure>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+**Composite key example** (key has one element with [String](/reference/data-types/string) type):
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+CREATE DICTIONARY dict_name (
+    country_code String,
+    ...
+)
+PRIMARY KEY country_code
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<structure>
+    <key>
+        <attribute>
+            <name>country_code</name>
+            <type>String</type>
+        </attribute>
+    </key>
+    ...
+</structure>
+```
+
+</Tab>
+</Tabs>
+
+## Improve dictionary performance {#improve-performance}
+
+There are several ways to improve dictionary performance:
+
+- Call the function for working with the dictionary after `GROUP BY`.
+- Mark attributes to extract as injective.
+  An attribute is called injective if different keys correspond to different attribute values.
+  So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
+
+ClickHouse generates an exception for errors with dictionaries.
+Examples of errors can be:
+
+- The dictionary being accessed could not be loaded.
+- Error querying a `cached` dictionary.
+
+You can view the list of dictionaries and their statuses in the [system.dictionaries](/reference/system-tables/dictionaries) table.

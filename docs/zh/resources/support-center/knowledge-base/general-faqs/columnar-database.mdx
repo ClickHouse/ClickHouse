@@ -1,0 +1,45 @@
+---
+title: 什么是列式数据库？
+description: "列式数据库会将每一列的数据独立存储。这样一来，在任何一次查询中，只需从磁盘读取用到的那些列的数据。"
+date: 2021-09-01
+tags: ['核心数据概念']
+keywords: ['列式数据库']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## 介绍
+</div>
+
+列式数据库会将每一列的数据独立存储。这样一来，在任何一次查询中，只需从磁盘读取用到的那些列的数据。相应的代价是，涉及整行的操作成本会更高。列式数据库也称为面向列的数据库管理系统。ClickHouse 就是这类系统的典型示例。
+
+<div id="advantages-of-a-columnar-database">
+  ## 列式数据库的优势
+</div>
+
+列式数据库的主要优势包括：
+
+* 在包含很多列的表中，查询往往只需使用其中少数几列。
+* 针对海量数据的聚合查询。
+* 按列进行数据压缩。
+
+<div id="row-oriented-vs-column-oriented-databases">
+  ## 面向行数据库与列式数据库的对比
+</div>
+
+下面展示了在生成报表时，传统面向行系统与列式数据库之间的区别：
+
+**传统面向行**
+
+<Image img="/images/row-oriented.webp" alt="传统面向行数据库存储示意图" size="md" />
+
+**列式**
+
+<Image img="/images/column-oriented.webp" alt="列式数据库存储示意图" size="md" />
+
+对于分析型应用而言，列式数据库通常是更优的选择，因为它允许你在表中预留很多列以备不时之需，同时在执行读取查询时，无需为未使用的列付出额外成本 (而传统 OLTP 数据库在查询时会读取全部数据，因为数据是按行而非按列存储的) 。面向列的数据库专为大数据处理和数据仓库场景而设计。它们通常可以借助由低成本硬件构成的分布式集群实现原生扩展，从而提升吞吐量。ClickHouse 通过结合 [Distributed](/zh/reference/engines/table-engines/special/distributed) 和 [Replicated](/zh/reference/engines/table-engines/mergetree-family/replication) 表来实现这一点。

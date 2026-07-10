@@ -824,6 +824,8 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     in.ignore(type_and_value_size);
 
     ReadBufferFromMemory buf(type_and_value);
+    /// Decoding of values stored in the column is not limited by input_format_binary_max_type_complexity:
+    /// it can happen during background operations where we don't want to throw.
     auto variant_type = decodeDataType(buf);
     auto variant_name = variant_type->getName();
     /// If we already have such variant, just deserialize it into corresponding variant column.

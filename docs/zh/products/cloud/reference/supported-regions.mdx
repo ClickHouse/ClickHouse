@@ -1,0 +1,135 @@
+---
+title: '支持的 Cloud 区域'
+sidebarTitle: '支持的 Cloud 区域'
+keywords: ['aws', 'gcp', 'google cloud', 'azure', 'cloud', 'regions']
+description: 'ClickHouse Cloud 支持的区域'
+slug: /cloud/reference/supported-regions
+doc_type: 'reference'
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="aws-regions">
+  ## AWS 区域
+</div>
+
+* ap-northeast-1 (东京)
+* ap-northeast-2 (韩国，首尔)
+* ap-south-1 (孟买)
+* ap-southeast-1 (新加坡)
+* ap-southeast-2 (悉尼)
+* eu-central-1 (法兰克福)
+* eu-west-1 (爱尔兰)
+* eu-west-2 (伦敦)
+* us-east-1 (北弗吉尼亚)
+* us-east-2 (俄亥俄)
+* us-west-2 (俄勒冈)
+* il-central-1 (以色列，特拉维夫)
+
+**私有区域：**
+
+* ca-central-1 (加拿大)
+* af-south-1 (南非)
+* eu-north-1 (斯德哥尔摩)
+* sa-east-1 (南美洲)
+* ap-southeast-3 (雅加达)
+* ap-east-1 (香港)
+* mx-central-1 (墨西哥)
+
+<div id="google-cloud-regions">
+  ## Google Cloud 区域
+</div>
+
+* asia-southeast1 (新加坡) 
+* asia-northeast1 (东京) 
+* europe-west2 (伦敦) 
+* europe-west4 (荷兰) 
+* us-central1 (爱荷华) 
+* us-east1 (南卡罗来纳) 
+
+**私有区域：**
+
+* australia-southeast1 (悉尼) 
+* europe-west3 (法兰克福) 
+* europe-west6 (苏黎世) 
+* northamerica-northeast1 (蒙特利尔) 
+* us-west1 (俄勒冈)
+
+<div id="azure-regions">
+  ## Azure 区域
+</div>
+
+* 美国西部 3 (亚利桑那州) 
+* 美国东部 2 (弗吉尼亚州) 
+* 德国中西部 (法兰克福) 
+
+**私有区域：**
+
+* 日本东部 (东京、埼玉) 
+* 阿联酋北部 (迪拜) 
+* 澳大利亚东部 (新南威尔士州) 
+
+<Note>
+  需要部署到当前未列出的区域？[提交申请](https://clickhouse.com/pricing?modal=open)。
+</Note>
+
+<div id="private-regions">
+  ## 私有区域
+</div>
+
+<EnterprisePlanFeatureBadge feature="Private regions feature" />
+
+我们为 Enterprise 层级服务提供私有区域。如需申请私有区域，请[联系我们](https://clickhouse.com/company/contact)。
+
+关于私有区域，需要注意以下几点：
+
+* 服务不会自动扩缩容；但支持手动纵向扩缩容和横向扩缩容。
+* 服务不能休眠。
+* 私有区域不提供状态页。
+
+HIPAA 合规可能还有其他要求 (包括签署 BAA) 。请注意，HIPAA 目前仅适用于 Enterprise 层级服务
+
+<div id="hipaa-compliant-regions">
+  ## HIPAA 合规区域
+</div>
+
+<EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
+
+客户必须签署商业伙伴协议 (BAA)，并通过销售或支持团队申请开通流程，才能在 HIPAA 合规区域中创建服务。以下区域支持 HIPAA 合规：
+
+* AWS af-south-1 (南非)  **私有区域**
+* AWS ca-central-1 (加拿大)  **私有区域**
+* AWS eu-central-1 (法兰克福) 
+* AWS eu-north-1 (斯德哥尔摩)  **私有区域**
+* AWS eu-west-1 (爱尔兰) 
+* AWS eu-west-2 (伦敦) 
+* AWS sa-east-1 (南美洲)  **私有区域**
+* AWS us-east-1 (弗吉尼亚北部) 
+* AWS us-east-2 (俄亥俄) 
+* AWS us-west-2 (俄勒冈) 
+* GCP europe-west4 (荷兰) 
+* GCP us-central1 (爱荷华) 
+* GCP us-east1 (南卡罗来纳)
+
+<div id="pci-compliant-regions">
+  ## PCI 合规区域
+</div>
+
+<EnterprisePlanFeatureBadge feature="PCI" support="true" />
+
+客户必须通过销售团队或支持团队申请完成 onboarding，才能在 PCI 合规区域中创建服务。以下区域支持 PCI 合规：
+
+* AWS af-south-1 (南非) **私有区域**
+* AWS ca-central-1 (加拿大) **私有区域**
+* AWS eu-central-1 (法兰克福) 
+* AWS eu-north-1 (斯德哥尔摩) **私有区域**
+* AWS eu-west-1 (爱尔兰) 
+* AWS eu-west-2 (伦敦) 
+* AWS mx-central-1 (墨西哥) **私有区域**
+* AWS sa-east-1 (南美) **私有区域**
+* AWS us-east-1 (北弗吉尼亚) 
+* AWS us-east-2 (俄亥俄) 
+* AWS us-west-2 (俄勒冈) 
+* GCP europe-west4 (荷兰) 
+* GCP us-central1 (爱荷华) 
+* GCP us-east1 (南卡罗来纳)
