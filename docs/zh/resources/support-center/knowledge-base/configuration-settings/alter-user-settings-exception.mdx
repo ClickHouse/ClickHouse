@@ -1,0 +1,41 @@
+---
+title: 修改用户设置时的异常
+description: 处理修改用户设置时抛出的异常
+date: 2023-08-26
+tags: ['设置', '错误与异常']
+keywords: ['异常', '用户设置']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dbexception-cannot-update-user-default-in-usersxml-because-this-storage-is-readonly-access_storage_readonly">
+  ## DB::Exception: 无法更新 users.xml 中的用户 `default`，因为此存储为 readonly。 (ACCESS_STORAGE_READONLY)
+</div>
+
+当你尝试修改用户设置时，可能会遇到上述异常。
+
+以下是排查此错误的几种方法：
+
+<div id="edit-usersxml-directly">
+  ## 直接编辑 users.xml
+</div>
+
+你可以直接在 `/etc/clickhouse-server/users.d` 目录下的 `users.xml` 文件中，为特定用户编辑或添加所需设置。
+
+有关 `users.xml` 的更多信息，请参阅[此处](/zh/concepts/features/configuration/settings/settings-profiles)。
+
+<div id="create-another-user">
+  ## 创建另一个用户
+</div>
+
+您可以使用指定的设置再创建一个用户，然后使用该新用户连接到 ClickHouse。
+
+请参阅[此页面](/zh/reference/statements/create/user)，了解如何创建用户。
+
+<div id="enable-sql-driven-access-control">
+  ## 启用 SQL 驱动的访问控制
+</div>
+
+您可以为 `default` 用户启用 SQL 驱动的访问控制与账户管理。有关启用方法的步骤，请参见此[页面](/zh/concepts/features/security/access-rights#enabling-access-control)。

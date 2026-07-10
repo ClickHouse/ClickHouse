@@ -1,0 +1,546 @@
+---
+sidebarTitle: 'BACKUP と RESTORE の使用'
+slug: /cloud/migration/oss-to-cloud-backup-restore
+title: 'バックアップコマンドを使用したセルフマネージド ClickHouse から ClickHouse Cloud への移行'
+description: 'BACKUP コマンドと RESTORE コマンドを使用して、セルフマネージド ClickHouse と ClickHouse Cloud 間で移行する方法を説明するページ'
+doc_type: 'guide'
+keywords: ['移行', 'ClickHouse Cloud', 'OSS', 'セルフマネージドから Cloud へ移行', 'BACKUP', 'RESTORE']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="overview-migration-approaches">
+  ## 概要
+</div>
+
+セルフマネージド ClickHouse (OSS) から ClickHouse Cloud にデータを移行するには、主に 2 つの方法があります。
+
+* [`remoteSecure()`](/ja/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) 関数を使用して、データを直接 pull/push する方法
+* クラウドオブジェクトストレージ経由で `BACKUP`/`RESTORE` コマンドを使用する方法
+
+> この移行ガイドでは、`BACKUP`/`RESTORE` アプローチに焦点を当て、
+> オープンソース版 ClickHouse のデータベース、またはサービス全体を S3 バケット経由で ClickHouse Cloud に移行する実践的な例を紹介します。
+
+**前提条件**
+
+* Docker がインストールされていること
+* [S3 バケットと IAM ユーザー](/ja/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket) を用意していること
+* 新しい ClickHouse Cloud サービスを作成できること
+
+このガイドの手順を追いやすくし、再現しやすくするために、
+2 つの分片と 2 つのレプリカを持つ ClickHouse クラスター用の docker compose レシピの 1 つを使用します。
+
+<Info>
+  **クラスターが必要です**
+
+  このバックアップ方法では、テーブルを `MergeTree` エンジンから `ReplicatedMergeTree` に変換する必要があるため、ClickHouse クラスターが必要です。
+  単一インスタンスで実行している場合は、代わりに [&quot;Migrating between self-managed ClickHouse and ClickHouse Cloud using remoteSecure&quot;](/ja/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) の手順に従ってください。
+</Info>
+
+<div id="oss-setup">
+  ## OSS の準備
+</div>
+
+まず、examples リポジトリの Docker Compose 設定を使って ClickHouse クラスターを起動します。
+すでに稼働中の ClickHouse クラスターがある場合は、この手順は省略できます。
+
+1. [examples リポジトリ](https://github.com/ClickHouse/examples) をローカルマシンにクローンします
+2. ターミナルで `examples/docker-compose-recipes/recipes/cluster_2S_2R` に `cd` します
+3. Docker が起動していることを確認してから、ClickHouse クラスターを起動します:
+
+```bash
+docker compose up
+```
+
+次のように表示されます:
+
+```bash
+[+] Running 7/7
+ ✔ Container clickhouse-keeper-01  Created  0.1s
+ ✔ Container clickhouse-keeper-02  Created  0.1s
+ ✔ Container clickhouse-keeper-03  Created  0.1s
+ ✔ Container clickhouse-01         Created  0.1s
+ ✔ Container clickhouse-02         Created  0.1s
+ ✔ Container clickhouse-04         Created  0.1s
+ ✔ Container clickhouse-03         Created  0.1s
+```
+
+フォルダーのルートディレクトリで新しいターミナルウィンドウを開き、次のコマンドを実行してクラスターの最初のノードに接続します:
+
+```bash
+docker exec -it clickhouse-01 clickhouse-client
+```
+
+<div id="mergetree-to-replicatedmergetree">
+  ### MergeTree テーブルから ReplicatedMergeTree テーブルへ
+</div>
+
+ClickHouse Cloud は [`SharedMergeTree`](/ja/products/cloud/features/infrastructure/shared-merge-tree) を使用します。
+バックアップの復元時に、ClickHouse は `ReplicatedMergeTree` を使用するテーブルを自動的に `SharedMergeTree` テーブルへ変換します。
+
+クラスターで実行している場合、テーブルはすでに `ReplicatedMergeTree` エンジンを使用している可能性が高いです。
+そうでない場合は、バックアップを作成する前に、`MergeTree` テーブルを `ReplicatedMergeTree` に変換する必要があります。
+
+`MergeTree` テーブルを `ReplicatedMergeTree` に変換する方法を示すため、まず `MergeTree` テーブルを作成し、その後 `ReplicatedMergeTree` に変換します。
+そのために、[New York taxi data guide](/ja/get-started/sample-datasets/nyc-taxi) の最初の 2 つの手順に従って、サンプルテーブルを作成し、データをロードします。
+便宜上、これらの手順も以下に記載しています。
+
+新しいデータベースを作成し、S3 バケット から新しいテーブルにデータを挿入するには、次のコマンドを実行します。
+
+```sql
+CREATE DATABASE nyc_taxi;
+
+CREATE TABLE nyc_taxi.trips_small_adapted (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+```sql
+INSERT INTO nyc_taxi.trips_small_adapted
+SELECT
+    trip_id,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_longitude,
+    pickup_latitude,
+    dropoff_longitude,
+    dropoff_latitude,
+    passenger_count,
+    trip_distance,
+    fare_amount,
+    extra,
+    tip_amount,
+    tolls_amount,
+    total_amount,
+    payment_type,
+    pickup_ntaname,
+    dropoff_ntaname
+FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
+    'TabSeparatedWithNames'
+);
+```
+
+次のコマンドを実行し、テーブルを`DETACH`します。
+
+```sql
+DETACH TABLE nyc_taxi.trips_small_adapted;
+```
+
+次に、それをレプリケートテーブルとしてアタッチします:
+
+```sql
+ATTACH TABLE nyc_taxi.trips_small_adapted AS REPLICATED;
+```
+
+最後に、レプリカのメタデータを復元します:
+
+```sql
+SYSTEM RESTORE REPLICA nyc_taxi.trips_small_adapted;
+```
+
+`ReplicatedMergeTree` に変換されていることを確認します:
+
+```sql
+SELECT engine
+FROM system.tables
+WHERE name = 'trips_small_adapted' AND database = 'nyc_taxi';
+```
+
+```response
+┌─engine──────────────┐
+│ ReplicatedMergeTree │
+└─────────────────────┘
+```
+
+これで、後で
+S3 バケットからバックアップを復元できるよう、Cloud サービスの設定に進む準備が整いました。
+
+<div id="distributed-tables">
+  ### ReplicatedMergeTree を使った分散テーブル
+</div>
+
+構成で複数の分片にまたがる分散テーブルを使用している場合は、各ノードにローカルの `ReplicatedMergeTree` テーブルと、クエリの入口となる `Distributed` テーブルが必要です。
+
+次のコマンドを実行して、すべてのクラスター ノードにローカルのレプリケートテーブルを作成します:
+
+```sql
+CREATE DATABASE IF NOT EXISTS nyc_taxi ON CLUSTER 'cluster_2S_2R';
+
+CREATE TABLE nyc_taxi.trips_small_dist_local ON CLUSTER 'cluster_2S_2R'
+(
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/{table}/{shard}', '{replica}')
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+次に、その上に `Distributed` テーブルを作成します:
+
+```sql
+
+CREATE TABLE nyc_taxi.trips_small_dist ON CLUSTER 'cluster_2S_2R'
+(
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = Distributed('cluster_2S_2R', 'nyc_taxi', 'trips_small_dist_local', rand());
+```
+
+分散テーブル経由でデータを挿入します:
+
+```sql
+INSERT INTO nyc_taxi.trips_small_dist
+SELECT
+    trip_id,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_longitude,
+    pickup_latitude,
+    dropoff_longitude,
+    dropoff_latitude,
+    passenger_count,
+    trip_distance,
+    fare_amount,
+    extra,
+    tip_amount,
+    tolls_amount,
+    total_amount,
+    payment_type,
+    pickup_ntaname,
+    dropoff_ntaname
+FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
+    'TabSeparatedWithNames'
+);
+```
+
+<div id="cloud-setup">
+  ## Cloud の準備
+</div>
+
+データは新しい Cloud サービスに復元します。
+以下の手順に従って、新しい Cloud サービスを作成してください。
+
+<Steps>
+  <Step>
+    #### Cloud Console を開く
+
+    [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/) にアクセスします
+  </Step>
+
+  <Step>
+    #### 新しいサービスを作成する
+
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="新しいサービスを作成する" />
+  </Step>
+
+  <Step>
+    #### サービスを設定して作成する
+
+    使用するリージョンと構成を選択し、`Create service` をクリックします
+
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="サービスの設定を行う" />
+  </Step>
+
+  <Step>
+    #### アクセスロールを作成する
+
+    SQL Console を開きます
+
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="サービスの設定を行う" />
+
+    ### S3 アクセスを設定する
+
+    S3 からバックアップを復元するには、ClickHouse Cloud と S3 バケットの間で安全にアクセスできるよう設定する必要があります。
+
+    1. [&quot;Accessing S3 data securely&quot;](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) の手順に従ってアクセスロールを作成し、ロール ARN を取得します。
+
+    2. [&quot;How to create an S3 bucket and IAM role&quot;](/ja/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket) で作成した S3 バケットポリシーを更新し、前の手順で取得したロール ARN を追加します。
+
+    更新後の S3 バケットポリシーは、次のようになります。
+
+    ```json highlight={10-11}
+    {
+        "Version": "2012-10-17",
+        "Id": "Policy123456",
+        "Statement": [
+            {
+                "Sid": "abc123",
+                "Effect": "Allow",
+                "Principal": {
+                    "AWS": [
+                        "arn:aws:iam::123456789123:role/ClickHouseAccess-001",
+                        "arn:aws:iam::123456789123:user/docs-s3-user"
+                    ]
+                },
+                "Action": "s3:*",
+                "Resource": [
+                    "arn:aws:s3:::ch-docs-s3-bucket",
+                    "arn:aws:s3:::ch-docs-s3-bucket/*"
+                ]
+            }
+        ]
+    }
+    ```
+
+    このポリシーには、両方の ARN が含まれています。
+
+    * **IAM ユーザー** (`docs-s3-user`): セルフマネージドの ClickHouse クラスターが S3 にバックアップできるようにします
+    * **ClickHouse Cloud ロール** (`ClickHouseAccess-001`): Cloud サービスが S3 から復元できるようにします
+  </Step>
+</Steps>
+
+<div id="taking-a-backup-on-oss">
+  ## バックアップの作成 (セルフマネージド環境)
+</div>
+
+各分片は個別にバックアップする必要があります。各分片上のノードに接続し、
+分片ごとに一意の宛先パスを指定してバックアップコマンドを実行します。
+
+`BUCKET_URL`、`KEY_ID`、`SECRET_KEY` は、お使いの AWS 認証情報に置き換えてください。
+ガイド[「S3 バケットと IAM ロールを作成する方法」](/ja/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)
+では、まだこれらをお持ちでない場合の取得方法を説明しています。
+
+**分片 1:**
+
+```sql
+BACKUP DATABASE nyc_taxi
+TO S3(
+  'BUCKET_URL/backup_s1.zip',
+  'KEY_ID',
+  'SECRET_KEY'
+)
+```
+
+**分片 2：**
+
+```sql
+BACKUP DATABASE nyc_taxi
+TO S3(
+  'BUCKET_URL/backup_s2.zip',
+  'KEY_ID',
+  'SECRET_KEY'
+)
+```
+
+すべてが正しく設定されていれば、以下のような応答が表示されます。
+この応答には、バックアップに割り当てられた一意の ID と、バックアップのステータスが含まれます。
+
+```response
+Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
+
+┌─id───────────────────────────────────┬─status─────────┐
+│ e73b99ab-f2a9-443a-80b4-533efe2d40b3 │ BACKUP_CREATED │
+└──────────────────────────────────────┴────────────────┘
+```
+
+<Info>
+  **単一ノード構成**
+
+  分散テーブルを使用していない場合は、1つのコマンドでデータベース全体をバックアップできます。
+
+  ```sql
+  BACKUP DATABASE nyc_taxi
+  TO S3(
+    'BUCKET_URL',
+    'KEY_ID',
+    'SECRET_KEY'
+  )
+  ```
+</Info>
+
+先ほどまで空だった S3 バケットを確認すると、いくつかのフォルダが作成されているのがわかります。
+
+<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="バックアップ、データ、メタデータ" />
+
+完全な移行を行う場合は、次のコマンドを実行してサーバー全体をバックアップできます。
+
+```sql
+BACKUP
+TABLE system.users,
+TABLE system.roles,
+TABLE system.settings_profiles,
+TABLE system.row_policies,
+TABLE system.quotas,
+TABLE system.functions,
+ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+TO S3(
+  'BUCKET_ID',
+  'KEY_ID',
+  'SECRET_ID'
+)
+SETTINGS
+  compression_method='lzma',
+  compression_level=3;
+```
+
+上記のコマンドでは、次のものがバックアップされます:
+
+* すべてのユーザーデータベースとテーブル
+* ユーザーアカウントとパスワード
+* ロールと権限
+* 設定プロファイル
+* 行ポリシー
+* クォータ
+* ユーザー定義関数
+
+別のクラウドサービスプロバイダ (CSP) を使用している場合は、`TO S3()` (AWS と GCP の両方に対応) や `TO AzureBlobStorage()` の構文を使用できます。
+
+非常に大規模なデータベースの場合は、`ASYNC` を使用してバックグラウンドでバックアップを実行することも検討してください:
+
+```sql
+BACKUP DATABASE my_database 
+TO S3('https://your-bucket.s3.amazonaws.com/backup.zip', 'key', 'secret')
+ASYNC;
+       
+-- バックアップIDを即座に返して処理を返す
+-- 実行結果の例:
+-- ┌─id──────────────────────────────────┬─status────────────┐
+-- │ abc123-def456-789                   │ CREATING_BACKUP   │
+-- └─────────────────────────────────────┴───────────────────┘
+```
+
+このバックアップIDを使って、バックアップの進行状況を確認できます。
+
+```sql
+SELECT * 
+FROM system.backups 
+WHERE id = 'abc123-def456-789'
+```
+
+増分バックアップを取得することもできます。
+バックアップ全般の詳細については、[バックアップと復元](/ja/concepts/features/backup-restore/overview)のドキュメントを参照してください。
+
+<div id="restore-to-clickhouse-cloud">
+  ## ClickHouse Cloud への復元
+</div>
+
+各分片のバックアップを 1 つずつ Cloud サービスに復元します。`ROLE_ARN` は
+[&quot;S3 データへ安全にアクセスする&quot;](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) で取得した
+値に設定してください。2 回目以降の復元では `SETTINGS allow_non_empty_tables=true` を使用し、
+競合によって失敗する代わりに、分片データがすでに復元済みのテーブルに追記されるようにします。
+
+**分片 1:**
+
+```sql
+RESTORE DATABASE nyc_taxi
+FROM S3(
+    'BUCKET_URL/backup_s1.zip',
+    extra_credentials(role_arn = 'ROLE_ARN')
+)
+```
+
+**分片 2:**
+
+```sql
+RESTORE DATABASE nyc_taxi
+FROM S3(
+    'BUCKET_URL/backup_s2.zip',
+    extra_credentials(role_arn = 'ROLE_ARN')
+)
+SETTINGS allow_non_empty_tables=true;
+```
+
+<Info>
+  **非分散デプロイメント**
+
+  分散テーブルを使用していない場合は、1つのコマンドでデータベースを復元できます。
+
+  ```sql
+  RESTORE DATABASE nyc_taxi
+  FROM S3(
+      'BUCKET_URL',
+      extra_credentials(role_arn = 'ROLE_ARN')
+  )
+  ```
+</Info>
+
+同様の手順で、サービス全体を復元することもできます。
+
+```sql
+RESTORE
+    TABLE system.users,
+    TABLE system.roles,
+    TABLE system.settings_profiles,
+    TABLE system.row_policies,
+    TABLE system.quotas,
+    ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+FROM S3(
+    'BUCKET_URL',
+    extra_credentials(role_arn = 'ROLE_ARN')
+)
+```
+
+復元が完了したら、Cloud でデータが利用可能になっていることを確認できます。
+
+```sql
+-- ClickHouse Cloud にローカルテーブルの内容がすべて復元されていることを確認します
+SELECT count() from nyc_taxi.trips_small_dist_local;
+3000317
+```
+
+ClickHouse Cloud では内部的に `SharedMergeTree` を使用しているため、従来の分散テーブルは不要です。削除したうえで、クエリで元のテーブル名をそのまま使えるようにするビューへ置き換えることができます。
+
+```sql
+DROP TABLE drop table nyc_taxi.trips_small_dist;
+CREATE VIEW nyc_taxi.trips_small_dist AS SELECT * FROM nyc_taxi.trips_small_dist_local;
+SELECT count() from nyc_taxi.trips_small_dist;
+3000317
+```
+
+分散されていない `ReplicatedMergeTree` テーブルは `SharedMergeTree` として復元されます:
+
+```sql
+SELECT count() FROM nyc_taxi.trips_small_adapted;
+3000317
+```

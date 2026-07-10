@@ -1,0 +1,201 @@
+---
+description: 'Estrutura de dados preparada opcional para uso em operações de JOIN.'
+sidebarTitle: 'Join'
+slug: /engines/table-engines/special/join
+title: 'Motor de tabela Join'
+doc_type: 'reference'
+---
+
+Estrutura de dados preparada opcional para uso em operações de [JOIN](/pt-BR/reference/statements/select/join).
+
+<Note>
+  No ClickHouse Cloud, se o serviço tiver sido criado com uma versão anterior à 25.4, será necessário definir a compatibilidade para pelo menos 25.4 usando `SET compatibility=25.4`.
+</Note>
+
+<div id="creating-a-table">
+  ## Criando uma tabela
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
+```
+
+Consulte a descrição detalhada da consulta [CREATE TABLE](/pt-BR/reference/statements/create/table).
+
+<div id="engine-parameters">
+  ## Parâmetros do motor
+</div>
+
+<div id="join_strictness">
+  ### `join_strictness`
+</div>
+
+`join_strictness` – [strictness do JOIN](/pt-BR/reference/statements/select/join#supported-types-of-join).
+
+<div id="join_type">
+  ### `join_type`
+</div>
+
+`join_type` – [tipo de JOIN](/pt-BR/reference/statements/select/join#supported-types-of-join).
+
+<div id="key-columns">
+  ### Colunas-chave
+</div>
+
+`k1[, k2, ...]` – Colunas-chave da cláusula `USING` usadas na operação `JOIN`.
+
+Informe os parâmetros `join_strictness` e `join_type` sem aspas, por exemplo, `Join(ANY, LEFT, col1)`. Eles devem corresponder à operação `JOIN` para a qual a tabela será usada. Se os parâmetros não corresponderem, o ClickHouse não lança exceção e pode retornar dados incorretos.
+
+<div id="specifics-and-recommendations">
+  ## Detalhes e recomendações
+</div>
+
+<div id="data-storage">
+  ### Armazenamento de dados
+</div>
+
+Os dados da tabela `Join` ficam sempre na RAM. Ao inserir linhas em uma tabela, o ClickHouse grava blocos de dados no diretório em disco para que possam ser restaurados quando o servidor for reiniciado.
+
+Se o servidor for reiniciado de forma incorreta, o bloco de dados em disco pode ser perdido ou corrompido. Nesse caso, talvez seja necessário excluir manualmente o arquivo com os dados corrompidos.
+
+<div id="selecting-and-inserting-data">
+  ### Selecionando e inserindo dados
+</div>
+
+Você pode usar consultas `INSERT` para adicionar dados a tabelas do motor `Join`. Se a tabela foi criada com a strictness `ANY`, os dados com chaves duplicadas são ignorados. Com a strictness `ALL`, todas as linhas são adicionadas.
+
+Os principais casos de uso de tabelas do motor `Join` são os seguintes:
+
+* Colocar a tabela no lado direito de uma cláusula `JOIN`.
+* Chamar a função [joinGet](/pt-BR/reference/functions/regular-functions/other-functions#joinGet), que permite extrair dados da tabela da mesma forma que de um dicionário.
+
+<div id="deleting-data">
+  ### Excluindo dados
+</div>
+
+As consultas `ALTER DELETE` em tabelas com motor `Join` são implementadas como [mutações](/pt-BR/reference/statements/alter/index#mutations). A mutação `DELETE` lê os dados filtrados e sobrescreve os dados em memória e no disco.
+
+<div id="join-limitations-and-settings">
+  ### Limitações e configurações
+</div>
+
+Ao criar uma tabela, as seguintes configurações são aplicadas:
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+[join&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings#join_use_nulls)
+
+<div id="max_rows_in_join">
+  #### `max_rows_in_join`
+</div>
+
+[max&#95;rows&#95;in&#95;join](/pt-BR/reference/settings/session-settings#max_rows_in_join)
+
+<div id="max_bytes_in_join">
+  #### `max_bytes_in_join`
+</div>
+
+[max&#95;bytes&#95;in&#95;join](/pt-BR/reference/settings/session-settings#max_bytes_in_join)
+
+<div id="join_overflow_mode">
+  #### `join_overflow_mode`
+</div>
+
+[join&#95;overflow&#95;mode](/pt-BR/reference/settings/session-settings#join_overflow_mode)
+
+<div id="join_any_take_last_row">
+  #### `join_any_take_last_row`
+</div>
+
+[join&#95;any&#95;take&#95;last&#95;row](/pt-BR/reference/settings/session-settings#join_any_take_last_row)
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+<div id="persistent">
+  #### Persistente
+</div>
+
+Desabilita a persistência dos motores de tabela Join e [Set](/pt-BR/reference/engines/table-engines/special/set).
+
+Reduz a sobrecarga de E/S. Adequado para cenários que priorizam desempenho e não exigem persistência.
+
+Valores possíveis:
+
+* 1 — Habilitado.
+* 0 — Desabilitado.
+
+Valor padrão: `1`.
+
+As tabelas do motor `Join` não podem ser usadas em operações `GLOBAL JOIN`.
+
+O motor `Join` permite especificar a configuração [join&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings#join_use_nulls) na instrução `CREATE TABLE`. A consulta [SELECT](/pt-BR/reference/statements/select/index) deve ter o mesmo valor de `join_use_nulls`.
+
+<div id="example">
+  ## Exemplos de uso
+</div>
+
+Criando a tabela à esquerda:
+
+```sql
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
+```
+
+```sql
+INSERT INTO id_val VALUES (1,11), (2,12), (3,13);
+```
+
+Criando a tabela `Join` da direita:
+
+```sql
+CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
+```
+
+```sql
+INSERT INTO id_val_join VALUES (1,21), (1,22), (3,23);
+```
+
+Junção das tabelas:
+
+```sql
+SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
+```
+
+```text
+┌─id─┬─val─┬─id_val_join.val─┐
+│  1 │  11 │              21 │
+│  2 │  12 │               0 │
+│  3 │  13 │              23 │
+└────┴─────┴─────────────────┘
+```
+
+Como alternativa, você pode obter dados da tabela `Join`, especificando o valor da chave de junção:
+
+```sql
+SELECT joinGet('id_val_join', 'val', toUInt32(1));
+```
+
+```text
+┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
+│                                         21 │
+└────────────────────────────────────────────┘
+```
+
+Excluir uma linha da tabela `Join`:
+
+```sql
+ALTER TABLE id_val_join DELETE WHERE id = 3;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  21 │
+└────┴─────┘
+```

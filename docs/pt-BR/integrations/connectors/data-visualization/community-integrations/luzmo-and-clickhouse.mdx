@@ -1,0 +1,72 @@
+---
+sidebarTitle: 'Luzmo'
+slug: /integrations/luzmo
+keywords: ['ClickHouse', 'Luzmo', 'conectar', 'integrar', 'UI', 'embarcada']
+description: 'Luzmo é uma plataforma de analytics embarcada com integração nativa com o ClickHouse, criada especificamente para aplicações de software e SaaS.'
+title: 'Integrando o Luzmo ao ClickHouse'
+sidebar: 'integrations'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<div id="1-setup-a-clickhouse-connection">
+  ## 1. Configure uma conexão com o ClickHouse
+</div>
+
+Para se conectar ao ClickHouse, acesse a **página Connections**, selecione **New Connection** e, em seguida, escolha o ClickHouse no modal **New Connection**.
+
+<Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="Interface do Luzmo mostrando a caixa de diálogo Create a New Connection com o ClickHouse selecionado" border />
+
+Será solicitado que você informe um **host**, **nome de usuário** e **senha**:
+
+<Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="Formulário de configuração de conexão do Luzmo mostrando campos para host, nome de usuário e senha do ClickHouse" border />
+
+* **Host**: este é o host em que seu banco de dados ClickHouse está exposto. Observe que apenas `https` é aceito aqui para transferir dados com segurança pelo wire. A estrutura esperada da URL do host é: `https://url-to-clickhouse-db:port/database`
+  Por padrão, o plugin se conectará ao banco de dados &#39;default&#39; e à porta 443. Ao informar um banco de dados após a &#39;/&#39;, você pode configurar a qual banco de dados se conectar.
+* **Username**: o nome de usuário que será usado para se conectar ao seu cluster ClickHouse.
+* **Password**: a senha para se conectar ao seu cluster ClickHouse
+
+Consulte os exemplos em nossa documentação para desenvolvedores para saber como [criar uma conexão com o ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) por meio da nossa API.
+
+<div id="2-add-datasets">
+  ## 2. Adicione conjuntos de dados
+</div>
+
+Depois de conectar o ClickHouse, você pode adicionar conjuntos de dados conforme explicado [aqui](https://academy.luzmo.com/article/ldx3iltg). Você pode selecionar um ou vários conjuntos de dados disponíveis no ClickHouse e [vinculá-los](https://academy.luzmo.com/article/gkrx48x5) no Luzmo para garantir que possam ser usados em conjunto em um dashboard. Confira também este artigo sobre [Como preparar seus dados para análise](https://academy.luzmo.com/article/u492qov0).
+
+Para saber como adicionar conjuntos de dados usando nossa API, consulte [este exemplo na documentação para desenvolvedores](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody).
+
+Agora você pode usar seus conjuntos de dados para criar dashboards incríveis (incorporados) ou até mesmo viabilizar um analista de dados com IA ([Luzmo IQ](https://luzmo.com/iq)) capaz de responder às perguntas dos seus clientes.
+
+<Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="Exemplo de dashboard do Luzmo mostrando várias visualizações de dados do ClickHouse" border />
+
+<div id="usage-notes">
+  ## Notas de uso
+</div>
+
+1. O conector ClickHouse do Luzmo usa a interface da API HTTP (normalmente executada na porta 8123) para se conectar.
+2. Se você usar tabelas com o mecanismo de tabela `Distributed`, alguns gráficos do Luzmo poderão falhar quando `distributed_product_mode` estiver definido como `deny`. No entanto, isso só deve ocorrer se você vincular a tabela com outra tabela e usar esse vínculo em um gráfico. Nesse caso, defina `distributed_product_mode` como outra opção que faça sentido no seu cluster ClickHouse. Se estiver usando ClickHouse Cloud, você pode ignorar essa configuração com segurança.
+3. Para garantir que, por exemplo, somente o aplicativo Luzmo possa acessar sua instância do ClickHouse, é altamente recomendável **incluir na lista de permissões** a [faixa de endereços IP estáticos do Luzmo](https://academy.luzmo.com/article/u9on8gbm). Também recomendamos usar um usuário técnico somente leitura.
+4. Atualmente, o conector ClickHouse oferece suporte aos seguintes tipos de dados:
+
+   | Tipo do ClickHouse | Tipo do Luzmo |
+   | ------------------ | ------------- |
+   | UInt               | numeric       |
+   | Int                | numeric       |
+   | Float              | numeric       |
+   | Decimal            | numeric       |
+   | Date               | datetime      |
+   | DateTime           | datetime      |
+   | String             | hierarchy     |
+   | Enum               | hierarchy     |
+   | FixedString        | hierarchy     |
+   | UUID               | hierarchy     |
+   | Bool               | hierarchy     |

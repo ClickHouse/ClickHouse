@@ -1,0 +1,78 @@
+---
+title: حلّ خطأ "تعذّر إلحاق البيانات بتنسيق Parquet" في ClickHouse
+description: هل تواجه الخطأ "Cannot append data in format Parquet to file" في ClickHouse؟ لنلقِ نظرة على كيفية حلّه.
+date: 2023-03-25
+tags: ['الأخطاء والاستثناءات', 'تنسيقات البيانات']
+keywords: ['Parquet', 'تعذّر إلحاق البيانات']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="resolving-cannot-append-data-in-parquet-format-error-in-clickhouse">
+  ## معالجة الخطأ &quot;تعذّر إلحاق البيانات بتنسيق Parquet&quot; في ClickHouse
+</div>
+
+هل يظهر لك الخطأ &quot;Cannot append data in format Parquet to file&quot; في ClickHouse؟
+
+عادةً ما يظهر الخطأ بالشكل التالي:
+
+`DB::Exception: Cannot append data in format Parquet to file, because this format doesn't support appends. (CANNOT_APPEND_TO_FILE)`
+
+لنفترض أنك أنشأت جدولًا يستخدم محرك الجداول `File` مع تنسيق Parquet.
+
+```sql
+CREATE TABLE parquet_test
+(
+    `x` UInt32,
+    `y` String
+)
+ENGINE = File(Parquet)
+```
+
+يمكنك الكتابة إلى الجدول مرةً واحدة فقط:
+
+```sql
+INSERT INTO parquet_test VALUES
+   (1, 'Hello'),
+   (2, 'Hi')
+```
+
+يؤدي ذلك إلى إنشاء ملف باسم `data.Parquet` في المجلد `data/default/parquet_test`. إذا حاولت insert دفعة أخرى:
+
+```sql
+INSERT INTO parquet_test VALUES
+   (3, 'World'),
+   (4, 'Bye')
+```
+
+...سيظهر لك الخطأ التالي:
+
+```response
+Code: 641. DB::Exception: Received from localhost:9000. DB::Exception: Cannot append data in format Parquet to file, because this format doesn't support appends. You can allow to create a new file on each insert by enabling setting engine_file_allow_create_multiple_files. (CANNOT_APPEND_TO_FILE)
+```
+
+لا يمكنك الإلحاق بملفات Parquet في ClickHouse. ولكن يمكنك جعل ClickHouse ينشئ ملفًا جديدًا لكل `INSERT` عبر تمكين [`إعداد engine_file_allow_create_multiple_files`](/ar/reference/settings/session-settings#engine_file_allow_create_multiple_files). وإذا كان هذا الإعداد مُمكّنًا، فسيُنشأ ملف جديد عند كل عملية insert باسم يتبع هذا النمط:
+
+`data.Parquet` -&gt; `data.1.Parquet` -&gt; `data.2.Parquet`، وهكذا:
+
+لنجرب ذلك. سنضع الأمرين في ملف واحد باسم `parquet.sql`:
+
+```sql
+SET engine_file_allow_create_multiple_files = 1;
+
+INSERT INTO default.parquet_test VALUES  (3, 'World'), (4, 'Bye');
+```
+
+شغّل ذلك باستخدام `clickhouse-client`:
+
+```bash
+./clickhouse client --queries-file parquet.sql
+```
+
+والآن سترى ملفين في `data/default/parquet_test` (وملفًا جديدًا مع كل عملية insert لاحقة).
+
+<Note>
+  ينطبق الإعداد `engine_file_allow_create_multiple_files` على تنسيقات بيانات أخرى غير قابلة للإلحاق، مثل JSON وORC.
+</Note>

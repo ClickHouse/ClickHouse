@@ -1,0 +1,157 @@
+---
+title: 'Monitoreo en la consola de ClickHouse Cloud'
+slug: /cloud/monitoring/cloud-console
+description: 'Paneles de monitoreo integrados en la consola de ClickHouse Cloud'
+keywords: ['cloud', 'monitoreo', 'paneles', 'estado del servicio', 'utilización de recursos', 'panel avanzado']
+sidebarTitle: 'Consola de ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Los servicios de ClickHouse Cloud incluyen componentes de monitoreo listos para usar que proporcionan a los usuarios paneles y notificaciones. De forma predeterminada, todos los usuarios de la consola de ClickHouse Cloud pueden acceder a estos paneles.
+
+<div id="dashboards">
+  ## Paneles
+</div>
+
+<div id="service-health">
+  ### Estado del servicio
+</div>
+
+El panel Service Health puede usarse para supervisar el estado general de un servicio. ClickHouse Cloud recopila y almacena las métricas que se muestran en este panel a partir de las tablas del sistema para que puedan consultarse cuando un servicio se suspende por inactividad.
+
+{/* TODO: Añadir una captura de pantalla del panel Service Health */}
+
+<div id="resource-utilization">
+  ### Utilización de recursos
+</div>
+
+El panel Infrastructure ofrece una vista detallada de los recursos que utiliza el proceso de ClickHouse. ClickHouse Cloud recopila y almacena las métricas que se muestran en este panel a partir de las tablas del sistema, para que puedan consultarse cuando un servicio esté inactivo.
+
+<div id="memory-and-cpu">
+  #### Memoria y CPU
+</div>
+
+Los gráficos de **CPU asignada** y **Memoria asignada** muestran los recursos de cómputo totales disponibles para cada réplica de su servicio. Estas asignaciones pueden modificarse mediante las [funciones de escalado](/es/products/cloud/features/autoscaling/overview) de ClickHouse Cloud.
+
+Los gráficos de **Uso de memoria** y **Uso de CPU** estiman cuánta CPU y memoria están utilizando realmente los procesos de ClickHouse en cada réplica, incluidas las consultas y los procesos en segundo plano, como las fusiones.
+
+<Info>
+  **Degradación del rendimiento**
+
+  Si el uso de memoria o CPU se acerca a la memoria o CPU asignadas, es posible que empiece a experimentar una degradación del rendimiento. Para solucionarlo, recomendamos:
+
+  * Optimizar sus consultas
+  * Cambiar la partición de sus motores de tabla
+  * Añadir más recursos de cómputo a su servicio mediante el [escalado](/es/products/cloud/features/autoscaling/overview)
+</Info>
+
+Estas son las métricas de la tabla del sistema correspondientes que se muestran en estos gráficos:
+
+| Gráfico          | Nombre de la métrica correspondiente | Agregación | Notas                                                             |
+| ---------------- | ------------------------------------ | ---------- | ----------------------------------------------------------------- |
+| Memoria asignada | `CGroupMemoryTotal`                  | Máx.       |                                                                   |
+| CPU asignada     | `CGroupMaxCPU`                       | Máx.       |                                                                   |
+| Memoria usada    | `MemoryResident`                     | Máx.       |                                                                   |
+| CPU usada        | Métrica de CPU del sistema           | Máx.       | `ClickHouseServer_UsageCores` a través del endpoint de Prometheus |
+
+<div id="data-transfer">
+  #### Transferencia de datos
+</div>
+
+Los gráficos muestran el ingreso y la salida de datos de ClickHouse Cloud. Más información sobre la [transferencia de datos por red](/es/products/cloud/reference/billing/network-data-transfer).
+
+<div id="advanced-dashboard">
+  ### Panel avanzado
+</div>
+
+Este panel es una versión modificada del [panel avanzado de observabilidad integrado](/es/products/cloud/features/monitoring/advanced-dashboard), donde cada serie representa métricas por réplica. Este panel puede ser útil para supervisar y diagnosticar problemas específicos de ClickHouse.
+
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Panel avanzado en ClickHouse Cloud" border />
+
+<Note>
+  ClickHouse Cloud recopila y almacena, a partir de tablas del sistema, las métricas que se muestran en este panel para que puedan consultarse incluso cuando un servicio está inactivo. Acceder a estas métricas no emite ninguna consulta al servicio subyacente y no reactivará servicios inactivos.
+</Note>
+
+La tabla siguiente relaciona cada gráfico del Panel avanzado con la métrica correspondiente de ClickHouse, la tabla del sistema de origen y el tipo de agregación:
+
+| Gráfico                                    | Nombre de la métrica correspondiente de ClickHouse                                                                                                                      | Tabla del sistema         | Tipo de agregación      |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------- |
+| Consultas/s                                | `ProfileEvent_Query`                                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| Consultas en ejecución                     | `CurrentMetric_Query`                                                                                                                                                   | `metric_log`              | Avg                     |
+| Fusiones en ejecución                      | `CurrentMetric_Merge`                                                                                                                                                   | `metric_log`              | Avg                     |
+| Bytes seleccionados/s                      | `ProfileEvent_SelectedBytes`                                                                                                                                            | `metric_log`              | Sum / bucketSizeSeconds |
+| Espera de E/S                              | `ProfileEvent_OSIOWaitMicroseconds`                                                                                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
+| Espera de lectura de S3                    | `ProfileEvent_ReadBufferFromS3Microseconds`                                                                                                                             | `metric_log`              | Sum / bucketSizeSeconds |
+| Errores de lectura de S3/s                 | `ProfileEvent_ReadBufferFromS3RequestsErrors`                                                                                                                           | `metric_log`              | Sum / bucketSizeSeconds |
+| Espera de CPU                              | `ProfileEvent_OSCPUWaitMicroseconds`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| Uso de CPU del SO (userspace, normalizado) | `OSUserTimeNormalized`                                                                                                                                                  | `asynchronous_metric_log` |                         |
+| Uso de CPU del SO (kernel, normalizado)    | `OSSystemTimeNormalized`                                                                                                                                                | `asynchronous_metric_log` |                         |
+| Lectura desde disco                        | `ProfileEvent_OSReadBytes`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
+| Lectura desde el filesystem                | `ProfileEvent_OSReadChars`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
+| Memoria monitorizada (bytes)               | `CurrentMetric_MemoryTracking`                                                                                                                                          | `metric_log`              |                         |
+| Total de partes de MergeTree               | `TotalPartsOfMergeTreeTables`                                                                                                                                           | `asynchronous_metric_log` |                         |
+| Máx. partes por partición                  | `MaxPartCountForPartition`                                                                                                                                              | `asynchronous_metric_log` |                         |
+| Lectura desde S3                           | `ProfileEvent_ReadBufferFromS3Bytes`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| Tamaño de la caché del filesystem          | `CurrentMetric_FilesystemCacheSize`                                                                                                                                     | `metric_log`              |                         |
+| Solicitudes de escritura de Disk S3/s      | `ProfileEvent_DiskS3PutObject` + `ProfileEvent_DiskS3UploadPart` + `ProfileEvent_DiskS3CreateMultipartUpload` + `ProfileEvent_DiskS3CompleteMultipartUpload`            | `metric_log`              | Sum / bucketSizeSeconds |
+| Solicitudes de lectura de Disk S3/s        | `ProfileEvent_DiskS3GetObject` + `ProfileEvent_DiskS3HeadObject` + `ProfileEvent_DiskS3ListObjects`                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
+| Tasa de aciertos de la caché de FS         | `sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes))` | `metric_log`              |                         |
+| Tasa de aciertos de la caché de páginas    | `greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes)))`              | `metric_log`              |                         |
+| Bytes recibidos por red/s                  | `NetworkReceiveBytes`                                                                                                                                                   | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
+| Bytes enviados por red/s                   | `NetworkSendBytes`                                                                                                                                                      | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
+| Conexiones TCP concurrentes                | `CurrentMetric_TCPConnection`                                                                                                                                           | `metric_log`              |                         |
+| Conexiones MySQL concurrentes              | `CurrentMetric_MySQLConnection`                                                                                                                                         | `metric_log`              |                         |
+| Conexiones HTTP concurrentes               | `CurrentMetric_HTTPConnection`                                                                                                                                          | `metric_log`              |                         |
+
+Para obtener información detallada sobre cada visualización y sobre cómo utilizarlas para diagnosticar problemas, consulta la [documentación del panel avanzado](/es/products/cloud/features/monitoring/advanced-dashboard).
+
+<div id="query-insights">
+  ## Query insights
+</div>
+
+La función **Query Insights** hace que el registro de consultas integrado de ClickHouse sea más fácil de usar mediante diversas visualizaciones y tablas. La tabla `system.query_log` de ClickHouse es una fuente clave de información para la optimización de consultas, la depuración y la supervisión del estado general y el rendimiento del clúster.
+
+Después de seleccionar un servicio, el elemento de navegación **Monitoring** en la barra lateral izquierda se despliega para mostrar un subelemento **Query insights**:
+
+<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="Descripción general de la UI de Query Insights" border />
+
+<div id="top-level-metrics">
+  ### Métricas de nivel superior
+</div>
+
+Los recuadros de estadísticas de la parte superior representan métricas básicas de las consultas para el periodo de tiempo seleccionado. Debajo, los gráficos de series temporales muestran el volumen de consultas, la latencia y la tasa de errores, desglosados por tipo de consulta (select, insert, otras). El gráfico de latencia puede ajustarse para mostrar las latencias p50, p90 y p99:
+
+<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="gráfico de latencia de Query Insights" border />
+
+<div id="recent-queries">
+  ### Consultas recientes
+</div>
+
+Una tabla muestra las entradas del log de consultas agrupadas por el hash de la consulta normalizada y el usuario dentro de la ventana de tiempo seleccionada. Las consultas recientes se pueden filtrar y ordenar por cualquier campo disponible, y la tabla puede configurarse para mostrar u ocultar campos adicionales, como tablas y las latencias p90 y p99:
+
+<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="Tabla de consultas recientes de Query Insights" border />
+
+<div id="query-drill-down">
+  ### Desglose de consultas
+</div>
+
+Al seleccionar una consulta en la tabla **Recent queries**, se abrirá un flyout con métricas e información específicas de la consulta seleccionada:
+
+<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="Desglose de consultas en la UI de Query Insights" border />
+
+Todas las métricas de la pestaña **Query info** son métricas agregadas, pero también podemos ver las métricas de ejecuciones individuales al seleccionar la pestaña **Query history**:
+
+<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="Información de consultas en la UI de Query Insights" border />
+
+Desde este panel, se pueden expandir los elementos `Settings` y `Profile Events` de cada ejecución de consulta para mostrar información adicional.
+
+<div id="related">
+  ## Páginas relacionadas
+</div>
+
+* [Notificaciones](/es/products/cloud/features/monitoring/notifications) — Configura alertas para eventos de escalado, errores y facturación
+* [panel avanzado](/es/products/cloud/features/monitoring/advanced-dashboard) — Referencia detallada de cada visualización del panel
+* [Consultar tablas del sistema](/es/products/cloud/features/monitoring/system-tables) — Ejecuta consultas SQL personalizadas sobre tablas del sistema para una introspección más profunda
+* [Endpoint de Prometheus](/es/products/cloud/features/monitoring/prometheus) — Exporta métricas a Grafana, Datadog u otras herramientas compatibles con Prometheus
