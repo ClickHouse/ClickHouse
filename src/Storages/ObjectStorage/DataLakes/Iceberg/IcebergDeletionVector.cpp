@@ -1,8 +1,10 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDeletionVector.h>
 
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
 #include <Storages/ObjectStorage/Utils.h>
 
