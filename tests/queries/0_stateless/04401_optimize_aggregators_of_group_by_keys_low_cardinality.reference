@@ -1,0 +1,34 @@
+-- the aggregate wrappers are eliminated: same single group as the direct predicate
+rare token	8
+rare token	8
+rare token	8
+rare token	8
+rare token	8
+rare token	8
+-- skip-index pruning fires for HAVING min(s) = ... (aggregate pushed down to the text index): 8/128
+Granules: 8/128
+-- skip-index pruning fires for HAVING any(s = ...) too: 8/128
+Granules: 8/128
+-- aggregate is gone from the query tree (no min/max/any/anyLast function remains)
+0
+-- LowCardinality wrapper matrix: result must be identical with the optimization on and off
+0
+1
+2
+3
+4
+0
+1
+2
+0
+1
+2
+3
+4
+5
+6
+0
+1
+2
+3
+4

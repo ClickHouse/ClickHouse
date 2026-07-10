@@ -5,8 +5,11 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -95,8 +98,21 @@ public:
 
         if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
         {
+            auto * function_node = node->as<FunctionNode>();
             if (aggregationCanBeEliminated(node, group_by_keys_stack.back()))
-                node = node->as<FunctionNode>()->getArguments().getNodes()[0];
+            {
+                node = function_node->getArguments().getNodes()[0];
+            }
+            else if (function_node->isOrdinaryFunction())
+            {
+                /// A child aggregate may have been replaced by its argument, which for a
+                /// LowCardinality group by key has a different type than the eliminated aggregate
+                /// (min(LowCardinality(String)) is String, but the key is LowCardinality(String)).
+                /// Re-resolve this ordinary function against its current argument types so the type
+                /// stays consistent and predicates like `key = 'x'` keep operating directly on the
+                /// key column, letting them push down to storage and use skip indexes.
+                reresolveIfArgumentTypesChanged(*function_node);
+            }
         }
         else if (node->getNodeType() == QueryTreeNodeType::QUERY)
         {
@@ -118,6 +134,30 @@ private:
         bool parents_are_only_deterministic = false;
     };
 
+    /// Re-resolve an ordinary function if any argument's current result type no longer matches the
+    /// type the function was resolved with (a child aggregate was replaced by its differently-typed
+    /// argument). Cascades upward as parents are visited in leaveImpl.
+    void reresolveIfArgumentTypesChanged(FunctionNode & function_node)
+    {
+        const auto & resolved_argument_types = function_node.getArgumentTypes();
+        const auto & argument_nodes = function_node.getArguments().getNodes();
+        if (resolved_argument_types.size() != argument_nodes.size())
+            return;
+
+        bool argument_types_changed = false;
+        for (size_t i = 0; i < argument_nodes.size(); ++i)
+        {
+            if (!resolved_argument_types[i] || !resolved_argument_types[i]->equals(*argument_nodes[i]->getResultType()))
+            {
+                argument_types_changed = true;
+                break;
+            }
+        }
+
+        if (argument_types_changed)
+            resolveOrdinaryFunctionNodeByName(function_node, function_node.getFunctionName(), getContext());
+    }
+
     bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
     {
         if (group_by_keys.empty())
@@ -138,7 +178,12 @@ private:
         if (function_arguments.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a single argument of function '{}' but received {}", function->getFunctionName(), function_arguments.size());
 
-        if (!function->getResultType()->equals(*function_arguments[0]->getResultType()))
+        /// The aggregate result type must match the argument type up to LowCardinality: aggregate
+        /// functions always strip LowCardinality from their result (min(LowCardinality(String)) ->
+        /// String), so comparing the raw types would make this pass dead for LowCardinality keys.
+        /// The type mismatch introduced by dropping the aggregate is repaired by re-resolving the
+        /// parent ordinary functions in leaveImpl.
+        if (!recursiveRemoveLowCardinality(function->getResultType())->equals(*recursiveRemoveLowCardinality(function_arguments[0]->getResultType())))
             return false;
 
         candidates.push_back({ function_arguments[0], true });
