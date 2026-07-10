@@ -149,9 +149,14 @@ ClickHouse supports reading Iceberg tables that use the following deletion metho
 
 - [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
 - [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) stored in Puffin files (Iceberg v3, read-only)
 
-The following deletion method is **not supported**:
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+The following limitations apply to deletion vectors:
+
+- Only `deletion-vector-v1` Puffin blobs are supported
+- Data files must be in Parquet format
+- Column-scoped deletion vectors (`fields` in the Puffin blob) are not supported
+- Writing deletion vectors is not supported
 
 ### Basic usage {#basic-usage}
 ```sql

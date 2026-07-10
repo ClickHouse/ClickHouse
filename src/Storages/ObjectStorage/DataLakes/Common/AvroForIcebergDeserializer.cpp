@@ -16,6 +16,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <base/find_symbols.h>
 #include <Common/assert_cast.h>
+#include <Poco/String.h>
 
 namespace DB::ErrorCodes
 {
@@ -259,6 +260,22 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     const auto record_count = getValueFromRowByName(row_index, c_data_file_record_count, TypeIndex::Int64).safeGet<Int64>();
     const auto file_size_in_bytes = getValueFromRowByName(row_index, c_data_file_file_size_in_bytes, TypeIndex::Int64).safeGet<Int64>();
 
+    std::optional<Int64> content_offset;
+    if (hasPath(c_data_file_content_offset))
+    {
+        const auto content_offset_value = getValueFromRowByName(row_index, c_data_file_content_offset);
+        if (!content_offset_value.isNull())
+            content_offset = content_offset_value.safeGet<Int64>();
+    }
+
+    std::optional<Int64> content_size_in_bytes;
+    if (hasPath(c_data_file_content_size_in_bytes))
+    {
+        const auto content_size_value = getValueFromRowByName(row_index, c_data_file_content_size_in_bytes);
+        if (!content_size_value.isNull())
+            content_size_in_bytes = content_size_value.safeGet<Int64>();
+    }
+
     switch (content_type)
     {
         case FileContentType::DATA: {
@@ -310,6 +327,25 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                         upper_reference_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(upper.safeGet<String>()));
                 }
             }
+
+            if (Poco::toLower(file_format) == "puffin")
+            {
+                if (!content_offset.has_value() || !content_size_in_bytes.has_value())
+                {
+                    throw Exception(
+                        DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Puffin deletion vector entry in manifest file '{}' is missing content_offset or content_size_in_bytes",
+                        manifest_file_path);
+                }
+                if (!lower_reference_data_file_path.has_value())
+                {
+                    throw Exception(
+                        DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Puffin deletion vector entry in manifest file '{}' is missing referenced_data_file",
+                        manifest_file_path);
+                }
+            }
+
             return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::POSITION_DELETE,
                 file_path_key,
@@ -327,7 +363,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 /*equality_ids*/ std::nullopt,
                 /*sort_order_id = */ std::nullopt,
                 record_count,
-                file_size_in_bytes);
+                file_size_in_bytes,
+                content_offset,
+                content_size_in_bytes);
         }
         case FileContentType::EQUALITY_DELETE: {
             std::vector<Int32> equality_ids;
