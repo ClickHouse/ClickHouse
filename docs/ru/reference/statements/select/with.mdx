@@ -1,0 +1,560 @@
+---
+description: 'Документация по конструкции WITH'
+sidebarTitle: 'WITH'
+slug: /sql-reference/statements/select/with
+title: 'Конструкция WITH'
+doc_type: 'reference'
+---
+
+ClickHouse поддерживает общие табличные выражения ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), общие скалярные выражения и рекурсивные запросы.
+
+<div id="common-table-expressions">
+  ## Общие табличные выражения
+</div>
+
+Общие табличные выражения — это именованные подзапросы.
+На них можно ссылаться по имени в любом месте `SELECT`-запроса, где допускается табличное выражение.
+На именованные подзапросы можно ссылаться по имени в области видимости текущего запроса или в областях видимости дочерних подзапросов.
+
+Каждая ссылка на общее табличное выражение в `SELECT`-запросах всегда заменяется подзапросом из его определения, если CTE явно не определено как материализованное (см. [Материализованные общие табличные выражения](#materialized-common-table-expressions)).
+Рекурсия предотвращается за счёт исключения текущего CTE из процесса разрешения идентификаторов.
+
+Обратите внимание, что CTE не гарантируют одинаковые результаты во всех местах, где к ним обращаются, поскольку для каждого случая использования запрос выполняется заново.
+
+<div id="common-table-expressions-syntax">
+  ### Синтаксис
+</div>
+
+```sql
+WITH <identifier> AS [MATERIALIZED] <subquery expression>
+```
+
+<div id="common-table-expressions-example">
+  ### Пример
+</div>
+
+Пример случая, когда подзапрос выполняется повторно:
+
+```sql
+WITH cte_numbers AS
+(
+    SELECT
+        num
+    FROM generateRandom('num UInt64', NULL)
+    LIMIT 1000000
+)
+SELECT
+    count()
+FROM cte_numbers
+WHERE num IN (SELECT num FROM cte_numbers)
+```
+
+Если бы CTE передавали именно результаты, а не просто фрагмент кода, вы бы всегда видели `1000000`
+
+Однако поскольку мы дважды обращаемся к `cte_numbers`, случайные числа каждый раз генерируются заново, и поэтому мы видим разные случайные результаты: `280501, 392454, 261636, 196227` и так далее...
+
+<div id="materialized-common-table-expressions">
+  ## Материализованные общие табличные выражения
+</div>
+
+По умолчанию ClickHouse подставляет подзапрос CTE во все места, где на него есть ссылка, и каждый раз выполняет его заново.
+Добавление ключевого слова `MATERIALIZED` указывает ClickHouse выполнить подзапрос CTE **ровно один раз**, сохранить результат во временной таблице и использовать эту таблицу для всех ссылок.
+Это особенно полезно, когда один и тот же CTE используется в запросе несколько раз (например, в self-join&#39;ах или нескольких подзапросах `IN`), поскольку базовое вычисление выполняется только один раз.
+
+<Note>
+  Материализованные CTE — **экспериментальная** возможность.
+  Для их использования должны быть включены [анализатор](/ru/guides/clickhouse/performance-and-monitoring/analyzer) и настройка `enable_materialized_cte`.
+</Note>
+
+<div id="common-table-expressions-syntax">
+  ### Синтаксис
+</div>
+
+```sql
+WITH <identifier> AS MATERIALIZED (<subquery>)
+SELECT ...
+```
+
+<div id="materialized-cte-when-to-use">
+  ### Когда использовать
+</div>
+
+Материализованные CTE наиболее полезны в следующих случаях:
+
+* Один и тот же CTE используется в запросе **более одного раза**.
+  Без `MATERIALIZED` каждая ссылка на него повторно выполняет подзапрос независимо.
+* CTE содержит **недетерминированные** функции, такие как `generateRandom`.
+  Материализация гарантирует, что все ссылки будут видеть одни и те же данные.
+* CTE включает **ресурсоёмкие вычисления** (агрегации, JOIN, сканирование больших объёмов данных), которые не следует выполнять повторно.
+
+<Tip>
+  Если материализованный CTE используется только один раз, ClickHouse автоматически разворачивает его обратно в обычный подзапрос, чтобы избежать лишних накладных расходов.
+</Tip>
+
+<div id="materialized-common-table-expressions-examples">
+  ### Примеры
+</div>
+
+**Пример 1:** JOIN материализованного CTE с самим собой
+
+Без `MATERIALIZED` обе стороны JOIN выполняли бы подзапрос независимо.
+С `MATERIALIZED` таблица сканируется один раз, и обе стороны JOIN читают из одной и той же временной таблицы.
+
+```sql
+SET enable_materialized_cte = 1;
+
+CREATE TABLE users (uid Int16, name String, age Int16) ENGINE = Memory;
+INSERT INTO users VALUES (1231, 'John', 33), (6666, 'Ksenia', 48), (8888, 'Alice', 50);
+
+WITH
+    a AS MATERIALIZED (SELECT * FROM users WHERE name = 'Alice')
+SELECT count() FROM a AS l JOIN a AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       1 │
+└─────────┘
+```
+
+**Пример 2:** Детерминированные результаты при недетерминированных функциях
+
+Обычные CTE с `generateRandom` дают разные результаты при каждом обращении.
+Материализация CTE обеспечивает согласованность:
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH cte_numbers AS MATERIALIZED
+(
+    SELECT num
+    FROM generateRandom('num UInt64', NULL)
+    LIMIT 1000000
+)
+SELECT count()
+FROM cte_numbers
+WHERE num IN (SELECT num FROM cte_numbers);
+```
+
+Поскольку обе ссылки обращаются к одним и тем же материализованным данным, результат всегда равен `1000000`.
+
+**Пример 3:** Цепочка материализованных CTE
+
+Материализованные CTE могут ссылаться на другие материализованные CTE.
+ClickHouse определяет зависимости и материализует их в правильном порядке:
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH
+    a AS MATERIALIZED (SELECT uid, name FROM users),
+    b AS MATERIALIZED (SELECT uid FROM a)
+SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+Порядок определений CTE не имеет значения — допускаются ссылки вперёд:
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH
+    b AS MATERIALIZED (SELECT uid FROM a),
+    a AS MATERIALIZED (SELECT uid FROM users)
+SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+<div id="materialized-cte-restrictions">
+  ### Ограничения
+</div>
+
+* **Требуется экспериментальная настройка**: настройка `enable_materialized_cte` должна быть включена.
+* **Требуется анализатор**: материализованные CTE работают только при включенном [анализаторе](/ru/guides/clickhouse/performance-and-monitoring/analyzer) (`enable_analyzer = 1`).
+* **Не поддерживается с `RECURSIVE`**: использование ключевых слов `MATERIALIZED` и `RECURSIVE` вместе не допускается и приводит к исключению `UNSUPPORTED_METHOD`.
+* **Коррелированные CTE запрещены**: материализованный CTE не может ссылаться на столбцы из внешних областей видимости запроса.
+
+<div id="common-scalar-expressions">
+  ## Общие скалярные выражения
+</div>
+
+ClickHouse позволяет объявлять псевдонимы для произвольных скалярных выражений в конструкции `WITH`.
+На общие скалярные выражения можно ссылаться в любом месте запроса.
+
+<Note>
+  Если общее скалярное выражение ссылается не на константный литерал, выражение может приводить к появлению [свободных переменных](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables).
+  ClickHouse разрешает любой идентификатор в ближайшей возможной области видимости, а значит, при конфликтах имен свободные переменные могут ссылаться на неожиданные сущности или приводить к коррелированному подзапросу.
+  Рекомендуется определять CSE как [лямбда-функцию](/ru/reference/functions/regular-functions/overview#arrow-operator-and-lambda) (это возможно только при включенном [анализаторе](/ru/guides/clickhouse/performance-and-monitoring/analyzer)), связывая все используемые идентификаторы, чтобы добиться более предсказуемого разрешения идентификаторов в выражениях.
+</Note>
+
+<div id="common-table-expressions-syntax">
+  ### Синтаксис
+</div>
+
+```sql
+WITH <expression> AS <identifier>
+```
+
+<div id="materialized-common-table-expressions-examples">
+  ### Примеры
+</div>
+
+**Пример 1:** Использование константного выражения как &quot;переменной&quot;
+
+```sql
+WITH '2019-08-01 15:23:00' AS ts_upper_bound
+SELECT *
+FROM hits
+WHERE
+    EventDate = toDate(ts_upper_bound) AND
+    EventTime <= ts_upper_bound;
+```
+
+**Пример 2:** Использование функций высшего порядка для ограничения идентификаторов
+
+```sql
+WITH
+    '.txt' as extension,
+    (id, extension) -> concat(lower(id), extension) AS gen_name
+SELECT gen_name('test', '.sql') as file_name;
+```
+
+```response
+   ┌─file_name─┐
+1. │ test.sql  │
+   └───────────┘
+```
+
+**Пример 3:** Использование функций высшего порядка со свободными переменными
+
+Следующие запросы показывают, что непривязанные идентификаторы разрешаются как сущность из ближайшей области видимости.
+Здесь `extension` не привязана в теле лямбда-функции `gen_name`.
+Хотя `extension` определена как `'.txt'` в виде общего скалярного выражения в области видимости определения и использования `generated_names`, она разрешается как столбец таблицы `extension_list`, поскольку доступна в подзапросе `generated_names`.
+
+```sql
+CREATE TABLE extension_list
+(
+    extension String
+)
+ORDER BY extension
+AS SELECT '.sql';
+
+WITH
+    '.txt' as extension,
+    generated_names as (
+        WITH
+            (id) -> concat(lower(id), extension) AS gen_name
+        SELECT gen_name('test') as file_name FROM extension_list
+    )
+SELECT file_name FROM generated_names;
+```
+
+```response
+   ┌─file_name─┐
+1. │ test.sql  │
+   └───────────┘
+```
+
+**Пример 4:** Исключение результата выражения sum(bytes) из списка столбцов в предложении SELECT
+
+```sql
+WITH sum(bytes) AS s
+SELECT
+    formatReadableSize(s),
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY s;
+```
+
+**Пример 5:** Использование результатов скалярного подзапроса
+
+```sql
+/* этот пример вернёт TOP 10 наибольших таблиц */
+WITH
+    (
+        SELECT sum(bytes)
+        FROM system.parts
+        WHERE active
+    ) AS total_disk_usage
+SELECT
+    (sum(bytes) / total_disk_usage) * 100 AS table_disk_usage,
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY table_disk_usage DESC
+LIMIT 10;
+```
+
+**Пример 6:** Повторное использование выражения в подзапросе
+
+```sql
+WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
+SELECT * FROM test1;
+```
+
+<div id="recursive-queries">
+  ## Рекурсивные запросы
+</div>
+
+Необязательный модификатор `RECURSIVE` позволяет запросу WITH обращаться к собственному результату. Пример:
+
+**Пример:** Суммирование целых чисел от 1 до 100
+
+```sql
+WITH RECURSIVE test_table AS (
+    SELECT 1 AS number
+UNION ALL
+    SELECT number + 1 FROM test_table WHERE number < 100
+)
+SELECT sum(number) FROM test_table;
+```
+
+```text
+┌─sum(number)─┐
+│        5050 │
+└─────────────┘
+```
+
+<Note>
+  Рекурсивные CTE опираются на [анализатор запросов](/ru/guides/clickhouse/performance-and-monitoring/analyzer), добавленный в версии **`24.3`**. Если вы используете версию **`24.3+`** и сталкиваетесь с исключением **`(UNKNOWN_TABLE)`** или **`(UNSUPPORTED_METHOD)`**, это означает, что анализатор отключен для вашего экземпляра, роли или профиля. Чтобы включить анализатор, активируйте настройку **`allow_experimental_analyzer`** или обновите настройку **`compatibility`** до более новой версии.
+  Начиная с версии `24.8`, анализатор был полностью переведен в промышленную эксплуатацию, а настройка `allow_experimental_analyzer` была переименована в `enable_analyzer`.
+</Note>
+
+Общая форма рекурсивного запроса `WITH` всегда состоит из нерекурсивного выражения, затем `UNION ALL`, затем рекурсивного выражения, при этом только рекурсивное выражение может содержать ссылку на собственный результат запроса. Рекурсивный CTE-запрос выполняется следующим образом:
+
+1. Вычислите нерекурсивное выражение. Поместите результат запроса нерекурсивного выражения во временную рабочую таблицу.
+2. Пока рабочая таблица не пуста, повторяйте следующие шаги:
+   1. Вычислите рекурсивное выражение, подставив текущее содержимое рабочей таблицы вместо рекурсивной самоссылки. Поместите результат запроса рекурсивного выражения во временную промежуточную таблицу.
+   2. Замените содержимое рабочей таблицы содержимым промежуточной таблицы, затем очистите промежуточную таблицу.
+
+Рекурсивные запросы обычно используются для работы с иерархическими или древовидными данными. Например, можно написать запрос, выполняющий обход дерева:
+
+**Пример:** Обход дерева
+
+Сначала создадим таблицу дерева:
+
+```sql
+DROP TABLE IF EXISTS tree;
+CREATE TABLE tree
+(
+    id UInt64,
+    parent_id Nullable(UInt64),
+    data String
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tree VALUES (0, NULL, 'ROOT'), (1, 0, 'Child_1'), (2, 0, 'Child_2'), (3, 1, 'Child_1_1');
+```
+
+Это дерево можно обойти с помощью такого запроса:
+
+**Пример:** Обход дерева
+
+```sql
+WITH RECURSIVE search_tree AS (
+    SELECT id, parent_id, data
+    FROM tree t
+    WHERE t.id = 0
+UNION ALL
+    SELECT t.id, t.parent_id, t.data
+    FROM tree t, search_tree st
+    WHERE t.parent_id = st.id
+)
+SELECT * FROM search_tree;
+```
+
+```text
+┌─id─┬─parent_id─┬─data──────┐
+│  0 │      ᴺᵁᴸᴸ │ ROOT      │
+│  1 │         0 │ Child_1   │
+│  2 │         0 │ Child_2   │
+│  3 │         1 │ Child_1_1 │
+└────┴───────────┴───────────┘
+```
+
+<div id="search-order">
+  ### Порядок обхода
+</div>
+
+Чтобы задать порядок обхода в глубину, для каждой результирующей строки мы вычисляем массив строк, которые уже были посещены:
+
+**Пример:** Обход дерева в глубину
+
+```sql
+WITH RECURSIVE search_tree AS (
+    SELECT id, parent_id, data, [t.id] AS path
+    FROM tree t
+    WHERE t.id = 0
+UNION ALL
+    SELECT t.id, t.parent_id, t.data, arrayConcat(path, [t.id])
+    FROM tree t, search_tree st
+    WHERE t.parent_id = st.id
+)
+SELECT * FROM search_tree ORDER BY path;
+```
+
+```text
+┌─id─┬─parent_id─┬─data──────┬─path────┐
+│  0 │      ᴺᵁᴸᴸ │ ROOT      │ [0]     │
+│  1 │         0 │ Child_1   │ [0,1]   │
+│  3 │         1 │ Child_1_1 │ [0,1,3] │
+│  2 │         0 │ Child_2   │ [0,2]   │
+└────┴───────────┴───────────┴─────────┘
+```
+
+Чтобы получить порядок обхода в ширину, обычно добавляют столбец, отслеживающий глубину поиска:
+
+**Пример:** Обход дерева в ширину
+
+```sql
+WITH RECURSIVE search_tree AS (
+    SELECT id, parent_id, data, [t.id] AS path, toUInt64(0) AS depth
+    FROM tree t
+    WHERE t.id = 0
+UNION ALL
+    SELECT t.id, t.parent_id, t.data, arrayConcat(path, [t.id]), depth + 1
+    FROM tree t, search_tree st
+    WHERE t.parent_id = st.id
+)
+SELECT * FROM search_tree ORDER BY depth;
+```
+
+```text
+┌─id─┬─link─┬─data──────┬─path────┬─depth─┐
+│  0 │ ᴺᵁᴸᴸ │ ROOT      │ [0]     │     0 │
+│  1 │    0 │ Child_1   │ [0,1]   │     1 │
+│  2 │    0 │ Child_2   │ [0,2]   │     1 │
+│  3 │    1 │ Child_1_1 │ [0,1,3] │     2 │
+└────┴──────┴───────────┴─────────┴───────┘
+```
+
+<div id="cycle-detection">
+  ### Обнаружение циклов
+</div>
+
+Сначала создадим таблицу графа:
+
+```sql
+DROP TABLE IF EXISTS graph;
+CREATE TABLE graph
+(
+    from UInt64,
+    to UInt64,
+    label String
+) ENGINE = MergeTree ORDER BY (from, to);
+
+INSERT INTO graph VALUES (1, 2, '1 -> 2'), (1, 3, '1 -> 3'), (2, 3, '2 -> 3'), (1, 4, '1 -> 4'), (4, 5, '4 -> 5');
+```
+
+Мы можем обойти этот граф с помощью следующего запроса:
+
+**Пример:** Обход графа без обнаружения циклов
+
+```sql
+WITH RECURSIVE search_graph AS (
+    SELECT from, to, label FROM graph g
+    UNION ALL
+    SELECT g.from, g.to, g.label
+    FROM graph g, search_graph sg
+    WHERE g.from = sg.to
+)
+SELECT DISTINCT * FROM search_graph ORDER BY from;
+```
+
+```text
+┌─from─┬─to─┬─label──┐
+│    1 │  4 │ 1 -> 4 │
+│    1 │  2 │ 1 -> 2 │
+│    1 │  3 │ 1 -> 3 │
+│    2 │  3 │ 2 -> 3 │
+│    4 │  5 │ 4 -> 5 │
+└──────┴────┴────────┘
+```
+
+Но если мы добавим в этот граф цикл, предыдущий запрос завершится ошибкой `Maximum recursive CTE evaluation depth`:
+
+```sql
+INSERT INTO graph VALUES (5, 1, '5 -> 1');
+
+WITH RECURSIVE search_graph AS (
+    SELECT from, to, label FROM graph g
+UNION ALL
+    SELECT g.from, g.to, g.label
+    FROM graph g, search_graph sg
+    WHERE g.from = sg.to
+)
+SELECT DISTINCT * FROM search_graph ORDER BY from;
+```
+
+```text
+Code: 306. DB::Exception: Received from localhost:9000. DB::Exception: Maximum recursive CTE evaluation depth (1000) exceeded, during evaluation of search_graph AS (SELECT from, to, label FROM graph AS g UNION ALL SELECT g.from, g.to, g.label FROM graph AS g, search_graph AS sg WHERE g.from = sg.to). Consider raising max_recursive_cte_evaluation_depth setting.: While executing RecursiveCTESource. (TOO_DEEP_RECURSION)
+```
+
+Стандартный способ обработки циклов — сформировать массив уже посещённых узлов:
+
+**Пример:** Обход графа с обнаружением циклов
+
+```sql
+WITH RECURSIVE search_graph AS (
+    SELECT from, to, label, false AS is_cycle, [tuple(g.from, g.to)] AS path FROM graph g
+UNION ALL
+    SELECT g.from, g.to, g.label, has(path, tuple(g.from, g.to)), arrayConcat(sg.path, [tuple(g.from, g.to)])
+    FROM graph g, search_graph sg
+    WHERE g.from = sg.to AND NOT is_cycle
+)
+SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
+```
+
+```text
+┌─from─┬─to─┬─label──┬─is_cycle─┬─path──────────────────────┐
+│    1 │  4 │ 1 -> 4 │ true     │ [(1,4),(4,5),(5,1),(1,4)] │
+│    4 │  5 │ 4 -> 5 │ true     │ [(4,5),(5,1),(1,4),(4,5)] │
+│    5 │  1 │ 5 -> 1 │ true     │ [(5,1),(1,4),(4,5),(5,1)] │
+└──────┴────┴────────┴──────────┴───────────────────────────┘
+```
+
+<div id="infinite-queries">
+  ### Бесконечные запросы
+</div>
+
+Можно также использовать бесконечные рекурсивные CTE-запросы, если во внешнем запросе указан `LIMIT`:
+
+**Пример:** Бесконечный рекурсивный CTE-запрос
+
+```sql
+WITH RECURSIVE test_table AS (
+    SELECT 1 AS number
+UNION ALL
+    SELECT number + 1 FROM test_table
+)
+SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
+```
+
+```text
+┌─sum(number)─┐
+│        5050 │
+└─────────────┘
+```
+
+<div id="trailing-comma">
+  ## Завершающая запятая
+</div>
+
+Запятая допускается после последнего элемента конструкции `WITH`:
+
+```sql
+WITH
+    (SELECT sum(number) FROM numbers(10)) AS total,
+    total * 2 AS doubled,
+SELECT total, doubled;
+```

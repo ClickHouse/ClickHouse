@@ -1,0 +1,80 @@
+---
+title: 두 쿼리가 동일한 결과 집합을 반환하는지 검증하는 방법
+description: 해시 함수와 비교 기법을 사용해 두 ClickHouse 쿼리가 동일한 결과 집합을 반환하는지 검증하는 방법을 알아봅니다.
+date: 2023-05-04
+tags: ['함수']
+keywords: ['검증', '결과 집합', '해시 함수']
+---
+
+<div id="question">
+  ## 질문
+</div>
+
+두 쿼리가 동일한 결과 세트를 반환하는지 어떻게 확인할 수 있습니까?
+
+<div id="answer">
+  ## 답변
+</div>
+
+다음과 같이 진행할 수 있습니다:
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- 쿼리 1을 여기에 작성하세요
+            -- SELECT ...
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- 쿼리 2를 여기에 작성하세요
+            -- SELECT ...
+        )
+    ) AS q2_resultset_hash
+SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
+```
+
+이 예시에서는 [CTE](/ko/reference/statements/select/with)를 사용해 두 쿼리에서 각 행의 [cityHash](/ko/reference/functions/regular-functions/hash-functions#cityhash64) 값의 합계를 계산하며, 두 결과 집합이 동일하면 `1`을 반환합니다.
+
+일련의 정수 데이터와 Pretty 형식을 사용한 예시는 다음과 같습니다:
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number DESC
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number ASC
+        )
+    ) AS q2_resultset_hash
+SELECT q1_resultset_hash = q2_resultset_hash AS Q1_equals_Q2
+FORMAT Pretty
+```
+
+다음이 반환됩니다:
+
+```
+┏━━━━━━━━━━━━━━┓
+┃ Q1_equals_Q2 ┃
+┡━━━━━━━━━━━━━━┩
+│            1 │
+└──────────────┘
+```
+
+이는 여러 상황에서 유용할 수 있지만, 모든 타입의 결과 세트 동등성을 검증하는 만능 해결책으로 볼 수는 없으며, 사용할 때 몇 가지 주의사항이 있습니다. 예를 들어 어떤 행에라도 `NULL` 값이 포함되어 있으면 위 방식은 실패합니다.

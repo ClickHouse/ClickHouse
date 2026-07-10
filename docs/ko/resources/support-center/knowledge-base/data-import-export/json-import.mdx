@@ -1,0 +1,40 @@
+---
+slug: /faq/integration/json-import
+title: 'ClickHouse에 JSON을 가져오려면 어떻게 해야 합니까?'
+toc_hidden: true
+toc_priority: 11
+description: '이 페이지에서는 ClickHouse에 JSON을 가져오는 방법을 설명합니다'
+keywords: ['JSON 가져오기', 'JSONEachRow 포맷', '데이터 가져오기', 'JSON 수집', '데이터 포맷']
+doc_type: 'guide'
+---
+
+ClickHouse는 [입력 및 출력용 데이터 포맷](/ko/reference/formats/index)을 폭넓게 지원합니다. 이 중에는 여러 JSON 변형이 있으며, 데이터 수집에 가장 일반적으로 사용되는 포맷은 [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow)입니다. 이 포맷은 각 행에 JSON 객체 하나가 있어야 하며, 각 객체는 줄바꿈으로 구분됩니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+[HTTP 인터페이스](/ko/concepts/features/interfaces/http) 사용:
+
+```bash
+$ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+[CLI 인터페이스](/ko/concepts/features/interfaces/cli) 사용 시:
+
+```bash
+$ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"
+```
+
+데이터를 수동으로 삽입하는 대신 [통합 도구](/ko/integrations/home)를 사용하는 방법을 고려해 보세요.
+
+<div id="useful-settings">
+  ## 유용한 설정
+</div>
+
+* `input_format_skip_unknown_fields`를 사용하면 테이블 스키마에 없는 추가 필드가 있더라도 해당 필드를 무시하고 JSON을 삽입할 수 있습니다.
+* `input_format_import_nested_json`를 사용하면 중첩된 JSON 객체를 [Nested](/ko/reference/data-types/nested-data-structures/index) 타입 컬럼에 삽입할 수 있습니다.
+
+<Note>
+  설정은 HTTP 인터페이스에서는 `GET` 매개변수로, `CLI` 인터페이스에서는 `--` 접두사가 붙은 추가 명령줄 인수로 지정합니다.
+</Note>

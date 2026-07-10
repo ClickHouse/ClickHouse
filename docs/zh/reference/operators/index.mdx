@@ -1,0 +1,693 @@
+---
+description: '运算符文档'
+sidebarTitle: '运算符'
+slug: /sql-reference/operators/
+title: '运算符'
+doc_type: 'reference'
+---
+
+ClickHouse 会在解析查询时，根据运算符的优先级、先后顺序和结合性，将其转换为相应的函数。
+
+<div id="access-operators">
+  ## 访问运算符
+</div>
+
+`a[N]` – 访问数组元素。`arrayElement(a, N)` 函数。
+
+`a.N` – 访问Tuple元素。`tupleElement(a, N)` 函数。
+
+<div id="numeric-negation-operator">
+  ## 数值取负运算符
+</div>
+
+`-a` – `negate(a)` 函数。
+
+有关 Tuple 取负，请参见：[tupleNegate](/zh/reference/functions/regular-functions/tuple-functions#tupleNegate)。
+
+<div id="multiplication-and-division-operators">
+  ## 乘法和除法运算符
+</div>
+
+`a * b` – `multiply(a, b)` 函数。
+
+如需将Tuple乘以数值，请参见 [tupleMultiplyByNumber](/zh/reference/functions/regular-functions/tuple-functions#tupleMultiplyByNumber)；如需计算标量积，请参见 [dotProduct](/zh/reference/functions/regular-functions/array-functions#arrayDotProduct)。
+
+`a / b` – `divide(a, b)` 函数。
+
+如需将Tuple除以数值，请参见 [tupleDivideByNumber](/zh/reference/functions/regular-functions/tuple-functions#tupleDivideByNumber)。
+
+`a % b` – `modulo(a, b)` 函数。
+
+<div id="addition-and-subtraction-operators">
+  ## 加法和减法运算符
+</div>
+
+`a + b` – `plus(a, b)` 函数。
+
+对于 Tuple 加法，请参见：[tuplePlus](/zh/reference/functions/regular-functions/tuple-functions#tuplePlus)。
+
+`a - b` – `minus(a, b)` 函数。
+
+对于 Tuple 减法，请参见：[tupleMinus](/zh/reference/functions/regular-functions/tuple-functions#tupleMinus)。
+
+<div id="comparison-operators">
+  ## 比较运算符
+</div>
+
+<div id="equals-function">
+  ### equals 函数
+</div>
+
+`a = b` – 表示 `equals(a, b)` 函数。
+
+`a == b` – 表示 `equals(a, b)` 函数。
+
+<div id="notequals-function">
+  ### notEquals 函数
+</div>
+
+`a != b` – 表示 `notEquals(a, b)` 函数。
+
+`a <> b` – 表示 `notEquals(a, b)` 函数。
+
+<div id="lessorequals-function">
+  ### lessOrEquals 函数
+</div>
+
+`a <= b` – 即 `lessOrEquals(a, b)` 函数。
+
+<div id="greaterorequals-function">
+  ### greaterOrEquals 函数
+</div>
+
+`a >= b` —— `greaterOrEquals(a, b)` 函数。
+
+<div id="less-function">
+  ### less 函数
+</div>
+
+`a < b` —— `less(a, b)` 函数。
+
+<div id="greater-function">
+  ### greater 函数
+</div>
+
+`a > b` — `greater(a, b)` 函数。
+
+<div id="like-function">
+  ### like 函数
+</div>
+
+`a LIKE b` —— 即 `like(a, b)` 函数。
+
+<div id="notlike-function">
+  ### notLike 函数
+</div>
+
+`a NOT LIKE b` —— 即 `notLike(a, b)` 函数。
+
+<div id="ilike-function">
+  ### ilike 函数
+</div>
+
+`a ILIKE b` —— 即 `ilike(a, b)` 函数。
+
+<div id="between-function">
+  ### BETWEEN 函数
+</div>
+
+`a BETWEEN b AND c` – 等同于 `a >= b AND a <= c`。
+
+`a NOT BETWEEN b AND c` – 等同于 `a < b OR a > c`。
+
+<div id="is-not-distinct-from">
+  ### `is not distinct from` 运算符 (`<=>`)
+</div>
+
+<Note>
+  从 25.10 版本开始，你可以像使用其他运算符一样使用 `<=>`。
+  在 25.10 之前，它只能用于 JOIN 表达式，例如：
+
+  ```sql
+  CREATE TABLE a (x String) ENGINE = Memory;
+  INSERT INTO a VALUES ('ClickHouse');
+
+  SELECT * FROM a AS a1 JOIN a AS a2 ON a1.x <=> a2.x;
+
+  ┌─x──────────┬─a2.x───────┐
+  │ ClickHouse │ ClickHouse │
+  └────────────┴────────────┘
+  ```
+</Note>
+
+`<=>` 运算符是对 `NULL` 安全的相等运算符，等价于 `IS NOT DISTINCT FROM`。
+它的行为与常规相等运算符 (`=`) 类似，但会将 `NULL` 值视为可比较的。
+两个 `NULL` 值会被视为相等，而 `NULL` 与任何非 `NULL` 值比较时，返回 0 (false) 而不是 `NULL`。
+
+```sql
+SELECT
+  'ClickHouse' <=> NULL,
+  NULL <=> NULL
+```
+
+```response
+┌─isNotDistinc⋯use', NULL)─┬─isNotDistinc⋯NULL, NULL)─┐
+│                        0 │                        1 │
+└──────────────────────────┴──────────────────────────┘
+```
+
+<div id="operators-for-working-with-strings">
+  ## 用于处理字符串的运算符
+</div>
+
+<div id="overlay">
+  ### OVERLAY
+</div>
+
+* `OVERLAY(string PLACING replacement FROM offset)` - `overlay(string, replacement, offset)` 函数。
+* `OVERLAY(string PLACING replacement FROM offset FOR length)` - `overlay(string, replacement, offset, length)` 函数。
+* `OVERLAYUTF8(string PLACING replacement FROM offset)` - `overlayUTF8(string, replacement, offset)` 函数。
+* `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - `overlayUTF8(string, replacement, offset, length)` 函数。
+
+<div id="operators-for-working-with-data-sets">
+  ## 用于处理数据集的运算符
+</div>
+
+请参阅 [IN 运算符](/zh/reference/statements/in) 和 [EXISTS](/zh/reference/operators/exists) 运算符。
+
+<div id="in-function">
+  ### in 函数
+</div>
+
+`a IN ...` —— `in(a, b)` 函数。
+
+<div id="notin-function">
+  ### notIn 函数
+</div>
+
+`a NOT IN ...` —— `notIn(a, b)` 函数。
+
+<div id="globalin-function">
+  ### globalIn 函数
+</div>
+
+`a GLOBAL IN ...` — `globalIn(a, b)` 函数。
+
+<div id="globalnotin-function">
+  ### globalNotIn 函数
+</div>
+
+`a GLOBAL NOT IN ...` —— `globalNotIn(a, b)` 函数。
+
+<div id="in-subquery-function">
+  ### in 子查询函数
+</div>
+
+`a = ANY (subquery)` – 即 `in(a, subquery)` 函数。
+
+<div id="notin-subquery-function">
+  ### notIn 子查询函数
+</div>
+
+`a != ANY (subquery)` —— 与 `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)` 相同。
+
+<div id="in-subquery-function">
+  ### in 子查询函数
+</div>
+
+`a = ALL (subquery)` – 等同于 `a IN (SELECT singleValueOrNull(*) FROM subquery)`。
+
+<div id="notin-subquery-function">
+  ### notIn 子查询函数
+</div>
+
+`a != ALL (subquery)` —— 即 `notIn(a, subquery)` 函数。
+
+**示例**
+
+带有 ALL 的查询：
+
+```sql title="Query"
+SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
+```
+
+```text title="Response"
+┌─a─┐
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+带有 ANY 的查询：
+
+```sql title="Query"
+SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
+```
+
+```text title="Response"
+┌─a─┐
+│ 4 │
+│ 5 │
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+<div id="some-all-on-arrays">
+  ### 数组上的 `SOME` / `ALL`
+</div>
+
+除了上文描述的子查询形式外，`SOME` / `ALL` 的右侧也可以是数组表达式 (数组字面量、数组类型的列，或任何返回数组的表达式) 。这是 PostgreSQL 风格的数组量词语法。它会在解析时被识别并重写为数组函数，因此无需手动重写：
+
+| Syntax                                              | Rewritten to                       |
+| --------------------------------------------------- | ---------------------------------- |
+| `expr = SOME(arr)`                                  | `has(arr, expr)`                   |
+| `expr <> ALL(arr)`                                  | `NOT has(arr, expr)`               |
+| `expr OP SOME(arr)` (any other comparison operator) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (any other comparison operator)  | `arrayAll(x -> expr OP x, arr)`    |
+
+`SOME` 是存在量词 (即 SQL 中 `ANY` 的同义词) 。`=` 和 `<>` 会被特殊处理为 `has` / `NOT has`，因为它们有经过优化的实现；一般形式则会退回到高阶 `arrayExists` / `arrayAll` 函数。
+
+数组形式仅对比较运算符 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, 和 `>=` 生效。其他支持右侧为数组的运算符——例如 `LIKE`、`ILIKE`、`NOT LIKE`、`REGEXP` 和 `IN`——**不会** 被重写为数组量词，而是保留其原本含义。例如，`'abc' LIKE SOME(['a%', 'b%'])` 并不是数组量词语法；对于这些情况，请直接使用 `arrayExists` / `arrayAll`。
+
+<Info>
+  **数组形式不支持 `ANY`**
+
+  只有 `SOME` 和 `ALL` 接受右侧为数组。之所以排除 `ANY`，是因为 `any` 同时也是一个 aggregate function，因此形态为 `expr = any(x)` 的表达式会保留其函数调用含义。要使用数组量词，请使用 `SOME`。
+</Info>
+
+```sql title="Query"
+SELECT
+    3 = SOME([1, 2, 3, 4]) AS in_array,
+    5 < SOME([1, 2, 6])    AS less_than_some,
+    5 > ALL([1, 2, 3])     AS greater_than_all;
+```
+
+```text title="Response"
+┌─in_array─┬─less_than_some─┬─greater_than_all─┐
+│        1 │              1 │                1 │
+└──────────┴────────────────┴──────────────────┘
+```
+
+<Info>
+  **`NULL` 的处理与子查询形式不同**
+
+  由于数组形式会在 parser 中被重写 (此时无法使用 `transform_null_in` 之类的查询设置，而且按行处理的数组列也无法走 analyzer 的 NULL 安全 `IN` 路径) ，它采用的是 `has` (用于 `=` / `<>`) 以及 `arrayExists` / `arrayAll` 的二值语义 (会将结果未知的 `NULL` 比较折叠为 `0`) 。这可能与子查询形式不同：后者对 `NULL` 的处理会经由 `IN` / `NOT IN` 进行转换，并取决于 `transform_null_in`：
+
+  ```sql
+  SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
+  SELECT NULL <> ALL([NULL]);   -- NOT has([NULL], NULL)              -> 0
+  SELECT NULL < SOME([1]);      -- arrayExists(x -> NULL < x, [1])    -> 0
+  SELECT NULL > ALL([1]);       -- arrayAll(x -> NULL > x, [1])       -> 0
+  ```
+</Info>
+
+<div id="operators-for-working-with-dates-and-times">
+  ## 日期和时间运算符
+</div>
+
+<div id="extract">
+  ### EXTRACT
+</div>
+
+```sql
+EXTRACT(part FROM date);
+```
+
+从给定的日期中提取指定部分。例如，您可以从给定日期中提取月份，或从时间中提取秒。
+
+`part` 参数指定要提取日期的哪个部分。可用值如下：
+
+* `NANOSECOND` — 纳秒。可能的值：0–999999999。
+* `MICROSECOND` — 微秒。可能的值：0–999999。
+* `MILLISECOND` — 毫秒。可能的值：0–999。
+* `SECOND` — 秒。可能的值：0–59。
+* `MINUTE` — 分钟。可能的值：0–59。
+* `HOUR` — 小时。可能的值：0–23。
+* `DAY` — 月中的第几天。可能的值：1–31。
+* `WEEK` — ISO 8601 周数。可能的值：1–53。
+* `MONTH` — 月份编号。可能的值：1–12。
+* `QUARTER` — 季度。可能的值：1–4。
+* `YEAR` — 年。
+* `EPOCH` — Unix 时间戳 (自 1970-01-01 00:00:00 UTC 起的秒数) 。注意：对于 `DateTime64`，秒以下部分会被截断。
+* `DOW` — 一周中的第几天 (与 PostgreSQL 兼容) 。0 = 星期日，6 = 星期六。
+* `DOY` — 一年中的第几天。可能的值：1–366。
+* `ISODOW` — ISO 一周中的第几天。1 = 星期一，7 = 星期日。
+* `ISOYEAR` — ISO 8601 周编号年份。
+* `CENTURY` — 世纪。例如，2024 年属于 21 世纪。
+* `DECADE` — 十年 (年份除以 10) 。例如，2024 年的十年值为 202。
+* `MILLENNIUM` — 千年。例如，2024 年属于第 3 个千年。
+* `TIMEZONE_HOUR` — 操作数时区的 UTC 偏移中带符号的小时部分。例如，`+5:30` 返回 `5`，`-3:30` 返回 `-3`。
+* `TIMEZONE_MINUTE` — 操作数时区的 UTC 偏移中带符号的分钟部分。例如，`+5:30` 返回 `30`，`-3:30` 返回 `-30`。
+
+`part` 参数不区分大小写。
+
+`date` 参数指定要处理的值。支持 [Date](/zh/reference/data-types/date)、[Date32](/zh/reference/data-types/date32)、[DateTime](/zh/reference/data-types/datetime)、[DateTime64](/zh/reference/data-types/datetime64) 和 [Interval](/zh/reference/data-types/special-data-types/interval) 类型。当 `date` 为 `Interval` 时，请求的 `part` 必须与该 `Interval` 存储的种类一致 (例如，允许 `EXTRACT(DAY FROM INTERVAL 5 DAY)`；会拒绝 `EXTRACT(HOUR FROM INTERVAL 5 DAY)`，因为 ClickHouse 的 interval 只支持单一种类) 。`Interval` 操作数的结果为 `Int64`。
+
+示例：
+
+```sql
+SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
+SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
+SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
+SELECT EXTRACT(EPOCH FROM toDateTime('2024-01-15 12:30:45', 'UTC'));
+SELECT EXTRACT(DOW FROM toDate('2024-01-15'));
+SELECT EXTRACT(CENTURY FROM toDate('2024-01-01'));
+SELECT EXTRACT(TIMEZONE_HOUR   FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 5
+SELECT EXTRACT(TIMEZONE_MINUTE FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 30
+SELECT EXTRACT(DAY   FROM INTERVAL 40 DAY);                                                -- 40
+SELECT EXTRACT(MONTH FROM INTERVAL 7 MONTH);                                               -- 7
+```
+
+在以下示例中，我们将创建一个表，并向其中插入一个 `DateTime` 类型的值。
+
+```sql
+CREATE TABLE test.Orders
+(
+    OrderId UInt64,
+    OrderName String,
+    OrderDate DateTime
+) ENGINE = MergeTree
+ORDER BY ();
+```
+
+```sql
+INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
+```
+
+```sql
+SELECT
+    toYear(OrderDate) AS OrderYear,
+    toMonth(OrderDate) AS OrderMonth,
+    toDayOfMonth(OrderDate) AS OrderDay,
+    toHour(OrderDate) AS OrderHour,
+    toMinute(OrderDate) AS OrderMinute,
+    toSecond(OrderDate) AS OrderSecond
+FROM test.Orders;
+```
+
+```text
+┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
+│      2008 │         10 │       11 │        13 │          23 │          44 │
+└───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
+```
+
+你可以在 [tests](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql) 中查看更多示例。
+
+<div id="interval">
+  ### INTERVAL
+</div>
+
+创建一个 [Interval](/zh/reference/data-types/special-data-types/interval) 类型的值，用于与 [Date](/zh/reference/data-types/date) 和 [DateTime](/zh/reference/data-types/datetime) 类型的值进行算术运算。
+
+时间间隔类型：
+
+* `SECOND`
+* `MINUTE`
+* `HOUR`
+* `DAY`
+* `WEEK`
+* `MONTH`
+* `QUARTER`
+* `YEAR`
+
+设置 `INTERVAL` 值时，也可以使用字符串字面量。例如，`INTERVAL 1 HOUR` 与 `INTERVAL '1 hour'` 或 `INTERVAL '1' hour` 完全等价。
+
+<Tip>
+  不同类型的时间间隔不能组合使用。不能使用 `INTERVAL 4 DAY 1 HOUR` 这样的表达式。请使用小于或等于该时间间隔最小单位的单位来指定时间间隔，例如 `INTERVAL 25 HOUR`。你也可以像下面的示例那样，连续使用多个运算。
+</Tip>
+
+示例：
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR;
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:09:50 │                                    2020-11-08 01:09:50 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4 day' + INTERVAL '3 hour';
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:12:10 │                                    2020-11-08 01:12:10 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERVAL '3' hour;
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay('4')), toIntervalHour('3'))─┐
+│ 2020-11-03 22:33:19 │                                        2020-11-08 01:33:19 │
+└─────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  始终建议优先使用 `INTERVAL` 语法或 `addDays` 函数。简单的加减运算 (如 `now() + ...` 这样的写法) 不会考虑时间设置，例如夏令时。
+</Note>
+
+示例：
+
+```sql
+SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
+```
+
+```text
+┌────────────────time─┬──time_plus_24_hours─┬─────time_plus_1_day─┐
+│ 2014-10-26 00:00:00 │ 2014-10-26 23:00:00 │ 2014-10-27 00:00:00 │
+└─────────────────────┴─────────────────────┴─────────────────────┘
+```
+
+**另请参阅**
+
+* [Interval](/zh/reference/data-types/special-data-types/interval) 数据类型
+* [toInterval](/zh/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 类型转换函数
+
+<div id="date-time-addition">
+  ### 日期与时间相加
+</div>
+
+可以使用 `+` 运算符将 [Date](/zh/reference/data-types/date) 或 [Date32](/zh/reference/data-types/date32) 值与 [Time](/zh/reference/data-types/time) 或 [Time64](/zh/reference/data-types/time64) 值相加。结果为 [DateTime](/zh/reference/data-types/datetime) 或 [DateTime64](/zh/reference/data-types/datetime64)，表示该日期中给定时刻的日期时间值。该运算满足交换律。
+
+结果类型取决于操作数类型：
+
+| Left operand | Right operand | Result type     |
+| ------------ | ------------- | --------------- |
+| `Date`       | `Time`        | `DateTime`      |
+| `Date`       | `Time64(s)`   | `DateTime64(s)` |
+| `Date32`     | `Time`        | `DateTime64(0)` |
+| `Date32`     | `Time64(s)`   | `DateTime64(s)` |
+
+<Note>
+  结果使用[会话时区](/zh/reference/settings/session-settings#session_timezone) (如果未设置会话时区，则使用服务器默认时区) 。[`date_time_overflow_behavior`](/zh/reference/settings/formats#date_time_overflow_behavior)设置控制结果超出可表示范围时的行为。
+</Note>
+
+示例：
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25 │ DateTime       │
+└─────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
+```
+
+```text
+┌─────────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+└────────────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
+└─────────────────────────┴────────────────┘
+```
+
+<div id="logical-and-operator">
+  ## 逻辑 AND 运算符
+</div>
+
+语法 `SELECT a AND b` — 使用函数 [and](/zh/reference/functions/regular-functions/logical-functions#and) 计算 `a` 与 `b` 的逻辑与。
+
+<div id="logical-or-operator">
+  ## 逻辑 OR 运算符
+</div>
+
+语法 `SELECT a OR b` — 使用函数 [or](/zh/reference/functions/regular-functions/logical-functions#or) 计算 `a` 与 `b` 的逻辑或。
+
+<div id="logical-negation-operator">
+  ## 逻辑非运算符
+</div>
+
+语法 `SELECT NOT a` — 使用函数 [not](/zh/reference/functions/regular-functions/logical-functions#not) 对 `a` 进行逻辑非运算。
+
+<div id="conditional-operator">
+  ## 条件运算符
+</div>
+
+`a ? b : c` – `if(a, b, c)` 函数。
+
+注意：
+
+条件运算符会先计算 b 和 c 的值，再检查是否满足条件 a，然后返回对应的值。如果 `b` 或 `C` 是 [arrayJoin()](/zh/reference/functions/regular-functions/array-join) 函数，则无论 “a” 条件是否成立，每一行都会被复制。
+
+<div id="conditional-expression">
+  ## 条件表达式
+</div>
+
+```sql
+CASE [x]
+    WHEN a THEN b
+    [WHEN ... THEN ...]
+    [ELSE c]
+END
+```
+
+如果指定了 `x`，则使用 `transform(x, [a, ...], [b, ...], c)` 函数。否则，使用 `multiIf(a, b, ..., c)`。
+
+如果表达式中没有 `ELSE c` 子句，默认值为 `NULL`。
+
+`transform` 函数不支持 `NULL`。
+
+<div id="concatenation-operator">
+  ## 拼接运算符
+</div>
+
+`s1 || s2` – `concat(s1, s2)` 函数。
+
+<div id="lambda-creation-operator">
+  ## Lambda 创建运算符
+</div>
+
+`x -> expr` – `lambda(x, expr)` 函数。
+
+以下运算符没有优先级，因为它们是括号：
+
+<div id="array-creation-operator">
+  ## 数组创建运算符
+</div>
+
+`[x1, ...]` – `array(x1, ...)` 函数。
+
+<div id="tuple-creation-operator">
+  ## Tuple 创建运算符
+</div>
+
+`(x1, x2, ...)` – 即 `tuple(x2, x2, ...)` 函数。
+
+<div id="associativity">
+  ## 结合性
+</div>
+
+所有二元运算符都是左结合的。例如，`1 + 2 + 3` 会被转换为 `plus(plus(1, 2), 3)`。
+但有时结果可能不符合你的预期。例如，`SELECT 4 > 2 > 3` 的结果将为 0。
+
+出于效率考虑，`and` 和 `or` 函数可以接受任意数量的参数。相应的 `AND` 和 `OR` 运算符链会被转换为对这些函数的一次调用。
+
+<div id="checking-for-null">
+  ## 检查 `NULL` 值
+</div>
+
+ClickHouse 支持 `IS NULL` 和 `IS NOT NULL` 运算符。
+
+<div id="is_null">
+  ### IS NULL
+</div>
+
+* 对于 [Nullable](/zh/reference/data-types/nullable) 类型的值，`IS NULL` 运算符返回：
+  * 如果值为 `NULL`，则返回 `1`。
+  * 否则返回 `0`。
+* 对于其他值，`IS NULL` 运算符始终返回 `0`。
+
+可通过启用 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 设置来优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NULL FROM table` 会被转换为 `SELECT n.null FROM TABLE`。
+
+{/* */}
+
+```sql
+SELECT x+100 FROM t_null WHERE y IS NULL
+```
+
+```text
+┌─plus(x, 100)─┐
+│          101 │
+└──────────────┘
+```
+
+<div id="is_not_null">
+  ### IS NOT NULL
+</div>
+
+* 对于 [Nullable](/zh/reference/data-types/nullable) 类型的值，`IS NOT NULL` 运算符返回：
+  * 如果该值为 `NULL`，则返回 `0`。
+  * 否则返回 `1`。
+* 对于其他值，`IS NOT NULL` 运算符始终返回 `1`。
+
+{/* */}
+
+```sql
+SELECT * FROM t_null WHERE y IS NOT NULL
+```
+
+```text
+┌─x─┬─y─┐
+│ 2 │ 3 │
+└───┴───┘
+```
+
+可通过启用 [optimize&#95;functions&#95;to&#95;subcolumns](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 设置进行优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数仅读取 [null](/zh/reference/data-types/nullable#finding-null) 子列，而不是读取并处理整个列数据。查询 `SELECT n IS NOT NULL FROM table` 会被转换为 `SELECT NOT n.null FROM TABLE`。
+
+<div id="checking-boolean-values">
+  ## 检查布尔值
+</div>
+
+ClickHouse 支持 `IS TRUE`、`IS FALSE`、`IS UNKNOWN`、`IS NOT TRUE`、`IS NOT FALSE` 和 `IS NOT UNKNOWN` 运算符。
+它们可与 [Bool](/zh/reference/data-types/boolean) 和 `Nullable(Bool)` 表达式一起使用。
+
+* `expr IS TRUE` 仅当 `expr` 为 `true` 时返回 `1`。
+* `expr IS FALSE` 仅当 `expr` 为 `false` 时返回 `1`。
+* `expr IS UNKNOWN` 仅当 `expr` 为 `NULL` 时返回 `1`。
+* `expr IS NOT TRUE` 在 `expr` 为 `false` 或 `NULL` 时返回 `1`。
+* `expr IS NOT FALSE` 在 `expr` 为 `true` 或 `NULL` 时返回 `1`。
+* `expr IS NOT UNKNOWN` 在 `expr` 不为 `NULL` 时返回 `1`。
+
+对于布尔表达式，`IS UNKNOWN` 等同于 `IS NULL`，而 `IS NOT UNKNOWN` 等同于 `IS NOT NULL`。
+
+{/* */}
+
+```sql
+CREATE TABLE t_bool (x Nullable(Bool)) ENGINE = Memory;
+INSERT INTO t_bool VALUES (true), (false), (NULL);
+
+SELECT
+    x,
+    x IS TRUE,
+    x IS FALSE,
+    x IS UNKNOWN,
+    x IS NOT TRUE,
+    x IS NOT FALSE,
+    x IS NOT UNKNOWN
+FROM t_bool;
+```

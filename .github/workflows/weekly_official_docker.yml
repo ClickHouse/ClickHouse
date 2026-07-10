@@ -18,6 +18,16 @@ env:
         required: false
         default: true
         type: boolean
+      skip-images:
+        description: 'Skip update_library_images stage'
+        required: false
+        default: false
+        type: boolean
+      skip-docs:
+        description: 'Skip update_docs stage'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: official-docker-library
@@ -37,6 +47,8 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           DRY_RUN=${{ github.event.inputs.dry-run == 'true' && '--dry-run' || '' }}
+          SKIP_IMAGES=${{ github.event.inputs.skip-images == 'true' && '--skip-images' || '' }}
+          SKIP_DOCS=${{ github.event.inputs.skip-docs == 'true' && '--skip-docs' || '' }}
           ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
           ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
           RCSK
@@ -44,4 +56,4 @@ jobs:
       - name: Update official docker repos
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 official_docker_update.py -vv $DRY_RUN
+          python3 official_docker_update.py -vv $DRY_RUN $SKIP_IMAGES $SKIP_DOCS

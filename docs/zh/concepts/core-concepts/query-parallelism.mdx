@@ -1,0 +1,294 @@
+---
+slug: /optimize/query-parallelism
+sidebarTitle: '查询并行度'
+description: 'ClickHouse 通过处理通道和 max_threads 设置并行执行查询。'
+title: 'ClickHouse 如何并行执行查询'
+doc_type: 'guide'
+keywords: ['并行处理', '查询优化', '性能', '线程', '最佳实践']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse [专为速度而打造](/zh/get-started/about/why-clickhouse-is-so-fast)。它以高度并行的方式执行查询，利用所有可用的 CPU 核心，将数据分配到各个处理通道中，并且常常让硬件接近其性能极限。
+
+本指南将逐步讲解 ClickHouse 中的查询并行度如何工作，以及你如何对其进行调优或监控，以提升大型工作负载下的性能。
+
+我们使用 [uk&#95;price&#95;paid&#95;simple](/zh/concepts/core-concepts/parts) 数据集上的一个聚合查询来说明关键概念。
+
+<div id="step-by-step-how-clickHouse-parallelizes-an-aggregation-query">
+  ## 分步说明：ClickHouse 如何并行处理聚合查询
+</div>
+
+当 ClickHouse ① 执行带有表主键过滤条件的聚合查询时，会 ② 将主索引加载到内存中，以 ③ 判断哪些粒度需要处理，哪些可以安全地跳过：
+
+<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="索引分析" />
+
+<div id="distributing-work-across-processing-lanes">
+  ### 将工作分配到各处理通道
+</div>
+
+然后，选定的数据会被[动态](#load-balancing-across-processing-lanes)分配到 `n` 个并行的[处理通道](/zh/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)中，这些通道会将数据按[块](/zh/resources/develop-contribute/introduction/architecture#block)流式传输并逐块处理，最终得到结果：
+
+<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 个并行处理通道" />
+
+<br />
+
+<br />
+
+`n` 个并行处理通道的数量由 [`max_threads`](/zh/reference/settings/session-settings#max_threads) 设置控制，默认情况下，该值与服务器上 ClickHouse 可用的单个 CPU 的核心数 (线程数) 相同。在上面的示例中，我们假设有 `4` 个核心。
+
+在一台具有 `8` 个核心的机器上，查询处理吞吐量大致会翻倍 (但内存占用也会相应增加) ，因为会有更多通道并行处理数据：
+
+<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8 个并行处理通道" />
+
+<br />
+
+<br />
+
+高效的通道分配是最大化 CPU 利用率并缩短总查询时间的关键。
+
+<div id="processing-queries-on-sharded-tables">
+  ### 在分片表上处理查询
+</div>
+
+当表数据作为[分片](/zh/guides/oss/deployment-and-scaling/shards)分布在多台服务器上时，每台服务器都会并行处理自己的分片。在每台服务器内部，本地数据也会像上文所述那样，通过并行处理通道进行处理：
+
+<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="分布式通道" />
+
+<br />
+
+<br />
+
+最先接收到查询的服务器会收集各个分片返回的所有子结果，并将其合并为最终的全局结果。
+
+将查询负载分散到各个分片上，可以横向扩展并行能力，尤其适用于高吞吐量环境。
+
+<Info>
+  **ClickHouse Cloud 使用并行副本，而不是分片**
+
+  在 ClickHouse Cloud 中，同样的并行能力是通过[并行副本](/zh/products/cloud/features/infrastructure/parallel-replicas)实现的，其工作方式与无共享集群中的分片类似。每个 ClickHouse Cloud 副本——也就是一个无状态计算节点——都会并行处理一部分数据，并像独立分片一样共同形成最终结果。
+</Info>
+
+<div id="monitoring-query-parallelism">
+  ## 监控查询并行度
+</div>
+
+使用这些工具来验证查询是否充分利用了可用的 CPU 资源，并在未充分利用时进行诊断。
+
+这里我们在一台配备 59 个 CPU 核心的测试服务器上运行示例，这样 ClickHouse 就能充分展示其查询并行能力。
+
+为了观察示例查询的执行方式，我们可以让 ClickHouse server 在聚合查询期间返回所有 trace 级别的日志条目。为便于演示，我们去掉了查询中的谓词——否则只会处理 3 个粒度，这不足以让 ClickHouse 利用超过少数几个并行处理通道：
+
+```sql
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+SETTINGS send_logs_level='trace';
+```
+
+```txt
+① <Debug> ...: 3609 marks to read from 3 ranges
+② <Trace> ...: Spreading mark ranges among streams
+② <Debug> ...: Reading approx. 29564928 rows with 59 streams
+```
+
+我们可以看到：
+
+* ① ClickHouse 需要在 3 个数据范围内读取 3,609 个粒度 (在跟踪日志中记为标记) 。
+* ② 借助 59 个 CPU 核心，它会将这项工作分配到 59 个并行处理流中——每个处理通道对应一个流。
+
+或者，我们也可以使用 [EXPLAIN](/zh/reference/statements/explain#explain-pipeline) 子句来查看聚合查询的[物理算子计划](/zh/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)——也称为“查询管道”：
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple;
+```
+
+```txt
+    ┌─explain───────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                      │
+ 2. │ ExpressionTransform × 59                                                          │
+ 3. │   (Aggregating)                                                                   │
+ 4. │   Resize 59 → 59                                                                  │
+ 5. │     AggregatingTransform × 59                                                     │
+ 6. │       StrictResize 59 → 59                                                        │
+ 7. │         (Expression)                                                              │
+ 8. │         ExpressionTransform × 59                                                  │
+ 9. │           (ReadFromMergeTree)                                                     │
+10. │           MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+    └───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+注意：请从下往上阅读上面的算子计划。每一行代表物理执行计划中的一个阶段，从底部开始读取存储中的数据，到顶部结束于最终处理步骤。标记为 `× 59` 的算子会在 59 条并行处理通道上，对互不重叠的数据区域并发执行。这反映了 `max_threads` 的值，也展示了查询的各个阶段如何在 CPU 核心之间实现并行化。
+
+ClickHouse 的[嵌入式 web UI](/zh/concepts/features/interfaces/http) (可通过 `/play` 端点访问) 可以将上面的物理计划渲染为图形化视图。在此示例中，我们将 `max_threads` 设置为 `4`，以使可视化更紧凑，因此只显示 4 条并行处理通道：
+
+<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="查询管道" />
+
+注意：请从左到右阅读该可视化图。每一行代表一条并行处理通道，数据以数据块为单位流式传输，并依次应用过滤、聚合和最终处理等转换。在这个示例中，你可以看到与 `max_threads = 4` 设置对应的四条并行通道。
+
+<div id="load-balancing-across-processing-lanes">
+  ### 跨处理通道的负载均衡
+</div>
+
+请注意，上述物理计划中的 `Resize` 算子会在各处理通道之间对数据块流进行[重新分区和重新分发](/zh/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)，以保持各通道的负载均衡。当不同数据范围中满足查询谓词的行数差异较大时，这种重新平衡尤为重要；否则，某些通道可能负载过高，而其他通道则处于空闲状态。通过重新分配工作，较快的通道实际上可以帮助较慢的通道分担负载，从而优化整体查询运行时间。
+
+<div id="why-max-threads-isnt-always-respected">
+  ## 为什么 max_threads 并不总会生效
+</div>
+
+如上所述，`n` 条并行处理通道的数量由 `max_threads` 设置控制，默认情况下，它与服务器上 ClickHouse 可用的 CPU 核心数一致：
+
+```sql
+SELECT getSetting('max_threads');
+```
+
+```txt
+   ┌─getSetting('max_threads')─┐
+1. │                        59 │
+   └───────────────────────────┘
+```
+
+但是，`max_threads` 的值可能会被忽略，这取决于所选待处理数据量的多少：
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+...   
+(ReadFromMergeTree)
+MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 30
+```
+
+如上面的执行计划摘录所示，尽管 `max_threads` 设置为 `59`，ClickHouse 在扫描数据时仍只使用了 **30** 个并发流。
+
+现在来运行这个查询：
+
+```sql
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+   ┌─max(price)─┐
+1. │  594300000 │ -- 5.943 亿
+   └────────────┘
+   
+1 行记录。耗时: 0.013 秒。处理了 231 万行, 13.66 MB (1.7312 亿行/秒, 1.02 GB/s.)
+峰值内存占用: 27.24 MiB.   
+```
+
+如上面的输出所示，该查询处理了 231 万行数据，并读取了 13.66MB 数据。这是因为在索引分析阶段，ClickHouse 选择了 **282 个粒度** 进行处理，每个粒度包含 8,192 行，总计约 231 万行：
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+    ┌─explain───────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))             │
+ 2. │   Aggregating                                         │
+ 3. │     Expression (Before GROUP BY)                      │
+ 4. │       Expression                                      │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)   │
+ 6. │         Indexes:                                      │
+ 7. │           PrimaryKey                                  │
+ 8. │             Keys:                                     │
+ 9. │               town                                    │
+10. │             Condition: (town in ['LONDON', 'LONDON']) │
+11. │             Parts: 3/3                                │
+12. │             Granules: 282/3609                        │
+    └───────────────────────────────────────────────────────┘  
+```
+
+无论 `max_threads` 配置为多少，ClickHouse 只有在数据量足以支撑时，才会分配额外的并行处理通道。`max_threads` 中的 “max” 表示上限，并不意味着一定会使用这么多线程。
+
+这里“足够的数据”主要由两个设置决定：它们定义了每个处理通道需要处理的最小行数 (默认 163,840) 和最小字节数 (默认 2,097,152) ：
+
+对于 shared-nothing 集群：
+
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/zh/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/zh/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read)
+
+对于使用共享存储的集群 (例如 ClickHouse Cloud) ：
+
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/zh/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/zh/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
+
+此外，读取任务大小还有一个硬性下限，由以下设置控制：
+
+* [Merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/zh/reference/settings/session-settings#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/zh/reference/settings/session-settings#merge_tree_min_bytes_per_task_for_remote_reading)
+
+<Warning>
+  **不要修改这些设置**
+
+  不建议在生产环境中修改这些设置。这里列出它们，只是为了说明为什么 `max_threads` 并不总能决定实际的并行度。
+</Warning>
+
+为便于演示，我们来看一下在覆盖这些设置、强制启用最大并发时的物理执行计划：
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON'
+SETTINGS
+  max_threads = 59,
+  merge_tree_min_read_task_size = 0,
+  merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 0, 
+  merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 0;
+```
+
+```txt
+...   
+(ReadFromMergeTree)
+MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59
+```
+
+现在 ClickHouse 使用 59 个并发流扫描数据，完全遵循已配置的 `max_threads`。
+
+这说明，对于小型数据集上的查询，ClickHouse 会主动限制并发度。设置覆盖仅应用于测试，不要用于生产环境，因为这可能导致执行效率低下或资源争用。
+
+<div id="key-takeaways">
+  ## 关键要点
+</div>
+
+* ClickHouse 使用与 `max_threads` 关联的处理通道并行执行查询。
+* 实际通道数量取决于选中待处理数据的规模。
+* 使用 `EXPLAIN PIPELINE` 和跟踪日志分析通道使用情况。
+
+<div id="where-to-find-more-information">
+  ## 在哪里查找更多信息
+</div>
+
+如果你想进一步了解 ClickHouse 如何并行执行查询，以及它如何在大规模场景下实现高性能，可参阅以下资源：
+
+* [查询处理层 – VLDB 2024 论文 (网页版) ](/zh/concepts/core-concepts/academic-overview#4-query-processing-layer) - 详细解析 ClickHouse 的内部执行模型，包括调度、流水线处理和算子设计。
+
+* [部分聚合状态详解](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#-multi-core-parallelization) - 从技术角度深入讲解部分聚合状态如何在各条处理通道中实现高效的并行执行。
+
+* 一段详细讲解 ClickHouse 查询处理全过程的视频教程：
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/hP6G2Nlz_cA?si=Imd_i427J_kZOXHe" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
