@@ -126,6 +126,7 @@ ReaderExecutor::ReaderExecutor(
     , continuity_tracker(ReadContinuityTracker::Options{.bridgeable_gap = options.min_bytes_for_seek})
     , long_connection_limit(std::move(options.long_connection_limit))
     , encryption_header_cache(std::move(options.encryption_header_cache))
+    , cache_chain(std::move(options.cache_chain))
     , min_bytes_for_seek(options.min_bytes_for_seek)
     , max_tail_for_drain(options.max_tail_for_drain)
     , active_metric(CurrentMetrics::ReaderExecutorActive)
@@ -300,6 +301,60 @@ size_t ReaderExecutor::readOneShot(const StoredObject & object, size_t object_of
         buffer->seek(static_cast<off_t>(object_offset), SEEK_SET);
     stats.add(Stats::SourceRequests);
     return readIntoBlock(*buffer, dst, want);
+}
+
+size_t ReaderExecutor::serveThroughCaches(const StoredObject & object, size_t object_offset, size_t want, char * dst)
+{
+    chassert(!cache_chain.empty());
+
+    /// Probe the chain top-down. A tier that fully covers the window serves it; the faster
+    /// tiers above it that missed are then populated (promotion). A partial cover is treated
+    /// as a miss in this slice — the aligned source read below refills it.
+    for (size_t i = 0; i < cache_chain.size(); ++i)
+    {
+        stats.add(Stats::CacheGetRequests);
+        if (cache_chain[i]->tryRead(object, object_offset, dst, want) == want)
+        {
+            for (size_t j = 0; j < i; ++j)
+            {
+                stats.add(Stats::CachePopulateRequests);
+                cache_chain[j]->write(object, object_offset, dst, want);
+            }
+            return want;
+        }
+    }
+
+    /// Full miss: read the miss range from the source ONCE, aligned to the top tier's segment
+    /// boundary (head down, tail up) so the populated region matches the tier's granularity and
+    /// neighbouring reads hit. The aligned slack is over-read (counted in BytesFromSource, not
+    /// RequestedBytes). Clamp the tail to the object for known sizes.
+    const size_t alignment = std::max<size_t>(1, cache_chain.front()->missAlignment());
+    const size_t fetch_start = object_offset - object_offset % alignment;
+    size_t fetch_end = object_offset + want;
+    if (const size_t rem = fetch_end % alignment)
+        fetch_end += alignment - rem;
+    if (!offset_map.hasUnknownSize())
+        fetch_end = std::min<size_t>(fetch_end, object.bytes_size);
+    const size_t fetch_len = fetch_end - fetch_start;
+
+    OwnedChainedBuffer aligned(fetch_len);
+    const size_t got_aligned = readOneShot(object, fetch_start, fetch_len, aligned.data());
+    stats.add(Stats::BytesFromSource, got_aligned);
+
+    /// Populate every tier (all missed) with the bytes actually read.
+    for (auto & provider : cache_chain)
+    {
+        stats.add(Stats::CachePopulateRequests);
+        provider->write(object, fetch_start, aligned.data(), got_aligned);
+    }
+
+    /// Copy the requested window out of the aligned buffer.
+    const size_t slice_start = object_offset - fetch_start;
+    if (slice_start >= got_aligned)
+        return 0;
+    const size_t slice_len = std::min(want, got_aligned - slice_start);
+    memcpy(dst, aligned.data() + slice_start, slice_len);
+    return slice_len;
 }
 
 void ReaderExecutor::dropLongConnection()
@@ -480,12 +535,22 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     auto block = std::make_shared<OwnedChainedBuffer>(want);
 
     size_t got = 0;
-    if (long_conn && long_conn->servesObject(object->remote_path)
+    if (!cache_chain.empty())
+    {
+        /// Read-through cache path: probe the chain, serve a hit or read+populate on a miss.
+        /// It records its own SourceRequests / BytesFromSource / Cache{Get,Populate}Requests;
+        /// long connections are not used on this path.
+        got = serveThroughCaches(*object, object_offset, want, block->data());
+    }
+    else if (long_conn && long_conn->servesObject(object->remote_path)
         && long_conn->canContinue(object_offset, want, min_bytes_for_seek))
     {
         /// Reuse the held connection for this contiguous (or small-gap) window.
         stats.add(Stats::LongConnectionHits);
         got = serveFromLongConnection(object_offset, want, block->data());
+        /// Requested bytes equal source bytes on the direct path; any bridged (skipped) bytes
+        /// were already counted in BytesFromSource inside serveFromLongConnection.
+        stats.add(Stats::BytesFromSource, got);
     }
     else
     {
@@ -498,11 +563,9 @@ ChainedBuffers ReaderExecutor::readNextWindow()
             got = serveFromLongConnection(object_offset, want, block->data());
         else
             got = readOneShot(*object, object_offset, want, block->data());
+        stats.add(Stats::BytesFromSource, got);
     }
 
-    /// Requested bytes equal source bytes until caches / over-read coalescing land; any bridged
-    /// (skipped) bytes were already counted in BytesFromSource inside serveFromLongConnection.
-    stats.add(Stats::BytesFromSource, got);
     stats.add(Stats::RequestedBytes, got);
 
     if (offset_map.hasUnknownSize())

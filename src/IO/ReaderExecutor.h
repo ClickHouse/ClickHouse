@@ -5,6 +5,7 @@
 #include <IO/ChainedBuffers.h>
 #include <IO/ReadContinuityTracker.h>
 #include <IO/LongConnectionLimit.h>
+#include <IO/ICacheProvider.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
@@ -49,6 +50,9 @@ public:
         std::shared_ptr<LongConnectionLimit> long_connection_limit = nullptr;
         /// Global cache of encryption-header bytes; null disables it. Set only for random-key disks.
         std::shared_ptr<EncryptionHeaderCache> encryption_header_cache = nullptr;
+        /// Read-through cache chain (front = fastest tier). Empty disables caching (the
+        /// direct-source path); set on the `use_reader_executor` path for cacheable reads.
+        CacheChain cache_chain = {};
     };
 
     ReaderExecutor(
@@ -206,6 +210,12 @@ private:
     size_t serveFromLongConnection(size_t object_offset, size_t want, char * dst);
     /// One-shot bounded read (the stateless path): open, seek, read `want` into `dst`.
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
+    /// Serve `want` bytes at object-local `object_offset` through the cache chain: probe
+    /// top-down, serve a full hit, else read the miss range (aligned to the top tier's
+    /// `missAlignment`, clamped to the object) from the source once, populate every tier that
+    /// missed, and copy the requested slice into `dst`. Returns bytes served. No long
+    /// connection is used on this path. Precondition: `!cache_chain.empty()`.
+    size_t serveThroughCaches(const StoredObject & object, size_t object_offset, size_t want, char * dst);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
     void dropLongConnection();
 
@@ -233,6 +243,8 @@ private:
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
     /// Global encryption-header cache; null disables caching (url / non-disk reads).
     std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
+    /// Read-through cache chain (front = fastest tier); empty = direct-source path.
+    CacheChain cache_chain;
     size_t min_bytes_for_seek;
     size_t max_tail_for_drain;
 
