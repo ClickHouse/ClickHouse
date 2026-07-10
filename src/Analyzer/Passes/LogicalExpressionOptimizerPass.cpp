@@ -38,6 +38,32 @@ using namespace std::literals;
 /// work budget for tryOptimizeAndCompareChain (forward-declared here to avoid touching the header).
 size_t & getTreeHashWorkCounter();
 
+enum class TransitiveComparisonDomain
+{
+    None,
+    NativeNumber,
+    String,
+};
+
+/// Pairwise ClickHouse comparisons do not form one global transitive order because some
+/// type combinations use conversions specific to the compared pair. Only build chains
+/// inside domains whose comparison semantics are shared by all member types.
+static TransitiveComparisonDomain getTransitiveComparisonDomain(const DataTypePtr & type)
+{
+    const auto nested_type = removeLowCardinalityAndNullable(type);
+    if (isNativeNumber(nested_type))
+        return TransitiveComparisonDomain::NativeNumber;
+    if (isString(nested_type))
+        return TransitiveComparisonDomain::String;
+    return TransitiveComparisonDomain::None;
+}
+
+static bool haveSameTransitiveComparisonDomain(const DataTypePtr & lhs, const DataTypePtr & rhs)
+{
+    const auto lhs_domain = getTransitiveComparisonDomain(lhs);
+    return lhs_domain != TransitiveComparisonDomain::None && lhs_domain == getTransitiveComparisonDomain(rhs);
+}
+
 static constexpr std::array boolean_functions{
     "equals"sv,   "notEquals"sv,   "less"sv,   "greaterOrEquals"sv, "greater"sv,      "lessOrEquals"sv,    "in"sv,     "notIn"sv,
     "globalIn"sv, "globalNotIn"sv, "nullIn"sv, "notNullIn"sv,       "globalNullIn"sv, "globalNullNotIn"sv, "isNull"sv, "isNotNull"sv,
@@ -1182,6 +1208,11 @@ private:
             const auto & lhs = function_arguments[0];
             const auto & rhs = function_arguments[1];
 
+            /// An unsafe edge could bridge otherwise safe endpoints. Check every original
+            /// comparison before adding it to the graph, not only a generated comparison.
+            if (!haveSameTransitiveComparisonDomain(lhs->getResultType(), rhs->getResultType()))
+                continue;
+
             if (function_name == "less")
             {
                 if (rhs->as<ConstantNode>())
@@ -1283,6 +1314,7 @@ private:
 
                     /// Non-sense to have both sides as constant, and no repeat of equal function
                     if (constant && !left.first->as<ConstantNode>()
+                        && haveSameTransitiveComparisonDomain(left.first->getResultType(), constant->getResultType())
                         && (compare_type != CompareType::equals || equal_funcs[left.first].insert(constant).second))
                     {
                         String compare_function_name;
