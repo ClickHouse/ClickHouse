@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <vector>
 #include <zlib.h>
+#include <lz4frame.h>
 #include <roaring/roaring.hh>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -36,12 +37,15 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int LZ4_DECODER_FAILED;
 }
 
 namespace
 {
 
 constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
+constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
+constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
 constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
 
@@ -78,6 +82,68 @@ void validatePuffinBlobBounds(Int64 offset, Int64 length, size_t data_size, size
 
     if (static_cast<UInt64>(end) > data_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: offset/length out of bounds", blob_index);
+}
+
+void validatePuffinFooterFlags(const UInt8 flags[4])
+{
+    if (flags[1] != 0 || flags[2] != 0 || flags[3] != 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Puffin footer flags");
+    if ((flags[0] & ~PUFFIN_FOOTER_COMPRESSED_FLAG) != 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Puffin footer flags");
+}
+
+String decompressPuffinFooterPayload(const char * data, size_t size)
+{
+    LZ4F_dctx * dctx = nullptr;
+    size_t ret = LZ4F_createDecompressionContext(&dctx, LZ4F_VERSION);
+    if (LZ4F_isError(ret))
+        throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Failed to create LZ4 decompression context: {}", LZ4F_getErrorName(ret));
+
+    struct DecompressionContextGuard
+    {
+        LZ4F_dctx * dctx;
+        explicit DecompressionContextGuard(LZ4F_dctx * dctx_) : dctx(dctx_) { }
+        ~DecompressionContextGuard() { LZ4F_freeDecompressionContext(dctx); }
+    };
+    DecompressionContextGuard guard(dctx);
+
+    LZ4F_frameInfo_t frame_info{};
+    size_t header_size = size;
+    ret = LZ4F_getFrameInfo(dctx, &frame_info, data, &header_size);
+    if (LZ4F_isError(ret))
+        throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Failed to read LZ4 frame info for Puffin footer: {}", LZ4F_getErrorName(ret));
+
+    const char * src = data + header_size;
+    size_t src_remaining = size - header_size;
+
+    String result;
+    if (frame_info.contentSize != 0)
+        result.resize(frame_info.contentSize);
+    else
+        result.resize(std::max(size * 2, static_cast<size_t>(256)));
+
+    size_t dst_offset = 0;
+    while (true)
+    {
+        size_t src_read = src_remaining;
+        size_t dst_write = result.size() - dst_offset;
+        ret = LZ4F_decompress(dctx, result.data() + dst_offset, &dst_write, src, &src_read, nullptr);
+        if (LZ4F_isError(ret))
+            throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Failed to decompress Puffin footer: {}", LZ4F_getErrorName(ret));
+
+        src += src_read;
+        src_remaining -= src_read;
+        dst_offset += dst_write;
+
+        if (ret == 0)
+            break;
+
+        if (dst_offset == result.size())
+            result.resize(result.size() * 2);
+    }
+
+    result.resize(dst_offset);
+    return result;
 }
 
 std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t data_size)
@@ -126,23 +192,45 @@ std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekab
     seekable.readStrict(magic_buf, 4);
     checkMagic(reinterpret_cast<const UInt8 *>(magic_buf), "header");
 
-    seekable.seek(static_cast<off_t>(file_size - 12), SEEK_SET);
+    seekable.seek(static_cast<off_t>(file_size - PUFFIN_FOOTER_TRAILER_SIZE), SEEK_SET);
     Int32 footer_length_signed = 0;
     readBinaryLittleEndian(footer_length_signed, seekable);
 
-    seekable.seek(static_cast<off_t>(file_size - 4), SEEK_SET);
+    UInt8 flags[4] = {};
+    seekable.readStrict(reinterpret_cast<char *>(flags), sizeof(flags));
+
     char trailing_buf[4];
     seekable.readStrict(trailing_buf, 4);
     checkMagic(reinterpret_cast<const UInt8 *>(trailing_buf), "trailing");
+    validatePuffinFooterFlags(flags);
 
-    if (footer_length_signed <= 0
-        || static_cast<size_t>(footer_length_signed) + 12 > file_size)
+    if (footer_length_signed <= 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin footer length: {}", footer_length_signed);
+
+    UInt64 footer_trailer_size = 0;
+    if (common::addOverflow(static_cast<UInt64>(footer_length_signed), PUFFIN_FOOTER_TRAILER_SIZE, footer_trailer_size)
+        || footer_trailer_size > file_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin footer length: {}", footer_length_signed);
 
     const size_t footer_length = static_cast<size_t>(footer_length_signed);
-    String footer_json(footer_length, '\0');
-    seekable.seek(static_cast<off_t>(file_size - 12 - footer_length), SEEK_SET);
-    seekable.readStrict(footer_json.data(), footer_length);
+    const size_t payload_start = file_size - PUFFIN_FOOTER_TRAILER_SIZE - footer_length;
+    if (payload_start < sizeof(PUFFIN_MAGIC))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin footer length: {}", footer_length_signed);
+
+    seekable.seek(static_cast<off_t>(payload_start - sizeof(PUFFIN_MAGIC)), SEEK_SET);
+    char leading_magic_buf[4];
+    seekable.readStrict(leading_magic_buf, 4);
+    checkMagic(reinterpret_cast<const UInt8 *>(leading_magic_buf), "footer");
+
+    String footer_payload(footer_length, '\0');
+    seekable.seek(static_cast<off_t>(payload_start), SEEK_SET);
+    seekable.readStrict(footer_payload.data(), footer_length);
+
+    String footer_json;
+    if ((flags[0] & PUFFIN_FOOTER_COMPRESSED_FLAG) != 0)
+        footer_json = decompressPuffinFooterPayload(footer_payload.data(), footer_payload.size());
+    else
+        footer_json = std::move(footer_payload);
 
     return parseFooterJSON(footer_json, file_size);
 }
