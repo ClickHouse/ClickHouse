@@ -1342,7 +1342,7 @@ Queries are logged in the [system.query_log](/operations/system-tables/query_log
 
 <SystemLogParameters/>
 
-The `enable_user_query_log` parameter creates [`system.user_query_log`](/operations/system-tables/user_query_log), a view over the query log table filtered by `currentUser`. It is enabled by default.
+The `enable_user_query_log` parameter creates [`system.user_query_log`](/operations/system-tables/user_query_log), a view over the configured query log table (`query_log.database` / `query_log.table`, `system.query_log` by default) that returns only the rows whose initiating user matches `currentUser` (the initiating user is taken from `initial_user` when it is set, otherwise from `user`). It is enabled by default.
 
 If the table does not exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 

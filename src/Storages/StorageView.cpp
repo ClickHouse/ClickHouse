@@ -153,6 +153,16 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::max_result_rows] = 0;
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
+
+    /// A security barrier view must not let the outer `additional_table_filters` reach its inner
+    /// query. A filter keyed on the barrier view's underlying source table (e.g. `system.query_log`)
+    /// would otherwise be evaluated inside the barrier and could observe rows hidden by the view
+    /// predicate. Strip the setting from the inner query context so it can never be applied there,
+    /// while filters targeting unrelated tables in the outer query keep working - those are applied
+    /// in the outer context, which is left untouched.
+    if (view->isSecurityBarrier())
+        view_settings[Setting::additional_table_filters] = Map{};
+
     view_context->setSettings(view_settings);
     view_context->setIsViewInnerQuery(true);
     return view_context;
@@ -348,12 +358,10 @@ void StorageView::readImpl(
     if (security_barrier)
     {
         const auto & settings = context->getSettingsRef();
-        if (!settings[Setting::additional_table_filters].value.empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot use `additional_table_filters` with security barrier view `{}`",
-                getStorageID().getFullTableName());
-
+        /// `additional_table_filters` is deliberately not rejected here: it is table-scoped, so a
+        /// filter targeting an unrelated table in the outer query is harmless. The only dangerous
+        /// case - a filter keyed on the barrier view's inner source table - is neutralized in
+        /// `getViewContext`, which strips the setting from the inner query context.
         if (!settings[Setting::additional_result_filter].value.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,

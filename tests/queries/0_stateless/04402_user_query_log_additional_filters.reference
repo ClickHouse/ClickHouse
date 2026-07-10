@@ -1,3 +1,6 @@
-additional_table_filters rejected
+additional_table_filters on inner source ignored (analyzer=1)
+additional_table_filters on inner source ignored (analyzer=0)
+additional_table_filters for unrelated table accepted
+additional_table_filters for the view accepted
 additional_result_filter rejected
 additional_result_filter rejected with old analyzer
