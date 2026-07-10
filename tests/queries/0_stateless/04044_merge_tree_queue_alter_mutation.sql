@@ -7,6 +7,9 @@ set optimize_move_to_prewhere = 1;
 set insert_keeper_fault_injection_probability = 0;
 set alter_sync = 2;
 set mutations_sync = 2;
+-- Pin the legacy plan format: the reference asserts on the `explain indexes=1` tree,
+-- which changed shape after `explain_query_plan_default` defaulted to `pretty`.
+set explain_query_plan_default = 'legacy';
 
 -- ============================================================
 -- 1. Empty table

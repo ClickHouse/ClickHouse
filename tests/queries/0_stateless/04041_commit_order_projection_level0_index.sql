@@ -8,6 +8,9 @@ set query_plan_optimize_prewhere = 1;
 set optimize_move_to_prewhere = 1;
 set insert_keeper_fault_injection_probability = 0;
 set optimize_use_projections = 1;
+-- Pin the legacy plan format: the reference asserts on the `explain indexes=1` tree,
+-- which changed shape after `explain_query_plan_default` defaulted to `pretty`.
+set explain_query_plan_default = 'legacy';
 
 drop table if exists mt_level0_idx sync;
 
