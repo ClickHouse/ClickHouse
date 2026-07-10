@@ -1,6 +1,5 @@
 
 #include <memory>
-#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <config.h>
@@ -1051,9 +1050,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     sort_orders->add(sort_order);
     new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(new_metadata_file_content, oss, 4);
-    return {new_metadata_file_content, removeEscapedSlashes(oss.str())};
+    return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
 }
 
 /**

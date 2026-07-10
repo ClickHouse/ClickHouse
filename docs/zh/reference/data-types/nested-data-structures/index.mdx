@@ -1,0 +1,275 @@
+---
+description: 'ClickHouse 中嵌套数据结构的概述'
+sidebarTitle: 'Nested(Name1 Type1, Name2 Type2, ...)'
+slug: /sql-reference/data-types/nested-data-structures/nested
+title: 'Nested(name1 Type1, Name2 Type2, ...)'
+doc_type: 'guide'
+---
+
+嵌套数据结构就像单元格中的一张表。嵌套数据结构的参数——列名和类型——其指定方式与 [CREATE TABLE](/zh/reference/statements/create/table) 查询中的写法相同。表中的每一行都可以对应嵌套数据结构中的任意多行。
+
+<Tip>
+  **避免在列名中使用点号**
+
+  当 `flatten_nested = 1` (默认值) 时，包含点号的列名、具有相同点号前缀的列，以及 `Array` 类型的列，都可能被解释为扁平化 Nested 结构的一部分。这可能导致在插入时出现意外的数组长度校验，以及重命名限制。
+
+  如无必要，请避免在列名中使用点号。
+  除非你确实需要 `Nested` 语义，否则请在列名中使用下划线 (`_`) 或其他分隔符来代替点号。
+</Tip>
+
+示例：
+
+```sql highlight={8-15}
+CREATE TABLE test.visits(
+  CounterID UInt32,
+  StartDate Date,
+  Sign Int8,
+  IsNew UInt8,
+  VisitID UInt64,
+  UserID UInt64,
+  Goals Nested(
+    ID UInt32,
+    Serial UInt32,
+    EventTime DateTime,
+    Price Int64,
+    OrderID String,
+    CurrencyID UInt32
+  )
+)
+ENGINE = CollapsingMergeTree(Sign)
+ORDER BY (StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID));
+
+INSERT INTO test.visits
+(CounterID, StartDate, Sign, IsNew, VisitID, UserID, Goals.ID, Goals.Serial, Goals.EventTime, Goals.Price, Goals.OrderID, Goals.CurrencyID)
+VALUES
+    (101500, '2014-03-17', 1, 1, 1001, 100001, [1073752, 591325, 591325], [1, 2, 3], ['2014-03-17 16:38:10', '2014-03-17 16:38:48', '2014-03-17 16:42:27'], [0, 0, 0], ['', '', ''], [0, 0, 0]),
+    (101500, '2014-03-17', 1, 0, 1002, 100002, [1073752], [1], ['2014-03-17 00:28:25'], [0], [''], [0]),
+    (101500, '2014-03-17', 1, 0, 1003, 100003, [1073752], [1], ['2014-03-17 10:46:20'], [0], [''], [0]),
+    (101500, '2014-03-17', 1, 1, 1004, 100004, [1073752, 591325, 591325, 591325], [1, 2, 3, 4], ['2014-03-17 13:59:20', '2014-03-17 22:17:55', '2014-03-17 22:18:07', '2014-03-17 22:18:51'], [0, 0, 0, 0], ['', '', '', ''], [0, 0, 0, 0]),
+    (101500, '2014-03-17', 1, 0, 1005, 100005, [], [], [], [], [], []),
+    (101500, '2014-03-17', 1, 0, 1006, 100006, [1073752, 591325, 591325], [1, 2, 3], ['2014-03-17 11:37:06', '2014-03-17 14:07:47', '2014-03-17 14:36:21'], [0, 0, 0], ['', '', ''], [0, 0, 0]),
+    (101500, '2014-03-17', 1, 0, 1007, 100007, [], [], [], [], [], []),
+    (101500, '2014-03-17', 1, 0, 1008, 100008, [], [], [], [], [], []),
+    (101500, '2014-03-17', 1, 1, 1009, 100009, [591325, 1073752], [1, 2], ['2014-03-17 00:46:05', '2014-03-17 00:46:05'], [0, 0], ['', ''], [0, 0]),
+    (101500, '2014-03-17', 1, 1, 1010, 100010, [1073752, 591325, 591325, 591325], [1, 2, 3, 4], ['2014-03-17 13:28:33', '2014-03-17 13:30:26', '2014-03-17 18:51:21', '2014-03-17 18:51:45'], [0, 0, 0, 0], ['', '', '', ''], [0, 0, 0, 0]);
+```
+
+上述 `CREATE TABLE` DDL 语句声明了 `Goals` 嵌套数据结构，其中包含有关转化或已实现目标的数据。
+`visits` 表中的每一行都对应零次或多次转化。
+
+当 [`flatten_nested`](/zh/reference/settings/session-settings#flatten_nested) 设置为 `0` 时 (默认值为 `flatten_nested=1`) ，支持任意级别的嵌套。
+
+在大多数情况下，处理嵌套数据结构时，其列使用以点分隔的列名来指定。
+这些列构成一个由对应类型组成的数组。
+同一个嵌套数据结构中的所有列数组长度都相同。
+
+例如：
+
+```sql
+SELECT
+    Goals.ID,
+    Goals.EventTime
+FROM test.visits
+WHERE CounterID = 101500 AND length(Goals.ID) < 5
+ORDER BY VisitID
+LIMIT 10
+```
+
+```text
+    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    ┃ Goals.ID                       ┃ Goals.EventTime                                                                           ┃
+    ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+ 1. │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 2. │ [1073752]                      │ ['2014-03-17 00:28:25']                                                                   │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 3. │ [1073752]                      │ ['2014-03-17 10:46:20']                                                                   │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 4. │ [1073752,591325,591325,591325] │ ['2014-03-17 13:59:20','2014-03-17 22:17:55','2014-03-17 22:18:07','2014-03-17 22:18:51'] │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 5. │ []                             │ []                                                                                        │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 6. │ [1073752,591325,591325]        │ ['2014-03-17 11:37:06','2014-03-17 14:07:47','2014-03-17 14:36:21']                       │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 7. │ []                             │ []                                                                                        │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 8. │ []                             │ []                                                                                        │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+ 9. │ [591325,1073752]               │ ['2014-03-17 00:46:05','2014-03-17 00:46:05']                                             │
+    ├────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+10. │ [1073752,591325,591325,591325] │ ['2014-03-17 13:28:33','2014-03-17 13:30:26','2014-03-17 18:51:21','2014-03-17 18:51:45'] │
+    └────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<Tip>
+  可以把嵌套数据结构简单理解为一组长度相等的多个列数组。
+</Tip>
+
+<div id="filtering-nested-columns-in-where">
+  ### 在 WHERE 中过滤 Nested 列
+</div>
+
+由于 `Nested` 结构中的每一列都存储为 `Array`，因此在 `WHERE` 子句中引用它时，拿到的是每一行的整个数组，而不是单个元素。你不能将嵌套列直接与标量值比较，因此必须改用[数组函数](/zh/reference/functions/regular-functions/array-functions)。
+
+例如，这个查询**不会**悄悄地返回 0 行——它会引发异常，因为 `Goals.ID` 的类型是 `Array(UInt32)`，而 `equals(Array(UInt32), UInt32)` 不是有效的比较：
+
+```sql
+-- WRONG: compares the entire Array to a scalar
+SELECT * FROM test.visits
+WHERE Goals.ID = 591325;
+```
+
+```text
+Code: 43. DB::Exception: Illegal types of arguments (`Array(UInt32)`, `UInt32`)
+of function `equals`. (ILLEGAL_TYPE_OF_ARGUMENT)
+```
+
+使用 [`has`](/zh/reference/functions/regular-functions/array-functions#has) 检查数组是否包含特定值：
+
+```sql
+-- Find visits that have at least one goal with ID 591325
+SELECT CounterID, VisitID, Goals.ID
+FROM test.visits
+WHERE has(Goals.ID, 591325);
+```
+
+如果条件较为复杂，可使用 [`arrayExists`](/zh/reference/functions/regular-functions/array-functions#arrayExists)：
+
+```sql
+-- Find visits that have at least one goal with ID greater than 1000000
+SELECT CounterID, VisitID, Goals.ID
+FROM test.visits
+WHERE arrayExists(id -> id > 1000000, Goals.ID);
+```
+
+你可以使用 `length` 根据数组长度进行过滤，或使用 `notEmpty` 排除空数组：
+
+```sql
+-- Visits with at least 3 goals
+SELECT CounterID, VisitID, Goals.ID
+FROM test.visits
+WHERE length(Goals.ID) >= 3;
+
+-- Visits with at least one goal (non-empty array)
+SELECT CounterID, VisitID, Goals.ID
+FROM test.visits
+WHERE notEmpty(Goals.ID);
+```
+
+若要针对嵌套结构中的单个元素进行过滤，而不是针对整行过滤，请先使用 `ARRAY JOIN` 将数组展开。
+在 `ARRAY JOIN` 之后，每个元素都会成为单独的一行，因此 `WHERE` 子句会作用于标量值。
+更多信息，请参见 [`ARRAY JOIN` 子句](/zh/reference/statements/select/array-join)。示例：
+
+```sql
+SELECT
+    Goal.ID,
+    Goal.EventTime
+FROM test.visits
+ARRAY JOIN Goals AS Goal
+WHERE CounterID = 101500 AND length(Goals.ID) < 5
+ORDER BY VisitID, Goal.Serial
+LIMIT 10
+```
+
+```text
+    ┏━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┓
+    ┃ Goal.ID ┃      Goal.EventTime ┃
+    ┡━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━┩
+ 1. │ 1073752 │ 2014-03-17 16:38:10 │
+    ├─────────┼─────────────────────┤
+ 2. │  591325 │ 2014-03-17 16:38:48 │
+    ├─────────┼─────────────────────┤
+ 3. │  591325 │ 2014-03-17 16:42:27 │
+    ├─────────┼─────────────────────┤
+ 4. │ 1073752 │ 2014-03-17 00:28:25 │
+    ├─────────┼─────────────────────┤
+ 5. │ 1073752 │ 2014-03-17 10:46:20 │
+    ├─────────┼─────────────────────┤
+ 6. │ 1073752 │ 2014-03-17 13:59:20 │
+    ├─────────┼─────────────────────┤
+ 7. │  591325 │ 2014-03-17 22:17:55 │
+    ├─────────┼─────────────────────┤
+ 8. │  591325 │ 2014-03-17 22:18:07 │
+    ├─────────┼─────────────────────┤
+ 9. │  591325 │ 2014-03-17 22:18:51 │
+    ├─────────┼─────────────────────┤
+10. │ 1073752 │ 2014-03-17 11:37:06 │
+    └─────────┴─────────────────────┘
+```
+
+你不能对整个嵌套数据结构执行 `SELECT`。只能显式列出其中的各个列。
+
+<div id="inserting-data">
+  ### 插入数据
+</div>
+
+对于 `INSERT` 查询，应分别传入嵌套数据结构中各组成列的数组 (就像它们是彼此独立的列数组一样) 。插入时，系统会检查它们的长度是否一致。
+
+每个嵌套子列都会在列列表中以点表示法列出 (`Goals.ID`、`Goals.Serial` 等) ，相应的值则为数组：
+
+```sql
+INSERT INTO test.visits
+    (CounterID, StartDate, Sign, IsNew, VisitID, UserID,
+     Goals.ID, Goals.Serial, Goals.EventTime, Goals.Price, Goals.OrderID, Goals.CurrencyID)
+VALUES
+    -- A visit with two goals: each nested sub-column gets an array of length 2
+    (101500, '2014-03-18', 1, 1, 2001, 200001,
+     [1073752, 591325], [1, 2],
+     ['2014-03-18 10:00:00', '2014-03-18 10:05:00'],
+     [100, 200], ['order_a', 'order_b'], [1, 2]),
+    -- A visit with no goals: all nested sub-columns get empty arrays
+    (101500, '2014-03-18', 1, 0, 2002, 200002,
+     [], [], [], [], [], []);
+```
+
+单行中的所有嵌套子列数组长度必须相同。长度不一致会报错：
+
+```sql
+-- ERROR: Goals.ID has 2 elements, but Goals.Serial has 1
+INSERT INTO test.visits
+    (CounterID, StartDate, Sign, IsNew, VisitID, UserID,
+     Goals.ID, Goals.Serial, Goals.EventTime, Goals.Price, Goals.OrderID, Goals.CurrencyID)
+VALUES
+    (101500, '2014-03-18', 1, 1, 2003, 200003,
+     [1073752, 591325], [1],
+     ['2014-03-18 12:00:00'], [0], [''], [0]);
+```
+
+对于 `DESCRIBE` 查询，嵌套数据结构中的各列也会以相同方式分别列出。
+
+<div id="alter-limitations">
+  ### ALTER 的限制
+</div>
+
+对嵌套数据结构执行 `ALTER` 查询时有以下限制：
+
+**添加子列** 可正常使用。你可以向现有的 `Nested` 结构添加新的子列：
+
+```sql
+ALTER TABLE test.visits ADD COLUMN Goals.Revenue Float64;
+```
+
+**删除子列**可用于单个子列：
+
+```sql
+ALTER TABLE test.visits DROP COLUMN Goals.Revenue;
+```
+
+**修改类型** 对子列同样适用，并会触发一次变更 (数据重写) ：
+
+```sql
+ALTER TABLE test.visits MODIFY COLUMN Goals.Price Int32;
+```
+
+**重命名** 存在一些限制。你可以在同一个嵌套结构内重命名子列：
+
+```sql
+-- OK: stays within the Goals structure
+ALTER TABLE test.visits RENAME COLUMN Goals.Price TO Goals.Amount;
+```
+
+但是，你**不能**：
+
+* 重命名整个嵌套结构 (例如，将 `Goals` 改为 `Conversions`) 。
+* 将子列移动到其他嵌套结构中 (例如，将 `Goals.ID` 移动到 `OtherNested.ID`) 。
+* 将子列移出嵌套结构，或移入嵌套结构 (例如，将 `Goals.ID` 改为 `GoalID`，反之亦然) 。

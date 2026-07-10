@@ -1,0 +1,58 @@
+---
+title: استخدام التجميعات المُفلترة في ClickHouse
+description: تعرّف على كيفية استخدام التجميعات المُفلترة في ClickHouse باستخدام مُبدِّلي التجميع `-If` و`-Distinct` لتبسيط صياغة الاستعلامات وتعزيز التحليلات.
+date: 2023-03-01
+tags: ['الدوال']
+keywords: ['التجميعات المُفلترة']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="using-filtered-aggregates">
+  ## استخدام التجميعات المُفلترة
+</div>
+
+يوفّر ClickHouse طريقة بسيطة وواضحة لكتابة *التجميعات المُفلترة*.
+
+على سبيل المثال، قارن بين الطريقة القياسية في SQL لكتابة التجميعات المُفلترة (والتي تعمل جيدًا في ClickHouse) وبين الصياغة المختصرة التي تستخدم `-If` [مركِّب دالة التجميع](/ar/reference/functions/aggregate-functions/combinators)، والذي يمكن إلحاقه بأي دالة تجميع:
+
+```sql
+--standard SQL
+SELECT
+   avg(number)
+FILTER (WHERE number > 50)
+FROM numbers(100)
+
+--ClickHouse using an aggregate combinator
+SELECT
+   avgIf(number, number > 50)
+FROM numbers(100)
+```
+
+وبالمثل، يوجد المُركِّب التجميعي `-Distinct`:
+
+```sql
+--standard SQL
+SELECT avg(DISTINCT number)
+
+--ClickHouse using an aggregate combinator
+SELECT avgDistinct(number)
+```
+
+لماذا تُعدّ التجميعات المُفلترة مهمة؟ لأنها تتيح لك تنفيذ ميزة **&quot;مقارنة الشرائح&quot;** في خدمات تحليلات الويب.
+على سبيل المثال:
+
+```sql
+WITH
+   Region = 'us' AS segment1,
+   Browser = 'Chrome' AS segment2
+SELECT
+   uniqIf(UserID, segment1),
+   uniqIf(UserID, segment2)
+WHERE segment1 OR segment2
+```
+
+اطّلع على صفحة [مُركِّب دوال التجميع](/ar/reference/functions/aggregate-functions/combinators) في الوثائق
+لمزيد من التفاصيل.

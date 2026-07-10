@@ -1,0 +1,392 @@
+---
+title: 'العمل مع JSON في ClickHouse'
+sidebarTitle: 'العمل مع JSON'
+slug: /integrations/clickpipes/mongodb/quickstart
+description: 'أنماط شائعة للعمل مع بيانات JSON المنسوخة من MongoDB إلى ClickHouse عبر ClickPipes'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'إدخال البيانات', 'مزامنة آنية']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+يوفّر هذا الدليل أنماطًا شائعة للعمل مع بيانات JSON المنسوخة من MongoDB إلى ClickHouse عبر ClickPipes.
+
+لنفترض أننا أنشأنا مجموعة `t1` في MongoDB لتتبّع طلبات العملاء:
+
+```javascript
+db.t1.insertOne({
+  "order_id": "ORD-001234",
+  "customer_id": 98765,
+  "status": "completed",
+  "total_amount": 299.97,
+  "order_date": new Date(),
+  "shipping": {
+    "method": "express",
+    "city": "Seattle",
+    "cost": 19.99
+  },
+  "items": [
+    {
+      "category": "electronics",
+      "price": 149.99
+    },
+    {
+      "category": "accessories",
+      "price": 24.99
+    }
+  ]
+})
+```
+
+يقوم MongoDB CDC Connector بنسخ مستندات MongoDB إلى ClickHouse باستخدام نوع بيانات JSON المدعوم أصلاً. وسيحتوي الجدول المُكرَّر `t1` في ClickHouse على الصف التالي:
+
+```shell
+Row 1:
+──────
+_id:                "68a4df4b9fe6c73b541703b0"
+doc:                {"_id":"68a4df4b9fe6c73b541703b0","customer_id":"98765","items":[{"category":"electronics","price":149.99},{"category":"accessories","price":24.99}],"order_date":"2025-08-19T20:32:11.705Z","order_id":"ORD-001234","shipping":{"city":"Seattle","cost":19.99,"method":"express"},"status":"completed","total_amount":299.97}
+_peerdb_synced_at:  2025-08-19 20:50:42.005000000
+_peerdb_is_deleted: 0
+_peerdb_version:    0
+```
+
+<div id="table-schema">
+  ## مخطط الجدول
+</div>
+
+تستخدم الجداول المُكرّرة المخطط القياسية التالية:
+
+```shell
+┌─name───────────────┬─type──────────┐
+│ _id                │ String        │
+│ doc                │ JSON          │
+│ _peerdb_synced_at  │ DateTime64(9) │
+│ _peerdb_version    │ Int64         │
+│ _peerdb_is_deleted │ Int8          │
+└────────────────────┴───────────────┘
+```
+
+* `_id`: المفتاح الأساسي من MongoDB
+* `doc`: وثيقة MongoDB مُكرَّرة بصيغة نوع بيانات JSON
+* `_peerdb_synced_at`: يسجّل وقت آخر مزامنة للصف
+* `_peerdb_version`: يتتبع إصدار الصف؛ ويزداد عند تحديث الصف أو حذفه
+* `_peerdb_is_deleted`: يبيّن ما إذا كان الصف محذوفًا
+
+<div id="replacingmergetree-table-engine">
+  ### محرك الجدول ReplacingMergeTree
+</div>
+
+تربط ClickPipes مجموعات MongoDB في ClickHouse باستخدام عائلة محركات الجداول `ReplacingMergeTree`. ومع هذا المحرك، تُمثَّل التحديثات على أنها عمليات insert بإصدار أحدث (`_peerdb_version`) من المستند لمفتاح أساسي (`_id`) محدد، مما يتيح معالجة التحديثات وعمليات الاستبدال والحذف بكفاءة باعتبارها versioned inserts.
+
+يزيل `ReplacingMergeTree` التكرارات بشكل غير متزامن في الخلفية. ولضمان عدم وجود تكرارات للصف نفسه، استخدم [`المُعدِّل FINAL`](/ar/reference/statements/select/from#final-modifier). على سبيل المثال:
+
+```sql
+SELECT * FROM t1 FINAL;
+```
+
+<div id="handling-deletes">
+  ### التعامل مع عمليات الحذف
+</div>
+
+تُمرَّر عمليات الحذف من MongoDB كصفوف جديدة مُعلَّمة على أنها محذوفة باستخدام العمود `_peerdb_is_deleted`. وعادةً ما ستحتاج إلى استبعادها في استعلاماتك:
+
+```sql
+SELECT * FROM t1 FINAL WHERE _peerdb_is_deleted = 0;
+```
+
+يمكنك أيضًا إنشاء سياسة على مستوى الصف لتصفية الصفوف المحذوفة تلقائيًا، بدلًا من تحديد شرط التصفية في كل استعلام:
+
+```sql
+CREATE ROW POLICY policy_name ON t1
+FOR SELECT USING _peerdb_is_deleted = 0;
+```
+
+<div id="querying-json-data">
+  ## الاستعلام عن بيانات JSON
+</div>
+
+يمكنك الاستعلام مباشرةً عن حقول JSON باستخدام صيغة النقطة:
+
+```sql title="Query"
+SELECT
+    doc.order_id,
+    doc.shipping.method
+FROM t1;
+```
+
+```shell title="Result"
+┌-─doc.order_id─┬─doc.shipping.method─┐
+│ ORD-001234    │ express             │
+└───────────────┴─────────────────────┘
+```
+
+عند الاستعلام عن *حقول الكائنات المتداخلة* باستخدام البنية النقطية، تأكد من إضافة العامل [`^`](/ar/reference/data-types/newjson#reading-json-sub-objects-as-sub-columns):
+
+```sql title="Query"
+SELECT doc.^shipping as shipping_info FROM t1;
+```
+
+```shell title="Result"
+┌─shipping_info──────────────────────────────────────┐
+│ {"city":"Seattle","cost":19.99,"method":"express"} │
+└────────────────────────────────────────────────────┘
+```
+
+<div id="dynamic-type">
+  ### نوع Dynamic
+</div>
+
+في ClickHouse، يكون نوع كل حقل في JSON هو `Dynamic`. ويتيح النوع `Dynamic` لـ ClickHouse تخزين قيم من أي نوع من دون الحاجة إلى معرفة النوع مسبقًا. يمكنك التحقق من ذلك باستخدام الدالة `toTypeName`:
+
+```sql title="Query"
+SELECT toTypeName(doc.customer_id) AS type FROM t1;
+```
+
+```shell title="Result"
+┌─type────┐
+│ Dynamic │
+└─────────┘
+```
+
+لفحص أنواع البيانات الأساسية لحقلٍ ما، يمكنك استخدام الدالة `dynamicType`. لاحظ أنه قد توجد أنواع بيانات مختلفة لاسم الحقل نفسه في صفوف مختلفة:
+
+```sql title="Query"
+SELECT dynamicType(doc.customer_id) AS type FROM t1;
+```
+
+```shell title="Result"
+┌─type──┐
+│ Int64 │
+└───────┘
+```
+
+تعمل [الدوال العادية](/ar/reference/functions/regular-functions/regular-functions-index) مع النوع Dynamic تمامًا كما هو الحال مع الأعمدة العادية:
+
+**مثال 1: تحليل Date**
+
+```sql title="Query"
+SELECT parseDateTimeBestEffortOrNull(doc.order_date) AS order_date FROM t1;
+```
+
+```shell title="Result"
+┌─order_date──────────┐
+│ 2025-08-19 20:32:11 │
+└─────────────────────┘
+```
+
+**مثال 2: المنطق الشرطي**
+
+```sql title="Query"
+SELECT multiIf(
+    doc.total_amount < 100, 'less_than_100',
+    doc.total_amount < 1000, 'less_than_1000',
+    '1000+') AS spendings
+FROM t1;
+```
+
+```shell title="Result"
+┌─spendings──────┐
+│ less_than_1000 │
+└────────────────┘
+```
+
+**مثال 3: عمليات على Array**
+
+```sql title="Query"
+SELECT length(doc.items) AS item_count FROM t1;
+```
+
+```shell title="Result"
+┌─item_count─┐
+│          2 │
+└────────────┘
+```
+
+<div id="field-casting">
+  ### تحويل نوع الحقل
+</div>
+
+لا تعمل [دوال التجميع](/ar/reference/functions/aggregate-functions/combinators) في ClickHouse مباشرةً مع نوع Dynamic. على سبيل المثال، إذا حاولت استخدام الدالة `sum` مباشرةً على نوع Dynamic، فستحصل على الخطأ التالي:
+
+```sql
+SELECT sum(doc.shipping.cost) AS shipping_cost FROM t1;
+-- DB::Exception: Illegal type Dynamic of argument for aggregate function sum. (ILLEGAL_TYPE_OF_ARGUMENT)
+```
+
+لاستخدام دوال التجميع، حوِّل الحقل إلى النوع المناسب باستخدام الدالة `CAST` أو صيغة `::`:
+
+```sql title="Query"
+SELECT sum(doc.shipping.cost::Float32) AS shipping_cost FROM t1;
+```
+
+```shell title="Result"
+┌─shipping_cost─┐
+│         19.99 │
+└───────────────┘
+```
+
+<Note>
+  يُعد التحويل من نوع Dynamic إلى نوع البيانات الأساسي (الذي يحدده `dynamicType`) عالي الكفاءة جدًا، لأن ClickHouse يخزّن القيمة داخليًا مسبقًا بنوعها الأساسي.
+</Note>
+
+<div id="flattening-json">
+  ## تسوية JSON
+</div>
+
+<div id="normal-view">
+  ### العرض العادي
+</div>
+
+يمكنك إنشاء عروض عادية فوق جدول JSON لاحتواء منطق التسطيح/تحويل النوع/التحويل، بحيث تتمكن من الاستعلام عن البيانات بطريقة مشابهة لجدول علائقي. وتُعد العروض العادية خفيفة، لأنها لا تخزن سوى الاستعلام نفسه، وليس البيانات الأساسية. على سبيل المثال:
+
+```sql
+CREATE VIEW v1 AS
+SELECT
+    CAST(doc._id, 'String') AS object_id,
+    CAST(doc.order_id, 'String') AS order_id,
+    CAST(doc.customer_id, 'Int64') AS customer_id,
+    CAST(doc.status, 'String') AS status,
+    CAST(doc.total_amount, 'Decimal64(2)') AS total_amount,
+    CAST(parseDateTime64BestEffortOrNull(doc.order_date, 3), 'DATETIME(3)') AS order_date,
+    doc.^shipping AS shipping_info,
+    doc.items AS items
+FROM t1 FINAL
+WHERE _peerdb_is_deleted = 0;
+```
+
+سيكون لطريقة العرض هذه المخطط التالي:
+
+```shell
+┌─name────────────┬─type───────────┐
+│ object_id       │ String         │
+│ order_id        │ String         │
+│ customer_id     │ Int64          │
+│ status          │ String         │
+│ total_amount    │ Decimal(18, 2) │
+│ order_date      │ DateTime64(3)  │
+│ shipping_info   │ JSON           │
+│ items           │ Dynamic        │
+└─────────────────┴────────────────┘
+```
+
+يمكنك الآن إجراء استعلام على طريقة العرض كما لو كنت تستعلم جدولًا مُسطَّحًا:
+
+```sql
+SELECT
+    customer_id,
+    sum(total_amount)
+FROM v1
+WHERE shipping_info.city = 'Seattle'
+GROUP BY customer_id
+ORDER BY customer_id DESC
+LIMIT 10;
+```
+
+<div id="refreshable-materialized-view">
+  ### العرض المادي القابل للتحديث
+</div>
+
+يمكنك إنشاء [العروض المادية القابلة للتحديث](/ar/concepts/features/materialized-views/refreshable-materialized-view)، ما يتيح لك جدولة تنفيذ الاستعلام لإزالة تكرار الصفوف وتخزين النتائج في جدول هدف مُسطَّح. ومع كل تحديث مجدول، يُستبدل الجدول الهدف بأحدث نتائج الاستعلام.
+
+تكمن الميزة الأساسية لهذه الطريقة في أن الاستعلام الذي يستخدم الكلمة المفتاحية `FINAL` يُشغَّل مرة واحدة فقط أثناء التحديث، مما يلغي حاجة الاستعلامات اللاحقة على الجدول الهدف إلى استخدام `FINAL`.
+
+ومن عيوب هذه الطريقة أن البيانات في الجدول الهدف لا تكون مُحدَّثة إلا بقدر حداثة آخر تحديث. وفي كثير من حالات الاستخدام، توفّر فترات التحديث التي تتراوح من عدة دقائق إلى بضع ساعات توازنًا جيدًا بين حداثة البيانات وأداء الاستعلام.
+
+```sql
+CREATE TABLE flattened_t1 (
+    `_id` String,
+    `order_id` String,
+    `customer_id` Int64,
+    `status` String,
+    `total_amount` Decimal(18, 2),
+    `order_date` DateTime64(3),
+    `shipping_info` JSON,
+    `items` Dynamic
+)
+ENGINE = ReplacingMergeTree()
+PRIMARY KEY _id
+ORDER BY _id;
+
+CREATE MATERIALIZED VIEW rmv REFRESH EVERY 1 HOUR TO flattened_t1 AS
+SELECT 
+    CAST(doc._id, 'String') AS _id,
+    CAST(doc.order_id, 'String') AS order_id,
+    CAST(doc.customer_id, 'Int64') AS customer_id,
+    CAST(doc.status, 'String') AS status,
+    CAST(doc.total_amount, 'Decimal64(2)') AS total_amount,
+    CAST(parseDateTime64BestEffortOrNull(doc.order_date, 3), 'DATETIME(3)') AS order_date,
+    doc.^shipping AS shipping_info,
+    doc.items AS items
+FROM t1 FINAL
+WHERE _peerdb_is_deleted = 0;
+```
+
+يمكنك الآن الاستعلام عن الجدول `flattened_t1` مباشرةً من دون المُعدِّل `FINAL`:
+
+```sql
+SELECT
+    customer_id,
+    sum(total_amount)
+FROM flattened_t1
+WHERE shipping_info.city = 'Seattle'
+GROUP BY customer_id
+ORDER BY customer_id DESC
+LIMIT 10;
+```
+
+<div id="incremental-materialized-view">
+  ### العرض المادي التزايدي
+</div>
+
+إذا كنت تريد الوصول إلى الأعمدة المُسطَّحة في الوقت الفعلي، فيمكنك إنشاء [عروض مادية تزايدية](/ar/concepts/features/materialized-views/incremental-materialized-view). وإذا كان جدولك يشهد تحديثات متكررة، فلا يُنصح باستخدام المُعدِّل `FINAL` في العرض المادي، لأن كل تحديث سيؤدي إلى عملية دمج. وبدلًا من ذلك، يمكنك إزالة التكرار من البيانات وقت الاستعلام عن طريق إنشاء عرض عادي فوق العرض المادي.
+
+```sql
+CREATE TABLE flattened_t1 (
+    `_id` String,
+    `order_id` String,
+    `customer_id` Int64,
+    `status` String,
+    `total_amount` Decimal(18, 2),
+    `order_date` DateTime64(3),
+    `shipping_info` JSON,
+    `items` Dynamic,
+    `_peerdb_version` Int64,
+    `_peerdb_synced_at` DateTime64(9),
+    `_peerdb_is_deleted` Int8
+)
+ENGINE = ReplacingMergeTree()
+PRIMARY KEY _id
+ORDER BY _id;
+
+CREATE MATERIALIZED VIEW imv TO flattened_t1 AS
+SELECT 
+    CAST(doc._id, 'String') AS _id,
+    CAST(doc.order_id, 'String') AS order_id,
+    CAST(doc.customer_id, 'Int64') AS customer_id,
+    CAST(doc.status, 'String') AS status,
+    CAST(doc.total_amount, 'Decimal64(2)') AS total_amount,
+    CAST(parseDateTime64BestEffortOrNull(doc.order_date, 3), 'DATETIME(3)') AS order_date,
+    doc.^shipping AS shipping_info,
+    doc.items,
+    _peerdb_version,
+    _peerdb_synced_at,   
+    _peerdb_is_deleted
+FROM t1;
+
+CREATE VIEW flattened_t1_final AS
+SELECT * FROM flattened_t1 FINAL WHERE _peerdb_is_deleted = 0;
+```
+
+يمكنك الآن الاستعلام عن العرض `flattened_t1_final` كما يلي:
+
+```sql
+SELECT
+    customer_id,
+    sum(total_amount)
+FROM flattened_t1_final
+AND shipping_info.city = 'Seattle'
+GROUP BY customer_id
+ORDER BY customer_id DESC
+LIMIT 10;
+```

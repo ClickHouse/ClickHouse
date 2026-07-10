@@ -1,0 +1,40 @@
+---
+title: 'Resynchronisation de tables spécifiques'
+description: 'Resynchronisation de tables spécifiques dans un Postgres ClickPipe'
+slug: /integrations/clickpipes/postgres/table_resync
+sidebarTitle: 'Resynchroniser une table'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Dans certains cas, il peut être utile de resynchroniser des tables spécifiques d’un pipeline. Par exemple, après des changements majeurs de schéma dans Postgres, ou après un remaniement du modèle de données dans ClickHouse.
+
+Bien que la resynchronisation de tables individuelles en un clic soit encore en cours de développement, ce guide explique les étapes à suivre pour le faire dès aujourd’hui avec le Postgres ClickPipe.
+
+<div id="removing-table">
+  ### 1. Supprimer la table du pipeline
+</div>
+
+Pour cela, suivez le [guide de suppression de la table](/fr/integrations/clickpipes/postgres/remove-table).
+
+<div id="truncate-drop-table">
+  ### 2. TRUNCATE ou supprimez la table dans ClickHouse
+</div>
+
+Cette étape permet d’éviter les doublons de données lorsque nous ajouterons de nouveau cette table à l’étape suivante. Pour ce faire, accédez à l’onglet **SQL Console** dans ClickHouse Cloud et exécutez une requête.
+Notez qu’une validation empêche l’ajout de la table si elle existe déjà dans ClickHouse et n’est pas vide.
+
+Sinon, si vous devez conserver l’ancienne table, vous pouvez simplement la renommer. Cela peut également être utile lorsque la table est très volumineuse et que l’opération de suppression risque de prendre un certain temps.
+
+```sql
+RENAME TABLE table_A TO table_A_bak;
+```
+
+<div id="add-table-again">
+  ### 3. Ajouter à nouveau la table au ClickPipe
+</div>
+
+Pour ce faire, suivez le [guide d&#39;ajout d&#39;une table](/fr/integrations/clickpipes/postgres/add-table).

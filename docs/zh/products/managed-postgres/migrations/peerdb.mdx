@@ -1,0 +1,319 @@
+---
+slug: /cloud/managed-postgres/migrations/peerdb
+sidebarTitle: 'PeerDB'
+title: '使用 PeerDB 迁移到 Managed Postgres'
+description: '了解如何使用 PeerDB 将 PostgreSQL 数据迁移至 ClickHouse Managed Postgres'
+keywords: ['postgres', 'postgresql', '逻辑复制', '迁移', '数据传输', 'managed postgres', 'peerdb']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本指南将分步介绍如何使用 PeerDB 将您的 PostgreSQL 数据库迁移至 ClickHouse Managed Postgres。
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-peerdb-beta" />
+
+<div id="migration-peerdb-prerequisites">
+  ## 前置条件
+</div>
+
+* 具有访问源 PostgreSQL 数据库的权限。
+* 一个你希望迁移数据到其中的 ClickHouse Managed Postgres 实例。
+* 在一台机器上安装 PeerDB。你可以按照 [PeerDB GitHub repository](https://github.com/PeerDB-io/peerdb?tab=readme-ov-file#get-started) 中的安装说明进行操作。你只需克隆该 repository 并运行 `docker-compose up`。在本指南中，我们将使用 **PeerDB UI**；PeerDB 启动后，即可通过 `http://localhost:3000` 访问。
+
+<div id="migration-peerdb-considerations-before">
+  ## 迁移前注意事项
+</div>
+
+开始迁移前，请注意以下事项：
+
+* **数据库对象**：PeerDB 会根据源 schema 在目标数据库中自动创建表。但某些数据库对象 (如索引、约束和触发器) 不会自动迁移。迁移完成后，您需要在目标数据库中手动重新创建这些对象。
+* **DDL 变更**：如果启用持续复制，PeerDB 会使目标数据库与源数据库在 DML 操作 (INSERT、UPDATE、DELETE) 以及 ADD COLUMN 操作上保持同步。不过，其他 DDL 变更 (如 DROP COLUMN、ALTER COLUMN) 不会自动同步。有关 schema 变更支持的更多信息，请参见[此处](/zh/integrations/clickpipes/postgres/schema-changes)
+* **网络连通性**：请确保运行 PeerDB 的机器能够访问源数据库和目标数据库。您可能需要配置防火墙规则或安全组 (Security Group) 设置，以允许建立连接。
+
+<div id="migration-peerdb-create-peers">
+  ## 创建 peer
+</div>
+
+首先，我们需要分别为源数据库和目标数据库创建 peer。peer 表示与数据库建立的连接。在 PeerDB UI 中，点击侧边栏中的“Peers”，进入“Peers”部分。要创建新的 peer，请点击 `+ New peer` 按钮。
+
+<div id="migration-peerdb-source-peer">
+  ### 创建源 peer
+</div>
+
+填写主机、端口、数据库名称、用户名和密码等连接信息，为源 PostgreSQL 数据库创建一个 peer。填写完成后，点击 `Create peer` 按钮以保存该 peer。
+
+<Image img="/images/managed-postgres/peerdb/source-peer.webp" alt="创建源 Peer" size="md" border />
+
+<div id="migration-peerdb-target-peer">
+  ### 创建目标 peer
+</div>
+
+同样，你需要为 ClickHouse Managed Postgres 实例创建一个 peer，并提供必要的连接信息。你可以从 ClickHouse Cloud 控制台获取该实例的[连接信息](/zh/products/managed-postgres/connection)。填写完这些信息后，点击 `Create peer` 按钮以保存目标 peer。
+
+<Image img="/images/managed-postgres/peerdb/target-peer.webp" alt="创建目标 peer" size="md" border />
+
+现在，你应该能在“Peers”部分看到源 peer 和目标 peer 都已列出。
+
+<Image img="/images/managed-postgres/peerdb/peers.webp" alt="Peers 列表" size="md" border />
+
+<div id="migration-peerdb-source-schema-dump">
+  ### 获取源 schema 转储
+</div>
+
+为了在目标数据库中复现源数据库的配置，我们需要先获取源数据库的 schema 转储。你可以使用 `pg_dump` 为源 PostgreSQL 数据库创建仅包含 schema 的转储：
+
+<Accordion title="安装 pg_dump">
+  **Ubuntu：**
+
+  更新软件包列表：
+
+  ```shell
+  sudo apt update
+  ```
+
+  安装 PostgreSQL 客户端：
+
+  ```shell
+  sudo apt install postgresql-client
+  ```
+
+  **macOS：**
+
+  方法 1：使用 Homebrew (推荐)
+
+  如果尚未安装 Homebrew，请先安装：
+
+  ```shell
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  ```
+
+  安装 PostgreSQL：
+
+  ```shell
+  brew install postgresql
+  ```
+
+  验证安装：
+
+  ```shell
+  pg_dump --version
+  ```
+</Accordion>
+
+```shell
+pg_dump -d 'postgresql://<user>:<password>@<host>:<port>/<database>'  -s > source_schema.sql
+```
+
+<div id="migration-peerdb-remove-constraints-indexes">
+  #### 从 schema 转储中移除唯一约束和索引
+</div>
+
+在将其应用到目标数据库之前，我们需要先从转储文件中移除 UNIQUE 约束和索引，以免 PeerDB 向目标表摄取数据时被这些约束阻塞。可使用以下方式移除：
+
+```shell
+# 预览
+grep -n "CONSTRAINT.*UNIQUE" <dump_file_path>
+grep -n "CREATE UNIQUE INDEX" <dump_file_path>
+grep -n -E "(CONSTRAINT.*UNIQUE|CREATE UNIQUE INDEX)" <dump_file_path>
+
+# 删除
+sed -i.bak -E '/CREATE UNIQUE INDEX/,/;/d; /(CONSTRAINT.*UNIQUE|ADD CONSTRAINT.*UNIQUE)/d' <dump_file_path>
+```
+
+<div id="migration-peerdb-apply-schema-dump">
+  ### 将 schema 转储应用到目标数据库
+</div>
+
+清理完 schema 转储文件后，您可以通过 `psql` [连接到](/zh/products/managed-postgres/connection)目标 ClickHouse Managed Postgres 数据库，并运行该 schema 转储文件：
+
+```shell
+psql -h <target_host> -p <target_port> -U <target_username> -d <target_database> -f source_schema.sql
+```
+
+在目标端，我们不希望 PeerDB 的摄取因外键约束而受阻。为此，可以将目标角色 (即上文目标 peer 中使用的角色) 的 `session_replication_role` 设置为 `replica`：
+
+```sql
+ALTER ROLE <target_role> SET session_replication_role = replica;
+```
+
+<div id="migration-peerdb-create-mirror">
+  ## 创建 mirror
+</div>
+
+接下来，我们需要创建一个 mirror，用于定义源 peer 与目标 peer 之间的数据迁移过程。在 PeerDB UI 中，点击侧边栏中的“Mirrors”，进入“Mirrors”部分。要创建新的 mirror，请点击 `+ New mirror` 按钮。
+
+<Image img="/images/managed-postgres/peerdb/create-mirror.webp" alt="创建 Mirror" size="md" border />
+
+1. 为 mirror 指定一个能够描述此次迁移的名称。
+2. 从下拉菜单中选择你之前创建的源 peer 和目标 peer。
+3. 确保：
+
+* Soft delete 为 OFF。
+* 展开 `Advanced settings`。确保 **Postgres type system is enabled**，并且 **PeerDB columns are disabled**。
+
+<Image img="/images/managed-postgres/peerdb/settings.webp" alt="Mirror 设置" size="md" border />
+
+4. 选择你要迁移的表。你可以选择特定表，也可以选择源数据库中的所有表。
+
+<Image img="/images/managed-postgres/peerdb/table-picker.webp" alt="表选择器" size="md" border />
+
+<Info>
+  **选择表**
+
+  由于我们在前一步中已按原样迁移了 schema，请确保目标数据库中的目标表名称与源表名称相同。
+</Info>
+
+5. 配置好 mirror 设置后，点击 `Create mirror` 按钮。
+
+你应该会在“Mirrors”部分看到新创建的 mirror。
+
+<Image img="/images/managed-postgres/peerdb/mirrors.webp" alt="Mirrors 列表" size="md" border />
+
+<div id="migration-peerdb-initial-load">
+  ## 等待初始加载
+</div>
+
+创建 mirror 后，PeerDB 将开始把数据从源数据库初始加载到目标数据库。你可以点击该 mirror，再点击 **初始加载** 选项卡，以监控初始数据迁移的进度。
+
+<Image img="/images/managed-postgres/peerdb/initial-load.webp" alt="初始加载进度" size="md" border />
+
+初始加载完成后，你应会看到表明迁移已完成的状态。
+
+<div id="migration-peerdb-monitoring">
+  ## 监控初始加载和复制
+</div>
+
+如果你点击源 peer，就可以看到 PeerDB 正在运行的命令列表。例如：
+
+1. 首先，我们会运行 COUNT 查询，以估算每个表中的行数。
+2. 然后，我们会使用 NTILE 运行分区查询，将大表拆分为更小的数据块，以便高效传输数据。
+3. 接着，我们会运行 FETCH 命令，从源数据库拉取数据，然后由 PeerDB 将其同步到目标数据库。
+
+<div id="migration-peerdb-considerations">
+  ## 迁移后任务
+</div>
+
+<Note>
+  这些步骤可能会因具体用例和应用要求而有所不同。关键是要确保数据一致性、尽量缩短停机时间，并在完全切换到新系统之前验证迁移后数据的完整性。
+</Note>
+
+迁移完成后：
+
+* **执行切换前验证检查**
+
+在切换流量之前，比较源端和目标端的关键表：
+
+```sql
+-- 关键表的行数对比
+SELECT 'public.orders' AS table_name, COUNT(*) AS row_count FROM public.orders;
+SELECT 'public.customers' AS table_name, COUNT(*) AS row_count FROM public.customers;
+
+-- 抽查高活跃表中的最新记录
+SELECT MAX(updated_at) FROM public.orders;
+SELECT MAX(id) FROM public.orders;
+```
+
+* **停止向源系统写入**
+
+先暂停应用程序的写入操作。为进一步确保安全，可在切换期间将源数据库设为只读：
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+```
+
+如果需要回滚，可以重新启用写入：
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = off;
+```
+
+* **确认复制已完全同步**
+
+检查一个或多个高写入表中的最新行在源端和目标端是否一致：
+
+```sql
+-- 在源端和目标端分别运行并比较结果
+SELECT MAX(id) AS latest_id, MAX(updated_at) AS latest_ts FROM public.orders;
+```
+
+* **重新创建并启用约束、索引和触发器**
+
+如果你为了摄取而移除了约束/索引，或暂缓了它们的应用，现在请重新应用它们。另外，如果你之前将目标端上的复制角色设为了 `replica`，也请将其重置：
+
+```sql
+ALTER ROLE <target_role> SET session_replication_role = origin;
+```
+
+```shell
+# 示例：应用包含约束/索引/触发器的 SQL 文件
+psql -h <target_host> -p <target_port> -U <target_user> -d <target_db> -f post_migration_objects.sql
+```
+
+* **重置目标表的序列**
+
+数据加载完成后，使序列与表中的当前值保持一致：
+
+```sql
+-- 对所有非系统 schema 中 serial/identity 类型列进行通用序列重置
+DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE c.relkind = 'r'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    LOOP
+        IF r.seq_name IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
+                r.seq_name, r.column_name, r.schema_name, r.table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
+```
+
+* **切换应用流量**
+
+验证通过且序列/约束已配置就绪后：
+
+1. 将读流量切换到 ClickHouse Managed Postgres。
+2. 将写流量切换到 ClickHouse Managed Postgres。
+3. 监控应用错误、约束违规以及数据库健康状况。
+
+* **清理资源**
+
+当你确认迁移无误，并且已将应用切换为使用 ClickHouse Managed Postgres 后，即可删除 PeerDB 中的 mirror 和 peer。
+
+<Info>
+  **Replication slots**
+
+  如果你启用了 持续复制，PeerDB 会在源 PostgreSQL 数据库上创建一个 **replication slot**。迁移完成后，请务必从源数据库中手动删除该 **replication slot**，以避免不必要的资源占用。
+</Info>
+
+<div id="migration-peerdb-references">
+  ## 参考资料
+</div>
+
+* [ClickHouse Managed Postgres 文档](/zh/products/managed-postgres/overview)
+* [PeerDB CDC 创建指南](https://docs.peerdb.io/mirror/cdc-pg-pg)
+* [Postgres ClickPipe FAQ (同样适用于 PeerDB) ](/zh/integrations/clickpipes/postgres/faq)
+
+<div id="migration-pgdump-pg-restore-next-steps">
+  ## 后续步骤
+</div>
+
+恭喜！你已成功使用 pg&#95;dump 和 pg&#95;restore 将 PostgreSQL 数据库迁移到 ClickHouse Managed Postgres。现在，你可以开始探索 Managed Postgres 的各项功能，以及它与 ClickHouse 的集成。以下这份 10 分钟的快速入门可帮助你快速上手：
+
+* [Managed Postgres 快速入门指南](/zh/products/managed-postgres/quickstart)
