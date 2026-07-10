@@ -580,3 +580,43 @@ SELECT count() FROM tab WHERE hasTokenOrNull(val, 'quick'); -- 1
 SELECT count() FROM tab WHERE hasTokenOrNull(val, 'xyz');   -- 0
 
 DROP TABLE tab;
+
+SELECT '-- Preprocessor referencing an ALIAS column';
+-- https://github.com/ClickHouse/ClickHouse/issues/95944
+
+CREATE TABLE tab
+(
+    provider Nullable(String),
+    name String ALIAS ifNull(provider, 'default_name'),
+    INDEX name_text_idx(name) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(name))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(provider) VALUES ('Hello World'), ('FOO bar'), (NULL);
+
+SELECT count() FROM tab WHERE hasToken(name, 'hello');
+SELECT count() FROM tab WHERE hasToken(name, 'HELLO'); -- search term is preprocessed too
+SELECT count() FROM tab WHERE hasToken(name, 'world');
+SELECT count() FROM tab WHERE hasToken(name, 'foo');
+SELECT count() FROM tab WHERE hasToken(name, 'bar');
+SELECT count() FROM tab WHERE hasToken(name, 'default'); -- from the ifNull default of the NULL row
+SELECT count() FROM tab WHERE hasToken(name, 'name');
+SELECT count() FROM tab WHERE hasToken(name, 'missing');
+
+DROP TABLE tab;
+
+SELECT '-- Preprocessor on an ALIAS column with the sparseGrams tokenizer';
+
+CREATE TABLE tab
+(
+    provider Nullable(String),
+    name String ALIAS ifNull(provider, 'default_name'),
+    INDEX name_text_idx(name) TYPE text(tokenizer = sparseGrams(3), preprocessor = lower(name))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(provider) VALUES ('Hello World'), ('FOO bar'), (NULL);
+
+SELECT count() FROM tab;
+
+DROP TABLE tab;
