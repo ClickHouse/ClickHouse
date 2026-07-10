@@ -206,10 +206,12 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
     const DataTypePtr & data_type = argument_types[0];
 
     WhichDataType which(*data_type);
-    if (!which.isStringOrFixedString())
+    /// Only String is accepted: `add` reads the sketch bytes via `assert_cast<const ColumnString &>`,
+    /// so advertising FixedString here would let a FixedString column pass validation and then fail at runtime.
+    if (!which.isString())
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of argument for aggregate function {}. Expected String or FixedString.",
+            "Illegal type {} of argument for aggregate function {}. Expected String.",
             argument_types[0]->getName(), name);
 
     // Use uint64_t as template parameter since we're working with serialized data, not raw values
