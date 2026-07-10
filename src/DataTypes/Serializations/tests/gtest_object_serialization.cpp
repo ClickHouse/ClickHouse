@@ -92,7 +92,7 @@ TEST(ObjectSerialization, JSONSerialization)
 
 }
 
-/// flattenAndBucketSharedDataPaths must densify each shared-data path into a column that has one
+/// flattenSharedDataPathsForBucket must densify each shared-data path into a column that has one
 /// entry per row (the stored value where the path is present, a default where it is absent), for an
 /// arbitrary subrange [start, end). This exercises rows with different, overlapping and missing paths,
 /// empty rows and trailing gaps -- the exact shape the merge/serialization path produces.
@@ -106,12 +106,11 @@ void checkFlattenedSharedData(
     size_t end,
     const std::map<String, DensePath> & expected)
 {
-    auto buckets = flattenAndBucketSharedDataPaths(*col_object.getSharedDataPtr(), start, end, col_object.getDynamicType(), 1);
-    ASSERT_EQ(buckets.size(), 1u);
+    auto bucket = flattenSharedDataPathsForBucket(*col_object.getSharedDataPtr(), start, end, col_object.getDynamicType(), 0, 1);
 
     std::map<String, ColumnPtr> path_to_column;
-    for (const auto & [path, column] : buckets[0])
-        path_to_column[path] = column;
+    for (const auto & [path, column] : bucket)
+        path_to_column[String(path)] = column;
 
     ASSERT_EQ(path_to_column.size(), expected.size());
     for (const auto & [path, values] : expected)
