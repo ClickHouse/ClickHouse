@@ -59,5 +59,7 @@ where event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish' and
     query_kind = 'Insert'
 order by ALL
+-- Keep printing raw control characters (the logged queries end with a newline) so the reference is stable.
+settings output_format_vertical_display_control_characters = 0
 format Vertical;
 "
