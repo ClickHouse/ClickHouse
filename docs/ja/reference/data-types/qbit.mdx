@@ -1,0 +1,99 @@
+---
+description: '近似ベクトル検索のためのきめ細かな量子化を可能にする、ClickHouse の QBit データ型に関するドキュメント'
+keywords: ['qbit', 'データ型']
+sidebarTitle: 'QBit'
+slug: /sql-reference/data-types/qbit
+title: 'QBit データ型'
+doc_type: 'reference'
+---
+
+`QBit` データ型は、より高速な近似検索のためにベクトルの格納方法を再構成します。各ベクトルの要素をまとめて格納するのではなく、すべてのベクトルにまたがって同じビット位置ごとにまとめて格納します。
+これにより、ベクトルは元の精度のまま保持しつつ、検索時にきめ細かな量子化レベルを選択できます。ビットの読み取り量を減らせば I/O が減って計算が高速になり、より高い精度が必要な場合は多くのビットを読み取れます。量子化によるデータ転送量と計算量の削減による高速化のメリットを得ながら、必要に応じて元のデータをそのまま利用できます。
+
+`QBit` 型のカラムを宣言するには、次の構文を使用します。
+
+```sql
+column_name QBit(element_type, dimension)
+```
+
+* `element_type` – 各ベクトル要素の型。指定できる型は `BFloat16`、`Float32`、`Float64` です
+* `dimension` – 各ベクトルの要素数
+
+<div id="creating-qbit">
+  ## QBit の作成
+</div>
+
+テーブルのカラム定義で `QBit` 型を使用する場合:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]), (2, [9, 10, 11, 12, 13, 14, 15, 16]);
+SELECT vec FROM test ORDER BY id;
+```
+
+```text
+┌─vec──────────────────────┐
+│ [1,2,3,4,5,6,7,8]        │
+│ [9,10,11,12,13,14,15,16] │
+└──────────────────────────┘
+```
+
+<div id="converting-arrays-to-qbit">
+  ## 配列をQBitに変換する
+</div>
+
+配列の長さが`QBit`の次元と一致していれば、配列は`QBit`に変換されます。配列の要素型は、`QBit`の要素型と一致している必要はありません。数値型の要素であれば、どの型でも自動的に変換されます。これにより、既存の埋め込みカラムをそのまま`QBit`カラムへ移行できます。
+
+```sql
+CREATE TABLE embeddings (id UInt32, embedding Array(Float32)) ENGINE = Memory;
+INSERT INTO embeddings VALUES (1, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]), (2, [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]);
+
+CREATE TABLE vectors (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO vectors SELECT id, embedding FROM embeddings;
+
+SELECT * FROM vectors ORDER BY id;
+```
+
+```text
+┌─id─┬─vec───────────────────────────────┐
+│  1 │ [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8] │
+│  2 │ [0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1] │
+└────┴───────────────────────────────────┘
+```
+
+この変換は、`CAST` を使って明示的に行うこともできます。たとえば、`CAST(embedding AS QBit(Float32, 8))` のように指定します。
+
+<div id="qbit-subcolumns">
+  ## QBit サブカラム
+</div>
+
+`QBit` はサブカラムアクセスパターンを実装しており、保存されたベクトルの各ビットプレーンに個別にアクセスできます。各ビット位置には `.N` 構文でアクセスでき、`N` はビット位置を表します。
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [0, 0, 0, 0, 0, 0, 0, 0]);
+INSERT INTO test VALUES (1, [-0, -0, -0, -0, -0, -0, -0, -0]);
+SELECT bin(vec.1) FROM test;
+```
+
+```text
+┌─bin(tupleElement(vec, 1))─┐
+│ 00000000                  │
+│ 11111111                  │
+└───────────────────────────┘
+```
+
+アクセス可能なサブカラム数は、要素型によって異なります。
+
+* `BFloat16`: 16 個のサブカラム (1-16)
+* `Float32`: 32 個のサブカラム (1-32)
+* `Float64`: 64 個のサブカラム (1-64)
+
+<div id="vector-search-functions">
+  ## ベクトル検索関数
+</div>
+
+以下は、ベクトル類似度検索で `QBit` データ型を使用する距離関数です。
+
+* [`L2DistanceTransposed`](/ja/reference/functions/regular-functions/distance-functions#L2DistanceTransposed)
+* [`cosineDistanceTransposed`](/ja/reference/functions/regular-functions/distance-functions#cosineDistanceTransposed)

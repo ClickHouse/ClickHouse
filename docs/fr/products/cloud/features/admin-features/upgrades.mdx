@@ -1,0 +1,139 @@
+---
+sidebarTitle: 'Mises à niveau'
+slug: /manage/updates
+title: 'Mises à niveau'
+description: 'Avec ClickHouse Cloud, vous n’avez jamais à vous soucier des correctifs ou des mises à niveau. Nous déployons régulièrement des mises à niveau comprenant des correctifs, de nouvelles fonctionnalités et des améliorations de performances.'
+doc_type: 'guide'
+keywords: ['mises à niveau', 'gestion des versions', 'fonctionnalités cloud', 'maintenance', 'mises à jour']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+Avec ClickHouse Cloud, vous n’avez jamais à vous soucier de l’application des correctifs ni des mises à niveau. Nous déployons régulièrement des mises à niveau qui incluent des correctifs, de nouvelles fonctionnalités et des améliorations de performances. Pour obtenir la liste complète des nouveautés de ClickHouse, consultez notre [Cloud changelog](/fr/resources/changelogs/cloud/2026).
+
+<Note>
+  Nous introduisons un nouveau mécanisme de mise à niveau, un concept que nous appelons « make before break » (ou MBB). Avec cette nouvelle approche, nous ajoutons des répliques mises à jour avant de supprimer les anciennes pendant l’opération de mise à niveau. Cela permet des mises à niveau plus transparentes et moins perturbatrices pour les workloads en cours d’exécution.
+
+  Dans le cadre de ce changement, les données historiques des tables système seront conservées jusqu’à 30 jours dans le cadre des événements de mise à niveau. En outre, les données des tables système antérieures au 19 décembre 2024 pour les services sur AWS ou GCP, et antérieures au 14 janvier 2025 pour les services sur Azure, ne seront pas conservées dans le cadre de la migration vers les nouveaux niveaux d’organisation.
+</Note>
+
+<div id="version-compatibility">
+  ## Compatibilité des versions
+</div>
+
+Lorsque vous créez un service, le paramètre [`compatibility`](/fr/reference/settings/session-settings#compatibility) est défini sur la version de ClickHouse la plus récente proposée dans ClickHouse Cloud au moment du provisionnement initial de votre service.
+
+Le paramètre `compatibility` vous permet d&#39;utiliser les valeurs par défaut des paramètres des versions précédentes. Lorsque votre service est mis à niveau vers une nouvelle version, la version spécifiée pour le paramètre `compatibility` ne change pas. Cela signifie que les valeurs par défaut des paramètres qui existaient lorsque vous avez créé votre service ne changeront pas (sauf si vous avez déjà redéfini ces valeurs par défaut, auquel cas elles seront conservées après la mise à niveau).
+
+Vous ne pouvez pas gérer le paramètre `compatibility` par défaut au niveau du service. Vous devez [contacter l’assistance](https://clickhouse.com/support/program) si vous souhaitez modifier la version définie pour le paramètre `compatibility` par défaut de votre service. En revanche, vous pouvez surcharger le paramètre `compatibility` au niveau de l&#39;utilisateur, du rôle, du profil, de la requête ou de la session à l&#39;aide des mécanismes standard de configuration de ClickHouse, par exemple `SET compatibility = '22.3'` dans une session ou `SETTINGS compatibility = '22.3'` dans une requête.
+
+<div id="maintenance-mode">
+  ## Mode de maintenance
+</div>
+
+Il peut arriver que nous devions mettre à jour votre service, ce qui peut nécessiter la désactivation de certaines fonctionnalités, comme la mise à l&#39;échelle ou la mise en veille. Dans de rares cas, nous pouvons aussi devoir intervenir sur un service qui rencontre des problèmes afin de le rétablir dans un état de fonctionnement normal. Pendant cette maintenance, une bannière *« Maintenance en cours »* s&#39;affichera sur la page du service. Il est possible que vous puissiez tout de même utiliser le service pour exécuter des requêtes pendant cette période.
+
+Le temps pendant lequel le service est en maintenance ne vous sera pas facturé. Le *mode de maintenance* est rare et ne doit pas être confondu avec les mises à niveau habituelles du service.
+
+<div id="release-channels-upgrade-schedule">
+  ## Canaux de mise à niveau (calendrier des mises à niveau)
+</div>
+
+Les utilisateurs peuvent définir le calendrier des mises à niveau de leur service ClickHouse Cloud en s’abonnant à un canal de mise à niveau spécifique. Il existe trois canaux de mise à niveau, et l’utilisateur peut configurer le jour et l’heure des mises à niveau dans la semaine à l’aide de la fonctionnalité **mises à niveau planifiées**.
+
+Les trois canaux de mise à niveau sont les suivants :
+
+* Le [**canal de mise à niveau rapide**](#fast-release-channel-early-upgrades) pour un accès anticipé aux mises à niveau.
+* Le [**canal de mise à niveau standard**](#regular-release-channel) est le canal par défaut, et les mises à niveau sur ce canal commencent deux semaines après celles du canal de mise à niveau rapide. Si votre service des niveaux Scale et Enterprise n’a pas de canal de mise à niveau défini, il est automatiquement placé sur le canal de mise à niveau standard.
+* Le [**canal de mise à niveau lent**](#slow-release-channel-deferred-upgrades) est destiné aux mises à niveau différées. Les mises à niveau sur ce canal ont lieu deux semaines après celles du canal de mise à niveau standard.
+
+<Note>
+  Les services du niveau Basic sont automatiquement inscrits au canal de mise à niveau rapide
+</Note>
+
+<div id="fast-release-channel-early-upgrades">
+  ### Canal de mise à niveau rapide (mises à niveau anticipées)
+</div>
+
+<ScalePlanFeatureBadge feature="Le canal de mise à niveau rapide" />
+
+En plus du calendrier de mise à niveau habituel, nous proposons un canal **Fast release** si vous souhaitez que vos services reçoivent des mises à jour avant le calendrier de release habituel.
+
+Concrètement, les services :
+
+* Reçoivent les dernières versions de ClickHouse
+* Bénéficient de mises à niveau plus fréquentes à mesure que les nouvelles versions sont testées
+
+Vous pouvez modifier le calendrier de release du service dans la console Cloud, comme indiqué ci-dessous :
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="Sélectionner le type de canal de release" border />
+</div>
+
+<br />
+
+Ce canal **Fast release** convient pour tester de nouvelles fonctionnalités dans des environnements non critiques. **Il n&#39;est pas recommandé pour les workloads de production ayant des exigences strictes en matière de disponibilité et de fiabilité.**
+
+<div id="regular-release-channel">
+  ### Canal de mise à niveau standard
+</div>
+
+Pour tous les services des niveaux Scale et Enterprise qui n&#39;ont pas de canal de mise à niveau ni de calendrier de mise à niveau configurés, les mises à niveau seront effectuées dans le cadre du canal de mise à niveau standard. Cette option est recommandée pour les environnements de production.
+
+Les mises à niveau du canal de mise à niveau standard sont généralement effectuées deux semaines après le **canal de mise à niveau rapide**.
+
+<Note>
+  Les services du niveau Basic sont mis à niveau peu après le canal de mise à niveau rapide.
+</Note>
+
+<div id="slow-release-channel-deferred-upgrades">
+  ### Canal de mise à niveau lent (mises à niveau différées)
+</div>
+
+<EnterprisePlanFeatureBadge feature="The slow release channel" />
+
+Nous proposons un canal **Slow release** si vous souhaitez que vos services reçoivent les mises à niveau après le calendrier de publication régulier.
+
+Plus précisément, les services vont :
+
+* être mis à niveau une fois les déploiements des canaux de mise à niveau Rapide et Régulier terminés
+* recevoir les versions de ClickHouse ~ 2 semaines après la publication sur le canal régulier
+* être destinés aux clients qui souhaitent disposer de plus de temps pour tester les versions de ClickHouse dans leurs environnements hors production avant la mise à niveau de production. Les environnements hors production peuvent recevoir des mises à niveau via le canal de mise à niveau Rapide ou Régulier à des fins de test et de validation.
+
+<Note>
+  Vous pouvez changer de canal de mise à niveau à tout moment. Cependant, dans certains cas, ce changement ne s&#39;appliquera qu&#39;aux versions futures.
+
+  * Passer à un canal plus rapide mettra immédiatement votre service à niveau. Ex. : de Lent à Régulier, de Régulier à Rapide
+  * Si votre service utilise les [mises à niveau planifiées](#scheduled-upgrades), la mise à niveau aura lieu lors de la prochaine fenêtre planifiée.
+  * Passer à un canal plus lent ne rétrogradera pas votre service et le maintiendra sur sa version actuelle jusqu&#39;à ce qu&#39;une version plus récente soit disponible dans ce canal. Ex. : de Régulier à Lent, de Rapide à Régulier ou Lent
+</Note>
+
+<div id="scheduled-upgrades">
+  ## Mises à niveau planifiées
+</div>
+
+<EnterprisePlanFeatureBadge feature="Mises à niveau planifiées" linking_verb_are="true" />
+
+Vous pouvez configurer une fenêtre de mise à niveau pour les services du niveau Enterprise.
+
+Sélectionnez le service pour lequel vous souhaitez définir une fenêtre de mise à niveau, puis `Settings` dans le menu de gauche. Faites défiler jusqu&#39;à `Scheduled upgrades`.
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrades.webp" size="lg" alt="Mises à niveau planifiées" border />
+</div>
+
+<br />
+
+Cette option vous permet de choisir le jour de la semaine et le créneau horaire des mises à niveau de la base de données et du Cloud.
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrade_window.webp" size="lg" alt="Fenêtre de mise à niveau planifiée" border />
+</div>
+
+<br />
+
+<Note>
+  Bien que les mises à niveau planifiées suivent le calendrier défini, des exceptions s&#39;appliquent aux correctifs de sécurité critiques et aux correctifs de vulnérabilités, ainsi qu&#39;aux situations où des problèmes potentiels pourraient entraîner une corruption ou une perte de données. Lorsqu&#39;un problème de sécurité urgent est identifié, des mises à niveau peuvent être effectuées en dehors de la fenêtre planifiée. Les clients seront informés de ces exceptions si nécessaire.
+</Note>

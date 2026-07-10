@@ -1,0 +1,122 @@
+---
+alias: []
+description: 'Documentación sobre el formato CSV'
+input_format: true
+keywords: ['CSVWithNames']
+output_format: true
+slug: /interfaces/formats/CSVWithNames
+title: 'CSVWithNames'
+doc_type: 'reference'
+---
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✔       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+También imprime la fila de encabezado con los nombres de las columnas, al igual que [TabSeparatedWithNames](/es/reference/formats/TabSeparated/TabSeparatedWithNames).
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+<div id="inserting-data">
+  ### Insertar datos
+</div>
+
+<Tip>
+  A partir de la [versión](https://github.com/ClickHouse/ClickHouse/releases) 23.1, ClickHouse detecta automáticamente los encabezados en los archivos CSV al usar el formato `CSV`, por lo que no es necesario utilizar `CSVWithNames` ni `CSVWithNamesAndTypes`.
+</Tip>
+
+Con el siguiente archivo CSV, llamado `football.csv`:
+
+```csv
+date,season,home_team,away_team,home_team_goals,away_team_goals
+2022-04-30,2021,Sutton United,Bradford City,1,4
+2022-04-30,2021,Swindon Town,Barrow,2,1
+2022-04-30,2021,Tranmere Rovers,Oldham Athletic,2,0
+2022-05-02,2021,Salford City,Mansfield Town,2,2
+2022-05-02,2021,Port Vale,Newport County,1,2
+2022-05-07,2021,Barrow,Northampton Town,1,3
+2022-05-07,2021,Bradford City,Carlisle United,2,0
+2022-05-07,2021,Bristol Rovers,Scunthorpe United,7,0
+2022-05-07,2021,Exeter City,Port Vale,0,1
+2022-05-07,2021,Harrogate Town A.F.C.,Sutton United,0,2
+2022-05-07,2021,Hartlepool United,Colchester United,0,2
+2022-05-07,2021,Leyton Orient,Tranmere Rovers,0,1
+2022-05-07,2021,Mansfield Town,Forest Green Rovers,2,2
+2022-05-07,2021,Newport County,Rochdale,0,2
+2022-05-07,2021,Oldham Athletic,Crawley Town,3,3
+2022-05-07,2021,Stevenage Borough,Salford City,4,2
+2022-05-07,2021,Walsall,Swindon Town,0,3
+```
+
+Crear una tabla:
+
+```sql
+CREATE TABLE football
+(
+    `date` Date,
+    `season` Int16,
+    `home_team` LowCardinality(String),
+    `away_team` LowCardinality(String),
+    `home_team_goals` Int8,
+    `away_team_goals` Int8
+)
+ENGINE = MergeTree
+ORDER BY (date, home_team);
+```
+
+Inserte datos en formato `CSVWithNames`:
+
+```sql
+INSERT INTO football FROM INFILE 'football.csv' FORMAT CSVWithNames;
+```
+
+<div id="reading-data">
+  ### Leer datos
+</div>
+
+Lea los datos con el formato `CSVWithNames`:
+
+```sql
+SELECT *
+FROM football
+FORMAT CSVWithNames
+```
+
+La salida será un CSV con una única fila de encabezado:
+
+```csv
+"date","season","home_team","away_team","home_team_goals","away_team_goals"
+"2022-04-30",2021,"Sutton United","Bradford City",1,4
+"2022-04-30",2021,"Swindon Town","Barrow",2,1
+"2022-04-30",2021,"Tranmere Rovers","Oldham Athletic",2,0
+"2022-05-02",2021,"Port Vale","Newport County",1,2
+"2022-05-02",2021,"Salford City","Mansfield Town",2,2
+"2022-05-07",2021,"Barrow","Northampton Town",1,3
+"2022-05-07",2021,"Bradford City","Carlisle United",2,0
+"2022-05-07",2021,"Bristol Rovers","Scunthorpe United",7,0
+"2022-05-07",2021,"Exeter City","Port Vale",0,1
+"2022-05-07",2021,"Harrogate Town A.F.C.","Sutton United",0,2
+"2022-05-07",2021,"Hartlepool United","Colchester United",0,2
+"2022-05-07",2021,"Leyton Orient","Tranmere Rovers",0,1
+"2022-05-07",2021,"Mansfield Town","Forest Green Rovers",2,2
+"2022-05-07",2021,"Newport County","Rochdale",0,2
+"2022-05-07",2021,"Oldham Athletic","Crawley Town",3,3
+"2022-05-07",2021,"Stevenage Borough","Salford City",4,2
+"2022-05-07",2021,"Walsall","Swindon Town",0,3
+```
+
+<div id="format-settings">
+  ## Configuración del formato
+</div>
+
+<Note>
+  Si la opción [`input_format_with_names_use_header`](/es/reference/settings/formats#input_format_with_names_use_header) está establecida en `1`,
+  las columnas de los datos de entrada se asignarán a las columnas de la tabla según sus nombres; las columnas con nombres desconocidos se omitirán si la opción [input&#95;format&#95;skip&#95;unknown&#95;fields](/es/reference/settings/formats#input_format_skip_unknown_fields) está establecida en `1`.
+  De lo contrario, se omitirá la primera fila.
+</Note>

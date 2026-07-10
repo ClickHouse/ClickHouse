@@ -1,6 +1,6 @@
 #pragma once
 
-#include <expected>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -11,6 +11,8 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <boost/dynamic_bitset.hpp>
+
+#include <expected>
 
 struct PreformattedMessage;
 
@@ -77,9 +79,10 @@ public:
         const RangesInDataPart & part_with_ranges,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
-        const std::optional<KeyCondition> & part_offset_condition,
-        const std::optional<KeyCondition> & total_offset_condition,
+        const KeyCondition * part_offset_condition,
+        const KeyCondition * total_offset_condition,
         MarkRanges * exact_ranges,
+        const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
         LoggerPtr log);
 
@@ -145,7 +148,7 @@ private:
     static RangesInDataParts selectPartsToRead(
         const RangesInDataParts & parts,
         const std::optional<std::unordered_set<String>> & part_values,
-        const std::optional<KeyCondition> & minmax_idx_condition,
+        const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         const std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
@@ -165,13 +168,19 @@ public:
     static size_t minMarksForConcurrentRead(
         size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks);
 
-    /// If possible, construct optional key condition from predicates containing _part_offset and _part column.
-    static void buildKeyConditionFromPartOffset(
-        std::optional<KeyCondition> & part_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
+    /// If possible, construct optional key condition template from predicates containing _part_offset and _part column.
+    static ConditionTemplate<KeyCondition>::Ptr buildKeyConditionFromPartOffset(
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool skip_folding,
+        ContextPtr context);
 
-    /// If possible, construct optional key condition from predicates containing _part_offset + _part_starting_offset expression.
-    static void buildKeyConditionFromTotalOffset(
-        std::optional<KeyCondition> & total_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
+    /// If possible, construct optional key condition template from predicates containing _part_offset + _part_starting_offset expression.
+    static ConditionTemplate<KeyCondition>::Ptr buildKeyConditionFromTotalOffset(
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool skip_folding,
+        ContextPtr context);
 
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
@@ -187,7 +196,7 @@ public:
     static RangesInDataParts filterPartsByPartition(
         const RangesInDataParts & parts,
         const std::optional<PartitionPruner> & partition_pruner,
-        const std::optional<KeyCondition> & minmax_idx_condition,
+        const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
         const std::optional<std::unordered_set<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
@@ -245,7 +254,7 @@ public:
         const SelectQueryInfo & select_query_info,
         NamesAndTypesList available_real_columns,
         const RangesInDataParts & parts,
-        KeyCondition & key_condition,
+        ConditionTemplate<KeyCondition>::Ptr & key_condition,
         const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,

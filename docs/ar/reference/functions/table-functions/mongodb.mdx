@@ -1,0 +1,136 @@
+---
+description: 'يتيح تنفيذ استعلامات `SELECT` على البيانات المخزنة على خادم MongoDB
+  بعيد.'
+sidebarTitle: 'mongodb'
+slug: /sql-reference/table-functions/mongodb
+title: 'mongodb'
+doc_type: 'مرجع'
+---
+
+يتيح تنفيذ استعلامات `SELECT` على البيانات المخزنة على خادم MongoDB بعيد.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]]);
+mongodb(uri, collection, structure[, oid_columns]);
+mongodb(named_collection_name[, <arg>=<value>...]);
+```
+
+<div id="arguments">
+  ## المعاملات
+</div>
+
+| المعامل       | الوصف                                                                                                          |
+| ------------- | -------------------------------------------------------------------------------------------------------------- |
+| `host:port`   | عنوان خادم MongoDB.                                                                                            |
+| `database`    | اسم قاعدة البيانات البعيدة.                                                                                    |
+| `collection`  | اسم المجموعة البعيدة.                                                                                          |
+| `user`        | مستخدم MongoDB.                                                                                                |
+| `password`    | كلمة مرور المستخدم.                                                                                            |
+| `structure`   | المخطط الخاص بجدول ClickHouse الذي تُرجعه هذه الدالة.                                                          |
+| `options`     | خيارات سلسلة اتصال MongoDB (معامل اختياري).                                                                    |
+| `oid_columns` | قائمة مفصولة بفواصل بالأعمدة التي يجب التعامل معها باعتبارها `oid` في عبارة WHERE. القيمة الافتراضية هي `_id`. |
+
+<Tip>
+  إذا كنت تستخدم الخدمة السحابية MongoDB Atlas، فيُرجى إضافة هذه الخيارات:
+
+  ```ini
+  'connectTimeoutMS=10000&ssl=true&authSource=admin'
+  ```
+</Tip>
+
+يمكنك أيضًا الاتصال باستخدام URI:
+
+```sql
+mongodb(uri, collection, structure[, oid_columns])
+```
+
+| المعامل       | الوصف                                                                                              |
+| ------------- | -------------------------------------------------------------------------------------------------- |
+| `uri`         | سلسلة الاتصال.                                                                                     |
+| `collection`  | اسم المجموعة البعيدة.                                                                              |
+| `structure`   | المخطط الخاص بجدول ClickHouse الذي تُعيده هذه الدالة.                                              |
+| `oid_columns` | قائمة مفصولة بفواصل بالأعمدة التي يجب التعامل معها كـ `oid` في عبارة WHERE. وتكون `_id` افتراضيًا. |
+| :::           |                                                                                                    |
+
+يمكنك تمرير المعاملات باستخدام مجموعة مسماة:
+
+```sql
+mongodb(_named_collection_[, host][, port][, database][, collection][, user][, password][, structure][, options][, oid_columns])
+-- or
+mongodb(_named_collection_[, uri][, structure][, oid_columns])
+```
+
+<div id="returned_value">
+  ## القيمة المعادة
+</div>
+
+كائن جدول يحتوي على الأعمدة نفسها الموجودة في جدول MongoDB الأصلي.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+لنفترض أن لدينا مجموعة باسم `my_collection` مُعرَّفة في قاعدة بيانات MongoDB باسم `test`، وأننا نُدرج مستندين:
+
+```sql
+db.createUser({user:"test_user",pwd:"password",roles:[{role:"readWrite",db:"test"}]})
+
+db.createCollection("my_collection")
+
+db.my_collection.insertOne(
+    { log_type: "event", host: "120.5.33.9", command: "check-cpu-usage -w 75 -c 90" }
+)
+
+db.my_collection.insertOne(
+    { log_type: "event", host: "120.5.33.4", command: "system-check"}
+)
+```
+
+لنجرِ استعلامًا على المجموعة باستخدام الدالة الجدولية `mongodb`:
+
+```sql
+SELECT * FROM mongodb(
+    '127.0.0.1:27017',
+    'test',
+    'my_collection',
+    'test_user',
+    'password',
+    'log_type String, host String, command String',
+    'connectTimeoutMS=10000'
+)
+```
+
+أو:
+
+```sql
+SELECT * FROM mongodb(
+    'mongodb://test_user:password@127.0.0.1:27017/test?connectionTimeoutMS=10000',
+    'my_collection',
+    'log_type String, host String, command String'
+)
+```
+
+أو:
+
+```sql
+CREATE NAMED COLLECTION mongo_creds AS
+       uri='mongodb://test_user:password@127.0.0.1:27017/test?connectionTimeoutMS=10000',
+       collection='default_collection';
+
+SELECT * FROM mongodb(
+        mongo_creds,
+        collection = 'my_collection',
+        structure = 'log_type String, host String, command String'
+)
+```
+
+<div id="related">
+  ## موضوعات ذات صلة
+</div>
+
+* [محرك الجدول `MongoDB`](/ar/reference/engines/table-engines/integrations/mongodb)
+* [استخدام MongoDB كمصدر للقاموس](/ar/reference/statements/create/dictionary/sources/mongodb)
