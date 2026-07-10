@@ -63,6 +63,7 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/Kusto/Utilities.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
@@ -3248,6 +3249,23 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
         const auto & settings = client_context->getSettingsRef();
         const Dialect dialect = settings[Setting::dialect];
+
+        /// The Kusto parser is not a pure probe: `ParserKQLStatement::parseImpl`
+        /// records `let` bindings in a thread-local map (and clears it on a
+        /// `SET dialect = ...`). This function only checks whether the buffer is an
+        /// incomplete query -- nothing has been submitted yet -- so snapshot and
+        /// restore that map to keep the probe free of side effects. Otherwise
+        /// probing e.g. `let x = 1; print (` and then discarding the buffer with
+        /// Ctrl+C would leak `x` into subsequent queries in `clickhouse-local`,
+        /// where parsing and execution share the same thread-local state.
+        const bool restore_kql_bindings = dialect == Dialect::kusto;
+        std::unordered_map<String, String> saved_kql_bindings;
+        if (restore_kql_bindings)
+            saved_kql_bindings = kqlLetBindings();
+        SCOPE_EXIT({
+            if (restore_kql_bindings)
+                kqlLetBindings() = std::move(saved_kql_bindings);
+        });
 
         std::unique_ptr<IParserBase> parser;
         const char * begin = text.data();
