@@ -1,8 +1,10 @@
 import random
+import sys
 import threading
 
 import pytest
 
+from helpers.client import QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
 
 # This test is a manual reproduction, not an automatic regression test, so it is skipped in CI.
@@ -42,6 +44,29 @@ FUZZER_QUERY_SETTINGS = {"max_memory_usage": 10_000_000_000}
 
 NUM_FUZZ_TABLES = 32
 NUM_QUERY_WORKERS = 24
+
+# Bound every worker query. The integration client waits up to 600s (DEFAULT_QUERY_TIMEOUT) for a query
+# before it gives up, so after `stop` is set - or once the server is OOM-killed or otherwise wedged - a
+# worker blocked in `INSERT`/`OPTIMIZE` would keep its thread alive far past the join below. Since the
+# threads would otherwise be non-daemon, the pytest process would then wait for them at exit and hang the
+# manual run for minutes, in exactly the wedged/OOMed case this module is meant to inspect.
+# `connect_timeout`/`receive_timeout` bound the query server-side; the client-side `timeout` is a hard
+# backstop that kills a stuck `clickhouse client`. A timeout is expected under OOM, so swallow it and let
+# the caller re-check `stop` on the next iteration. Mirrors the fix in manual_cgroup_oom_repro.py.
+WORKER_QUERY_TIMEOUT = 20
+WORKER_QUERY_SETTINGS = {"connect_timeout": 5, "receive_timeout": 10}
+
+
+def run_worker_query(sql, settings=None):
+    merged = dict(WORKER_QUERY_SETTINGS)
+    if settings:
+        merged.update(settings)
+    try:
+        node.query_and_get_answer_with_error(
+            sql, timeout=WORKER_QUERY_TIMEOUT, settings=merged
+        )
+    except QueryTimeoutExceedException:
+        pass
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -121,22 +146,24 @@ def test_fuzzer_scenario_triggers_kernel_oom_and_server_survives():
             else:
                 # groupArray of large strings - another varied large aggregate state.
                 sql = f"SELECT length(groupArray(repeat('x', {rng.choice([100, 1009, 4099])}))) FROM num_10k"
-            node.query_and_get_answer_with_error(sql, settings=FUZZER_QUERY_SETTINGS)
+            run_worker_query(sql, settings=FUZZER_QUERY_SETTINGS)
 
     def fuzz_table_churn(t):
         # Write and merge the fuzzed table variants - parts, indexes and merges accumulate, as the ~97
         # fuzz tables did in the run.
         rng = random.Random(5000 + t)
         while not stop.is_set():
-            node.query_and_get_answer_with_error(
+            run_worker_query(
                 f"INSERT INTO num_10k__fuzz_{t} SELECT number FROM numbers({rng.randint(1000, 10000)})"
             )
-            node.query_and_get_answer_with_error(f"OPTIMIZE TABLE num_10k__fuzz_{t} FINAL")
-            node.query_and_get_answer_with_error(f"TRUNCATE TABLE num_10k__fuzz_{t}")
+            run_worker_query(f"OPTIMIZE TABLE num_10k__fuzz_{t} FINAL")
+            run_worker_query(f"TRUNCATE TABLE num_10k__fuzz_{t}")
 
+    # Daemon threads so a worker that is somehow still blocked cannot keep the pytest process alive at
+    # exit (a non-daemon thread would be joined implicitly, hanging the run).
     threads = (
-        [threading.Thread(target=query_worker, args=(s,)) for s in range(NUM_QUERY_WORKERS)]
-        + [threading.Thread(target=fuzz_table_churn, args=(t,)) for t in range(NUM_FUZZ_TABLES)]
+        [threading.Thread(target=query_worker, args=(s,), daemon=True) for s in range(NUM_QUERY_WORKERS)]
+        + [threading.Thread(target=fuzz_table_churn, args=(t,), daemon=True) for t in range(NUM_FUZZ_TABLES)]
     )
     for th in threads:
         th.start()
@@ -148,8 +175,17 @@ def test_fuzzer_scenario_triggers_kernel_oom_and_server_survives():
         node.wait_for_log_line("Cancelled all running merges", timeout=600)
     finally:
         stop.set()
+        # The join window comfortably exceeds the per-call worker timeout above, so a worker mid-query
+        # when `stop` was set still finishes here rather than lingering.
         for th in threads:
-            th.join(timeout=120)
+            th.join(timeout=30)
+        stuck = [th for th in threads if th.is_alive()]
+        if stuck:
+            print(
+                f"WARNING: {len(stuck)} worker(s) still running after join "
+                "(a query did not return within its timeout)",
+                file=sys.stderr,
+            )
 
     # The kernel OOM killer really fired: the canary died with cgroup OOM evidence, recorded in
     # system.crash_log.
