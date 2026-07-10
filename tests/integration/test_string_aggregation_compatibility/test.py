@@ -112,3 +112,59 @@ def test_string_aggregation_compatibility_setting(started_cluster):
         run_query(node1, extra_settings={"serialize_string_in_memory_with_zero_byte": 0})
         == 10000
     )
+
+
+def test_single_string_key_aggregation_compatibility(started_cluster):
+    # Unlike the two tests above, which group by `(id, s2)` and therefore go through the
+    # multi-key serialized aggregation path, this test groups by a single plain `String`
+    # key. That is exactly the path `PackedStringRef` replaces (the `key_string` /
+    # `key_string_two_level` variants), so it directly exercises the code this PR changes.
+    #
+    # The column mixes short keys that fit inline in a `PackedStringRef` (<= 11 bytes) with
+    # longer keys that spill to an out-of-line pointer (> 11 bytes), covering both
+    # representations. There are 1000 distinct keys, duplicated on both the new and the old
+    # (25.6) server; correct cross-version two-level aggregation must deduplicate them to
+    # 1000. A bucketing mismatch between versions would inflate the result (e.g. to 2000).
+    def create_tables(node, other_node_name):
+        node.query(
+            "DROP TABLE IF EXISTS repro3 SYNC; CREATE TABLE repro3 (s String) ENGINE = MergeTree ORDER BY s"
+        )
+        node.query(
+            "INSERT INTO repro3 SELECT concat('k', toString(number % 500)) FROM numbers(5000)"
+        )
+        node.query(
+            "INSERT INTO repro3 SELECT concat('long_string_key_', toString(number % 500)) FROM numbers(5000)"
+        )
+        node.query(
+            f"CREATE TABLE IF NOT EXISTS dist_repro3 (s String) AS remote('{other_node_name}', 'default.repro3', 'default', '')"
+        )
+        node.query(
+            "CREATE TABLE IF NOT EXISTS global_repro3 (s String) ENGINE = Merge('default', '.*repro3')"
+        )
+
+    create_tables(node1, other_node_name=node256.name)
+    create_tables(node256, other_node_name=node1.name)
+
+    def run_query(node, extra_settings={}):
+        return int(
+            node.query(
+                """
+        SELECT count()
+        FROM
+        (
+            SELECT s
+            FROM global_repro3
+            GROUP BY s
+        )""",
+                settings={"group_by_two_level_threshold": 1} | extra_settings,
+            )
+        )
+
+    assert run_query(node1) == 1000
+    assert run_query(node256) == 1000
+    # Same legacy in-memory serialization scenario as `test_string_aggregation_compatibility`,
+    # but on the single-`String` packed-key path.
+    assert (
+        run_query(node1, extra_settings={"serialize_string_in_memory_with_zero_byte": 0})
+        == 1000
+    )
