@@ -614,48 +614,48 @@ void StorageKafka2::parsePartitionAffinitySettings()
     const auto & raw_partition_num = (*kafka_settings)[KafkaSetting::kafka_partition_shard_num].value;
     const auto shard_count_val = (*kafka_settings)[KafkaSetting::kafka_shard_count].value;
 
+    /// Neither setting specified — affinity disabled.
     if (raw_partition_num.empty() && shard_count_val == 0)
         return;
 
-    /// sanityCheck already ensures both are specified together, but after macro
-    /// expansion the value might become empty — catch that edge case here.
-    const auto & partition_num_str = getContext()->getMacros()->expand(raw_partition_num, macros_info);
+    /// Both must be specified together.
+    if (raw_partition_num.empty() || shard_count_val == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'kafka_partition_shard_num' and 'kafka_shard_count' must be specified together");
 
-    if (partition_num_str.empty())
+    /// Validate macro expansion produces a valid integer.
+    const auto & expanded = getContext()->getMacros()->expand(raw_partition_num, macros_info);
+    if (expanded.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "'kafka_partition_shard_num' expanded to an empty string after macro substitution (original: '{}')",
             raw_partition_num);
 
-    if (shard_count_val == 0)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "'kafka_partition_shard_num' and 'kafka_shard_count' must be specified together");
-
-    UInt64 parsed_partition_num = 0;
-    try
-    {
-        parsed_partition_num = parse<UInt64>(partition_num_str);
-    }
-    catch (...)
-    {
+    UInt64 parsed = 0;
+    if (!tryParse(parsed, expanded))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "'kafka_partition_shard_num' must be a valid non-negative integer after macro expansion, got '{}'",
-            partition_num_str);
-    }
+            expanded);
 
-    partition_num = parsed_partition_num;
-    shard_count = shard_count_val;
-
-    if (partition_num > shard_count)
+    if (parsed > shard_count_val)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "'kafka_partition_shard_num' ({}) must not be greater than 'kafka_shard_count' ({}) after macro expansion",
-            partition_num,
-            shard_count);
+            "'kafka_partition_shard_num' ({}) must not be greater than 'kafka_shard_count' ({})",
+            parsed,
+            shard_count_val);
 
-    LOG_INFO(log, "Partition affinity enabled: partition_num={}, shard_count={}", partition_num, shard_count);
+    partition_num = parsed;
+    shard_count = shard_count_val;
+
+    /// Isolate Keeper coordination state per affinity bucket.
+    const auto effective_shard_num = partition_num % shard_count;
+    keeper_path = keeper_path + "/" + toString(effective_shard_num);
+    fs_keeper_path = keeper_path;
+    replica_path = keeper_path + "/replicas/" + (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
+
+    LOG_INFO(log, "Partition affinity enabled: partition_num={}, shard_count={}, keeper_path={}", partition_num, shard_count, keeper_path);
 }
 
 KafkaConsumer2Ptr StorageKafka2::createKafkaConsumer(size_t consumer_number)

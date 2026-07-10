@@ -1,5 +1,4 @@
 import json
-import time
 
 import pytest
 
@@ -75,24 +74,44 @@ def create_affinity_shard(instance, topic_name, shard_num, shard_count, keeper_p
 
 def wait_for_count(instance, table, expected, timeout=60):
     """Wait until the table has at least `expected` rows."""
-    for _ in range(timeout):
-        count = int(instance.query(f"SELECT count() FROM {table} SETTINGS max_execution_time=5").strip())
-        if count >= expected:
-            return count
-        time.sleep(1)
-    return int(instance.query(f"SELECT count() FROM {table}").strip())
+    instance.query_with_retry(
+        f"SELECT count() FROM {table}",
+        check_callback=lambda result: int(result.strip()) >= expected,
+        retry_count=timeout,
+        sleep_time=1,
+    )
 
 
-def test_partition_affinity_two_shards(kafka_cluster):
+def verify_shard_partitions(instance, table_suffix, shard_num, shard_count, num_partitions):
+    """Verify a shard consumed only its expected partitions with no leakage."""
+    expected_partitions = sorted(
+        [p for p in range(num_partitions) if p % shard_count == shard_num]
+    )
+    actual_partitions = instance.query(
+        f"SELECT DISTINCT partition_id FROM test.dst_{table_suffix} ORDER BY partition_id"
+    ).strip()
+    expected_str = "\n".join(str(p) for p in expected_partitions)
+    assert actual_partitions == expected_str, (
+        f"Shard {shard_num}: expected partitions {expected_partitions}, got {actual_partitions}"
+    )
+    leaked = instance.query(
+        f"SELECT count() FROM test.dst_{table_suffix} WHERE partition_id % {shard_count} != {shard_num}"
+    ).strip()
+    assert leaked == "0", f"Shard {shard_num} leaked {leaked} messages"
+
+
+def test_partition_affinity_basic(kafka_cluster):
     """
-    Test that kafka_partition_shard_num and kafka_shard_count correctly filter partitions.
-    With shard_count=2:
-      - shard 0 consumes partitions 0, 2, 4 (partition_id % 2 == 0)
-      - shard 1 consumes partitions 1, 3, 5 (partition_id % 2 == 1)
+    Test basic partition affinity with shared keeper_path and 2 shards.
+    6 partitions, 2 shards, all using the SAME keeper_path (isolation via path suffix).
+      - shard 0: partitions 0, 2, 4
+      - shard 1: partitions 1, 3, 5
     """
     admin = k.get_admin_client(kafka_cluster)
-    topic_name = "affinity_6p_topic"
+    topic_name = "affinity_basic_topic"
     num_partitions = 6
+    shard_count = 2
+    shared_keeper_path = "/clickhouse/test/affinity_basic"
 
     k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
     with k.existing_kafka_topic(admin, topic_name):
@@ -100,40 +119,32 @@ def test_partition_affinity_two_shards(kafka_cluster):
             msgs = [json.dumps({"partition_id": p, "value": i}) for i in range(3)]
             kafka_produce_to_partition(kafka_cluster, topic_name, p, msgs)
 
-        create_affinity_shard(instance, topic_name, 0, 2, "/clickhouse/test/affinity_shard0", "shard0")
-        create_affinity_shard(instance, topic_name, 1, 2, "/clickhouse/test/affinity_shard1", "shard1")
+        for shard_num in range(shard_count):
+            create_affinity_shard(
+                instance, topic_name, shard_num, shard_count,
+                shared_keeper_path, f"basic_s{shard_num}")
 
-        # Wait for both shards to consume their 9 messages (3 partitions * 3 messages)
-        wait_for_count(instance, "test.dst_shard0", 9)
-        wait_for_count(instance, "test.dst_shard1", 9)
+        # Each shard: 3 partitions * 3 msgs = 9
+        wait_for_count(instance, "test.dst_basic_s0", 9)
+        wait_for_count(instance, "test.dst_basic_s1", 9)
 
-        # Verify shard 0 only has data from partitions 0, 2, 4
-        shard0_partitions = instance.query(
-            "SELECT DISTINCT partition_id FROM test.dst_shard0 ORDER BY partition_id"
-        ).strip()
-        assert shard0_partitions == "0\n2\n4", f"Shard 0 got unexpected partitions: {shard0_partitions}"
+        for shard_num in range(shard_count):
+            verify_shard_partitions(instance, f"basic_s{shard_num}", shard_num, shard_count, num_partitions)
 
-        # Verify shard 1 only has data from partitions 1, 3, 5
-        shard1_partitions = instance.query(
-            "SELECT DISTINCT partition_id FROM test.dst_shard1 ORDER BY partition_id"
-        ).strip()
-        assert shard1_partitions == "1\n3\n5", f"Shard 1 got unexpected partitions: {shard1_partitions}"
-
-        # Verify message counts
-        shard0_count = int(instance.query("SELECT count() FROM test.dst_shard0").strip())
-        shard1_count = int(instance.query("SELECT count() FROM test.dst_shard1").strip())
-        assert shard0_count == 9, f"Shard 0 count: {shard0_count}"
-        assert shard1_count == 9, f"Shard 1 count: {shard1_count}"
+        total = sum(
+            int(instance.query(f"SELECT count() FROM test.dst_basic_s{s}").strip())
+            for s in range(shard_count)
+        )
+        assert total == 18, f"Expected 18 total messages, got {total}"
 
 
 def test_partition_affinity_backward_compatible(kafka_cluster):
     """
-    Test that without kafka_partition_shard_num/kafka_shard_count, all partitions are consumed.
+    Without kafka_partition_shard_num/kafka_shard_count, all partitions are consumed normally.
     """
     admin = k.get_admin_client(kafka_cluster)
     topic_name = "affinity_compat_topic"
     num_partitions = 4
-    keeper_path = "/clickhouse/test/affinity_compat"
 
     k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
     with k.existing_kafka_topic(admin, topic_name):
@@ -145,7 +156,7 @@ def test_partition_affinity_backward_compatible(kafka_cluster):
             f"""
             CREATE TABLE test.kafka_all (partition_id UInt64, value UInt64)
             ENGINE = Kafka('{instance.cluster.kafka_host}:19092', '{topic_name}', '{topic_name}_cg', 'JSONEachRow', '\\n')
-            SETTINGS kafka_keeper_path = '{keeper_path}',
+            SETTINGS kafka_keeper_path = '/clickhouse/test/affinity_compat',
                      kafka_replica_name = 'r1'
             SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 
@@ -164,58 +175,24 @@ def test_partition_affinity_backward_compatible(kafka_cluster):
         ).strip()
         assert all_partitions == "0\n1\n2\n3", f"Got unexpected partitions: {all_partitions}"
 
-        total_count = int(instance.query("SELECT count() FROM test.dst_all").strip())
-        assert total_count == 8, f"Total count: {total_count}"
 
-
-def test_partition_affinity_three_shards(kafka_cluster):
+def test_partition_affinity_settings_validation(kafka_cluster):
     """
-    Test partition affinity with 3 shards and 9 partitions.
-    Each shard should get exactly 3 partitions.
+    Validate all error conditions for affinity settings in one test:
+    - only kafka_partition_shard_num without kafka_shard_count
+    - only kafka_shard_count without kafka_partition_shard_num
+    - non-numeric kafka_partition_shard_num
+    - macro expanding to value > kafka_shard_count
+    - macro expanding to empty string
     """
-    admin = k.get_admin_client(kafka_cluster)
-    topic_name = "affinity_9p_topic"
-    num_partitions = 9
-    shard_count = 3
+    host = f"{instance.cluster.kafka_host}:19092"
 
-    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
-    with k.existing_kafka_topic(admin, topic_name):
-        for p in range(num_partitions):
-            msgs = [json.dumps({"partition_id": p, "value": 1})]
-            kafka_produce_to_partition(kafka_cluster, topic_name, p, msgs)
-
-        for shard_num in range(shard_count):
-            create_affinity_shard(
-                instance, topic_name, shard_num, shard_count,
-                f"/clickhouse/test/affinity_3s_{shard_num}", f"s{shard_num}")
-
-        # Wait for each shard to consume its 3 messages
-        for shard_num in range(shard_count):
-            wait_for_count(instance, f"test.dst_s{shard_num}", 3)
-
-        # Verify each shard got the correct partitions
-        for shard_num in range(shard_count):
-            expected_partitions = sorted(
-                [p for p in range(num_partitions) if p % shard_count == shard_num]
-            )
-            actual_partitions = instance.query(
-                f"SELECT DISTINCT partition_id FROM test.dst_s{shard_num} ORDER BY partition_id"
-            ).strip()
-            expected_str = "\n".join(str(p) for p in expected_partitions)
-            assert actual_partitions == expected_str, (
-                f"Shard {shard_num}: expected partitions {expected_partitions}, got {actual_partitions}"
-            )
-
-
-def test_partition_affinity_only_partition_num_fails(kafka_cluster):
-    """
-    Test that specifying kafka_partition_shard_num without kafka_shard_count raises an error.
-    """
+    # Only kafka_partition_shard_num without kafka_shard_count
     with pytest.raises(QueryRuntimeException) as exc_info:
         instance.query(
             f"""
             CREATE TABLE test.kafka_bad1 (value UInt64)
-            ENGINE = Kafka('{instance.cluster.kafka_host}:19092', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
+            ENGINE = Kafka('{host}', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
             SETTINGS kafka_keeper_path = '/clickhouse/test/bad1',
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = '0'
@@ -224,16 +201,12 @@ def test_partition_affinity_only_partition_num_fails(kafka_cluster):
         )
     assert "must be specified together" in str(exc_info.value)
 
-
-def test_partition_affinity_only_shard_count_fails(kafka_cluster):
-    """
-    Test that specifying kafka_shard_count without kafka_partition_shard_num raises an error.
-    """
+    # Only kafka_shard_count without kafka_partition_shard_num
     with pytest.raises(QueryRuntimeException) as exc_info:
         instance.query(
             f"""
             CREATE TABLE test.kafka_bad2 (value UInt64)
-            ENGINE = Kafka('{instance.cluster.kafka_host}:19092', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
+            ENGINE = Kafka('{host}', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
             SETTINGS kafka_keeper_path = '/clickhouse/test/bad2',
                      kafka_replica_name = 'r1',
                      kafka_shard_count = 2
@@ -242,16 +215,12 @@ def test_partition_affinity_only_shard_count_fails(kafka_cluster):
         )
     assert "must be specified together" in str(exc_info.value)
 
-
-def test_partition_affinity_invalid_partition_num_fails(kafka_cluster):
-    """
-    Test that a non-numeric kafka_partition_shard_num raises an error.
-    """
+    # Non-numeric kafka_partition_shard_num
     with pytest.raises(QueryRuntimeException) as exc_info:
         instance.query(
             f"""
             CREATE TABLE test.kafka_bad3 (value UInt64)
-            ENGINE = Kafka('{instance.cluster.kafka_host}:19092', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
+            ENGINE = Kafka('{host}', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
             SETTINGS kafka_keeper_path = '/clickhouse/test/bad3',
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = 'abc',
@@ -261,19 +230,13 @@ def test_partition_affinity_invalid_partition_num_fails(kafka_cluster):
         )
     assert "must be a valid non-negative integer" in str(exc_info.value)
 
-
-def test_partition_affinity_macro_expanded_out_of_range_fails(kafka_cluster):
-    """
-    Regression test: when kafka_partition_shard_num uses a macro that expands
-    to a value > kafka_shard_count, CREATE TABLE must fail with BAD_ARGUMENTS.
-    The macro {kafka_shard_num_bad} expands to '3', which is greater than shard_count=2.
-    """
+    # Macro expanding to value > kafka_shard_count
     with pytest.raises(QueryRuntimeException) as exc_info:
         instance.query(
             f"""
-            CREATE TABLE test.kafka_bad_macro (value UInt64)
-            ENGINE = Kafka('{instance.cluster.kafka_host}:19092', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
-            SETTINGS kafka_keeper_path = '/clickhouse/test/bad_macro',
+            CREATE TABLE test.kafka_bad4 (value UInt64)
+            ENGINE = Kafka('{host}', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
+            SETTINGS kafka_keeper_path = '/clickhouse/test/bad4',
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = '{{kafka_shard_num_bad}}',
                      kafka_shard_count = 2
@@ -282,20 +245,13 @@ def test_partition_affinity_macro_expanded_out_of_range_fails(kafka_cluster):
         )
     assert "must not be greater than" in str(exc_info.value)
 
-
-def test_partition_affinity_macro_expanded_to_empty_fails(kafka_cluster):
-    """
-    Regression test: when kafka_partition_shard_num uses a macro that expands
-    to an empty string, CREATE TABLE must fail with BAD_ARGUMENTS instead of
-    silently disabling partition affinity.
-    The macro {kafka_shard_num_empty} expands to '', which is invalid.
-    """
+    # Macro expanding to empty string
     with pytest.raises(QueryRuntimeException) as exc_info:
         instance.query(
             f"""
-            CREATE TABLE test.kafka_bad_empty_macro (value UInt64)
-            ENGINE = Kafka('{instance.cluster.kafka_host}:19092', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
-            SETTINGS kafka_keeper_path = '/clickhouse/test/bad_empty_macro',
+            CREATE TABLE test.kafka_bad5 (value UInt64)
+            ENGINE = Kafka('{host}', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
+            SETTINGS kafka_keeper_path = '/clickhouse/test/bad5',
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = '{{kafka_shard_num_empty}}',
                      kafka_shard_count = 2
@@ -305,25 +261,26 @@ def test_partition_affinity_macro_expanded_to_empty_fails(kafka_cluster):
     assert "expanded to an empty string" in str(exc_info.value)
 
 
-def test_partition_affinity_equality_1based_succeeds(kafka_cluster):
+def test_partition_affinity_edge_cases(kafka_cluster):
     """
-    Positive test: kafka_partition_shard_num == kafka_shard_count is allowed
-    to support 1-based shard numbering. shard_num=2, shard_count=2 maps to
-    effective shard 2%2=0, consuming partitions 0,2.
+    Edge cases:
+    1. kafka_partition_shard_num == kafka_shard_count (1-based numbering): shard_num=2, shard_count=2
+       maps to effective shard 0, consuming partitions 0,2.
+    2. Fewer partitions than shards: 2 partitions, 3 shards. Shard 2 gets nothing.
     """
     admin = k.get_admin_client(kafka_cluster)
-    topic_name = "affinity_1based_topic"
-    num_partitions = 4
 
-    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
-    with k.existing_kafka_topic(admin, topic_name):
-        for p in range(num_partitions):
+    # Case 1: 1-based shard numbering
+    topic1 = "affinity_1based_topic"
+    k.kafka_create_topic(admin, topic1, num_partitions=4)
+    with k.existing_kafka_topic(admin, topic1):
+        for p in range(4):
             msgs = [json.dumps({"partition_id": p, "value": i}) for i in range(2)]
-            kafka_produce_to_partition(kafka_cluster, topic_name, p, msgs)
+            kafka_produce_to_partition(kafka_cluster, topic1, p, msgs)
 
         # shard_num=2 with shard_count=2: effective shard = 2%2 = 0
         create_affinity_shard(
-            instance, topic_name, 2, 2,
+            instance, topic1, 2, 2,
             "/clickhouse/test/affinity_1based", "1based")
 
         wait_for_count(instance, "test.dst_1based", 4)
@@ -333,131 +290,224 @@ def test_partition_affinity_equality_1based_succeeds(kafka_cluster):
         ).strip()
         assert partitions == "0\n2", f"1-based shard got unexpected partitions: {partitions}"
 
-        total_count = int(instance.query("SELECT count() FROM test.dst_1based").strip())
-        assert total_count == 4, f"Expected 4, got {total_count}"
+    k.clean_test_database_and_topics(instance, cluster)
+
+    # Case 2: fewer partitions than shards
+    topic2 = "affinity_fewer_topic"
+    k.kafka_create_topic(admin, topic2, num_partitions=2)
+    with k.existing_kafka_topic(admin, topic2):
+        for p in range(2):
+            msgs = [json.dumps({"partition_id": p, "value": i}) for i in range(3)]
+            kafka_produce_to_partition(kafka_cluster, topic2, p, msgs)
+
+        shared_path = "/clickhouse/test/affinity_fewer"
+        for shard_num in range(3):
+            create_affinity_shard(
+                instance, topic2, shard_num, 3, shared_path, f"fewer_s{shard_num}")
+
+        wait_for_count(instance, "test.dst_fewer_s0", 3)
+        wait_for_count(instance, "test.dst_fewer_s1", 3)
+
+        s0 = instance.query(
+            "SELECT DISTINCT partition_id FROM test.dst_fewer_s0 ORDER BY partition_id"
+        ).strip()
+        assert s0 == "0", f"Shard 0 got: {s0}"
+
+        s1 = instance.query(
+            "SELECT DISTINCT partition_id FROM test.dst_fewer_s1 ORDER BY partition_id"
+        ).strip()
+        assert s1 == "1", f"Shard 1 got: {s1}"
+
+        # Shard 2 should have no data
+        s2_count = int(instance.query("SELECT count() FROM test.dst_fewer_s2").strip())
+        assert s2_count == 0, f"Shard 2 should have no data, got {s2_count} rows"
 
 
-def test_partition_affinity_fewer_partitions_than_shards(kafka_cluster):
+def test_partition_affinity_uneven_distribution(kafka_cluster):
     """
-    Test that when there are fewer partitions than shards, extra shards simply
-    don't consume anything (no error).
+    Test partition affinity when num_partitions is not evenly divisible by shard_count.
+    With 7 partitions and 3 shards:
+      - shard 0: partitions 0, 3, 6 (3 partitions)
+      - shard 1: partitions 1, 4    (2 partitions)
+      - shard 2: partitions 2, 5    (2 partitions)
+    Some shards get more partitions than others, but no errors should occur.
     """
     admin = k.get_admin_client(kafka_cluster)
-    topic_name = "affinity_2p_3s_topic"
-    num_partitions = 2
+    topic_name = "affinity_uneven_topic"
+    num_partitions = 7
     shard_count = 3
+    shared_keeper_path = "/clickhouse/test/affinity_uneven"
 
     k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
     with k.existing_kafka_topic(admin, topic_name):
         for p in range(num_partitions):
-            msgs = [json.dumps({"partition_id": p, "value": i}) for i in range(3)]
+            msgs = [json.dumps({"partition_id": p, "value": i}) for i in range(2)]
             kafka_produce_to_partition(kafka_cluster, topic_name, p, msgs)
 
         for shard_num in range(shard_count):
             create_affinity_shard(
                 instance, topic_name, shard_num, shard_count,
-                f"/clickhouse/test/affinity_fewer_{shard_num}", f"fp_s{shard_num}")
+                shared_keeper_path, f"uneven_s{shard_num}")
 
-        wait_for_count(instance, "test.dst_fp_s0", 3)
-        wait_for_count(instance, "test.dst_fp_s1", 3)
+        # shard 0: partitions 0,3,6 -> 6 messages
+        # shard 1: partitions 1,4   -> 4 messages
+        # shard 2: partitions 2,5   -> 4 messages
+        wait_for_count(instance, "test.dst_uneven_s0", 6)
+        wait_for_count(instance, "test.dst_uneven_s1", 4)
+        wait_for_count(instance, "test.dst_uneven_s2", 4)
 
-        s0_partitions = instance.query(
-            "SELECT DISTINCT partition_id FROM test.dst_fp_s0 ORDER BY partition_id"
-        ).strip()
-        assert s0_partitions == "0", f"Shard 0 got unexpected partitions: {s0_partitions}"
+        for shard_num in range(shard_count):
+            verify_shard_partitions(instance, f"uneven_s{shard_num}", shard_num, shard_count, num_partitions)
 
-        s1_partitions = instance.query(
-            "SELECT DISTINCT partition_id FROM test.dst_fp_s1 ORDER BY partition_id"
-        ).strip()
-        assert s1_partitions == "1", f"Shard 1 got unexpected partitions: {s1_partitions}"
-
-        # Shard 2 should have no data (no partition_id % 3 == 2 exists)
-        s2_count = int(instance.query("SELECT count() FROM test.dst_fp_s2").strip())
-        assert s2_count == 0, f"Shard 2 should have no data, got {s2_count} rows"
+        total = sum(
+            int(instance.query(f"SELECT count() FROM test.dst_uneven_s{s}").strip())
+            for s in range(shard_count)
+        )
+        assert total == 14, f"Expected 14 total messages, got {total}"
 
 
-def test_partition_affinity_replica_failover(kafka_cluster):
+def test_partition_affinity_single_replica_failover(kafka_cluster):
     """
-    Test that DETACH/ATTACH of a Kafka table does not break affinity boundaries.
-    Setup: 6 partitions, shard_count=2, so shard 0 owns partitions {0, 2, 4}.
+    DETACH/ATTACH of a shard does not break affinity boundaries.
+    After re-attach, the shard resumes consuming only its own partitions.
     """
     admin = k.get_admin_client(kafka_cluster)
     topic_name = "affinity_failover_topic"
     num_partitions = 6
+    shard_count = 2
+    shared_keeper_path = "/clickhouse/test/affinity_failover"
 
     k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
     with k.existing_kafka_topic(admin, topic_name):
-        # Produce initial batch: 5 messages per partition
         for p in range(num_partitions):
             msgs = [json.dumps({"partition_id": p, "value": i}) for i in range(5)]
             kafka_produce_to_partition(kafka_cluster, topic_name, p, msgs)
 
-        create_affinity_shard(
-            instance, topic_name, 0, 2,
-            "/clickhouse/test/affinity_failover_s0", "fo_s0")
-        create_affinity_shard(
-            instance, topic_name, 1, 2,
-            "/clickhouse/test/affinity_failover_s1", "fo_s1")
+        create_affinity_shard(instance, topic_name, 0, shard_count, shared_keeper_path, "fo_s0")
+        create_affinity_shard(instance, topic_name, 1, shard_count, shared_keeper_path, "fo_s1")
 
-        # Wait for initial messages: shard 0 gets 15, shard 1 gets 15
         wait_for_count(instance, "test.dst_fo_s0", 15)
         wait_for_count(instance, "test.dst_fo_s1", 15)
 
-        # Verify affinity before detach
-        s0_partitions = instance.query(
-            "SELECT DISTINCT partition_id FROM test.dst_fo_s0 ORDER BY partition_id"
-        ).strip()
-        assert s0_partitions == "0\n2\n4", f"Shard 0 affinity violated before detach: {s0_partitions}"
-
-        s1_partitions = instance.query(
-            "SELECT DISTINCT partition_id FROM test.dst_fo_s1 ORDER BY partition_id"
-        ).strip()
-        assert s1_partitions == "1\n3\n5", f"Shard 1 affinity violated before detach: {s1_partitions}"
-
-        # Detach shard 0 to simulate failure
+        # Detach shard 0
         instance.query("DETACH TABLE test.kafka_fo_s0")
 
-        # Produce more messages while shard 0 is down
+        # Produce more while shard 0 is down
         for p in range(num_partitions):
             msgs = [json.dumps({"partition_id": p, "value": 100 + i}) for i in range(5)]
             kafka_produce_to_partition(kafka_cluster, topic_name, p, msgs)
 
-        # Shard 1 should still consume its new messages
+        # Shard 1 continues consuming its partitions
         wait_for_count(instance, "test.dst_fo_s1", 30)
 
-        # Shard 0 dst should still have only the original 15 (frozen)
-        count_s0_frozen = int(instance.query("SELECT count() FROM test.dst_fo_s0").strip())
-        assert count_s0_frozen == 15, f"Shard 0 dst should be frozen at 15, got {count_s0_frozen}"
+        # Shard 0 frozen
+        count_s0 = int(instance.query("SELECT count() FROM test.dst_fo_s0").strip())
+        assert count_s0 == 15, f"Shard 0 should be frozen at 15, got {count_s0}"
 
         # Re-attach shard 0
         instance.query("ATTACH TABLE test.kafka_fo_s0")
-
-        # Wait for shard 0 to consume the messages produced while it was down
         wait_for_count(instance, "test.dst_fo_s0", 30)
 
-        # Verify affinity is still respected after ATTACH
-        s0_partitions_after = instance.query(
-            "SELECT DISTINCT partition_id FROM test.dst_fo_s0 ORDER BY partition_id"
-        ).strip()
-        assert s0_partitions_after == "0\n2\n4", \
-            f"Shard 0 affinity violated after re-attach: {s0_partitions_after}"
+        # Verify affinity preserved after re-attach
+        verify_shard_partitions(instance, "fo_s0", 0, shard_count, num_partitions)
+        verify_shard_partitions(instance, "fo_s1", 1, shard_count, num_partitions)
 
-        s1_partitions_after = instance.query(
-            "SELECT DISTINCT partition_id FROM test.dst_fo_s1 ORDER BY partition_id"
-        ).strip()
-        assert s1_partitions_after == "1\n3\n5", \
-            f"Shard 1 affinity violated after shard 0 re-attach: {s1_partitions_after}"
 
-        # Verify no cross-shard leakage
-        leaked_s0 = instance.query(
-            "SELECT count() FROM test.dst_fo_s0 WHERE partition_id % 2 != 0"
-        ).strip()
-        assert leaked_s0 == "0", f"Shard 0 leaked {leaked_s0} messages from odd partitions"
+def test_partition_affinity_multi_replica_failover(kafka_cluster):
+    """
+    Multiple replicas (different kafka_replica_name) for the same kafka_partition_shard_num
+    share the same Keeper coordination path. When one replica is detached, the surviving
+    replica must reclaim ALL partitions belonging to that shard.
 
-        leaked_s1 = instance.query(
-            "SELECT count() FROM test.dst_fo_s1 WHERE partition_id % 2 != 1"
+    Setup: 6 partitions, shard_count=2, shard 0 owns partitions {0, 2, 4}.
+    Two replicas (r1, r2) both use kafka_partition_shard_num=0 with the same keeper_path.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "affinity_multi_replica_topic"
+    num_partitions = 6
+    shard_count = 2
+    shared_keeper_path = "/clickhouse/test/affinity_multi_replica"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        for p in range(num_partitions):
+            msgs = [json.dumps({"partition_id": p, "value": i}) for i in range(6)]
+            kafka_produce_to_partition(kafka_cluster, topic_name, p, msgs)
+
+        # Replica 1 for shard 0
+        instance.query(
+            f"""
+            CREATE TABLE test.kafka_mr_r1 (partition_id UInt64, value UInt64)
+            ENGINE = Kafka('{instance.cluster.kafka_host}:19092', '{topic_name}', '{topic_name}_cg_mr', 'JSONEachRow', '\\n')
+            SETTINGS kafka_keeper_path = '{shared_keeper_path}',
+                     kafka_replica_name = 'r1',
+                     kafka_partition_shard_num = '0',
+                     kafka_shard_count = {shard_count}
+            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+
+            CREATE TABLE test.dst_mr_r1 (partition_id UInt64, value UInt64)
+            ENGINE = MergeTree() ORDER BY (partition_id, value);
+
+            CREATE MATERIALIZED VIEW test.mv_mr_r1 TO test.dst_mr_r1 AS
+            SELECT * FROM test.kafka_mr_r1;
+            """
+        )
+
+        # Replica 2 for shard 0 (same keeper_path, same shard_num, different replica_name)
+        instance.query(
+            f"""
+            CREATE TABLE test.kafka_mr_r2 (partition_id UInt64, value UInt64)
+            ENGINE = Kafka('{instance.cluster.kafka_host}:19092', '{topic_name}', '{topic_name}_cg_mr', 'JSONEachRow', '\\n')
+            SETTINGS kafka_keeper_path = '{shared_keeper_path}',
+                     kafka_replica_name = 'r2',
+                     kafka_partition_shard_num = '0',
+                     kafka_shard_count = {shard_count}
+            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+
+            CREATE TABLE test.dst_mr_r2 (partition_id UInt64, value UInt64)
+            ENGINE = MergeTree() ORDER BY (partition_id, value);
+
+            CREATE MATERIALIZED VIEW test.mv_mr_r2 TO test.dst_mr_r2 AS
+            SELECT * FROM test.kafka_mr_r2;
+            """
+        )
+
+        # Both replicas together consume shard-0 partitions {0,2,4}
+        wait_for_count(instance, "test.dst_mr_r1", 1)
+        wait_for_count(instance, "test.dst_mr_r2", 1)
+
+        # Both replicas only consume shard-0 partitions
+        for tbl in ["test.dst_mr_r1", "test.dst_mr_r2"]:
+            leaked = instance.query(
+                f"SELECT count() FROM {tbl} WHERE partition_id % {shard_count} != 0"
+            ).strip()
+            assert leaked == "0", f"{tbl} leaked messages from shard-1 partitions"
+
+        # Detach replica 2 to simulate failure
+        instance.query("DETACH TABLE test.kafka_mr_r2")
+
+        # Produce more messages to shard-0 partitions
+        for p in [0, 2, 4]:
+            msgs = [json.dumps({"partition_id": p, "value": 100 + i}) for i in range(5)]
+            kafka_produce_to_partition(kafka_cluster, topic_name, p, msgs)
+
+        # r1 must reclaim all shard-0 partitions and consume all 15 new messages
+        r1_before = int(instance.query("SELECT count() FROM test.dst_mr_r1").strip())
+        wait_for_count(instance, "test.dst_mr_r1", r1_before + 15)
+
+        # Verify r1 consumed from ALL shard-0 partitions after r2 went away
+        r1_partitions = instance.query(
+            "SELECT DISTINCT partition_id FROM test.dst_mr_r1 ORDER BY partition_id"
         ).strip()
-        assert leaked_s1 == "0", f"Shard 1 leaked {leaked_s1} messages from even partitions"
+        assert r1_partitions == "0\n2\n4", (
+            f"After r2 detach, r1 should own all shard-0 partitions, got: {r1_partitions}"
+        )
+
+        # No shard-1 leakage
+        leaked_r1 = instance.query(
+            f"SELECT count() FROM test.dst_mr_r1 WHERE partition_id % {shard_count} != 0"
+        ).strip()
+        assert leaked_r1 == "0", f"r1 leaked {leaked_r1} messages from shard-1 partitions"
 
 
 if __name__ == "__main__":

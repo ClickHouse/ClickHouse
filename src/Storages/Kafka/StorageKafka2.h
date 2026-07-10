@@ -151,8 +151,8 @@ private:
     // Configuration and state
     mutable std::mutex keeper_mutex;
     zkutil::ZooKeeperPtr keeper;
-    const String keeper_path;
-    const std::filesystem::path fs_keeper_path;
+    String keeper_path;
+    std::filesystem::path fs_keeper_path;
     String replica_path;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
@@ -168,7 +168,7 @@ private:
     const SettingsChanges settings_adjustments;
 
     /// Partition affinity: when both are > 0, only a deterministic subset of
-    /// partitions is consumed by this shard. See KeeperHandlingConsumer for the mapping algorithm.
+    /// partitions is consumed by this shard.
     UInt64 partition_num = 0;
     UInt64 shard_count = 0;
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
