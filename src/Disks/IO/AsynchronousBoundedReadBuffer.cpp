@@ -489,23 +489,38 @@ size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t rang
     /// prefetch under `prefetch_mutex`: exactly one thread consumes it, and the others block until the
     /// drain (including the in-flight read against `impl`) completes, after which everyone reads directly.
     ///
-    /// Fast path: when no prefetch is in flight we can skip the mutex and read straight from impl,
-    /// because impl->readBigAt() is contractually safe to run concurrently with other readBigAt()s.
-    /// We must NOT skip the mutex merely because the requested range is outside the prefetch: the
-    /// in-flight prefetch reads through impl via impl->next() on a background thread (see
-    /// ThreadPoolRemoteFSReader::submit, which defers the read to the pool), and the SeekableReadBuffer
-    /// contract forbids running readBigAt() in parallel with next() on the same object. Some backends
-    /// even initialize lazily on that background read (e.g. ReadBufferFromAzureBlobStorage creates its
-    /// blob_client inside initialize() from nextImpl()), so a positioned read racing the prefetch could
-    /// dereference an uninitialized member. `prefetch_estimated_end` is 0 exactly when no prefetch is in
-    /// flight (never issued, or already drained). It is published (nonzero) at prefetch() and reset to 0
-    /// only after the future has been consumed, i.e. after the background next() has completed. Reading
-    /// it acquire-ordered against those release-ordered stores guarantees that observing 0 happens-after
-    /// the background read finished, so the fast-path impl->readBigAt() runs with no concurrent next().
-    /// This is transient: a Parquet RandomRead storm has a single initial prefetch; once one reader
-    /// drains it under the mutex, every subsequent positioned read takes this lock-free path.
-    if (prefetch_estimated_end.load(std::memory_order_acquire) == 0)
+    /// Decide whether we need the prefetch before taking prefetch_mutex.
+    ///
+    /// `prefetch_estimated_end` is 0 exactly when no prefetch is in flight (never issued, or already
+    /// drained); otherwise it is an upper bound on the prefetch's covered end offset
+    /// ([file_offset_of_buffer_end, +buffer_size)). It is published (release) at prefetch() and reset
+    /// to 0 (release) only after the future has been consumed, i.e. after the background impl->next()
+    /// has completed. We read it acquire-ordered against those release-ordered stores.
+    const size_t estimated_end = prefetch_estimated_end.load(std::memory_order_acquire);
+
+    /// (1) No prefetch in flight: read straight from impl. Observing 0 happens-after the background
+    /// next() finished (or no prefetch was ever issued), so impl->readBigAt() has no concurrent next().
+    if (estimated_end == 0)
         return impl->readBigAt(to, n, range_begin, progress_callback);
+
+    /// (2) A prefetch is in flight, but the requested range starts at or past its end, so it cannot be
+    /// served from the prefetch buffer and does not overlap it. We can still skip the mutex only if
+    /// impl->readBigAt() is safe to run concurrently with the prefetch's background next() on impl.
+    /// The prefetch reads through impl via impl->next() on a background thread (see
+    /// ThreadPoolRemoteFSReader::submit, which defers the read to the pool), and the SeekableReadBuffer
+    /// contract forbids running readBigAt() in parallel with next() on the same object unless the
+    /// backend advertises otherwise. ReadBufferFromS3 does (its readBigAt() issues an independent
+    /// GetObject with request-local state); lazily-initialized backends like ReadBufferFromAzureBlobStorage
+    /// (blob_client created inside initialize() from nextImpl()) do not, so for those we fall through
+    /// and serialize. This restores the lock-free path for the common Parquet RandomRead storm on S3:
+    /// out-of-prefetch positioned reads no longer wait on the single initial prefetch.
+    if (range_begin >= estimated_end && impl->readBigAtIsSafeWithConcurrentSequentialRead())
+        return impl->readBigAt(to, n, range_begin, progress_callback);
+
+    /// (3) Otherwise (range overlaps the prefetch, or the backend is not concurrency-safe) drain the
+    /// prefetch under prefetch_mutex: exactly one thread consumes the shared prefetch_future (others
+    /// would deref a moved-from future's null shared state -> SIGSEGV), and the in-flight read against
+    /// impl completes before any positioned read on impl runs.
 
     size_t from_prefetch = 0;
     bool served_from_prefetch = false;

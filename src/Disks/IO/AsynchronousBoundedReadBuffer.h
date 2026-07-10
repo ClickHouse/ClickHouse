@@ -102,15 +102,16 @@ private:
     /// threads deref a moved-from future's null shared state (SIGSEGV), and the in-flight prefetch
     /// read against `impl` could run concurrently with a positioned read on `impl`.
     mutable std::mutex prefetch_mutex;
-    /// Nonzero exactly while a prefetch is in flight; holds the estimated end offset of that prefetch
-    /// ([file_offset_of_buffer_end, prefetch_estimated_end)). Published (release) at prefetch() and reset
-    /// to 0 (release) only after the prefetch future has been consumed, i.e. after the background
-    /// impl->next() has finished. readBigAt() reads it (acquire) to take a lock-free fast path when it is
-    /// 0: no prefetch is in flight, so impl->readBigAt() cannot race the prefetch's background next() on
-    /// impl (which the SeekableReadBuffer contract forbids, and which would null-deref lazily-initialized
-    /// backends such as ReadBufferFromAzureBlobStorage). We deliberately do NOT skip the mutex based on
-    /// the requested range being outside [begin, prefetch_estimated_end): while the prefetch is in flight
-    /// its background next() runs against impl, so any positioned read on impl must serialize with it.
+    /// Nonzero exactly while a prefetch is in flight; holds an upper bound on the end offset of that
+    /// prefetch ([file_offset_of_buffer_end, prefetch_estimated_end)). Published (release) at prefetch()
+    /// and reset to 0 (release) only after the prefetch future has been consumed, i.e. after the
+    /// background impl->next() has finished. readBigAt() reads it (acquire) to take a lock-free fast
+    /// path in two cases: (a) it is 0, so no prefetch is in flight; (b) it is nonzero but the requested
+    /// range starts at or past it AND impl advertises readBigAtIsSafeWithConcurrentSequentialRead(),
+    /// so the out-of-prefetch positioned read cannot race the prefetch's background next() unsafely.
+    /// Otherwise readBigAt() serializes on prefetch_mutex, because the prefetch's background next() runs
+    /// against impl and the SeekableReadBuffer contract forbids a positioned read in parallel with next()
+    /// (which would null-deref lazily-initialized backends such as ReadBufferFromAzureBlobStorage).
     /// mutable: reset from the const readBigAt() when it consumes the prefetch.
     mutable std::atomic<size_t> prefetch_estimated_end{0};
 

@@ -91,6 +91,11 @@ public:
 
     bool supportsReadAt() override { return true; }
 
+    /// readBigAt() issues an independent GetObject with request-local state and touches none of the
+    /// members nextImpl()/seek()/initialize() mutate, so it is safe to run concurrently with a
+    /// sequential read on the same object.
+    bool readBigAtIsSafeWithConcurrentSequentialRead() const override { return true; }
+
     /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
     bool supportsExternalBufferMode() const override { return use_external_buffer; }
 
