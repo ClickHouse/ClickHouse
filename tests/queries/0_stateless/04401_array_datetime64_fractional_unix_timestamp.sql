@@ -24,6 +24,13 @@ SELECT 'nullable_frac', [1783585473.954, NULL]::Array(Nullable(DateTime64(3)));
 -- Negative fractional timestamp matches the scalar representation.
 SELECT 'neg_frac', [-1390214744.877]::Array(DateTime64(3));
 
+-- Negative sub-second values whose whole part is zero must keep the sign.
+-- readIntText normalises "-0" to 0, so the sign has to be restored explicitly;
+-- e.g. -0.123 s is 123 ms before the epoch: 1969-12-31 23:59:59.877.
+SELECT 'csv_neg_zero_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[-0.123]"');
+SELECT 'json_neg_zero_frac', toString(x[1]) FROM format(JSONEachRow, 'x Array(DateTime64(3))', '{"x":[-0.877]}');
+SELECT 'csv_neg_one_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[-1.123]"');
+
 -- Fraction is truncated / padded to the column scale.
 SELECT 'scale0', [1783585473.954]::Array(DateTime64(0));
 SELECT 'scale6_extra', [1783585473.954321987]::Array(DateTime64(6));

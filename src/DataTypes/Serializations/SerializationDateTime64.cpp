@@ -167,16 +167,13 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
     while (!istr.eof() && isNumericASCII(*istr.position()))
         ++istr.position();
 
-    /// Fractional part (subseconds) is treated as positive by users, but represented as a negative number.
-    /// Mirror the handling in readDateTimeTextImpl for negative timestamps with a fractional part.
-    if (!is_negative && components.whole < 0 && components.fractional != 0)
-    {
-        const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
-        ++components.whole;
-        components.fractional = scale_multiplier - components.fractional;
-        if (!components.whole)
-            negative_fraction_multiplier = -1;
-    }
+    /// readIntText normalises "-0" to 0, so the sign is lost for pre-epoch sub-second
+    /// values whose whole part is zero (e.g. -0.123 s == 1969-12-31 23:59:59.877).
+    /// For a non-zero whole the sign is already carried by `components.whole`
+    /// (e.g. -1.123 -> decimalFromComponents(-1, 123) == -1123 ticks), so only the
+    /// zero-whole case needs the sign restored via the multiplier.
+    if (is_negative && components.whole == 0 && components.fractional != 0)
+        negative_fraction_multiplier = -1;
 
     if constexpr (throw_exception)
     {
