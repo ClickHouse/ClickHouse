@@ -1,0 +1,33 @@
+---
+sidebarTitle: 'Langfuse'
+title: 'Langfuse'
+description: 'Langfuse가 에이전트형 데이터 스택에 관측성과 트레이싱을 제공하는 방법'
+doc_type: 'guide'
+keywords: ['agentic data stack', 'Langfuse', 'observability', 'tracing', 'LLM']
+---
+
+Langfuse는 [에이전트형 데이터 스택](/ko/products/agentic-data-stack/overview)의 **관측성 계층**입니다. LibreChat에서 에이전트가 수행한 작업을 기록하므로 디버깅, 품질 측정, 비용 추적이 가능합니다. OpenTelemetry를 기반으로 하는 Langfuse는 ClickHouse에서 실행됩니다.
+
+<div id="trace">
+  ## 모든 실행 추적 및 살펴보기
+</div>
+
+모든 대화는 [Langfuse 트레이스](https://langfuse.com/docs/observability/overview)로 캡처됩니다. 여기에는 프롬프트, 각 도구 호출(에이전트가 실행한 SQL 포함), 그리고 응답이 포함됩니다. 각 트레이스에는 token 사용량, 비용, 지연 시간도 기록됩니다. 실행을 열어 에이전트가 무엇을 했는지, 그리고 어디에서 실패했는지 확인하십시오. 사용자 및 세션별로 정렬하면 누가 가장 많은 비용을 사용하고 있는지 확인할 수 있습니다.
+
+<div id="evals">
+  ## 출력 품질 평가
+</div>
+
+모델 출력은 비결정적이므로 Langfuse를 사용하면 추측에 의존하지 않고 품질을 측정할 수 있습니다. 예를 들어 답변이 잘못되었거나 분석이 도움이 되지 않을 때 이를 식별할 수 있도록 [사람 주석](https://langfuse.com/docs/evaluation/evaluation-methods/annotation)이나 자동화된 [LLM-as-a-judge](https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge) 평가기를 사용해 실행 결과에 점수를 매길 수 있습니다.
+
+<div id="in-the-stack">
+  ## 스택에서
+</div>
+
+스택은 LibreChat을 Langfuse에 연동하므로 별도의 계측 추가 없이 모든 실행이 자동으로 트레이스됩니다. 트레이스는 스택 자체의 ClickHouse 인스턴스에 저장되므로 관측성 데이터가 쿼리하는 데이터와 함께 보관됩니다. 스택의 일부로 실행하려면 [Docker 설정 가이드](/ko/products/agentic-data-stack/docker-setup)를 참조하십시오.
+
+독립 실행형 LibreChat 인스턴스에서 트레이스를 전송하거나 리전별 또는 HIPAA Langfuse 엔드포인트를 사용하려면 [Langfuse 보조 가이드](https://langfuse.com/integrations/agentic-data-stack)를 참조하십시오. ClickHouse에서 Langfuse를 사용하는 일반적인 방법은 [Langfuse 개요](/ko/products/cloud/features/ai-ml/langfuse)를 참조하십시오.
+
+<Info>
+  **관리형 환경을 원하십니까?** [Langfuse Cloud](https://cloud.langfuse.com)는 관리형 ClickHouse 클러스터 기반의 완전 관리형 배포이므로 직접 운영할 인프라가 필요하지 않습니다.
+</Info>

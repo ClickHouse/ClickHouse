@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/PartitionIds.h>
+#include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -131,6 +132,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     , path_prefix(path_prefix_)
     , file_name(file_name_)
     , is_temp(false)
+    , is_registered(true)
 {
     block_number = parseFileName(file_name);
     auto buf = disk->readFile(path_prefix + file_name, getReadSettings());
@@ -169,12 +171,56 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     partition_ids = storage_->getPartitionIdsAffectedByCommands(*commands, context_);
 }
 
+MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) noexcept
+    : create_time(other.create_time)
+    , commands(std::move(other.commands))
+    , disk(std::move(other.disk))
+    , path_prefix(std::move(other.path_prefix))
+    , file_name(std::exchange(other.file_name, {}))
+    , is_temp(std::exchange(other.is_temp, false))
+    , is_registered(std::exchange(other.is_registered, false))
+    , is_done(other.is_done)
+    , block_number(other.block_number)
+    , latest_failed_part(std::move(other.latest_failed_part))
+    , latest_failed_part_info(std::move(other.latest_failed_part_info))
+    , latest_fail_time(other.latest_fail_time)
+    , latest_fail_reason(std::move(other.latest_fail_reason))
+    , latest_fail_error_code_name(std::move(other.latest_fail_error_code_name))
+    , partition_ids(std::move(other.partition_ids))
+    , tid(other.tid)
+    , csn(other.csn)
+{
+}
+
 MergeTreeMutationEntry::~MergeTreeMutationEntry()
 {
+    if (file_name.empty())
+        return;
+
     if (is_temp && startsWith(file_name, "tmp_"))
     {
         try
         {
+            removeFile();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        return;
+    }
+
+    /// Committed to disk but never registered in `current_mutations_by_version`.
+    /// Remove the orphaned `mutation_*.txt` so it is not replayed on restart.
+    /// Mirrors the visibility of `killMutation` and `clearOldMutations`, which
+    /// log permanent mutation-file removals from their callers. See #80648.
+    if (!is_temp && !is_registered)
+    {
+        try
+        {
+            LOG_INFO(getLogger("MergeTreeMutationEntry"),
+                "Removing orphaned mutation file {} (block number {}); registration was not completed",
+                path_prefix + file_name, block_number);
             removeFile();
         }
         catch (...)

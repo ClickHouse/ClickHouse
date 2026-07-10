@@ -1,0 +1,154 @@
+---
+title: 'Se connecter à ClickHouse'
+slug: /cloud/reference/byoc/connect
+sidebarTitle: 'Se connecter à ClickHouse'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'se connecter à clickhouse', 'load balancer', 'privatelink']
+description: 'Connectez-vous à vos services ClickHouse BYOC via des endpoints publics, privés ou PrivateLink'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Cette page décrit les différentes façons de vous connecter à vos services ClickHouse en BYOC. Vous pouvez choisir entre des load balancers publics, des load balancers privés ou des points de terminaison PrivateLink/Private Service Connect, selon vos exigences en matière de sécurité et de réseau.
+
+<div id="public-load-balancer">
+  ## Public Load Balancer
+</div>
+
+Un load balancer public permet d’accéder à vos services ClickHouse via Internet. Il s’agit de la configuration par défaut lorsque vous utilisez un VPC dédié géré par ClickHouse.
+
+<div id="public-load-balancer-overview">
+  ### Vue d’ensemble
+</div>
+
+* **Accès** : Accessible depuis l’Internet public
+* **Cas d’utilisation** : Convient aux applications et aux utilisateurs qui doivent se connecter depuis différents lieux ou réseaux
+* **Sécurité** : Protégé par le chiffrement TLS et le filtrage IP (recommandé)
+
+<div id="connecting-via-public-load-balancer">
+  ### Connexion via Public Load Balancer
+</div>
+
+Pour vous connecter à votre service ClickHouse à l’aide du point de terminaison public :
+
+1. **Récupérez votre point de terminaison de service** dans la console ClickHouse Cloud. Le point de terminaison s’affiche dans la section &quot;Connect&quot; de votre service.
+
+<Image img="/images/cloud/reference/byoc-connect-1.webp" size="lg" alt="connexion BYOC" background="black" />
+
+Par exemple :
+
+```text
+sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com
+```
+
+<div id="public-ip-filtering">
+  ### Filtrage IP
+</div>
+
+Le filtrage IP (IP Access List) est **fortement recommandé** lorsque vous utilisez un load balancer public afin de limiter l&#39;accès aux adresses IP ou aux plages CIDR autorisées.
+
+Pour plus d&#39;informations sur le filtrage IP, consultez la [documentation sur l’IP Access List](/fr/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+<div id="private-load-balancer">
+  ## Load balancer privé
+</div>
+
+Un load balancer privé fournit un accès interne à vos services ClickHouse, uniquement depuis vos réseaux connectés (par exemple, des VPC appairés). Il s’agit de la configuration par défaut lorsque vous utilisez un VPC géré par le client.
+
+<div id="public-load-balancer-overview">
+  ### Vue d’ensemble
+</div>
+
+* **Accès** : Accessible uniquement depuis votre infrastructure réseau privée
+* **Cas d’utilisation** : Idéal pour les applications exécutées dans le même environnement Cloud ou connectées via VPC peering
+* **Sécurité** : Le trafic reste sur votre réseau privé, sans exposition à l’Internet public
+
+<div id="connecting-via-private-load-balancer">
+  ### Connexion via un load balancer privé
+</div>
+
+Pour vous connecter via le point de terminaison privé :
+
+1. **Activez le load balancer privé** (s’il n’est pas déjà activé). Contactez ClickHouse Support si vous devez [activer un load balancer privé](/fr/products/bring-your-own-cloud/configuration/configurations#load-balancers) pour votre déploiement.
+2. **Vérifiez la connectivité réseau** :
+   * Pour le VPC peering : terminez la configuration du VPC peering (voir [Private Networking Setup](/fr/products/bring-your-own-cloud/onboarding/network))
+   * Pour les autres réseaux privés : assurez-vous que le routage est configuré pour atteindre le VPC BYOC
+3. **Obtenez votre point de terminaison privé** :
+   Le point de terminaison privé est disponible dans la console ClickHouse Cloud, dans la section « Connect » de votre service. Il suit le même format que le point de terminaison public, avec le suffixe `-private` ajouté à la partie correspondant à l’ID du service. Par exemple :
+   * **Point de terminaison public** : `sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+   * **Point de terminaison privé** : `sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+
+<div id="public-ip-filtering">
+  ### Filtrage IP
+</div>
+
+Bien que les load balancers privés limitent l’accès aux seuls réseaux internes, vous pouvez tout de même configurer le filtrage IP afin de contrôler plus finement quelles sources, au sein de votre réseau privé, sont autorisées à se connecter. Le filtrage IP pour les load balancers privés repose sur le même mécanisme de configuration que pour les load balancers publics : définissez les adresses IP ou plages CIDR autorisées, et ClickHouse Cloud appliquera ces règles au type de point de terminaison approprié. La plateforme distingue automatiquement les plages CIDR publiques et privées et les associe aux points de terminaison du load balancer correspondants. Consultez la [documentation IP Access List](/fr/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+<div id="security-group-configuration">
+  ### Configuration du Security Group
+</div>
+
+Pour les déploiements sur AWS, le Security Group du load balancer privé détermine quels réseaux peuvent accéder au point de terminaison. Par défaut, seul le trafic provenant du VPC BYOC est autorisé.
+
+Pour plus de détails, consultez [la configuration du Security Group du load balancer privé](/fr/products/bring-your-own-cloud/configuration/configurations#private-load-balancer-security-group).
+
+<div id="privatelink-or-private-service-connect">
+  ## PrivateLink ou Private Service Connect
+</div>
+
+AWS PrivateLink et GCP Private Service Connect offrent l’option de connectivité la plus sécurisée et vous permettent d’accéder aux services ClickHouse de manière privée, sans VPC peering ni passerelle Internet.
+
+<div id="public-load-balancer-overview">
+  ### Vue d’ensemble
+</div>
+
+* **Accès** : connectivité privée via le service géré du fournisseur de cloud
+* **Isolation réseau** : le trafic ne transite jamais par l’Internet public
+* **Cas d’utilisation** : déploiements Enterprise nécessitant un niveau maximal de sécurité et d’isolation réseau
+* **Avantages** :
+  * Aucun VPC peering requis
+  * Architecture réseau simplifiée
+  * Amélioration de la posture de sécurité et de conformité
+
+<div id="connecting-via-privatelink">
+  ### Connexion via PrivateLink/Private Service Connect
+</div>
+
+Terminez la configuration de PrivateLink ou de Private Service Connect (voir [Private Networking Setup](/fr/products/bring-your-own-cloud/onboarding/network)). Une fois la configuration terminée, vous pouvez vous connecter à votre service ClickHouse à l’aide d’un format de point de terminaison propre à PrivateLink. Le point de terminaison PrivateLink inclut un sous-domaine `vpce` pour indiquer qu’il transite par le point de terminaison VPC. La résolution DNS dans votre VPC achemine automatiquement le trafic via le point de terminaison PrivateLink.
+
+Le format du point de terminaison PrivateLink est similaire à celui du point de terminaison public, mais inclut un sous-domaine `vpce` entre le sous-domaine du service et le sous-domaine de l’infrastructure BYOC. Par exemple :
+
+* **Point de terminaison public** : `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **Point de terminaison PrivateLink** : `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+<div id="endpoint-id-allowlist">
+  ### Liste d’autorisation des ID de point de terminaison
+</div>
+
+Pour utiliser PrivateLink ou Private Service Connect, l’ID du point de terminaison de la connexion client doit être explicitement autorisé pour chaque service ClickHouse. Veuillez contacter ClickHouse Support et fournir vos ID de point de terminaison afin qu’ils soient ajoutés à la liste d’autorisation du service.
+
+Pour obtenir des instructions de configuration détaillées, consultez le [guide Private Networking Setup](/fr/products/bring-your-own-cloud/onboarding/network).
+
+<div id="choosing-connection-method">
+  ## Choisir la bonne méthode de connexion
+</div>
+
+| Méthode de connexion                    | Niveau de sécurité       | Exigences réseau                         | Cas d’usage                                                |
+| --------------------------------------- | ------------------------ | ---------------------------------------- | ---------------------------------------------------------- |
+| **Load Balancer public**                | Moyen (avec filtrage IP) | Accès à Internet                         | Applications/utilisateurs répartis sur différents sites    |
+| **Load Balancer privé**                 | Élevé                    | VPC peering ou réseau privé              | Applications dans le même environnement Cloud              |
+| **PrivateLink/Private Service Connect** | Le plus élevé            | Service géré par le fournisseur de Cloud | Déploiements Enterprise nécessitant une isolation maximale |
+
+<div id="troubleshooting">
+  ## Dépannage des problèmes de connexion
+</div>
+
+Si vous rencontrez des problèmes de connexion :
+
+1. **Vérifiez l’accessibilité du point de terminaison** : assurez-vous d’utiliser le bon point de terminaison (public ou privé)
+2. **Vérifiez les filtres IP** : pour les load balancers publics, vérifiez que votre adresse IP figure dans la liste d’autorisation
+3. **Vérifiez la connectivité réseau** : pour les connexions privées, assurez-vous que le VPC peering ou PrivateLink est correctement configuré
+4. **Vérifiez les groupes de sécurité** : pour les load balancers privés, vérifiez que les règles des groupes de sécurité autorisent le trafic depuis votre réseau source
+5. **Vérifiez les groupes de sécurité** : pour PrivateLink ou Private Service Connect, vérifiez que l’ID du point de terminaison a bien été ajouté à la liste d’autorisation du service ClickHouse
+6. **Vérifiez l’authentification** : assurez-vous d’utiliser les bons identifiants (username et password)
+7. **Contactez le support** : si les problèmes persistent, contactez ClickHouse Support

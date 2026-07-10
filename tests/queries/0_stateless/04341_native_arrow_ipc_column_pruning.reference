@@ -1,0 +1,22 @@
+OK   ArrowStream: c_lc
+OK   ArrowStream: c_i32, c_f64
+OK   ArrowStream: c_list, c_map
+OK   ArrowStream: c_tuple, c_fs
+OK   ArrowStream: c_null
+OK   ArrowStream: c_f64, c_str, c_i32
+OK   ArrowStream: c_i32, c_str, c_fs, c_list, c_tuple, c_map, c_lc, c_null, c_f64
+OK   Arrow: c_lc
+OK   Arrow: c_i32, c_f64
+OK   Arrow: c_list, c_map
+OK   Arrow: c_tuple, c_fs
+OK   Arrow: c_null
+OK   Arrow: c_f64, c_str, c_i32
+OK   Arrow: c_i32, c_str, c_fs, c_list, c_tuple, c_map, c_lc, c_null, c_f64
+--- values of a pruned subset (native) ---
+0	0	[]
+1	1	[0]
+2	2	[0,1]
+3	0	[0,1,2]
+4	1	[]
+--- count() only (native, no columns decoded) ---
+20

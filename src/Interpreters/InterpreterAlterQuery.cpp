@@ -31,9 +31,11 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -422,11 +424,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
         DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess();
+        params.access_to_check = getRequiredAccess(table);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    getContext()->checkAccess(getRequiredAccess());
+    getContext()->checkAccess(getRequiredAccess(table));
 
     if (!table_id)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
@@ -490,7 +492,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
-    getContext()->checkAccess(getRequiredAccess());
+    /// ALTER DATABASE has no table and no UPDATE commands, so the `_row_exists` marker check never applies.
+    getContext()->checkAccess(getRequiredAccess(nullptr));
     AlterCommands alter_commands;
 
     for (const auto & child : alter.command_list->children)
@@ -505,7 +508,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     if (!alter.cluster.empty())
     {
         DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess();
+        params.access_to_check = getRequiredAccess(nullptr);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
@@ -552,35 +555,65 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     return res;
 }
 
-AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
+bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr & storage, const ContextPtr & context_)
+{
+    /// `_row_exists` is the hidden lightweight-delete marker only on storages that register it as a
+    /// virtual column (the MergeTree family). Testing merely for the absence of a physical `_row_exists`
+    /// column is too broad: on e.g. a `Memory` table `_row_exists` is not the marker, yet has no
+    /// physical column either, so a user could `ADD COLUMN _row_exists, UPDATE _row_exists = 0` and edit
+    /// a real physical column with only `ALTER DELETE`. `isVirtualColumn` is true only when `_row_exists`
+    /// is a registered virtual and not shadowed by a real column, which precisely identifies the marker.
+    /// A null storage (non-local ON CLUSTER target) fails closed -> treated as a regular column.
+    if (!storage)
+        return false;
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
+    return metadata_snapshot->isVirtualColumn(RowExistsColumn::name);
+}
+
+AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
+    const bool row_exists_is_marker = isRowExistsLightweightDeleteMarker(storage, getContext());
     for (const auto & child : alter.command_list->children)
-        required_access.append_range(getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable()));
+        required_access.append_range(
+            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_is_marker));
 
     return required_access;
 }
 
-AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const ASTAlterCommand & command, const String & database, const String & table)
+AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
+    const ASTAlterCommand & command, const String & database, const String & table, bool row_exists_is_lightweight_marker)
 {
     AccessRightsElements required_access;
 
     auto column_name = [&]() -> String { return getIdentifierName(command.column); };
     auto column_name_from_col_decl = [&]() -> std::string_view { return command.col_decl->as<ASTColumnDeclaration &>().name; };
-    auto column_names_from_update_assignments = [&]() -> std::vector<std::string_view>
-    {
-        std::vector<std::string_view> column_names;
-        for (const ASTPtr & assignment_ast : command.update_assignments->children)
-            column_names.emplace_back(assignment_ast->as<const ASTAssignment &>().column_name);
-        return column_names;
-    };
 
     switch (command.type)
     {
         case ASTAlterCommand::UPDATE:
         {
-            required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, column_names_from_update_assignments());
+            /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update:
+            /// `DELETE FROM` rewrites to `ALTER ... UPDATE _row_exists = 0`. Govern that exact form by
+            /// ALTER DELETE so `DELETE FROM` needs only the documented ALTER DELETE privilege. Any other
+            /// assignment - including `_row_exists = <expr>` that resurrects/edits the deletion mask -
+            /// stays a real update requiring ALTER UPDATE. The shortcut applies only when `_row_exists`
+            /// is the hidden virtual marker (not an ordinary physical column on some other engine).
+            std::vector<std::string_view> updated_columns;
+            bool deletes_via_row_exists = false;
+            for (const ASTPtr & assignment_ast : command.update_assignments->children)
+            {
+                const auto & assignment = assignment_ast->as<const ASTAssignment &>();
+                if (row_exists_is_lightweight_marker && isLightweightDeleteAssignment(assignment))
+                    deletes_via_row_exists = true;
+                else
+                    updated_columns.emplace_back(assignment.column_name);
+            }
+            if (!updated_columns.empty())
+                required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, updated_columns);
+            if (deletes_via_row_exists)
+                required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
             break;
         }
         case ASTAlterCommand::ADD_COLUMN:
