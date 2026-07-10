@@ -158,6 +158,11 @@ struct ReadSettings
         bool use_long_connections = true;
         size_t min_bytes_for_seek = 2 * 1_MiB;
         size_t max_tail_for_drain = 512 * 1_KiB;
+        /// Consumed bytes kept behind the read position for cheap backward seeks.
+        size_t hold_consumed = 0;
+        /// Fill-ahead (prefetch) lead. Not user-facing; internal readers
+        /// (merges) shrink it for streaming patterns.
+        size_t fill_ahead_lead = 16 * 1_MiB;
     };
     ReaderExecutorSettings reader_executor;
 

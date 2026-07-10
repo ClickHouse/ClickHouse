@@ -53,12 +53,27 @@ private:
     /// base state even across an EOF or exception exit.
     void detachBuffer();
 
+    /// Rewind into the trailing retention store: rebuild `chain` as the held
+    /// tail from `new_pos` plus the live chain. The held stream is contiguous
+    /// by construction (windows arrive sequentially; `held` is cleared on
+    /// executor-delegated seeks), so the only checks are coverage and that the
+    /// held tail still reaches the live front.
+    bool rewindIntoHeld(size_t new_pos);
+
     std::unique_ptr<ReaderExecutor> executor;
+    /// Trailing retention (`Options::hold_consumed`): consumed spans are parked
+    /// in `held` (up to this many bytes) so a backward seek within them
+    /// re-serves from memory instead of refetching.
+    const size_t hold_consumed;
     /// The chain-with-cursor we're currently streaming from. Empty between
     /// windows. `nextImpl` advances it by `working_buffer.size()`,
     /// `seek` either rewinds it via `tryRewind` or replaces it on a
     /// long-distance jump.
     ChainedBuffers chain;
+    /// The retention store: spans the cursor consumed, newest at the back,
+    /// trimmed to the last `hold_consumed` bytes. Shares the chain's blocks
+    /// (node references, no copies). Always empty when `hold_consumed == 0`.
+    ChainedBuffers held;
     /// Logical offset just past the last byte exposed via `working_buffer`.
     /// `getPosition()` subtracts `available()` to get the caller's
     /// current read position.

@@ -354,3 +354,86 @@ TEST(PipelineReadBuffer, MMapReportsNoExternalBufferMode)
     EXPECT_FALSE(buf.supportsExternalBufferMode());
     std::filesystem::remove(path);
 }
+
+TEST(PipelineReadBuffer, HoldConsumedServesBackwardSeekFromMemory)
+{
+    /// The merge read pattern: consume forward, hop back into just-consumed bytes.
+    /// With `hold_consumed` the chain retains a trailing window of consumed nodes,
+    /// so the hop re-serves from memory - no executor seek, no source request; a
+    /// hop beyond the window falls back to the executor and refetches.
+    const size_t size = 64 * 1024;
+    String content(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+    auto counting = std::make_shared<CountingSourceReader>(std::make_shared<MemorySourceReader>(content));
+
+    StoredObjects objects;
+    objects.emplace_back("test", "", size);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 8 * 1024;
+    executor_options.block_size = 4 * 1024;
+    executor_options.hold_consumed = 16 * 1024;
+    auto executor = std::make_unique<ReaderExecutor>(
+        counting, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
+    PipelineReadBuffer buf(std::move(executor));
+
+    std::vector<char> data(24 * 1024);
+    buf.readStrict(data.data(), data.size());
+    EXPECT_TRUE(std::memcmp(data.data(), content.data(), data.size()) == 0);
+    const size_t opens_before = counting->opens;
+
+    /// Hop back inside the hold window.
+    buf.seek(8 * 1024, SEEK_SET);
+    char c = 0;
+    buf.readStrict(&c, 1);
+    EXPECT_EQ(c, content[8 * 1024]);
+    EXPECT_EQ(counting->opens, opens_before) << "a hop inside the hold window must not touch the source";
+
+    /// Re-consume to the end: byte-exact after the rewind.
+    String rest;
+    readStringUntilEOF(rest, buf);
+    EXPECT_EQ(String(1, c) + rest, content.substr(8 * 1024));
+
+    /// A hop beyond the hold window falls back to the executor and refetches.
+    buf.seek(0, SEEK_SET);
+    String all;
+    readStringUntilEOF(all, buf);
+    EXPECT_EQ(all, content);
+    EXPECT_GT(counting->opens, opens_before);
+}
+
+TEST(PipelineReadBuffer, HoldConsumedClearedByFarSeek)
+{
+    /// A far (executor-delegated) seek resets the stream; the retention store
+    /// resets with it - a later backward hop into pre-jump territory must
+    /// refetch rather than serve coverage across the jump hole.
+    const size_t size = 64 * 1024;
+    String content(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        content[i] = static_cast<char>('a' + (i % 26));
+    auto counting = std::make_shared<CountingSourceReader>(std::make_shared<MemorySourceReader>(content));
+
+    StoredObjects objects;
+    objects.emplace_back("test", "", size);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 8 * 1024;
+    executor_options.block_size = 4 * 1024;
+    executor_options.hold_consumed = 16 * 1024;
+    auto executor = std::make_unique<ReaderExecutor>(
+        counting, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
+    PipelineReadBuffer buf(std::move(executor));
+
+    std::vector<char> head(16 * 1024);
+    buf.readStrict(head.data(), head.size());
+
+    buf.seek(48 * 1024, SEEK_SET);   /// far forward: executor path, store cleared
+    char c = 0;
+    buf.readStrict(&c, 1);
+    EXPECT_EQ(c, content[48 * 1024]);
+
+    const size_t opens_before = counting->opens;
+    buf.seek(4 * 1024, SEEK_SET);    /// pre-jump territory: must refetch
+    buf.readStrict(&c, 1);
+    EXPECT_EQ(c, content[4 * 1024]);
+    EXPECT_GT(counting->opens, opens_before);
+}

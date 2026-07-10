@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_window_size", 8388608, 8388608, "New experimental setting to configure the read-ahead window size of the ReaderExecutor."},
             {"reader_executor_block_size", 1048576, 1048576, "New experimental setting to configure the chained-buffer node / block size of the ReaderExecutor."},
             {"reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New experimental setting: fixed plan-window size for the ReaderExecutor (floored at reader_executor_window_size, default one window); raise it to plan further ahead."},
+            {"reader_executor_hold_consumed", 0, 0, "New experimental setting: trailing retention window of the ReaderExecutor read buffer - consumed bytes kept in memory for cheap backward seeks."},
             {"input_format_arrow_use_native_reader", false, true, "New setting to use the native ClickHouse reader for the Arrow and ArrowStream formats instead of the Apache Arrow library."},
             {"output_format_arrow_use_native_writer", false, true, "New setting to use the native ClickHouse writer for the Arrow and ArrowStream formats instead of the Apache Arrow library."},
             {"allow_minmax_index_for_json", true, false, "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"},

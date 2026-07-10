@@ -108,6 +108,7 @@ ReaderExecutor::ReaderExecutor(
     , long_connection_open_range(options.long_connection_open_range)
     , long_connection_max_bound(options.long_connection_max_bound)
     , fill_ahead_lead(options.fill_ahead_lead)
+    , hold_consumed(options.hold_consumed)
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<PoolFetchMachineRunner>(prefetch_pool) : nullptr)
     , local_runner(std::make_unique<LocalFetchMachineRunner>())

@@ -361,6 +361,7 @@ namespace Setting
     extern const SettingsUInt64 reader_executor_block_size;
     extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
     extern const SettingsUInt64 reader_executor_max_tail_for_drain;
+    extern const SettingsUInt64 reader_executor_hold_consumed;
     extern const SettingsBool reader_executor_use_long_connections;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
@@ -8220,6 +8221,7 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
+    res.reader_executor.hold_consumed = settings_ref[Setting::reader_executor_hold_consumed];
     res.page_cache_settings.read_if_exists_otherwise_bypass
         = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
     res.page_cache_settings.random_eviction_for_tests = settings_ref[Setting::page_cache_inject_eviction];

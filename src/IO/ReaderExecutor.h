@@ -148,6 +148,9 @@ public:
         size_t long_connection_max_bound = DEFAULT_LONG_CONNECTION_MAX_BOUND;
         /// Fill-ahead lead for a disk bottom tier (see `DEFAULT_FILL_AHEAD_LEAD`).
         size_t fill_ahead_lead = DEFAULT_FILL_AHEAD_LEAD;
+        /// Consumed bytes `PipelineReadBuffer` keeps behind its position for cheap
+        /// backward seeks (the chain's trailing retention); 0 = release on consume.
+        size_t hold_consumed = 0;
         std::shared_ptr<PrefetchThreadPool> prefetch_pool;
         std::shared_ptr<LongConnectionLimit> long_connection_limit;
         std::shared_ptr<ReaderExecutorLog> reader_executor_log;
@@ -218,6 +221,10 @@ public:
     // ─── Introspection ───────────────────────────────────────────────────
 
     size_t getPosition() const { return position; }
+
+    /// The configured trailing-retention size for the consumer's chain
+    /// (`Options::hold_consumed`); the buffer layer applies it.
+    size_t holdConsumed() const { return hold_consumed; }
 
     /// Logical object path for diagnostics; empty when no objects are configured.
     String getFileName() const { return log_file_path; }
@@ -797,6 +804,7 @@ private:
     size_t long_connection_max_bound;
     /// Fill-ahead lead for a disk bottom tier (Options).
     size_t fill_ahead_lead;
+    size_t hold_consumed = 0;
 
     /// Cursor state.
     size_t position = 0;

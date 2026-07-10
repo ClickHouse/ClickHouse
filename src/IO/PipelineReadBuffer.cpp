@@ -18,6 +18,7 @@ namespace ErrorCodes
 PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_)
     : ReadBufferFromFileBase(0, nullptr, 0)
     , executor(std::move(executor_))
+    , hold_consumed(executor->holdConsumed())
     , read_position(executor->getPosition())
 {
     LOG_DEBUG(log, "Created, total_size={}, read_position={}", executor->totalSize(), read_position);
@@ -82,9 +83,17 @@ off_t PipelineReadBuffer::seek(off_t off, int whence)
         return new_pos;
     }
 
+    if (rewindIntoHeld(new_pos))
+    {
+        LOG_TRACE(log, "seek: rewound into held consumed bytes");
+        read_position = new_pos;
+        return new_pos;
+    }
+
     LOG_TRACE(log, "seek: delegating to executor");
     executor->seek(new_pos);
     chain = ChainedBuffers{};
+    held = ChainedBuffers{};
     read_position = new_pos;
     return static_cast<off_t>(new_pos);
 }
@@ -207,6 +216,31 @@ bool PipelineReadBuffer::checkIfActuallySeekable()
     return !executor->hasUnknownSize();
 }
 
+bool PipelineReadBuffer::rewindIntoHeld(size_t new_pos)
+{
+    if (held.empty())
+        return false;
+    const ByteRange held_range = held.range();
+    if (new_pos < held_range.offset || new_pos >= held_range.end())
+        return false;
+    /// The held tail must still reach the live chain (or the cursor when it is
+    /// drained): a hole in between means those bytes were re-fetched territory.
+    const size_t resume = chain.empty() ? read_position : chain.range().offset;
+    if (held_range.end() < resume)
+        return false;
+
+    /// Rebuild the live chain as [new_pos, held end) + the old live chain, and
+    /// drop the re-opened tail from the store (those bytes are live again and
+    /// will be re-parked as they are re-consumed).
+    ChainedBuffers rebuilt = held.slice(ByteRange{new_pos, held_range.end() - new_pos});
+    rebuilt.append(std::move(chain));
+    chain = std::move(rebuilt);
+    held = new_pos > held_range.offset
+        ? held.slice(ByteRange{held_range.offset, new_pos - held_range.offset})
+        : ChainedBuffers{};
+    return true;
+}
+
 bool PipelineReadBuffer::nextImpl()
 {
     std::optional<Stopwatch> watch;
@@ -222,6 +256,18 @@ bool PipelineReadBuffer::nextImpl()
     /// `working_buffer` / `pos` point into.
     const size_t consumed = working_buffer.size();
     detachBuffer();
+    /// Park the span the chain is about to release: `slice` copies node
+    /// references (no data), so backward seeks within `hold_consumed` re-serve
+    /// from memory. Trim the store from the front to the hold window (`advance`
+    /// keeps a partial front node whole, so memory is bounded by
+    /// `hold_consumed` plus one node).
+    if (hold_consumed && consumed)
+    {
+        held.append(chain.slice(ByteRange{read_position - consumed, consumed}));
+        const ByteRange held_range = held.range();
+        if (held_range.size > hold_consumed)
+            held.advance(held_range.size - hold_consumed);
+    }
     chain.advance(consumed);
 
     if (chain.atEnd())

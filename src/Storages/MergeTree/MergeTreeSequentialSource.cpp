@@ -158,12 +158,18 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     if (read_with_direct_io)
         read_settings.local_fs_settings.direct_io_threshold = 1;
 
-    /// A compact-part merge reads all columns per granule, hopping BACKWARD between column
-    /// streams within each stripe; the executor's forward-only long connection and chain
-    /// rewind miss those hops and reopen per hop, multiplying requests over the legacy
-    /// buffered stream. Merges/mutations read through the legacy path until the executor
-    /// handles the pattern.
-    read_settings.reader_executor.enabled = false;
+    /// The merge read profile for the executor. A compact-part merge re-reads each
+    /// column pass from the block's start stripe - backward hops into bytes the stream
+    /// just consumed - and merges read cache-bypassed, so there is no retention tier
+    /// below: keep a trailing window of consumed bytes so those hops re-serve from
+    /// memory instead of paying a source request per hop. Merges stream granule bands
+    /// with no scan-sized look-ahead to amortise, so shrink the forward machinery too.
+    read_settings.reader_executor.hold_consumed = 2 * 1024 * 1024;
+    read_settings.reader_executor.window_size
+        = std::min<size_t>(read_settings.reader_executor.window_size, 2 * 1024 * 1024);
+    read_settings.reader_executor.plan_look_ahead_max_window
+        = std::min<size_t>(read_settings.reader_executor.plan_look_ahead_max_window, 4 * 1024 * 1024);
+    read_settings.reader_executor.fill_ahead_lead = 4 * 1024 * 1024;
 
     /// Configure throttling
     switch (type)
