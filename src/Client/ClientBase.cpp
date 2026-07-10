@@ -3248,7 +3248,35 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             return false;
 
         const auto & settings = client_context->getSettingsRef();
-        const Dialect dialect = settings[Setting::dialect];
+
+        const char * begin = text.data();
+        const char * end = begin + text.size();
+
+        /// The buffer can hold several statements, and one of them may be a `SET`
+        /// that changes a parser-shaping setting (most importantly the query
+        /// `dialect`) for the statements that follow it. `executeMultiQuery`
+        /// reparses each statement under the settings left by the previously
+        /// executed ones, so mirror that here: keep a local copy of the settings
+        /// and, after each successfully parsed `SET`, apply its changes to that
+        /// copy and rebuild the parser before probing the next statement. Nothing
+        /// is executed -- the changes are applied only to the local copy.
+        /// Tokenization is dialect-independent (every dialect consumes the same
+        /// token stream), so only the parser is rebuilt; the token iterator stays.
+        Settings effective_settings = settings;
+
+        auto make_parser = [&]() -> std::unique_ptr<IParserBase>
+        {
+            const Dialect dialect = effective_settings[Setting::dialect];
+            if (dialect == Dialect::kusto)
+                return std::make_unique<ParserKQLStatement>(end, effective_settings[Setting::allow_settings_after_format_in_insert]);
+            if (dialect == Dialect::prql)
+                return std::make_unique<ParserPRQLQuery>(0, effective_settings[Setting::max_parser_depth], effective_settings[Setting::max_parser_backtracks]);
+            if (dialect == Dialect::promql)
+                return std::make_unique<ParserPrometheusQuery>(effective_settings[Setting::promql_database], effective_settings[Setting::promql_table], Field{effective_settings[Setting::promql_evaluation_time]});
+            if (dialect == Dialect::polyglot)
+                return std::make_unique<ParserPolyglotQuery>(0, effective_settings[Setting::max_parser_depth], effective_settings[Setting::max_parser_backtracks], effective_settings[Setting::polyglot_dialect], end, effective_settings[Setting::allow_experimental_polyglot_dialect]);
+            return std::make_unique<ParserQuery>(end, effective_settings[Setting::allow_settings_after_format_in_insert], effective_settings[Setting::implicit_select]);
+        };
 
         /// The Kusto parser is not a pure probe: `ParserKQLStatement::parseImpl`
         /// records `let` bindings in a thread-local map (and clears it on a
@@ -3258,33 +3286,16 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         /// probing e.g. `let x = 1; print (` and then discarding the buffer
         /// (without submitting it) would leak `x` into subsequent queries in
         /// `clickhouse-local`, where parsing and execution share the same
-        /// thread-local state.
-        const bool restore_kql_bindings = dialect == Dialect::kusto;
-        std::unordered_map<String, String> saved_kql_bindings;
-        if (restore_kql_bindings)
-            saved_kql_bindings = kqlLetBindings();
-        SCOPE_EXIT({
-            if (restore_kql_bindings)
-                kqlLetBindings() = std::move(saved_kql_bindings);
-        });
+        /// thread-local state. Snapshot unconditionally: a `SET dialect = 'kusto'`
+        /// earlier in the buffer can switch the parser to Kusto below even when the
+        /// session dialect is not Kusto.
+        std::unordered_map<String, String> saved_kql_bindings = kqlLetBindings();
+        SCOPE_EXIT({ kqlLetBindings() = std::move(saved_kql_bindings); });
 
-        std::unique_ptr<IParserBase> parser;
-        const char * begin = text.data();
-        const char * end = begin + text.size();
+        std::unique_ptr<IParserBase> parser = make_parser();
 
-        if (dialect == Dialect::kusto)
-            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-        else if (dialect == Dialect::prql)
-            parser = std::make_unique<ParserPRQLQuery>(0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        else if (dialect == Dialect::promql)
-            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
-        else if (dialect == Dialect::polyglot)
-            parser = std::make_unique<ParserPolyglotQuery>(0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
-        else
-            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-
-        unsigned max_parser_depth = static_cast<unsigned>(settings[Setting::max_parser_depth]);
-        unsigned max_parser_backtracks = static_cast<unsigned>(settings[Setting::max_parser_backtracks]);
+        unsigned max_parser_depth = static_cast<unsigned>(effective_settings[Setting::max_parser_depth]);
+        unsigned max_parser_backtracks = static_cast<unsigned>(effective_settings[Setting::max_parser_backtracks]);
 
         Tokens tokens(begin, end, 0, true);
         IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
@@ -3353,6 +3364,26 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
                 /// Otherwise continuation only if the failure is at the end of input.
                 return token_iterator.max().type == TokenType::EndOfStream;
+            }
+
+            /// The statement parsed. If it is a `SET` that changes parser-shaping
+            /// settings, apply it to the local settings copy and rebuild the parser
+            /// so the following statements are probed under the new dialect/settings,
+            /// mirroring `executeMultiQuery` (which reparses each statement after
+            /// running the preceding `SET`). Without this, e.g.
+            /// `SET dialect = 'kusto'; let x = 1; print` typed from SQL mode would
+            /// keep using the SQL parser, fail on the `let`, and be committed --
+            /// running the prefix even though the final `print` is still incomplete.
+            if (const auto * set_query = ast->as<ASTSetQuery>())
+            {
+                /// Skip `profile` like the real SET handling does: applying a
+                /// settings profile needs access control the probe cannot use.
+                SettingsChanges changes;
+                for (const auto & change : set_query->changes)
+                    if (change.name != "profile")
+                        changes.push_back(change);
+                effective_settings.applyChanges(changes);
+                parser = make_parser();
             }
 
             if (token_iterator->isEnd())
