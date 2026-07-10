@@ -73,6 +73,12 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     /// target the policy names that will actually be stored.
     query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
 
+    /// Reject invalid filters on user-facing CREATE/ALTER only. Deserialization of persisted
+    /// policies (ATTACH/replicated/restored) must not fail here; the query-time guard in
+    /// ContextAccess::getRowPolicyFilter rejects such policies when they are actually used.
+    for (const auto & [filter_type, filter] : query.filters)
+        checkRowPolicyFilterExpression(filter);
+
     if (!query.cluster.empty())
     {
         auto required_access = getRequiredAccess();

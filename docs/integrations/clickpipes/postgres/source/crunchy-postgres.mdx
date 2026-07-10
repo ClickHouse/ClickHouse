@@ -1,0 +1,82 @@
+---
+sidebarTitle: 'Crunchy Bridge Postgres'
+description: 'Set up Crunchy Bridge Postgres as a source for ClickPipes'
+slug: /integrations/clickpipes/postgres/source/crunchy-postgres
+title: 'Crunchy Bridge Postgres source setup guide'
+keywords: ['crunchy bridge', 'postgres', 'clickpipes', 'logical replication', 'data ingestion']
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+ClickPipes supports Postgres version 12 and later.
+
+## Enable logical replication {#enable-logical-replication}
+
+Crunchy Bridge comes with logical replication enabled by [default](https://docs.crunchybridge.com/how-to/logical-replication). Ensure that the settings below are configured correctly. If not, adjust them accordingly.
+
+```sql
+SHOW wal_level; -- should be logical
+SHOW max_wal_senders; -- should be 10
+SHOW max_replication_slots; -- should be 10
+```
+
+## Creating ClickPipes user and granting permissions {#creating-clickpipes-user-and-granting-permissions}
+
+Connect to your Crunchy Bridge Postgres through the `postgres` user and run the below commands:
+
+1. Create a dedicated user for ClickPipes:
+
+    ```sql
+    CREATE USER clickpipes_user PASSWORD 'some-password';
+    ```
+
+2. Grant schema-level, read-only access to the user you created in the previous step. The following example shows permissions for the `public` schema. Repeat these commands for each schema containing tables you want to replicate:
+
+    ```sql
+    GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+    GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+    ```
+
+3. Grant replication privileges to the user:
+
+    ```sql
+     ALTER USER clickpipes_user WITH REPLICATION;
+    ```
+
+4. Create a [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) with the tables you want to replicate. We strongly recommend only including the tables you need in the publication to avoid performance overhead.
+
+<Warning>
+   Any table included in the publication must either have a **primary key** defined _or_ have its **replica identity** configured to `FULL`. See the [Postgres FAQs](/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) for guidance on scoping.
+</Warning>
+
+   - To create a publication for specific tables:
+
+      ```sql
+      CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+      ```
+
+   - To create a publication for all tables in a specific schema:
+
+      ```sql
+      CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+      ```
+
+   The `clickpipes` publication will contain the set of change events generated from the specified tables, and will later be used to ingest the replication stream.
+
+## Safe list ClickPipes IPs {#safe-list-clickpipes-ips}
+
+Safelist [ClickPipes IPs](/integrations/clickpipes/home#list-of-static-ips) by adding the Firewall Rules in Crunchy Bridge.
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp" alt="Where to find Firewall Rules in Crunchy Bridge?" border/>
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/add_firewall_rules_crunchy_bridge.webp" alt="Add the Firewall Rules for ClickPipes" border/>
+
+## What's next? {#whats-next}
+
+You can now [create your ClickPipe](/integrations/clickpipes/postgres/index) and start ingesting data from your Postgres instance into ClickHouse Cloud.
+Make sure to note down the connection details you used while setting up your Postgres instance as you will need them during the ClickPipe creation process.

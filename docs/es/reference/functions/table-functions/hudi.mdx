@@ -1,0 +1,54 @@
+---
+description: 'Proporciona una interfaz tipo tabla de solo lectura para las tablas
+  Hudi en Amazon S3.'
+sidebarTitle: 'hudi'
+slug: /sql-reference/table-functions/hudi
+title: 'hudi'
+doc_type: 'reference'
+---
+
+Proporciona una interfaz tipo tabla de solo lectura para las tablas Hudi en Amazon S3.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+| Argumento                                    | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                                        | URL del bucket con la ruta a una tabla Hudi existente en S3.                                                                                                                                                                                                                                                                                                                                                                  |
+| `aws_access_key_id`, `aws_secret_access_key` | Credenciales a largo plazo para el usuario de la cuenta de [AWS](https://aws.amazon.com/). Puede utilizarlas para autenticar sus solicitudes. Estos parámetros son opcionales. Si no se especifican credenciales, se usarán las de la configuración de ClickHouse. Para obtener más información, consulte [Using S3 for Data Storage](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3). |
+| `format`                                     | El [formato](/es/reference/formats/index) del archivo.                                                                                                                                                                                                                                                                                                                                                                           |
+| `structure`                                  | Estructura de la tabla. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                               |
+| `compression`                                | El parámetro es opcional. Valores admitidos: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. De forma predeterminada, la compresión se detecta automáticamente a partir de la extensión del archivo.                                                                                                                                                                                                                   |
+| `extra_credentials`                          | El parámetro es opcional. Se usa para pasar un `role_arn` para el acceso basado en roles en ClickHouse Cloud. Consulte [Secure S3](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver los pasos de configuración.                                                                                                                                                                                       |
+
+<div id="returned_value">
+  ## Valor devuelto
+</div>
+
+Una tabla con la estructura especificada para leer datos de la tabla Hudi especificada en S3.
+
+<div id="virtual-columns">
+  ## Columnas virtuales
+</div>
+
+* `_path` — Ruta del archivo. Tipo: `LowCardinality(String)`.
+* `_file` — Nombre del archivo. Tipo: `LowCardinality(String)`.
+* `_size` — Tamaño del archivo en bytes. Tipo: `Nullable(UInt64)`. Si se desconoce el tamaño del archivo, el valor es `NULL`.
+* `_time` — Hora de la última modificación del archivo. Tipo: `Nullable(DateTime)`. Si se desconoce la hora, el valor es `NULL`.
+* `_etag` — El etag del archivo. Tipo: `LowCardinality(String)`. Si se desconoce el etag, el valor es `NULL`.
+
+<div id="related">
+  ## Relacionados
+</div>
+
+* [motor Hudi](/es/reference/engines/table-engines/integrations/hudi)
+* [función de tabla de clúster de Hudi](/es/reference/functions/table-functions/hudiCluster)

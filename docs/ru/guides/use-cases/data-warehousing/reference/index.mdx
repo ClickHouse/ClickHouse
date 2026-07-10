@@ -1,0 +1,18 @@
+---
+description: 'Справочные руководства по подключению ClickHouse к каталогам озёр данных, включая AWS Glue, Unity, REST, Lakekeeper, Nessie и OneLake.'
+slug: /use-cases/data-lake/reference
+title: 'Руководства по каталогам'
+keywords: ['озеро данных', 'lakehouse', 'каталог', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'landing-page'
+---
+
+ClickHouse интегрируется с различными каталогами озёр данных через движок базы данных [`DataLakeCatalog`](/ru/reference/engines/database-engines/datalake). В приведённых ниже руководствах показано, как подключить ClickHouse к каждому поддерживаемому каталогу, включая примеры конфигурации, аутентификации и запросов.
+
+| Каталог                                                                      | Описание                                                                                                              |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [AWS Glue](/ru/guides/use-cases/data-warehousing/glue-catalog)                  | Выполняйте запросы к таблицам Iceberg, зарегистрированным в AWS Glue Data Catalog, на основе данных, хранящихся в S3. |
+| [Databricks Unity Catalog](/ru/guides/use-cases/data-warehousing/unity-catalog) | Подключайтесь к Databricks Unity Catalog для работы с таблицами Delta Lake и Iceberg.                                 |
+| [Iceberg REST Catalog](/ru/guides/use-cases/data-warehousing/rest-catalog)      | Используйте любой каталог, реализующий спецификацию Iceberg REST, например Tabular.                                   |
+| [Lakekeeper](/ru/guides/use-cases/data-warehousing/lakekeeper-catalog)          | Подключайтесь к Lakekeeper Catalog для работы с таблицами Iceberg.                                                    |
+| [Project Nessie](/ru/guides/use-cases/data-warehousing/nessie-catalog)          | Выполняйте запросы к таблицам Iceberg с помощью Nessie Catalog с управлением версиями данных в стиле Git.             |
+| [Microsoft OneLake](/ru/guides/use-cases/data-warehousing/onelake-catalog)      | Выполняйте запросы к таблицам Iceberg в Microsoft Fabric OneLake.                                                     |
