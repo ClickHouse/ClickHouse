@@ -132,3 +132,33 @@ SELECT 'special: hasAnyTokens([C]) -> 3, 4 (plain C only)';
 SELECT id FROM tab_special_tokens WHERE hasAnyTokens(description, ['C']) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE tab_special_tokens;
+
+-- 5. Issue #103783 (`hasPhrase`): with `splitByRegexp` the phrase `C# and` must match only a row that
+-- actually contains the token `C#`, not one containing `C++`. With `splitByNonAlpha` both `C#` and `C++`
+-- collapse to `c`, so `hasPhrase(description, 'C# and')` would falsely match `... C++ and ...`. This works
+-- because the text index injects its tokenizer into `hasPhrase` (previously `splitByRegexp` was excluded).
+
+DROP TABLE IF EXISTS tab_phrase;
+
+CREATE TABLE tab_phrase
+(
+    id UInt64,
+    description String,
+    INDEX idx description TYPE text(tokenizer = splitByRegexp('[^\\p{L}\\p{N}#+]+'), positions = 1) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2, min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1, allow_experimental_text_index_positions = 1;
+
+INSERT INTO tab_phrase VALUES
+    (1, 'we use C++ and go'),
+    (2, 'built with C# and react'),
+    (3, 'C is our language');
+
+SELECT 'phrase: hasPhrase([C# and]) -> 2 (not row 1 with C++)';
+SELECT id FROM tab_phrase WHERE hasPhrase(description, 'C# and') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT 'phrase: hasPhrase([C++ and]) -> 1';
+SELECT id FROM tab_phrase WHERE hasPhrase(description, 'C++ and') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+DROP TABLE tab_phrase;

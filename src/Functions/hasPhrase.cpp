@@ -188,6 +188,7 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
     static const UnorderedSetWithMemoryTracking<ITokenizer::Type> supported_types = {
         ITokenizer::Type::SplitByNonAlpha,
         ITokenizer::Type::SplitByString,
+        ITokenizer::Type::SplitByRegexp,
         ITokenizer::Type::AsciiCJK,
         ITokenizer::Type::Ngrams,
     };
