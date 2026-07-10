@@ -120,9 +120,6 @@ public:
         return sink_stream_size;
     }
 
-    size_t getViewProcessingNumThreads() const;
-
-
 protected:
     InsertDependenciesBuilder(
         StoragePtr table,
