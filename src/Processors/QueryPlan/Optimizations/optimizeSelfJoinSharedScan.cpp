@@ -95,21 +95,45 @@ void tryOptimizeSelfJoinSharedScan(
     if (join_op.strictness != JoinStrictness::All)
         return;
 
-    /// Compatible algorithms are those with a producer-first (`FillRightFirst`) pipeline: the build
-    /// side is fully consumed before the probe side is read, so the probe scan can replay the
-    /// buffer filled by the build scan. `GRACE_HASH` qualifies too and is kept so that a
-    /// user-requested on-disk algorithm is not silently downgraded to an in-memory one.
-    /// `AUTO` also qualifies: it resolves to `SpillingHashJoin`, `JoinSwitcher`, or `HashJoin`,
-    /// all producer-first, and stripping it would replace the user's configured under-memory-pressure
-    /// fallback (spill to disk or switch to merge join) with an exception.
-    const auto is_compatible_algorithm = [](JoinAlgorithm algo)
-    {
-        return algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH || algo == JoinAlgorithm::GRACE_HASH
-            || algo == JoinAlgorithm::AUTO;
-    };
-
+    /// The rewrite is valid only when the join is executed with a producer-first
+    /// (`FillRightFirst`) pipeline: the build side is fully consumed before the probe side is
+    /// read, so the probe scan can replay the buffer filled by the build scan.
+    /// `chooseJoinAlgorithm` walks `join_algorithms` in order and executes the first algorithm
+    /// that applies, so walk the same list and prove that whichever entry wins is producer-first.
+    /// Otherwise (e.g. `join_algorithm = 'full_sorting_merge,hash'`) skip the rewrite: the user's
+    /// algorithm list must keep selecting the same algorithm it would select without the rewrite.
     const auto & join_settings = join_step->getJoinSettings();
-    if (std::ranges::none_of(join_settings.join_algorithms, is_compatible_algorithm))
+    bool producer_first_guaranteed = false;
+    for (const auto algo : join_settings.join_algorithms)
+    {
+        /// Never applies here: a direct join requires a key-value build storage, while this
+        /// rewrite requires a plain `MergeTree` scan on the build side.
+        if (algo == JoinAlgorithm::DIRECT)
+            continue;
+
+        /// These always create a join, and always a producer-first one, so no later entry can
+        /// win: the hash family; `default`, which means `direct,hash`; and `auto`, which resolves
+        /// to `SpillingHashJoin`, `JoinSwitcher`, or `HashJoin`.
+        if (algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH || algo == JoinAlgorithm::AUTO
+            || algo == JoinAlgorithm::DEFAULT)
+        {
+            producer_first_guaranteed = true;
+            break;
+        }
+
+        /// Producer-first when chosen, but `chooseJoinAlgorithm` falls through to the next entry
+        /// when grace hash does not support the join, so the rest of the list must be safe too.
+        if (algo == JoinAlgorithm::GRACE_HASH)
+        {
+            producer_first_guaranteed = true;
+            continue;
+        }
+
+        /// A merge-style algorithm (`full_sorting_merge`, `partial_merge`, ...) may win; skip the
+        /// rewrite instead of overriding the user's algorithm choice.
+        return;
+    }
+    if (!producer_first_guaranteed)
         return;
 
     /// Under `join_overflow_mode = 'break'` the build side stops consuming its input once
@@ -169,8 +193,6 @@ void tryOptimizeSelfJoinSharedScan(
     else
         node.children[0] = &ref_node;
 
-    auto & mutable_join_algorithms = join_step->getJoinSettings().join_algorithms;
-    std::erase_if(mutable_join_algorithms, [&](auto algo) { return !is_compatible_algorithm(algo); });
     join_step->setOptimized();
 }
 
