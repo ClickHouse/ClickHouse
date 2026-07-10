@@ -1,0 +1,243 @@
+---
+sidebarTitle: 'Confluent Platform용 HTTP Sink 커넥터'
+slug: /integrations/kafka/cloud/confluent/http
+description: 'Kafka Connect 및 ClickHouse와 함께 HTTP Sink 커넥터 사용'
+title: 'Confluent HTTP Sink 커넥터'
+doc_type: 'guide'
+keywords: ['Confluent HTTP Sink Connector', 'HTTP Sink ClickHouse', 'Kafka HTTP 커넥터
+', 'ClickHouse HTTP 통합', 'Confluent Cloud HTTP Sink']
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+HTTP Sink 커넥터는 데이터 타입에 구애받지 않으므로 Kafka 스키마가 필요 없으며, 맵과 배열 같은 ClickHouse 고유의 데이터 타입도 지원합니다. 이러한 유연성이 추가되는 대신 구성은 다소 더 복잡해집니다.
+
+아래에서는 단일 Kafka 토픽에서 메시지를 가져와 ClickHouse 테이블에 행을 삽입하는 간단한 설치 방법을 설명합니다.
+
+<Note>
+  HTTP Connector는 [Confluent Enterprise License](https://docs.confluent.io/kafka-connect-http/current/overview.html#license)에 따라 배포됩니다.
+</Note>
+
+<div id="quick-start-steps">
+  ### 빠른 시작 절차
+</div>
+
+<div id="1-gather-your-connection-details">
+  #### 1. 연결 정보 수집
+</div>
+
+<ConnectionDetails />
+
+<div id="2-run-kafka-connect-and-the-http-sink-connector">
+  #### 2. Kafka Connect와 HTTP Sink 커넥터 실행
+</div>
+
+두 가지 옵션이 있습니다:
+
+* **자가 관리형:** Confluent 패키지를 다운로드하여 로컬에 설치합니다. 커넥터 설치는 [여기](https://docs.confluent.io/kafka-connect-http/current/overview.html)에 문서화된 설치 지침을 따르십시오.
+  confluent-hub 설치 방법을 사용하는 경우 로컬 설정 파일이 업데이트됩니다.
+
+* **Confluent Cloud:** Kafka 호스팅에 Confluent Cloud를 사용하는 경우 HTTP Sink의 완전 관리형 버전을 사용할 수 있습니다. 이 경우 ClickHouse 환경은 Confluent Cloud에서 액세스할 수 있어야 합니다.
+
+<Note>
+  다음 예시는 Confluent Cloud를 기준으로 합니다.
+</Note>
+
+<div id="3-create-destination-table-in-clickhouse">
+  #### 3. ClickHouse에 대상 테이블 생성
+</div>
+
+연결 테스트에 앞서, 먼저 ClickHouse Cloud에 테스트 테이블을 생성하십시오. 이 테이블은 Kafka에서 전달되는 데이터를 수신합니다:
+
+```sql
+CREATE TABLE default.my_table
+(
+    `side` String,
+    `quantity` Int32,
+    `symbol` String,
+    `price` Int32,
+    `account` String,
+    `userid` String
+)
+ORDER BY tuple()
+```
+
+<div id="4-configure-http-sink">
+  #### 4. HTTP Sink 구성
+</div>
+
+Kafka 토픽과 HTTP Sink 커넥터 인스턴스를 생성합니다:
+
+<Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="HTTP Sink 커넥터를 생성하는 방법을 보여주는 Confluent Cloud 인터페이스" border />
+
+<br />
+
+HTTP Sink 커넥터를 구성합니다:
+
+* 생성한 토픽 이름을 입력합니다
+* 인증
+  * `HTTP Url` - `INSERT` 쿼리가 지정된 ClickHouse Cloud URL `<protocol>://<clickhouse_host>:<clickhouse_port>?query=INSERT%20INTO%20<database>.<table>%20FORMAT%20JSONEachRow`. **참고**: 쿼리는 인코딩해야 합니다.
+  * `Endpoint Authentication type` - BASIC
+  * `Auth username` - ClickHouse 사용자 이름
+  * `Auth password` - ClickHouse 비밀번호
+
+<Note>
+  이 HTTP Url은 오류가 발생하기 쉽습니다. 문제를 방지하려면 이스케이프 처리를 정확히 하십시오.
+</Note>
+
+<Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="HTTP Sink 커넥터의 인증 설정을 보여주는 Confluent Cloud 인터페이스" border />
+
+<br />
+
+* 구성
+  * `Input Kafka record value format` 소스 데이터에 따라 다르지만, 대부분의 경우 JSON 또는 Avro를 사용합니다. 아래 설정에서는 `JSON`을 가정합니다.
+  * `advanced configurations` 섹션에서:
+    * `HTTP Request Method` - POST로 설정합니다
+    * `Request Body Format` - json
+    * `Batch batch size` - ClickHouse 권장 사항에 따라 **최소 1000**으로 설정합니다.
+    * `Batch json as array` - true
+    * `Retry on HTTP codes` - 400-500으로 설정하되 필요에 따라 조정하십시오. 예를 들어 ClickHouse 앞단에 HTTP 프록시가 있는 경우 달라질 수 있습니다.
+    * `Maximum Reties` - 기본값(10)이 적절하지만, 재시도 안정성을 높이려면 조정해도 됩니다.
+
+<Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="HTTP Sink 커넥터의 고급 구성 옵션을 보여주는 Confluent Cloud 인터페이스" border />
+
+<div id="5-testing-the-connectivity">
+  #### 5. 연결 테스트
+</div>
+
+HTTP Sink에 구성한 토픽에 메시지를 생성하세요
+
+<Image img="/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp" size="md" alt="Kafka 토픽에서 테스트 메시지를 생성하는 방법을 보여주는 Confluent Cloud 인터페이스" border />
+
+<br />
+
+그리고 생성한 메시지가 ClickHouse 인스턴스에 기록되었는지 확인하세요.
+
+<div id="troubleshooting">
+  ### 문제 해결
+</div>
+
+<div id="http-sink-doesnt-batch-messages">
+  #### HTTP Sink가 메시지를 배칭하지 않는 경우
+</div>
+
+[Sink 문서](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp)에 따르면 다음과 같습니다.
+
+> Kafka header 값이 서로 다른 메시지가 포함된 경우 HTTP Sink 커넥터는 요청을 배칭하지 않습니다.
+
+1. Kafka 레코드의 key가 동일한지 확인하십시오.
+2. HTTP API URL에 매개변수를 추가하면 각 레코드마다 고유한 URL이 생성될 수 있습니다. 따라서 추가 URL 매개변수를 사용하면 배칭이 비활성화됩니다.
+
+<div id="400-bad-request">
+  #### 400 잘못된 요청
+</div>
+
+<div id="cannot_parse_quoted_string">
+  ##### CANNOT_PARSE_QUOTED_STRING
+</div>
+
+JSON 객체를 `String` 컬럼에 삽입할 때 HTTP Sink가 다음 메시지와 함께 실패하는 경우:
+
+```response
+Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote: (while reading the value of key key_name): While executing JSONEachRowRowInputFormat: (at row 1). (CANNOT_PARSE_QUOTED_STRING)
+```
+
+URL에서 `input_format_json_read_objects_as_strings=1` 설정을 인코딩된 문자열 `SETTINGS%20input_format_json_read_objects_as_strings%3D1`로 지정하십시오
+
+<div id="load-the-github-dataset-optional">
+  ### GitHub 데이터셋 로드(선택 사항)
+</div>
+
+이 예시에서는 GitHub 데이터셋의 배열 필드를 그대로 유지합니다. 예시에서는 비어 있는 `github` topic이 있다고 가정하고, Kafka에 메시지를 삽입하기 위해 [kcat](https://github.com/edenhill/kcat)을 사용합니다.
+
+<div id="1-prepare-configuration">
+  ##### 1. 구성 준비
+</div>
+
+설치 유형에 맞는 Connect 설정은 [이 지침](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#set-up-a-local-connect-worker-with-cp-install)을 따르십시오. 이때 standalone과 분산 클러스터의 차이점을 유의하십시오. Confluent Cloud를 사용하는 경우에는 분산 설정이 해당됩니다.
+
+가장 중요한 매개변수는 `http.api.url`입니다. ClickHouse의 [HTTP 인터페이스](/ko/concepts/features/interfaces/http)에서는 INSERT 문을 URL 매개변수로 인코딩해야 합니다. 여기에는 포맷(이 경우 `JSONEachRow`)과 대상 데이터베이스가 포함되어야 합니다. 포맷은 Kafka 데이터와 일치해야 하며, 이 데이터는 HTTP payload에서 문자열로 변환됩니다. 이러한 매개변수는 URL 이스케이프 처리해야 합니다. GitHub 데이터셋에 대한 이 포맷의 예시는 아래와 같습니다(ClickHouse를 로컬에서 실행한다고 가정).
+
+```response
+<protocol>://<clickhouse_host>:<clickhouse_port>?query=INSERT%20INTO%20<database>.<table>%20FORMAT%20JSONEachRow
+
+http://localhost:8123?query=INSERT%20INTO%20default.github%20FORMAT%20JSONEachRow
+```
+
+다음 추가 매개변수는 HTTP Sink를 ClickHouse와 함께 사용할 때 유용합니다. 전체 매개변수 목록은 [여기](https://docs.confluent.io/kafka-connect-http/current/connector_config.html)에서 확인할 수 있습니다.
+
+* `request.method` - **POST**로 설정합니다.
+* `retry.on.status.codes` - 모든 오류 코드에서 재시도하려면 400-500으로 설정합니다. 데이터에서 예상되는 오류에 맞게 조정하십시오.
+* `request.body.format` - 대부분의 경우 JSON으로 설정합니다.
+* `auth.type` - ClickHouse에서 인증을 사용하는 경우 BASIC으로 설정합니다. 현재는 ClickHouse와 호환되는 다른 인증 메커니즘은 지원되지 않습니다.
+* `ssl.enabled` - SSL을 사용하는 경우 true로 설정합니다.
+* `connection.user` - ClickHouse 사용자 이름입니다.
+* `connection.password` - ClickHouse 비밀번호입니다.
+* `batch.max.size` - 단일 배치로 전송할 행 수입니다. 충분히 큰 값으로 설정되어 있는지 확인하십시오. ClickHouse [권장 사항](/ko/reference/statements/insert-into#performance-considerations)에 따르면 1000은 최소값으로 간주해야 합니다.
+* `tasks.max` - HTTP Sink 커넥터는 하나 이상의 작업을 실행할 수 있습니다. 이를 통해 성능을 높일 수 있습니다. 배치 크기와 함께 성능을 개선하는 주요 수단입니다.
+* `key.converter` - 키의 타입에 맞게 설정합니다.
+* `value.converter` - topic의 데이터 타입에 따라 설정합니다. 이 데이터에는 스키마가 필요하지 않습니다. 여기서 사용하는 포맷은 `http.api.url` 매개변수에 지정된 FORMAT과 일치해야 합니다. 가장 간단한 방법은 JSON과 org.apache.kafka.connect.json.JsonConverter 컨버터를 사용하는 것입니다. org.apache.kafka.connect.storage.StringConverter 컨버터를 사용해 값을 문자열로 처리하는 것도 가능합니다. 다만 이 경우에는 사용자가 함수로 삽입 SQL 문에서 값을 추출해야 합니다. io.confluent.connect.avro.AvroConverter 컨버터를 사용하는 경우 ClickHouse는 [Avro 포맷](/ko/reference/formats/Avro/Avro)도 지원합니다.
+
+프록시, 재시도, 고급 SSL 구성 방법을 포함한 전체 설정 목록은 [여기](https://docs.confluent.io/kafka-connect-http/current/connector_config.html)에서 확인할 수 있습니다.
+
+GitHub 샘플 데이터용 예시 설정 파일은 [여기](https://github.com/ClickHouse/clickhouse-docs/tree/main/docs/integrations/data-ingestion/kafka/code/connectors/http_sink)에서 확인할 수 있습니다. 이는 Connect가 standalone 모드로 실행되고 Kafka가 Confluent Cloud에서 호스팅된다고 가정합니다.
+
+<div id="2-create-the-clickhouse-table">
+  ##### 2. ClickHouse 테이블 생성
+</div>
+
+테이블이 생성되었는지 확인하십시오. 표준 MergeTree를 사용하는 최소 GitHub 데이터셋의 예시는 아래와 같습니다.
+
+```sql
+CREATE TABLE github
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4,'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
+
+```
+
+<div id="3-add-data-to-kafka">
+  ##### 3. Kafka에 데이터 적재
+</div>
+
+Kafka에 메시지를 전송합니다. 아래에서는 [kcat](https://github.com/edenhill/kcat)을 사용해 메시지 1만 개를 전송합니다.
+
+```bash
+head -n 10000 github_all_columns.ndjson | kcat -b <host>:<port> -X security.protocol=sasl_ssl -X sasl.mechanisms=PLAIN -X sasl.username=<username>  -X sasl.password=<password> -t github
+```
+
+대상 테이블(target table) &quot;Github&quot;를 간단히 조회해 보면 데이터가 삽입된 것을 확인할 수 있습니다.
+
+```sql
+SELECT count() FROM default.github;
+
+| count\(\) |
+| :--- |
+| 10000 |
+
+```

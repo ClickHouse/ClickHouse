@@ -37,6 +37,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_suspicious_types_in_group_by", 1);
     context->setSetting("allow_suspicious_types_in_order_by", 1);
     context->setSetting("allow_suspicious_indices", 1);
+    context->setSetting("allow_minmax_index_for_json", 1);
     context->setSetting("allow_suspicious_codecs", 1);
     context->setSetting("allow_hyperscan", 1);
     context->setSetting("allow_simdjson", 1);
@@ -71,6 +72,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_database_paimon_rest_catalog", 1);
     context->setSetting("allow_experimental_object_storage_queue_hive_partitioning", 1);
     context->setSetting("allow_experimental_json_lazy_type_hints", 1);
+    context->setSetting("allow_experimental_url_wildcard_from_index_pages", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
 
     context->setSetting("allow_experimental_ai_functions", 1);

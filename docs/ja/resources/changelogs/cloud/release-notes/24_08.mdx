@@ -1,0 +1,70 @@
+---
+slug: /changelogs/24.8
+title: 'Cloud 向け v24.8 変更履歴'
+description: 'v24.8 の迅速リリース版変更履歴'
+keywords: ['変更履歴', 'クラウド']
+sidebarTitle: '24.8'
+doc_type: 'changelog'
+---
+
+v24.8 リリースに基づく、ClickHouse Cloud サービスに関する主な変更点。
+
+<div id="backward-incompatible-change">
+  ## 後方互換性を持たない変更
+</div>
+
+* Variant データ型のバイナリ シリアライゼーションを変更しました。単一の variant しか含まない granule、または NULL 値のみを含む granule で、同じ discriminator を何度も書き込まないようにする compact モードを追加しました。あわせて、デフォルトで有効な MergeTree 設定 `use_compact_variant_discriminators_serialization` も追加しました。なお、Variant 型は引き続き Experimental であるため、このシリアライゼーション上の後方互換性を持たない変更の影響を受けるのは、以前にサポートと連携してこの機能を早期に有効化していた場合に限られます。[#62774](https://github.com/ClickHouse/ClickHouse/pull/62774) (Kruglov Pavel)。
+
+* Replicated データベースでの `CREATE MATERIALIZED VIEW ... ENGINE Replicated*MergeTree POPULATE AS SELECT ...` を禁止しました。この PR は、現在も ReplicatedMergeTree を使用しているユーザーにのみ関係します。[#63963](https://github.com/ClickHouse/ClickHouse/pull/63963) (vdimir)。
+
+* Metric `KeeperOutstandingRequets` は `KeeperOutstandingRequests` に名称変更されました。これにより、[#66179](https://github.com/ClickHouse/ClickHouse/issues/66179) で報告されたタイプミスを修正しました。[#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze)。
+
+* `clickhouse-client` と `clickhouse-local` のデフォルトが、単一クエリ モードから複数クエリ モードに変わりました。たとえば、`clickhouse-client -q "SELECT 1; SELECT 2"` がそのまま動作するようになり、従来必要だった `--multiquery` (または `-n`) の追加は不要になりました。`--multiquery`/`-n` スイッチは廃止されました。複数クエリ ステートメント内の `INSERT` クエリは、`FORMAT` clause に応じて特別に扱われます。`FORMAT` が `VALUES` (最も一般的なケース) の場合、`INSERT` ステートメントの終端はクエリ末尾のセミコロン `;` で表されます。それ以外のすべての フォーマット (たとえば `CSV` や `JSONEachRow`) では、`INSERT` ステートメントの終端はクエリ末尾の 2 つの改行 `\n\n` で表されます。[#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear)。
+
+* 以前のバージョンでは、データ型名の末尾に `WithDictionary` を付けることで、LowCardinality データ型の別構文を使用できました。これは初期段階の実装で、文書化も公開もされていませんでした。現在は非推奨です。この構文を使用していた場合は、テーブルに対して `ALTER` を実行し、データ型名を `LowCardinality` に変更する必要があります。[#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov)。
+
+* distributed な宛先テーブルと組み合わせて使用した Buffer ストレージの論理エラーを修正しました。これは後方互換性を持たない変更です。distributed な宛先テーブルに対して Buffer を使用するクエリは、そのテーブルがクエリ内に複数回現れる場合 (たとえば self-join) 、動作しなくなる可能性があります。[#67015](https://github.com/vdimir) (vdimir)。
+
+* 以前のバージョンでは、ガンマ関数に基づくランダム分布の関数 (Chi-Squared、Student、Fisher など) を、0 に近い負の argument で呼び出すと、計算が長時間かかったり無限ループになったりすることがありました。新しいバージョンでは、これらの関数を 0 または負の argument で呼び出すと例外が発生します。これにより [#67297](https://github.com/ClickHouse/ClickHouse/issues/67297) がクローズされます。[#67326](https://github.com/ClickHouse/ClickHouse/pull/67326) (Alexey Milovidov)。
+
+* 以前のバージョンでは、`arrayWithConstant` は非常に大きな配列の生成を求められると低速になることがありました。新しいバージョンでは、1 配列あたり 1 GB に制限されます。これにより [#32754](https://github.com/ClickHouse/ClickHouse/issues/32754) がクローズされます。[#67741](https://github.com/ClickHouse/ClickHouse/pull/67741) (Alexey Milovidov)。
+
+* `REPLACE` modifier のフォーマットを修正しました (括弧の省略を禁止) 。[#67774](https://github.com/ClickHouse/ClickHouse/pull/67774) (Azat Khuzhin)。
+
+<div id="new-feature">
+  ## 新機能
+</div>
+
+* クエリ内で名前付きタプルを構築できるよう、関数 tuple を拡張しました。あわせて、タプルから名前を抽出する関数 tupleNames を導入しました。[#54881](https://github.com/ClickHouse/ClickHouse/pull/54881) (Amos Bird).
+
+* full&#95;sorting&#95;join アルゴリズムで ASOF JOIN をサポートしました。[#54493](https://github.com/ClickHouse/ClickHouse/issues/54493) を解消します。 [#55051](https://github.com/ClickHouse/ClickHouse/pull/55051) (vdimir).
+
+* 新しい テーブル関数 である fuzzQuery を追加しました。この関数を使うと、指定したクエリ文字列にランダムな変更を加えられます。例: SELECT query FROM fuzzQuery(&#39;SELECT 1&#39;);. [#62103](https://github.com/ClickHouse/ClickHouse/pull/62103) (pufit).
+
+* 新しいウィンドウ関数 percent&#95;rank を追加しました。 [#62747](https://github.com/ClickHouse/ClickHouse/pull/62747) (lgbo).
+
+* clickhouse-client で JWT 認証をサポートしました。 [#62829](https://github.com/ClickHouse/ClickHouse/pull/62829) (Konstantin Bogdanov).
+
+* SQL 関数 changeYear、changeMonth、changeDay、changeHour、changeMinute、changeSecond を追加しました。たとえば、SELECT changeMonth(toDate(&#39;2024-06-14&#39;), 7) は日付 2024-07-14 を返します。 [#63186](https://github.com/ClickHouse/ClickHouse/pull/63186) (cucumber95).
+
+* system.errors テーブルのエラー値の履歴を保持し、定期的にディスクへフラッシュされる system.error&#95;log を追加しました。 [#65381](https://github.com/ClickHouse/ClickHouse/pull/65381) (Pablo Marcos).
+
+* 集約関数 groupConcat を追加しました。arrayStringConcat( groupArray(column), &#39;,&#39;) とほぼ同じです。受け取れるパラメータは 2 つで、文字列の区切り文字と処理する要素数です。 [#65451](https://github.com/ClickHouse/ClickHouse/pull/65451) (Yarik Briukhovetskyi).
+
+* AzureQueue ストレージを追加しました。 [#65458](https://github.com/ClickHouse/ClickHouse/pull/65458) (Kseniia Sumarokova).
+
+* Parquet ファイルへの page index の書き込みを無効化/有効化する新しい設定を追加しました。 [#65475](https://github.com/ClickHouse/ClickHouse/pull/65475) (lgbo).
+
+* テーブル関数 file で、ディレクトリパスの末尾にワイルドカード * を自動的に追加するようにしました。 [#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
+
+* 非対話型モードの client に --memory-usage オプションを追加しました。 [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+
+* S3 table engine に &#95;etag 仮想カラムを追加しました。 [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312) を修正しました。 [#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
+
+* このプルリクエストでは、複数のエンジン (File、URL、S3、AzureBlobStorage、HDFS) 向けに Hive-style パーティション化を導入しています。Hive-style パーティション化では、データをパーティション化されたサブディレクトリに整理することで、大規模なデータセットのクエリと管理を効率化します。現時点では、適切な名前とデータを持つ仮想カラムを作成するだけです。後続の PR で、適切なデータのフィルタリング (パフォーマンス向上) が導入されます。 [#65997](https://github.com/ClickHouse/ClickHouse/pull/65997) (Yarik Briukhovetskyi).
+
+* spark 互換性のため、関数 printf を追加しました。 [#66257](https://github.com/ClickHouse/ClickHouse/pull/66257) (李扬).
+
+* 関数 readWKTLineString を使用して、WKT フォーマットの MULTILINESTRING Geometry を読み取る機能を追加しました。 [#67647](https://github.com/ClickHouse/ClickHouse/pull/67647) (Jacob Reckhard).
+
+* query cache にタグ付け (ネームスペース) メカニズムを追加しました。異なるタグを持つ同じクエリは、query cache では別のものとして扱われます。例: SELECT 1 SETTINGS use&#95;query&#95;cache = 1, query&#95;cache&#95;tag = &#39;abc&#39; と SELECT 1 SETTINGS use&#95;query&#95;cache = 1, query&#95;cache&#95;tag = &#39;def&#39; は、異なる query cache エントリを作成するようになりました。 [#68235](https://github.com/ClickHouse/ClickHouse/pull/68235)(sakulali).

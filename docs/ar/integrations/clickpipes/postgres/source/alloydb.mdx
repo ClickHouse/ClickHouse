@@ -1,0 +1,151 @@
+---
+sidebarTitle: 'AlloyDB Postgres'
+description: 'إعداد مثيل AlloyDB Postgres كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/postgres/source/alloydb
+title: 'دليل إعداد AlloyDB Postgres كمصدر'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="supported-versions">
+  ## الإصدارات المدعومة
+</div>
+
+لنقل البيانات من مثيل AlloyDB الخاص بك إلى ClickHouse Cloud باستخدام ClickPipes، يجب تهيئة مثيلك لاستخدام **النسخ المتماثل المنطقي**. وهذا مدعوم **بدءًا من الإصدار 14 من AlloyDB**.
+
+<div id="enable-logical-replication">
+  ## تفعيل النسخ المتماثل المنطقي
+</div>
+
+للتحقق مما إذا كان النسخ المتماثل المنطقي مفعّلًا في مثيل AlloyDB، شغّل الاستعلام التالي على المثيل الأساسي:
+
+```sql
+SHOW  wal_level;
+```
+
+إذا كانت النتيجة `logical`، فهذا يعني أن النسخ المتماثل المنطقي مفعّل بالفعل، ويمكنك الانتقال إلى [الخطوة التالية](#create-a-clickpipes-user-and-manage-replication-permissions). أما إذا كانت النتيجة `replica`، فيجب ضبط العلامتين [`alloydb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) و[`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) على `on` في المثيل الأساسي.
+
+<Warning>
+  كما هو موضح في [وثائق علامات AlloyDB](https://cloud.google.com/alloydb/docs/reference/alloydb-flags)، فإن تعديل العلامات التي تفعّل النسخ المتماثل المنطقي يتطلب إعادة تشغيل المثيل الأساسي.
+</Warning>
+
+لتمكين هذه العلامات:
+
+1. في Google Cloud Console، انتقل إلى صفحة [Clusters](https://console.cloud.google.com/alloydb/clusters) الخاصة بـ AlloyDB. من قائمة **Actions** للمثيل الأساسي، انقر على **Edit**.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp" alt="تحرير تكوين المثيل الأساسي" size="lg" border />
+
+2. مرّر إلى أسفل حتى **Advanced configuration options** ثم وسّع هذا القسم. ضمن **Flags**، انقر على **Add a database flag**.
+
+   * أضف العلامة [`allowdb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) واضبط قيمتها على `on`
+   * أضف العلامة [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) واضبط قيمتها على `on`
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp" alt="ضبط علامتي allowdb.enable_pglogical و alloydb.logical_decoding على on" size="lg" border />
+
+3. انقر على **Update instance** لحفظ تغييرات التكوين. ومن المهم ملاحظة أن هذا الإجراء **يؤدي إلى إعادة تشغيل المثيل الأساسي.**
+
+4. بعد أن تتغير حالة المثيل من `Updating` إلى `Ready`، شغّل الاستعلام التالي على المثيل الأساسي للتأكد من تفعيل النسخ المتماثل المنطقي:
+
+   ```sql
+   SHOW  wal_level;
+   ```
+
+   يجب أن تكون النتيجة `logical`.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp" alt="التحقق من أن النسخ المتماثل المنطقي مُمكَّن" size="lg" border />
+
+<div id="create-a-clickpipes-user-and-manage-replication-permissions">
+  ## أنشئ مستخدم ClickPipes وأدر أذونات النسخ المتماثل
+</div>
+
+اتصل بمثيل AlloyDB الخاص بك كمستخدم مسؤول ونفّذ الأوامر التالية:
+
+1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. امنح المستخدم الذي أنشأته في الخطوة السابقة وصولًا للقراءة فقط على مستوى المخطط. يوضح المثال التالي الأذونات الخاصة بالمخطط `public`. كرر هذه الأوامر لكل مخطط يحتوي على جداول تريد نسخها متماثلًا:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. امنح المستخدم امتيازات النسخ المتماثل:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. أنشئ [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) تتضمن الجداول التي تريد نسخها متماثلًا. نوصي بشدة بقصر الـ publication على الجداول التي تحتاجها فقط لتجنب الحمل الإضافي على الأداء.
+
+<Warning>
+  يجب أن يكون لكل جدول مُدرج في الـ publication إما **مفتاح أساسي** معرّف *أو* أن تكون **هوية النسخة المتماثلة** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة لـ Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
+</Warning>
+
+* لإنشاء publication لجداول محددة:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * لإنشاء publication لجميع الجداول ضمن مخطط محدد:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+ستحتوي publication ‏`clickpipes` على مجموعة أحداث التغيير الناتجة من الجداول المحددة، وستُستخدم لاحقًا لإدخال دفق النسخ المتماثل.
+
+<div id="configure-network-access">
+  ## تهيئة الوصول إلى الشبكة
+</div>
+
+<Note>
+  لا يدعم ClickPipes اتصالات Private Service Connect (PSC). إذا كنت لا تسمح بالوصول العام إلى مثيل AlloyDB الخاص بك، فيمكنك [استخدام نفق SSH](#configure-network-access) للاتصال بشكل آمن. سيتم دعم PSC في المستقبل.
+</Note>
+
+بعد ذلك، يجب السماح لـ ClickPipes بالاتصال بمثيل AlloyDB الخاص بك.
+
+<Tabs>
+  <Tab title="السماح بعناوين IP الخاصة بـ ClickPipes">
+    1. في Google Cloud Console، انتقل إلى صفحة AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters). حدِّد مثيلك الأساسي لفتح صفحة **Overview**.
+
+    2. مرِّر لأسفل إلى **Instances in your cluster** وانقر على **Edit primary**.
+
+    3. حدِّد مربع الاختيار **Enable Public IP** للسماح بالاتصال بالمثيل عبر الإنترنت العام. ضمن **Authorized external networks**، أدخل [قائمة عناوين IP الثابتة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips) للمنطقة التي نُشرت فيها خدمتك.
+
+       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="تهيئة الشبكة للوصول العام باستخدام قائمة سماح لعناوين IP" size="lg" border />
+
+    <Note>
+      يتطلب AlloyDB تحديد العناوين باستخدام [تنسيق CIDR](https://cloud.google.com/alloydb/docs/connection-overview#public-ip). يمكنك تكييف قائمة عناوين IP الثابتة الخاصة بـ ClickPipes لتتوافق مع هذا التنسيق عبر إضافة `/32` إلى كل عنوان.
+    </Note>
+
+    4. ضمن **Network Security**، حدِّد **Require SSL Encryption (default)** (إذا لم يكن محددًا بالفعل).
+
+    5. انقر على **Update instance** لحفظ تغييرات تهيئة أمان الشبكة.
+  </Tab>
+
+  <Tab title="استخدام نفق SSH">
+    إذا كنت لا تسمح بالوصول العام إلى مثيل AlloyDB الخاص بك، فيجب أولاً إعداد مضيف bastion عبر SSH لإنشاء نفق آمن للاتصال. لإعداد مضيف bastion عبر SSH على Google Cloud Platform:
+
+    1. أنشئ مثيل Google Compute Engine (GCE) وابدأ تشغيله باتباع [الوثائق الرسمية](https://cloud.google.com/compute/docs/instances/create-start-instance).
+       * تأكد من أن مثيل GCE موجود في نفس Virtual Private Network (VPC) الخاصة بمثيل AlloyDB.
+       * تأكد من أن مثيل GCE لديه [عنوان IP عام ثابت](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address). ستستخدم عنوان IP هذا عند توصيل ClickPipes بمضيف bastion عبر SSH.
+
+    2. حدِّث قواعد جدار الحماية الخاصة بمضيف bastion عبر SSH للسماح بحركة المرور من [قائمة عناوين IP الثابتة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips) للمنطقة التي نُشرت فيها خدمتك.
+
+    3. حدِّث قواعد جدار الحماية الخاصة بـ AlloyDB للسماح بحركة المرور من مضيف bastion عبر SSH.
+  </Tab>
+</Tabs>
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) وبدء إدخال البيانات من مثيل Postgres لديك إلى ClickHouse Cloud.
+احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد مثيل Postgres لديك، لأنك ستحتاج إليها خلال عملية إنشاء ClickPipe.
