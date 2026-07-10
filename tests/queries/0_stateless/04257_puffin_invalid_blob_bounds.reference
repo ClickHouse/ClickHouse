@@ -1,0 +1,6 @@
+--- overflow_offset_length.puffin ---
+Puffin blob 0: offset/length out of bounds
+--- negative_offset.puffin ---
+Puffin blob 0: offset/length out of bounds
+--- length_exceeds_file.puffin ---
+Puffin blob 0: offset/length out of bounds
