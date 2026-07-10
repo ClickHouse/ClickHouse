@@ -6,13 +6,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-port_base=$((20000 + $$ % 20000))
-tcp_port=${port_base}
-http_port=$((port_base + 1))
-mysql_port=$((port_base + 2))
-postgresql_port=$((port_base + 3))
-interserver_http_port=$((port_base + 4))
-
 test_dir=$(mktemp -d "${CLICKHOUSE_TMP%/}/${CLICKHOUSE_TEST_UNIQUE_NAME}.XXXXXX")
 test_dir=$(cd "${test_dir}" && pwd)
 
@@ -66,7 +59,30 @@ cat > "${test_dir}/users.xml" <<EOF
 </clickhouse>
 EOF
 
-cat > "${test_dir}/config.xml" <<EOF
+# Ask the OS for a currently unused TCP port instead of deriving one from the
+# shell PID: a fixed port range clashes with the many servers (and ephemeral
+# sockets) running in parallel during the test run, which made this test flaky
+# with "Address already in use" on startup.
+free_tcp_port()
+{
+    python3 -c "
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+"
+}
+
+# The test only connects over the native TCP protocol, so the server listens
+# on a single port. There is still a tiny window between picking the free port
+# and the server binding it, so retry with a fresh port if the server aborts.
+tcp_port=
+start_server()
+{
+    tcp_port=$(free_tcp_port)
+
+    cat > "${test_dir}/config.xml" <<EOF
 <clickhouse>
     <logger>
         <level>warning</level>
@@ -77,11 +93,7 @@ cat > "${test_dir}/config.xml" <<EOF
     </logger>
 
     <listen_host>127.0.0.1</listen_host>
-    <http_port>${http_port}</http_port>
     <tcp_port>${tcp_port}</tcp_port>
-    <mysql_port>${mysql_port}</mysql_port>
-    <postgresql_port>${postgresql_port}</postgresql_port>
-    <interserver_http_port>${interserver_http_port}</interserver_http_port>
 
     <path>${test_dir}/data/</path>
     <tmp_path>${test_dir}/tmp/</tmp_path>
@@ -112,18 +124,36 @@ cat > "${test_dir}/config.xml" <<EOF
 </clickhouse>
 EOF
 
-${CLICKHOUSE_BINARY} server --config-file="${test_dir}/config.xml" > "${test_dir}/server.stdout.log" 2>&1 &
-server_pid=$!
+    ${CLICKHOUSE_BINARY} server --config-file="${test_dir}/config.xml" > "${test_dir}/server.stdout.log" 2>&1 &
+    server_pid=$!
+
+    for _ in {1..120}
+    do
+        if ${CLICKHOUSE_CLIENT_BINARY} --host 127.0.0.1 --port "${tcp_port}" --query "SELECT 1" >/dev/null 2>&1
+        then
+            return 0
+        fi
+        # The server exits when it cannot bind the port, so do not keep waiting.
+        if ! kill -0 "${server_pid}" >/dev/null 2>&1
+        then
+            return 1
+        fi
+        sleep 0.25
+    done
+    return 1
+}
 
 ready=0
-for _ in {1..120}
+for _ in {1..5}
 do
-    if ${CLICKHOUSE_CLIENT_BINARY} --host 127.0.0.1 --port "${tcp_port}" --query "SELECT 1" >/dev/null 2>&1
+    if start_server
     then
         ready=1
         break
     fi
-    sleep 0.25
+    kill "${server_pid}" >/dev/null 2>&1 || true
+    wait "${server_pid}" >/dev/null 2>&1 || true
+    server_pid=
 done
 
 if [[ "${ready}" == 0 ]]
