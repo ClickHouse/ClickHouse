@@ -26,6 +26,7 @@ function get_parse_error_counters()
 }
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_fallback (x UInt64, s String, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY x"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_decimal (d Decimal32(2)) ENGINE = MergeTree ORDER BY d"
 
 counters_before=$(get_parse_error_counters)
 
@@ -34,6 +35,9 @@ counters_before=$(get_parse_error_counters)
 # (or take its special branches) and must not increment any error counter.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
     "INSERT INTO t_values_fallback VALUES (1 + 1, 'a', {'k1' : 1}), (3, upper('b'), {}), (NULL, 'c', '{\'k2\' : 2}'), (DEFAULT, 'd', {}), (divide(9, 3), 'div', {})"
+
+# Decimal expression fallback must not construct exceptions either.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "INSERT INTO t_values_decimal VALUES (1.23), (1.20 + 0.03)"
 
 counters_after=$(get_parse_error_counters)
 
@@ -50,10 +54,6 @@ fi
 
 # Decimal columns keep the old behavior: an overflowing decimal literal must fail the query
 # instead of being read as a Float64 expression that would silently lose precision.
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_decimal (d Decimal32(2)) ENGINE = MergeTree ORDER BY d"
-
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "INSERT INTO t_values_decimal VALUES (1.23), (1.20 + 0.03)"
-
 echo '--- decimal overflow still fails ---'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "INSERT INTO t_values_decimal VALUES (12345678.91)" | grep -o "ARGUMENT_OUT_OF_BOUND" | head -1
 

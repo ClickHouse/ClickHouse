@@ -431,8 +431,12 @@ std::optional<bool> ValuesBlockInputFormat::tryReadValueStreamingWithExceptions(
 
         rollback_on_exception = true;
 
-        assertDelimiterAfterValue(column_idx);
-        return read;
+        if (checkDelimiterAfterValue(column_idx))
+            return read;
+
+        column.popBack(1);
+        buf->rollbackToCheckpoint();
+        return std::nullopt;
     }
     catch (const Exception & e)
     {
