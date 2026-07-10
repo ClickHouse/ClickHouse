@@ -1,0 +1,43 @@
+-- https://github.com/ClickHouse/ClickHouse/pull/81944
+--
+-- `count_distinct_optimization` (enabled by default) rewrites `countDistinct(x)` /
+-- `uniqExact(x)` into `count() FROM (SELECT x GROUP BY x)`. This rewrite is wrong for
+-- distributed reads with `distributed_group_by_no_merge = 1`: the inner `GROUP BY` is
+-- completed independently on each shard and is not merged on the initiator, so the outer
+-- `count()` would count duplicate per-shard groups instead of the global distinct keys.
+-- The rewrite must therefore be skipped when the source is a remote table reached through
+-- the `remote(...)` table function (a `TableFunctionNode`), so that
+-- `count_distinct_optimization = 1` keeps matching `count_distinct_optimization = 0`.
+-- The companion test `04259_count_distinct_optimization_nullable` covers the local-table
+-- analyzer path; `04256_merge_distributed_group_by_no_merge_nested` covers the nested
+-- `StorageMerge` / `Distributed` wrapper path.
+
+SET enable_analyzer = 1;
+
+DROP TABLE IF EXISTS t_cd_remote;
+CREATE TABLE t_cd_remote (x UInt64) ENGINE = MergeTree ORDER BY tuple();
+-- Two distinct non-NULL keys plus a duplicate: the distinct count is 3 per shard.
+INSERT INTO t_cd_remote VALUES (1)(2)(3)(3);
+
+-- `remote(...)` with `distributed_group_by_no_merge = 1`: each of the two shards aggregates
+-- independently and the initiator only concatenates, so both queries must return two rows of 3.
+-- Without the guard, `count_distinct_optimization = 1` would return a single wrong value (6),
+-- counting the per-shard `GROUP BY` groups twice.
+SELECT countDistinct(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
+    SETTINGS count_distinct_optimization = 0, distributed_group_by_no_merge = 1;
+SELECT countDistinct(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
+    SETTINGS count_distinct_optimization = 1, distributed_group_by_no_merge = 1;
+SELECT uniqExact(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
+    SETTINGS count_distinct_optimization = 0, distributed_group_by_no_merge = 1;
+SELECT uniqExact(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
+    SETTINGS count_distinct_optimization = 1, distributed_group_by_no_merge = 1;
+
+-- With the default `distributed_group_by_no_merge = 0` the shard results are merged on the
+-- initiator to the global distinct count (a single row of 3), and must be identical whether
+-- the optimization is on or off.
+SELECT countDistinct(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
+    SETTINGS count_distinct_optimization = 0;
+SELECT countDistinct(x) FROM remote('127.0.0.{1,2}', currentDatabase(), t_cd_remote)
+    SETTINGS count_distinct_optimization = 1;
+
+DROP TABLE t_cd_remote;
