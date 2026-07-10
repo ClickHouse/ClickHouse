@@ -199,6 +199,15 @@ You can see which parts of `s` were stored using the sparse serialization:
 └────────┴────────────────────┘
 ```
 )", 0) \
+    DECLARE(Bool, compute_exact_num_defaults_for_sparse_columns, false, R"(
+Compute the exact count of default values per column during inserts and
+merges, instead of the cheaper sampling estimate used to decide on sparse
+serialization. Required by `optimize_trivial_count_with_sparsity_filter`,
+which consumes the persisted `num_defaults` counter (Nullable columns
+additionally need `nullable_serialization_version = 'allow_sparse'`).
+Leaving it disabled keeps inserts/merges as fast as before; enabling it
+adds an O(rows) pass per sparse-eligible column.
+)", EXPERIMENTAL) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
 If the file name for column is too long (more than 'max_file_name_length'
 bytes) replace it to SipHash128

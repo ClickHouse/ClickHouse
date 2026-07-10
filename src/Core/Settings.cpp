@@ -1597,6 +1597,19 @@ Possible values:
 
 - Any positive even integer.
 )", 0) \
+    DECLARE(UInt64, merge_tree_generic_exclusion_search_max_steps, 0, R"(
+When a filter cannot be evaluated as a single continuous range of the primary key, for example when it uses key columns other than the first one, ClickHouse runs an iterative generic exclusion search algorithm over the index marks. This setting limits the number of steps (index checks) the algorithm spends on each data part.
+
+The budget is spent on the largest remaining mark ranges first. When it is exhausted, the ranges that were not fully analyzed are accepted as a whole, so the query stays correct but may read more granules than an unlimited search would select. A lower budget speeds up index analysis at the cost of reading more data. The limit is approximate rather than a strict cap on the analysis cost: the search can exceed it by roughly one round of splitting, and when the part is already divided into many ranges (for example, by the query condition cache), each of them is checked at least once regardless of the limit.
+
+The number of steps the search made for each data part is reported in the trace level log messages of the query, and the `IndexGenericExclusionSearchStepLimitReached` profile event counts how many times the budget was exhausted.
+
+The (default) value 0 means unlimited steps.
+
+Possible values:
+
+- 0 for unlimited steps, or any positive integer.
+)", 0) \
     DECLARE(UInt64, merge_tree_max_rows_to_use_cache, (128 * 8192), R"(
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks.
 
@@ -2689,6 +2702,16 @@ SELECT * FROM test;
     \
     DECLARE(Bool, partial_result_on_first_cancel, false, R"(
 Allows query to return a partial result after cancel.
+)", 0) \
+    \
+    DECLARE(Bool, discard_query_data, false, R"(
+If enabled, the server skips sending query result rows to the client. The query is still executed and logged fully on the server, and the client still receives the remaining packets.
+
+Used for shadow traffic, benchmarks, and fuzzing.
+
+Has no effect for secondary queries.
+
+Affects only the native TCP protocol.
 )", 0) \
     \
     DECLARE(Bool, ignore_on_cluster_for_replicated_udf_queries, false, R"(
@@ -3990,6 +4013,9 @@ Allow '.' to match newline characters for a regexp_tree dictionary.
     DECLARE(Bool, dictionary_use_async_executor, false, R"(
 Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
 )", 0) \
+    DECLARE(BoolAuto, dictionary_lazy_load, Field("auto"), R"(
+Controls loading of a dictionary when specified in the `SETTINGS` clause of `CREATE DICTIONARY`: `1` defers loading until first use, `0` loads the dictionary at creation, `'auto'` follows the server setting `dictionaries_lazy_load`. Has no effect when set on a session or query level.
+)", 0) \
     DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
 Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \
@@ -4425,6 +4451,8 @@ Scope (out of scope on purpose): this setting blocks only the server's ambient c
 
 A trusted administrative client may need server-managed credentials for legitimate operations (for example, attaching system tables on an `s3_plain_rewritable` disk via SQL). Enable this setting in that client's session or settings profile to permit it.
 
+For `BACKUP`/`RESTORE ... ON CLUSTER` the initiator's value of this setting is propagated to the other hosts and used there as-is. Those hosts run the per-host continuation of the operation through the distributed DDL queue, by default without the initiator's user, so they would otherwise evaluate the restriction against their own default profile; the initiator's value is preserved instead, because it has already opened the same backup destination under its own, constrained, settings. A `readonly` constraint on the initiator still applies (an untrusted initiator cannot enable the setting for its own on-cluster backup), so this does not weaken the restriction.
+
 Durability for persistent `S3` and `S3Queue` tables: enabling this only per session or profile is not durable across a restart. When the server reloads such a table from its stored definition (startup or `RESTORE`) it rebuilds the S3 client and re-applies the restriction with the startup context, so a table that relied on server-managed credentials and was created only under a session/profile `s3_allow_server_credentials_in_user_queries = 1` is created successfully but becomes inaccessible after a restart (the table is left in place; queries against it fail until its credentials resolve to a permitted source again). The server itself still starts. Give such tables explicit credentials for durable access; alternatively, enabling the setting server-wide keeps them loading across restarts, at the cost of relaxing the restriction for all reloads.
 
 To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0` and marking it `readonly`:
@@ -4679,9 +4707,50 @@ The optimization is suppressed when the user has explicitly set `group_by_overfl
 
 Possible values:
 
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+)", 0) \
+    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, false, R"(
+Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
+queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`
+exactly partitions rows into defaults and non-defaults of `col`. The count is then
+served from the per-column `num_defaults` / `num_rows` counters that MergeTree already
+keeps in `serialization.json`, with no data scan.
+
+Patterns recognised:
+
+- `col = default(col)` / `col != default(col)` for `Int*` / `UInt*`, `String` /
+  `FixedString`, `Date` / `DateTime` / `DateTime64`, `Decimal*`, `UUID`, `IPv4` / `IPv6`.
+- `IS NULL` / `IS NOT NULL` on `Nullable` columns.
+- `empty(col)` / `notEmpty(col)` on `String` columns.
+- `col = true` / `col != true` on `Bool` columns.
+- `col > 0`, `col >= 1`, `col < 1`, `col <= 0` on unsigned integer columns.
+- Bare `col` / `NOT col` on `Int*`, `UInt*`, `Bool` columns (truthy test).
+
+The equality patterns are not applied to `Float*`, `Enum*`, `Nullable`, `LowCardinality`,
+or composite types (`Tuple`, `Array`, `Map`, ...) — for these the count is served from the
+regular scan path.
+
+To take effect, the per-part `num_defaults` counter must be exact. Enable the MergeTree
+table setting `compute_exact_num_defaults_for_sparse_columns` on the target table before
+inserts and merges. Parts written without it are silently opted out of the rewrite, so
+enabling `optimize_trivial_count_with_sparsity_filter` alone is not enough.
+
+For the `IS NULL` / `IS NOT NULL` patterns on `Nullable` columns, the column must also
+have a `num_defaults` entry in `serialization.json`, which only happens when the MergeTree
+table setting `nullable_serialization_version` is set to `allow_sparse` at insert /
+merge time. With the default value `basic` `Nullable` columns get no per-column entry, so
+the optimization silently does not apply.
+
+Possible values:
+
    - 0 — Optimization disabled.
    - 1 — Optimization enabled.
-)", 0) \
+
+See also:
+
+- [optimize_trivial_count_query](#optimize_trivial_count_query)
+)", EXPERIMENTAL) \
     DECLARE(Bool, optimize_count_from_files, true, R"(
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
@@ -8383,6 +8452,9 @@ If the number of set bits in a runtime bloom filter exceeds this ratio the filte
 )", EXPERIMENTAL) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
+)", 0) \
+    DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
+Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
 )", 0) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.

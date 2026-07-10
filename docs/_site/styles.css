@@ -613,9 +613,13 @@ html:not(.dark) .pagination-prev:hover {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    /* Small breathing room so the first nav item isn't flush against the
-       pinned search row, and so scrolled content doesn't butt the top edge. */
-    padding-top: 0.5rem;
+    /* Gap below the pinned search + Ask AI row. Use margin, not padding: the
+       scroll container's scrollbar track spans its whole padding box, so
+       padding-top would leave the scrollbar flush against — visually touching —
+       the search/Ask AI buttons. A margin pushes the scroll box itself (and
+       therefore the top of its scrollbar) down below that row, so the scrollbar
+       no longer exceeds the first nav item. */
+    margin-top: 0.5rem;
 }
 
 /* Hide the chat assistant textarea and its floating-input wrapper */
@@ -2628,33 +2632,47 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
    Banner Styling
    ============================================ */
 
-/* Light mode: black background, white text, yellow link */
-html:not(.dark) #banner {
-    background-color: #1a1a1a !important;
-    color: #ffffff !important;
-}
+/* Mintlify paints the banner text via `[&_*]:text-white/95!`, an `!important`
+   utility that lives in Tailwind's `@layer utilities`. For `!important`
+   declarations the cascade reverses layer order and treats un-layered styles
+   as the lowest-priority (implicit final) layer, so an un-layered override —
+   however specific — always loses to that utility and the text stays white.
+   Declaring these rules inside `@layer components` (ordered before `utilities`)
+   makes our `!important` win, so the banner text takes the colors below. */
+@layer components {
+    /* Light mode: black background, white text, yellow link */
+    html:not(.dark) #banner {
+        background-color: #1a1a1a !important;
+        color: #ffffff !important;
+    }
 
-html:not(.dark) #banner a {
-    color: #FAFF69 !important;
-    font-weight: 700 !important;
-}
+    html:not(.dark) #banner *,
+    html:not(.dark) #banner p {
+        color: #ffffff !important;
+    }
 
-/* Dark mode: yellow background, black text, white link */
-html.dark #banner,
-:is(.dark) #banner {
-    background-color: #FAFF69 !important;
-    color: #1a1a1a !important;
-}
+    html:not(.dark) #banner a {
+        color: #FAFF69 !important;
+        font-weight: 700 !important;
+    }
 
-html.dark #banner *,
-:is(.dark) #banner * {
-    color: #1a1a1a !important;
-}
+    /* Dark mode: yellow background, black text, black link */
+    html.dark #banner,
+    :is(.dark) #banner {
+        background-color: #FAFF69 !important;
+        color: #1a1a1a !important;
+    }
 
-html.dark #banner a,
-:is(.dark) #banner a {
-    color: #1a1a1a !important;
-    font-weight: 700 !important;
+    html.dark #banner *,
+    :is(.dark) #banner * {
+        color: #1a1a1a !important;
+    }
+
+    html.dark #banner a,
+    :is(.dark) #banner a {
+        color: #1a1a1a !important;
+        font-weight: 700 !important;
+    }
 }
 
 /* ============================================
