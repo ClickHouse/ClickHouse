@@ -169,6 +169,14 @@ def test_clickhouse_ddl_for_mysql_database(started_cluster):
         assert is_perm == "1", f"Expected is_permanently=1, got {is_perm}"
         clickhouse_node.query("ATTACH TABLE test_database.test_table")
 
+        # Test ordinary DETACH TABLE (not PERMANENTLY) for system.detached_tables (PR #107943)
+        clickhouse_node.query("DETACH TABLE test_database.test_table")
+        is_perm_ordinary = clickhouse_node.query("SELECT is_permanently FROM system.detached_tables WHERE database = 'test_database' AND table = 'test_table'").strip()
+        assert is_perm_ordinary == "0", f"Expected is_permanently=0 for ordinary detach, got {is_perm_ordinary}"
+        is_detached = clickhouse_node.query("SELECT is_detached FROM system.tables WHERE database = 'test_database' AND name = 'test_table'").strip()
+        assert is_detached == "1", f"Expected is_detached=1 in system.tables, got {is_detached}"
+        clickhouse_node.query("ATTACH TABLE test_database.test_table")
+
         clickhouse_node.query("DROP DATABASE test_database")
         assert "test_database" not in clickhouse_node.query("SHOW DATABASES")
 

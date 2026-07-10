@@ -114,6 +114,18 @@ def test_postgresql_database_engine_with_clickhouse_ddl(started_cluster):
     assert is_perm == "1", f"Expected is_permanently=1, got {is_perm}"
     node1.query("ATTACH TABLE postgres_database.test_table")
 
+    # Test ordinary DETACH TABLE (not PERMANENTLY) for system.detached_tables (PR #107943)
+    node1.query("DETACH TABLE postgres_database.test_table")
+    is_perm_ordinary = node1.query(
+        "SELECT is_permanently FROM system.detached_tables WHERE database = 'postgres_database' AND table = 'test_table'"
+    ).strip()
+    assert is_perm_ordinary == "0", f"Expected is_permanently=0 for ordinary detach, got {is_perm_ordinary}"
+    is_detached = node1.query(
+        "SELECT is_detached FROM system.tables WHERE database = 'postgres_database' AND name = 'test_table'"
+    ).strip()
+    assert is_detached == "1", f"Expected is_detached=1 in system.tables, got {is_detached}"
+    node1.query("ATTACH TABLE postgres_database.test_table")
+
     node1.query("DROP DATABASE postgres_database")
     assert "postgres_database" not in node1.query("SHOW DATABASES")
 
