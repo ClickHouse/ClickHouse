@@ -187,6 +187,19 @@ void optimizeUsePartAggregationCache(
             || mutations_snapshot->hasMetadataMutations()))
         return;
 
+    /// `UNIQUE KEY` tables carry a per-part delete bitmap that is versioned by `snapshot_csn` and can
+    /// change without renaming the part (a later delete/update installs a newer bitmap for the same
+    /// part name). The cache key is only `{query_hash, table_id, part_name}` and is not partitioned by
+    /// that bitmap version, so an entry populated before a newer bitmap is installed would be reused
+    /// and return rows that are deleted in the newer snapshot. The populator reads through
+    /// `createMergeTreeSequentialSource(..., apply_deleted_mask = true)`, but that path only wires the
+    /// lightweight-delete `_row_exists` filter, not the snapshot-sensitive `UNIQUE KEY` bitmap. The
+    /// normal projection read path already fails closed on these tables (see
+    /// `MergeTreeDataSelectExecutor`, which throws `NOT_IMPLEMENTED` for reads via projections), so
+    /// reject them here too (fail-closed) until the cache key/invalidation is made snapshot-aware.
+    if (reading->getStorageMetadata()->hasUniqueKey())
+        return;
+
     const auto & parts = reading->getParts();
     if (parts.empty())
         return;
