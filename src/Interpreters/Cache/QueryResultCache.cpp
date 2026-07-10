@@ -1049,14 +1049,25 @@ QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::HerdCoalescing::start
     /// without calling finishAsyncInsert, leaving its token in the map forever. Remove the stale token so the degraded
     /// state does not persist for this key - otherwise every subsequent query would block for the full timeout. Only erase
     /// if the map still points to the same token, to avoid removing a fresh token started by another query in the meantime.
-    /// Removing the map entry never strands other waiters still blocked on this token: the executor wakes them through the
-    /// token object directly in finishAsyncInsert, not via a map lookup.
     if (timed_out)
     {
-        std::lock_guard lock(mutex);
-        auto it = tokens.find(key);
-        if (it != tokens.end() && it->second == existing_token)
-            tokens.erase(it);
+        bool erased = false;
+        {
+            std::lock_guard lock(mutex);
+            auto it = tokens.find(key);
+            if (it != tokens.end() && it->second == existing_token)
+            {
+                tokens.erase(it);
+                erased = true;
+            }
+        }
+        /// If we removed the stale token, the executor is presumed dead (it never reached finishAsyncInsert, otherwise the
+        /// token would be done). Wake any other waiters still blocked on the same token so they stop sleeping until their
+        /// own deadlines and instead re-probe the cache / fall back to executing right away - one of us repopulates the
+        /// entry. Without this, sibling waiters would each block for the full timeout even after the cache is ready again.
+        /// The wake targets the token object directly (not a map lookup), so it is unaffected by the erase above.
+        if (erased)
+            wake({existing_token});
     }
     return nullptr;
 }
@@ -1149,8 +1160,15 @@ void QueryResultCache::clear(const std::optional<String> & tag)
     else
     {
         cache.clear();
-        herd_coalescing->clear();
     }
+
+    /// Wake herd waiters regardless of whether the clear was tagged. `HerdCoalescingKey` covers only the AST and user
+    /// (not the tag), so a single in-flight token can be shared by queries with different tags and cannot be matched to
+    /// one tag here. Waking all waiters is safe: each simply re-probes the cache and either reads a freshly inserted
+    /// entry or falls back to executing itself, instead of staying blocked on an in-flight computation whose result the
+    /// operator has just asked to discard. Previously a tagged clear left same-tag waiters blocked until the executor
+    /// finished (or their timeout elapsed).
+    herd_coalescing->clear();
 
     std::lock_guard lock(mutex);
     times_executed.clear();
