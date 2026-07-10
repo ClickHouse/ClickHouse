@@ -220,7 +220,7 @@ void writeIPv6(const Tins::IPv6Address & addr, IPv6 & out)
         buf[i++] = byte;
 }
 
-String formatTcpFlags(const Tins::TCP & tcp)
+String formatTCPFlags(const Tins::TCP & tcp)
 {
     static constexpr std::array<std::pair<Tins::TCP::Flags, const char *>, 8> names{{
         {Tins::TCP::SYN, "SYN"},
@@ -475,7 +475,7 @@ Chunk PCAPBlockInputFormat::read()
 
         if (need[COL_TCP_FLAGS])
         {
-            if (tcp) { String f = formatTcpFlags(*tcp); col_tcp_flags->insertData(f.data(), f.size()); col_tcp_flags_null->insertValue(0); }
+            if (tcp) { String f = formatTCPFlags(*tcp); col_tcp_flags->insertData(f.data(), f.size()); col_tcp_flags_null->insertValue(0); }
             else insert_null_string(*col_tcp_flags, *col_tcp_flags_null);
         }
         if (need[COL_TCP_SEQ])
