@@ -566,7 +566,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(storage, table_node ? table_node->getStorageID() : storage->getStorageID(), query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -1138,7 +1138,8 @@ void pushOrderByIntoView(
     /// `StorageView` does not support prewhere), so pushing `LIMIT` would
     /// truncate before the row-policy filter runs and could return fewer rows
     /// than expected.
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    const auto * row_policy_table_node = table_expression->as<TableNode>();
+    if (getEffectiveRowPolicyFilter(storage, row_policy_table_node ? row_policy_table_node->getStorageID() : storage->getStorageID(), query_context))
         return;
 
     /// Skip when `additional_table_filters` matches this view: the additional
