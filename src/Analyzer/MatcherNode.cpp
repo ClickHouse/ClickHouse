@@ -22,7 +22,37 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int CANNOT_COMPILE_REGEXP;
+}
+
+namespace
+{
+
+/// Quote-aware, per-part comparison of a COLUMNS list identifier against a column name. A single-part
+/// identifier (whose text may contain dots) compares against the whole column name, not a per-part reparse.
+bool matcherIdentifierMatchesColumnName(
+    const Identifier & matcher_identifier,
+    const std::vector<IdentifierQuoteStyle> & matcher_quotes,
+    const std::string & column_name)
+{
+    auto part_quoted = [&](size_t p) { return p < matcher_quotes.size() && matcher_quotes[p] == IdentifierQuoteStyle::DoubleQuote; };
+
+    const auto & matcher_parts = matcher_identifier.getParts();
+    if (matcher_parts.size() == 1)
+        return identifierPartsEqual(matcher_parts[0], column_name, /*case_insensitive=*/ !part_quoted(0));
+
+    Identifier column_identifier(column_name);
+    const auto & column_parts = column_identifier.getParts();
+    if (matcher_parts.size() != column_parts.size())
+        return false;
+
+    for (size_t p = 0; p < matcher_parts.size(); ++p)
+        if (!identifierPartsEqual(matcher_parts[p], column_parts[p], /*case_insensitive=*/ !part_quoted(p)))
+            return false;
+    return true;
+}
+
 }
 
 const char * toString(MatcherNodeType matcher_node_type)
@@ -144,27 +174,56 @@ bool MatcherNode::isMatchingColumn(const std::string & column_name, bool standar
 
     /// Per-part comparison: unquoted parts match case-insensitively, double-quoted parts must match
     /// exactly. So `COLUMNS(data."Name")` matches `Data.Name` (`data` folds; `"Name"` stays exact).
-    Identifier column_identifier(column_name);
-    const auto & column_parts = column_identifier.getParts();
+    static const std::vector<IdentifierQuoteStyle> no_quotes;
     for (size_t i = 0; i < columns_identifiers.size(); ++i)
     {
-        const auto & matcher_parts = columns_identifiers[i].getParts();
-        if (matcher_parts.size() != column_parts.size())
-            continue;
-
-        const auto & matcher_quotes = i < columns_identifiers_quote_styles.size()
-            ? columns_identifiers_quote_styles[i] : std::vector<IdentifierQuoteStyle>{};
-
-        bool all_parts_match = true;
-        for (size_t p = 0; p < matcher_parts.size() && all_parts_match; ++p)
-        {
-            const bool part_quoted = p < matcher_quotes.size() && matcher_quotes[p] == IdentifierQuoteStyle::DoubleQuote;
-            all_parts_match = identifierPartsEqual(matcher_parts[p], column_parts[p], /*case_insensitive=*/ !part_quoted);
-        }
-        if (all_parts_match)
+        const auto & matcher_quotes = i < columns_identifiers_quote_styles.size() ? columns_identifiers_quote_styles[i] : no_quotes;
+        if (matcherIdentifierMatchesColumnName(columns_identifiers[i], matcher_quotes, column_name))
             return true;
     }
     return false;
+}
+
+void MatcherNode::canonicalizeColumnsIdentifiers(const Names & visible_column_names)
+{
+    if (matcher_type != MatcherNodeType::COLUMNS_LIST)
+        return;
+
+    static const std::vector<IdentifierQuoteStyle> no_quotes;
+    for (size_t i = 0; i < columns_identifiers.size(); ++i)
+    {
+        auto & matcher_identifier = columns_identifiers[i];
+        /// Exact spelling wins: an argument naming a visible column exactly is kept as is.
+        if (std::find(visible_column_names.begin(), visible_column_names.end(), matcher_identifier.getFullName()) != visible_column_names.end())
+            continue;
+
+        const auto & matcher_quotes = i < columns_identifiers_quote_styles.size() ? columns_identifiers_quote_styles[i] : no_quotes;
+
+        Names folded_matches;
+        for (const auto & column_name : visible_column_names)
+            if (std::find(folded_matches.begin(), folded_matches.end(), column_name) == folded_matches.end()
+                && matcherIdentifierMatchesColumnName(matcher_identifier, matcher_quotes, column_name))
+                folded_matches.push_back(column_name);
+
+        if (folded_matches.size() > 1)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "COLUMNS matcher identifier '{}' is ambiguous: matches columns with different cases: '{}' and '{}'",
+                matcher_identifier.getFullName(), folded_matches[0], folded_matches[1]);
+
+        if (folded_matches.size() == 1)
+        {
+            /// Rewrite to the canonical spelling; a single-part identifier keeps its one-part
+            /// shape even when the canonical name contains dots (the backtick `a.b` case).
+            if (matcher_identifier.getPartsSize() == 1)
+                matcher_identifier = Identifier(std::vector<std::string>{folded_matches.front()});
+            else
+                matcher_identifier = Identifier(folded_matches.front());
+        }
+    }
+
+    columns_identifiers_set.clear();
+    for (const auto & identifier : columns_identifiers)
+        columns_identifiers_set.insert(identifier.getFullName());
 }
 
 void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const

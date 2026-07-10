@@ -3,6 +3,7 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ColumnTransformers.h>
+#include <Core/Names.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/re2.h>
@@ -153,6 +154,10 @@ public:
     /// In `standard` mode unquoted COLUMNS(...) identifiers match case-insensitively; quoted ones
     /// stay case-sensitive. Pass `standard_mode = true` to enable that behaviour.
     bool isMatchingColumn(const std::string & column_name, bool standard_mode = false);
+
+    /// `standard` mode: rebind unquoted/backticked COLUMNS(...) arguments to the visible column
+    /// namespace (exact spelling wins, one folded match canonicalized, several folded ambiguous).
+    void canonicalizeColumnsIdentifiers(const Names & visible_column_names);
 
     QueryTreeNodeType getNodeType() const override
     {

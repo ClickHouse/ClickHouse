@@ -1,5 +1,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 
+#include <algorithm>
+
 #include <Common/typeid_cast.h>
 
 #include <Core/Settings.h>
@@ -96,7 +98,10 @@ std::optional<ASTIdentifier> IdentifierSemantic::uncover(const ASTIdentifier & i
     if (identifier.semantic->covered)
     {
         std::vector<String> name_parts = identifier.name_parts;
-        return ASTIdentifier(std::move(name_parts));
+        ASTIdentifier result(std::move(name_parts));
+        /// Preserve per-part quote styles: they drive case sensitivity in `standard` mode.
+        result.quote_styles = identifier.quote_styles;
+        return result;
     }
     return {};
 }
@@ -245,6 +250,15 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const Da
         return;
 
     identifier.name_parts = std::vector<String>(identifier.name_parts.begin() + to_strip, identifier.name_parts.end());
+    /// Keep per-part quote styles in lockstep; empty canonically means "all parts unquoted".
+    if (!identifier.quote_styles.empty())
+    {
+        identifier.quote_styles.erase(
+            identifier.quote_styles.begin(), identifier.quote_styles.begin() + std::min(to_strip, identifier.quote_styles.size()));
+        if (std::all_of(identifier.quote_styles.begin(), identifier.quote_styles.end(),
+                [](IdentifierQuoteStyle style) { return style == IdentifierQuoteStyle::None; }))
+            identifier.quote_styles.clear();
+    }
     identifier.resetFullName();
 }
 
@@ -254,7 +268,13 @@ void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const Dat
     if (!prefix.empty())
     {
         prefix.resize(prefix.size() - 1); /// crop dot
+        /// The synthesized prefix part is unquoted; the short name keeps its original quote style.
+        auto short_name_style = identifier.quote_styles.empty() ? IdentifierQuoteStyle::None : identifier.quote_styles.back();
         identifier.name_parts = {prefix, identifier.shortName()};
+        if (short_name_style == IdentifierQuoteStyle::None)
+            identifier.quote_styles.clear();
+        else
+            identifier.quote_styles = {IdentifierQuoteStyle::None, short_name_style};
         identifier.resetFullName();
         identifier.semantic->table = prefix;
         identifier.semantic->legacy_compound = true;

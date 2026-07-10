@@ -7757,6 +7757,8 @@ CTE names follow a stricter rule: defining two unquoted CTEs whose names differ 
 an error. A double-quoted CTE definition pins its name to case-sensitive matching, so quoted
 case-siblings may coexist and are referenced exactly.
 
+Named window (`WINDOW` clause) names are matched exactly regardless of mode.
+
 Database names follow a stricter rule: collisions among user-defined databases that differ only
 in case are reported as ambiguous unless the lookup is double-quoted.
 

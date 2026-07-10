@@ -1820,7 +1820,19 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 
     QueryTreeNodes matched_column_nodes;
 
-    const bool standard_mode = scope.isStandardMode();
+    bool standard_mode = scope.isStandardMode();
+    /// `standard` mode: resolve COLUMNS(...) arguments against the matched-column namespace once,
+    /// up front (exact-first, single folded match canonicalized, several ambiguous), then match exactly.
+    if (standard_mode && matcher_node_typed.getMatcherType() == MatcherNodeType::COLUMNS_LIST)
+    {
+        Names matched_column_names;
+        matched_column_names.reserve(matched_columns.size());
+        for (const auto & column : matched_columns)
+            matched_column_names.push_back(column.name);
+        matcher_node_typed.canonicalizeColumnsIdentifiers(matched_column_names);
+        standard_mode = false;
+    }
+
     for (const auto & column : matched_columns)
     {
         const auto & column_name = column.name;
@@ -2079,7 +2091,13 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
         auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
-        const bool standard_mode = scope.isStandardMode();
+        bool standard_mode = scope.isStandardMode();
+        /// Same up-front canonicalization as in getMatchedColumnNodesWithNames, over tuple element names.
+        if (standard_mode && matcher_node_typed.getMatcherType() == MatcherNodeType::COLUMNS_LIST)
+        {
+            matcher_node_typed.canonicalizeColumnsIdentifiers(element_names);
+            standard_mode = false;
+        }
         for (const auto & element_name : element_names)
         {
             if (!matcher_node_typed.isMatchingColumn(element_name, standard_mode))
@@ -2233,7 +2251,10 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
     auto table_expressions_stack = buildTableExpressionsStack(nearest_query_scope_query_node->getJoinTree());
     std::vector<QueryTreeNodesWithNames> table_expressions_column_nodes_with_names_stack;
 
-    std::unordered_set<std::string> table_expression_column_names_to_skip;
+    /// Per-side: a USING participant's fold-variant name is suppressed only on its own side,
+    /// so a distinct case-sibling on the other side stays expandable.
+    std::unordered_set<std::string> left_column_names_to_skip;
+    std::unordered_set<std::string> right_column_names_to_skip;
 
     QueryTreeNodesWithNames result;
 
@@ -2341,7 +2362,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             auto left_table_expression_columns = std::move(table_expressions_column_nodes_with_names_stack.back());
             table_expressions_column_nodes_with_names_stack.pop_back();
 
-            table_expression_column_names_to_skip.clear();
+            left_column_names_to_skip.clear();
+            right_column_names_to_skip.clear();
 
             QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
@@ -2395,24 +2417,32 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                     QueryTreeNodePtr matched_column_node = createProjectionForUsing(join_using_column_node, join_node->getKind(), scope);
                     matched_column_node->setAlias(join_using_column_name);
 
-                    table_expression_column_names_to_skip.insert(join_using_column_name);
+                    left_column_names_to_skip.insert(join_using_column_name);
+                    right_column_names_to_skip.insert(join_using_column_name);
                     /// A folded USING spelling (`USING (key)` over columns `Key`) differs from the
-                    /// canonical source column names — skip those too or `*` duplicates the keys.
-                    /// Only case-folded variants: the alias-compat path can bind USING to a
-                    /// projection alias whose underlying column must stay expandable.
+                    /// participant's canonical name — skip it on its own side or `*` duplicates the key.
+                    /// Only fold-variants: alias-compat targets' underlying columns stay expandable.
                     if (scope.isStandardMode())
-                        for (const auto & join_using_side_node : join_using_column_nodes)
-                            if (const auto * side_column_node = join_using_side_node->as<ColumnNode>())
-                                if (const auto & side_name = side_column_node->getColumnName();
-                                    side_name != join_using_column_name && Poco::icompare(side_name, join_using_column_name) == 0)
-                                    table_expression_column_names_to_skip.insert(side_name);
+                    {
+                        auto add_participant_skip = [&](const QueryTreeNodePtr & participant_node, std::unordered_set<std::string> & skip_set)
+                        {
+                            const auto * participant_column = participant_node->as<ColumnNode>();
+                            if (!participant_column)
+                                return;
+                            const auto & participant_name = participant_column->getColumnName();
+                            if (participant_name != join_using_column_name && Poco::icompare(participant_name, join_using_column_name) == 0)
+                                skip_set.insert(participant_name);
+                        };
+                        add_participant_skip(join_using_column_nodes.at(0), left_column_names_to_skip);
+                        add_participant_skip(join_using_column_nodes.at(1), right_column_names_to_skip);
+                    }
                     matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), join_using_column_name);
                 }
             }
 
             for (auto && left_table_column_with_name : left_table_expression_columns)
             {
-                if (table_expression_column_names_to_skip.contains(left_table_column_with_name.second))
+                if (left_column_names_to_skip.contains(left_table_column_with_name.second))
                     continue;
 
                 matched_expression_nodes_with_column_names.push_back(std::move(left_table_column_with_name));
@@ -2420,7 +2450,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 
             for (auto && right_table_column_with_name : right_table_expression_columns)
             {
-                if (table_expression_column_names_to_skip.contains(right_table_column_with_name.second))
+                if (right_column_names_to_skip.contains(right_table_column_with_name.second))
                     continue;
 
                 matched_expression_nodes_with_column_names.push_back(std::move(right_table_column_with_name));
@@ -2614,15 +2644,18 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
+    /// Full visible column namespace of this matcher; also used by the WHERE/HAVING
+    /// rewriter below for exact-first + uniqueness folding in `standard` mode.
+    Names matched_column_names;
+    matched_column_names.reserve(matched_expression_nodes_with_names.size());
+    for (const auto & [_, matched_column_name] : matched_expression_nodes_with_names)
+        matched_column_names.push_back(matched_column_name);
+
     /// `standard` mode: resolve EXCEPT/REPLACE targets against the matched-column namespace
     /// once, up front (exact-first, single folded match canonicalized, several ambiguous), so
     /// the per-column checks below can match exactly and case-siblings are never both consumed.
     if (scope.isStandardMode())
     {
-        Names matched_column_names;
-        matched_column_names.reserve(matched_expression_nodes_with_names.size());
-        for (const auto & [_, matched_column_name] : matched_expression_nodes_with_names)
-            matched_column_names.push_back(matched_column_name);
         for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
         {
             if (auto * except_node = transformer->as<ExceptColumnTransformerNode>())
@@ -2879,11 +2912,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                                 current = it->second->clone();
                                 return;
                             }
-                            /// `standard` mode: an unquoted-last-part reference folds case-insensitively
-                            /// against the projection-replacement targets, mirroring how
-                            /// `findReplacementExpression` matches projection columns. Qualified
-                            /// references (`t.age`) are not rewritten in either mode — same as the
-                            /// exact-match behavior above.
+                            /// `standard` mode: fold an unquoted reference against the full visible
+                            /// namespace, exact-first with uniqueness; qualified names never fold.
                             if (scope.isStandardMode())
                             {
                                 const auto & quote_styles = identifier->getQuoteStyles();
@@ -2891,11 +2921,27 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                                     = !quote_styles.empty() && quote_styles.back() == IdentifierQuoteStyle::DoubleQuote;
                                 if (!last_part_quoted)
                                 {
-                                    for (const auto & [key, expr] : replace_transformer_mappings)
+                                    /// An exact visible match or several distinct folded matches must be
+                                    /// left untouched for normal resolution (binding or ambiguity error).
+                                    const std::string * folded_match = nullptr;
+                                    bool bind_normally = false;
+                                    for (const auto & visible_name : matched_column_names)
                                     {
-                                        if (Poco::icompare(key, ident_full_name) == 0)
+                                        if (Poco::icompare(visible_name, ident_full_name) != 0)
+                                            continue;
+                                        if (visible_name == ident_full_name || (folded_match && *folded_match != visible_name))
                                         {
-                                            current = expr->clone();
+                                            bind_normally = true;
+                                            break;
+                                        }
+                                        folded_match = &visible_name;
+                                    }
+                                    if (!bind_normally && folded_match)
+                                    {
+                                        auto folded_it = replace_transformer_mappings.find(*folded_match);
+                                        if (folded_it != replace_transformer_mappings.end())
+                                        {
+                                            current = folded_it->second->clone();
                                             return;
                                         }
                                     }
@@ -5574,11 +5620,25 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         NameSet pinned_columns;
         if (scope.isStandardMode())
         {
-            for (const auto & side : {join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression()})
+            /// Column enumeration recurses into nested JOIN operands, so pin collection must too:
+            /// a nested JoinNode/CrossJoinNode has no table-expression data of its own.
+            std::function<void(const QueryTreeNodePtr &)> collect_pinned_columns = [&](const QueryTreeNodePtr & side)
             {
+                if (const auto * nested_join_node = side->as<JoinNode>())
+                {
+                    collect_pinned_columns(nested_join_node->getLeftTableExpression());
+                    collect_pinned_columns(nested_join_node->getRightTableExpression());
+                    return;
+                }
+                if (const auto * nested_cross_join_node = side->as<CrossJoinNode>())
+                {
+                    for (const auto & nested_table_expression : nested_cross_join_node->getTableExpressions())
+                        collect_pinned_columns(nested_table_expression);
+                    return;
+                }
                 auto side_data_it = scope.table_expression_node_to_data.find(side);
                 if (side_data_it == scope.table_expression_node_to_data.end() || !side_data_it->second.standard_mode)
-                    continue;
+                    return;
                 const auto & side_data = side_data_it->second;
                 for (const auto & [column_name, _] : side_data.column_names_and_types)
                 {
@@ -5587,7 +5647,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                         || std::find(bucket->second.begin(), bucket->second.end(), column_name) == bucket->second.end())
                         pinned_columns.insert(column_name);
                 }
-            }
+            };
+            collect_pinned_columns(join_node_typed.getLeftTableExpression());
+            collect_pinned_columns(join_node_typed.getRightTableExpression());
         }
 
         QueryTreeNodes using_nodes;

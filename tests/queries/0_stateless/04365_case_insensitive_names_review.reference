@@ -116,3 +116,18 @@ SELECT 1 AS "MyAlias"
 --- Duplicate folded transformer targets are ambiguous ---
 a	1
 1
+--- REPLACE filter rewrite respects the visible namespace ---
+0	1
+--- Qualified COLUMNS is exact-first and ambiguity-aware ---
+1
+5
+--- USING spelling differing from shared canonical still merges ---
+1	Int64
+2	Int64
+--- USING star expansion suppresses only per-side participants ---
+1	z	10
+--- NATURAL JOIN pin survives nested join operands ---
+1	2	3
+--- Parenthesized alias forms keep the quote pin ---
+1
+1

@@ -860,6 +860,9 @@ public:
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(operands.back().get()))
         {
             tryGetIdentifierNameInto(node, ast_with_alias->alias);
+            /// Remember whether the alias identifier was double-quoted so the analyzer can keep it case-sensitive
+            if (const auto * alias_identifier = node->as<ASTIdentifier>())
+                ast_with_alias->alias_is_double_quoted = alias_identifier->getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote;
             return true;
         }
 

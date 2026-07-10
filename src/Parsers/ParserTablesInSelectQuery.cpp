@@ -2,6 +2,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -68,7 +69,13 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 ParserAlias alias_parser(allow_alias_without_as_keyword);
                 ASTPtr alias_node;
                 if (alias_parser.parse(pos, alias_node, expected))
+                {
                     res->subquery->setAlias(alias_node->getColumnName());
+                    /// Remember whether the alias identifier was double-quoted so the analyzer can keep it case-sensitive
+                    if (const auto * alias_identifier = alias_node->as<ASTIdentifier>())
+                        res->subquery->as<ASTSubquery &>().alias_is_double_quoted
+                            = alias_identifier->getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote;
+                }
             }
             else
             {

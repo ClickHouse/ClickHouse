@@ -325,3 +325,51 @@ SELECT * REPLACE ('a' AS FirstName, 'b' AS firstname) FROM t_dup_tgt; -- { serve
 SELECT * REPLACE ('a' AS firstname) FROM t_dup_tgt;
 SELECT * EXCEPT (firstname) FROM t_dup_tgt;
 DROP TABLE t_dup_tgt;
+
+SELECT '--- REPLACE filter rewrite respects the visible namespace ---';
+CREATE TABLE t_rw (Age String, age Int32) ENGINE = Memory;
+INSERT INTO t_rw VALUES ('x', 1);
+SELECT * REPLACE (0 AS Age) FROM t_rw WHERE age = 1;
+SELECT * REPLACE (0 AS Age) FROM t_rw WHERE AGE = 1; -- { serverError AMBIGUOUS_IDENTIFIER }
+DROP TABLE t_rw;
+
+SELECT '--- Qualified COLUMNS is exact-first and ambiguity-aware ---';
+CREATE TABLE t_qc (Age Int32, age Int32, `A.B` Int32) ENGINE = Memory;
+INSERT INTO t_qc VALUES (1, 2, 5);
+SELECT t.COLUMNS(Age) FROM t_qc AS t;
+SELECT t.COLUMNS(AGE) FROM t_qc AS t; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT t.COLUMNS(`a.b`) FROM t_qc AS t;
+DROP TABLE t_qc;
+
+SELECT '--- USING spelling differing from shared canonical still merges ---';
+CREATE TABLE t_uc_l (Key Int32, a Int32) ENGINE = Memory;
+CREATE TABLE t_uc_r (Key Int64, b Int32) ENGINE = Memory;
+INSERT INTO t_uc_l VALUES (1, 10);
+INSERT INTO t_uc_r VALUES (2, 100);
+SELECT Key, toTypeName(Key) FROM t_uc_l FULL JOIN t_uc_r USING (key) ORDER BY ALL;
+DROP TABLE t_uc_l;
+DROP TABLE t_uc_r;
+
+SELECT '--- USING star expansion suppresses only per-side participants ---';
+CREATE TABLE t_sp_l (Key Int32, key String, a Int32) ENGINE = Memory;
+CREATE TABLE t_sp_r (key Int32) ENGINE = Memory;
+INSERT INTO t_sp_l VALUES (1, 'z', 10);
+INSERT INTO t_sp_r VALUES (1);
+SELECT * FROM t_sp_l JOIN t_sp_r USING (Key);
+DROP TABLE t_sp_l;
+DROP TABLE t_sp_r;
+
+SELECT '--- NATURAL JOIN pin survives nested join operands ---';
+SELECT * FROM (SELECT 1 AS "KEY") AS s1 CROSS JOIN (SELECT 2 AS z) AS s2 NATURAL JOIN (SELECT 3 AS key) AS s3;
+
+SELECT '--- Parenthesized alias forms keep the quote pin ---';
+SELECT x FROM (SELECT (1 AS "X")); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT "X" FROM (SELECT (1 AS "X"));
+CREATE TABLE t_pj1 (a Int32) ENGINE = Memory;
+CREATE TABLE t_pj2 (b Int32) ENGINE = Memory;
+INSERT INTO t_pj1 VALUES (1);
+INSERT INTO t_pj2 VALUES (2);
+SELECT j.a FROM (t_pj1 CROSS JOIN t_pj2) AS "J"; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT "J".a FROM (t_pj1 CROSS JOIN t_pj2) AS "J";
+DROP TABLE t_pj1;
+DROP TABLE t_pj2;

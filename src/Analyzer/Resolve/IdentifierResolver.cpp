@@ -1420,7 +1420,9 @@ static bool qualifierBindsToJoinSubtree(
     auto it = scope.table_expression_node_to_data.find(join_tree_node);
     if (it == scope.table_expression_node_to_data.end())
         return false;
-    return !it->second.table_name.empty() && identifierPartsEqual(it->second.table_name, qualifier, case_insensitive);
+    /// A double-quoted table/CTE definition pins its name; an unquoted qualifier must not fold onto it.
+    return !it->second.table_name.empty()
+        && identifierPartsEqual(it->second.table_name, qualifier, case_insensitive && !it->second.table_name_is_double_quoted);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
@@ -1641,16 +1643,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         {
             auto & left_resolved_column = left_resolved_identifier->as<ColumnNode &>();
             auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
-            if (left_resolved_column.getColumnName() == right_resolved_column.getColumnName())
+
+            /// Folded USING key: use the entry whose per-side participants are exactly the
+            /// resolved columns — a mere case-sibling of the key must keep its own resolution.
+            auto find_folded_using_entry = [&]()
             {
-                using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
-            }
-            else if (scope.isStandardMode()
-                && Poco::icompare(left_resolved_column.getColumnName(), right_resolved_column.getColumnName()) == 0)
-            {
-                /// Folded USING key: the sides resolved to case-sibling physical columns. Use the
-                /// USING entry whose per-side participants are exactly the resolved columns — a
-                /// mere case-sibling of the key (distinct column) must keep its own resolution.
                 for (auto it = join_using_column_name_to_column_node.begin(); it != join_using_column_name_to_column_node.end(); ++it)
                 {
                     if (Poco::icompare(it->first, left_resolved_column.getColumnName()) != 0)
@@ -1666,9 +1663,23 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                         || left_participant->getColumnSource() != left_resolved_column.getColumnSource()
                         || right_participant->getColumnSource() != right_resolved_column.getColumnSource())
                         continue;
-                    using_column_node_it = it;
-                    break;
+                    return it;
                 }
+                return join_using_column_name_to_column_node.end();
+            };
+
+            if (left_resolved_column.getColumnName() == right_resolved_column.getColumnName())
+            {
+                using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
+                /// The clause spelling may be a case-sibling of the byte-equal resolved names
+                /// (`USING (key)` over `Key`/`Key`) — fall back to the participant-verified scan.
+                if (using_column_node_it == join_using_column_name_to_column_node.end() && scope.isStandardMode())
+                    using_column_node_it = find_folded_using_entry();
+            }
+            else if (scope.isStandardMode()
+                && Poco::icompare(left_resolved_column.getColumnName(), right_resolved_column.getColumnName()) == 0)
+            {
+                using_column_node_it = find_folded_using_entry();
             }
         }
         else

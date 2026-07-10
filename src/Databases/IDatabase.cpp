@@ -55,7 +55,7 @@ String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, Contex
 {
     /// Remote / data-lake databases (PostgreSQL, MySQL, DataLake, ...) do not participate: extra
     /// probes double remote round trips. Documented under the `case_insensitive_names` setting.
-    if (isRemoteDatabase())
+    if (isRemoteDatabase() || isDatalakeCatalog())
         return {};
 
     /// Prefer the narrow exact-name lookup first: `getTablesIterator` may enumerate the entire
