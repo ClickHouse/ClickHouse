@@ -1,0 +1,152 @@
+---
+slug: /use-cases/observability/clickstack/session-replay
+title: 'Relecture de session'
+sidebarTitle: 'Relecture de session'
+description: 'Capturez et rejouez les sessions utilisateur dans ClickStack pour déboguer les problèmes frontend, comprendre le comportement utilisateur et corréler l’activité du navigateur avec les logs et les traces du backend.'
+doc_type: 'guide'
+keywords: ['clickstack', 'relecture de session', 'SDK navigateur', 'frontend observability', 'sessions utilisateur', 'débogage']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+La relecture de session dans ClickStack capture et reconstitue les interactions des utilisateurs dans votre application web, ce qui vous permet de rejouer visuellement exactement ce qu’un utilisateur a vu et fait pendant sa session. Plutôt qu’un enregistrement vidéo, le SDK enregistre les modifications du DOM, les mouvements de souris, les clics, les défilements, les saisies au clavier, les console logs, les requêtes réseau (XHR, Fetch, WebSocket) et les exceptions JavaScript — puis reconstitue l’expérience dans le navigateur.
+
+Comme les relectures de session sont stockés dans ClickHouse aux côtés de vos logs, traces et métriques, vous pouvez passer du visionnage de l’expérience d’un utilisateur à l’inspection des traces backend et des requêtes de base de données qui l’ont alimentée — le tout en quelques clics. La relecture de session est donc utile pour le debugging des problèmes de production, comprendre le comportement des utilisateurs, identifier les points de friction UX et confirmer visuellement les problèmes signalés au support.
+
+<div id="instrumentation">
+  ## Instrumenter votre application
+</div>
+
+ClickStack est entièrement compatible avec OpenTelemetry. Vous pouvez donc envoyer de la télémétrie navigateur (traces, exceptions) à l’aide du SDK JavaScript OpenTelemetry standard ou de l’un des [SDKs ClickStack pour différents langages](/fr/clickstack/ingesting-data/sdks). Cependant, **la relecture de session nécessite le Browser SDK de ClickStack** (`@hyperdx/browser`), qui étend le SDK OpenTelemetry avec l’enregistrement de session, la capture de la console et la capture des requêtes réseau. Si vous avez seulement besoin de traces, sans relecture de session, n’importe quel SDK navigateur compatible OTel fonctionnera avec ClickStack.
+
+Les exemples ci-dessous utilisent le Browser SDK de ClickStack. Ajouter la relecture de session à votre application ne prend que trois étapes : installer le paquet, initialiser le SDK, puis toutes les interactions utilisateur sont capturées automatiquement — aucune autre modification du code n’est nécessaire.
+
+<Tip>
+  Initialisez le SDK à un emplacement dont le chargement est garanti au démarrage de votre application. Par exemple, dans une application Next.js, il peut s’agir de votre `layout.js` racine. Cela garantit que l’enregistrement de session commence immédiatement et capture l’intégralité de l’expérience utilisateur.
+</Tip>
+
+<Tabs>
+  <Tab title="NPM">
+    ```shell
+    npm install @hyperdx/browser
+    ```
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+      url: 'http://your-otel-collector:4318',
+      apiKey: 'YOUR_INGESTION_API_KEY', // omettre pour Managed ClickStack
+      service: 'my-frontend-app',
+      tracePropagationTargets: [/api.myapp.domain/i],
+      consoleCapture: true,
+      advancedNetworkCapture: true,
+    });
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    ```shell
+    yarn add @hyperdx/browser
+    ```
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+      url: 'http://your-otel-collector:4318',
+      apiKey: 'YOUR_INGESTION_API_KEY', // omettre pour Managed ClickStack
+      service: 'my-frontend-app',
+      tracePropagationTargets: [/api.myapp.domain/i],
+      consoleCapture: true,
+      advancedNetworkCapture: true,
+    });
+    ```
+  </Tab>
+
+  <Tab title="Balise de script">
+    Pour les applications qui n’utilisent pas de bundler, incluez directement le SDK via une balise de script. La variable globale `HyperDX` est alors exposée et peut être utilisée de la même manière que le paquet NPM.
+
+    ```html
+    <script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+    <script>
+      window.HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // omettre pour Managed ClickStack
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i],
+        consoleCapture: true,
+        advancedNetworkCapture: true,
+      });
+    </script>
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  L’option `tracePropagationTargets` est essentielle pour relier les relectures de session aux traces backend — définissez-la sur votre domaine API pour activer un traçage distribué complet du frontend au backend. Pour obtenir la liste complète des options du SDK, y compris les contrôles de confidentialité, les actions personnalisées, les limites d’erreur React et les source maps, consultez la [référence du Browser SDK](/fr/clickstack/ingesting-data/sdks/browser).
+</Note>
+
+Le Browser SDK prend également en charge le [masquage des champs de saisie et du texte](/fr/clickstack/ingesting-data/sdks/browser#options) pour les applications sensibles à la confidentialité, ainsi que [l’ajout d’informations ou de métadonnées utilisateur](/fr/clickstack/ingesting-data/sdks/browser#attach-user-information-or-metadata), afin de pouvoir rechercher et filtrer les sessions par utilisateur dans l’UI ClickStack.
+
+<div id="viewing-replays">
+  ## Visualisation des relectures de session
+</div>
+
+Accédez à **Client Sessions** depuis la barre latérale gauche dans la ClickStack UI (HyperDX). Cette vue répertorie toutes les sessions de navigateur capturées, avec leur durée et leur nombre d&#39;événements.
+
+<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Vue de recherche des relectures de session" size="lg" />
+
+Cliquez sur le bouton de lecture d&#39;une session pour la rejouer. La vue de replay affiche l&#39;expérience utilisateur reconstituée à droite, avec à gauche une chronologie des événements du navigateur — requêtes réseau, console logs et erreurs.
+
+<Image img="/images/clickstack/session-replay/session-replay.webp" alt="Lecture d’une relecture de session" size="lg" />
+
+Basculez entre les modes **Highlighted** et **All Events** pour ajuster le niveau de détail affiché dans la chronologie. Les erreurs sont annotées en rouge, et cliquer sur un événement positionne le replay à cet instant de la session.
+
+<div id="session-to-trace">
+  ### De la session à la trace
+</div>
+
+Lorsque vous sélectionnez une requête réseau ou une erreur dans la chronologie de la session, vous pouvez accéder à l’onglet **Trace** pour suivre cette requête dans vos services backend et voir les logs, spans et requêtes de base de données associés, déclenchés par cette interaction utilisateur.
+
+Cela fonctionne parce que la configuration `tracePropagationTargets` relie les spans du navigateur aux spans du server via l’en-tête `traceparent`, créant ainsi une trace distribuée continue depuis le clic de l’utilisateur jusqu’à la base de données. Pour une présentation détaillée de sa mise en œuvre, y compris l’instrumentation du frontend et du backend, consultez [Instrumenter votre application NextJS avec OpenTelemetry et ClickStack](https://clickhouse.com/blog/instrumenting-nextjs-opentelemetry-clickstack).
+
+<Frame>
+  <img src="/images/clickstack/session-replay/clickpy-trace.webp" alt="Explorer les traces backend dans ClickStack à partir d’une relecture de session" />
+</Frame>
+
+<div id="trace-to-session">
+  ### De la trace à la session
+</div>
+
+La corrélation fonctionne aussi dans l&#39;autre sens. Lorsque vous consultez une trace dans la vue **Search**, cliquez dessus pour ouvrir son détail, puis sélectionnez l&#39;onglet **Relecture de session** pour voir exactement ce que l&#39;utilisateur faisait au moment de cette trace. C&#39;est particulièrement utile pour analyser des erreurs ou des requêtes lentes : vous pouvez partir d&#39;un problème backend et voir immédiatement le point de vue de l&#39;utilisateur.
+
+<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="Vue de trace de Relecture de session" size="lg" />
+
+<div id="data-storage">
+  ## Comment les données de session sont stockées
+</div>
+
+Les données de relecture de session sont stockées dans une table dédiée [`hyperdx_sessions`](/fr/clickstack/ingesting-data/schemas#sessions) dans ClickHouse, distincte des logs et des traces. Chaque événement de session correspond à une ligne, avec un champ `Body` contenant la charge utile de l’événement et une map `LogAttributes` qui stocke les métadonnées de l’événement. Les colonnes `Body` et `LogAttributes` contiennent ensemble les détails des événements de session utilisés pour reconstituer la relecture.
+
+Pour des informations complètes sur le schéma de la table, consultez [Tables et schémas utilisés par ClickStack](/fr/clickstack/ingesting-data/schemas).
+
+<div id="try-it-out">
+  ## Essayez
+</div>
+
+Il existe deux façons de voir la relecture de session en action :
+
+* **Exemple en direct** — rendez-vous sur [clickpy.clickhouse.com](https://clickpy.clickhouse.com), interagissez avec l’application, puis consultez le replay de votre session sur [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), dans la source **ClickPy Sessions**. Pour savoir comment ClickPy a été instrumentée, consultez l’article de blog [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack).
+* **Démo locale** — la [relecture de session demo](/fr/clickstack/example-datasets/session-replay) explique pas à pas comment instrumenter une application de démonstration, y compris l’exécution de ClickStack en local et la consultation de vos replays.
+
+<div id="learn-more">
+  ## En savoir plus
+</div>
+
+* [Démo relecture de session](/fr/clickstack/example-datasets/session-replay) — application de démonstration locale interactive avec des instructions pas à pas
+* [Référence du Browser SDK](/fr/clickstack/ingesting-data/sdks/browser) — toutes les options du SDK, les source maps, les custom actions et la configuration avancée
+* [Search](/fr/clickstack/features/search) — syntaxe de recherche pour filtrer les sessions et les événements
+* [Dashboards](/fr/clickstack/features/dashboards/overview) — créez des visualisations et des tableaux de bord à partir des données de session et de trace
+* [Alerts](/fr/clickstack/features/alerts) — configurez des alertes sur les erreurs, la latence et d&#39;autres signaux
+* [Architecture de ClickStack](/fr/clickstack/architecture) — comment ClickHouse, HyperDX et l&#39;OTel collector s&#39;articulent

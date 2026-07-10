@@ -1,0 +1,180 @@
+---
+title: Как включить SSL с Let's Encrypt на одном сервере ClickHouse
+description: Узнайте, как настроить SSL для одного сервера ClickHouse с помощью Let's Encrypt, включая выпуск сертификата, настройку и проверку.
+date: 2024-12-11
+tags: ['Безопасность и аутентификация']
+keywords: ['SSL', 'Let/`s Encrypt']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="steps-to-follow">
+  ## Порядок действий
+</div>
+
+Следующие шаги можно использовать, чтобы включить SSL для одного сервера ClickHouse с помощью [Let&#39;s Encrypt](https://letsencrypt.org/) — бесплатного, автоматизированного и открытого центра сертификации (CA), созданного для того, чтобы любому было проще защищать свои веб-сайты с помощью HTTPS. Автоматизируя процесс выпуска сертификата и renewal сертификатов, Let&#39;s Encrypt позволяет поддерживать безопасность веб-сайтов без ручного вмешательства.
+
+<Note>
+  В этом руководстве предполагается, что ClickHouse установлен в стандартные каталоги пакетов. Во всех примерах используется домен `product-test-server.clickhouse-dev.com`. Замените его на свой домен.
+</Note>
+
+1. Убедитесь, что у вас есть DNS-запись `A` или `AAAA`, указывающая на ваш сервер. Это можно проверить с помощью Linux-утилиты `dig.` Например, ответ для `product-test-server.clickhouse-dev.com` при использовании DNS-сервера Cloudflare `1.1.1.1`:
+
+<br />
+
+```bash
+dig @1.1.1.1 product-test-server.clickhouse-dev.com
+
+; <<>> DiG 9.18.28-0ubuntu0.22.04.1-Ubuntu <<>> @1.1.1.1 product-test-server.clickhouse-dev.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 22315
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+;; QUESTION SECTION:
+;product-test-server.clickhouse-dev.com.    IN A
+
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+
+;; Query time: 52 msec
+;; SERVER: 1.1.1.1#53(1.1.1.1) (UDP)
+;; WHEN: Thu Dec 12 09:37:33 UTC 2024
+;; MSG SIZE  rcvd: 83
+```
+
+Обратите внимание на раздел ниже, где подтверждается наличие записи типа A.
+
+```bash
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+```
+
+2. Откройте порт 80 на вашем сервере. Этот порт будет использоваться для автоматического продления сертификата с помощью протокола ACME и `certbot`. В AWS это можно сделать, [изменив связанный с инстансом Security Group](https://repost.aws/knowledge-center/connect-http-https-ec2).
+
+<br />
+
+<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="Конфигурация AWS Security Group с открытым портом 80" border />
+
+3. Установите [`certbot`](https://certbot.eff.org/instructions), например с помощью `apt`
+
+<br />
+
+```bash
+sudo apt install certbot
+```
+
+4. Получите SSL-сертификат
+
+<br />
+
+```bash
+sudo certbot certonly
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+
+How would you like to authenticate with the ACME CA?
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+1: Spin up a temporary webserver (standalone)
+2: Place files in webroot directory (webroot)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel): 1
+Please enter the domain name(s) you would like on your certificate (comma and/or
+space separated) (Enter 'c' to cancel): product-test-server.clickhouse-dev.com
+Requesting a certificate for product-test-server.clickhouse-dev.com
+
+Successfully received certificate.
+Certificate is saved at: /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/fullchain.pem
+Key is saved at:         /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/privkey.pem
+This certificate expires on 2025-03-12.
+These files will be updated when the certificate renews.
+Certbot has set up a scheduled task to automatically renew this certificate in the background.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+If you like Certbot, please consider supporting our work by:
+ * Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+ * Donating to EFF:                    https://eff.org/donate-le
+```
+
+<Note>
+  На нашем сервере не запущен веб-сервер, поэтому выберите вариант (1), чтобы Certbot использовал автономный временный веб-сервер.
+</Note>
+
+Когда появится запрос, введите полное доменное имя вашего сервера, например `product-test-server.clickhouse-dev.com`.
+
+<Note>
+  У Let&#39;s Encrypt действует политика, запрещающая выдачу сертификатов для некоторых типов доменов, например доменов, сгенерированных публичными облачными провайдерами (таких как AWS *.compute.amazonaws.com). Такие домены считаются общей инфраструктурой и блокируются в целях безопасности и предотвращения злоупотреблений.
+</Note>
+
+5. Скопируйте сертификаты в каталог ClickHouse.
+
+<br />
+
+```bash
+echo '* * * * * root cp -u /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/*.pem /etc/clickhouse-server/ && chown clickhouse:clickhouse /etc/clickhouse-server/*.pem && chmod 400 /etc/clickhouse-server/*.pem' | sudo tee /etc/cron.d/copy-certificates
+```
+
+Эта команда настраивает cron-задачу для автоматического управления SSL-сертификатами Let&#39;s Encrypt для сервера ClickHouse. Она выполняется каждую минуту от имени пользователя root и копирует файлы .pem из каталога Let&#39;s Encrypt в каталог конфигурации сервера ClickHouse, но только если эти файлы были обновлены. После копирования скрипт меняет владельца файлов на пользователя и группу clickhouse, чтобы у сервера были необходимые права доступа. Он также устанавливает безопасные разрешения только для чтения (`chmod 400`) для скопированных файлов, чтобы обеспечить строгую защиту файлов. Благодаря этому сервер ClickHouse всегда имеет доступ к актуальным SSL-сертификатам без ручного вмешательства, что позволяет сохранять безопасность и сводить к минимуму операционные накладные расходы.
+
+6. Настройте использование этих сертификатов в clickhouse-server.
+
+<br />
+
+```bash
+echo "https_port: 8443
+tcp_port_secure: 9440
+openSSL:
+ server:
+ certificateFile: '/etc/clickhouse-server/fullchain.pem'
+ privateKeyFile: '/etc/clickhouse-server/privkey.pem'
+ disableProtocols: 'sslv2,sslv3,tlsv1,tlsv1_1'" | sudo tee /etc/clickhouse-server/config.d/ssl.yaml
+```
+
+7. Перезапустите сервер ClickHouse
+
+<br />
+
+```bash
+sudo clickhouse restart
+```
+
+8. Проверьте, что ClickHouse может взаимодействовать по SSL
+
+<br />
+
+```bash
+curl https://product-test-server.clickhouse-dev.com:8443/
+
+Ok.
+```
+
+Чтобы этот последний шаг сработал, вам, возможно, потребуется убедиться, что порт 8443 доступен, например добавлен в вашу Security Group в AWS. Либо, если вам нужен доступ к ClickHouse только с сервера, измените файл hosts, то есть:
+
+```bash
+echo "127.0.0.1 product-test-server.clickhouse-dev.com" | sudo tee -a /etc/hosts
+```
+
+<Warning>
+  Если вы разрешаете подключения с адресов по маске, убедитесь, что применена хотя бы одна из следующих мер:
+
+  * сервер защищён межсетевым экраном и недоступен из недоверенных сетей;
+  * для всех пользователей доступ ограничен подмножеством сетевых адресов (см. users.xml);
+  * у всех пользователей установлены надёжные пароли, доступны только защищённые интерфейсы (TLS) либо подключения выполняются только через интерфейсы TLS.
+  * пользователи без пароля имеют доступ только для чтения.
+
+  См. также: https://www.shodan.io/search?query=clickhouse
+
+  В качестве руководства по защите публичных инстансов можно использовать статью [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http).
+</Warning>
+
+Следующее также должно работать при подключении с локальной машины, на которой запущен ClickHouse. Чтобы подключиться через `product-test-server.clickhouse-dev.com`, откройте порт 9440 в вашем:
+
+```bash
+clickhouse client --secure --user default --password <password>
+```

@@ -1,0 +1,438 @@
+---
+title: 'Inferência de esquema JSON'
+slug: /integrations/data-formats/json/inference
+description: 'Como usar a inferência de esquema JSON'
+keywords: ['json', 'esquema', 'inferência', 'inferência de esquema']
+doc_type: 'guide'
+---
+
+O ClickHouse pode determinar automaticamente a estrutura de dados JSON. Isso permite consultar dados JSON diretamente, por exemplo, em disco com `clickhouse-local` ou em buckets do S3, e/ou criar esquemas automaticamente antes de carregar os dados no ClickHouse.
+
+<div id="when-to-use-type-inference">
+  ## Quando usar inferência de tipos
+</div>
+
+* **Estrutura consistente** - Os dados com base nos quais você vai inferir os tipos contêm todas as chaves de interesse. A inferência de tipos se baseia na amostragem dos dados até um [número máximo de linhas](/pt-BR/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) ou de [bytes](/pt-BR/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference). Dados além da amostra, com colunas adicionais, serão ignorados e não poderão ser consultados.
+* **Tipos consistentes** - Os tipos de dados de chaves específicas precisam ser compatíveis, ou seja, deve ser possível converter automaticamente um tipo em outro.
+
+Se você tiver um JSON mais dinâmico, ao qual novas chaves podem ser adicionadas e no qual vários tipos são possíveis para o mesmo caminho, consulte [&quot;Trabalhando com dados semiestruturados e dinâmicos&quot;](/pt-BR/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data).
+
+<div id="detecting-types">
+  ## Detectando tipos
+</div>
+
+O texto a seguir pressupõe que o JSON tenha uma estrutura consistente e um único tipo para cada caminho.
+
+Em exemplos anteriores, usamos uma versão simples do [Python PyPI conjunto de dados](https://clickpy.clickhouse.com/) no formato `NDJSON`. Nesta seção, exploramos um conjunto de dados mais complexo, com estruturas aninhadas: o [conjunto de dados arXiv](https://www.kaggle.com/datasets/Cornell-University/arxiv?resource=download), que contém 2,5 milhões de artigos acadêmicos. Cada linha desse conjunto de dados, distribuído em `NDJSON`, representa um artigo acadêmico publicado. Um exemplo de linha é mostrado abaixo:
+
+```json
+{
+  "id": "2101.11408",
+  "submitter": "Daniel Lemire",
+  "authors": "Daniel Lemire",
+  "title": "Number Parsing at a Gigabyte per Second",
+  "comments": "Software at https://github.com/fastfloat/fast_float and\n https://github.com/lemire/simple_fastfloat_benchmark/",
+  "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+  "doi": "10.1002/spe.2984",
+  "report-no": null,
+  "categories": "cs.DS cs.MS",
+  "license": "http://creativecommons.org/licenses/by/4.0/",
+  "abstract": "With disks and networks providing gigabytes per second ....\n",
+  "versions": [
+    {
+      "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+      "version": "v1"
+    },
+    {
+      "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+      "version": "v2"
+    }
+  ],
+  "update_date": "2022-11-07",
+  "authors_parsed": [
+    [
+      "Lemire",
+      "Daniel",
+      ""
+    ]
+  ]
+}
+```
+
+Esses dados exigem um esquema muito mais complexo do que os exemplos anteriores. Abaixo, descrevemos o processo de definição desse esquema, apresentando tipos complexos como `Tuple` e `Array`.
+
+Esse conjunto de dados está armazenado em um bucket do S3 público em `s3://datasets-documentation/arxiv/arxiv.json.gz`.
+
+Você pode ver que o conjunto de dados acima contém objetos JSON aninhados. Embora seja recomendável definir e versionar seus esquemas, a inferência permite deduzir os tipos a partir dos dados. Isso permite gerar automaticamente o DDL do esquema, evitando a necessidade de montá-lo manualmente e acelerando o processo de desenvolvimento.
+
+<Info>
+  **Detecção automática de formato**
+
+  Além de detectar o esquema, a inferência de esquema JSON também infere automaticamente o formato dos dados com base na extensão e no conteúdo do arquivo. Como resultado, o arquivo acima é detectado automaticamente como NDJSON.
+</Info>
+
+O uso da [função s3](/pt-BR/reference/functions/table-functions/s3) com o comando `DESCRIBE` mostra os tipos que serão inferidos.
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────┬─type────────────────────────────────────────────────────────────────────┐
+│ id             │ Nullable(String)                                                        │
+│ submitter      │ Nullable(String)                                                        │
+│ authors        │ Nullable(String)                                                        │
+│ title          │ Nullable(String)                                                        │
+│ comments       │ Nullable(String)                                                        │
+│ journal-ref    │ Nullable(String)                                                        │
+│ doi            │ Nullable(String)                                                        │
+│ report-no      │ Nullable(String)                                                        │
+│ categories     │ Nullable(String)                                                        │
+│ license        │ Nullable(String)                                                        │
+│ abstract       │ Nullable(String)                                                        │
+│ versions       │ Array(Tuple(created Nullable(String),version Nullable(String)))         │
+│ update_date    │ Nullable(Date)                                                          │
+│ authors_parsed │ Array(Array(Nullable(String)))                                          │
+└────────────────┴─────────────────────────────────────────────────────────────────────────┘
+```
+
+<Info>
+  **Evite valores nulos**
+
+  Você pode ver que muitas colunas são detectadas como Nullable. [Não recomendamos usar o tipo Nullable](/pt-BR/reference/data-types/nullable#storage-features) quando isso não for absolutamente necessário. Você pode usar [schema&#95;inference&#95;make&#95;columns&#95;nullable](/pt-BR/reference/settings/formats#schema_inference_make_columns_nullable) para controlar quando Nullable será aplicado.
+</Info>
+
+Podemos ver que a maioria das colunas foi detectada automaticamente como `String`, com a coluna `update_date` detectada corretamente como `Date`. A coluna `versions` foi criada como `Array(Tuple(created String, version String))` para armazenar uma lista de objetos, e `authors_parsed` foi definida como `Array(Array(String))` para arrays aninhados.
+
+<Info>
+  **Controle da detecção de tipos**
+
+  A detecção automática de datas e DateTimes pode ser controlada, respectivamente, pelas configurações [`input_format_try_infer_dates`](/pt-BR/reference/settings/formats#input_format_try_infer_dates) e [`input_format_try_infer_datetimes`](/pt-BR/reference/settings/formats#input_format_try_infer_datetimes) (ambas ativadas por padrão). A inferência de objetos como Tuples é controlada pela configuração [`input_format_json_try_infer_named_tuples_from_objects`](/pt-BR/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects). Outras configurações que controlam a inferência de esquema para JSON, como a detecção automática de números, podem ser encontradas [aqui](/pt-BR/concepts/features/interfaces/schema-inference#text-formats).
+</Info>
+
+<div id="querying-json">
+  ## Consultando JSON
+</div>
+
+O texto a seguir pressupõe que o JSON tenha uma estrutura consistente e um único tipo para cada caminho.
+
+Podemos contar com a inferência de esquema para consultar os dados JSON diretamente. Abaixo, encontramos os principais autores de cada ano, aproveitando o fato de que as datas e os arrays são detectados automaticamente.
+
+```sql
+SELECT
+ toYear(update_date) AS year,
+ authors,
+    count() AS c
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+GROUP BY
+    year,
+ authors
+ORDER BY
+    year ASC,
+ c DESC
+LIMIT 1 BY year
+```
+
+```response
+┌─year─┬─authors────────────────────────────────────┬───c─┐
+│ 2007 │ The BABAR Collaboration, B. Aubert, et al  │  98 │
+│ 2008 │ The OPAL collaboration, G. Abbiendi, et al │  59 │
+│ 2009 │ Ashoke Sen                                 │  77 │
+│ 2010 │ The BABAR Collaboration, B. Aubert, et al  │ 117 │
+│ 2011 │ Amelia Carolina Sparavigna                 │  21 │
+│ 2012 │ ZEUS Collaboration                         │ 140 │
+│ 2013 │ CMS Collaboration                          │ 125 │
+│ 2014 │ CMS Collaboration                          │  87 │
+│ 2015 │ ATLAS Collaboration                        │ 118 │
+│ 2016 │ ATLAS Collaboration                        │ 126 │
+│ 2017 │ CMS Collaboration                          │ 122 │
+│ 2018 │ CMS Collaboration                          │ 138 │
+│ 2019 │ CMS Collaboration                          │ 113 │
+│ 2020 │ CMS Collaboration                          │  94 │
+│ 2021 │ CMS Collaboration                          │  69 │
+│ 2022 │ CMS Collaboration                          │  62 │
+│ 2023 │ ATLAS Collaboration                        │ 128 │
+│ 2024 │ ATLAS Collaboration                        │ 120 │
+└──────┴────────────────────────────────────────────┴─────┘
+
+18 rows in set. Elapsed: 20.172 sec. Processed 2.52 million rows, 1.39 GB (124.72 thousand rows/s., 68.76 MB/s.)
+```
+
+A inferência de esquema nos permite consultar arquivos JSON sem precisar especificar o esquema, acelerando análises ad hoc de dados.
+
+<div id="creating-tables">
+  ## Criando tabelas
+</div>
+
+Podemos usar a inferência de esquema para definir o esquema de uma tabela. O comando `CREATE AS EMPTY` a seguir faz com que o DDL da tabela seja inferido e a tabela seja criada. Isso não carrega nenhum dado:
+
+```sql
+CREATE TABLE arxiv
+ENGINE = MergeTree
+ORDER BY update_date EMPTY
+AS SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+SETTINGS schema_inference_make_columns_nullable = 0
+```
+
+Para confirmar a estrutura da tabela, usamos o comando `SHOW CREATE TABLE`:
+
+```sql
+SHOW CREATE TABLE arxiv
+
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `journal-ref` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+O esquema acima é o esquema correto para esses dados. A inferência de esquema se baseia na amostragem e na leitura dos dados linha por linha. Os valores das colunas são extraídos de acordo com o formato, usando parsers recursivos e heurísticas para determinar o tipo de cada valor. O número máximo de linhas e bytes lidos dos dados durante a inferência de esquema é controlado pelas configurações [`input_format_max_rows_to_read_for_schema_inference`](/pt-BR/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (25000 por padrão) e [`input_format_max_bytes_to_read_for_schema_inference`](/pt-BR/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (32MB por padrão). Se a detecção não estiver correta, você pode fornecer dicas conforme descrito [aqui](/pt-BR/reference/settings/formats#schema_inference_make_columns_nullable).
+
+<div id="creating-tables-from-snippets">
+  ### Criando tabelas a partir de snippets
+</div>
+
+O exemplo acima usa um arquivo no S3 para criar o esquema da tabela. Talvez você queira criar um esquema a partir de um snippet com uma única linha. Isso pode ser feito usando a função [format](/pt-BR/reference/functions/table-functions/format), como mostrado abaixo:
+
+```sql
+CREATE TABLE arxiv
+ENGINE = MergeTree
+ORDER BY update_date EMPTY
+AS SELECT *
+FROM format(JSONEachRow, '{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"Withdisks and networks providing gigabytes per second ","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]]}') SETTINGS schema_inference_make_columns_nullable = 0
+
+SHOW CREATE TABLE arxiv
+
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+<div id="loading-json-data">
+  ## Carregamento de dados JSON
+</div>
+
+O texto a seguir pressupõe que o JSON tenha uma estrutura consistente e um único tipo para cada caminho.
+
+Os comandos anteriores criaram uma tabela na qual os dados podem ser carregados. Agora você pode inserir os dados na sua tabela usando o seguinte `INSERT INTO SELECT`:
+
+```sql
+INSERT INTO arxiv SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+```
+
+```response
+0 rows in set. Elapsed: 38.498 sec. Processed 2.52 million rows, 1.39 GB (65.35 thousand rows/s., 36.03 MB/s.)
+Peak memory usage: 870.67 MiB.
+```
+
+Para ver exemplos de carregamento de dados de outras fontes, como um arquivo, consulte [aqui](/pt-BR/reference/statements/insert-into).
+
+Depois de carregados, podemos consultar os dados, opcionalmente usando o formato `PrettyJSONEachRow` para exibir as linhas em sua estrutura original:
+
+```sql
+SELECT *
+FROM arxiv
+LIMIT 1
+FORMAT PrettyJSONEachRow
+
+{
+  "id": "0704.0004",
+  "submitter": "David Callan",
+  "authors": "David Callan",
+  "title": "A determinant of Stirling cycle numbers counts unlabeled acyclic",
+  "comments": "11 pages",
+  "journal-ref": "",
+  "doi": "",
+  "report-no": "",
+  "categories": "math.CO",
+  "license": "",
+  "abstract": "  We show that a determinant of Stirling cycle numbers counts unlabeled acyclic\nsingle-source automata.",
+  "versions": [
+    {
+      "created": "Sat, 31 Mar 2007 03:16:14 GMT",
+      "version": "v1"
+    }
+  ],
+  "update_date": "2007-05-23",
+  "authors_parsed": [
+    [
+      "Callan",
+      "David"
+    ]
+  ]
+}
+```
+
+```response
+1 row in set. Elapsed: 0.009 sec.
+```
+
+<div id="handling-errors">
+  ## Tratando erros
+</div>
+
+Às vezes, você pode ter dados inválidos. Por exemplo, colunas específicas que não têm o tipo correto ou um objeto JSON formatado incorretamente. Para isso, você pode usar as configurações [`input_format_allow_errors_num`](/pt-BR/reference/settings/formats#input_format_allow_errors_num) e [`input_format_allow_errors_ratio`](/pt-BR/reference/settings/formats#input_format_allow_errors_ratio) para permitir que um determinado número de linhas seja ignorado se os dados estiverem causando erros de inserção. Além disso, [dicas](/pt-BR/reference/settings/formats#schema_inference_hints) podem ser fornecidas para ajudar na inferência.
+
+<div id="working-with-semi-structured-data">
+  ## Trabalhando com dados semi-estruturados e dinâmicos
+</div>
+
+No exemplo anterior, usamos um JSON estático, com nomes de chaves e tipos bem conhecidos. Muitas vezes, porém, não é assim — novas chaves podem ser adicionadas, ou seus tipos podem mudar. Isso é comum em casos de uso como dados de observabilidade.
+
+O ClickHouse lida com isso por meio de um tipo [`JSON`](/pt-BR/reference/data-types/newjson) específico.
+
+Se você sabe que seu JSON é altamente dinâmico, com muitas chaves exclusivas e vários tipos para as mesmas chaves, recomendamos não usar a inferência de esquema com `JSONEachRow` para tentar inferir uma coluna para cada chave — mesmo que os dados estejam no formato JSON delimitado por quebras de linha.
+
+Considere o exemplo a seguir, de uma versão estendida do [Python PyPI conjunto de dados](https://clickpy.clickhouse.com/) acima. Aqui, adicionamos uma coluna `tags` arbitrária com pares aleatórios de chave-valor.
+
+```json
+{
+  "date": "2022-09-22",
+  "country_code": "IN",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "bandersnatch",
+  "python_minor": "",
+  "system": "",
+  "version": "0.2.8",
+  "tags": {
+    "5gTux": "f3to*PMvaTYZsz!*rtzX1",
+    "nD8CV": "value"
+  }
+}
+```
+
+Uma amostra desses dados está disponível publicamente em formato JSON delimitado por nova linha. Se tentarmos fazer inferência de esquema nesse arquivo, você verá que o desempenho é ruim, com uma resposta extremamente verbosa:
+
+```sql
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+
+-- resultado omitido por brevidade
+```
+
+```response
+9 rows in set. Elapsed: 127.066 sec.
+```
+
+O principal problema aqui é que o formato `JSONEachRow` é usado para inferência. Ele tenta inferir **um tipo de coluna para cada chave no JSON** — na prática, tentando aplicar um esquema estático aos dados sem usar o tipo [`JSON`](/pt-BR/reference/data-types/newjson).
+
+Com milhares de colunas únicas, essa abordagem de inferência é lenta. Como alternativa, você pode usar o formato `JSONAsObject`.
+
+`JSONAsObject` trata toda a entrada como um único objeto JSON e a armazena em uma única coluna do tipo [`JSON`](/pt-BR/reference/data-types/newjson), o que o torna mais adequado para payloads JSON altamente dinâmicos ou aninhados.
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─┐
+│ json │ JSON │
+└──────┴──────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+Esse formato também é essencial nos casos em que as colunas têm vários tipos que não podem ser compatibilizados. Por exemplo, considere um arquivo `sample.json` com o seguinte JSON delimitado por quebras de linha:
+
+```json
+{"a":1}
+{"a":"22"}
+```
+
+Nesse caso, o ClickHouse consegue fazer a coerção necessária para lidar com o conflito de tipos e tratar a coluna `a` como `Nullable(String)`.
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─────────────┐
+│ a    │ Nullable(String) │
+└──────┴──────────────────┘
+
+1 row in set. Elapsed: 0.081 sec.
+```
+
+<Info>
+  **Coerção de tipos**
+
+  Essa coerção de tipos pode ser controlada por meio de várias configurações. O exemplo acima depende da configuração [`input_format_json_read_numbers_as_strings`](/pt-BR/reference/settings/formats#input_format_json_read_numbers_as_strings).
+</Info>
+
+No entanto, alguns tipos são incompatíveis. Considere o exemplo a seguir:
+
+```json
+{"a":1}
+{"a":{"b":2}}
+```
+
+Nesse caso, não é possível fazer nenhum tipo de conversão. Portanto, o comando `DESCRIBE` falha:
+
+```sql
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+```
+
+```response
+Elapsed: 0.755 sec.
+```
+
+```sql
+Received exception from server (version 24.12.1):
+Code: 636. DB::Exception: Received from sql-clickhouse.clickhouse.com:9440. DB::Exception: The table structure cannot be extracted from a JSON format file. Error:
+Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a' in row 1 differs from type defined by previous rows: Int64. You can specify the type for this column using setting schema_inference_hints.
+```
+
+Nesse caso, `JSONAsObject` trata cada linha como um único tipo [`JSON`](/pt-BR/reference/data-types/newjson) (que permite que a mesma coluna tenha múltiplos tipos). Isso é essencial:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+SETTINGS enable_json_type = 1, describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─┐
+│ json │ JSON │
+└──────┴──────┘
+
+1 row in set. Elapsed: 0.010 sec.
+```
+
+<div id="further-reading">
+  ## Leitura adicional
+</div>
+
+Para saber mais sobre a inferência de tipos de dados, consulte [esta](/pt-BR/concepts/features/interfaces/schema-inference) página da documentação.

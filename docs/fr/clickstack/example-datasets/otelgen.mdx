@@ -1,0 +1,197 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/otelgen
+title: 'Générer des données OpenTelemetry synthétiques avec otelgen'
+sidebarTitle: 'Données synthétiques avec otelgen'
+description: 'Utilisez otelgen pour envoyer des logs, traces et métriques synthétiques à un ClickStack OpenTelemetry collector'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'otelgen', 'données synthétiques', 'OpenTelemetry', 'test', 'logs', 'traces', 'métriques', 'observabilité']
+---
+
+[`otelgen`](https://github.com/krzko/otelgen) est un petit outil CLI en Go qui génère des logs, traces et métriques OTLP synthétiques. Utilisez-le pour vérifier qu’un ClickStack OpenTelemetry collector existant accepte bien les données et que les événements s’affichent dans la ClickStack UI.
+
+Ce guide suppose que le collector est déjà en fonctionnement avec des endpoints OTLP sur `4317` (gRPC) et `4318` (HTTP).
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    <Steps>
+      <Step>
+        ### Prérequis
+
+        Ce guide suppose que vous avez suivi le [guide de démarrage de Managed ClickStack](/fr/clickstack/deployment/managed) et qu’un OpenTelemetry collector est en cours d’exécution, avec des endpoints OTLP gRPC (`4317`) et HTTP (`4318`) accessibles depuis la machine sur laquelle vous exécutez `otelgen`. Si vous avez [sécurisé le collector](/fr/clickstack/ingesting-data/collector#securing-the-collector) avec un `OTLP_AUTH_TOKEN`, gardez cette valeur à portée de main.
+      </Step>
+
+      <Step>
+        ### Installer otelgen
+
+        Installez-le avec Homebrew :
+
+        ```shell
+        brew install krzko/tap/otelgen
+        ```
+
+        Ou avec Go :
+
+        ```shell
+        go install github.com/krzko/otelgen@latest
+        ```
+      </Step>
+
+      <Step>
+        ### Définir les variables d’environnement
+
+        Exportez l’endpoint du collector et, si le collector est sécurisé, le jeton d’authentification :
+
+        ```shell
+        export OTEL_ENDPOINT=<host>:4317
+        export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
+        ```
+
+        Utilisez l’hôte et le port de votre collector. Si le collector s’exécute sur la même machine, utilisez `localhost:4317`.
+
+        <Info>
+          **Collector non sécurisé**
+
+          Le ClickStack OpenTelemetry collector n’exige pas d’authentification par défaut. Si vous n’avez pas suivi [Securing the collector](/fr/clickstack/ingesting-data/collector#securing-the-collector) pour définir un `OTLP_AUTH_TOKEN`, ignorez `OTLP_AUTH_TOKEN` ici et retirez le flag `--header` des commandes ci-dessous.
+        </Info>
+      </Step>
+
+      <Step>
+        ### Générer des traces
+
+        Envoyez une courte rafale de traces comportant plusieurs spans :
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          traces multi
+        ```
+
+        `--rate` correspond au nombre de traces par seconde et `--duration` à la durée d’exécution, en secondes. `--insecure` désactive TLS sur la connexion gRPC, ce qui est nécessaire lorsque `otelgen` pointe vers le port OTLP en plaintext du collector.
+      </Step>
+
+      <Step>
+        ### Générer des logs
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          logs multi
+        ```
+      </Step>
+
+      <Step>
+        ### Générer des métriques
+
+        Les sous-commandes de métriques ne prennent pas en charge `--duration`. Exécutez la commande, puis appuyez sur `Ctrl+C` après quelques secondes pour l’arrêter.
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${OTLP_AUTH_TOKEN}" \
+          --protocol grpc --insecure \
+          --rate 2 \
+          metrics sum
+        ```
+
+        `otelgen` prend également en charge les sous-commandes `gauge`, `histogram`, `up-down-counter` et `exponential-histogram` sous `metrics`.
+      </Step>
+
+      <Step>
+        ### Vérifier dans ClickStack
+
+        Ouvrez la ClickStack UI depuis la ClickHouse Cloud console. Dans la vue `Search`, basculez la source entre `Logs` et `Traces` pour confirmer l’arrivée de nouveaux événements. Définissez l’intervalle de temps sur `Last 15 minutes`. Ouvrez le `Chart Explorer`, sélectionnez `Metrics`, puis créez un graphique à partir de l’un des noms de métrique produits par `otelgen` (par exemple `otelgen.metrics.sum`) afin de vérifier l’ingestion des métriques.
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    <Steps>
+      <Step>
+        ### Prérequis
+
+        Ce guide suppose que vous avez démarré Open Source ClickStack en suivant les [instructions pour l’image tout-en-un](/fr/clickstack/getting-started/oss), et que les points de terminaison OTLP (`4317` gRPC et `4318` HTTP) sont accessibles. Vous avez également besoin de l’API key d’ingestion depuis la HyperDX UI, sous `Team Settings > API Keys`.
+      </Step>
+
+      <Step>
+        ### Installer otelgen
+
+        Installez-le avec Homebrew :
+
+        ```shell
+        brew install krzko/tap/otelgen
+        ```
+
+        Ou installez-le avec Go :
+
+        ```shell
+        go install github.com/krzko/otelgen@latest
+        ```
+      </Step>
+
+      <Step>
+        ### Définir les variables d’environnement
+
+        Exportez le point de terminaison du collector et l’API key d’ingestion :
+
+        ```shell
+        export OTEL_ENDPOINT=localhost:4317
+        export CLICKSTACK_API_KEY=<your_ingestion_api_key>
+        ```
+      </Step>
+
+      <Step>
+        ### Générer des traces
+
+        Envoyez une courte rafale de traces comportant plusieurs spans :
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${CLICKSTACK_API_KEY}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          traces multi
+        ```
+
+        `--rate` correspond au nombre de traces par seconde et `--duration` à la durée d’exécution, en secondes. `--insecure` active le gRPC en clair vers le collector local.
+      </Step>
+
+      <Step>
+        ### Générer des logs
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${CLICKSTACK_API_KEY}" \
+          --protocol grpc --insecure \
+          --rate 2 --duration 10 \
+          logs multi
+        ```
+      </Step>
+
+      <Step>
+        ### Générer des métriques
+
+        Les sous-commandes de métriques ne prennent pas en charge `--duration`. Exécutez la commande, puis appuyez sur `Ctrl+C` après quelques secondes pour l’arrêter.
+
+        ```shell
+        otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
+          --header "authorization=${CLICKSTACK_API_KEY}" \
+          --protocol grpc --insecure \
+          --rate 2 \
+          metrics sum
+        ```
+
+        `otelgen` prend également en charge les sous-commandes `gauge`, `histogram`, `up-down-counter` et `exponential-histogram` sous `metrics`.
+      </Step>
+
+      <Step>
+        ### Vérifier dans ClickStack
+
+        Accédez à [http://localhost:8080](http://localhost:8080) pour ouvrir la ClickStack UI. Dans la vue `Search`, basculez la source entre `Logs` et `Traces` pour confirmer l’arrivée de nouveaux événements. Réglez l’intervalle de temps sur `Last 15 minutes`. Ouvrez `Chart Explorer`, sélectionnez `Metrics`, puis affichez l’un des noms de métriques produits par `otelgen` sous forme de graphique (par exemple `otelgen.metrics.sum`) afin de vérifier l’ingestion des métriques.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

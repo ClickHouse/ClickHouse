@@ -1,0 +1,481 @@
+---
+sidebarTitle: 'C'
+keywords: ['c', 'البروتوكول الأصلي', 'التنسيق الأصلي', 'ترويسات فقط', 'مضمّن', 'tcp', 'فك ترميز block']
+slug: /integrations/c
+description: 'عميل C قائم على الترويسات فقط للبروتوكول الأصلي لـ ClickHouse، ومصمم للدمج.'
+title: 'عميل C لـ ClickHouse'
+doc_type: 'reference'
+---
+
+`clickhouse-c` هو عميل C قائم على الترويسات فقط لبروتوكول ClickHouse [native protocol](/ar/concepts/features/interfaces/tcp).
+تتوفر الشيفرة المصدرية والمرجع الخاص بكل ترويسة في [مستودع GitHub](https://github.com/ClickHouse/clickhouse-c).
+
+وعلى خلاف العملاء عالية المستوى، فهو لا يقدم لك الكثير عن قصد. تقوم الترويسة الأساسية بفك ترميز
+وترميز كتل بتنسيق [Native](/ar/reference/formats/Native) عبر دالة استدعاء I/O توفّرها أنت. وأنت من يتولى
+إدارة الـ socket، وTLS context، وallocator، وretries، وconnection pooling. وهذا ما يجعله صغيرًا بما يكفي
+لدمجه: إذ إن تضمين `clickhouse.h` وحده لا يضيف أي dependencies وقت الربط تتجاوز libc.
+
+<Note>
+  هذه المكتبة قيد التطوير النشط. يفك الإصدار v1 ترميز أنواع ClickHouse الأساسية.
+  أبلِغ عن القيود أو الوظائف غير المتوفرة عبر [issue tracker](https://github.com/ClickHouse/clickhouse-c/issues).
+  لكن تجدر الإشارة إلى أن هذه المكتبة تفتقر عمدًا إلى بعض الوظائف.
+</Note>
+
+<div id="non-goals">
+  ## ما الذي لا تفعله المكتبة
+</div>
+
+هذه أمور مستبعدة عمدًا. تولَّها في تطبيقك أو باستخدام مكتبة مرافقة:
+
+* بروتوكول HTTP. غلّف libcurl مباشرةً لاستخدام [واجهة HTTP](/ar/concepts/features/interfaces/http).
+* تحليل DNS، والتبديل عند إخفاق نقطة النهاية، وتجميع الاتصالات، وإعادة المحاولة، والتراجع التدريجي.
+* دورة حياة سياق TLS. تعتمد البنية الخلفية لـ OpenSSL على كائن `SSL` تكون قد أنشأت اتصالًا به مسبقًا.
+* تعدد الخيوط. كل `chc_client` أحادي الخيط بحكم التصميم.
+* عمليات I/O غير المتزامنة داخل المكتبة. يستدعي العميل المتزامن `chc_io.read` بشكل متزامن. ولعميل
+  يعتمد على حلقة أحداث ولا ينفذ أي I/O بنفسه، استخدم [عميل ioless](#async-client).
+
+<div id="headers">
+  ## كيفية تنظيم المكتبة
+</div>
+
+تأتي `clickhouse-c` على شكل مجموعة مسطّحة من ملفات الترويسة. يحتوي كل ملف ترويسة على كلٍّ من التصريحات والتنفيذ،
+ويكون محميًا بماكرو حارس. اختر ملفات الترويسة التي يحتاجها build الخاص بك.
+
+| الترويسة                                                                                                         | الغرض                                                                                                         | رايات الربط      |
+| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`clickhouse.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse.md)                         | الأساسيات: الأنواع، والأخطاء، وallocator، وvtable للإدخال/الإخراج، ومحلّل أسماء الأنواع، وقارئ block، وwriter | —                |
+| [`clickhouse-client.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-client.md)           | حلقة حزم TCP: Hello وQuery وData وEndOfStream وException وProgress وPong                                      | —                |
+| [`clickhouse-async.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-async.md)             | عميل ioless: حلقة الحزم نفسها، لكن يقودها المستدعي عبر تمرير البايتات، من دون socket                          | —                |
+| [`clickhouse-compression.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-compression.md) | تخطيط الإطارات المضغوطة، وCityHash128، وتوجيه codec، وموائمات `LZ4`/`ZSTD`                                    | `-llz4 -lzstd`   |
+| [`clickhouse-posix-io.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-posix-io.md)       | backend للإدخال/الإخراج فوق `read(2)`/`write(2)` بالحجب                                                       | —                |
+| [`clickhouse-openssl.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-openssl.md)         | backend للإدخال/الإخراج فوق `SSL_read`/`SSL_write`                                                            | `-lssl -lcrypto` |
+
+<div id="server-setting">
+  ## إعداد الخادم المطلوب
+</div>
+
+يقرأ مفكّك الترميز أسماء الأنواع القابلة للطباعة من التمثيل السلكي، لذا يجب ترميزها كنص. يكتبها ClickHouse
+كنص افتراضيًا، ولكن ثبّت هذا الإعداد في استعلاماتك حتى لا يؤدي ملف تعريف الخادم أو الجلسة
+الذي يضبطه على صيغة ثنائية إلى تعطيل فك الترميز:
+
+```plaintext
+output_format_native_encode_types_in_binary_format = 0
+```
+
+<div id="adding-to-project">
+  ## إضافته إلى مشروعك
+</div>
+
+لا توجد حزمة لتثبيتها، لذا ينبغي عليك إدراج ملفات الترويسة ضمن شجرة مشروعك باستخدام وحدة فرعية في Git أو عبر نسخها مباشرةً.
+تتولى وحدة ترجمة واحدة فقط تعريف `CHC_IMPLEMENTATION` وتضمين التنفيذ؛
+أما جميع الوحدات الأخرى فتضمّن ملفات الترويسة نفسها للتصريحات فقط.
+
+```c
+/* clickhouse_impl.c */
+#define CHC_IMPLEMENTATION
+#include "clickhouse.h"
+#include "clickhouse-posix-io.h"
+#include "clickhouse-client.h"
+#include "clickhouse-compression.h"
+```
+
+```c
+/* every other TU */
+#include "clickhouse.h"
+#include "clickhouse-client.h"
+```
+
+عرّف `CHC_PROVIDE_STDLIB_ALLOC` قبل تضمين `clickhouse.h` لاستخدام `chc_alloc_stdlib`.
+عرّف `CHC_NO_LZ4` أو `CHC_NO_ZSTD` مع `clickhouse-compression.h` لإزالة تبعيات lz4/zstd.
+
+<div id="connecting-over-tcp">
+  ## الاتصال عبر TCP
+</div>
+
+للاتصال بخادم ClickHouse، عليك إعداد الـsocket بنفسك، ثم تغليفه داخل `chc_io` وتمريره
+إلى `chc_client_init`، التي تُجري مصافحة Hello بشكل متزامن. لا تتولى المكتبة أي DNS
+أو failover أو إعادة اتصال أو pooling — فهذه كلها تقع على عاتق الجهة المستدعية.
+
+```c
+int fd = socket(AF_INET, SOCK_STREAM, 0);
+int one = 1;
+setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+
+struct sockaddr_in sa = {};
+sa.sin_family      = AF_INET;
+sa.sin_port        = htons(9000);
+sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+connect(fd, (struct sockaddr *) &sa, sizeof sa);
+
+chc_alloc al = chc_alloc_stdlib();
+chc_posix_io state;
+chc_io io;
+chc_posix_io_init(&state, &io, fd, NULL, NULL);
+
+chc_client *client = NULL;
+chc_client_opts opts = {
+    .user     = "default",
+    .password = "",
+    .database = "default",
+};
+chc_err err = {};
+if (chc_client_init(&client, &opts, &al, &io, &err) != CHC_OK) {
+    fprintf(stderr, "connect: %s\n", err.msg);
+    chc_client_close(client);   /* safe to call on the NULL-on-failure handle */
+    return 1;
+}
+
+const chc_server_info *info = chc_client_server_info(client);
+printf("connected to %s %llu.%llu.%llu\n", info->display_name,
+       (unsigned long long) info->version_major,
+       (unsigned long long) info->version_minor,
+       (unsigned long long) info->version_patch);
+```
+
+كل `chc_client` أحادي الخيط ويغلّف اتصالًا واحدًا. تستدعي المكتبة دوال `chc_io`
+الراجعة بشكل متزامن؛ أمّا ما تفعله هذه الدوال في الخلفية (`epoll`, `io_uring`,
+`WaitLatchOrSocket`) فهو متروك لك.
+
+<div id="running-a-query">
+  ## تشغيل استعلام
+</div>
+
+أرسل الاستعلام، ثم واصل تفريغ الحزم حتى `CHC_PKT_END_OF_STREAM`. استخدم `chc_client_send_query_ex` لإرفاق [إعداد الخادم المطلوب](#server-setting)؛ أما `chc_client_send_query` وحده فيرسل
+قائمة إعدادات فارغة ويرث الإعدادات الافتراضية التي يعتمدها الخادم.
+
+```c
+chc_query_setting settings[] = {
+    { .name = "output_format_native_encode_types_in_binary_format", .value = "0" },
+};
+chc_query_opts qopts = { .settings = settings, .n_settings = 1 };
+
+const char *sql = "SELECT number, toString(number * number) FROM numbers(5)";
+if (chc_client_send_query_ex(client, sql, strlen(sql), &qopts, &err) != CHC_OK) {
+    fprintf(stderr, "query: %s\n", err.msg);
+    return 1;
+}
+
+for (;;) {
+    chc_packet pkt = {};
+    if (chc_client_recv_packet(client, &pkt, &err) != CHC_OK) {
+        fprintf(stderr, "recv: %s\n", err.msg);
+        break;
+    }
+
+    if (pkt.kind == CHC_PKT_DATA) {
+        for (size_t r = 0; r < chc_block_n_rows(pkt.block); r++)
+            for (size_t c = 0; c < chc_block_n_columns(pkt.block); c++)
+                print_value(chc_block_column_type(pkt.block, c),
+                            chc_block_column(pkt.block, c), r);
+    } else if (pkt.kind == CHC_PKT_EXCEPTION) {
+        fprintf(stderr, "server: %s\n", pkt.exception->display_text);
+    }
+
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    chc_packet_clear(client, &pkt);
+    if (done) break;
+}
+```
+
+تصل استثناءات الخادم على شكل حزم `CHC_PKT_EXCEPTION`، وليست على هيئة قيمة إرجاع غير OK من
+`chc_client_recv_packet`. ولا تُرجِع قيمة غير OK إلا الإخفاقات على مستوى النقل فقط. تكون أول حزمة `CHC_PKT_DATA`
+في النتيجة كتلة ترويسة تصف المخطط من دون أي صفوف؛ وتليها كتل البيانات.
+يحرر `chc_packet_clear` كتلة الحزمة أو الاستثناء الخاص بها — لذا عيّن هذين الحقلين في الحزمة إلى null أولًا
+لتتولى ملكيتهما بدلًا من ذلك.
+
+<div id="reading-column-data">
+  ## قراءة بيانات الأعمدة
+</div>
+
+الكتل موجّهة بالأعمدة. لكل عمود تخطيط مادي تُرجعه `chc_column_layout`،
+وتُجري التفريع بناءً عليه؛ أما النوع المصرَّح به فيأتي من `chc_block_column_type`. تتداخل
+التخطيطات المركّبة، لذا فإن قراءة `Nullable(Array(String))` تعني فكّ `Nullable`، وتتبع offsets
+الخاصة بالمصفوفة، ثم تقطيع بيانات السلاسل النصية.
+
+| التخطيط                   | وسائل الوصول                                                                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CHC_COL_FIXED`           | `chc_column_fixed_data(c, &elem_size)` — `n_rows * elem_size` بايتًا بترتيب `little-endian`                                                      |
+| `CHC_COL_STRING`          | `chc_column_string_data(c)`, `chc_column_string_offsets(c)` — تمثل `offsets[i]` النهاية الحصرية للصف `i` بترتيب بايتات المضيف؛ ويبدأ الصف 0 من 0 |
+| `CHC_COL_NULLABLE`        | `chc_column_null_map(c)` (بايت واحد لكل صف، 1 = `NULL`)، `chc_column_nullable_inner(c)`                                                          |
+| `CHC_COL_ARRAY`           | `chc_column_array_offsets(c)` (نهايات تراكمية)، `chc_column_array_values(c)`؛ ويُفك ترميز `Map` على أنه `Array(Tuple(K, V))`                     |
+| `CHC_COL_TUPLE`           | `chc_column_tuple_arity(c)`, `chc_column_tuple_child(c, i)` — لكل عنصر فرعي عدد الصفوف نفسه                                                      |
+| `CHC_COL_LOW_CARDINALITY` | `chc_column_lc_key_size(c)` (1/2/4/8)، `chc_column_lc_keys(c)`, `chc_column_lc_dict(c)`؛ والخانة 0 في القاموس هي القيمة الافتراضية               |
+
+قارئ للأعمدة الرقمية العادية، وأعمدة السلاسل النصية، والأعمدة `Nullable`:
+
+```c
+void print_value(const chc_type *t, const chc_column *c, size_t row)
+{
+    if (chc_column_layout(c) == CHC_COL_NULLABLE) {
+        if (chc_column_null_map(c)[row]) { fputs("\\N", stdout); return; }
+        print_value(chc_type_child(t, 0), chc_column_nullable_inner(c), row);
+        return;
+    }
+
+    switch (chc_column_layout(c)) {
+    case CHC_COL_FIXED: {
+        /* fixed_data is a raw little-endian byte slab. memcpy into a typed
+           local to avoid unaligned loads and strict-aliasing UB, then
+           byte-swap on big-endian hosts. */
+        size_t es;
+        const uint8_t *p = chc_column_fixed_data(c, &es) + row * es;
+        switch (chc_type_kind(t)) {
+        case CHC_UINT64: { uint64_t v; memcpy(&v, p, sizeof v); printf("%" PRIu64, v); break; }
+        case CHC_INT32:  { int32_t  v; memcpy(&v, p, sizeof v); printf("%" PRId32, v); break; }
+        case CHC_FLOAT64: { double  v; memcpy(&v, p, sizeof v); printf("%g", v); break; }
+        /* ... remaining numeric kinds ... */
+        default: break;
+        }
+        break;
+    }
+    case CHC_COL_STRING: {
+        const uint8_t  *bytes   = chc_column_string_data(c);
+        const uint64_t *offsets = chc_column_string_offsets(c);
+        uint64_t start = row == 0 ? 0 : offsets[row - 1];
+        fwrite(bytes + start, 1, (size_t) (offsets[row] - start), stdout);
+        break;
+    }
+    default: break;
+    }
+}
+```
+
+بيانات `CHC_COL_FIXED` تكون little-endian على مستوى wire؛ وعلى المضيفات ذات ترتيب big-endian يجب عليك تبديل بايتات الأعداد
+الصحيحة متعددة البايتات بنفسك. تكون offsets ومفاتيح LowCardinality قد بُدّلت بالفعل إلى ترتيب المضيف وقت فك الترميز.
+تتكوّن UUIDs من نصفين `UInt64` بنظام little-endian، ويكون IPv4 عدداً صحيحاً من 4 بايتات بنظام little-endian، بينما يكون IPv6
+بترتيب بايتات الشبكة. وتكون ticks الخاصة بـ `DateTime64` بتوقيت UTC — أما timezone في النوع فهي metadata فقط.
+
+عند استيعاب البيانات من طرف غير موثوق، استدعِ `chc_column_validate` على كل عمود قبل اجتيازه.
+ولا يتحقق `chc_block_read` من الثوابت العابرة للحقول مثل offsets الخاصة بالمصفوفات ومفاتيح
+LowCardinality، لذا قد تؤدي block مزوّرة بخلاف ذلك إلى القراءة خارج حدود العمود الداخلي.
+
+<div id="inserting-data">
+  ## إدراج البيانات
+</div>
+
+أنشئ كتلة باستخدام `chc_block_builder`، ثم مرّرها إلى `chc_client_send_data`. يسجّل المُنشئ
+المؤشرات بدلًا من نسخ البيانات، لذا يجب أن تظل شرائح الأعمدة صالحة طوال عملية الإرسال. ترسل عملية INSERT الاستعلام،
+وتنتظر كتلة الترويسة من الخادم، ثم ترسل كتلة بيانات واحدة أو أكثر، ثم ترسل كتلة فارغة
+لإنهاء الدفق.
+
+```c
+const char *sql = "INSERT INTO greetings (id, message) VALUES";
+chc_client_send_query(client, sql, strlen(sql), "", 0, &err);
+
+/* Wait for the server's header block (schema, 0 rows). */
+bool got_header = false;
+while (!got_header) {
+    chc_packet pkt = {};
+    if (chc_client_recv_packet(client, &pkt, &err) != CHC_OK) {
+        fprintf(stderr, "recv: %s\n", err.msg);
+        return 1;
+    }
+    chc_packet_kind kind = pkt.kind;
+    if (kind == CHC_PKT_DATA) got_header = true;
+    else if (kind == CHC_PKT_EXCEPTION && pkt.exception)
+        fprintf(stderr, "server: %s\n", pkt.exception->display_text);
+    chc_packet_clear(client, &pkt);
+    if (kind == CHC_PKT_EXCEPTION || kind == CHC_PKT_END_OF_STREAM) return 1;  /* no header coming */
+}
+
+chc_block_builder *bb = NULL;
+chc_block_builder_init(&bb, &al, &err);
+
+uint64_t ids[3] = { 1, 2, 3 };
+chc_type *u64 = NULL;
+chc_type_parse("UInt64", 6, &al, &u64, &err);
+chc_block_builder_append_fixed(bb, "id", 2, u64, ids, 3, &err);
+
+/* String columns: cumulative exclusive end offsets + a packed byte slab. */
+uint64_t offsets[3] = { 5, 11, 20 };   /* "hello", "buenas", "goedendag" */
+const uint8_t bytes[] = "hellobuenasgoedendag";
+chc_block_builder_append_string(bb, "message", 7, offsets, bytes, 3, &err);
+
+chc_client_send_data(client, bb, &err);   /* the populated block */
+chc_client_send_data(client, NULL, &err); /* empty block ends the INSERT */
+
+/* Drain to EndOfStream. */
+for (;;) {
+    chc_packet pkt = {};
+    chc_client_recv_packet(client, &pkt, &err);
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    chc_packet_clear(client, &pkt);
+    if (done) break;
+}
+
+chc_block_builder_destroy(bb);
+chc_type_destroy(u64, &al);
+```
+
+`chc_block_builder_append_fixed` يأخذ `n_rows * elem_size` بايتًا بترتيب little-endian؛
+ويأخذ `chc_block_builder_append_string` إزاحات نهاياتٍ تراكميةً حصرية بترتيب بايتات المضيف عبر
+لوح packed. إن تمرير الـ builder عبر `chc_client_send_data` بدلًا من
+`chc_block_write` منخفض المستوى يتيح للعميل ضبط خيارات الكتلة استنادًا إلى revision المتفاوض عليه وتطبيق
+الضغط.
+
+<div id="compression">
+  ## الضغط
+</div>
+
+مرّر وضع ضغط وخوارزمية ضغط مُهيّأة في `chc_client_opts`. يفكّ العميل ضغط
+حزم Data الواردة ويضغط الحزم الصادرة. تأتي ترويسة الضغط مع مواءمَي `LZ4` و`ZSTD`؛
+ولا تملأ كل تهيئة إلا الخانات الخاصة بها، لذا استدعِ كليهما لدعم أيٍّ منهما.
+
+```c
+#include "clickhouse-compression.h"
+
+chc_codec codec = {};
+chc_lz4_codec_init(&codec);
+chc_zstd_codec_init(&codec);
+
+chc_client_opts opts = {
+    .user        = "default",
+    .compression = CHC_COMP_LZ4,   /* or CHC_COMP_ZSTD */
+    .codec       = &codec,
+};
+```
+
+لاستخدام مكتبة ضغط لا يوفّر المشروع لها طبقة ربط، أنشئ `chc_codec` بنفسك؛
+يُعرَّف `vtable` في `clickhouse-compression.h`.
+
+<div id="tls">
+  ## TLS
+</div>
+
+يوفّر `clickhouse-openssl.h` طبقة `chc_io` تعتمد على `SSL_read`/`SSL_write`. وتتولى أنت إدارة OpenSSL:
+فالمكتبة لا تنشئ أبدًا `SSL_CTX`، ولا تتحقق من الشهادات، ولا تضبط SNI، ولا تستدعي `SSL_connect` /
+`SSL_shutdown`. وعند استدعاء `chc_io.read`، يجب أن تكون المصافحة قد اكتملت.
+
+```c
+#include "clickhouse-openssl.h"
+
+SSL *ssl = /* connected, handshake complete */;
+chc_openssl_io state;
+chc_io io;
+chc_openssl_io_init(&state, &io, ssl, NULL, NULL);
+/* hand &io to chc_client_init, same as the POSIX backend */
+```
+
+يستخدم [ClickHouse Cloud](/ar/products/cloud/getting-started/intro) وعمليات النشر الأخرى المُمكَّنة بـ TLS البروتوكول الأصلي على
+المنفذ 9440. وتقبل كلتا الواجهتين الخلفيتين دالة رد نداء اختيارية `check_cancel`، يُجرى استطلاعها بين عمليات القراءة، بالإضافة إلى
+مهلة قراءة عبر `chc_openssl_io_set_deadline` / `chc_posix_io_set_deadline`.
+
+<div id="async-client">
+  ## عميل Ioless (غير المتزامن)
+</div>
+
+`clickhouse-async.h` هو إصدار ioless من عميل TCP مخصّص لحلقات الأحداث. فهو لا يتعامل مع أي
+مقبس مطلقًا: إذ تمرّر البايتات التي استلمتها وتستخرج البايتات التي يريد إرسالها، بينما تتولى أنت إدارة `epoll`،
+أو `io_uring`، أو `WaitLatchOrSocket` بنفسك. وتظل الخيارات، وأنواع الحزم، وblock builder
+كما هي نفسها في العميل المتزامن.
+
+`chc_async_client_init` لا يُجري أي عمليات I/O ولا يمكن أن يحجب التنفيذ. ثم تعمل المصافحة
+كآلة حالات قابلة للاستئناف، وينطبق الأمر نفسه على كل عملية إرسال واستقبال. وعندما تحتاج عملية `parse` إلى ما يتجاوز البايتات التي مرّرتها، تُعيد
+الدالة `CHC_WOULD_BLOCK` بدلًا من الحجب — مرّر المزيد من البايتات الواردة ثم استدعِها مرة أخرى، وعندها يستأنف
+المحلّل العمل من منتصف block.
+
+```c
+#include "clickhouse-async.h"
+
+chc_async_client *c = NULL;
+chc_client_opts opts = { .user = "default" };
+chc_async_client_init(&c, &opts, &al, &err);
+
+for (;;) {
+    int rc = chc_async_handshake(c, &err);
+    if (rc == CHC_OK) break;
+    if (rc != CHC_WOULD_BLOCK) break;   /* hard error */
+    pump(c);   /* drain pending_out to the socket; feed received bytes to chc_async_submit */
+}
+
+chc_async_send_query(c, sql, strlen(sql), "", 0, &err);
+
+for (;;) {
+    chc_packet pkt = {};
+    int rc = chc_async_recv_packet(c, &pkt, &err);
+    if (rc == CHC_WOULD_BLOCK) { pump(c); continue; }
+    if (rc != CHC_OK) break;
+
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    if (pkt.kind == CHC_PKT_DATA && pkt.block) { /* read columns as above */ }
+    chc_async_packet_clear(c, &pkt);
+    if (done) break;
+}
+```
+
+تنقل `pump` البايتات في كلا الاتجاهين. في الاتجاه الصادر، يعيد `chc_async_pending_out` مؤشراً وطولاً
+للبايتات الموجودة في قائمة الانتظار؛ وبعد أن يقبل المقبس جزءاً منها، استدعِ `chc_async_consume_out` بذلك العدد،
+فالكتابة الجزئية لا بأس بها. في الاتجاه الوارد، مرّر قراءات المقبس إلى `chc_async_submit`. لا تُحظر عمليات
+الإرسال مطلقاً ولا تفرض ضغطاً عكسياً، لذا راقب طول البيانات الصادرة المعلّقة وتوقّف عن إصدار عمليات
+الإرسال عندما يصبح كبيراً جداً.
+
+يوجد مشغّل liburing عامل في
+[`test/test_async_uring.c`](https://github.com/ClickHouse/clickhouse-c/blob/main/test/test_async_uring.c).
+
+<div id="allocator">
+  ## الذاكرة والمُخصِّص
+</div>
+
+تتلقى كل نقطة دخول `vtable` الخاص بـ `chc_alloc`، لذا يجري التخصيص وفق الآلية التي يستخدمها المضيف.
+
+```c
+typedef struct chc_alloc {
+    void *ud;
+    void *(*alloc)  (void *ud, size_t bytes);
+    void *(*realloc)(void *ud, void *p, size_t old_bytes, size_t new_bytes);
+    void  (*free)   (void *ud, void *p, size_t bytes);
+} chc_alloc;
+```
+
+عرّف `CHC_PROVIDE_STDLIB_ALLOC` قبل تضمين `clickhouse.h`، ثم استدعِ `chc_alloc_stdlib()` للحصول على
+مُخصِّص قياسي يعتمد على `malloc`.
+
+<div id="errors">
+  ## الأخطاء واستثناءات الخادم
+</div>
+
+تعيد الدوال `CHC_OK` (0) أو رمز `CHC_ERR_*` غير صفري. يكون الرمز هو قيمة الإرجاع؛ بينما يحمل
+`chc_err` المُخصَّص في مكدس المستدعي رسالة مقروءة للبشر. لا تُخصِّص المكتبة مطلقًا ذاكرة من الكومة
+لأي خطأ.
+
+```c
+typedef struct chc_err {
+    int  server_code;           /* set when the return code is CHC_ERR_SERVER */
+    char msg[CHC_ERR_MSG_LEN];  /* NUL-terminated, default 256 bytes */
+    char server_name[64];       /* ClickHouse exception class, if SERVER */
+} chc_err;
+```
+
+أخطاء الاستعلام من جهة الخادم ليست إخفاقات `chc_err`. فهي تصل ضمن تدفق الحزم على شكل
+`CHC_PKT_EXCEPTION`، وتحمل قيم `code` و`display_text` و`stack_trace` الخاصة بالخادم. واقصر
+التحقق من `chc_err` على إخفاقات النقل والبروتوكول وفك الترميز فقط.
+
+<div id="supported-types">
+  ## أنواع البيانات المدعومة
+</div>
+
+يفك قارئ الكتل ترميز ما يلي:
+
+* `Int8`–`Int256`, `UInt8`–`UInt256`
+* `Float32`, `Float64`, `BFloat16`
+* `Bool`
+* `Decimal32`, `Decimal64`, `Decimal128`, `Decimal256`
+* `Date`, `Date32`, `DateTime`, `DateTime64`, `Time`, `Time64`
+* `String`, `FixedString(N)`
+* `UUID`, `IPv4`, `IPv6`
+* `Enum8`, `Enum16`
+* `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)`
+* `LowCardinality(T)`
+* `Interval`
+* `QBit(...)`
+* `Point`, `Ring`, `Polygon`, `MultiPolygon`
+* `SimpleAggregateFunction(f, T)`، ويُفك ترميزه على أنه `T` الداخلي
+* `JSON` و `Object('json')`، على شكل أعمدة `String` باستخدام تسلسل String (انظر أدناه)
+
+لا يُفك ترميز `JSON` و `Object('json')` إلا عندما يضبط الاستعلام `output_format_native_write_json_as_string=1`.
+يصل كل صفّ كمستند JSON واحد في عمود `CHC_COL_STRING`، لذا تقرؤه accessors الخاصة بالسلاسل النصية؛
+ويكتب builder البنية نفسها باستخدام `chc_block_builder_append_json_string`. وأي إصدار آخر من
+تسلسل JSON يعيد `CHC_ERR_TYPE` مع ذكر اسم الإعداد.
+
+لا يزال `Variant` و `Dynamic` و `AggregateFunction` غير مدعومة في فك الترميز، وتعيد `CHC_ERR_TYPE`؛
+لذا حوّلها إلى `String` على جهة الخادم كحل احتياطي.
