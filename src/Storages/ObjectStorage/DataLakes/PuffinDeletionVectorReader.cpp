@@ -1,6 +1,8 @@
 #include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
 
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekableReadBuffer.h>
 
@@ -9,6 +11,12 @@
 #include <cstring>
 #include <limits>
 #include <zlib.h>
+
+namespace ProfileEvents
+{
+extern const Event PuffinFilesRead;
+extern const Event PuffinFileReadMicroseconds;
+}
 
 namespace DB
 {
@@ -21,6 +29,17 @@ namespace ErrorCodes
 
 namespace
 {
+
+struct ScopedPuffinFileReadProfileEvent
+{
+    ProfileEventTimeIncrement<Microseconds> watch;
+
+    ScopedPuffinFileReadProfileEvent()
+        : watch(ProfileEvents::PuffinFileReadMicroseconds)
+    {
+        ProfileEvents::increment(ProfileEvents::PuffinFilesRead);
+    }
+};
 
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
 constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
@@ -150,6 +169,8 @@ std::vector<UInt64> deserializeDeletionVectorV1Blob(std::string_view blob_bytes)
 
 std::vector<UInt64> readDeletionVectorFromPuffin(ReadBuffer & file, Int64 offset, Int64 length)
 {
+    ScopedPuffinFileReadProfileEvent profile_event;
+
     if (offset < 0 || length < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin deletion vector offset {} or length {}", offset, length);
 
