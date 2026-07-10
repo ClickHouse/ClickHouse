@@ -2,7 +2,6 @@
 
 import os
 import socket
-import subprocess
 import sys
 import threading
 import traceback
@@ -35,10 +34,11 @@ CLICKHOUSE_PORT_HTTP = os.environ.get("CLICKHOUSE_PORT_HTTP", "8123")
 # redirect only when the `max_http_get_redirects` setting allows it.
 #####################################################################################
 
-# IP-address of this host accessible from the outside world. Get the first one.
-HTTP_SERVER_HOST = (
-    subprocess.check_output(["hostname", "-i"]).decode("utf-8").strip().split()[0]
-)
+# Resolve CLICKHOUSE_HOST to a numeric IP (is_ipv6 needs one); getaddrinfo keeps IPv4 and IPv6
+# working and is portable, unlike `hostname -i` which is a Linux-only flag (fails on macOS/BSD).
+HTTP_SERVER_HOST = socket.getaddrinfo(
+    os.environ.get("CLICKHOUSE_HOST", "127.0.0.1"), None
+)[0][4][0]
 IS_IPV6 = is_ipv6(HTTP_SERVER_HOST)
 HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST, IS_IPV6)
 
@@ -54,9 +54,7 @@ CSV_DATA = "1,first\n2,second\n"
 def get_ch_answer(query):
     url = os.environ.get(
         "CLICKHOUSE_URL",
-        "http://{host}:{port}".format(
-            host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_HTTP
-        ),
+        "http://{host}:{port}".format(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_HTTP),
     )
     try:
         return urllib.request.urlopen(url, data=query.encode()).read().decode()
