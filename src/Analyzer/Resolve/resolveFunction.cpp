@@ -68,6 +68,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
 }
 
 namespace Setting
@@ -513,8 +514,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_table_expression*/,
                     allow_niladic_functions);
             }
-            catch (const Exception &)
+            catch (const Exception & e)
             {
+                /// SEMI/ANTI JOIN column access violations must not be masked by dead-branch
+                /// folding: they are compile-time access-control errors, not "unknown column"
+                /// lookups. Rethrow so the query is rejected even when the offending reference
+                /// sits in a statically unreachable branch of `if`.
+                if (e.code() == ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED)
+                    throw;
                 apply_constant_if_optimization = true;
             }
 
@@ -646,8 +653,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             false /*allow_table_expression*/,
                             allow_niladic_functions);
                     }
-                    catch (const Exception &)
+                    catch (const Exception & e)
                     {
+                        /// See the `if` special case above: SEMI/ANTI JOIN access violations
+                        /// must not be swallowed by dead-branch folding.
+                        if (e.code() == ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED)
+                            throw;
                         apply_constant_multi_if_optimization = true;
                     }
                 }

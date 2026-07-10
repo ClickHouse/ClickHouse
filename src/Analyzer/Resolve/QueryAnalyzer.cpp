@@ -2093,9 +2093,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             scope.scope_node->formatASTForErrorMessage());
     }
 
-    /// Check if the table is from the non-preserved side of a SEMI or ANTI JOIN
-    checkSemiAntiJoinTableAccess(table_expression_node, scope, matcher_node);
-
     /// In the recursive term of a recursive CTE the qualifier names the CTE itself (e.g. `x.*` in
     /// `WITH RECURSIVE x AS (... UNION ALL SELECT x.* FROM x ...)`). The qualifier resolves through
     /// expression arguments to the synthetic self-reference table node registered in
@@ -2104,6 +2101,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     /// join-tree table expression (the `FROM x` clone). Remap the matcher to that initialized join-tree node so
     /// `x.*` expands the same columns, matching the column/unqualified-matcher behavior and avoiding the
     /// uninitialized-data path.
+    ///
+    /// The remap must happen BEFORE checkSemiAntiJoinTableAccess: that check uses raw pointer identity
+    /// via isFromJoinTree, so a synthetic self-reference node - which never appears in the join tree -
+    /// would silently bypass the SEMI/ANTI side restriction. Running the remap first lets the check
+    /// inspect the actual join-tree node.
     auto * nearest_query_scope = scope.getNearestQueryScope();
     if (nearest_query_scope
         && table_identifier_resolve_result.isResolvedFromExpressionArguments()
@@ -2128,6 +2130,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
         table_expression_node = std::move(remapped_table_expression_node);
     }
+
+    /// Check if the table is from the non-preserved side of a SEMI or ANTI JOIN
+    checkSemiAntiJoinTableAccess(table_expression_node, scope, matcher_node);
 
     NamesAndTypes matched_columns;
 

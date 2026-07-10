@@ -49,47 +49,47 @@ SELECT * FROM (SELECT 1 AS a) t1 RIGHT SEMI JOIN (SELECT 2 AS b) t2 ON true;
 
 -- Explicit column reference: preserved side works, non-preserved side fails
 SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false;
-SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 
 -- Default behavior (both settings = 0): returns columns from both sides
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false
 SETTINGS anti_join_compatibility = 0;
 
 -- Test that non-preserved side columns are not accessible with qualified references
-SELECT d.* FROM (SELECT 1 AS id, 2 AS value) AS l SEMI LEFT JOIN (SELECT 1 AS id, 3 AS values) AS d USING id; -- { serverError UNKNOWN_IDENTIFIER }
-SELECT l.* FROM (SELECT 1 AS id, 2 AS value) AS l SEMI RIGHT JOIN (SELECT 1 AS id, 3 AS values) AS d USING id; -- { serverError UNKNOWN_IDENTIFIER }
-SELECT d.* FROM (SELECT 1 AS id, 2 AS value) AS l ANTI LEFT JOIN (SELECT 2 AS id, 3 AS values) AS d USING id; -- { serverError UNKNOWN_IDENTIFIER }
-SELECT l.* FROM (SELECT 2 AS id, 2 AS value) AS l ANTI RIGHT JOIN (SELECT 1 AS id, 3 AS values) AS d USING id; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT d.* FROM (SELECT 1 AS id, 2 AS value) AS l SEMI LEFT JOIN (SELECT 1 AS id, 3 AS values) AS d USING id; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+SELECT l.* FROM (SELECT 1 AS id, 2 AS value) AS l SEMI RIGHT JOIN (SELECT 1 AS id, 3 AS values) AS d USING id; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+SELECT d.* FROM (SELECT 1 AS id, 2 AS value) AS l ANTI LEFT JOIN (SELECT 2 AS id, 3 AS values) AS d USING id; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+SELECT l.* FROM (SELECT 2 AS id, 2 AS value) AS l ANTI RIGHT JOIN (SELECT 1 AS id, 3 AS values) AS d USING id; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 
 -- Test USING column access
 SELECT id FROM (SELECT 1 AS id) AS l SEMI LEFT JOIN (SELECT 1 AS id) AS d USING id;
 SELECT l.id FROM (SELECT 1 AS id) AS l SEMI LEFT JOIN (SELECT 1 AS id) AS d USING id;
-SELECT d.id FROM (SELECT 1 AS id) AS l SEMI LEFT JOIN (SELECT 1 AS id) AS d USING id; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT d.id FROM (SELECT 1 AS id) AS l SEMI LEFT JOIN (SELECT 1 AS id) AS d USING id; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 
 -- Test USING with non-existent columns
 SELECT * FROM (SELECT 1 AS other_id) AS l SEMI LEFT JOIN (SELECT 1 AS id) AS d USING (id); -- { serverError UNKNOWN_IDENTIFIER }
 
 -- Test WHERE clause: non-preserved side columns are not accessible
 -- LEFT SEMI JOIN: cannot reference right side columns in WHERE
-SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true WHERE t2.b = 2; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true WHERE t2.b = 2; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true WHERE t1.a = 1;
 
 -- RIGHT SEMI JOIN: cannot reference left side columns in WHERE
-SELECT * FROM (SELECT 1 AS a) t1 RIGHT SEMI JOIN (SELECT 2 AS b) t2 ON true WHERE t1.a = 1; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM (SELECT 1 AS a) t1 RIGHT SEMI JOIN (SELECT 2 AS b) t2 ON true WHERE t1.a = 1; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT * FROM (SELECT 1 AS a) t1 RIGHT SEMI JOIN (SELECT 2 AS b) t2 ON true WHERE t2.b = 2;
 
 -- LEFT ANTI JOIN: cannot reference right side columns in WHERE
-SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false WHERE t2.b = 2; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false WHERE t2.b = 2; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false WHERE t1.a = 1;
 
 -- RIGHT ANTI JOIN: cannot reference left side columns in WHERE
-SELECT * FROM (SELECT 1 AS a) t1 RIGHT ANTI JOIN (SELECT 2 AS b) t2 ON false WHERE t1.a = 1; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM (SELECT 1 AS a) t1 RIGHT ANTI JOIN (SELECT 2 AS b) t2 ON false WHERE t1.a = 1; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT * FROM (SELECT 1 AS a) t1 RIGHT ANTI JOIN (SELECT 2 AS b) t2 ON false WHERE t2.b = 2;
 
 -- Test nested JOINs: SEMI/ANTI JOIN restrictions apply only within their scope
 -- Nested: (t1 LEFT SEMI JOIN t2) LEFT JOIN t3
 -- t2 is non-preserved in inner SEMI JOIN, t3 is in outer regular JOIN
-SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT JOIN (SELECT 3 AS c) t3 ON true; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT JOIN (SELECT 3 AS c) t3 ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT t3.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT JOIN (SELECT 3 AS c) t3 ON true;
 
 -- Nested: t1 LEFT JOIN (t2 LEFT SEMI JOIN t3)
@@ -99,7 +99,7 @@ SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT JOIN (SELECT * FROM (SELECT 2 AS b) t2 
 
 -- Nested: (t1 LEFT SEMI JOIN t2) LEFT JOIN t3
 -- In outer JOIN's ON clause, t2 (non-preserved in inner SEMI JOIN) should still be inaccessible
-SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT JOIN (SELECT 3 AS c) t3 ON t2.b = t3.c; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT JOIN (SELECT 3 AS c) t3 ON t2.b = t3.c; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 -- But t1 (preserved in inner SEMI JOIN) should be accessible in outer JOIN's ON clause
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true LEFT JOIN (SELECT 3 AS c) t3 ON t1.a = t3.c;
 -- Test that inner SEMI JOIN's own ON expression can still access both sides
@@ -116,31 +116,31 @@ LEFT SEMI JOIN (SELECT 1 AS b) t2
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON arrayExists(x -> ignore(t2.*) = 0, [1]);
 SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON arrayExists(x -> t2.b = 2, [1]);
 -- The exemption must not leak past the ON clause: the same lambda in WHERE still cannot see the non-preserved side.
-SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true WHERE arrayExists(x -> ignore(t2.*) = 0, [1]); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true WHERE arrayExists(x -> ignore(t2.*) = 0, [1]); -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 
 -- (t1 LEFT SEMI JOIN t2) LEFT SEMI JOIN t3: outer sees t2 on its preserved left side, but
 -- the inner LEFT SEMI JOIN places t2 on its non-preserved right side -- must be denied.
-SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true LEFT SEMI JOIN (SELECT 1 AS c) t3 ON true; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true LEFT SEMI JOIN (SELECT 1 AS c) t3 ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 -- t1 is on the preserved left of both joins -- must be allowed.
 SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true LEFT SEMI JOIN (SELECT 1 AS c) t3 ON true;
 -- (t1 LEFT SEMI JOIN t2) RIGHT SEMI JOIN t3: outer RIGHT SEMI makes its entire left subtree
 -- (including t1) non-preserved, regardless of the inner join's own preservation.
-SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 -- t3 is on the preserved right of the outer RIGHT SEMI JOIN -- must be allowed.
 SELECT t3.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true;
 -- (t1 LEFT SEMI JOIN t2) CROSS JOIN t3: t2 remains non-preserved due to the inner LEFT SEMI JOIN
 -- and must stay inaccessible even when wrapped by CROSS JOIN at the root.
-SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true CROSS JOIN (SELECT 1 AS c) t3; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true CROSS JOIN (SELECT 1 AS c) t3; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 -- t1 is preserved by the inner LEFT SEMI JOIN and should remain accessible.
 SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true CROSS JOIN (SELECT 1 AS c) t3;
 
 -- (t1 LEFT SEMI JOIN t2) wrapped by ARRAY JOIN at the root: the traversal must descend through the
 -- ARRAY JOIN node to reach the inner SEMI JOIN, so t2 stays non-preserved and inaccessible.
-SELECT t2.* FROM (SELECT [1] AS arr, 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true ARRAY JOIN arr; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t2.* FROM (SELECT [1] AS arr, 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true ARRAY JOIN arr; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 -- t1 is preserved by the inner LEFT SEMI JOIN and should remain accessible under the ARRAY JOIN.
 SELECT t1.a FROM (SELECT [1] AS arr, 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true ARRAY JOIN arr;
 -- Same for ANTI JOIN under ARRAY JOIN.
-SELECT t2.* FROM (SELECT [1] AS arr, 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false ARRAY JOIN arr; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t2.* FROM (SELECT [1] AS arr, 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false ARRAY JOIN arr; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 
 -- Additional clause coverage: PREWHERE, GROUP BY, HAVING, QUALIFY, LIMIT BY, and ORDER BY
 
@@ -151,27 +151,89 @@ CREATE TABLE semi_anti_prewhere_left (number UInt64) ENGINE = MergeTree ORDER BY
 CREATE TABLE semi_anti_prewhere_right (number UInt64) ENGINE = MergeTree ORDER BY number;
 INSERT INTO semi_anti_prewhere_left VALUES (1);
 INSERT INTO semi_anti_prewhere_right VALUES (1);
-SELECT * FROM semi_anti_prewhere_left AS t1 LEFT SEMI JOIN semi_anti_prewhere_right AS t2 ON true PREWHERE t2.number = 1; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM semi_anti_prewhere_left AS t1 LEFT SEMI JOIN semi_anti_prewhere_right AS t2 ON true PREWHERE t2.number = 1; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT * FROM semi_anti_prewhere_left AS t1 LEFT SEMI JOIN semi_anti_prewhere_right AS t2 ON true PREWHERE t1.number = 1;
 DROP TABLE semi_anti_prewhere_left;
 DROP TABLE semi_anti_prewhere_right;
 
 -- 'HAVING';
-SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t1.a HAVING t2.b = 2; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t1.a HAVING t2.b = 2; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t1.a HAVING t1.a = 1;
 
 -- 'GROUP BY';
-SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t2.b; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t2.b; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t1.a;
 
 -- 'QUALIFY';
-SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true QUALIFY row_number() OVER () = 1 AND t2.b = 2; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true QUALIFY row_number() OVER () = 1 AND t2.b = 2; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true QUALIFY row_number() OVER () = 1 AND t1.a = 1;
 
 -- 'LIMIT BY';
-SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false LIMIT 1 BY t2.b; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false LIMIT 1 BY t2.b; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false LIMIT 1 BY t1.a;
 
 -- 'ORDER BY';
-SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false ORDER BY t2.b; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false ORDER BY t2.b; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false ORDER BY t1.a;
+
+-- Recursive CTE: `x.*` in the recursive term goes through the self-reference remap in
+-- `resolveQualifiedMatcher`. That remap must happen before the SEMI/ANTI access check so the
+-- check sees the actual join-tree node rather than the synthetic self-reference (which would
+-- silently bypass the restriction because `isFromJoinTree` compares raw pointers).
+-- `x` is the non-preserved right side of the LEFT SEMI JOIN, so `x.*` must be rejected.
+WITH RECURSIVE x AS
+(
+    SELECT 1 AS a
+    UNION ALL
+    SELECT x.*
+    FROM numbers(0) AS t
+    LEFT SEMI JOIN x ON true
+)
+SELECT * FROM x; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+
+-- Same shape with LEFT ANTI JOIN: `x` is non-preserved, so `x.*` must be rejected.
+WITH RECURSIVE x AS
+(
+    SELECT 1 AS a
+    UNION ALL
+    SELECT x.*
+    FROM numbers(0) AS t
+    LEFT ANTI JOIN x ON false
+)
+SELECT * FROM x; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+
+-- `x` on the preserved (left) side of a LEFT SEMI JOIN inside the recursive term must be allowed.
+WITH RECURSIVE x AS
+(
+    SELECT 1 AS a
+    UNION ALL
+    SELECT x.a
+    FROM x
+    LEFT SEMI JOIN numbers(0) AS t ON true
+)
+SELECT * FROM x ORDER BY a;
+
+-- Static dead-branch access-control: `if(false, ...)` / `multiIf(false, ...)` fold unreachable
+-- branches after analysis, and the analyzer swallows `UNKNOWN_IDENTIFIER` from those branches
+-- so that queries like `if(0, missing_column, 42)` keep working. SEMI/ANTI JOIN access
+-- violations are a different class of error - they must not be silently masked, even inside
+-- a statically-unreachable branch. Enforced by a dedicated error code.
+SELECT if(false, t2.b, 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+SELECT if(false, t2.*, 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+SELECT if(false, ignore(t2.b), 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+SELECT multiIf(false, t2.b, false, t2.b, 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+SELECT if(false, t2.b, 42) FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+-- Unqualified reference: falls back to `UNKNOWN_IDENTIFIER` and is still folded away, matching
+-- the "missing column" contract. Frozen behavior.
+SELECT if(false, b, 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true;
+-- Live branch still receives normal access-control (control case).
+SELECT if(true, t2.b, 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+
+-- Negative-regression: the conditional rethrow above must NOT collateral-damage the existing
+-- dead-branch folding contract. Non-SEMI/ANTI analysis errors inside a dead branch (missing
+-- column, unknown function, cast failures) must continue to be swallowed and the whole `if`
+-- collapsed to the live branch. Any of these starting to throw would signal that the
+-- dead-branch folding in `resolveFunction.cpp` has been over-tightened.
+SELECT if(false, does_not_exist, 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true;
+SELECT if(false, nonexistent_fn_xyz(1), 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true;
+SELECT if(false, cast('abc' AS Int32), 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true;

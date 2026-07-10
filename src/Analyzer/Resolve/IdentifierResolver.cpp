@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_UUID_MISMATCH;
+    extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
 }
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
@@ -1131,7 +1132,7 @@ void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
     {
         const char * join_type_str = is_semi ? "SEMI" : "ANTI";
         const char * side_str = skip_right ? "right" : "left";
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+        throw Exception(ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED,
             "Cannot access columns from the {} side of {} JOIN in this context. Expression {} is not available. In scope {}",
             side_str,
             join_type_str,
@@ -1210,7 +1211,39 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     {
         /// Early check: if this side should be skipped, return immediately
         if (side_checker.shouldSkipSide(side))
+        {
+            /// Surface a dedicated error code when the user is explicitly requesting something
+            /// from the non-preserved side, instead of falling through to a generic
+            /// `UNKNOWN_IDENTIFIER`. This matters because downstream dead-branch folding for
+            /// `if`/`multiIf` (see `resolveFunction.cpp`) swallows `UNKNOWN_IDENTIFIER` to
+            /// keep queries like `if(0, missing_column, 42)` working, and would otherwise
+            /// also swallow SEMI/ANTI access violations.
+            ///
+            /// Two shapes count as "explicit":
+            /// - compound expression like `t2.b`: the qualifier `t2` binds to the skipped side
+            /// - a table lookup like `x` (used by recursive-CTE self-reference remap): the
+            ///   bare table name binds to the skipped side
+            const bool is_table_lookup = identifier_lookup.isTableExpressionLookup();
+            const bool is_qualified_expr = identifier_lookup.isExpressionLookup()
+                                        && identifier_lookup.identifier.getPartsSize() > 1;
+            if (is_table_lookup || is_qualified_expr)
+            {
+                const auto & prefix = identifier_lookup.identifier.front();
+                if (qualifierBindsToJoinSubtree(join_tree_node, prefix, scope))
+                {
+                    const char * join_type_str = side_checker.is_semi ? "SEMI" : "ANTI";
+                    const char * side_str = side == JoinTableSide::Left ? "left" : "right";
+                    throw Exception(ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED,
+                        "Cannot access columns from the {} side of {} JOIN in this context. "
+                        "Expression {} is not available. In scope {}",
+                        side_str,
+                        join_type_str,
+                        identifier_lookup.identifier.getFullName(),
+                        scope.scope_node->formatASTForErrorMessage());
+                }
+            }
             return QueryTreeNodePtr{};
+        }
 
         /// scope.join_using_columns holds raw pointers to this stack-local map. The pop must run
         /// even if tryResolveIdentifierFromJoinTreeNode throws: an UNKNOWN_IDENTIFIER from a
