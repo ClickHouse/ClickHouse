@@ -413,6 +413,14 @@ enum class ObjectStorageQueueBucketingMode : uint8_t
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueBucketingMode)
 
+enum class QueryRunnerMode : uint8_t
+{
+    SYNCHRONOUS,
+    ASYNCHRONOUS,
+};
+
+DECLARE_SETTING_ENUM(QueryRunnerMode)
+
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
@@ -444,6 +452,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     ICEBERG_ONELAKE,
     ICEBERG_BIGLAKE,
     PAIMON_REST,
+    ICEBERG_DELTA_SHARING,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)

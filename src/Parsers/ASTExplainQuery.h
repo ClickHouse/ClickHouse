@@ -26,6 +26,7 @@ public:
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
         CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
+        Analyze, /// EXPLAIN ANALYZE ...
         WhatIf, /// 'EXPLAIN WHATIF SELECT ...'
     };
 
@@ -41,6 +42,7 @@ public:
             case QueryEstimates: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
+            case Analyze: return "EXPLAIN ANALYZE";
             case WhatIf: return "EXPLAIN WHATIF";
         }
     }
@@ -63,6 +65,8 @@ public:
             return TableOverride;
         if (str == "EXPLAIN CURRENT TRANSACTION")
             return CurrentTransaction;
+        if (str == "EXPLAIN ANALYZE")
+            return Analyze;
         if (str == "EXPLAIN WHATIF")
             return WhatIf;
 

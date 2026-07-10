@@ -27,8 +27,7 @@ If you would like to test the Redis integration before configuring your own exis
 - Access to Redis log files
 
 <Steps>
-<Step>
-#### Verify Redis logging configuration {#verify-redis}
+<Step title="Verify Redis logging configuration" id="verify-redis">
 
 First, check your Redis logging configuration. Connect to Redis and check the log file location:
 
@@ -61,8 +60,7 @@ sudo systemctl restart redis
 docker restart <redis-container>
 ```
 </Step>
-<Step>
-#### Create custom OTel collector configuration {#custom-otel}
+<Step title="Create custom OTel collector configuration" id="custom-otel">
 
 ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by HyperDX via OpAMP.
 
@@ -116,8 +114,7 @@ This configuration:
 - This configuration uses `start_at: beginning` to read all existing logs when the collector starts, allowing you to see logs immediately. For production deployments where you want to avoid re-ingesting logs on collector restarts, change to `start_at: end`.
 </Note>
 </Step>
-<Step>
-#### Configure ClickStack to load custom configuration {#load-custom}
+<Step title="Configure ClickStack to load custom configuration" id="load-custom">
 
 To enable custom collector configuration in your existing ClickStack deployment, you must:
 
@@ -157,8 +154,7 @@ docker run --name clickstack \
 Ensure the ClickStack collector has appropriate permissions to read the Redis log files. In production, use read-only mounts (`:ro`) and follow the principle of least privilege.
 </Note>
 </Step>
-<Step>
-#### Verifying Logs in HyperDX {#verifying-logs}
+<Step title="Verifying Logs in HyperDX" id="verifying-logs">
 
 Once configured, log into HyperDX and verify that logs are flowing:
 
@@ -173,8 +169,7 @@ Once configured, log into HyperDX and verify that logs are flowing:
 For users who want to test the Redis integration before configuring their production systems, we provide a sample dataset of pre-generated Redis Logs with realistic patterns.
 
 <Steps>
-<Step>
-#### Download the sample dataset {#download-sample}
+<Step title="Download the sample dataset" id="download-sample">
 
 Download the sample log file:
 
@@ -182,8 +177,7 @@ Download the sample log file:
 curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/redis/redis-server.log
 ```
 </Step>
-<Step>
-#### Create test collector configuration {#test-config}
+<Step title="Create test collector configuration" id="test-config">
 
 Create a file named `redis-demo.yaml` with the following configuration:
 
@@ -225,8 +219,7 @@ service:
 EOF
 ```
 </Step>
-<Step>
-#### Run ClickStack with demo configuration {#run-demo}
+<Step title="Run ClickStack with demo configuration" id="run-demo">
 
 Run ClickStack with the demo logs and configuration:
 
@@ -268,11 +261,11 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 To help you get started monitoring Redis with ClickStack, we provide essential visualizations for Redis Logs.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import Pre-built Dashboard {#import-dashboard}
+<Step title="Import Pre-built Dashboard" id="import-dashboard">
 
 1. Open HyperDX and navigate to the Dashboards section.
 2. Click "Import Dashboard" in the upper right corner under the ellipses.
@@ -283,8 +276,7 @@ To help you get started monitoring Redis with ClickStack, we provide essential v
 
 <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="Finish Import"/>
 </Step>
-<Step>
-#### The dashboard will be created with all visualizations pre-configured {#created-dashboard}
+<Step title="The dashboard will be created with all visualizations pre-configured" id="created-dashboard">
 
 <Note>
 For the demo dataset, set the time range to **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.

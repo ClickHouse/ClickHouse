@@ -75,6 +75,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
@@ -596,6 +597,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
+    mutable EncryptionHeaderCachePtr encryption_header_cache TSA_GUARDED_BY(mutex);   /// Cache of raw encryption-header bytes by file path
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -1531,12 +1533,27 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     if (auto it = shard.set.find(id); it != shard.set.end())
     {
         DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(it->uuid);
-        if (storage.second)
+        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`), so a hit can
+        /// carry a UUID that no longer matches the name we are resolving. Return the cached storage
+        /// only if it is still fresh. Otherwise the entry is stale and must not be reused:
+        ///  - the table no longer exists by its UUID (e.g. a refreshable materialized view's inner
+        ///    table was dropped and recreated), or
+        ///  - the UUID still exists but the name was reassigned to a different table by a rename or
+        ///    exchange within the same query. This happens during `CREATE OR REPLACE`, which creates a
+        ///    temporary table, populates it (caching the temporary name -> temporary UUID here), then
+        ///    atomically swaps it with the target via `EXCHANGE`. After the swap the temporary name
+        ///    refers to the old table that is about to be dropped, but the cache would still hand out
+        ///    the new (now live) table - so dropping by the temporary name would shut down the live
+        ///    table instead and break it (e.g. detaching a materialized view from its source), or
+        ///  - the caller asked for a specific UUID but the cached entry resolves to a different one
+        ///    (a same-name replacement); returning it would silently substitute the wrong table
+        ///    instead of letting the fresh lookup report `UNKNOWN_TABLE`/`TABLE_UUID_MISMATCH`.
+        /// In all cases remove the stale entry and fall through to a fresh lookup by name.
+        if (storage.second
+            && storage.second->getStorageID().getQualifiedName() == id.getQualifiedName()
+            && (!id.hasUUID() || it->uuid == id.uuid))
             return storage;
 
-        /// The table was cached but no longer exists by its UUID
-        /// (e.g. refreshable materialized view's inner table was dropped and recreated).
-        /// Remove the stale entry and fall through to a fresh lookup by name.
         shard.set.erase(it);
     }
 
@@ -3869,7 +3886,7 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
 void Context::waitForDictionariesLoad() const
 {
     LOG_INFO(shared->log, "Waiting for dictionaries to be loaded");
-    auto results = getExternalDictionariesLoader().tryLoadAll<ExternalLoader::LoadResults>();
+    auto results = getExternalDictionariesLoader().tryLoadAllExceptLazy<ExternalLoader::LoadResults>();
     bool all_dictionaries_loaded = true;
     for (const auto & result : results)
     {
@@ -4991,6 +5008,46 @@ void Context::clearQueryConditionCache() const
         shared->query_condition_cache->clear();
 }
 
+void Context::setEncryptionHeaderCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->encryption_header_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Encryption header cache has been already created.");
+
+    shared->encryption_header_cache = std::make_shared<EncryptionHeaderCache>(cache_policy, max_size_in_bytes, size_ratio);
+}
+
+EncryptionHeaderCachePtr Context::getEncryptionHeaderCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->encryption_header_cache;
+}
+
+void Context::updateEncryptionHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->encryption_header_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Encryption header cache was not created yet.");
+
+    size_t size = config.getUInt64("encryption_header_cache_size", DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered encryption header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->encryption_header_cache->setMaxSizeInBytes(size);
+}
+
+void Context::clearEncryptionHeaderCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->encryption_header_cache)
+        shared->encryption_header_cache->clear();
+}
+
 
 void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
 {
@@ -5076,6 +5133,10 @@ void Context::clearCaches() const
 
     if (shared->query_condition_cache)
         shared->query_condition_cache->clear();
+
+    /// Path-keyed like the delete-bitmap cache below; clear it here too (see the note there).
+    if (shared->encryption_header_cache)
+        shared->encryption_header_cache->clear();
 
     /// UNIQUE KEY delete-bitmap cache is optional (zero size disables it),
     /// so the null check stays non-fatal. Without clearing, a renamed /
@@ -7213,9 +7274,14 @@ void Context::setApplicationType(ApplicationType type)
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
 
-    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER || type == ApplicationType::DISKS)
+    if (type == ApplicationType::LOCAL
+        || type == ApplicationType::SERVER
+        || type == ApplicationType::KEEPER
+        || type == ApplicationType::DISKS)
     {
-        shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
+        /// Use the context's own config when it has been set (e.g. keeper-bench, which runs
+        /// without a Poco::Util::Application), falling back to the global application config.
+        shared->server_settings.loadSettingsFromConfig(getConfigRef());
 
         /// Initialize the max_* mirrors from server_settings
         /// This ensures limits are enforced even when ConfigReloader is not running (e.g., clickhouse-local)
