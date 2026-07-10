@@ -659,11 +659,9 @@ bool RestCatalog::empty() const
     {
         if (found_table)
             return true;
-
-        const auto tables = getTables(namespace_name, /* limit */1);
+        const auto tables = listTablesInNamespace(namespace_name, /* limit */1);
         if (!tables.empty())
             found_table = true;
-
         return found_table;
     };
 
@@ -688,7 +686,7 @@ DB::Names RestCatalog::getTables() const
             runner.enqueueAndKeepTrack(
             [=, &tables, &mutex, this]
             {
-                auto tables_in_namespace = getTables(current_namespace);
+                auto tables_in_namespace = listTablesInNamespace(current_namespace);
                 std::lock_guard lock(mutex);
                 std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
             });
@@ -707,6 +705,24 @@ DB::Names RestCatalog::getTables() const
     return tables;
 }
 
+RestCatalog::Namespaces RestCatalog::getNamespaces() const
+{
+    /// Enumerate the whole namespace tree (every node at every level). Used by
+    /// the `getTables(const TableNameFilter &)` namespace push-down.
+    Namespaces namespaces;
+    getNamespacesRecursive(
+        /* base_namespace */"", /// Empty base namespace means starting from root.
+        namespaces,
+        /* stop_condition */{},
+        /* execute_func */{});
+    return namespaces;
+}
+
+DB::Names RestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    return listTablesInNamespace(namespace_name);
+}
+
 void RestCatalog::getNamespacesRecursive(
     const std::string & base_namespace,
     Namespaces & result,
@@ -715,7 +731,7 @@ void RestCatalog::getNamespacesRecursive(
 {
     checkStackSize();
 
-    auto namespaces = getNamespaces(base_namespace);
+    auto namespaces = listChildNamespaces(base_namespace);
     result.reserve(result.size() + namespaces.size());
     result.insert(result.end(), namespaces.begin(), namespaces.end());
 
@@ -749,7 +765,17 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
     return {{"parent", parent_param}};
 }
 
-RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_namespace) const
+bool RestCatalog::hasFlatNamespaces() const
+{
+    /// Catalogs whose namespaces are single-level and which ignore the `parent` filter when listing
+    /// namespaces. For these, sub-namespace listing is skipped (see `parseNamespaces`) so that an echo
+    /// of the parent is not turned into a fake child, which would otherwise recurse without bound.
+    const auto type = getCatalogType();
+    return type == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+        || type == DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
+}
+
+RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & base_namespace) const
 {
     Poco::URI::QueryParameters base_params;
     if (!base_namespace.empty())
@@ -858,11 +884,13 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 
             const int idx = static_cast<int>(current_namespace_array->size()) - 1;
             const auto current_namespace = current_namespace_array->get(idx).extract<String>();
-            /// BigLake does not support multi-level namespaces. When asked for sub-namespaces of
-            /// a non-empty parent (via ?parent=X), BigLake ignores the filter and returns other
-            /// top-level namespaces instead. Skip all sub-namespace results to avoid constructing
-            /// fake multi-level paths like "ns1.ns2" that BigLake will reject with HTTP 400.
-            if (getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE && !base_namespace.empty())
+            /// Some catalogs have flat (single-level) namespaces and do not support multi-level ones:
+            /// BigLake, and Databricks Delta Sharing (share -> namespace/schema -> table). When asked
+            /// for sub-namespaces of a non-empty parent (via ?parent=X) they ignore the filter and
+            /// return other top-level namespaces instead. Skip all sub-namespace results to avoid
+            /// constructing fake multi-level paths like "ns1.ns2" (and, for BigLake, an HTTP 400) and,
+            /// in turn, the unbounded recursion that fake children would cause in getNamespacesRecursive.
+            if (hasFlatNamespaces() && !base_namespace.empty())
             {
                 continue;
             }
@@ -876,17 +904,13 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
         /// Iceberg REST OpenAPI spec: response carries `next-page-token` (kebab-case).
         /// Empty / null / missing token all mean "no more pages".
         ///
-        /// BigLake-non-empty-base-namespace short-circuit: when the BigLake quirk
-        /// above drops every returned entry (because BigLake ignores `parent`
-        /// and returns unrelated top-level namespaces), continuing pagination
-        /// just burns O(pages) REST calls per parent namespace without ever
-        /// contributing to the result. Treat the first page as terminal by
-        /// leaving `next_page_token` empty (already cleared at function entry)
-        /// so the outer `getNamespaces` loop returns immediately.
-        const bool biglake_drops_all_entries
-            = getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
-            && !base_namespace.empty();
-        if (!biglake_drops_all_entries
+        /// Flat-namespace short-circuit: when the skip above drops every returned entry (because a
+        /// flat-namespace catalog ignores `parent` and returns unrelated top-level namespaces),
+        /// continuing pagination just burns O(pages) REST calls per parent namespace without ever
+        /// contributing to the result. Treat the first page as terminal by leaving `next_page_token`
+        /// empty (already cleared at function entry) so the outer `listChildNamespaces` loop returns immediately.
+        const bool flat_namespace_drops_all_entries = hasFlatNamespaces() && !base_namespace.empty();
+        if (!flat_namespace_drops_all_entries
             && object->has("next-page-token")
             && !object->isNull("next-page-token"))
         {
@@ -902,7 +926,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     }
 }
 
-DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
+DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace, size_t limit) const
 {
     auto encoded_namespace = encodeNamespaceForURI(base_namespace);
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
