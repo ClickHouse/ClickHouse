@@ -99,3 +99,36 @@ SELECT 'negation: hasAllTokens([qux, corge]) -> 3';
 SELECT id FROM tab_regex_negation WHERE hasAllTokens(doc, ['qux', 'corge']) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE tab_regex_negation;
+
+-- 4. Issue #103783: preserve special-character tokens such as `C++` and `C#`, which `splitByNonAlpha`
+-- would reduce to `c` (causing false positives). The separator is any run of characters that are not
+-- letters, digits, `#` or `+`, so `C++` and `C#` are kept as single tokens and can be searched exactly.
+
+DROP TABLE IF EXISTS tab_special_tokens;
+
+CREATE TABLE tab_special_tokens
+(
+    id UInt64,
+    description String,
+    INDEX idx description TYPE text(tokenizer = splitByRegexp('[^\\p{L}\\p{N}#+]+')) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2, min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
+
+INSERT INTO tab_special_tokens VALUES
+    (1, 'We use C++ for our backend systems'),
+    (2, 'Built with C# and React'),
+    (3, 'C is our primary language'),
+    (4, 'Learning the C language basics');
+
+SELECT 'special: hasAnyTokens([C++]) -> 1 (no false positives)';
+SELECT id FROM tab_special_tokens WHERE hasAnyTokens(description, ['C++']) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT 'special: hasAnyTokens([C#]) -> 2';
+SELECT id FROM tab_special_tokens WHERE hasAnyTokens(description, ['C#']) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT 'special: hasAnyTokens([C]) -> 3, 4 (plain C only)';
+SELECT id FROM tab_special_tokens WHERE hasAnyTokens(description, ['C']) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+DROP TABLE tab_special_tokens;

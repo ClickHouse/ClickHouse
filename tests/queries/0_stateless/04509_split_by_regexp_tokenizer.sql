@@ -52,6 +52,10 @@ SELECT tokens('a→b→c', 'splitByRegexp', '→');
 SELECT tokens('aba', 'splitByRegexp', '^a');
 -- The $ anchor matches only at the true end of the string
 SELECT tokens('banana', 'splitByRegexp', 'a$');
+-- Issue #103783: keep special-character tokens such as C++ and C# (separator is any run of characters
+-- that are not letters, digits, '#' or '+'), which splitByNonAlpha would otherwise reduce to 'c'
+SELECT tokens('We use C++ for our backend systems', 'splitByRegexp', '[^\\p{L}\\p{N}#+]+');
+SELECT tokens('Built with C# and React', 'splitByRegexp', '[^\\p{L}\\p{N}#+]+');
 -- Result type and constness
 SELECT tokens('a,b,c', 'splitByRegexp', ',') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 -- { echoOff }
