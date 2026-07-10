@@ -2,8 +2,15 @@
 2
 2
 2
+2
 0
 0
--- text index prunes granules with a Nullable constant key (issue #110018)
+0
+-- mapValues index prunes granules for wrapped constant key (issue #110031)
+1
+1
+1
+-- mapKeys index prunes granules for wrapped constant key (issue #110031)
+1
 1
 1

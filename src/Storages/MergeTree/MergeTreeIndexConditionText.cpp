@@ -24,6 +24,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -1143,13 +1144,14 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     /// It is true because `arrayElement` (and the equivalent subcolumn access) returns default value if key doesn't exist in the map,
     /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
 
-    /// The result type may be Nullable(UInt8) when the map key is a Nullable constant
-    /// (e.g. `m[CAST('key' AS Nullable(String))] = 'value'`). This is still safe: a non-NULL
-    /// constant key returns the map value type default for a missing key (not NULL), so the
-    /// "predicate is false on the default value" invariant checked below on the empty map holds.
+    /// The result type may be Nullable(UInt8) / LowCardinality(UInt8) / LowCardinality(Nullable(UInt8))
+    /// when the map key is wrapped (e.g. `m[CAST('key' AS LowCardinality(Nullable(String)))] = 'value'`).
+    /// This is still safe: a non-NULL constant key returns the map value type default for a missing key
+    /// (not NULL), so the "predicate is false on the default value" invariant checked below on the empty
+    /// map holds.
     const auto * dag_node = function_node.getDAGNode();
     if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic()
-        || !WhichDataType(removeNullable(dag_node->result_type)).isUInt8())
+        || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
@@ -1189,14 +1191,17 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
                     return false;
 
-                /// The key constant may be wrapped in Nullable (e.g. `m[CAST('key' AS Nullable(String))]`).
+                /// The key constant may be wrapped in Nullable / LowCardinality / LowCardinality(Nullable)
+                /// (e.g. `m[CAST('key' AS LowCardinality(Nullable(String)))]`).
                 if (const_key_argument->type != ActionsDAG::ActionType::COLUMN
-                    || !isStringOrFixedString(removeNullable(const_key_argument->result_type)))
+                    || !isStringOrFixedString(removeLowCardinalityAndNullable(const_key_argument->result_type)))
                     return false;
 
+                /// Unwrap Const/LowCardinality/Nullable to reach the underlying string value.
                 ColumnPtr key_column = const_key_argument->column;
                 if (const auto * const_column = checkAndGetColumn<const ColumnConst>(key_column.get()))
                     key_column = const_column->getDataColumnPtr();
+                key_column = recursiveRemoveLowCardinality(key_column);
                 if (const auto * nullable_column = checkAndGetColumn<const ColumnNullable>(key_column.get()))
                 {
                     /// A NULL key makes arrayElement return NULL, breaking the default-value invariant.
