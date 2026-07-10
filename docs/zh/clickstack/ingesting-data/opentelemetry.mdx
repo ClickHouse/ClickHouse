@@ -1,0 +1,181 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/opentelemetry
+toc_max_heading_level: 2
+description: '通过 OpenTelemetry 为 ClickStack 进行数据摄取 - ClickHouse 可观测性技术栈'
+title: '通过 OpenTelemetry 进行数据摄取'
+doc_type: 'guide'
+keywords: ['clickstack', 'opentelemetry', '链路追踪', '可观测性', '遥测']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+所有数据都会通过一个 **OpenTelemetry (OTel) collector** 实例摄取到 ClickStack，该实例是日志、指标、链路追踪和会话数据的主要入口。我们建议此实例使用官方提供的 collector [ClickStack 发行版](#installing-otel-collector)。
+
+<Tip>
+  此外还提供托管版 ClickStack — 请参阅 [Managed ClickStack](/zh/clickstack/getting-started/managed)。
+</Tip>
+
+用户可以通过[语言 SDK](/zh/clickstack/ingesting-data/sdks/index)将数据发送到此 collector，也可以通过采集基础设施指标和日志的数据采集 agent 发送 (例如以 [agent](/zh/clickstack/ingesting-data/collector#collector-roles) 角色运行的 OTel collector，或其他技术，例如 [Fluentd](https://www.fluentd.org/) 或 [Vector](https://vector.dev/)) 。对于希望使用托管 OpenTelemetry 管道的团队，[Bindplane](/zh/clickstack/integration-partners/bindplane) 提供了一种 OpenTelemetry 原生解决方案，并内置原生 ClickStack 目标端，可简化遥测数据的收集、处理和路由。
+
+<div id="sending-otel-data">
+  ## 发送 OpenTelemetry 数据
+</div>
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    ### 安装 ClickStack OpenTelemetry collector
+
+    要将数据发送到托管 ClickStack，应以[网关角色](/zh/clickstack/ingesting-data/collector#collector-roles)部署一个 OTel collector。与 OTel 兼容的插桩会通过基于 HTTP 或 gRPC 的 OTLP 将事件发送到该 collector。
+
+    <Info>
+      **我们建议使用 ClickStack OpenTelemetry collector**
+
+      这样您就可以受益于标准化摄取、强制执行的 schema，以及与 ClickStack UI (HyperDX) 的开箱即用兼容性。使用默认 schema 可启用自动 source 检测和预配置的列映射。
+    </Info>
+
+    更多详情，请参阅[&quot;部署 collector&quot;](/zh/clickstack/ingesting-data/collector)。
+
+    ### 向 collector 发送数据
+
+    要将数据发送到托管 ClickStack，请将您的 OpenTelemetry 插桩指向 OpenTelemetry collector 提供的以下端点：
+
+    * **HTTP (OTLP):** `http://localhost:4318`
+    * **gRPC (OTLP):** `localhost:4317`
+
+    对于支持 OpenTelemetry 的[语言 SDK](/zh/clickstack/ingesting-data/sdks/index)和遥测库，您只需在应用程序中设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 环境变量：
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    ```
+
+    如果以 agent 角色部署 [OTel collector 的 contrib 发行版](https://github.com/open-telemetry/opentelemetry-collector-contrib)，则可使用 OTLP exporter 将数据发送到 ClickStack collector。下面展示了一个 agent 配置示例，它会读取这个[结构化日志文件](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz)。
+
+    ```yaml
+    # clickhouse-agent-config.yaml
+    receivers:
+      filelog:
+        include:
+          - /opt/data/logs/access-structured.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            timestamp:
+              parse_from: attributes.time_local
+              layout: '%Y-%m-%d %H:%M:%S'
+    exporters:
+      # HTTP setup
+      otlphttp/hdx:
+        endpoint: 'http://localhost:4318'
+        compression: gzip
+     
+      # gRPC setup (alternative)
+      otlp/hdx:
+        endpoint: 'localhost:4317'
+        compression: gzip
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 10000
+    service:
+      telemetry:
+        metrics:
+          address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
+      pipelines:
+        logs:
+          receivers: [filelog]
+          processors: [batch]
+          exporters: [otlphttp/hdx]
+    ```
+  </Tab>
+
+  <Tab title="开源 ClickStack">
+    大多数 ClickStack 发行版都包含 ClickStack OpenTelemetry collector，包括：
+
+    * [All-in-One](/zh/clickstack/deployment/all-in-one)
+    * [Docker Compose](/zh/clickstack/deployment/docker-compose)
+    * [Helm](/zh/clickstack/deployment/helm)
+
+    ### 安装 ClickStack OpenTelemetry collector
+
+    ClickStack OTel collector 也可以独立部署，不依赖于技术栈中的其他组件。
+
+    如果你使用的是 [HyperDX-only](/zh/clickstack/deployment/hyperdx-only) 发行版，则需要自行负责将数据传送到 ClickHouse。可通过以下方式实现：
+
+    * 运行你自己的 OpenTelemetry collector，并将其指向 ClickHouse——见下文。
+    * 使用其他工具直接发送到 ClickHouse，例如 [Vector](https://vector.dev/)、[Fluentd](https://www.fluentd.org/) 等，甚至默认的 [OTel contrib collector 发行版](https://github.com/open-telemetry/opentelemetry-collector-contrib)。
+
+    <Info>
+      **我们建议使用 ClickStack OpenTelemetry collector**
+
+      这样你可以受益于标准化摄取、强制执行的 schema，以及与 HyperDX UI 的开箱即用兼容性。使用默认 schema 可启用自动 source 检测和预配置的列映射。
+    </Info>
+
+    更多详情，请参阅[&quot;部署 collector&quot;](/zh/clickstack/ingesting-data/collector)。
+
+    ### 将数据发送到 collector
+
+    要将数据发送到 ClickStack，请将你的 OpenTelemetry 插桩指向 OpenTelemetry collector 提供的以下端点：
+
+    * **HTTP (OTLP):** `http://localhost:4318`
+    * **gRPC (OTLP):** `localhost:4317`
+
+    对于支持 OpenTelemetry 的[语言 SDK](/zh/clickstack/ingesting-data/sdks/index)和遥测库，你只需在应用程序中设置 `OTEL_EXPORTER_OTLP_ENDPOINT` 环境变量：
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    ```
+
+    此外，还需要提供一个包含 API 摄取密钥的授权请求头。你可以在 HyperDX 应用中的 `Team Settings → API Keys` 下找到该密钥。
+
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="摄取密钥" size="lg" />
+
+    对于语言 SDK，这既可以通过 `init` 函数设置，也可以通过 `OTEL_EXPORTER_OTLP_HEADERS` 环境变量设置，例如：
+
+    ```shell
+    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+    ```
+
+    agent 同样应在所有 OTLP 通信中包含此授权请求头。例如，如果以 agent 角色部署 [OTel collector 的 contrib 发行版](https://github.com/open-telemetry/opentelemetry-collector-contrib)，则可以使用 OTLP exporter。下面展示了一个读取此[结构化日志文件](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz)的 agent 配置示例。请注意，需要指定授权密钥，参见 `<YOUR_API_INGESTION_KEY>`。
+
+    ```yaml
+    # clickhouse-agent-config.yaml
+    receivers:
+      filelog:
+        include:
+          - /opt/data/logs/access-structured.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            timestamp:
+              parse_from: attributes.time_local
+              layout: '%Y-%m-%d %H:%M:%S'
+    exporters:
+      # HTTP setup
+      otlphttp/hdx:
+        endpoint: 'http://localhost:4318'
+        headers:
+          authorization: <YOUR_API_INGESTION_KEY>
+        compression: gzip
+     
+      # gRPC setup (alternative)
+      otlp/hdx:
+        endpoint: 'localhost:4317'
+        headers:
+          authorization: <YOUR_API_INGESTION_KEY>
+        compression: gzip
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 10000
+    service:
+      telemetry:
+        metrics:
+          address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
+      pipelines:
+        logs:
+          receivers: [filelog]
+          processors: [batch]
+          exporters: [otlphttp/hdx]
+    ```
+  </Tab>
+</Tabs>

@@ -1,0 +1,77 @@
+---
+sidebarTitle: '자주 사용하는 액세스 관리 쿼리'
+title: '자주 사용하는 액세스 관리 쿼리'
+slug: /cloud/security/common-access-management-queries
+description: '이 문서에서는 SQL 사용자와 역할을 정의하고, 해당 권한 및 permission을 데이터베이스, 테이블, 행, 컬럼에 적용하는 기본 방법을 설명합니다.'
+keywords: ['ClickHouse Cloud', '액세스 관리']
+doc_type: 'guide'
+---
+
+import CommonUserRolesContent from '/snippets/ko/_users-and-roles-common.mdx';
+
+<Tip>
+  **자가 관리형**
+
+  자가 관리형 ClickHouse를 사용 중이라면 [SQL 사용자 및 역할](/ko/concepts/features/security/access-rights)을 참조하십시오.
+</Tip>
+
+이 문서에서는 SQL 사용자와 역할을 정의하고, 해당 권한을 데이터베이스(database), 테이블(table), 행(row), 컬럼(column)에 적용하는 기본 사항을 설명합니다.
+
+<div id="admin-user">
+  ## 관리자 사용자
+</div>
+
+ClickHouse Cloud 서비스에는 서비스가 생성될 때 함께 생성되는 관리자 사용자 `default`가 있습니다. 비밀번호는 서비스 생성 시 제공되며, **관리자** 역할이 있는 ClickHouse Cloud 사용자가 재설정할 수 있습니다.
+
+ClickHouse Cloud 서비스에 SQL 사용자를 추가로 만들면 해당 사용자에게는 SQL 사용자 이름과 비밀번호가 필요합니다. 이 사용자들에게 관리자 수준의 권한을 부여하려면 새 사용자에게 역할 `default_role`을 할당하십시오. 예를 들어, 사용자 `clickhouse_admin`을 추가하는 방법은 다음과 같습니다.
+
+```sql
+CREATE USER IF NOT EXISTS clickhouse_admin
+IDENTIFIED WITH sha256_password BY 'P!@ssword42!';
+```
+
+```sql
+GRANT default_role TO clickhouse_admin;
+```
+
+<Note>
+  SQL 콘솔을 사용할 때 SQL 문은 `default` 사용자로 실행되지 않습니다. 대신 `sql-console:${cloud_login_email}`라는 이름의 사용자로 실행되며, 여기서 `cloud_login_email`은 현재 쿼리를 실행하는 사용자의 이메일입니다.
+
+  이렇게 자동으로 생성된 SQL 콘솔 사용자에게는 `default` 역할이 부여됩니다.
+</Note>
+
+<div id="passwordless-authentication">
+  ## 비밀번호 없는 인증
+</div>
+
+SQL 콘솔에서 사용할 수 있는 역할은 두 가지입니다. `default_role`과 동일한 권한을 가진 `sql_console_admin`과 읽기 전용 권한을 가진 `sql_console_read_only`입니다.
+
+관리자 사용자는 기본적으로 `sql_console_admin` 역할이 할당되므로 별도 변경 사항이 없습니다. 반면 `sql_console_read_only` 역할을 사용하면 관리자 권한이 없는 사용자에게 임의의 인스턴스에 대해 읽기 전용 또는 전체 접근 권한을 부여할 수 있습니다. 이 접근 권한은 관리자가 구성해야 합니다. 또한 인스턴스별 요구 사항에 더 잘 맞도록 `GRANT` 또는 `REVOKE` 명령으로 역할을 조정할 수 있으며, 이러한 역할에 적용한 변경 사항은 모두 유지됩니다.
+
+<div id="granular-access-control">
+  ### 세분화된 접근 제어
+</div>
+
+이 접근 제어 기능은 사용자 수준의 세분화 수준으로 수동 구성할 수도 있습니다. 사용자에게 새 `sql_console_*` 역할을 할당하기 전에, 네임스페이스 `sql-console-role:<email>`에 맞는 SQL 콘솔 사용자별 데이터베이스 역할을 먼저 생성해야 합니다. 예시는 다음과 같습니다:
+
+```sql
+CREATE ROLE OR REPLACE sql-console-role:<email>;
+GRANT <some grants> TO sql-console-role:<email>;
+```
+
+일치하는 역할이 감지되면 미리 정의된 역할 대신 해당 사용자에게 할당됩니다. 이를 통해 `sql_console_sa_role` 및 `sql_console_pm_role`과 같은 역할을 생성하고, 이를 특정 사용자에게 부여하는 등 더 복잡한 접근 제어 구성을 할 수 있습니다. 예시는 다음과 같습니다:
+
+```sql
+CREATE ROLE OR REPLACE sql_console_sa_role;
+GRANT <whatever level of access> TO sql_console_sa_role;
+CREATE ROLE OR REPLACE sql_console_pm_role;
+GRANT <whatever level of access> TO sql_console_pm_role;
+CREATE ROLE OR REPLACE `sql-console-role:christoph@clickhouse.com`;
+CREATE ROLE OR REPLACE `sql-console-role:jake@clickhouse.com`;
+CREATE ROLE OR REPLACE `sql-console-role:zach@clickhouse.com`;
+GRANT sql_console_sa_role to `sql-console-role:christoph@clickhouse.com`;
+GRANT sql_console_sa_role to `sql-console-role:jake@clickhouse.com`;
+GRANT sql_console_pm_role to `sql-console-role:zach@clickhouse.com`;
+```
+
+<CommonUserRolesContent />

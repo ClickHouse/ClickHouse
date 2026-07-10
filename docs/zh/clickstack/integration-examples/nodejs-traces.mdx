@@ -1,0 +1,271 @@
+---
+slug: /use-cases/observability/clickstack/integrations/nodejs-traces
+title: '使用 ClickStack 监控 Node.js 链路追踪'
+sidebarTitle: 'Node.js 链路追踪'
+description: '使用 ClickStack 监控 Node.js 应用的链路追踪'
+doc_type: 'guide'
+keywords: ['Node.js', '链路追踪', 'OTEL', 'ClickStack', '分布式链路追踪']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **简而言之**
+
+  使用 OpenTelemetry 自动埋点，在 ClickStack 中采集 Node.js 应用程序的分布式链路追踪。包含演示数据集和预置仪表盘。
+</Info>
+
+<div id="existing-nodejs">
+  ## 与现有 Node.js 应用程序集成
+</div>
+
+本节介绍如何使用 OpenTelemetry 自动埋点为现有的 Node.js 应用程序添加分布式链路追踪。
+
+如果您想先测试此集成，再配置自己的现有环境，可以使用我们预先配置的设置以及[演示数据集部分](#demo-dataset)中的样例数据进行测试。
+
+<div id="prerequisites">
+  ##### 前置条件
+</div>
+
+* 正在运行且可访问 OTLP 端点 (端口 4317/4318) 的 ClickStack 实例
+* 现有 Node.js 应用程序 (Node.js 14 或更高版本)
+* npm 或 yarn 包管理器
+* ClickStack 主机名或 IP 地址
+
+<Steps>
+  <Step>
+    #### 安装并配置 OpenTelemetry
+
+    安装 `@hyperdx/node-opentelemetry` 包，并在应用程序启动时进行初始化。详细安装步骤请参阅 [Node.js SDK 指南](/zh/clickstack/ingesting-data/sdks/nodejs#getting-started)。
+  </Step>
+
+  <Step>
+    #### 获取 ClickStack API key
+
+    需要一个用于将 trace 发送到 ClickStack OTLP 端点的 API key。
+
+    1. 在你的 ClickStack URL 中打开 HyperDX (例如 http://localhost:8080)
+    2. 如有需要，请创建账户或登录
+    3. 进入 **Team Settings → API Keys**
+    4. 复制你的 **摄取 API key**
+
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+  </Step>
+
+  <Step>
+    #### 运行你的应用程序
+
+    设置以下环境变量后，启动你的 Node.js 应用程序：
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    ```
+  </Step>
+
+  <Step>
+    #### 生成一些流量
+
+    向你的应用程序发起请求以生成链路追踪：
+
+    ```bash
+    # 简单请求
+    curl http://localhost:3000/
+    curl http://localhost:3000/api/users
+    curl http://localhost:3000/api/products
+
+    # 模拟负载
+    for i in {1..100}; do curl -s http://localhost:3000/ > /dev/null; done
+    ```
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证链路追踪
+
+    配置完成后，登录 HyperDX 并确认链路追踪已正常上报。你应该会看到类似下面的内容。如果没有看到链路追踪，请尝试调整时间范围：
+
+    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="链路追踪搜索视图" />
+
+    点击任意一个 trace，即可查看包含 spans、耗时和 attributes 的详细视图：
+
+    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="单个 trace 视图" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## 演示数据集
+</div>
+
+对于希望在为生产应用接入 Node.js 链路追踪之前，先使用 ClickStack 测试 Node.js 链路追踪的用户，我们提供了一个预先生成的 Node.js 应用链路追踪样本数据集，其中包含逼真的流量模式。
+
+<Steps>
+  <Step>
+    #### 下载样本数据集
+
+    下载样本链路追踪文件：
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nodejs/nodejs-traces-sample.json
+    ```
+  </Step>
+
+  <Step>
+    #### 启动 ClickStack
+
+    如果你还没有运行 ClickStack，请使用以下命令启动：
+
+    ```bash
+    docker run -d --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CLICKHOUSE_USER=default \
+      -e CLICKHOUSE_PASSWORD= \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### 获取 ClickStack API key
+
+    用于将 trace 发送到 ClickStack OTLP 端点的 API key。
+
+    1. 在你的 ClickStack URL 中打开 HyperDX (例如 http://localhost:8080)
+    2. 创建账户，或在需要时登录
+    3. 导航到 **Team Settings → API Keys**
+    4. 复制你的 **摄取 API key**
+
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+
+    将你的 API key 设置为环境变量：
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    ```
+  </Step>
+
+  <Step>
+    #### 将链路追踪发送到 ClickStack
+
+    ```bash
+    curl -X POST http://localhost:4318/v1/traces \
+      -H "Content-Type: application/json" \
+      -H "Authorization: $CLICKSTACK_API_KEY" \
+      -d @nodejs-traces-sample.json
+    ```
+
+    你应该会看到类似 `{"partialSuccess":{}}` 的响应，这表示链路追踪已成功发送。
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证链路追踪
+
+    1. 打开 [HyperDX](http://localhost:8080/)，并登录你的账户 (你可能需要先创建账户)
+    2. 导航到 **搜索** 视图，并将 source 设置为 **链路追踪**
+    3. 将时间范围设置为 **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
+
+    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="链路追踪搜索视图" />
+
+    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="单个 trace 视图" />
+
+    <Info>
+      **时区显示**
+
+      HyperDX 会按浏览器的本地时区显示时间戳。演示数据覆盖的时间范围为 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**。较宽的时间范围可确保无论你身处何地，都能看到这些演示链路追踪。看到链路追踪后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## 仪表盘和可视化
+</div>
+
+为帮助你开始监控 Node.js 应用的性能，我们提供了一个预置仪表盘，其中包含关键的 trace 可视化内容。
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nodejs-traces-dashboard.json'} download="nodejs-traces-dashboard.json" eventName="docs.node_traces_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+  </Step>
+
+  <Step>
+    #### 导入预置仪表盘
+
+    1. 打开 HyperDX，进入 **Dashboards** 部分
+    2. 点击右上角的 **Import Dashboard** (位于省略号菜单下)
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘" />
+
+    3. 上传 `nodejs-traces-dashboard.json` 文件，然后点击 **Finish Import**
+
+    <Image img="/images/clickstack/nodejs/finish-import.webp" alt="完成导入" />
+  </Step>
+
+  <Step>
+    #### 仪表盘创建后，所有可视化都会预先配置好
+
+    <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="示例仪表盘" />
+
+    <Note>
+      对于演示数据集，请将时间范围设置为 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (请根据你的本地时区调整) 。导入后的仪表盘默认不会指定时间范围。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="demo-traces-not-appearing">
+  ### 通过 curl 发送的演示链路追踪未出现
+</div>
+
+如果你已通过 curl 发送了链路追踪，但在 HyperDX 中看不到，请尝试再次发送一遍：
+
+```bash
+curl -X POST http://localhost:4318/v1/traces \
+  -H "Content-Type: application/json" \
+  -H "Authorization: $CLICKSTACK_API_KEY" \
+  -d @nodejs-traces-sample.json
+```
+
+这是一个已知问题，会在通过 `curl` 使用演示方法时出现，但不会影响已完成遥测埋点的生产环境应用。
+
+<div id="no-traces">
+  ### HyperDX 中没有显示任何链路追踪
+</div>
+
+**请确认环境变量已设置：**
+
+```bash
+echo $CLICKSTACK_API_KEY
+# 应输出您的 API key
+
+echo $OTEL_EXPORTER_OTLP_ENDPOINT
+# 应输出 http://localhost:4318 或您的 ClickStack 主机地址
+```
+
+**验证网络连接：**
+
+```bash
+curl -v http://localhost:4318/v1/traces
+```
+
+应该可以成功连接到 OTLP 端点。
+
+**检查应用日志：**
+应用启动时，查找 OpenTelemetry 的初始化消息。HyperDX SDK 应会输出确认其已初始化的信息。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* 为关键指标 (错误率、延迟阈值) 设置[告警](/zh/clickstack/features/alerts)
+* 为特定用例 (API 监控、安全事件) 创建更多仪表盘
+
+<div id="going-to-production">
+  ## 投入生产环境
+</div>
+
+本指南使用 HyperDX SDK，可将链路追踪直接发送到 ClickStack 的 OTLP 端点。这种方式非常适合开发、测试以及中小规模的生产部署。
+对于更大规模的生产环境，或者需要对遥测数据进行更多控制时，建议部署您自己的 OpenTelemetry Collector 作为 agent。
+有关生产环境部署模式和 collector 配置示例，请参见 [使用 OpenTelemetry 进行摄取](/zh/clickstack/ingesting-data/opentelemetry)。

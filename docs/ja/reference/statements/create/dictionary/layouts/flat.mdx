@@ -1,0 +1,44 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/flat
+title: 'flat 辞書レイアウト'
+sidebarTitle: 'flat'
+description: '辞書をフラットな配列としてメモリに格納します。'
+doc_type: 'reference'
+---
+
+`flat` レイアウトでは、辞書全体がフラットな配列の形でメモリに格納されます。
+使用されるメモリ量は、最大のキーのサイズ (使用領域) に比例します。
+
+<Tip>
+  このレイアウトタイプは、利用可能な辞書の格納方式の中で最も高いパフォーマンスを提供します。
+</Tip>
+
+辞書キーの型は [UInt64](/ja/reference/data-types/int-uint) で、値は `max_array_size` に制限されます (デフォルトは 500,000) 。
+辞書の作成時にこれより大きなキーが見つかった場合、ClickHouse は例外をスローし、辞書を作成しません。
+辞書のフラット配列の初期サイズは、`initial_array_size` 設定で制御されます (デフォルトは 1024) 。
+
+あらゆる種類のソースがサポートされています。
+辞書の更新時には、データ (ファイルまたはテーブルから) が丸ごと読み込まれます。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <layout>
+      <flat>
+        <initial_array_size>50000</initial_array_size>
+        <max_array_size>5000000</max_array_size>
+      </flat>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

@@ -64,8 +64,10 @@
 #include <Encoder.hh>
 #include <Generic.hh>
 #include <GenericDatum.hh>
+#include <Schema.hh>
 #include <Specific.hh>
 #include <Stream.hh>
+#include <Types.hh>
 #include <ValidSchema.hh>
 
 #include <Poco/JSON/Object.h>
@@ -219,6 +221,13 @@ String removeEscapedSlashes(const String & json_str)
     return result;
 }
 
+String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(json, oss, indent);
+    return removeEscapedSlashes(oss.str());
+}
+
 static void extendSchemaForPartitions(
     String & schema,
     const std::vector<String> & partition_columns,
@@ -234,10 +243,7 @@ static void extendSchemaForPartitions(
         partition_fields->add(field);
     }
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(partition_fields, oss);
-
-    std::string json_representation = removeEscapedSlashes(oss.str());
+    std::string json_representation = stringifyJSON(partition_fields);
 
     std::string from = "#";
     size_t start_pos = schema.find(from);
@@ -245,6 +251,43 @@ static void extendSchemaForPartitions(
     {
         schema.replace(start_pos, from.size(), json_representation);
     }
+}
+
+namespace
+{
+void setVersionedField(avro::GenericRecord & rec, const auto & value, const String & field_name)
+{
+    size_t field_index = rec.fieldIndex(field_name);
+    const avro::NodePtr & field_schema = rec.schema()->leafAt(static_cast<UInt32>(field_index));
+
+    if (field_schema->type() == avro::AVRO_UNION)
+    {
+        avro::GenericUnion field(field_schema);
+        field.selectBranch(1);
+        field.datum() = avro::GenericDatum(value);
+        rec.fieldAt(field_index) = avro::GenericDatum(field_schema, field);
+    }
+    else
+    {
+        rec.fieldAt(field_index) = avro::GenericDatum(value);
+    }
+}
+
+Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata)
+{
+    Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
+    auto schemas = metadata->getArray(Iceberg::f_schemas);
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        auto schema = schemas->getObject(static_cast<UInt32>(i));
+        if (schema->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+            return schema;
+    }
+    throw Exception(
+        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "Not found schema with current-schema-id {} in the schemas list",
+        current_schema_id);
+}
 }
 
 void generateManifestFile(
@@ -282,19 +325,14 @@ void generateManifestFile(
     if (root_schema->type() != avro::AVRO_RECORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg manifest file schema must be record");
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    int current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
-    Poco::JSON::Stringifier::stringify(metadata->getArray(Iceberg::f_schemas)->getObject(current_schema_id), oss, 4);
-    std::string json_representation = removeEscapedSlashes(oss.str());
+    std::string json_representation = stringifyJSON(getCurrentSchema(metadata), 4);
 
     auto adapter = std::make_unique<OutputStreamWriteBufferAdapter>(buf);
     avro::DataFileWriter<avro::GenericDatum> writer(std::move(adapter), schema);
     writer.setMetadata(Iceberg::f_schema, json_representation);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
-    std::ostringstream oss_partition_spec; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec);
-    writer.setMetadata(Iceberg::f_partition_spec, oss_partition_spec.str());
+    writer.setMetadata(Iceberg::f_partition_spec, stringifyJSON(partition_spec->getArray(Iceberg::f_fields)));
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
     for (size_t file_idx = 0; file_idx < data_file_names.size(); ++file_idx)
@@ -306,34 +344,14 @@ void generateManifestFile(
         manifest.field(Iceberg::f_status) = avro::GenericDatum(1);
         Int64 snapshot_id = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
 
-        auto set_versioned_field = [&](const auto & value, const String & field_name)
-        {
-            if (version > 1)
-            {
-                size_t field_index = 0;
-                if (!schema.root()->nameIndex(field_name, field_index))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
-
-                const avro::NodePtr & union_schema = schema.root()->leafAt(static_cast<UInt32>(field_index));
-
-                avro::GenericUnion field(union_schema);
-                field.selectBranch(1);
-                field.datum() = avro::GenericDatum(value);
-                manifest.field(field_name) = avro::GenericDatum(union_schema, field);
-            }
-            else
-            {
-                manifest.field(field_name) = avro::GenericDatum(value);
-            }
-        };
-        set_versioned_field(snapshot_id, Iceberg::f_snapshot_id);
+        setVersionedField(manifest, snapshot_id, Iceberg::f_snapshot_id);
 
         if (version > 1)
         {
             Int64 sequence_number = user_defined_sequence_number.value_or(new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number));
 
-            set_versioned_field(sequence_number, Iceberg::f_sequence_number);
-            set_versioned_field(sequence_number, Iceberg::f_file_sequence_number);
+            setVersionedField(manifest, sequence_number, Iceberg::f_sequence_number);
+            setVersionedField(manifest, sequence_number, Iceberg::f_file_sequence_number);
         }
         avro::GenericRecord & data_file = manifest.field(Iceberg::f_data_file).value<avro::GenericRecord>();
         if (version > 1)
@@ -508,38 +526,18 @@ void generateManifestList(
             entry.field(Iceberg::f_min_sequence_number) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
         }
 
-        auto set_versioned_field = [&](const auto & value, const String & field_name)
-        {
-            if (version == 1)
-            {
-                size_t field_index = 0;
-                if (!schema.root()->nameIndex(field_name, field_index))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
-
-                const avro::NodePtr & union_schema = schema.root()->leafAt(static_cast<UInt32>(field_index));
-
-                avro::GenericUnion field(union_schema);
-                field.selectBranch(1);
-                field.datum() = avro::GenericDatum(value);
-                entry.field(field_name) = avro::GenericDatum(union_schema, field);
-            }
-            else
-            {
-                entry.field(field_name) = value;
-            }
-        };
         entry.field(Iceberg::f_added_snapshot_id) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
 
         if (version == 1)
         {
-            set_versioned_field(1, Iceberg::f_added_files_count);
-            set_versioned_field(std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
-            set_versioned_field(0, Iceberg::f_deleted_files_count);
+            setVersionedField(entry, 1, Iceberg::f_added_files_count);
+            setVersionedField(entry, std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
+            setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
             if (summary->has(Iceberg::f_added_position_deletes))
-                set_versioned_field(summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
+                setVersionedField(entry, summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
             else
-                set_versioned_field(0, Iceberg::f_deleted_rows_count);
+                setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
         }
         else
         {
@@ -555,20 +553,24 @@ void generateManifestList(
 
         if (entry_content == Iceberg::FileContentType::DATA)
         {
-            set_versioned_field(
+            setVersionedField(
+                entry,
                 summary->has(Iceberg::f_added_records) ? summary->getValue<Int64>(Iceberg::f_added_records) : 0,
                 Iceberg::f_added_rows_count);
         }
         else
         {
-            set_versioned_field(
+            setVersionedField(
+                entry,
                 summary->has(Iceberg::f_added_position_deletes) ? summary->getValue<Int64>(Iceberg::f_added_position_deletes) : 0,
                 Iceberg::f_added_rows_count);
         }
-        set_versioned_field(
+        setVersionedField(
+            entry,
             0,
             Iceberg::f_existing_rows_count);
-        set_versioned_field(0, Iceberg::f_deleted_rows_count);
+        setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
+
         writer.write(entry_datum);
     }
 
@@ -1075,9 +1077,7 @@ bool IcebergStorageSink::initializeMetadata()
         }
 
         {
-            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            Poco::JSON::Stringifier::stringify(metadata, oss, 4);
-            std::string json_representation = removeEscapedSlashes(oss.str());
+            std::string json_representation = stringifyJSON(metadata, 4);
 
             fiu_do_on(FailPoints::iceberg_writes_cleanup,
             {

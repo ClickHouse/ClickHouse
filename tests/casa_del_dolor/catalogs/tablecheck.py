@@ -18,8 +18,23 @@ from pyspark.sql.types import (
     DecimalType,
 )
 
+try:
+    from pyspark.sql.types import TimestampNTZType
+
+    # Excluded from cross-engine comparison for the same reason as TimestampType
+    _TEMPORAL_NTZ_TYPES = (TimestampNTZType,)
+except ImportError:
+    _TEMPORAL_NTZ_TYPES = ()
+
 from .laketables import SparkTable, LakeFormat
 from integration.helpers.client import Client
+
+# Row-hash placeholder for SQL NULL, so rows with a NULL in a compared column are
+# still compared instead of silently dropped (Spark CONCAT/COLLECT_LIST and ClickHouse
+# `||`/groupArray both discard NULL row hashes). ASCII so string ordering stays identical
+# across engines; the compared types are numeric/bool/array-of-those, which never produce
+# this literal, so it cannot collide with a real value.
+_NULL_SENTINEL = "<NULL>"
 
 
 class SparkAndClickHouseCheck:
@@ -45,9 +60,13 @@ class SparkAndClickHouseCheck:
                 VarcharType,
                 TimestampType,
                 DateType,
-            ),
+            )
+            + _TEMPORAL_NTZ_TYPES,
         ):
-            # Map type is not comparable in Spark, Struct is complicated
+            # Map type is not comparable in Spark, Struct is complicated.
+            # TIMESTAMP_NTZ is excluded like TimestampType: its string form differs
+            # between Spark and ClickHouse (fractional seconds, precision), so hashing
+            # it across engines yields spurious mismatches.
             return False
         return True
 
@@ -162,14 +181,22 @@ class SparkAndClickHouseCheck:
             )
 
             # Spark hash
-            # Convert all columns to string and concatenate. Remove trailing 0 for decimals
+            # Convert all columns to string and concatenate, wrapping each in COALESCE so a
+            # NULL keeps the row (otherwise CONCAT yields NULL and COLLECT_LIST drops it).
+            # Decimals: match ClickHouse `toString`, which trims trailing zeros only in the
+            # fractional part and drops a bare decimal point. A blunt TRIM TRAILING '0' would
+            # also strip significant zeros (e.g. "10" -> "1"), causing false mismatches.
+            def spark_col_expr(col) -> str:
+                s = f"CAST({col.column_name} AS STRING)"
+                if isinstance(col.spark_type, DecimalType):
+                    s = (
+                        f"CASE WHEN {s} LIKE '%.%' "
+                        f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {s})) ELSE {s} END"
+                    )
+                return f"COALESCE({s}, '{_NULL_SENTINEL}')"
+
             spark_strings = {
-                col.column_name: (
-                    f"TRIM(TRAILING '0' FROM CAST({col.column_name} AS STRING))"
-                    if isinstance(col.spark_type, DecimalType)
-                    else f"CAST({col.column_name} AS STRING)"
-                )
-                for col in order_by_cols
+                col.column_name: spark_col_expr(col) for col in order_by_cols
             }
             concat_cols = ", '||', ".join([col.column_name for col in order_by_cols])
             # Generate hash using SQL
@@ -188,11 +215,13 @@ class SparkAndClickHouseCheck:
             # ClickHouse hash
             # Convert all columns to string and concatenate
             # ClickHouse arrays as strings don't have a space after the comma, add it
+            # Wrap in coalesce with the same sentinel as the Spark side so NULL rows are kept
+            # and compared rather than dropped by groupArray.
             clickhouse_strings = {
                 col.column_name: (
-                    f"'[' || arrayStringConcat(arrayMap(x -> toString(x), {col.column_name}), ', ') || ']'"
+                    f"coalesce('[' || arrayStringConcat(arrayMap(x -> toString(x), {col.column_name}), ', ') || ']', '{_NULL_SENTINEL}')"
                     if isinstance(col.spark_type, (ArrayType))
-                    else f"toString({col.column_name})"
+                    else f"coalesce(toString({col.column_name}), '{_NULL_SENTINEL}')"
                 )
                 for col in order_by_cols
             }

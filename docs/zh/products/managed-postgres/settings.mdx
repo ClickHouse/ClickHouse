@@ -1,0 +1,42 @@
+---
+slug: /cloud/managed-postgres/settings
+sidebarTitle: '设置'
+title: '设置'
+description: '配置 PostgreSQL 和 PgBouncer 参数，并管理 Managed Postgres 的实例设置'
+keywords: ['Postgres 配置', 'PostgreSQL 设置', 'PgBouncer']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
+
+您可以在侧边栏的 **设置** 选项卡中，修改 Managed Postgres 实例的配置参数并管理实例设置。
+
+<div id="service-actions">
+  ## Service actions 与扩缩容
+</div>
+
+<Image img="/images/managed-postgres/service-actions.webp" alt="Service actions 与扩缩容" size="md" border />
+
+**Service actions** 工具栏提供了用于管理您的 Managed Postgres 实例的操作：
+
+* **重置密码**：更新 superuser 密码 (仅当实例处于 `Running` 状态时可用)
+* **重启**：重启数据库实例 (仅当实例处于 `Running` 状态时可用)
+* **删除**：删除实例
+
+**扩缩容** 部分允许您更改主节点和备用节点的实例类型，以增加或减少计算资源和存储容量。
+更多详细信息请参见[扩缩容页面](/zh/products/managed-postgres/scaling)。
+
+<div id="changing-configuration">
+  ## 更改配置参数
+</div>
+
+<Image img="/images/managed-postgres/postgres-parameters.webp" alt="Postgres 参数配置" size="md" border />
+
+要修改参数，请选择 **Edit parameters** 按钮。选择需要修改的参数，并相应调整其值。确认修改无误后，点击 **Save Changes** 按钮。
+
+对配置参数所做的更改通常会在一分钟内保存到实例。某些参数需要重启数据库后才会生效。这些更改将在下次重启后应用，你可以从 **Service actions** 工具栏手动触发重启。
+
+请参阅有关配置参数的官方[文档](https://www.postgresql.org/docs/current/runtime-config.html)。可设置的参数列表很快会进一步扩展。在此期间，如果你需要当前尚不支持的参数，请联系[支持团队](https://clickhouse.com/support/program)提出申请。
