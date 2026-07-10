@@ -134,4 +134,32 @@ private:
     std::unique_ptr<re2::RE2> re2;
     unsigned number_of_subpatterns;
 };
+
+/// Finds the next non-empty match of `regexp` at or after byte offset `pos` in `[data, data + length)`,
+/// keeping the whole buffer as context so that `^`, `$` and `\b` work; match offsets are relative to `data`.
+/// On success returns `true`, sets `match_start` / `match_length` and advances `pos` past the match (so `pos`
+/// strictly increases). Returns `false` and leaves `pos` unchanged when there is no further match or the
+/// leftmost match is empty (an empty match is treated as "no separator", like `splitByRegexp`).
+/// `matches` is caller-owned scratch, reused to avoid per-call allocation.
+inline bool nextRegexpMatch(
+    const OptimizedRegularExpression & regexp,
+    const char * data,
+    size_t length,
+    size_t & pos,
+    size_t & match_start,
+    size_t & match_length,
+    OptimizedRegularExpression::MatchVec & matches)
+{
+    if (pos > length)
+        return false;
+
+    if (regexp.match(data, length, pos, matches) == 0 || matches.empty() || matches[0].length == 0)
+        return false;
+
+    match_start = matches[0].offset;
+    match_length = matches[0].length;
+    pos = match_start + match_length;
+    return true;
+}
+
 }

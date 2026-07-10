@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/assert_cast.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils.h>
 #include <Columns/IColumn_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -32,6 +33,7 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+        SplitByRegexp,
     };
 
     ITokenizer() = delete;
@@ -319,6 +321,32 @@ private:
     std::vector<String> separators;
 };
 
+/// Parser extracting tokens which are separated by a regular expression.
+/// The regexp plays the role of the separator (like `splitByRegexp`): tokens are the pieces of text
+/// between successive matches. Empty pieces (produced by leading, trailing or consecutive separators) are
+/// not emitted, since empty tokens are useless for a text index.
+struct SplitByRegexpTokenizer final : public ITokenizerHelper<SplitByRegexpTokenizer>
+{
+    explicit SplitByRegexpTokenizer(const String & regexp_);
+
+    static const char * getName() { return "splitByRegexp"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override;
+
+    bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+private:
+    String regexp_str;
+    /// `shared_ptr` (rather than a plain member) so that the tokenizer stays copyable for `clone`, since
+    /// `OptimizedRegularExpression` is non-copyable. The compiled regexp is immutable and safe to share.
+    std::shared_ptr<OptimizedRegularExpression> regexp;
+};
+
 /// Parser doing "no operation". Returns the entire input as a single token.
 struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
 {
@@ -483,6 +511,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             const auto & split_by_string_tokenizer = assert_cast<const SplitByStringTokenizer &>(tokenizer);
             detail::forEachTokenImpl(split_by_string_tokenizer, data, length, callback);
+            return;
+        }
+        case ITokenizer::Type::SplitByRegexp:
+        {
+            const auto & split_by_regexp_tokenizer = assert_cast<const SplitByRegexpTokenizer &>(tokenizer);
+            detail::forEachTokenImpl(split_by_regexp_tokenizer, data, length, callback);
             return;
         }
         case ITokenizer::Type::Array:

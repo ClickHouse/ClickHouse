@@ -6,6 +6,7 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Functions/Regexps.h>
 
 #if defined(__SSE2__)
 #  include <emmintrin.h>
@@ -295,6 +296,73 @@ String SplitByStringTokenizer::getDescription() const
     }
 
     return result + "])";
+}
+
+SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_)
+    : ITokenizerHelper(Type::SplitByRegexp)
+    , regexp_str(regexp_)
+    , regexp(std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(regexp_)))
+{
+}
+
+bool SplitByRegexpTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
+{
+    /// Scratch reused by `OptimizedRegularExpression::match`. A local keeps this method const and reentrant;
+    /// `nextRegexpMatch` accepts it as a parameter so a future caller can hoist it out of the token loop.
+    OptimizedRegularExpression::MatchVec matches;
+
+    while (pos <= length)
+    {
+        const size_t token_begin = pos;
+        size_t match_start = 0;
+        size_t match_length = 0;
+
+        if (nextRegexpMatch(*regexp, data, length, pos, match_start, match_length, matches))
+        {
+            /// The token is the text preceding the separator; `pos` has already advanced past the separator.
+            if (match_start > token_begin)
+            {
+                token_start = token_begin;
+                token_length = match_start - token_begin;
+                return true;
+            }
+            /// Empty piece (leading or consecutive separators): skip it and keep scanning.
+        }
+        else
+        {
+            /// No further separator: the remaining tail is the last token. An empty tail is not emitted.
+            pos = length + 1; /// Mark exhausted so subsequent calls return false.
+            if (token_begin < length)
+            {
+                token_start = token_begin;
+                token_length = length - token_begin;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    return false;
+}
+
+bool SplitByRegexpTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::nextInStringLike is not implemented");
+}
+
+void SplitByRegexpTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::substringToBloomFilter is not implemented");
+}
+
+void SplitByRegexpTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::substringToTokens is not implemented");
+}
+
+String SplitByRegexpTokenizer::getDescription() const
+{
+    return fmt::format("{}({})", getName(), quoteString(regexp_str));
 }
 
 bool ArrayTokenizer::nextInString(const char * /*data*/, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
