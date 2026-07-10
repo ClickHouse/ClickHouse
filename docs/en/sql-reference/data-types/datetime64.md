@@ -125,6 +125,27 @@ FROM dt64;
 └─────────────────────────┴─────────────────────────┘
 ```
 
+5. Parsing MongoDB's `ISODate(...)` syntax from JSON
+
+When inserting into a `DateTime64` column from `JSONEachRow` (or other JSON-based formats), ClickHouse also accepts the MongoDB shell's `ISODate("...")` and `new ISODate("...")` datetime constructor syntax, in addition to a plain string.
+This allows MongoDB dumps to be imported directly without preprocessing.
+
+```sql
+CREATE TABLE dt64_mongo (ts DateTime64(3, 'UTC')) ENGINE = Memory;
+
+INSERT INTO dt64_mongo FORMAT JSONEachRow {"ts": ISODate("2024-05-29T23:16:12.256Z")};
+INSERT INTO dt64_mongo FORMAT JSONEachRow {"ts": new ISODate("2024-05-29T23:16:12.256Z")};
+
+SELECT * FROM dt64_mongo;
+```
+
+```text
+┌──────────────────────ts─┐
+│ 2024-05-29 23:16:12.256 │
+│ 2024-05-29 23:16:12.256 │
+└─────────────────────────┘
+```
+
 **See Also**
 
 - [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
