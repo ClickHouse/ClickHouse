@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-darwin
 # Test that allow_experimental_detach_queries in clickhouse-local (LocalConnection)
 # behaves like the TCP and HTTP handlers:
 # - ExceptionBeforeStart (unknown table, quota, etc.) is propagated to the client
@@ -7,6 +8,11 @@
 #
 # clickhouse-local only enters the detach path in interactive mode (is_interactive=true),
 # which requires a real TTY.  We use `script -q -c` to give clickhouse-local a PTY.
+#
+# Tagged `no-darwin`: this relies on the `util-linux` `script -c CMD FILE` syntax to
+# allocate a PTY, which the BSD `script` shipped on macOS does not support (its argument
+# order is `script FILE CMD`), so `script -q -c` yields empty output there. Linux coverage
+# (Fast test plus all Stateless suites) is unaffected.
 
 set -e
 
