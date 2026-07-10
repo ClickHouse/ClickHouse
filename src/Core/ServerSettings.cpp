@@ -43,6 +43,10 @@
 
 #include <fmt/ranges.h>
 
+#include <algorithm>
+#include <string_view>
+#include <vector>
+
 
 namespace CurrentMetrics
 {
@@ -1913,10 +1917,43 @@ void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfigurat
 
 void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
 {
+    auto first_component = [](std::string_view full) -> std::string_view
+    {
+        return full.substr(0, full.find_first_of("-_"));
+    };
+
+    /// Snapshot the options already defined by the daemon and the server (e.g. `config-file`, `pid-file`)
+    /// before we start adding new ones - `addOption` may reallocate the underlying storage and invalidate
+    /// iterators and references into the set.
+    std::vector<std::string> builtin_options;
+    for (const auto & option : options)
+        builtin_options.push_back(option.fullName());
+
     const auto & accessor = ServerSettingsTraits::Accessor::instance();
     for (size_t i = 0; i < accessor.size(); ++i)
     {
         const String & name = accessor.getName(i);
+
+        /// `Poco::Util::OptionSet` resolves options by unique prefix, so a multi-component built-in option
+        /// such as `config-file` can be abbreviated (e.g. `--config`, as used by the systemd unit and by
+        /// `clickhouse restart`). Registering a server setting that shares the first name component with such
+        /// a built-in option (both `config_file` and `config_reload_interval_ms` share `config` with
+        /// `config-file`) would make that abbreviation ambiguous and prevent the server from starting. Skip
+        /// these settings - they can still be set through the config file or after the `--` separator.
+        std::string_view name_component = first_component(name);
+        const bool clashes_with_builtin = std::any_of(
+            builtin_options.begin(),
+            builtin_options.end(),
+            [&](const std::string & builtin)
+            {
+                if (builtin == name)
+                    return true;
+                std::string_view builtin_component = first_component(builtin);
+                return builtin_component.size() != builtin.size() && builtin_component == name_component;
+            });
+        if (clashes_with_builtin)
+            continue;
+
         std::string_view path = accessor.getPath(i);
 
         std::string binding = path.empty() ? name : std::string(path);

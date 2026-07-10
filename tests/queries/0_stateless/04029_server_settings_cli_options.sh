@@ -86,3 +86,21 @@ $CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name 
 kill $PID 2>/dev/null
 wait $PID 2>/dev/null
 trap '' EXIT
+
+# Test 5: The built-in `--config` option (an abbreviation of `--config-file`, used by the systemd
+# unit and by `clickhouse restart`) must keep resolving after server settings are registered as CLI
+# options. Registering settings whose name shares the `config` prefix (`config_file`,
+# `config_reload_interval_ms`) previously made `--config` ambiguous and prevented the server from
+# starting. Pass a non-existent config file so the server fails fast, and check that the failure is
+# "config file not found" rather than "ambiguous option".
+srv_dir5="${CLICKHOUSE_TMP}/srv5"
+mkdir -p "$srv_dir5"
+$CLICKHOUSE_BINARY server \
+    --max_connections 10 --config="$srv_dir5/no_such_config.xml" \
+    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir5/" > "${CLICKHOUSE_TMP}/server5.log" 2>&1
+
+if grep -q 'Ambiguous option' "${CLICKHOUSE_TMP}/server5.log"; then
+    echo "FAIL: --config is ambiguous"
+else
+    echo "OK: --config resolves"
+fi
