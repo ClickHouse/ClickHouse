@@ -1037,6 +1037,44 @@ def test_subquery_drops_stale_marker():
     )
 
 
+def test_range_query_drops_stale_marker():
+    # A top-level range query rewrites a root instant selector to a range vector: at each step it takes the latest
+    # sample within the lookback window - including a Prometheus stale marker. A stale marker means "no sample here",
+    # so Prometheus omits that step from the matrix instead of emitting it. The step at 110 (the stale marker) must
+    # be dropped, while regular `NaN` samples at 130 and 140 stay visible.
+    do_range_query_test(
+        "stale_counter_values",
+        100,
+        150,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "stale_counter_values", "case": "stale-nan"}, "values": [[100, "2"], [120, "1"], [130, "NaN"], [140, "NaN"], [150, "3"]]}]}',
+        [
+            [
+                "[('__name__','stale_counter_values'),('case','stale-nan')]",
+                "[('1970-01-01 00:01:40.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',nan),('1970-01-01 00:02:20.000',nan),('1970-01-01 00:02:30.000',3)]",
+            ]
+        ],
+    )
+
+
+def test_subquery_over_operator_drops_stale_marker():
+    # A comparison with the `bool` modifier rewrites every step of the instant vector to 0 or 1. If the stale marker
+    # is not dropped before the comparison runs, `stale_marker == bool 2` would evaluate to 0 and surface the stale
+    # step as a real sample. Prometheus drops the stale series before the comparison, so the step at 110 must be
+    # absent from the subquery matrix: only 100 (2 == 2 -> 1) and 120 (1 == 2 -> 0) remain.
+    do_query_test(
+        "(stale_counter_values == bool 2)[30s:10s]",
+        120,
+        '{"resultType": "matrix", "result": [{"metric": {"case": "stale-nan"}, "values": [[100, "1"], [120, "0"]]}]}',
+        [
+            [
+                "[('case','stale-nan')]",
+                "[('1970-01-01 00:01:40.000',1),('1970-01-01 00:02:00.000',0)]",
+            ]
+        ],
+    )
+
+
 def test_literals():
     timestamp = 250
     do_query_test(
