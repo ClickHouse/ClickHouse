@@ -1,0 +1,50 @@
+<test>
+    <!--
+        Targets FunctionToSubcolumnsPass (setting `optimize_functions_to_subcolumns`, default on).
+
+        A chain of WITH-clause aliases, each a nested `if` referencing the previous alias several
+        times, so the analyzer clones the aliased subtree at every use and the resolved query tree
+        grows exponentially in the chain depth. `FunctionToSubcolumnsVisitorFirstPass` visits every
+        column reference in that tree.
+
+        The important detail is `FROM t_fts_alias_chain` (a real table), NOT a subquery. The pass's
+        per-column work in `enterImpl(const ColumnNode &)` is guarded by `if (!table_node) return;`
+        and only runs when the column's source is a `TableNode`. Wrapping the source in a subquery
+        (e.g. `FROM (SELECT value FROM t_fts_alias_chain)`) makes `value` a subquery/`QueryNode`
+        column, so every reference early-exits before the `getFullTableName()` + `Identifier`
+        construction that dominates the pass, and no improvement to that path is observable.
+        Keep the FROM a plain table.
+
+        No data is needed: the query is analysis-bound (the table has a handful of rows and the
+        result is discarded with FORMAT Null), so `client_time` reflects analyzer/planner time.
+    -->
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <max_expanded_ast_elements>5000000000</max_expanded_ast_elements>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_fts_alias_chain (value UInt64) ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+    <fill_query>
+        INSERT INTO t_fts_alias_chain SELECT number FROM numbers(100)
+    </fill_query>
+
+    <query><![CDATA[
+        WITH
+            if(value = 10, 'A', if(value = 20, 'B', if(value = 30, 'C', if(value = 40, 'D', if(value = 50, 'E', 'F'))))) AS col1,
+            if(col1 = 'A', 'Alpha', if(col1 = 'B', 'Beta', if(col1 = 'C', 'Gamma', if(col1 = 'D', 'Delta', if(col1 = 'E', 'Epsilon', 'Other'))))) AS col2,
+            if(col2 = 'A', 'Alpha', if(col2 = 'B', 'Beta', if(col2 = 'C', 'Gamma', if(col2 = 'D', 'Delta', if(col2 = 'E', 'Epsilon', 'Other'))))) AS col3,
+            if(col3 = 'A', 'Alpha', if(col3 = 'B', 'Beta', if(col3 = 'C', 'Gamma', if(col3 = 'D', 'Delta', if(col3 = 'E', 'Epsilon', 'Other'))))) AS col4,
+            if(col4 = 'A', 'Alpha', if(col4 = 'B', 'Beta', if(col4 = 'C', 'Gamma', if(col4 = 'D', 'Delta', if(col4 = 'E', 'Epsilon', 'Other'))))) AS col5,
+            if(col5 = 'A', 'Alpha', if(col5 = 'B', 'Beta', if(col5 = 'C', 'Gamma', if(col5 = 'D', 'Delta', if(col5 = 'E', 'Epsilon', 'Other'))))) AS col6,
+            if(col6 = 'A', 'Alpha', if(col6 = 'B', 'Beta', if(col6 = 'C', 'Gamma', if(col6 = 'D', 'Delta', if(col6 = 'E', 'Epsilon', 'Other'))))) AS col7,
+            if(col7 = 'A', 'Alpha', if(col7 = 'B', 'Beta', if(col7 = 'C', 'Gamma', if(col7 = 'D', 'Delta', if(col7 = 'E', 'Epsilon', 'Other'))))) AS col8,
+            if(col8 = 'Alpha', if(col1 = 'A', 'A-One', 'Other'), 'Zero') AS col9
+        SELECT col1, col2, col3, col4, col5, col6, col7, col8, col9
+        FROM t_fts_alias_chain
+        FORMAT Null
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS t_fts_alias_chain</drop_query>
+</test>
