@@ -9,6 +9,26 @@ doc_type: 'reference'
 
 # `system.user_query_log` {#system-user-query-log}
 
+:::warning Upgrade compatibility
+
+The name `system.user_query_log` is reserved for this system view. Before upgrading from a ClickHouse version that does not provide this view, check whether an existing table uses this name:
+
+```sql
+SELECT database, name, engine
+FROM system.tables
+WHERE database = 'system' AND name = 'user_query_log';
+```
+
+If the query returns a table, rename or drop it using the old ClickHouse version before upgrading. Otherwise, the new version will refuse to start because it cannot safely replace the existing table. Renaming the table preserves its data:
+
+```sql
+RENAME TABLE system.user_query_log TO system.user_query_log_legacy;
+```
+
+Also update the `query_log.table` server configuration parameter if it is set to `user_query_log` while `query_log.database` is set to `system`. For example, after the rename above, set `query_log.table` to `user_query_log_legacy` if the renamed table should remain the query log destination.
+
+:::
+
 ## Description {#description}
 
 The `system.user_query_log` table is a view over the query log table configured by the `query_log.database` and `query_log.table` server configuration parameters. By default, this is `system.query_log`. The view returns only rows where the initiating user is equal to the result of `currentUser()`. For distributed query log rows, the initiating user is stored in `initial_user`; otherwise, `user` is used.
