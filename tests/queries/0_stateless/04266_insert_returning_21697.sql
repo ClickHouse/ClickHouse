@@ -208,7 +208,7 @@ TRUNCATE TABLE db_insert_returning_tx.t_insert_returning_tx;
 BEGIN TRANSACTION;
 INSERT INTO db_insert_returning_tx.t_insert_returning_tx
 RETURNING (SELECT no_such_col FROM db_insert_returning_tx.t_insert_returning_tx)
-VALUES (10), (11), (12); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT number + 10 FROM numbers(3); -- { serverError UNKNOWN_IDENTIFIER }
 ROLLBACK;
 SELECT count() FROM db_insert_returning_tx.t_insert_returning_tx;
 
