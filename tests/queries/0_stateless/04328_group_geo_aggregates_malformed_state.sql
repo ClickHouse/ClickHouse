@@ -55,15 +55,18 @@ SELECT groupPolygonUnionMerge(state) FROM (
 -- 6. groupPolygonUnion: reject an inner-ring count that exceeds the cumulative ring budget.
 --    Inner-ring counts are no longer capped on their own; the cumulative ring budget bounds the
 --    total. The single polygon already charges one (outer) ring, so 10,000,001 inner rings
---    exceeds MAX_RINGS_IN_POLYGONAL_STATE (10,000,000).
+--    exceeds MAX_RINGS_IN_POLYGONAL_STATE (10,000,000). The outer ring carries a single point so
+--    deserialization reaches the inner-ring count instead of tripping the zero-point-ring guard.
 SELECT 'union_oversized_rings';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
-        '01',          -- version
-        '01',          -- 1 chunk
-        '01',          -- 1 polygon
-        '00',          -- 0-point outer ring
-        '81ADE204'     -- 10000001 inner rings (cumulative ring budget 10000000)
+        '01',                  -- version
+        '01',                  -- 1 chunk
+        '01',                  -- 1 polygon
+        '01',                  -- 1-point outer ring
+        '0000000000000000',    -- x = 0.0
+        '0000000000000000',    -- y = 0.0
+        '81ADE204'             -- 10000001 inner rings (cumulative ring budget 10000000)
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
