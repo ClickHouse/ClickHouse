@@ -153,12 +153,21 @@ public:
                 data_type_val->getName(),
                 getName());
 
-        if (isDynamic(data_type_val) || isVariant(data_type_val))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different data types. Consider using typed subcolumns or cast column to a specific data type",
-                data_type_val->getName(),
-                getName());
+        /// Reject `Dynamic`/`Variant` anywhere inside the `val` type, not only at the top level:
+        /// nested runtime-typed values would reintroduce mixed-type comparisons into heap maintenance
+        /// and final sorting. This mirrors the recursive guard in `argMin`/`argMax` and `min`/`max`.
+        auto check_not_dynamic_or_variant = [&](const IDataType & type)
+        {
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
+                    data_type_val->getName(),
+                    getName());
+        };
+        check_not_dynamic_or_variant(*data_type_val);
+        data_type_val->forEachChild(check_not_dynamic_or_variant);
     }
 
     String getName() const override

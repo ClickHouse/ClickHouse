@@ -45,6 +45,18 @@ SET allow_experimental_variant_type = 1;
 SELECT argMaxMany(2)(number, number::Variant(UInt64)) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT argMinMany(2)(number, number::Variant(UInt64)) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- Error: Dynamic/Variant nested anywhere inside the val type are also rejected, matching argMin/argMax.
+-- Tuple, Array, Map, Nullable, and LowCardinality forward isComparable to their children, so a
+-- top-level-only guard would let these through even though the underlying values can mix runtime types.
+SELECT argMaxMany(2)(number, tuple(number::Dynamic, number)) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)(number, tuple(number::Dynamic, number)) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMaxMany(2)(number, [number::Dynamic]) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)(number, [number::Dynamic]) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMaxMany(2)(number, tuple(number::Variant(UInt64, String), number)) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)(number, tuple(number::Variant(UInt64, String), number)) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMaxMany(2)(number, [number::Variant(UInt64, String)]) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)(number, [number::Variant(UInt64, String)]) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 -- NaN val ranks as the worst candidate (consistent with argMax/argMin), so it is evicted in
 -- favor of real values and never lingers in the heap.
 SELECT argMaxMany(1)(arg, val) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
