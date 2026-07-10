@@ -139,6 +139,11 @@ private:
 
     TextIndexDirectReadMode getHintOrNoneMode() const;
 
+    /// Looks through a semantically-equivalent positive boolean wrapper around a supported atom
+    /// (`atom = true`, `atom != false`, `isNotDistinctFrom(atom, true)`, `atom IN (only-truthy-consts)`)
+    /// by recursing into the atom, so pruning is not lost. Returns true if a wrapper was handled.
+    bool traversePositiveBooleanWrapper(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
+
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
     bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;

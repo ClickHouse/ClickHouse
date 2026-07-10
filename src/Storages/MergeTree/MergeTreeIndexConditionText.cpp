@@ -500,6 +500,11 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
+        /// Look through a semantically-equivalent positive boolean wrapper around a supported atom,
+        /// e.g. `hasToken(s, 'x') = true`, so pruning is not lost.
+        if (traversePositiveBooleanWrapper(function, out))
+            return true;
+
         if ((function_name == "in" || function_name == "globalIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
@@ -525,6 +530,163 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     }
 
     return false;
+}
+
+bool MergeTreeIndexConditionText::traversePositiveBooleanWrapper(
+    const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    const String function_name = function_node.getFunctionName();
+
+    if (function_name != "equals"
+        && function_name != "notEquals"
+        && function_name != "isNotDistinctFrom"
+        && function_name != "in"
+        && function_name != "globalIn")
+        return false;
+
+    /// Maps a scalar constant to its boolean value, but only for the canonical boolean
+    /// spellings (`true`/`false`, `1`/`0`). Anything else (e.g. `= 5`, which is always false
+    /// for a UInt8 atom) returns nullopt so it is left to row-level evaluation.
+    auto field_to_boolean = [](const Field & value) -> std::optional<bool>
+    {
+        switch (value.getType())
+        {
+            case Field::Types::Bool:
+            case Field::Types::UInt64:
+            {
+                UInt64 v = value.safeGet<UInt64>();
+                if (v == 0)
+                    return false;
+                if (v == 1)
+                    return true;
+                return {};
+            }
+            case Field::Types::Int64:
+            {
+                Int64 v = value.safeGet<Int64>();
+                if (v == 0)
+                    return false;
+                if (v == 1)
+                    return true;
+                return {};
+            }
+            case Field::Types::Float64:
+            {
+                Float64 v = value.safeGet<Float64>();
+                if (v == 0.0)
+                    return false;
+                if (v == 1.0)
+                    return true;
+                return {};
+            }
+            default:
+                return {};
+        }
+    };
+
+    auto node_to_boolean = [&](const RPNBuilderTreeNode & node) -> std::optional<bool>
+    {
+        Field value;
+        DataTypePtr type;
+        if (!node.tryGetConstant(value, type))
+            return {};
+        return field_to_boolean(value);
+    };
+
+    /// Recurse into `atom` and, if it builds an index condition, force direct-read off.
+    /// The wrapper node's children are not [haystack, needles], so the direct-read /
+    /// preprocessor rewrite (which assumes that shape) must not fire on it. Granule pruning
+    /// is mode-independent (driven by the RPN function type), so pruning is fully preserved,
+    /// and the bare inner atom node is still optimized for direct read independently.
+    auto recurse_into_atom = [&](const RPNBuilderTreeNode & atom) -> bool
+    {
+        if (!atom.isFunction())
+            return false;
+
+        RPNElement inner;
+        if (!traverseAtomNode(atom, inner))
+            return false;
+
+        for (auto & query : inner.text_search_queries)
+            query->direct_read_mode = TextIndexDirectReadMode::None;
+
+        out = std::move(inner);
+        return true;
+    };
+
+    if (function_name == "in" || function_name == "globalIn")
+    {
+        auto lhs = function_node.getArgumentAt(0);
+        auto rhs = function_node.getArgumentAt(1);
+
+        if (!lhs.isFunction())
+            return false;
+
+        auto future_set = rhs.tryGetPreparedSet();
+        if (!future_set)
+            return false;
+
+        auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+            return false;
+
+        Columns columns = prepared_set->getSetElements();
+        if (columns.size() != 1 || isTuple(columns.front()->getDataType()))
+            return false;
+
+        const auto & set_column = *columns.front();
+        size_t total_row_count = prepared_set->getTotalRowCount();
+        if (total_row_count == 0)
+            return false;
+
+        /// Only `atom IN (only-truthy-consts)` is equivalent to the bare atom.
+        /// A `false`/`0` element makes the set always-true or negative, so decline.
+        for (size_t row = 0; row < total_row_count; ++row)
+        {
+            auto boolean = field_to_boolean(set_column[row]);
+            if (!boolean || !*boolean)
+                return false;
+        }
+
+        return recurse_into_atom(lhs);
+    }
+
+    /// equals / notEquals / isNotDistinctFrom: exactly one side is a boolean constant,
+    /// the other is the atom.
+    auto lhs = function_node.getArgumentAt(0);
+    auto rhs = function_node.getArgumentAt(1);
+
+    auto lhs_boolean = node_to_boolean(lhs);
+    auto rhs_boolean = node_to_boolean(rhs);
+
+    const RPNBuilderTreeNode * atom = nullptr;
+    std::optional<bool> constant;
+    if (rhs_boolean && !lhs_boolean)
+    {
+        atom = &lhs;
+        constant = rhs_boolean;
+    }
+    else if (lhs_boolean && !rhs_boolean)
+    {
+        atom = &rhs;
+        constant = lhs_boolean;
+    }
+    else
+    {
+        return false;
+    }
+
+    /// A positive wrapper selects a row only when the atom is exactly true:
+    ///   atom = true, isNotDistinctFrom(atom, true), atom != false
+    /// (under WHERE three-valued logic, NULL and false rows are excluded in every case, so this
+    /// holds for Nullable atoms too). The inner atom's granule mask is therefore a necessary
+    /// condition and pruning stays sound. Negative wrappers (= false, != true) map to the negated
+    /// atom; NOT-of-a-mask always yields can_be_true = true, so they give no pruning benefit -- decline.
+    bool positive = function_name == "notEquals" ? (*constant == false) : (*constant == true);
+    if (!positive)
+        return false;
+
+    return recurse_into_atom(*atom);
 }
 
 VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
