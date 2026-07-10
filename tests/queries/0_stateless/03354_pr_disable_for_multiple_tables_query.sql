@@ -13,6 +13,12 @@ insert into Y (id, y_a, y_b) values (4, 'r6', 'nr6'), (6, 'r7', 'nr7'), (7, 'r8'
 
 set enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
+-- Pin the settings that the flaky/stress randomizer changes and that would otherwise alter the plan:
+-- with automatic_parallel_replicas_mode=2 only statistics are collected and parallel replicas are not
+-- actually used (so ReadFromRemoteParallelReplicas disappears from the plan), and
+-- parallel_replicas_local_plan affects whether ReadFromRemoteParallelReplicas appears at all.
+set automatic_parallel_replicas_mode = 0, parallel_replicas_local_plan = 1;
+
 set parallel_replicas_for_queries_with_multiple_tables=1;
 select count() from (explain select X.*, Y.* from X inner join Y on X.id = Y.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
 set parallel_replicas_for_queries_with_multiple_tables=0;
