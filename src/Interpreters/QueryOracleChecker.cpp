@@ -11,6 +11,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Common/FieldVisitorToString.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
@@ -1969,6 +1970,12 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
         size_t g_idx = 0;
         for (const auto & group_expr : inner_select.groupBy()->children)
         {
+            /// A GROUP BY key that is an asterisk / `COLUMNS(...)` matcher derives
+            /// directly from `IAST` and cannot take an alias (`IAST::setAlias`
+            /// throws `LOGICAL_ERROR`), and it could not be referenced by a stable
+            /// alias from the outer query anyway. Skip the oracle for such queries.
+            if (!group_expr->as<ASTWithAlias>())
+                return false;
             String g_alias = fmt::format("_g_{}", g_idx++);
             group_key_alias[group_expr->getTreeHash(/*ignore_aliases=*/true).low64] = g_alias;
             auto g_clone = group_expr->clone();
