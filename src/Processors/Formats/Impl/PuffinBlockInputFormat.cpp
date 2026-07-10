@@ -326,9 +326,6 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
         if (key <= last_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap keys must be sorted in ascending order");
 
-        while (last_key < key - 1)
-            ++last_key;
-
         auto bitmap = readRoaringPortableSafe(ptr, remaining, key);
 
         const size_t bitmap_size = bitmap.getSizeInBytes(/*portable=*/true);
