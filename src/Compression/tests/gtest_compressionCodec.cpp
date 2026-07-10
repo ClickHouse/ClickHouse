@@ -1593,6 +1593,36 @@ TEST(ChimpTest, DecompressMalformedInputTruncatedStream)
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
 }
 
+TEST(ChimpTest, DecompressMalformedInputReuseAfterInvalidation)
+{
+    /// A `0b10` item reuses the previous item's leading-zero count. The encoder invalidates that count
+    /// (sentinel 255) after every `0b00` (repeat) and `0b01` item, so it never emits `0b10` right after
+    /// one of those. A malformed stream can still do so: here the second value is a `0b00` repeat of 0
+    /// and the third is a `0b10` that reuses the (now invalidated) leading-zero state to smuggle in
+    /// 0x12345678. The decoder now mirrors the encoder's sentinel reset and rejects such a stream with
+    /// `CANNOT_DECOMPRESS` instead of decoding a value the encoder can never produce.
+    constexpr unsigned char block[] = {
+        0x9D,                         /// Chimp method byte
+        0x19, 0x00, 0x00, 0x00,       /// compressed_size = 25
+        0x0C, 0x00, 0x00, 0x00,       /// decompressed_size = 12 (3 items * 4 bytes)
+        0x04,                         /// bytes_size = 4
+        0x00,                         /// bytes_to_skip (unused)
+        0x03, 0x00, 0x00, 0x00,       /// items_count = 3
+        0x00, 0x00, 0x00, 0x00,       /// first value = 0
+        0x00,                         /// 0b00 flag, match_index = 0 -> second value is a repeat of 0
+        0x84, 0x8D, 0x15, 0x9E, 0x00, /// 0b10 flag reusing the invalidated leading-zero state, data = 0x12345678
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(12);
+
+    auto codec = makeCodec("Chimp", std::make_shared<DataTypeFloat32>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
 TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)
 {
     /// Reproducer for process abort when `compression_methods_size + 1 > source_size`:

@@ -371,7 +371,15 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
                 break;
             // 0b10 prefix
             case 2:
+                /// `0b10` reuses the leading-zero count of the previous item. The encoder invalidates that
+                /// count (sets it to the sentinel 255) after every `0b00` (repeat) and `0b01` item, so it
+                /// never emits `0b10` right after one of those. A malformed stream can still do so; the
+                /// reused sentinel would then make `sizeof(T) * 8 - leading_zero_bits` underflow the
+                /// `UInt8 data_bits`. Reject any reused count that exceeds the type width instead of
+                /// decoding a value the encoder can never produce.
                 curr_xored_info.leading_zero_bits = prev_xored_info.leading_zero_bits;
+                if (curr_xored_info.leading_zero_bits > sizeof(T) * 8)
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data: corrupted input data.");
                 curr_xored_info.data_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits;
                 require_bits(curr_xored_info.data_bits);
                 xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
@@ -397,6 +405,9 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
                 xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
                 xored_data <<= curr_xored_info.trailing_zero_bits;
                 curr_value = prev_value ^ xored_data;
+                /// Mirror the encoder: after a `0b01` item the leading-zero count must not be reusable by a
+                /// following `0b10`, so invalidate it with the same sentinel the encoder writes (255).
+                curr_xored_info.leading_zero_bits = 255;
                 break;
             // 0b00 prefix
             case 0:
@@ -404,6 +415,9 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
                 match_index = reader.readBits(LOG_NO_PREVIOUS_VALUES);
                 prev_value = stored_values[match_index];
                 curr_value = prev_value;
+                /// Mirror the encoder: a `0b00` (repeat) item also invalidates the reusable leading-zero
+                /// count, so a following `0b10` must not reuse it.
+                curr_xored_info.leading_zero_bits = 255;
                 break;
             default:
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Illegal flag value {}", static_cast<int>(flag));
