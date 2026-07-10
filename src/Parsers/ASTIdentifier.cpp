@@ -139,6 +139,20 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
     /// Preserve double quotes only — they are semantically meaningful for case-sensitivity in
     /// `standard` mode, while backticks behave like unquoted and can use the formatter's default
     /// quoting policy (which avoids spurious backticks in the output for plain identifiers).
+    /// When quote metadata is recorded and says a part is NOT double-quoted, presentation-level
+    /// DoubleQuotes quoting must divert to backticks: `"x"` would pin exact case on reparse in `standard` mode.
+    auto write_not_pinned = [&](const String & part_name)
+    {
+        if (!quote_styles.empty() && settings.identifier_quoting_style == IdentifierQuotingStyle::DoubleQuotes)
+        {
+            FormatSettings backtick_settings = settings;
+            backtick_settings.identifier_quoting_style = IdentifierQuotingStyle::Backticks;
+            backtick_settings.writeIdentifier(ostr, part_name, /*ambiguous=*/false);
+        }
+        else
+            settings.writeIdentifier(ostr, part_name, /*ambiguous=*/false);
+    };
+
     auto format_element = [&](const String & elem_name, IdentifierQuoteStyle quote)
     {
         if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
@@ -147,14 +161,14 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
             if (quote == IdentifierQuoteStyle::DoubleQuote)
                 writeDoubleQuotedString(special_delimiter_and_identifier->second, ostr);
             else
-                settings.writeIdentifier(ostr, special_delimiter_and_identifier->second, /*ambiguous=*/false);
+                write_not_pinned(special_delimiter_and_identifier->second);
             return;
         }
 
         if (quote == IdentifierQuoteStyle::DoubleQuote)
             writeDoubleQuotedString(elem_name, ostr);
         else
-            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
+            write_not_pinned(elem_name);
     };
 
     if (compound())

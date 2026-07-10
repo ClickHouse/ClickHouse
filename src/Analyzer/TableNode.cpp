@@ -153,7 +153,9 @@ bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     if (storage_id != rhs_typed.storage_id
         || table_expression_modifiers != rhs_typed.table_expression_modifiers
         || temporary_table_name != rhs_typed.temporary_table_name
-        || case_sensitive_column_names != rhs_typed.case_sensitive_column_names)
+        || case_sensitive_column_names != rhs_typed.case_sensitive_column_names
+        || database_name_is_double_quoted != rhs_typed.database_name_is_double_quoted
+        || table_name_is_double_quoted != rhs_typed.table_name_is_double_quoted)
         return false;
 
     /// Parameterized views: two calls with different argument values share the same `StorageID` but
@@ -198,6 +200,13 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         }
     }
 
+    /// Mix in quote pins only when one is set, so unpinned tables keep their historical hash.
+    if (database_name_is_double_quoted || table_name_is_double_quoted)
+    {
+        state.update(database_name_is_double_quoted);
+        state.update(table_name_is_double_quoted);
+    }
+
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
 
@@ -213,6 +222,8 @@ QueryTreeNodePtr TableNode::cloneImpl() const
     result_table_node->table_expression_modifiers = table_expression_modifiers;
     result_table_node->temporary_table_name = temporary_table_name;
     result_table_node->case_sensitive_column_names = case_sensitive_column_names;
+    result_table_node->database_name_is_double_quoted = database_name_is_double_quoted;
+    result_table_node->table_name_is_double_quoted = table_name_is_double_quoted;
 
     result_table_node->materialized_cte = materialized_cte;
 
@@ -233,8 +244,20 @@ boost::intrusive_ptr<ASTTableIdentifier> TableNode::toASTIdentifier() const
     // `storage_id.hasDatabase()` can return false only on the initiator node.
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
     if (!storage_id.hasDatabase())
-        return make_intrusive<ASTTableIdentifier>(storage_id.getTableName());
-    return make_intrusive<ASTTableIdentifier>(storage_id.getDatabaseName(), storage_id.getTableName());
+    {
+        auto identifier = make_intrusive<ASTTableIdentifier>(storage_id.getTableName());
+        if (table_name_is_double_quoted)
+            identifier->setQuoteStyles({IdentifierQuoteStyle::DoubleQuote});
+        return identifier;
+    }
+
+    auto identifier = make_intrusive<ASTTableIdentifier>(storage_id.getDatabaseName(), storage_id.getTableName());
+    /// Re-emit the original double-quote pins; empty `quote_styles` canonically means all-unquoted.
+    if (database_name_is_double_quoted || table_name_is_double_quoted)
+        identifier->setQuoteStyles(
+            {database_name_is_double_quoted ? IdentifierQuoteStyle::DoubleQuote : IdentifierQuoteStyle::None,
+             table_name_is_double_quoted ? IdentifierQuoteStyle::DoubleQuote : IdentifierQuoteStyle::None});
+    return identifier;
 }
 
 }

@@ -29,7 +29,9 @@
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <base/defines.h> /// chassert
+#include <Poco/String.h>
 
 
 namespace ProfileEvents
@@ -53,6 +55,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsCaseInsensitiveNames case_insensitive_names;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
@@ -185,8 +188,16 @@ struct HasSystemTablesMatcher
         String table;
         bool successfully_parsed = parseDatabaseAndTableName(pos, expected, database, table);
         if (successfully_parsed)
-            if (DatabaseCatalog::isPredefinedDatabase(database))
+        {
+            bool is_predefined = DatabaseCatalog::isPredefinedDatabase(database);
+            /// In `standard` mode unquoted database names fold case-insensitively (quoting is no longer
+            /// visible here), so `SYSTEM.one` must also count: test the folded spellings too.
+            if (!is_predefined && data.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard)
+                is_predefined = DatabaseCatalog::isPredefinedDatabase(Poco::toLower(database))
+                    || DatabaseCatalog::isPredefinedDatabase(Poco::toUpper(database));
+            if (is_predefined)
                 data.has_system_tables = true;
+        }
     }
 };
 

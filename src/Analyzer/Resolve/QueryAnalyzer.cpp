@@ -1671,6 +1671,13 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         const bool table_name_case_insensitive = identifier_lookup.isPartCaseInsensitive(parts_size == 2 ? 1 : 0, standard_mode);
         resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
             identifier_lookup.identifier, scope.context, database_name_case_insensitive, table_name_case_insensitive);
+        /// Transfer the original double-quote pins onto the resolved table so `toAST` re-emits them.
+        if (standard_mode && resolve_result.resolved_identifier && identifier_lookup.anyPartDoubleQuoted())
+        {
+            auto & table_node = resolve_result.resolved_identifier->as<TableNode &>();
+            table_node.setDatabaseNameIsDoubleQuoted(parts_size == 2 && identifier_lookup.isPartDoubleQuoted(0));
+            table_node.setTableNameIsDoubleQuoted(identifier_lookup.isPartDoubleQuoted(parts_size == 2 ? 1 : 0));
+        }
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
@@ -2644,8 +2651,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    /// Full visible column namespace of this matcher; also used by the WHERE/HAVING
-    /// rewriter below for exact-first + uniqueness folding in `standard` mode.
+    /// Column names matched by this matcher, used to canonicalize EXCEPT/REPLACE targets.
     Names matched_column_names;
     matched_column_names.reserve(matched_expression_nodes_with_names.size());
     for (const auto & [_, matched_column_name] : matched_expression_nodes_with_names)
@@ -2895,6 +2901,14 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             auto * query_node = query_scope->scope_node->as<QueryNode>();
             if (query_node)
             {
+                /// Fold screening below must see every column of every table expression in scope,
+                /// not only the matcher-matched ones: an exact column elsewhere wins over the fold.
+                Names visible_namespace_column_names;
+                if (scope.isStandardMode())
+                    for (const auto & [_, visible_table_expression_data] : scope.table_expression_node_to_data)
+                        for (const auto & visible_column : visible_table_expression_data.column_names_and_types)
+                            visible_namespace_column_names.push_back(visible_column.name);
+
                 auto replace_identifiers_in_node = [&](QueryTreeNodePtr & node) -> void
                 {
                     if (!node) return;
@@ -2925,7 +2939,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                                     /// left untouched for normal resolution (binding or ambiguity error).
                                     const std::string * folded_match = nullptr;
                                     bool bind_normally = false;
-                                    for (const auto & visible_name : matched_column_names)
+                                    for (const auto & visible_name : visible_namespace_column_names)
                                     {
                                         if (Poco::icompare(visible_name, ident_full_name) != 0)
                                             continue;
@@ -5642,9 +5656,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 const auto & side_data = side_data_it->second;
                 for (const auto & [column_name, _] : side_data.column_names_and_types)
                 {
-                    auto bucket = side_data.lowercase_column_name_to_original_names.find(Poco::toLower(column_name));
-                    if (bucket == side_data.lowercase_column_name_to_original_names.end()
-                        || std::find(bucket->second.begin(), bucket->second.end(), column_name) == bucket->second.end())
+                    if (side_data.isColumnPinnedCaseSensitive(column_name))
                         pinned_columns.insert(column_name);
                 }
             };
@@ -6732,9 +6744,23 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         {
             const auto & projection_node = projection_nodes_list[i];
             bool quoted = projection_node->hasAlias() && projection_node->isAliasDoubleQuoted();
+            bool has_explicit_alias = projection_node->hasAlias();
             if (!quoted && i < projection_columns.size())
                 if (auto it = projection_alias_to_quoted.find(projection_columns[i].name); it != projection_alias_to_quoted.end())
+                {
                     quoted = it->second;
+                    has_explicit_alias = true;
+                }
+            /// Alias-less pass-through column (star expansion / bare identifier): propagate the
+            /// source column's pin so the pinned name stays case-sensitive from the outside too.
+            /// An explicit alias is a new definition with its own quoting and never inherits.
+            if (!quoted && !has_explicit_alias)
+            {
+                if (const auto * column_node = projection_node->as<ColumnNode>())
+                    if (auto column_source = column_node->getColumnSourceOrNull())
+                        if (auto ted_it = scope.table_expression_node_to_data.find(column_source); ted_it != scope.table_expression_node_to_data.end())
+                            quoted = ted_it->second.isColumnPinnedCaseSensitive(column_node->getColumnName());
+            }
             any_quoted_projection_alias |= quoted;
             projection_quoted_flags.push_back(quoted);
         }

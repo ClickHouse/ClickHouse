@@ -1103,8 +1103,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         && identifier.getPartsSize() > 1)
     {
         const auto & table_name_compat = table_expression_data.table_name;
+        /// A double-quoted definition (e.g. `WITH "MyCte" AS ...`) pins the name to exact matching.
         const bool prefix_matches_table_name = !table_name_compat.empty()
-            && identifierPartsEqual(path_start, table_name_compat, part_case_insensitive(0));
+            && identifierPartsEqual(path_start, table_name_compat,
+                part_case_insensitive(0) && !table_expression_data.table_name_is_double_quoted);
         const bool prefix_matches_alias = table_expression_node->hasAlias()
             && identifierPartsEqual(path_start, table_expression_node->getAlias(), part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted());
         if (prefix_matches_table_name || prefix_matches_alias)
@@ -1289,13 +1291,26 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
                     resolve_result = identifier;
             }
         }
-        else if (!prefer_left_table)
+        else
         {
-            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "JOIN {} ambiguous identifier '{}'. In scope {}",
-                table_expression_node->formatASTForErrorMessage(),
-                identifier_lookup.identifier.getFullName(),
-                scope.scope_node->formatASTForErrorMessage());
+            const auto * first_column = resolve_result.resolved_identifier->as<ColumnNode>();
+            const auto * second_column = identifier.resolved_identifier->as<ColumnNode>();
+            const bool first_exact = first_column && first_column->getColumnName() == identifier_lookup.identifier.back();
+            const bool second_exact = second_column && second_column->getColumnName() == identifier_lookup.identifier.back();
+            if (scope.isStandardMode() && first_exact != second_exact)
+            {
+                /// Exact-first across cross-join sides: the exact spelling wins over a folded match.
+                if (second_exact)
+                    resolve_result = std::move(identifier);
+            }
+            else if (!prefer_left_table)
+            {
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "JOIN {} ambiguous identifier '{}'. In scope {}",
+                    table_expression_node->formatASTForErrorMessage(),
+                    identifier_lookup.identifier.getFullName(),
+                    scope.scope_node->formatASTForErrorMessage());
+            }
         }
     }
 
@@ -1591,6 +1606,28 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     {
         auto & resolved_column = resolved_identifier_candidate->as<ColumnNode &>();
         auto using_column_node_it = using_column_name_to_column_node.find(resolved_column.getColumnName());
+        /// Folded USING key: the clause spelling can be a case-sibling of the resolved name.
+        /// Accept an entry only when this side's participant is the resolved column itself.
+        if (using_column_node_it == using_column_name_to_column_node.end() && current_scope.isStandardMode())
+        {
+            for (auto it = using_column_name_to_column_node.begin(); it != using_column_name_to_column_node.end(); ++it)
+            {
+                if (Poco::icompare(it->first, resolved_column.getColumnName()) != 0)
+                    continue;
+                const auto & participants = it->second->as<ColumnNode &>().getExpressionOrThrow()->as<const ListNode &>().getNodes();
+                auto is_this_side_participant = [&](const QueryTreeNodePtr & participant)
+                {
+                    const auto * participant_column = participant->as<ColumnNode>();
+                    return participant_column && participant_column->getColumnName() == resolved_column.getColumnName()
+                        && participant_column->getColumnSource() == resolved_column.getColumnSource();
+                };
+                if (std::ranges::any_of(participants, is_this_side_participant))
+                {
+                    using_column_node_it = it;
+                    break;
+                }
+            }
+        }
         if (using_column_node_it == using_column_name_to_column_node.end())
             return;
 
@@ -1698,6 +1735,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         {
             const auto & using_column_node = using_column_node_it->second->as<const ColumnNode &>();
             resolved_identifier = createProjectionForUsing(using_column_node, join_kind, scope);
+        }
+        else if (scope.isStandardMode()
+            && left_resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN
+            && right_resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN
+            && (left_resolved_identifier->as<ColumnNode &>().getColumnName() == identifier_lookup.identifier.back())
+                != (right_resolved_identifier->as<ColumnNode &>().getColumnName() == identifier_lookup.identifier.back()))
+        {
+            /// Exact-first across join sides: the side matching the reference spelling exactly
+            /// wins over the side that matched only by case folding.
+            resolved_identifier = left_resolved_identifier->as<ColumnNode &>().getColumnName() == identifier_lookup.identifier.back()
+                ? left_resolved_identifier
+                : right_resolved_identifier;
         }
         else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier, scope))
         {

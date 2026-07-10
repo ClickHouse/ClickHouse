@@ -53,6 +53,16 @@ bool matcherIdentifierMatchesColumnName(
     return true;
 }
 
+/// Exact comparison that respects part boundaries: a one-part identifier compares against the whole
+/// column name; a compound one requires the column name to split into exactly the same parts.
+bool matcherIdentifierExactlyMatchesColumnName(const Identifier & matcher_identifier, const std::string & column_name)
+{
+    const auto & matcher_parts = matcher_identifier.getParts();
+    if (matcher_parts.size() == 1)
+        return matcher_parts[0] == column_name;
+    return Identifier(column_name).getParts() == matcher_parts;
+}
+
 }
 
 const char * toString(MatcherNodeType matcher_node_type)
@@ -164,7 +174,15 @@ bool MatcherNode::isMatchingColumn(const std::string & column_name, bool standar
         return RE2::PartialMatch(column_name, *columns_matcher);
 
     if (columns_identifiers_set.contains(column_name))
-        return true;
+    {
+        /// Default mode keeps the historical rendered-text matching. In `standard` mode exact-first must
+        /// respect part boundaries too: compound `a.b` and one-part `\`a.b\`` render alike but differ.
+        if (!standard_mode)
+            return true;
+        for (const auto & identifier : columns_identifiers)
+            if (matcherIdentifierExactlyMatchesColumnName(identifier, column_name))
+                return true;
+    }
 
     /// Standard mode: an unquoted COLUMNS argument should match a case-different column name.
     /// Argument quote styles live in `columns_identifiers_quote_styles`; if no part of an
@@ -193,8 +211,10 @@ void MatcherNode::canonicalizeColumnsIdentifiers(const Names & visible_column_na
     for (size_t i = 0; i < columns_identifiers.size(); ++i)
     {
         auto & matcher_identifier = columns_identifiers[i];
-        /// Exact spelling wins: an argument naming a visible column exactly is kept as is.
-        if (std::find(visible_column_names.begin(), visible_column_names.end(), matcher_identifier.getFullName()) != visible_column_names.end())
+        /// Exact spelling wins: an argument naming a visible column exactly (with the same part
+        /// boundaries) is kept as is.
+        if (std::any_of(visible_column_names.begin(), visible_column_names.end(),
+                [&](const auto & column_name) { return matcherIdentifierExactlyMatchesColumnName(matcher_identifier, column_name); }))
             continue;
 
         const auto & matcher_quotes = i < columns_identifiers_quote_styles.size() ? columns_identifiers_quote_styles[i] : no_quotes;
@@ -221,9 +241,13 @@ void MatcherNode::canonicalizeColumnsIdentifiers(const Names & visible_column_na
         }
     }
 
+    /// Rebuild the exact-match set from shape-verified matches only: rendered text alone would let a
+    /// compound identifier grab a same-text column with different dotted part boundaries.
     columns_identifiers_set.clear();
     for (const auto & identifier : columns_identifiers)
-        columns_identifiers_set.insert(identifier.getFullName());
+        for (const auto & column_name : visible_column_names)
+            if (matcherIdentifierExactlyMatchesColumnName(identifier, column_name))
+                columns_identifiers_set.insert(column_name);
 }
 
 void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const

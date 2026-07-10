@@ -131,3 +131,10 @@ a	1
 --- Parenthesized alias forms keep the quote pin ---
 1
 1
+--- Exact column on another join side beats a folded REPLACE target ---
+0	5
+--- Pins are sticky through pass-through projections ---
+1
+--- Folded predefined database name still triggers the query cache policy ---
+--- Qualified reference to a folded USING key gets the merged type ---
+Int64

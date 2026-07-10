@@ -373,3 +373,28 @@ SELECT j.a FROM (t_pj1 CROSS JOIN t_pj2) AS "J"; -- { serverError UNKNOWN_IDENTI
 SELECT "J".a FROM (t_pj1 CROSS JOIN t_pj2) AS "J";
 DROP TABLE t_pj1;
 DROP TABLE t_pj2;
+
+SELECT '--- Exact column on another join side beats a folded REPLACE target ---';
+CREATE TABLE t_ns1 (Age Int32) ENGINE = Memory;
+CREATE TABLE t_ns2 (age Int32) ENGINE = Memory;
+INSERT INTO t_ns1 VALUES (1);
+INSERT INTO t_ns2 VALUES (5);
+SELECT t1.* REPLACE (0 AS Age), t2.age FROM t_ns1 AS t1, t_ns2 AS t2 WHERE age = 5;
+DROP TABLE t_ns1;
+DROP TABLE t_ns2;
+
+SELECT '--- Pins are sticky through pass-through projections ---';
+SELECT mycol FROM (SELECT * FROM (SELECT 1 AS "MyCol")); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT mycol FROM (SELECT "MyCol" AS MyCol FROM (SELECT 1 AS "MyCol"));
+
+SELECT '--- Folded predefined database name still triggers the query cache policy ---';
+SELECT * FROM SYSTEM.one SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+
+SELECT '--- Qualified reference to a folded USING key gets the merged type ---';
+CREATE TABLE t_qt_l (Key Int32, a Int32) ENGINE = Memory;
+CREATE TABLE t_qt_r (key Int64, b Int32) ENGINE = Memory;
+INSERT INTO t_qt_l VALUES (1, 10);
+INSERT INTO t_qt_r VALUES (2, 100);
+SELECT toTypeName(l.key) FROM t_qt_l AS l FULL JOIN t_qt_r AS r USING (key) LIMIT 1;
+DROP TABLE t_qt_l;
+DROP TABLE t_qt_r;

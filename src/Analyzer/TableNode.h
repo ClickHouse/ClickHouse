@@ -114,6 +114,28 @@ public:
         temporary_table_name = std::move(temporary_table_name_value);
     }
 
+    /// Double-quote pins from the original `FROM` identifier; semantic in `standard` mode,
+    /// where a double-quoted part must stay pinned to exact-case matching across `toAST` round-trips.
+    bool isDatabaseNameDoubleQuoted() const
+    {
+        return database_name_is_double_quoted;
+    }
+
+    bool isTableNameDoubleQuoted() const
+    {
+        return table_name_is_double_quoted;
+    }
+
+    void setDatabaseNameIsDoubleQuoted(bool value)
+    {
+        database_name_is_double_quoted = value;
+    }
+
+    void setTableNameIsDoubleQuoted(bool value)
+    {
+        table_name_is_double_quoted = value;
+    }
+
     /// Return true if table node has table expression modifiers, false otherwise
     bool hasTableExpressionModifiers() const
     {
@@ -185,6 +207,8 @@ private:
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;
     Names case_sensitive_column_names;
+    bool database_name_is_double_quoted = false;
+    bool table_name_is_double_quoted = false;
     MaterializedCTEPtr materialized_cte;
 
     static constexpr size_t materialized_cte_subquery_index = 0;

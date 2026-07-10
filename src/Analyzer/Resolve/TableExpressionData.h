@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include <IO/Operators.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/Identifier.h>
@@ -95,6 +97,17 @@ struct AnalysisTableExpressionData
     LowercaseToOriginalNamesMap lowercase_column_name_to_original_names;
 
     bool standard_mode = false;
+
+    /// True when the column's definition is pinned case-sensitive (double-quoted definition):
+    /// pinned names are the ones `enableStandardMode` omitted from the lowercase fold index.
+    bool isColumnPinnedCaseSensitive(const String & column_name) const
+    {
+        if (!standard_mode)
+            return false;
+        auto bucket = lowercase_column_name_to_original_names.find(Poco::toLower(column_name));
+        return bucket == lowercase_column_name_to_original_names.end()
+            || std::find(bucket->second.begin(), bucket->second.end(), column_name) == bucket->second.end();
+    }
 
     bool hasFullIdentifierName(IdentifierView identifier_view, bool use_case_insensitive = false) const
     {
