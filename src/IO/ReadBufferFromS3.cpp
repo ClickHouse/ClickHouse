@@ -367,6 +367,9 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
             auto new_client = credentials_refresh_callback();
             if (new_client)
             {
+                /// A concurrent readBigAt()/nextImpl() may be copying client_ptr in sendRequest();
+                /// serialize the reassignment against those reads (see readBigAtIsSafeWithConcurrentSequentialRead()).
+                std::lock_guard lock(client_ptr_mutex);
                 client_ptr = std::move(new_client);
                 return true;
             }
@@ -468,14 +471,20 @@ std::optional<size_t> ReadBufferFromS3::tryGetFileSize()
     return file_size;
 }
 
+std::shared_ptr<const S3::Client> ReadBufferFromS3::getClient() const
+{
+    std::lock_guard lock(client_ptr_mutex);
+    return client_ptr;
+}
+
 size_t ReadBufferFromS3::getObjectSizeFromS3() const
 {
-    return S3::getObjectSize(*client_ptr, bucket, key, version_id);
+    return S3::getObjectSize(*getClient(), bucket, key, version_id);
 }
 
 std::optional<RemoteFileMetadata> ReadBufferFromS3::getRemoteFileMetadata() const
 {
-    const auto object_info = S3::getObjectInfo(*client_ptr, bucket, key, version_id);
+    const auto object_info = S3::getObjectInfo(*getClient(), bucket, key, version_id);
     return RemoteFileMetadata{.size = object_info.size, .last_modification_time = object_info.last_modification_time};
 }
 
@@ -568,6 +577,11 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
 
     S3::setClickhouseAttemptNumber(req, attempt);
 
+    /// Copy the client under the lock so a concurrent credential refresh (processException on a
+    /// parallel readBigAt()/nextImpl()) reassigning client_ptr cannot race this read; do the
+    /// network call on the local copy without holding the lock.
+    std::shared_ptr<const S3::Client> client = getClient();
+
     if (range_end_incl)
     {
         req.SetRange(fmt::format("bytes={}-{}", range_begin, *range_end_incl));
@@ -584,7 +598,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     }
 
     ProfileEvents::increment(ProfileEvents::S3GetObject);
-    if (client_ptr->isClientForDisk())
+    if (client->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
     /// Simulate a real `ExpiredToken` error returned from S3, used by integration tests for
@@ -609,7 +623,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     /// Measures time-to-first-byte: just the GetObject API call, not data transfer.
     /// Each sendRequest call is logged individually, unlike HDFS/Local which aggregate.
     Stopwatch blob_log_watch;
-    Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
+    Aws::S3::Model::GetObjectOutcome outcome = client->GetObject(req);
 
     if (outcome.IsSuccess())
     {

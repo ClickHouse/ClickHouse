@@ -6,6 +6,7 @@
 #if USE_AWS_S3
 
 #include <memory>
+#include <mutex>
 
 #include <IO/HTTPCommon.h>
 #include <IO/S3/ReadBufferFromGetObjectResult.h>
@@ -27,6 +28,12 @@ using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
 class ReadBufferFromS3 : public ReadBufferFromFileBase
 {
 private:
+    /// Guards client_ptr against concurrent read (sendRequest) vs credential-refresh reassignment
+    /// (processException on ExpiredToken). Needed because readBigAt() and nextImpl() can run
+    /// concurrently on the same buffer (see readBigAtIsSafeWithConcurrentSequentialRead()), and
+    /// both paths touch client_ptr. Always copy the shared_ptr under this lock, then do the network
+    /// call on the local copy; never hold the lock across the request.
+    mutable std::mutex client_ptr_mutex;
     mutable std::shared_ptr<const S3::Client> client_ptr;
     String bucket;
     String key;
@@ -91,9 +98,10 @@ public:
 
     bool supportsReadAt() override { return true; }
 
-    /// readBigAt() issues an independent GetObject with request-local state and touches none of the
-    /// members nextImpl()/seek()/initialize() mutate, so it is safe to run concurrently with a
-    /// sequential read on the same object.
+    /// readBigAt() issues an independent GetObject with request-local state. The only member it
+    /// shares with nextImpl()/seek()/initialize() is client_ptr, which the credential-refresh path
+    /// (processException) may reassign; that access is serialized by client_ptr_mutex. So readBigAt()
+    /// is safe to run concurrently with a sequential read on the same object.
     bool readBigAtIsSafeWithConcurrentSequentialRead() const override { return true; }
 
     /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
@@ -120,6 +128,10 @@ private:
     bool processException(size_t read_offset, size_t attempt) const;
 
     size_t getObjectSizeFromS3() const;
+
+    /// Returns the current client, copied under client_ptr_mutex so it is safe against a concurrent
+    /// credential-refresh reassignment (processException). Do the network call on the returned copy.
+    std::shared_ptr<const S3::Client> getClient() const;
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
 
