@@ -6,13 +6,12 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from more_itertools import tail
-
-from ci.jobs.scripts.bugfix_validation import BUGFIX_BUILD_TYPES, find_master_builds
+from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
+    force_heavy_modules_sequential,
     get_optimal_test_batch,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
@@ -25,12 +24,27 @@ temp_path = f"{repo_dir}/ci/tmp"
 
 
 MAX_FAILS_BEFORE_DROP = 5
+# Flaky-check best-effort scope cap: the maximum number of changed test modules a single
+# flaky-check run will execute. A PR can mechanically touch a large number of integration
+# test modules (e.g. a repo-wide lint/format change), and running every one of them
+# repeatedly under `--dist=each` cannot fit the flaky-check time budget - the job would be
+# hard-killed by the external CI timeout before producing any report. When the cap is
+# exceeded the extra modules are skipped (best effort) and the selected ones get full
+# flakiness coverage instead of a truncated run. See FLAKY_CHECK_TIME_LIMIT for the hard
+# time guarantee that backstops this.
+MAX_FLAKY_CHECK_MODULES = 10
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() // (1024**3), 1)
 
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
+# Flaky/targeted checks run with --dist=each, so every worker runs the full set
+# of changed modules concurrently (each with its own Docker cluster) instead of
+# splitting modules across workers. A worker's peak footprint is therefore much
+# larger, so it needs a bigger memory budget to avoid exhausting the container
+# cgroup and tripping the kernel OOM killer (see OOM_IN_DMESG_TEST_NAME).
+MAX_MEM_PER_WORKER_DIST_EACH = 20
 
 INFRASTRUCTURE_ERROR_PATTERNS = [
     "timed out after",
@@ -377,7 +391,7 @@ def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
         print(f"  Deleted {deleted_count} profraw files", flush=True)
         return final_file
     else:
-        print(f"ERROR: Failed to create final coverage file", flush=True)
+        print("ERROR: Failed to create final coverage file", flush=True)
         if result.stderr:
             print(result.stderr, flush=True)
         return None
@@ -521,10 +535,23 @@ def tail(filepath: str, buff_len: int = 1024) -> List[str]:
 
 def run_pytest_and_collect_results(
     command: str, env: str, report_name: str, timeout: int = None
-) -> Result:
+) -> Tuple[Result, bool]:
     """
-    Does xdist timeout check.
+    Runs a pytest command and reports whether the run was cut short by a timeout.
+
+    Returns `(test_result, timed_out)`. `timed_out` is True when the run did not finish
+    on its own but was stopped by either:
+      - the graceful xdist `--session-timeout` (pytest interrupts itself and writes the
+        `xdist.dsession.Interrupted: session-timeout:` marker to the log), or
+      - the hard subprocess backstop (`Shell.run` `SIGTERM`s/`SIGKILL`s pytest after
+        `timeout` seconds, e.g. when a test hangs past the session-timeout).
+
+    Callers use `timed_out` to tell an empty result set caused by expected time-budget
+    exhaustion (best effort, may be downgraded to `SKIPPED`) apart from one caused by a
+    real pytest/harness failure (no timeout - must stay `ERROR`).
     """
+
+    run_sw = Utils.Stopwatch()
 
     test_result = Result.from_pytest_run(
         command=command,
@@ -536,9 +563,11 @@ def run_pytest_and_collect_results(
         timeout=timeout,
     )
 
+    timed_out = False
     if "!!!!!!! xdist.dsession.Interrupted: session-timeout:" in tail(
         f"{temp_path}/{report_name}.log"
     ):
+        timed_out = True
         test_result.info = "ERROR: session-timeout occurred during test execution"
         assert test_result.status == Result.Status.ERROR
         test_result.results.append(
@@ -548,7 +577,36 @@ def run_pytest_and_collect_results(
                 info=test_result.info,
             )
         )
-    return test_result
+    elif timeout is not None and run_sw.duration >= timeout:
+        # The graceful session-timeout marker is absent but the run still reached the
+        # hard subprocess `timeout`: `Shell.run` killed pytest before it could finish
+        # (a normal run returns well under `timeout`). Treat this as a timeout so an
+        # empty result is reported as best-effort rather than as a harness failure.
+        timed_out = True
+
+    return test_result, timed_out
+
+
+def is_empty_best_effort_skip(
+    is_flaky_check: bool,
+    is_targeted_check: bool,
+    has_results: bool,
+    timed_out: bool,
+) -> bool:
+    """
+    Decide whether a flaky/targeted check that produced no test results should be
+    reported as `SKIPPED` (best effort) instead of falling through to `create_from`'s
+    default `ERROR`.
+
+    Only the expected timeout path is downgraded: a flaky/targeted run whose time budget
+    was exhausted (graceful xdist session-timeout or the hard subprocess backstop) before
+    any test produced a result is best-effort `SKIPPED`. When no timeout was observed, an
+    empty result means pytest failed to produce any output for some other reason (it
+    crashed before writing the jsonl report, or exited with a plugin/internal error and no
+    test rows). That is a real harness failure and must stay `ERROR`, so this returns
+    False.
+    """
+    return (is_flaky_check or is_targeted_check) and not has_results and timed_out
 
 
 def main():
@@ -609,7 +667,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
         elif any(build in to for build in ("amd_", "arm_")):
-            build_type = to
             if "amd_llvm_coverage" in to:
                 is_llvm_coverage = True
         elif to == "old analyzer":
@@ -640,9 +697,16 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if args.workers:
         workers = args.workers
     else:
+        # --dist=each (flaky/targeted checks) makes every worker run all modules,
+        # so budget more memory per worker than the module-splitting loadfile runs.
+        mem_per_worker = (
+            MAX_MEM_PER_WORKER_DIST_EACH
+            if is_flaky_check or is_targeted_check
+            else MAX_MEM_PER_WORKER
+        )
         print("ncpu:", ncpu)
         print("mem_gb:", mem_gb)
-        workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
+        workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // mem_per_worker) or 1
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
     clickhouse_server_config_dir = f"{Utils.cwd()}/programs/server"
@@ -686,17 +750,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 # TODO: reduce scope to modified test cases instead of entire modules
                 changed_files = info.get_changed_files()
                 for file in changed_files:
-                    if (
-                        file.startswith("tests/integration/test")
-                        # e2e tests require external credentials/backends and are
-                        # excluded from the default pytest run via the `e2e`
-                        # marker. Skip them so a mixed PR (both e2e and regular
-                        # integration tests changed) does not try to run them.
-                        and not file.startswith("tests/integration/test_e2e_")
-                        and Path(file).name.startswith("test")
-                        and file.endswith(".py")
-                        and Path(file).is_file()
-                    ):
+                    if Targeting.is_integration_test_file(file):
                         changed_test_modules.append(
                             file.removeprefix("tests/integration/")
                         )
@@ -706,8 +760,29 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     )
                     changed_test_modules = ["test_accept_invalid_certificate/test.py"]
 
+    # Best-effort scope cap for the flaky check (see MAX_FLAKY_CHECK_MODULES). When a PR
+    # touches more changed test modules than can be repeatedly run within the time budget,
+    # run a deterministic subset (sorted for reproducibility) and skip the rest rather than
+    # truncating the whole run. The remaining ones are reported below as skipped so the
+    # reduced coverage is explicit, not silent.
+    skipped_flaky_modules = []
+    if is_flaky_check and len(changed_test_modules) > MAX_FLAKY_CHECK_MODULES:
+        changed_test_modules = sorted(changed_test_modules)
+        skipped_flaky_modules = changed_test_modules[MAX_FLAKY_CHECK_MODULES:]
+        changed_test_modules = changed_test_modules[:MAX_FLAKY_CHECK_MODULES]
+        print(
+            f"Flaky check: best-effort scope cap - running {len(changed_test_modules)} of "
+            f"{len(changed_test_modules) + len(skipped_flaky_modules)} changed modules "
+            f"to fit the time budget.\n"
+            f"  Running: {changed_test_modules}\n"
+            f"  Skipped (best effort): {skipped_flaky_modules}"
+        )
+
     if is_bugfix_validation:
-        bt_paths = {bt: f"{temp_path}/clickhouse_{bt}" for bt in BUGFIX_BUILD_TYPES}
+        # Download the master-HEAD binaries matching this job's runner arch:
+        # the aarch64 job runs on an ARM runner and must use the ARM builds.
+        build_types = bugfix_build_types(info.job_name)
+        bt_paths = {bt: f"{temp_path}/clickhouse_{bt}" for bt in build_types}
         # In local runs, only reuse existing binaries; probing master commits in S3
         # depends on `master_commits` workflow data populated by CI workflow hooks
         # and is not available locally.
@@ -719,7 +794,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             )
             build_urls = None
         else:
-            build_urls = find_master_builds()
+            build_urls = find_master_builds(build_types)
             assert build_urls, "Could not find master builds in S3"
         if build_urls:
             for bt, url in build_urls.items():
@@ -730,7 +805,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
                     )
                     Shell.run(f"chmod +x {bt_path}", verbose=True)
-        clickhouse_path = f"{temp_path}/clickhouse_{BUGFIX_BUILD_TYPES[0]}"
+        clickhouse_path = f"{temp_path}/clickhouse_{build_types[0]}"
 
     if is_bugfix_validation or is_flaky_check:
         assert (
@@ -779,12 +854,67 @@ tar -czf ./ci/tmp/logs.tar.gz \
         )
     )
 
+    if is_flaky_check or is_targeted_check:
+        # The flaky/targeted parallel bucket runs `--dist=each`: every worker runs
+        # every parallel module at once. TEST_CONFIGS `dist_each_sequential` modules
+        # would start one cluster per worker and OOM small runners, so move them to
+        # the looped sequential phase. Normal `--dist=loadfile` runs do not call this.
+        before = list(parallel_test_modules)
+        parallel_test_modules, sequential_test_modules = force_heavy_modules_sequential(
+            parallel_test_modules, sequential_test_modules
+        )
+        moved = [m for m in before if m not in parallel_test_modules]
+        if moved:
+            print(f"Forced heavy modules to the sequential phase (avoid concurrent --dist=each clusters): {moved}")
+
     if is_sequential:
         parallel_test_modules = []
         assert not is_parallel
     elif is_parallel:
         sequential_test_modules = []
         assert not is_sequential
+
+    # If this PR only touches test files (no production/config code changed),
+    # this batch only needs to run whichever of parallel_test_modules /
+    # sequential_test_modules actually contains a changed module - the other
+    # side would produce results identical to master and can be dropped
+    # outright (saving the time to run it), and if neither side contains a
+    # changed module the whole batch can be skipped. Placed after the
+    # is_sequential/is_parallel handling above so it sees the modules this
+    # job invocation will actually run, not the pre-flavor-filter set.
+    if (
+        total_batches > 1
+        and not is_flaky_check
+        and not is_targeted_check
+        and not is_bugfix_validation
+        and not args.test
+    ):
+        changed_files = info.get_changed_files()
+        if changed_files and all(
+            Targeting.is_functional_test_file(f)
+            or Targeting.is_integration_test_file(f)
+            or Targeting.is_ci_job_script(f)
+            for f in changed_files
+        ):
+            changed_integration_modules = {
+                f.removeprefix("tests/integration/")
+                for f in changed_files
+                if Targeting.is_integration_test_file(f)
+            }
+            if not changed_integration_modules:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only non-integration test files changed in this PR - nothing for this job to run",
+                ).complete_job()
+            if not (changed_integration_modules & set(parallel_test_modules)):
+                parallel_test_modules = []
+            if not (changed_integration_modules & set(sequential_test_modules)):
+                sequential_test_modules = []
+            if not parallel_test_modules and not sequential_test_modules:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed test modules fall into this batch",
+                ).complete_job()
 
     if (is_targeted_check or is_flaky_check) and not parallel_test_modules and not sequential_test_modules:
         # Targeted check: all selected tests were stale (removed or renamed since the CIDB record).
@@ -853,7 +983,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         ),
     }
     if is_llvm_coverage:
-        test_env["LLVM_PROFILE_FILE"] = f"it-%4m.profraw"
+        test_env["LLVM_PROFILE_FILE"] = "it-%4m.profraw"
         print(
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
@@ -873,6 +1003,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
     failed_tests_files = []
 
     has_error = False
+    # Set when a pytest run was cut short by a timeout (graceful session-timeout or the
+    # hard subprocess backstop). Used below to keep an empty flaky/targeted result a
+    # best-effort SKIPPED only when a timeout actually exhausted the budget.
+    timed_out = False
     session_timeout_parallel = 3600 * 2
     session_timeout_sequential = 3600
 
@@ -886,11 +1020,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     # Flaky-check soft timeout. Mirrors the pattern in `ci/jobs/functional_tests.py`:
     # bound the total time spent inside pytest so the job has headroom for cleanup,
-    # log collection and reporting before the workflow global timeout fires. Without
-    # this, a flaky-check run over many modified test modules can be hard-killed by
-    # the global timeout, producing `Unknown error (exit status: None)` instead of
-    # a proper report.
-    FLAKY_CHECK_TIME_LIMIT = 90 * 60  # 90 min, integration tests are slower than functional
+    # log collection and reporting before the job is cancelled. Without this, a
+    # flaky-check run over many modified test modules can be hard-killed, producing no
+    # report at all instead of a best-effort partial one.
+    #
+    # The budget must stay well below the external ceiling at which a lone integration
+    # job is cancelled (observed at ~80-90 min from job start in CI). The previous 90 min
+    # was above that ceiling: the graceful xdist `--session-timeout` and the subprocess
+    # hard-kill backstop never fired before the external cancellation, so the whole
+    # process was killed and 0 results were reported (the job showed a red failure rather
+    # than a best-effort report). 45 min matches the functional flaky check and leaves
+    # ample room for the hard-kill backstop (+600s below), cleanup and reporting.
+    FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min - kept below the external job-cancellation ceiling
     if is_flaky_check:
         elapsed_for_flaky = int(sw.duration)
         flaky_check_remaining_s = max(FLAKY_CHECK_TIME_LIMIT - elapsed_for_flaky, 60)
@@ -930,12 +1071,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     if parallel_test_modules:
         log_file = f"{temp_path}/pytest_parallel.log"
-        test_result_parallel = run_pytest_and_collect_results(
+        test_result_parallel, parallel_timed_out = run_pytest_and_collect_results(
             command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
             env=test_env,
             report_name="parallel",
             timeout=session_timeout_parallel + 600,
         )
+        timed_out = timed_out or parallel_timed_out
         test_results.extend(test_result_parallel.results)
         _mark_infrastructure_errors(test_result_parallel.results)
         failed_test_cases.extend(
@@ -971,12 +1113,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 iter_session_timeout_sequential = min(
                     session_timeout_sequential, flaky_check_remaining_s
                 )
-            test_result_sequential = run_pytest_and_collect_results(
+            test_result_sequential, sequential_timed_out = run_pytest_and_collect_results(
                 command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
                 timeout=iter_session_timeout_sequential + 600,
             )
+            timed_out = timed_out or sequential_timed_out
             test_results.extend(test_result_sequential.results)
             _mark_infrastructure_errors(test_result_sequential.results)
             failed_test_cases.extend(
@@ -1003,11 +1146,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # Run additional build types for bugfix validation.
     # Exit early on first failure to avoid duplicate test names and workspace pollution.
     if is_bugfix_validation:
+        build_types = bugfix_build_types(info.job_name)
         for r in test_results:
-            r.set_label(BUGFIX_BUILD_TYPES[0])
+            r.set_label(build_types[0])
 
         if all(r.is_ok() for r in test_results):
-            for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
+            for bugfix_bt in build_types[1:]:
                 print(f"\n=== Bugfix validation with {bugfix_bt} ===")
                 bt_clickhouse_path = f"{temp_path}/clickhouse_{bugfix_bt}"
                 test_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = bt_clickhouse_path
@@ -1020,7 +1164,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 bt_test_results = []
 
                 if parallel_test_modules:
-                    bt_result_parallel = run_pytest_and_collect_results(
+                    bt_result_parallel, _ = run_pytest_and_collect_results(
                         command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                         env=test_env,
                         report_name=f"parallel_{bugfix_bt}",
@@ -1036,7 +1180,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
                 bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
                 if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
-                    bt_result_sequential = run_pytest_and_collect_results(
+                    bt_result_sequential, _ = run_pytest_and_collect_results(
                         command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                         env=test_env,
                         report_name=f"sequential_{bugfix_bt}",
@@ -1093,7 +1237,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
-        test_result_retries = run_pytest_and_collect_results(
+        test_result_retries, _ = run_pytest_and_collect_results(
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             report_name="retries",
@@ -1153,7 +1297,65 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_targeted_check or is_flaky_check or is_bugfix_validation:
         test_results = [r for r in test_results if r.name != "Timeout"]
 
-    R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
+    # Whether pytest produced any real test results, captured *before* the synthetic
+    # `skipped_flaky_modules` entries are appended below. The empty-result status decision
+    # must look only at real pytest output: in a scope-capped flaky run the synthetic
+    # `SKIPPED` entries would otherwise make `test_results` non-empty even when the selected
+    # modules produced nothing, masking a timeout-empty run (should be `SKIPPED`) or an empty
+    # harness failure (should be `ERROR`) as a green top-level result.
+    pytest_has_results = bool(test_results)
+
+    # Make the best-effort scope cap explicit in the report: list the modules that were
+    # skipped to fit the time budget as SKIPPED entries rather than dropping them silently.
+    for skipped_module in skipped_flaky_modules:
+        test_results.append(
+            Result(
+                name=skipped_module,
+                status=Result.Status.SKIPPED,
+                info="Skipped by flaky-check best-effort scope cap (MAX_FLAKY_CHECK_MODULES)",
+            )
+        )
+
+    # If a timeout exhausted the time budget before any test produced a result (e.g. a
+    # single very slow or hanging module consumed the whole budget), report SKIPPED rather
+    # than letting `create_from` default an empty result set to ERROR, which would block
+    # the PR. Crucially, this best-effort downgrade applies *only* when a timeout was
+    # actually observed: an empty result without a timeout means pytest failed to produce
+    # any output for some other reason (crashed before writing the jsonl report, plugin or
+    # internal error, ...), which is a real harness failure and must stay ERROR.
+    #
+    # Both decisions use `pytest_has_results` (real pytest output) rather than the current
+    # `test_results`, which may carry only the synthetic `skipped_flaky_modules` entries
+    # appended above. With a scope cap in effect those synthetic `SKIPPED` rows make
+    # `test_results` non-empty, so the empty-result status must be forced here: `create_from`
+    # only defaults an empty result set to `ERROR`, and a list of `SKIPPED` rows would
+    # otherwise collapse to a green top-level status.
+    empty_best_effort = is_empty_best_effort_skip(
+        is_flaky_check, is_targeted_check, pytest_has_results, timed_out
+    )
+    empty_harness_failure = (
+        (is_flaky_check or is_targeted_check) and not pytest_has_results and not timed_out
+    )
+    R = Result.create_from(
+        results=test_results,
+        status=(
+            Result.Status.SKIPPED
+            if empty_best_effort
+            else Result.Status.ERROR if empty_harness_failure else ""
+        ),
+        info=(
+            "No test results collected within the flaky-check time budget (best effort)"
+            if empty_best_effort
+            else (
+                "No test results collected and no timeout was observed - reporting the "
+                "empty pytest run as a harness ERROR"
+                if empty_harness_failure
+                else ""
+            )
+        ),
+        stopwatch=sw,
+        files=attached_files,
+    )
 
     if is_llvm_coverage:
         assert (
@@ -1175,6 +1377,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
             R.set_success()
             has_error = False
 
+    # Capture whether this run saw any infrastructure problems BEFORE the
+    # clearing block below resets `has_error`. If the answer is yes, the
+    # bugfix-validation inversion path further down must be skipped: we have
+    # no reliable signal about whether the bug reproduces on this arch, and
+    # running the inversion would let an infra `FAIL` be flipped to `OK`
+    # (counted as validation) or rewrite an `ERROR`-only outcome as
+    # `SKIPPED` via the no-`has_failure` branch. See bot review on
+    # ClickHouse/ClickHouse#103541 (2026-05-15).
+    had_infra_or_error = has_error or any(
+        r.has_label(Result.Label.INFRA) for r in test_results
+    )
+
     # If all non-OK results are infrastructure errors, do not treat as a real failure
     if has_error:
         non_ok = [r for r in test_results if not r.is_ok()]
@@ -1192,14 +1406,30 @@ tar -czf ./ci/tmp/logs.tar.gz \
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"
-        if has_error:
-            # An infrastructure/harness error (e.g. session-timeout) is not
-            # bug reproduction. Keep `has_error` dominant over inversion so a
-            # non-reproduction failure cannot be flipped to `OK` and promoted
-            # to job success.
+        if had_infra_or_error:
+            # Infrastructure errors or session-level failures were observed
+            # during this run. Skip the inversion path so the per-arch job
+            # cannot be silently counted as a validation. The post-hook in
+            # `new_tests_check.py` uses strict `is_success` (`OK` / `XFAIL`
+            # only); leaving the result in a non-success state is enough to
+            # prevent this arch from contributing a false validation.
+            #
+            # If, after all the upstream handling, the result is still in a
+            # success-equivalent state (e.g. every surviving child is `OK`
+            # because all infra failures were already relabeled to `SKIPPED`
+            # by `_mark_infrastructure_errors`), force `ERROR` here so the
+            # post-hook cannot accidentally treat this arch as validated.
             print(
-                "Bugfix validation: has_error is set, skipping status inversion"
+                "Bugfix validation: infrastructure error or session-level "
+                "failure detected - skipping status inversion to avoid "
+                "leaking an infra outcome into validation success."
             )
+            if R.is_success():
+                R.set_error().set_info(
+                    "Bugfix validation aborted: infrastructure error during "
+                    "the run - no reliable signal about whether the bug "
+                    "reproduces on this arch"
+                )
         else:
             has_failure = False
             for r in R.results:
@@ -1217,13 +1447,49 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 elif r.status == Result.Status.OK:
                     r.status = Result.Status.FAIL
             if not has_failure:
-                print("Failed to reproduce the bug")
-                R.set_failed()
-                R.set_info("Failed to reproduce the bug")
+                # See the matching comment in `ci/jobs/functional_tests.py`. The
+                # bug did not reproduce on this arch, so report SKIPPED instead
+                # of FAIL: `Result.is_ok` includes SKIPPED so the job exits 0,
+                # while `is_success` (used by the post-hook) excludes SKIPPED so
+                # the per-arch job does not count as a validation. Contract:
+                # at least one per-arch job must end up `OK`/`XFAIL` for the
+                # post-hook to consider the bug validated.
+                print("Bug does not reproduce on this arch - bugfix validation N/A")
+                R.set_status(Result.Status.SKIPPED)
+                R.set_info("Bug does not reproduce on this arch - bugfix validation N/A")
             else:
                 R.set_success()
 
     force_ok_exit = False
+    if R:
+        failures_cnt = len([r for r in R.results if not r.is_ok()])
+        if failures_cnt > 0 and failures_cnt < 4:
+            print(
+                f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
+            )
+            force_ok_exit = True
+        elif failures_cnt > 0 and "ci-non-blocking" in info.pr_labels:
+            print(
+                f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
+            )
+            force_ok_exit = True
+    if is_bugfix_validation:
+        # Per-arch bugfix-validation jobs are advisory: their pass/fail status
+        # records "did the bug reproduce on this arch?", not whether the PR
+        # should be blocked. Setting `do_not_block_pipeline_on_failure=True`
+        # marks the job as non-blocking so downstream jobs are not dropped
+        # when this job reports FAIL. The process itself still exits with
+        # the natural status (`Result.complete_job` calls `sys.exit(1)` on
+        # non-OK results); the non-blocking flag is metadata for the
+        # pipeline scheduler. The PR-merge-blocking decision lives in the
+        # `new_tests_check.py` workflow post-hook, which OR's the per-arch
+        # bugfix-validation job statuses.
+        print(
+            "NOTE: Bugfix validation job - marking as non-blocking; "
+            "failure here will not block downstream pipeline jobs "
+            "(process exit code still reflects the actual job status)"
+        )
+        force_ok_exit = True
     if is_llvm_coverage and llvm_profdata_cmd:
         print("Collecting and merging LLVM coverage files...")
 

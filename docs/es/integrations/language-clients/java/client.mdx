@@ -1,0 +1,1460 @@
+---
+sidebarTitle: 'Cliente'
+keywords: ['clickhouse', 'java', 'cliente', 'integrar']
+description: 'Conector de Java para ClickHouse'
+slug: /integrations/language-clients/java/client
+title: 'Cliente de Java'
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTableWrapper.jsx";
+
+<a id="migration_from_v1_config" />
+
+<View title="v0.8+">
+  Biblioteca cliente de Java para comunicarse con un servidor de base de datos a través de sus protocolos. La implementación actual solo admite la [interfaz HTTP](/es/concepts/features/interfaces/http).
+  La biblioteca ofrece su propia API para enviar solicitudes a un servidor, y también incluye herramientas para trabajar con distintos formatos de datos binarios (RowBinary* &amp; Native*).
+
+  ## Configuración
+
+  * Maven Central (página web del proyecto): https://mvnrepository.com/artifact/com.clickhouse/client-v2
+  * Versiones nocturnas (enlace al repositorio): https://central.sonatype.com/repository/maven-snapshots/
+  * Artifactory de compilaciones Nightly anteriores (enlace al repositorio): https://s01.oss.sonatype.org/content/repositories/snapshots/
+
+  <br />
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>client-v2</artifactId>
+          <version>0.9.8</version>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/client-v2
+      implementation("com.clickhouse:client-v2:0.9.8")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/client-v2
+      implementation 'com.clickhouse:client-v2:0.9.8'
+      ```
+    </Tab>
+  </Tabs>
+
+  <br />
+
+  ## Inicialización
+
+  El objeto Client se inicializa mediante `com.clickhouse.client.api.Client.Builder#build()`. Cada cliente tiene su propio contexto y no se comparten objetos entre ellos.
+  El Builder dispone de métodos de configuración para simplificar la configuración.
+
+  Ejemplo:
+
+  ```java showLineNumbers
+   Client client = new Client.Builder()
+                  .addEndpoint("https://clickhouse-cloud-instance:8443/")
+                  .setUsername(user)
+                  .setPassword(password)
+                  .build();
+  ```
+
+  `Client` es `AutoCloseable` y debe cerrarse cuando ya no se necesite.
+
+  ### Autenticación
+
+  La autenticación se configura por cliente en la fase de inicialización. Se admiten tres métodos de autenticación: por contraseña, por token de acceso y por certificado de cliente SSL.
+
+  La autenticación mediante contraseña requiere configurar el nombre de usuario y la contraseña llamando a `setUsername(String)` y `setPassword(String)`:
+
+  ```java showLineNumbers
+   Client client = new Client.Builder()
+          .addEndpoint("https://clickhouse-cloud-instance:8443/")
+          .setUsername(user)
+          .setPassword(password)
+          .build();
+  ```
+
+  La autenticación mediante un token de acceso requiere establecer el token de acceso llamando a `setAccessToken(String)`:
+
+  ```java showLineNumbers
+   Client client = new Client.Builder()
+          .addEndpoint("https://clickhouse-cloud-instance:8443/")
+          .setAccessToken(userAccessToken)
+          .build();
+  ```
+
+  La autenticación mediante un certificado de cliente SSL requiere configurar el nombre de usuario, habilitar la autenticación SSL, y establecer un certificado de cliente y una clave de cliente mediante las llamadas a `setUsername(String)`, `useSSLAuthentication(boolean)`, `setClientCertificate(String)` y `setClientKey(String)` respectivamente:
+
+  ```java showLineNumbers
+  Client client = new Client.Builder()
+          .useSSLAuthentication(true)
+          .setUsername("some_user")
+          .setClientCertificate("some_user.crt")
+          .setClientKey("some_user.key")
+  ```
+
+  <Note>
+    La autenticación SSL puede ser difícil de diagnosticar en producción porque muchos errores de las bibliotecas SSL no proporcionan información suficiente. Por ejemplo, si el certificado del cliente y la clave no coinciden, el servidor cerrará la conexión de inmediato (en el caso de HTTP, esto ocurrirá durante la fase de inicio de la conexión, cuando no se envía ninguna solicitud HTTP, por lo que no se envía ninguna respuesta).
+
+    Utilice herramientas como [openssl](https://docs.openssl.org/master/man1/openssl/) para verificar certificados y claves:
+
+    * comprobar la integridad de la clave: `openssl rsa -in [key-file.key] -check -noout`
+    * comprobar que el certificado del cliente tenga un CN que coincida con un usuario:
+      * obtener el CN de un certificado de usuario: `openssl x509 -noout -subject -in [user.cert]`
+      * verificar que el mismo valor esté establecido en la base de datos `select name, auth_type, auth_params from system.users where auth_type = 'ssl_certificate'` (la consulta mostrará `auth_params` con algo como ` {"common_names":["some_user"]}`)
+  </Note>
+
+  ## Configuración
+
+  Todas las configuraciones se definen mediante métodos de instancia (también conocidos como métodos de configuración) que hacen explícitos el alcance y el contexto de cada valor.
+  Los principales parámetros de configuración se definen en un único ámbito (cliente u operación) y no se sobrescriben entre sí.
+
+  La configuración se define durante la creación del cliente. Consulte `com.clickhouse.client.api.Client.Builder`.
+
+  ## Configuración del cliente
+
+  <Tabs>
+    <Tab title="Conexión & endpoints">
+      | Método                                                                  | Argumentos                                                                                      | Descripción                                                                                                      | Predeterminado | Clave                       |
+      | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------- | --------------------------- |
+      | `addEndpoint(String endpoint)`                                          | `endpoint` - dirección del servidor en formato URL                                              | Añade un endpoint del servidor a la lista de servidores disponibles. Actualmente, solo se admite un endpoint.    | `none`         | `none`                      |
+      | `addEndpoint(Protocol protocol, String host, int port, boolean secure)` | `protocol` - protocolo de conexión<br />`host` - IP o nombre de host<br />`secure` - usar HTTPS | Añade un endpoint del servidor a la lista de servidores disponibles. Actualmente, solo se admite un endpoint.    | `none`         | `none`                      |
+      | `enableConnectionPool(boolean enable)`                                  | `enable` - indicador para habilitar o deshabilitar                                              | Establece si el pool de conexiones está habilitado                                                               | `true`         | `connection_pool_enabled`   |
+      | `setMaxConnections(int maxConnections)`                                 | `maxConnections` - número de conexiones                                                         | Establece cuántas conexiones puede abrir un cliente para cada endpoint del servidor.                             | `10`           | `max_open_connections`      |
+      | `setConnectionTTL(long timeout, ChronoUnit unit)`                       | `timeout` - valor de tiempo de espera<br />`unit` - unidad de tiempo                            | Establece el TTL de la conexión, tras el cual se considerará inactiva                                            | `-1`           | `connection_ttl`            |
+      | `setKeepAliveTimeout(long timeout, ChronoUnit unit)`                    | `timeout` - valor de tiempo de espera<br />`unit` - unidad de tiempo                            | Establece el tiempo de espera de Keep-Alive de la conexión HTTP. Establézcalo en `0` para desactivar Keep-Alive. | -              | `http_keep_alive_timeout`   |
+      | `setConnectionReuseStrategy(ConnectionReuseStrategy strategy)`          | `strategy` - `LIFO` o `FIFO`                                                                    | Selecciona qué estrategia debe usar el pool de conexiones                                                        | `FIFO`         | `connection_reuse_strategy` |
+      | `setDefaultDatabase(String database)`                                   | `database` - nombre de una base de datos                                                        | Establece la base de datos predeterminada.                                                                       | `default`      | `database`                  |
+    </Tab>
+
+    <Tab title="Autenticación">
+      | Método                                               | Argumentos                                                             | Descripción                                                                                                                                                                             | Predeterminado | Clave                 |
+      | ---------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | --------------------- |
+      | `setUsername(String username)`                       | `username` - nombre de usuario para autenticación                      | Establece el nombre de usuario para un método de autenticación seleccionado mediante configuración adicional                                                                            | `default`      | `user`                |
+      | `setPassword(String password)`                       | `password` - valor secreto                                             | Establece un secreto para la autenticación por contraseña y, en la práctica, lo selecciona como método de autenticación                                                                 | -              | `password`            |
+      | `setAccessToken(String accessToken)`                 | `accessToken` - cadena del token de acceso                             | Establece un token de acceso para autenticarse con el método de autenticación correspondiente                                                                                           | -              | `access_token`        |
+      | `useSSLAuthentication(boolean useSSLAuthentication)` | `useSSLAuthentication` - indicador para habilitar la autenticación SSL | Establece el certificado de cliente SSL como método de autenticación.                                                                                                                   | -              | `ssl_authentication`  |
+      | `useHTTPBasicAuth(boolean useBasicAuth)`             | `useBasicAuth` - indicador para habilitar o deshabilitar               | Establece si debe usarse la autenticación HTTP básica para la autenticación con nombre de usuario y contraseña. Resuelve problemas con contraseñas que contienen caracteres especiales. | `true`         | `http_use_basic_auth` |
+      | `useBearerTokenAuth(String bearerToken)`             | `bearerToken` - un token Bearer codificado                             | Especifica si se debe usar la autenticación Bearer y qué token usar. El token se enviará tal cual.                                                                                      | -              | `bearer_token`        |
+    </Tab>
+
+    <Tab title="Tiempos de espera & reintentos">
+      | Método                                                       | Argumentos                                                                | Descripción                                                                                                      | Predeterminado                                               | Clave                        |
+      | ------------------------------------------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------- |
+      | `setConnectTimeout(long timeout, ChronoUnit unit)`           | `timeout` - valor del tiempo de espera<br />`unit` - unidad de tiempo     | Establece el tiempo de espera para iniciar cualquier conexión saliente.                                          | -                                                            | `connection_timeout`         |
+      | `setConnectionRequestTimeout(long timeout, ChronoUnit unit)` | `timeout` - valor del tiempo de espera<br />`unit` - unidad de tiempo     | Establece el tiempo de espera de la solicitud de conexión. Solo surte efecto al obtener una conexión de un pool. | `10000`                                                      | `connection_request_timeout` |
+      | `setSocketTimeout(long timeout, ChronoUnit unit)`            | `timeout` - valor del tiempo de espera<br />`unit` - unidad de tiempo     | Establece el tiempo de espera del socket, que afecta a las operaciones de lectura y escritura                    | `0`                                                          | `socket_timeout`             |
+      | `setExecutionTimeout(long timeout, ChronoUnit timeUnit)`     | `timeout` - valor del tiempo de espera<br />`timeUnit` - unidad de tiempo | Establece el tiempo máximo de ejecución para las consultas                                                       | `0`                                                          | `max_execution_time`         |
+      | `retryOnFailures(ClientFaultCause ...causes)`                | `causes` - constante enum de `ClientFaultCause`                           | Establece los tipos de fallos recuperables que se pueden reintentar.                                             | `NoHttpResponse` `ConnectTimeout` `ConnectionRequestTimeout` | `client_retry_on_failures`   |
+      | `setMaxRetries(int maxRetries)`                              | `maxRetries` - número de reintentos                                       | Establece el número máximo de reintentos para los fallos definidos por `retryOnFailures`                         | `3`                                                          | `retry`                      |
+    </Tab>
+
+    <Tab title="Opciones de socket">
+      | Método                               | Argumentos                                  | Descripción                                                                                                                            | Predeterminado | Clave                |
+      | ------------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------- | -------------------- |
+      | `setSocketRcvbuf(long size)`         | `size` - tamaño en bytes                    | Establece el búfer de recepción del socket TCP. Este búfer se encuentra fuera de la memoria de la JVM.                                 | `8196`         | `socket_rcvbuf`      |
+      | `setSocketSndbuf(long size)`         | `size` - tamaño en bytes                    | Establece el búfer de envío del socket TCP. Este búfer se encuentra fuera de la memoria de la JVM.                                     | `8196`         | `socket_sndbuf`      |
+      | `setSocketKeepAlive(boolean value)`  | `value` - indicador para activar/desactivar | Establece la opción `SO_KEEPALIVE` para cada socket TCP. TCP Keep Alive habilita un mecanismo que comprobará el estado de la conexión. | -              | `socket_keepalive`   |
+      | `setSocketTcpNodelay(boolean value)` | `value` - indicador para activar/desactivar | Establece la opción `SO_NODELAY` para cada socket TCP. Esta opción de TCP hace que el socket envíe los datos lo antes posible.         | -              | `socket_tcp_nodelay` |
+      | `setSocketLinger(int secondsToWait)` | `secondsToWait` - número de segundos        | Establece el tiempo de espera de cierre para cada socket TCP creado por el cliente.                                                    | -              | `socket_linger`      |
+    </Tab>
+
+    <Tab title="Compresión">
+      | Método                                    | Argumentos                                        | Descripción                                                                                                                               | Predeterminado | Clave                                      |
+      | ----------------------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------ |
+      | `compressServerResponse(boolean enabled)` | `enabled` - indicador para habilitar/deshabilitar | Define si el servidor debe comprimir sus respuestas.                                                                                      | `true`         | `compress`                                 |
+      | `compressClientRequest(boolean enabled)`  | `enabled` - indicador para habilitar/deshabilitar | Define si el cliente debe comprimir sus peticiones.                                                                                       | `false`        | `decompress`                               |
+      | `useHttpCompression(boolean enabled)`     | `enabled` - indicador para habilitar/deshabilitar | Define si debe usarse la compresión HTTP para la comunicación entre cliente y servidor si las opciones correspondientes están habilitadas | -              | -                                          |
+      | `appCompressedData(boolean enabled)`      | `enabled` - indicador para habilitar/deshabilitar | Indica al cliente que la compresión la gestionará la aplicación.                                                                          | `false`        | `app_compressed_data`                      |
+      | `setLZ4UncompressedBufferSize(int size)`  | `size` - tamaño en bytes                          | Define el tamaño de un búfer que recibirá la parte sin comprimir de un flujo de datos.                                                    | `65536`        | `compression.lz4.uncompressed_buffer_size` |
+      | `disableNativeCompression`                | `disable` - indicador para deshabilitar           | Desactiva la compresión nativa. Si se establece en `true`, la compresión nativa se desactivará.                                           | `false`        | `disable_native_compression`               |
+    </Tab>
+
+    <Tab title="SSL/Seguridad">
+      | Método                                      | Argumentos                                       | Descripción                                                                                                            | Predeterminado | Clave                |
+      | ------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | -------------- | -------------------- |
+      | `setSSLTrustStore(String path)`             | `path` - ruta del archivo en el sistema local    | Indica si el cliente debe usar el almacén de confianza SSL para validar el host del servidor.                          | -              | `trust_store`        |
+      | `setSSLTrustStorePassword(String password)` | `password` - valor secreto                       | Establece la contraseña que se usará para desbloquear el almacén de confianza SSL especificado por `setSSLTrustStore`. | -              | `key_store_password` |
+      | `setSSLTrustStoreType(String type)`         | `type` - nombre del tipo de almacén de confianza | Establece el tipo del almacén de confianza especificado por `setSSLTrustStore`.                                        | -              | `key_store_type`     |
+      | `setRootCertificate(String path)`           | `path` - ruta del archivo en el sistema local    | Indica si el cliente debe usar el certificado raíz (CA) especificado para validar el host del servidor.                | -              | `sslrootcert`        |
+      | `setClientCertificate(String path)`         | `path` - ruta del archivo en el sistema local    | Establece la ruta del certificado de cliente que se usará al iniciar la conexión SSL y para la autenticación SSL.      | -              | `sslcert`            |
+      | `setClientKey(String path)`                 | `path` - ruta del archivo en el sistema local    | Establece la clave privada de cliente que se usará para cifrar la comunicación SSL con el servidor.                    | -              | `ssl_key`            |
+      | `sslSocketSNI(String sni)`                  | `sni` - cadena con el nombre del servidor        | Establece el nombre del servidor que se usará para SNI (Server Name Indication) en la conexión SSL/TLS.                | -              | `ssl_socket_sni`     |
+    </Tab>
+
+    <Tab title="Proxy">
+      | Método                                            | Argumentos                                                                                  | Descripción                                                       | Predeterminado | Clave                                    |
+      | ------------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | -------------- | ---------------------------------------- |
+      | `addProxy(ProxyType type, String host, int port)` | `type` - tipo de proxy<br />`host` - hostname o IP del proxy<br />`port` - puerto del proxy | Establece el proxy que se usará para comunicarse con un servidor. | -              | `proxy_type`, `proxy_host`, `proxy_port` |
+      | `setProxyCredentials(String user, String pass)`   | `user` - nombre de usuario del proxy<br />`pass` - contraseña                               | Establece las credenciales para autenticarse con un proxy.        | -              | `proxy_user`, `proxy_password`           |
+    </Tab>
+
+    <Tab title="HTTP & Encabezados">
+      | Método                                      | Argumentos                                                                | Descripción                                                                                                                                                                                                                                                                                                                                                                  | Predeterminado | Clave                                    |
+      | ------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ---------------------------------------- |
+      | `setHttpCookiesEnabled(boolean enabled)`    | `enabled` - indicador para habilitar/deshabilitar                         | Indica si las cookies HTTP deben recordarse y volver a enviarse al servidor.                                                                                                                                                                                                                                                                                                 | -              | -                                        |
+      | `httpHeader(String key, String value)`      | `key` - clave de cabecera HTTP<br />`value` - valor de cadena             | Establece el valor de una sola cabecera HTTP. El valor anterior se sobrescribe.                                                                                                                                                                                                                                                                                              | `none`         | `none`                                   |
+      | `httpHeader(String key, Collection values)` | `key` - clave de cabecera HTTP<br />`values` - lista de valores de cadena | Establece los valores de una sola cabecera HTTP. El valor anterior se sobrescribe.                                                                                                                                                                                                                                                                                           | `none`         | `none`                                   |
+      | `httpHeaders(Map headers)`                  | `headers` - mapa con cabeceras HTTP                                       | Establece varios valores de cabeceras HTTP a la vez.                                                                                                                                                                                                                                                                                                                         | `none`         | `none`                                   |
+      | `useHttpFormDataForQuery(boolean enable)`   | `enable` - indicador para habilitar/deshabilitar                          | Establece si los parámetros de consulta deben enviarse como datos de formulario HTTP en el cuerpo de la solicitud en lugar de la URL. Funciona solo con compresión del lado del servidor. Si la compresión del lado del cliente está habilitada, se deshabilitará para las solicitudes de consulta con parámetros, ya que cada parámetro se envía como contenido multiparte. | `false`        | `client.http.use_form_request_for_query` |
+    </Tab>
+
+    <Tab title="Configuración del servidor">
+      | Método                                          | Argumentos                                                    | Descripción                                                                                                                                                                                                                                     | Predeterminado | Clave                    |
+      | ----------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------ |
+      | `serverSetting(String name, String value)`      | `name` - nombre del ajuste<br />`value` - valor del ajuste    | Establece qué ajustes se pasan al servidor con cada consulta. Los ajustes de operaciones individuales pueden sobrescribirlos. [Lista de ajustes](/es/concepts/features/configuration/settings/settings-query-level)                                | `none`         | `none`                   |
+      | `serverSetting(String name, Collection values)` | `name` - nombre del ajuste<br />`values` - valores del ajuste | Establece qué ajustes se pasan al servidor con varios valores; por ejemplo, [roles](/es/concepts/features/interfaces/http#setting-role-with-query-parameters)                                                                                      | `none`         | `none`                   |
+      | `setOption("custom_settings_prefix", value)`    | `value` - cadena de prefijo                                   | Establece el prefijo de los ajustes personalizados que se pasan al servidor. Debe estar alineado con la configuración del servidor. Consulta [ClickHouse Docs](/es/concepts/features/configuration/settings/settings-query-level#custom_settings). | `custom_`      | `custom_settings_prefix` |
+    </Tab>
+
+    <Tab title="Zona horaria">
+      | Método                                         | Argumentos                                              | Descripción                                                                                                                                                | Predeterminado | Clave                  |
+      | ---------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ---------------------- |
+      | `useServerTimeZone(boolean useServerTimeZone)` | `useServerTimeZone` - indicador para activar/desactivar | Indica si el cliente debe usar la zona horaria del servidor al decodificar los valores de las columnas DateTime y Date.                                    | `true`         | `use_server_time_zone` |
+      | `useTimeZone(String timeZone)`                 | `timeZone` - ID de zona horaria válida de Java          | Indica si debe usarse la zona horaria especificada al decodificar los valores de las columnas DateTime y Date. Sobrescribirá la zona horaria del servidor. | -              | `use_time_zone`        |
+      | `setServerTimeZone(String timeZone)`           | `timeZone` - ID de zona horaria válida de Java          | Establece la zona horaria del servidor. De forma predeterminada, se usará la zona horaria UTC.                                                             | `UTC`          | `server_time_zone`     |
+    </Tab>
+
+    <Tab title="Avanzado">
+      | Método                                                                    | Argumentos                                                                                  | Descripción                                                                                                                                                                                  | Predeterminado | Clave                        |
+      | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ---------------------------- |
+      | `setOption(String key, String value)`                                     | `key` - clave de la opción de configuración<br />`value` - valor de la opción               | Establece el valor sin procesar de las opciones del cliente. Resulta útil al leer la configuración desde archivos de propiedades.                                                            | -              | -                            |
+      | `useAsyncRequests(boolean async)`                                         | `async` - indicador para habilitar/deshabilitar                                             | Establece si el cliente debe ejecutar la solicitud en un hilo independiente. Está deshabilitado de forma predeterminada porque la aplicación sabe mejor cómo organizar las tareas multihilo. | `false`        | `async`                      |
+      | `setSharedOperationExecutor(ExecutorService executorService)`             | `executorService` - instancia del servicio ejecutor                                         | Establece el servicio ejecutor para las tareas de operación.                                                                                                                                 | `none`         | `none`                       |
+      | `setQueryIdGenerator(Supplier<String> supplier)`                          | `supplier` - un `Supplier<String>` que genera IDs de consulta                               | Establece un generador personalizado de IDs de consulta que se usa cuando no se especifica ningún ID de consulta en la configuración de la operación (`InsertSettings`, `QuerySettings`).    | -              | -                            |
+      | `setClientNetworkBufferSize(int size)`                                    | `size` - tamaño en bytes                                                                    | Establece el tamaño de un búfer en el espacio de memoria de la aplicación que se utiliza para copiar datos entre el socket y la aplicación.                                                  | `300000`       | `client_network_buffer_size` |
+      | `allowBinaryReaderToReuseBuffers(boolean reuse)`                          | `reuse` - indicador para habilitar/deshabilitar                                             | Si está habilitado, el lector usará búferes preasignados para realizar la transcodificación de valores numéricos. Reduce la presión del GC para datos numéricos.                             | -              | -                            |
+      | `columnToMethodMatchingStrategy(ColumnToMethodMatchingStrategy strategy)` | `strategy` - implementación de la estrategia de coincidencia                                | Establece una estrategia personalizada para hacer coincidir los campos de la clase DTO y las columnas de la DB al registrar el DTO.                                                          | `none`         | `none`                       |
+      | `setClientName(String clientName)`                                        | `clientName` - cadena con el nombre de la aplicación                                        | Establece información adicional sobre la aplicación que realiza la llamada. Se enviará como encabezado `User-Agent`.                                                                         | -              | `client_name`                |
+      | `registerClientMetrics(Object registry, String name)`                     | `registry` - instancia de registro de Micrometer<br />`name` - nombre del grupo de métricas | Registra sensores en una instancia de registro de Micrometer (https://micrometer.io/).                                                                                                       | -              | -                            |
+      | `setServerVersion(String version)`                                        | `version` - cadena con la versión del servidor                                              | Establece la versión del servidor para evitar su detección automática.                                                                                                                       | -              | `server_version`             |
+      | `typeHintMapping(Map typeHintMapping)`                                    | `typeHintMapping` - mapa de indicaciones de tipo                                            | Establece la correspondencia de indicaciones de tipo para los tipos de ClickHouse. Por ejemplo, para que los arrays multidimensionales se presenten como contenedores de Java.               | -              | `type_hint_mapping`          |
+    </Tab>
+  </Tabs>
+
+  <br />
+
+  ### Identificación del cliente
+
+  Hay dos campos en el log de consultas que identifican la aplicación que originó una solicitud: `client_name` y `http_user_agent`. El protocolo TCP nativo utiliza
+  `client_name` para identificar la aplicación. El protocolo HTTP utiliza `http_user_agent` para identificar la aplicación. El constructor del cliente dispone del método `setClientName` para establecer los valores correctos
+  en ambos protocolos.
+  El campo `http_user_agent` se establece según el formato común del header `User-Agent`: `application-name[/version] [(operating-system; architecture; ...)]`.
+  Este conjunto de valores se repite para cada capa: aplicación, biblioteca cliente y biblioteca cliente HTTP. Lo que establece el método `setClientName` aparece primero en la lista.
+
+  Por ejemplo:
+
+  ```java showLineNumbers
+  client.setClientName("my-app-01/1.0");
+  ```
+
+  dará como resultado el siguiente valor de `http_user_agent`:
+
+  ```
+  my-app-01/1.0 clickhouse-java-v2/0.9.6-SNAPSHOT (Linux; jvm:17.0.17) Apache-HttpClient/5.4.4
+  ```
+
+  La aplicación puede establecer su propio encabezado HTTP `User-Agent` para identificarse. No obstante, el fragmento `clickhouse-java-v2/0.9.6-SNAPSHOT` se añadirá al final del encabezado.
+
+  ### Identificación de operaciones
+
+  El registro de consultas cuenta con otros dos campos, `query_id` y `log_comment`, que pueden utilizarse para identificar una operación y agregar información adicional al registro de consultas.
+
+  `query_id` es un identificador único de una operación. La aplicación puede establecerlo llamando al método `setQueryId` de la clase `QuerySettings`.
+
+  ```java showLineNumbers
+  QuerySettings querySettings = new QuerySettings();
+  querySettings.setQueryId("some-query-id");
+  ```
+
+  `log_comment` es un comentario que se puede añadir al registro de consultas. Las aplicaciones pueden establecerlo llamando al método `logComment` de la clase `QuerySettings`.
+
+  ```java showLineNumbers
+  QuerySettings querySettings = new QuerySettings();
+  querySettings.logComment("some-comment");
+  ```
+
+  ### Configuración del servidor
+
+  Los ajustes del lado del servidor pueden configurarse a nivel de cliente una sola vez durante la creación (consulte el método `serverSetting` de `Builder`) y a nivel de operación (consulte `serverSetting` en la clase de ajustes de operación).
+
+  ```java showLineNumbers
+   try (Client client = new Client.Builder().addEndpoint(Protocol.HTTP, "localhost", mockServer.port(), false)
+          .setUsername("default")
+          .setPassword(ClickHouseServerForTest.getPassword())
+          .compressClientRequest(true)
+
+          // Client level
+          .serverSetting("max_threads", "10")
+          .serverSetting("async_insert", "1")
+          .serverSetting("roles", Arrays.asList("role1", "role2"))
+
+          .build()) {
+
+  	// Operation level
+  	QuerySettings querySettings = new QuerySettings();
+  	querySettings.serverSetting("session_timezone", "Europe/Zurich");
+
+  	...
+  }
+  ```
+
+  ⚠️ Cuando las opciones se configuran mediante el método `setOption` (ya sea en `Client.Builder` o en la clase de configuración de operaciones), el nombre de los server settings debe ir precedido del prefijo `clickhouse_setting_`. En este caso, `com.clickhouse.client.api.ClientConfigProperties#serverSetting()` puede resultar de utilidad.
+
+  ### Encabezado HTTP personalizado
+
+  Se pueden configurar HTTP headers personalizados para todas las operaciones (nivel de cliente) o para una sola (nivel de operación).
+
+  ```java showLineNumbers
+
+  QuerySettings settings = new QuerySettings()
+      .httpHeader(HttpHeaders.REFERER, clientReferer)
+      .setQueryId(qId);
+
+  ```
+
+  Cuando las opciones se configuran mediante el método `setOption` (ya sea en `Client.Builder` o en la clase de configuración de operaciones), el nombre del encabezado personalizado debe llevar el prefijo `http_header_`. El método `com.clickhouse.client.api.ClientConfigProperties#httpHeader()` puede ser de utilidad en este caso.
+
+  ## Definiciones comunes
+
+  ### ClickHouseFormat
+
+  Enum de [formatos compatibles](/es/reference/formats/index). Incluye todos los formatos admitidos por ClickHouse.
+
+  * `raw` - el usuario debe transcodificar los datos sin procesar
+  * `full` - el cliente puede transcodificar datos por su cuenta y acepta un flujo de datos sin procesar
+  * `-` - operación no admitida por ClickHouse para este formato
+
+  Esta versión del cliente admite:
+
+  | Formato                                                                                                          | Entrada | Salida |
+  | ---------------------------------------------------------------------------------------------------------------- | :-----: | :----: |
+  | [TabSeparated](/es/reference/formats/TabSeparated/TabSeparated)                                                     |   raw   |   raw  |
+  | [TabSeparatedRaw](/es/reference/formats/TabSeparated/TabSeparatedRaw)                                               |   raw   |   raw  |
+  | [TabSeparatedWithNames](/es/reference/formats/TabSeparated/TabSeparatedWithNames)                                   |   raw   |   raw  |
+  | [TabSeparatedWithNamesAndTypes](/es/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)                   |   raw   |   raw  |
+  | [TabSeparatedRawWithNames](/es/reference/formats/TabSeparated/TabSeparatedRawWithNames)                             |   raw   |   raw  |
+  | [TabSeparatedRawWithNamesAndTypes](/es/reference/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes)             |   raw   |   raw  |
+  | [Template](/es/reference/formats/Template/Template)                                                                 |   raw   |   raw  |
+  | [TemplateIgnoreSpaces](/es/reference/formats/Template/TemplateIgnoreSpaces)                                         |   raw   |    -   |
+  | [CSV](/es/reference/formats/CSV/CSV)                                                                                |   raw   |   raw  |
+  | [CSVWithNames](/es/reference/formats/CSV/CSVWithNames)                                                              |   raw   |   raw  |
+  | [CSVWithNamesAndTypes](/es/reference/formats/CSV/CSVWithNamesAndTypes)                                              |   raw   |   raw  |
+  | [CustomSeparated](/es/reference/formats/CustomSeparated/CustomSeparated)                                            |   raw   |   raw  |
+  | [CustomSeparatedWithNames](/es/reference/formats/CustomSeparated/CustomSeparatedWithNames)                          |   raw   |   raw  |
+  | [CustomSeparatedWithNamesAndTypes](/es/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)          |   raw   |   raw  |
+  | [SQLInsert](/es/reference/formats/SQLInsert)                                                                        |    -    |   raw  |
+  | [Values](/es/reference/formats/Values)                                                                              |   raw   |   raw  |
+  | [Vertical](/es/reference/formats/Vertical)                                                                          |    -    |   raw  |
+  | [JSON](/es/reference/formats/JSON/JSON)                                                                             |   raw   |   raw  |
+  | [JSONAsString](/es/reference/formats/JSON/JSONAsString)                                                             |   raw   |    -   |
+  | [JSONAsObject](/es/reference/formats/JSON/JSONAsObject)                                                             |   raw   |    -   |
+  | [JSONStrings](/es/reference/formats/JSON/JSONStrings)                                                               |   raw   |   raw  |
+  | [JSONColumns](/es/reference/formats/JSON/JSONColumns)                                                               |   raw   |   raw  |
+  | [JSONColumnsWithMetadata](/es/reference/formats/JSON/JSONColumnsWithMetadata)                                       |   raw   |   raw  |
+  | [JSONCompact](/es/reference/formats/JSON/JSONCompact)                                                               |   raw   |   raw  |
+  | [JSONCompactStrings](/es/reference/formats/JSON/JSONCompactStrings)                                                 |    -    |   raw  |
+  | [JSONCompactColumns](/es/reference/formats/JSON/JSONCompactColumns)                                                 |   raw   |   raw  |
+  | [JSONEachRow](/es/reference/formats/JSON/JSONEachRow)                                                               |   raw   |   raw  |
+  | [PrettyJSONEachRow](/es/reference/formats/JSON/PrettyJSONEachRow)                                                   |    -    |   raw  |
+  | [JSONEachRowWithProgress](/es/reference/formats/JSON/JSONEachRowWithProgress)                                       |    -    |   raw  |
+  | [JSONStringsEachRow](/es/reference/formats/JSON/JSONStringsEachRow)                                                 |   raw   |   raw  |
+  | [JSONStringsEachRowWithProgress](/es/reference/formats/JSON/JSONStringsEachRowWithProgress)                         |    -    |   raw  |
+  | [JSONCompactEachRow](/es/reference/formats/JSON/JSONCompactEachRow)                                                 |   raw   |   raw  |
+  | [JSONCompactEachRowWithNames](/es/reference/formats/JSON/JSONCompactEachRowWithNames)                               |   raw   |   raw  |
+  | [JSONCompactEachRowWithNamesAndTypes](/es/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)               |   raw   |   raw  |
+  | [JSONCompactStringsEachRow](/es/reference/formats/JSON/JSONCompactStringsEachRow)                                   |   raw   |   raw  |
+  | [JSONCompactStringsEachRowWithNames](/es/reference/formats/JSON/JSONCompactStringsEachRowWithNames)                 |   raw   |   raw  |
+  | [JSONCompactStringsEachRowWithNamesAndTypes](/es/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes) |   raw   |   raw  |
+  | [JSONObjectEachRow](/es/reference/formats/JSON/JSONObjectEachRow)                                                   |   raw   |   raw  |
+  | [BSONEachRow](/es/reference/formats/BSONEachRow)                                                                    |   raw   |   raw  |
+  | [TSKV](/es/reference/formats/TabSeparated/TSKV)                                                                     |   raw   |   raw  |
+  | [Pretty](/es/reference/formats/Pretty/Pretty)                                                                       |    -    |   raw  |
+  | [PrettyNoEscapes](/es/reference/formats/Pretty/PrettyNoEscapes)                                                     |    -    |   raw  |
+  | [PrettyMonoBlock](/es/reference/formats/Pretty/PrettyMonoBlock)                                                     |    -    |   raw  |
+  | [PrettyNoEscapesMonoBlock](/es/reference/formats/Pretty/PrettyNoEscapesMonoBlock)                                   |    -    |   raw  |
+  | [PrettyCompact](/es/reference/formats/Pretty/PrettyCompact)                                                         |    -    |   raw  |
+  | [PrettyCompactNoEscapes](/es/reference/formats/Pretty/PrettyCompactNoEscapes)                                       |    -    |   raw  |
+  | [PrettyCompactMonoBlock](/es/reference/formats/Pretty/PrettyCompactMonoBlock)                                       |    -    |   raw  |
+  | [PrettyCompactNoEscapesMonoBlock](/es/reference/formats/Pretty/PrettyCompactNoEscapesMonoBlock)                     |    -    |   raw  |
+  | [PrettySpace](/es/reference/formats/Pretty/PrettySpace)                                                             |    -    |   raw  |
+  | [PrettySpaceNoEscapes](/es/reference/formats/Pretty/PrettySpaceNoEscapes)                                           |    -    |   raw  |
+  | [PrettySpaceMonoBlock](/es/reference/formats/Pretty/PrettySpaceMonoBlock)                                           |    -    |   raw  |
+  | [PrettySpaceNoEscapesMonoBlock](/es/reference/formats/Pretty/PrettySpaceNoEscapesMonoBlock)                         |    -    |   raw  |
+  | [Prometheus](/es/reference/formats/Prometheus)                                                                      |    -    |   raw  |
+  | [Protobuf](/es/reference/formats/Protobuf/Protobuf)                                                                 |   raw   |   raw  |
+  | [ProtobufSingle](/es/reference/formats/Protobuf/ProtobufSingle)                                                     |   raw   |   raw  |
+  | [ProtobufList](/es/reference/formats/Protobuf/ProtobufList)                                                         |   raw   |   raw  |
+  | [Avro](/es/reference/formats/Avro/Avro)                                                                             |   raw   |   raw  |
+  | [AvroConfluent](/es/reference/formats/Avro/AvroConfluent)                                                           |   raw   |    -   |
+  | [Parquet](/es/reference/formats/Parquet/Parquet)                                                                    |   raw   |   raw  |
+  | [ParquetMetadata](/es/reference/formats/Parquet/ParquetMetadata)                                                    |   raw   |    -   |
+  | [Arrow](/es/reference/formats/Arrow/Arrow)                                                                          |   raw   |   raw  |
+  | [ArrowStream](/es/reference/formats/Arrow/ArrowStream)                                                              |   raw   |   raw  |
+  | [ORC](/es/reference/formats/ORC)                                                                                    |   raw   |   raw  |
+  | [One](/es/reference/formats/One)                                                                                    |   raw   |    -   |
+  | [Npy](/es/reference/formats/Npy)                                                                                    |   raw   |   raw  |
+  | [RowBinary](/es/reference/formats/RowBinary/RowBinary)                                                              |   full  |  full  |
+  | [RowBinaryWithNames](/es/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)                                    |   full  |  full  |
+  | [RowBinaryWithNamesAndTypes](/es/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)                            |   full  |  full  |
+  | [RowBinaryWithDefaults](/es/reference/formats/RowBinary/RowBinaryWithDefaults)                                      |   full  |    -   |
+  | [Native](/es/reference/formats/Native)                                                                              |   full  |   raw  |
+  | [Null](/es/reference/formats/Null)                                                                                  |    -    |   raw  |
+  | [XML](/es/reference/formats/XML)                                                                                    |    -    |   raw  |
+  | [CapnProto](/es/reference/formats/CapnProto)                                                                        |   raw   |   raw  |
+  | [LineAsString](/es/reference/formats/LineAsString/LineAsString)                                                     |   raw   |   raw  |
+  | [Regexp](/es/reference/formats/Regexp)                                                                              |   raw   |    -   |
+  | [RawBLOB](/es/reference/formats/RawBLOB)                                                                            |   raw   |   raw  |
+  | [MsgPack](/es/reference/formats/MsgPack)                                                                            |   raw   |   raw  |
+  | [MySQLDump](/es/reference/formats/MySQLDump)                                                                        |   raw   |    -   |
+  | [DWARF](/es/reference/formats/DWARF)                                                                                |   raw   |    -   |
+  | [Markdown](/es/reference/formats/Markdown)                                                                          |    -    |   raw  |
+  | [Form](/es/reference/formats/Form)                                                                                  |   raw   |    -   |
+
+  ## API de inserción
+
+  ### insert(String tableName, InputStream data, ClickHouseFormat format)
+
+  Acepta datos como un `InputStream` de bytes en el formato especificado. Se espera que `data` esté codificado en el `format`.
+
+  **Firmas**
+
+  ```java
+  CompletableFuture<InsertResponse> insert(String tableName, InputStream data, ClickHouseFormat format, InsertSettings settings)
+  CompletableFuture<InsertResponse> insert(String tableName, InputStream data, ClickHouseFormat format)
+  ```
+
+  **Parámetros**
+
+  `tableName` - nombre de la tabla de destino.
+
+  `data` - un flujo de entrada de datos codificados.
+
+  `format` - un formato en el que se codifican los datos.
+
+  `settings` - parámetros de la solicitud.
+
+  **Valor de retorno**
+
+  Future del tipo `InsertResponse`: resultado de la operación e información adicional como las métricas del lado del servidor.
+
+  **Ejemplos**
+
+  ```java showLineNumbers
+  try (InputStream dataStream = getDataStream()) {
+      try (InsertResponse response = client.insert(TABLE_NAME, dataStream, ClickHouseFormat.JSONEachRow,
+              insertSettings).get(3, TimeUnit.SECONDS)) {
+
+          log.info("Insert finished: {} rows written", response.getMetrics().getMetric(ServerMetrics.NUM_ROWS_WRITTEN).getLong());
+      } catch (Exception e) {
+          log.error("Failed to write JSONEachRow data", e);
+          throw new RuntimeException(e);
+      }
+  }
+
+  ```
+
+  ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings)
+
+  Envía una solicitud de escritura a la base de datos. La lista de objetos se convierte a un formato eficiente y luego se envía al servidor. La clase de los elementos de la lista debe registrarse de antemano mediante el método `register(Class, TableSchema)`.
+
+  **Firmas**
+
+  ```java
+  client.insert(String tableName, List<?> data, InsertSettings settings)
+  client.insert(String tableName, List<?> data)
+  ```
+
+  **Parámetros**
+
+  `tableName` - nombre de la tabla de destino.
+
+  `data` - objetos DTO (Data Transfer Object) de colección.
+
+  `settings` - parámetros de la solicitud.
+
+  **Valor de retorno**
+
+  Future del tipo `InsertResponse`: el resultado de la operación e información adicional como las métricas del lado del servidor.
+
+  **Ejemplos**
+
+  ```java showLineNumbers
+  // Important step (done once) - register class to pre-compile object serializer according to the table schema.
+  client.register(ArticleViewEvent.class, client.getTableSchema(TABLE_NAME));
+
+  List<ArticleViewEvent> events = loadBatch();
+
+  try (InsertResponse response = client.insert(TABLE_NAME, events).get()) {
+      // handle response, then it will be closed and connection that served request will be released.
+  }
+  ```
+
+  ### InsertSettings
+
+  Opciones de configuración para operaciones de inserción.
+
+  **Métodos de configuración**
+
+  | Método                                          | Descripción                                                                                                                                                                                                 |
+  | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `setQueryId(String queryId)`                    | Establece el ID de consulta que se asignará a la operación. Valor predeterminado: `null`.                                                                                                                   |
+  | `setDeduplicationToken(String token)`           | Establece el token de deduplicación. Este token se enviará al servidor y puede utilizarse para identificar la consulta. Valor predeterminado: `null`.                                                       |
+  | `setInputStreamCopyBufferSize(int size)`        | Tamaño del búfer de copia. El búfer se utiliza durante las operaciones de escritura para copiar datos del flujo de entrada proporcionado por el usuario a un flujo de salida. Valor predeterminado: `8196`. |
+  | `serverSetting(String name, String value)`      | Establece ajustes de servidor individuales para una operación.                                                                                                                                              |
+  | `serverSetting(String name, Collection values)` | Establece opciones de configuración individuales del servidor con varios valores para una operación. Los elementos de la colección deben ser valores `String`.                                              |
+  | `setDBRoles(Collection dbRoles)`                | Establece los roles de DB que deben configurarse antes de ejecutar una operación. Los elementos de la colección deben ser valores `String`.                                                                 |
+  | `setOption(String option, Object value)`        | Establece una opción de configuración en formato raw. No se trata de un ajuste del servidor.                                                                                                                |
+
+  ### InsertResponse
+
+  Objeto de respuesta que contiene el resultado de la operación de inserción. Solo está disponible si el cliente recibió una respuesta del servidor.
+
+  <Note>
+    Este objeto debe cerrarse lo antes posible para liberar una conexión, ya que esta no puede reutilizarse hasta que se hayan leído por completo todos los datos de la respuesta anterior.
+  </Note>
+
+  | Método                          | Descripción                                                                                                                         |
+  | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+  | `OperationMetrics getMetrics()` | Devuelve un objeto con las métricas de la operación.                                                                                |
+  | `String getQueryId()`           | Devuelve el ID de consulta asignado a la operación por la aplicación (mediante la configuración de la operación o por el servidor). |
+
+  ## API de consultas
+
+  ### query(String sqlQuery)
+
+  Envía `sqlQuery` tal cual. El formato de respuesta se determina mediante la configuración de la consulta. `QueryResponse` contendrá una referencia al flujo de respuesta que debe ser consumido por un lector para el formato compatible.
+
+  **Firmas**
+
+  ```java
+  CompletableFuture<QueryResponse> query(String sqlQuery, QuerySettings settings)
+  CompletableFuture<QueryResponse> query(String sqlQuery)
+  ```
+
+  **Parámetros**
+
+  `sqlQuery` - una única sentencia SQL. La consulta se envía tal como está al servidor.
+
+  `settings` - parámetros de la solicitud.
+
+  **Valor de retorno**
+
+  Future del tipo `QueryResponse`: un conjunto de datos de resultado e información adicional como las métricas del lado del servidor. El objeto Response debe cerrarse tras consumir el conjunto de datos.
+
+  **Ejemplos**
+
+  ```java
+  final String sql = "select * from " + TABLE_NAME + " where title <> '' limit 10";
+
+  // Default format is RowBinaryWithNamesAndTypesFormatReader so reader have all information about columns
+  try (QueryResponse response = client.query(sql).get(3, TimeUnit.SECONDS);) {
+
+      // Create a reader to access the data in a convenient way
+      ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
+
+      while (reader.hasNext()) {
+          reader.next(); // Read the next record from stream and parse it
+
+          // get values
+          double id = reader.getDouble("id");
+          String title = reader.getString("title");
+          String url = reader.getString("url");
+
+          // collecting data
+      }
+  } catch (Exception e) {
+      log.error("Failed to read data", e);
+  }
+
+  // put business logic outside of the reading block to release http connection asap.
+  ```
+
+  ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings)
+
+  Envía `sqlQuery` tal cual. Además, enviará los parámetros de consulta para que el servidor pueda compilar la expresión SQL.
+
+  **Firmas**
+
+  ```java
+  CompletableFuture<QueryResponse> query(String sqlQuery, Map<String, Object> queryParams, QuerySettings settings)
+  ```
+
+  **Parámetros**
+
+  `sqlQuery` - expresión SQL con marcadores de posición `{}`.
+
+  `queryParams` - mapa de variables para completar la expresión SQL en el servidor.
+
+  `settings` - parámetros de la solicitud.
+
+  **Valor de retorno**
+
+  Future del tipo `QueryResponse`: un conjunto de datos de resultado e información adicional como las métricas del lado del servidor. El objeto Response debe cerrarse tras consumir el conjunto de datos.
+
+  **Ejemplos**
+
+  ```java showLineNumbers
+
+  // define parameters. They will be sent to the server along with the request.
+  Map<String, Object> queryParams = new HashMap<>();
+  queryParams.put("param1", 2);
+
+  try (QueryResponse response =
+          client.query("SELECT * FROM " + table + " WHERE col1 >= {param1:UInt32}", queryParams, new QuerySettings()).get()) {
+
+      // Create a reader to access the data in a convenient way
+      ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
+
+      while (reader.hasNext()) {
+          reader.next(); // Read the next record from stream and parse it
+
+          // reading data
+      }
+
+  } catch (Exception e) {
+      log.error("Failed to read data", e);
+  }
+
+  ```
+
+  ### queryAll(String sqlQuery)
+
+  Consulta datos en formato `RowBinaryWithNamesAndTypes`. Devuelve el resultado como una colección. El rendimiento de lectura es el mismo que con el lector, pero se necesita más memoria para almacenar el conjunto de datos completo.
+
+  **Firmas**
+
+  ```java
+  List<GenericRecord> queryAll(String sqlQuery)
+  ```
+
+  **Parámetros**
+
+  `sqlQuery` - expresión SQL para consultar datos desde un servidor.
+
+  **Valor de retorno**
+
+  Conjunto de datos completo representado por una lista de objetos `GenericRecord` que proporcionan acceso por filas a los datos del resultado.
+
+  **Ejemplos**
+
+  ```java showLineNumbers
+  try {
+      log.info("Reading whole table and process record by record");
+      final String sql = "select * from " + TABLE_NAME + " where title <> ''";
+
+      // Read whole result set and process it record by record
+      client.queryAll(sql).forEach(row -> {
+          double id = row.getDouble("id");
+          String title = row.getString("title");
+          String url = row.getString("url");
+
+          log.info("id: {}, title: {}, url: {}", id, title, url);
+      });
+  } catch (Exception e) {
+      log.error("Failed to read data", e);
+  }
+  ```
+
+  ### QuerySettings
+
+  Opciones de configuración para operaciones de consulta.
+
+  **Métodos de configuración**
+
+  | Método                                            | Descripción                                                                                                                                                                                 |
+  | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `setQueryId(String queryId)`                      | Establece el ID de la consulta que se asignará a la operación.                                                                                                                              |
+  | `setFormat(ClickHouseFormat format)`              | Establece el formato de la respuesta. Consulte `RowBinaryWithNamesAndTypes` para ver la lista completa.                                                                                     |
+  | `setMaxExecutionTime(Integer maxExecutionTime)`   | Establece el tiempo de ejecución de la operación en el servidor. No afecta al tiempo de espera de lectura.                                                                                  |
+  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | Solicita al servidor que espere a que finalice la consulta antes de enviar una respuesta.                                                                                                   |
+  | `setUseServerTimeZone(Boolean useServerTimeZone)` | La zona horaria del servidor (consulte la configuración del cliente) se utilizará para interpretar los tipos de fecha/hora en el resultado de una operación. Valor predeterminado: `false`. |
+  | `setUseTimeZone(String timeZone)`                 | Solicita al servidor que use `timeZone` para la conversión de tiempo. Consulte [session&#95;timezone](/es/reference/settings/session-settings#session_timezone).                               |
+  | `serverSetting(String name, String value)`        | Establece ajustes individuales del servidor para una operación.                                                                                                                             |
+  | `serverSetting(String name, Collection values)`   | Establece opciones de configuración individuales del servidor con varios valores para una operación. Los elementos de la colección deben ser valores `String`.                              |
+  | `setDBRoles(Collection dbRoles)`                  | Establece los roles de DB que deben configurarse antes de ejecutar una operación. Los elementos de la colección deben ser valores `String`.                                                 |
+  | `setOption(String option, Object value)`          | Establece una opción de configuración en formato raw. No es una configuración del servidor.                                                                                                 |
+
+  ### QueryResponse
+
+  Objeto de respuesta que contiene el resultado de la ejecución de la consulta. Solo está disponible si el cliente recibió una respuesta del servidor.
+
+  <Note>
+    Este objeto debe cerrarse lo antes posible para liberar una conexión, ya que esta no puede reutilizarse hasta que se hayan leído por completo todos los datos de la respuesta anterior.
+  </Note>
+
+  | Método                          | Descripción                                                                                                                         |
+  | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+  | `ClickHouseFormat getFormat()`  | Devuelve el formato en el que están codificados los datos de la respuesta.                                                          |
+  | `InputStream getInputStream()`  | Devuelve un flujo de bytes sin comprimir con los datos en el formato especificado.                                                  |
+  | `OperationMetrics getMetrics()` | Devuelve un objeto con las métricas de la operación.                                                                                |
+  | `String getQueryId()`           | Devuelve el ID de consulta asignado a la operación por la aplicación (mediante la configuración de la operación) o por el servidor. |
+  | `TimeZone getTimeZone()`        | Devuelve la zona horaria que debe usarse para procesar los tipos Date/DateTime en la respuesta.                                     |
+
+  ### Ejemplos
+
+  * El código de ejemplo está disponible en el [repositorio](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client-v2)
+  * Servicio de Spring de referencia [implementación](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service)
+
+  ## API común
+
+  ### getTableSchema(String table)
+
+  Obtiene el esquema de la tabla para `table`.
+
+  **Firmas**
+
+  ```java
+  TableSchema getTableSchema(String table)
+  TableSchema getTableSchema(String table, String database)
+  ```
+
+  **Parámetros**
+
+  `table` - nombre de la tabla de la que se deben obtener los datos del esquema.
+
+  `database` - base de datos donde se define la tabla de destino.
+
+  **Valor de retorno**
+
+  Devuelve un objeto `TableSchema` con la lista de columnas de la tabla.
+
+  ### getTableSchemaFromQuery(String sql)
+
+  Obtiene el esquema a partir de una instrucción SQL.
+
+  **Firmas**
+
+  ```java
+  TableSchema getTableSchemaFromQuery(String sql)
+  ```
+
+  **Parámetros**
+
+  `sql` - Sentencia SQL &quot;SELECT&quot; cuyo esquema se desea obtener.
+
+  **Valor de retorno**
+
+  Devuelve un objeto `TableSchema` con columnas que coinciden con la expresión `sql`.
+
+  ### TableSchema
+
+  ### register(Class&lt;?&gt; clazz, TableSchema schema)
+
+  Compila la capa de serialización y deserialización para la clase Java que se utilizará para escribir y leer datos con `schema`. El método creará un serializador y un deserializador para el par getter/setter y la columna correspondiente.
+  La coincidencia de columna se determina extrayendo su nombre a partir del nombre del método. Por ejemplo, `getFirstName` corresponderá a la columna `first_name` o `firstname`.
+
+  **Firmas**
+
+  ```java
+  void register(Class<?> clazz, TableSchema schema)
+  ```
+
+  **Parámetros**
+
+  `clazz` - Clase que representa el POJO utilizado para leer/escribir datos.
+
+  `schema` - Esquema de datos que se usará para hacer coincidir con las propiedades POJO.
+
+  **Ejemplos**
+
+  ```java showLineNumbers
+  client.register(ArticleViewEvent.class, client.getTableSchema(TABLE_NAME));
+  ```
+
+  ## Ejemplos de uso
+
+  El código de ejemplos completo está almacenado en el repositorio en la [carpeta](https://github.com/ClickHouse/clickhouse-java/tree/main/examples) &#39;example&#96;:
+
+  * [client-v2](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client-v2) - colección principal de ejemplos.
+  * [demo-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service) - ejemplo de cómo utilizar el cliente en una aplicación Spring Boot.
+  * [demo-kotlin-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-kotlin-service) - ejemplo de cómo usar el cliente en una aplicación de Ktor (Kotlin).
+
+  ## Lectura de datos
+
+  Hay dos formas comunes de leer datos:
+
+  * método `query()` que devuelve un objeto `QueryResponse` de bajo nivel que contiene un `InputStream` con datos. Normalmente se combina con `ClickHouseBinaryFormatReader` para lecturas en streaming, pero
+    puede utilizarse con cualquier otra implementación personalizada de lector. `QueryResponse` también proporciona acceso a los metadatos del conjunto de resultados y a las métricas.
+  * método `queryAll()` y uso de `GenericRecord` para acceder cómodamente a las filas. En este caso, todo el conjunto de resultados se carga en memoria.
+  * método `queryRecords()` que devuelve `com.clickhouse.client.api.query.Records`: un iterador de objetos `GenericRecord`. Este método utiliza un enfoque de streaming
+    (no se cargan datos en memoria) y usa `GenericRecord` para acceder a los datos.
+
+  **Nota:** el enfoque de streaming requiere una lectura rápida; de lo contrario, puede provocar un timeout de escritura en el servidor, ya que los datos se leen directamente desde el stream de red.
+
+  ### Lectura de Arrays
+
+  **Métodos de `ClickHouseBinaryFormatReader`**
+
+  * `getList(...)` - lee cualquier `Array(...)` como `List<T>`. Es una buena opción predeterminada para lecturas flexibles con tipado. Admite arrays anidados.
+  * `getByteArray(...)`, `getShortArray(...)`, `getIntArray(...)`, `getLongArray(...)`, `getFloatArray(...)`, `getDoubleArray(...)`, `getBooleanArray(...)` - mejor para arrays 1D de valores compatibles con tipos primitivos.
+  * `getStringArray(...)` - para `Array(String)` (y valores de `enum` representados por nombres).
+  * `getObjectArray(...)` - opción genérica para cualquier tipo de elemento de `Array(...)`, incluidos los arrays anidados. Úselo para leer arrays con valores anulables y arrays anidados.
+
+  Las sobrecargas basadas en índice y en nombre están disponibles para todos los métodos. El índice es base 1. Las sobrecargas basadas en índice realizan acceso directo a una columna.
+  Los métodos basados en nombre requieren una búsqueda por índice en cada invocación.
+
+  ```java
+  try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
+      ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
+      while (reader.next() != null) {
+          
+          Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
+          Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
+
+          // nested arrays are returned as nested Object[]:
+          Object[] firstInner = (Object[]) arr2d[0];
+          Long firstValue = (Long) firstInner[0];
+      }
+  }
+  ```
+
+  **Métodos de `GenericRecord`**
+
+  * `getList(...)` - lee cualquier `Array(...)` como `List<T>`. Buena opción predeterminada para lecturas flexibles con tipado. Admite arrays anidados.
+  * `getByteArray(...)`, `getShortArray(...)`, `getIntArray(...)`, `getLongArray(...)`, `getFloatArray(...)`, `getDoubleArray(...)`, `getBooleanArray(...)` - ideal para arrays unidimensionales de valores compatibles con tipos primitivos.
+  * `getStringArray(...)` - para `Array(String)` (y valores de `enum` representados por nombres).
+  * `getObjectArray(...)` - opción genérica para cualquier tipo de elemento de `Array(...)`, incluidos los arrays anidados. Úsela para leer arrays con valores que admiten NULL y arrays anidados.
+
+  Las sobrecargas basadas en índice y en nombre están disponibles para todos los métodos. El índice es base 1. Las sobrecargas basadas en índice realizan acceso directo a una columna.
+  Los métodos basados en nombre requieren una búsqueda por índice en cada invocación.
+
+  ```java
+  try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
+      List<GenericRecord> rows = client.queryAll(
+          "SELECT int_arr, arr2d_nullable FROM test_arrays ORDER BY id");
+
+      for (GenericRecord row : rows) {
+          Object[] intArr = row.getObjectArray("int_arr");                 // Array(Int32) -> Integer[]
+          Object[] arr2d = row.getObjectArray("arr2d_nullable");           // Array(Array(Nullable(Int32)))
+
+          Object[] inner = (Object[]) arr2d[0];
+          Object maybeNull = inner[1]; // may be null
+      }
+  }
+  ```
+
+  ## Guía de migración
+
+  El cliente antiguo (V1) utilizaba `com.clickhouse.client.ClickHouseClient#builder` como punto de partida. El nuevo cliente (V2) usa un patrón similar con `com.clickhouse.client.api.Client.Builder`. Las principales
+  diferencias son:
+
+  * no se utiliza ningún cargador de servicios para obtener la implementación. `com.clickhouse.client.api.Client` es una clase fachada para todo tipo de implementaciones futuras.
+  * menos fuentes de configuración: una se proporciona al builder y otra se encuentra en la configuración de operación (`QuerySettings`, `InsertSettings`). La versión anterior tenía una configuración por nodo y, en algunos casos, cargaba
+    variables de entorno.
+
+  ### Coincidencia de parámetros de configuración
+
+  Hay 3 clases enum relacionadas con la configuración en V1:
+
+  * `com.clickhouse.client.config.ClickHouseDefaults` - parámetros de configuración que suelen establecerse en la mayoría de los casos de uso, como `USER` y `PASSWORD`.
+  * `com.clickhouse.client.config.ClickHouseClientOption` - parámetros de configuración específicos para el cliente, como `HEALTH_CHECK_INTERVAL`.
+  * `com.clickhouse.client.http.config.ClickHouseHttpOption` - parámetros de configuración específicos de la interfaz HTTP, como `RECEIVE_QUERY_PROGRESS`.
+
+  Fueron diseñados para agrupar parámetros y ofrecer una separación clara. Sin embargo, en algunos casos esto generaba confusión (¿hay alguna diferencia entre `com.clickhouse.client.config.ClickHouseDefaults#ASYNC` y
+  `com.clickhouse.client.config.ClickHouseClientOption#ASYNC`?). El nuevo cliente V2 utiliza `com.clickhouse.client.api.Client.Builder` como diccionario único de todas las opciones de configuración posibles del cliente. En `com.clickhouse.client.api.ClientConfigProperties` se encuentran listados todos los nombres de parámetros de configuración.
+
+  La siguiente tabla muestra qué opciones antiguas son compatibles con el nuevo cliente y su nuevo significado.
+
+  **Leyenda:** ✔ = compatible, ✗ = eliminado
+
+  <Tabs>
+    <Tab title="Conexión y autenticación">
+      | Configuración de V1                                                              | Método del builder de V2                    | Comentarios               |
+      | -------------------------------------------------------------------------------- | ------------------------------------------- | ------------------------- |
+      | `ClickHouseDefaults#HOST`                                                        | `Client.Builder#addEndpoint`                |                           |
+      | `ClickHouseDefaults#PROTOCOL`                                                    | ✗                                           | Solo se admite HTTP en V2 |
+      | `ClickHouseDefaults#DATABASE`<br />`ClickHouseClientOption#DATABASE`             | `Client.Builder#setDefaultDatabase`         |                           |
+      | `ClickHouseDefaults#USER`                                                        | `Client.Builder#setUsername`                |                           |
+      | `ClickHouseDefaults#PASSWORD`                                                    | `Client.Builder#setPassword`                |                           |
+      | `ClickHouseClientOption#CONNECTION_TIMEOUT`                                      | `Client.Builder#setConnectTimeout`          |                           |
+      | `ClickHouseClientOption#CONNECTION_TTL`                                          | `Client.Builder#setConnectionTTL`           |                           |
+      | `ClickHouseHttpOption#MAX_OPEN_CONNECTIONS`                                      | `Client.Builder#setMaxConnections`          |                           |
+      | `ClickHouseHttpOption#KEEP_ALIVE`<br />`ClickHouseHttpOption#KEEP_ALIVE_TIMEOUT` | `Client.Builder#setKeepAliveTimeout`        |                           |
+      | `ClickHouseHttpOption#CONNECTION_REUSE_STRATEGY`                                 | `Client.Builder#setConnectionReuseStrategy` |                           |
+      | `ClickHouseHttpOption#USE_BASIC_AUTHENTICATION`                                  | `Client.Builder#useHTTPBasicAuth`           |                           |
+    </Tab>
+
+    <Tab title="SSL y seguridad">
+      | Configuración V1                                       | Método de Builder V2                      | Comentarios                                                           |
+      | ------------------------------------------------------ | ----------------------------------------- | --------------------------------------------------------------------- |
+      | `ClickHouseDefaults#SSL_CERTIFICATE_TYPE`              | ✗                                         |                                                                       |
+      | `ClickHouseDefaults#SSL_KEY_ALGORITHM`                 | ✗                                         |                                                                       |
+      | `ClickHouseDefaults#SSL_PROTOCOL`                      | ✗                                         |                                                                       |
+      | `ClickHouseClientOption#SSL`                           | ✗                                         | Consulte `Client.Builder#addEndpoint`                                 |
+      | `ClickHouseClientOption#SSL_MODE`                      | ✗                                         |                                                                       |
+      | `ClickHouseClientOption#SSL_ROOT_CERTIFICATE`          | `Client.Builder#setRootCertificate`       | La autenticación SSL debe habilitarse mediante `useSSLAuthentication` |
+      | `ClickHouseClientOption#SSL_CERTIFICATE`               | `Client.Builder#setClientCertificate`     |                                                                       |
+      | `ClickHouseClientOption#SSL_KEY`                       | `Client.Builder#setClientKey`             |                                                                       |
+      | `ClickHouseClientOption#KEY_STORE_TYPE`                | `Client.Builder#setSSLTrustStoreType`     |                                                                       |
+      | `ClickHouseClientOption#TRUST_STORE`                   | `Client.Builder#setSSLTrustStore`         |                                                                       |
+      | `ClickHouseClientOption#KEY_STORE_PASSWORD`            | `Client.Builder#setSSLTrustStorePassword` |                                                                       |
+      | `ClickHouseClientOption#SSL_SOCKET_SNI`                | `Client.Builder#sslSocketSNI`             |                                                                       |
+      | `ClickHouseClientOption#CUSTOM_SOCKET_FACTORY`         | ✗                                         |                                                                       |
+      | `ClickHouseClientOption#CUSTOM_SOCKET_FACTORY_OPTIONS` | ✗                                         | Consulte `Client.Builder#sslSocketSNI` para configurar SNI            |
+    </Tab>
+
+    <Tab title="Opciones de socket">
+      | Configuración de V1                         | Método de Builder                      | Comentarios |
+      | ------------------------------------------- | -------------------------------------- | ----------- |
+      | `ClickHouseClientOption#SOCKET_TIMEOUT`     | `Client.Builder#setSocketTimeout`      |             |
+      | `ClickHouseClientOption#SOCKET_REUSEADDR`   | `Client.Builder#setSocketReuseAddress` |             |
+      | `ClickHouseClientOption#SOCKET_KEEPALIVE`   | `Client.Builder#setSocketKeepAlive`    |             |
+      | `ClickHouseClientOption#SOCKET_LINGER`      | `Client.Builder#setSocketLinger`       |             |
+      | `ClickHouseClientOption#SOCKET_IP_TOS`      | ✗                                      |             |
+      | `ClickHouseClientOption#SOCKET_TCP_NODELAY` | `Client.Builder#setSocketTcpNodelay`   |             |
+      | `ClickHouseClientOption#SOCKET_RCVBUF`      | `Client.Builder#setSocketRcvbuf`       |             |
+      | `ClickHouseClientOption#SOCKET_SNDBUF`      | `Client.Builder#setSocketSndbuf`       |             |
+    </Tab>
+
+    <Tab title="Compresión">
+      | Configuración V1                              | Método del builder V2                   | Comentarios                                                |
+      | --------------------------------------------- | --------------------------------------- | ---------------------------------------------------------- |
+      | `ClickHouseClientOption#COMPRESS`             | `Client.Builder#compressServerResponse` | Véase también `useHttpCompression`                         |
+      | `ClickHouseClientOption#DECOMPRESS`           | `Client.Builder#compressClientRequest`  | Véase también `useHttpCompression`                         |
+      | `ClickHouseClientOption#COMPRESS_ALGORITHM`   | ✗                                       | `LZ4` para conexiones no HTTP. HTTP usa `Accept-Encoding`  |
+      | `ClickHouseClientOption#DECOMPRESS_ALGORITHM` | ✗                                       | `LZ4` para conexiones no HTTP. HTTP usa `Content-Encoding` |
+      | `ClickHouseClientOption#COMPRESS_LEVEL`       | ✗                                       |                                                            |
+      | `ClickHouseClientOption#DECOMPRESS_LEVEL`     | ✗                                       |                                                            |
+    </Tab>
+
+    <Tab title="Proxy">
+      | Configuración V1                        | Método del builder V2                | Comentarios |
+      | --------------------------------------- | ------------------------------------ | ----------- |
+      | `ClickHouseClientOption#PROXY_TYPE`     | `Client.Builder#addProxy`            |             |
+      | `ClickHouseClientOption#PROXY_HOST`     | `Client.Builder#addProxy`            |             |
+      | `ClickHouseClientOption#PROXY_PORT`     | `Client.Builder#addProxy`            |             |
+      | `ClickHouseClientOption#PROXY_USERNAME` | `Client.Builder#setProxyCredentials` |             |
+      | `ClickHouseClientOption#PROXY_PASSWORD` | `Client.Builder#setProxyCredentials` |             |
+    </Tab>
+
+    <Tab title="Timeouts & reintentos">
+      | Configuración de V1                             | Método Builder de V2                 | Comentarios                     |
+      | ----------------------------------------------- | ------------------------------------ | ------------------------------- |
+      | `ClickHouseClientOption#MAX_EXECUTION_TIME`     | `Client.Builder#setExecutionTimeout` |                                 |
+      | `ClickHouseClientOption#RETRY`                  | `Client.Builder#setMaxRetries`       | Véase también `retryOnFailures` |
+      | `ClickHouseHttpOption#AHC_RETRY_ON_FAILURE`     | `Client.Builder#retryOnFailures`     |                                 |
+      | `ClickHouseClientOption#FAILOVER`               | ✗                                    |                                 |
+      | `ClickHouseClientOption#REPEAT_ON_SESSION_LOCK` | ✗                                    |                                 |
+      | `ClickHouseClientOption#SESSION_ID`             | ✗                                    |                                 |
+      | `ClickHouseClientOption#SESSION_CHECK`          | ✗                                    |                                 |
+      | `ClickHouseClientOption#SESSION_TIMEOUT`        | ✗                                    |                                 |
+    </Tab>
+
+    <Tab title="Zona horaria">
+      | Configuración V1                                                                     | Método del builder de V2           | Comentarios |
+      | ------------------------------------------------------------------------------------ | ---------------------------------- | ----------- |
+      | `ClickHouseDefaults#SERVER_TIME_ZONE`<br />`ClickHouseClientOption#SERVER_TIME_ZONE` | `Client.Builder#setServerTimeZone` |             |
+      | `ClickHouseClientOption#USE_SERVER_TIME_ZONE`                                        | `Client.Builder#useServerTimeZone` |             |
+      | `ClickHouseClientOption#USE_SERVER_TIME_ZONE_FOR_DATES`                              |                                    |             |
+      | `ClickHouseClientOption#USE_TIME_ZONE`                                               | `Client.Builder#useTimeZone`       |             |
+    </Tab>
+
+    <Tab title="Búferes & rendimiento">
+      | Configuración de V1                             | Método del builder de V2                    | Comentarios |
+      | ----------------------------------------------- | ------------------------------------------- | ----------- |
+      | `ClickHouseClientOption#BUFFER_SIZE`            | `Client.Builder#setClientNetworkBufferSize` |             |
+      | `ClickHouseClientOption#BUFFER_QUEUE_VARIATION` | ✗                                           |             |
+      | `ClickHouseClientOption#READ_BUFFER_SIZE`       | ✗                                           |             |
+      | `ClickHouseClientOption#WRITE_BUFFER_SIZE`      | ✗                                           |             |
+      | `ClickHouseClientOption#REQUEST_CHUNK_SIZE`     | ✗                                           |             |
+      | `ClickHouseClientOption#REQUEST_BUFFERING`      | ✗                                           |             |
+      | `ClickHouseClientOption#RESPONSE_BUFFERING`     | ✗                                           |             |
+      | `ClickHouseClientOption#MAX_BUFFER_SIZE`        | ✗                                           |             |
+      | `ClickHouseClientOption#MAX_QUEUED_BUFFERS`     | ✗                                           |             |
+      | `ClickHouseClientOption#MAX_QUEUED_REQUESTS`    | ✗                                           |             |
+      | `ClickHouseClientOption#REUSE_VALUE_WRAPPER`    | ✗                                           |             |
+    </Tab>
+
+    <Tab title="Hilos & asincronía">
+      | Configuración V1                                               | Método de Builder                     | Comentarios                           |
+      | -------------------------------------------------------------- | ------------------------------------- | ------------------------------------- |
+      | `ClickHouseDefaults#ASYNC`<br />`ClickHouseClientOption#ASYNC` | `Client.Builder#useAsyncRequests`     |                                       |
+      | `ClickHouseDefaults#MAX_SCHEDULER_THREADS`                     | ✗                                     | consulte `setSharedOperationExecutor` |
+      | `ClickHouseDefaults#MAX_THREADS`                               | ✗                                     | consulte `setSharedOperationExecutor` |
+      | `ClickHouseDefaults#THREAD_KEEPALIVE_TIMEOUT`                  | consulte `setSharedOperationExecutor` |                                       |
+      | `ClickHouseClientOption#MAX_THREADS_PER_CLIENT`                | ✗                                     |                                       |
+      | `ClickHouseClientOption#MAX_CORE_THREAD_TTL`                   | ✗                                     |                                       |
+    </Tab>
+
+    <Tab title="HTTP & Encabezados">
+      | Configuración de V1                                  | Método del builder de V2       | Comentarios                                              |
+      | ---------------------------------------------------- | ------------------------------ | -------------------------------------------------------- |
+      | `ClickHouseHttpOption#CUSTOM_HEADERS`                | `Client.Builder#httpHeaders`   |                                                          |
+      | `ClickHouseHttpOption#CUSTOM_PARAMS`                 | ✗                              | Consulte `Client.Builder#serverSetting`                  |
+      | `ClickHouseClientOption#CLIENT_NAME`                 | `Client.Builder#setClientName` |                                                          |
+      | `ClickHouseHttpOption#CONNECTION_PROVIDER`           | ✗                              |                                                          |
+      | `ClickHouseHttpOption#DEFAULT_RESPONSE`              | ✗                              |                                                          |
+      | `ClickHouseHttpOption#SEND_HTTP_CLIENT_ID`           | ✗                              |                                                          |
+      | `ClickHouseHttpOption#AHC_VALIDATE_AFTER_INACTIVITY` | ✗                              | Siempre está habilitado cuando se usa Apache Http Client |
+    </Tab>
+
+    <Tab title="Formato & Consulta">
+      | Configuración V1                                                 | Método del builder  | Comentarios                                                                                                                  |
+      | ---------------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+      | `ClickHouseDefaults#FORMAT`<br />`ClickHouseClientOption#FORMAT` | ✗                   | Se trasladó a la configuración de la operación (`QuerySettings` y `InsertSettings`)                                          |
+      | `ClickHouseClientOption#QUERY_ID`                                | ✗                   | Consulte `QuerySettings` e `InsertSettings`                                                                                  |
+      | `ClickHouseClientOption#LOG_LEADING_COMMENT`                     | ✗                   | Consulte `QuerySettings#logComment` e `InsertSettings#logComment`                                                            |
+      | `ClickHouseClientOption#MAX_RESULT_ROWS`                         | ✗                   | Es una configuración del servidor                                                                                            |
+      | `ClickHouseClientOption#RESULT_OVERFLOW_MODE`                    | ✗                   | Es una configuración del servidor                                                                                            |
+      | `ClickHouseHttpOption#RECEIVE_QUERY_PROGRESS`                    | ✗                   | Configuración del servidor                                                                                                   |
+      | `ClickHouseHttpOption#WAIT_END_OF_QUERY`                         | ✗                   | Configuración del servidor                                                                                                   |
+      | `ClickHouseHttpOption#REMEMBER_LAST_SET_ROLES`                   | `Client#setDBRoles` | Ahora es una configuración en tiempo de ejecución. Consulte también `QuerySettings#setDBRoles` e `InsertSettings#setDBRoles` |
+    </Tab>
+
+    <Tab title="Descubrimiento de nodos & balanceo de carga">
+      | Configuración V1                                 | Método del builder V2 | Comentarios |
+      | ------------------------------------------------ | --------------------- | ----------- |
+      | `ClickHouseClientOption#AUTO_DISCOVERY`          | ✗                     |             |
+      | `ClickHouseClientOption#LOAD_BALANCING_POLICY`   | ✗                     |             |
+      | `ClickHouseClientOption#LOAD_BALANCING_TAGS`     | ✗                     |             |
+      | `ClickHouseClientOption#HEALTH_CHECK_INTERVAL`   | ✗                     |             |
+      | `ClickHouseClientOption#HEALTH_CHECK_METHOD`     | ✗                     |             |
+      | `ClickHouseClientOption#NODE_DISCOVERY_INTERVAL` | ✗                     |             |
+      | `ClickHouseClientOption#NODE_DISCOVERY_LIMIT`    | ✗                     |             |
+      | `ClickHouseClientOption#NODE_CHECK_INTERVAL`     | ✗                     |             |
+      | `ClickHouseClientOption#NODE_GROUP_SIZE`         | ✗                     |             |
+      | `ClickHouseClientOption#CHECK_ALL_NODES`         | ✗                     |             |
+    </Tab>
+
+    <Tab title="Miscelánea">
+      | Configuración V1                                                                 | Método Builder V2                 | Comentarios                                |
+      | -------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------ |
+      | `ClickHouseDefaults#AUTO_SESSION`                                                | ✗                                 | Se revisará la compatibilidad con sesiones |
+      | `ClickHouseDefaults#BUFFERING`                                                   | ✗                                 |                                            |
+      | `ClickHouseDefaults#MAX_REQUESTS`                                                | ✗                                 |                                            |
+      | `ClickHouseDefaults#ROUNDING_MODE`                                               |                                   |                                            |
+      | `ClickHouseDefaults#SERVER_VERSION`<br />`ClickHouseClientOption#SERVER_VERSION` | `Client.Builder#setServerVersion` |                                            |
+      | `ClickHouseDefaults#SRV_RESOLVE`                                                 | ✗                                 |                                            |
+      | `ClickHouseClientOption#CUSTOM_SETTINGS`                                         |                                   |                                            |
+      | `ClickHouseClientOption#PRODUCT_NAME`                                            | ✗                                 | Use el nombre del cliente                  |
+      | `ClickHouseClientOption#RENAME_RESPONSE_COLUMN`                                  | ✗                                 |                                            |
+      | `ClickHouseClientOption#SERVER_REVISION`                                         | ✗                                 |                                            |
+      | `ClickHouseClientOption#TRANSACTION_TIMEOUT`                                     | ✗                                 |                                            |
+      | `ClickHouseClientOption#WIDEN_UNSIGNED_TYPES`                                    | ✗                                 |                                            |
+      | `ClickHouseClientOption#USE_BINARY_STRING`                                       | ✗                                 |                                            |
+      | `ClickHouseClientOption#USE_BLOCKING_QUEUE`                                      | ✗                                 |                                            |
+      | `ClickHouseClientOption#USE_COMPILATION`                                         | ✗                                 |                                            |
+      | `ClickHouseClientOption#USE_OBJECTS_IN_ARRAYS`                                   | ✗                                 |                                            |
+      | `ClickHouseClientOption#MAX_MAPPER_CACHE`                                        | ✗                                 |                                            |
+      | `ClickHouseClientOption#MEASURE_REQUEST_TIME`                                    | ✗                                 |                                            |
+    </Tab>
+  </Tabs>
+
+  ### Diferencias generales
+
+  * Client V2 utiliza menos clases propietarias para aumentar la portabilidad. Por ejemplo, V2 funciona con cualquier implementación de `java.io.InputStream` para
+    escribir datos en un servidor.
+  * La configuración `async` de Client V2 está `off` de forma predeterminada. Esto significa que no hay hilos adicionales y que la aplicación tiene un mayor control sobre el cliente. Esta configuración debería estar `off` en la mayoría de los casos de uso. Al habilitar `async`, se creará un hilo independiente para cada solicitud. Solo tiene sentido cuando se usa un
+    executor controlado por la aplicación (consulte `com.clickhouse.client.api.Client.Builder#setSharedOperationExecutor`)
+
+  ### Escritura de datos
+
+  * usa cualquier implementación de `java.io.InputStream`. Se admite V1 `com.clickhouse.data.ClickHouseInputStream`, pero NO se recomienda.
+  * Una vez detectado el final del flujo de entrada, se actúa en consecuencia. Antes, debe cerrarse el flujo de salida de una solicitud.
+
+  **V1 Insertar datos con formato TSV.**
+
+  ```java
+  InputStream inData = getInData();
+  ClickHouseRequest.Mutation request = client.read(server)
+          .write()
+          .table(tableName)
+          .format(ClickHouseFormat.TSV);
+  ClickHouseConfig config = request.getConfig();
+  CompletableFuture<ClickHouseResponse> future;
+  try (ClickHousePipedOutputStream requestBody = ClickHouseDataStreamFactory.getInstance()
+          .createPipedOutputStream(config)) {
+      // start the worker thread which transfer data from the input into ClickHouse
+      future = request.data(requestBody.getInputStream()).execute();
+
+      // Copy data from inData stream to requestBody stream
+
+      // We need to close the stream before getting a response
+      requestBody.close();
+
+      try (ClickHouseResponse response = future.get()) {
+          ClickHouseResponseSummary summary = response.getSummary();
+          Assert.assertEquals(summary.getWrittenRows(), numRows, "Num of written rows");
+      }
+  }
+
+  ```
+
+  **V2 Insertar datos con formato TSV.**
+
+  ```java
+  InputStream inData = getInData();
+  InsertSettings settings = new InsertSettings().setInputStreamCopyBufferSize(8198 * 2); // set copy buffer size
+  try (InsertResponse response = client.insert(tableName, inData, ClickHouseFormat.TSV, settings).get(30, TimeUnit.SECONDS)) {
+
+    // Insert is complete at this point
+
+  } catch (Exception e) {
+   // Handle exception
+  }
+  ```
+
+  * solo hay que llamar a un único método. No es necesario crear un objeto de solicitud adicional.
+  * el flujo del cuerpo de la solicitud se cierra automáticamente cuando se copian todos los datos.
+  * hay una nueva API de bajo nivel disponible: `com.clickhouse.client.api.Client#insert(java.lang.String, java.util.List<java.lang.String>, com.clickhouse.client.api.DataStreamWriter, com.clickhouse.data.ClickHouseFormat, com.clickhouse.client.api.insert.InsertSettings)`. `com.clickhouse.client.api.DataStreamWriter` está diseñada para implementar lógica personalizada de escritura de datos. Por ejemplo, leer datos de una
+    cola.
+
+  ### Lectura de datos
+
+  * Los datos se leen en el formato `RowBinaryWithNamesAndTypes` de forma predeterminada. Actualmente, solo se admite este formato cuando se requiere el enlace de datos.
+  * Los datos pueden leerse como una colección de registros mediante el método `List<GenericRecord> com.clickhouse.client.api.Client#queryAll(java.lang.String)`. Este método lee los datos en memoria y libera la conexión. No requiere ninguna gestión adicional. `GenericRecord` proporciona acceso a los datos e implementa algunas conversiones.
+
+  ```java
+  Collection<GenericRecord> records = client.queryAll("SELECT * FROM table");
+  for (GenericRecord record : records) {
+      int rowId = record.getInteger("rowID");
+      String name = record.getString("name");
+      LocalDateTime ts = record.getLocalDateTime("ts");
+  }
+
+  ```
+</View>
+
+<View title="v0.7.x">
+  Biblioteca cliente de Java para comunicarse con un servidor de base de datos a través de sus protocolos. La implementación actual solo admite la [interfaz HTTP](/es/concepts/features/interfaces/http). La biblioteca ofrece su propia API para enviar solicitudes al servidor.
+
+  <Warning>
+    **Desuso**
+
+    Esta biblioteca quedará en desuso pronto. Use el [cliente de Java](/es/integrations/language-clients/java/client) más reciente para los nuevos proyectos
+  </Warning>
+
+  ## Configuración
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      <!-- https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client -->
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>clickhouse-http-client</artifactId>
+          <version>0.7.2</version>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client
+      implementation("com.clickhouse:clickhouse-http-client:0.7.2")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client
+      implementation 'com.clickhouse:clickhouse-http-client:0.7.2'
+      ```
+    </Tab>
+  </Tabs>
+
+  Desde la versión `0.5.0`, el driver utiliza una nueva biblioteca HTTP de cliente que debe agregarse como dependencia.
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      <!-- https://mvnrepository.com/artifact/org.apache.httpcomponents.client5/httpclient5 -->
+      <dependency>
+          <groupId>org.apache.httpcomponents.client5</groupId>
+          <artifactId>httpclient5</artifactId>
+          <version>5.3.1</version>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/org.apache.httpcomponents.client5/httpclient5
+      implementation("org.apache.httpcomponents.client5:httpclient5:5.3.1")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/org.apache.httpcomponents.client5/httpclient5
+      implementation 'org.apache.httpcomponents.client5:httpclient5:5.3.1'
+      ```
+    </Tab>
+  </Tabs>
+
+  ## Inicialización
+
+  Formato de URL de conexión: `protocol://host[:port][/database][?param[=value][&param[=value]][#tag[,tag]]`, por ejemplo:
+
+  * `http://localhost:8443?ssl=true&sslmode=NONE`
+  * `https://(https://explorer@play.clickhouse.com:443`
+
+  Conectarse a un único nodo:
+
+  ```java showLineNumbers
+  ClickHouseNode server = ClickHouseNode.of("http://localhost:8123/default?compress=0");
+  ```
+
+  Conectarse a un clúster con múltiples nodos:
+
+  ```java showLineNumbers
+  ClickHouseNodes servers = ClickHouseNodes.of(
+      "jdbc:ch:http://server1.domain,server2.domain,server3.domain/my_db"
+      + "?load_balancing_policy=random&health_check_interval=5000&failover=2");
+  ```
+
+  ## API de consulta
+
+  ```java showLineNumbers
+  try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+       ClickHouseResponse response = client.read(servers)
+          .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+          .query("select * from numbers limit :limit")
+          .params(1000)
+          .executeAndWait()) {
+              ClickHouseResponseSummary summary = response.getSummary();
+              long totalRows = summary.getTotalRowsToRead();
+  }
+  ```
+
+  ## API de consulta en streaming
+
+  ```java showLineNumbers
+  try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+       ClickHouseResponse response = client.read(servers)
+          .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+          .query("select * from numbers limit :limit")
+          .params(1000)
+          .executeAndWait()) {
+              for (ClickHouseRecord r : response.records()) {
+              int num = r.getValue(0).asInteger();
+              // conversión de tipos
+              String str = r.getValue(0).asString();
+              LocalDate date = r.getValue(0).asDate();
+          }
+  }
+  ```
+
+  Consulte el [ejemplo de código completo](https://github.com/ClickHouse/clickhouse-java/blob/main/examples/client/src/main/java/com/clickhouse/examples/jdbc/Main.java#L73) en el [repositorio](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client).
+
+  ## API de inserción
+
+  ```java showLineNumbers
+  try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+       ClickHouseResponse response = client.read(servers).write()
+          .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+          .query("insert into my_table select c2, c3 from input('c1 UInt8, c2 String, c3 Int32')")
+          .data(myInputStream) // `myInputStream` es la fuente de datos en formato RowBinary
+          .executeAndWait()) {
+              ClickHouseResponseSummary summary = response.getSummary();
+              summary.getWrittenRows();
+  }
+  ```
+
+  Consulte el [ejemplo de código completo](https://github.com/ClickHouse/clickhouse-java/blob/main/examples/client/src/main/java/com/clickhouse/examples/jdbc/Main.java#L39) en el [repositorio](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client).
+
+  **Codificación RowBinary**
+
+  El formato RowBinary se describe en su [página](/es/reference/formats/RowBinary/RowBinaryWithNamesAndTypes).
+
+  Hay un ejemplo de [código](https://github.com/ClickHouse/clickhouse-kafka-connect/blob/main/src/main/java/com/clickhouse/kafka/connect/sink/db/ClickHouseWriter.java#L622).
+
+  ## Características
+
+  ### Compresión
+
+  De forma predeterminada, el cliente usará compresión LZ4, lo que requiere esta dependencia:
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      <!-- https://mvnrepository.com/artifact/org.lz4/lz4-java -->
+      <dependency>
+          <groupId>org.lz4</groupId>
+          <artifactId>lz4-java</artifactId>
+          <version>1.8.0</version>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/org.lz4/lz4-java
+      implementation("org.lz4:lz4-java:1.8.0")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/org.lz4/lz4-java
+      implementation 'org.lz4:lz4-java:1.8.0'
+      ```
+    </Tab>
+  </Tabs>
+
+  También puede optar por usar gzip configurando `compress_algorithm=gzip` en la URL de conexión.
+
+  También puede deshabilitar la compresión de varias maneras.
+
+  1. Desactívalo estableciendo `compress=0` en la URL de conexión: `http://localhost:8123/default?compress=0`
+  2. Desactívelo en la configuración del cliente:
+
+  ```java showLineNumbers
+  ClickHouseClient client = ClickHouseClient.builder()
+     .config(new ClickHouseConfig(Map.of(ClickHouseClientOption.COMPRESS, false)))
+     .nodeSelector(ClickHouseNodeSelector.of(ClickHouseProtocol.HTTP))
+     .build();
+  ```
+
+  Consulte la [documentación de compresión](/es/guides/clickhouse/data-modelling/compression/compression-modes) para obtener más información sobre las distintas opciones de compresión.
+
+  ### Múltiples consultas
+
+  Ejecutar múltiples consultas en un hilo de trabajo una tras otra dentro de la misma sesión:
+
+  ```java showLineNumbers
+  CompletableFuture<List<ClickHouseResponseSummary>> future = ClickHouseClient.send(servers.apply(servers.getNodeSelector()),
+      "create database if not exists my_base",
+      "use my_base",
+      "create table if not exists test_table(s String) engine=Memory",
+      "insert into test_table values('1')('2')('3')",
+      "select * from test_table limit 1",
+      "truncate table test_table",
+      "drop table if exists test_table");
+  List<ClickHouseResponseSummary> results = future.get();
+  ```
+
+  ### Parámetros con nombre
+
+  Puede pasar parámetros por nombre en lugar de depender únicamente de su posición en la lista de parámetros. Esta capacidad está disponible mediante la función `params`.
+
+  ```java showLineNumbers
+  try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+       ClickHouseResponse response = client.read(servers)
+          .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+          .query("select * from my_table where name=:name limit :limit")
+          .params("Ben", 1000)
+          .executeAndWait()) {
+              //...
+          }
+  }
+  ```
+
+  <Info>
+    **Parámetros**
+
+    Todas las firmas de `params` que incluyen el tipo `String` (`String`, `String[]`, `Map<String, String>`) suponen que las claves que se pasan son cadenas válidas de ClickHouse SQL. Por ejemplo:
+
+    ```java showLineNumbers
+    try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+         ClickHouseResponse response = client.read(servers)
+            .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+            .query("select * from my_table where name=:name")
+            .params(Map.of("name","'Ben'"))
+            .executeAndWait()) {
+                //...
+            }
+    }
+    ```
+
+    Si prefieres no analizar manualmente objetos `String` para convertirlos a ClickHouse SQL, puedes usar la función auxiliar `ClickHouseValues.convertToSqlExpression` ubicada en `com.clickhouse.data`:
+
+    ```java showLineNumbers
+    try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+         ClickHouseResponse response = client.read(servers)
+            .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+            .query("select * from my_table where name=:name")
+            .params(Map.of("name", ClickHouseValues.convertToSqlExpression("Ben's")))
+            .executeAndWait()) {
+                //...
+            }
+    }
+    ```
+
+    En el ejemplo anterior, `ClickHouseValues.convertToSqlExpression` escapará la comilla simple interna y envolverá la variable entre comillas simples válidas.
+
+    Otros tipos, como `Integer`, `UUID`, `Array` y `Enum`, se convertirán automáticamente en `params`.
+  </Info>
+
+  ## Descubrimiento de nodos
+
+  El cliente Java permite detectar nodos de ClickHouse automáticamente. La detección automática está deshabilitada de forma predeterminada. Para habilitarla manualmente, establezca `auto_discovery` en `true`:
+
+  ```java
+  properties.setProperty("auto_discovery", "true");
+  ```
+
+  O en la URL de conexión:
+
+  ```plaintext
+  jdbc:ch://my-server/system?auto_discovery=true
+  ```
+
+  Si el descubrimiento automático está habilitado, no es necesario especificar todos los nodos de ClickHouse en la URL de conexión. Los nodos especificados en la URL se tratarán como seeds, y el Java client descubrirá automáticamente más nodos a partir de las system tables y/o clickhouse-keeper o ZooKeeper.
+
+  Las siguientes opciones controlan la configuración de detección automática:
+
+  | Propiedad                       | Predeterminado | Descripción                                                                                                              |
+  | ------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------ |
+  | auto&#95;discovery              | `false`        | Indica si el cliente debe descubrir más nodos a partir de las tablas del sistema y/o de clickhouse-keeper/zookeeper.     |
+  | node&#95;discovery&#95;interval | `0`            | Intervalo de descubrimiento de nodos en milisegundos; un valor cero o negativo significa descubrimiento de una sola vez. |
+  | node&#95;discovery&#95;limit    | `100`          | Número máximo de nodos que se pueden descubrir a la vez; un valor de cero o negativo significa que no hay límite.        |
+
+  ### Balanceo de carga
+
+  El cliente Java selecciona un nodo de ClickHouse al que enviar las solicitudes, de acuerdo con la política de balanceo de carga. En general, la política de balanceo de carga es responsable de lo siguiente:
+
+  1. Obtén un nodo de una lista de nodos gestionados.
+  2. Gestión del estado del nodo.
+  3. De forma opcional, programe un proceso en segundo plano para el descubrimiento de nodos (si el descubrimiento automático está habilitado) y ejecute una comprobación de estado.
+
+  A continuación se muestra una lista de opciones para configurar el balanceo de carga:
+
+  | Propiedad                     | Valor predeterminado                     | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+  | ----------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | load&#95;balancing&#95;policy | `""`                                     | La política de balanceo de carga puede ser una de las siguientes: <li>`firstAlive` - la solicitud se envía al primer nodo en buen estado de la lista de nodos administrados</li><li>`random` - la solicitud se envía a un nodo aleatorio de la lista de nodos administrados </li><li>`roundRobin` - la solicitud se envía a cada nodo de la lista de nodos administrados, por turnos.</li><li>nombre completo de la clase que implementa `ClickHouseLoadBalancingPolicy` - política de balanceo de carga personalizada</li>Si no se especifica, la solicitud se envía al primer nodo de la lista de nodos administrados |
+  | load&#95;balancing&#95;tags   | `""`                                     | Etiquetas de balanceo de carga para filtrar nodos. Las solicitudes se envían solo a los nodos que tienen las etiquetas especificadas                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+  | health&#95;check&#95;interval | `0`                                      | Intervalo de comprobación de estado en milisegundos; un valor cero o negativo significa una ejecución única.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+  | health&#95;check&#95;method   | `ClickHouseHealthCheckMethod.SELECT_ONE` | Método de comprobación de estado. Puede ser uno de los siguientes: <li>`ClickHouseHealthCheckMethod.SELECT_ONE` - comprobación mediante la consulta `select 1`</li> <li>`ClickHouseHealthCheckMethod.PING` - comprobación específica del protocolo, que suele ser más rápida</li>                                                                                                                                                                                                                                                                                                                                       |
+  | node&#95;check&#95;interval   | `0`                                      | Intervalo de comprobación de nodos en milisegundos; un número negativo se trata como cero. El estado del nodo se comprueba si ha transcurrido el tiempo especificado desde la última comprobación.<br />La diferencia entre `health_check_interval` y `node_check_interval` es que la opción `health_check_interval` programa la tarea en segundo plano que comprueba el estado de la lista de nodos (todos o solo los que tienen fallos), mientras que `node_check_interval` especifica el tiempo transcurrido desde la última comprobación de un nodo concreto                                                        |
+  | check&#95;all&#95;nodes       | `false`                                  | Si debe realizarse una comprobación de estado de todos los nodos o solo de los defectuosos.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+
+  ### Failover y reintento
+
+  El Java client ofrece opciones de configuración para definir el comportamiento de failover y retry ante queries fallidas:
+
+  | Propiedad                          | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                   |
+  | ---------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | failover                           | `0`            | Número máximo de veces que puede producirse una conmutación por error en una solicitud. Un valor de cero o negativo significa que no hay conmutación por error. La conmutación por error envía la solicitud fallida a un nodo distinto (según la política de equilibrio de carga) para recuperarse del error. |
+  | retry                              | `0`            | Número máximo de veces que se puede reintentar una solicitud. Cero o un valor negativo significa que no hay reintentos. El reintento envía una solicitud al mismo nodo, y solo si el servidor de ClickHouse devuelve el código de error `NETWORK_ERROR`                                                       |
+  | repeat&#95;on&#95;session&#95;lock | `true`         | Si se debe repetir la ejecución cuando la sesión esté bloqueada hasta que se agote el tiempo de espera (según `session_timeout` o `connect_timeout`). La solicitud fallida se repite si el servidor de ClickHouse devuelve el código de error `SESSION_IS_LOCKED`                                             |
+
+  ### Agregar encabezados HTTP personalizados
+
+  El cliente Java admite la capa de transporte HTTP/S para agregar encabezados HTTP personalizados a la solicitud.
+  Se debe utilizar la propiedad custom&#95;http&#95;headers; los encabezados deben separarse con `,`. El par clave/valor del encabezado debe dividirse con `=`
+
+  ## Compatibilidad con Java Client
+
+  ```java
+  options.put("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
+  ```
+
+  ## JDBC Driver
+
+  ```java
+  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
+  ```
+</View>

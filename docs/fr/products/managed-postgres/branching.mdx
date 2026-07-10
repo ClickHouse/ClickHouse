@@ -1,0 +1,122 @@
+---
+slug: /cloud/managed-postgres/branching
+sidebarTitle: 'Création de branches'
+title: 'Création de branches'
+description: 'Créez des branches de base de données isolées à partir d’instantanés pris à un instant précis pour les workflows de développement, de préproduction, de test et de reprise'
+keywords: ['managed postgres', 'création de branches', 'pitr', 'restauration à un instant précis', 'préproduction', 'développement', 'branche de base de données']
+doc_type: 'guide'
+---
+
+Managed Postgres prend en charge la création de branches de base de données isolées à l’aide de la restauration à un instant précis (PITR).
+
+Une branche est un déploiement PostgreSQL entièrement indépendant, créé à partir d’un instant précis d’une base de données existante. Les branches peuvent être utilisées pour le développement, la préproduction, les tests, le débogage, la validation des données ou les workflows de reprise, sans affecter la base de données source.
+
+Contrairement aux implémentations copy-on-write qui partagent le stockage avec la base de données principale, les branches Managed Postgres sont restaurées à partir de sauvegardes et fonctionnent comme des déploiements PostgreSQL indépendants.
+
+<div id="branching">
+  ## Fonctionnement de la création de branches
+</div>
+
+La création d’une branche s’appuie sur la même infrastructure de sauvegarde et de restauration que celle utilisée pour la [restauration à un instant précis](/fr/products/managed-postgres/backup-and-restore).
+
+Lorsque vous créez une branche, Managed Postgres restaure une sauvegarde de base depuis le stockage objet, rejoue les segments WAL nécessaires pour atteindre le point de récupération demandé, puis déploie une nouvelle instance PostgreSQL à partir de l’état restauré. Une fois la restauration terminée, la branche fonctionne indépendamment de la base de données source.
+
+La branche obtenue est une copie complète de la base de données source au moment sélectionné.
+
+<div id="common-use-cases">
+  ## Cas d’usage courants
+</div>
+
+<div id="dev-and-testing">
+  ### Développement et tests
+</div>
+
+Créez une branche à partir d’une base de données de production ou de préproduction afin de valider les modifications de l’application, les migrations ou les nouvelles fonctionnalités avec des données réalistes.
+
+<div id="staging-environments">
+  ### Environnements de préproduction
+</div>
+
+Maintenez un environnement de préproduction aussi proche que possible de la production, sans affecter les charges de travail en production.
+
+<div id="date-validation">
+  ### Validation des données
+</div>
+
+Testez les modifications de schéma, les stratégies d’indexation et les optimisations de requêtes avant de les déployer en production.
+
+<div id="recovery-and-investigation">
+  ### Récupération et investigation
+</div>
+
+Restaurez une base de données à un instant précis pour le dépannage, l’audit ou la validation du comportement de l’application.
+
+<div id="branch-sizing">
+  ## Dimensionnement des branches
+</div>
+
+Les branches sont des déploiements PostgreSQL indépendants et peuvent être dimensionnées séparément de la base de données source.
+
+Par exemple, un déploiement de production peut utiliser une configuration plus importante, tandis qu’une branche de développement ou de préproduction peut utiliser un profil de calcul plus modeste afin de réduire les coûts. Cela permet aux équipes de créer des environnements temporaires sans avoir à disposer des mêmes ressources de calcul qu’en production.
+
+<div id="branch-creation-time">
+  ## Délai de création d&#39;une branche
+</div>
+
+Comme Managed Postgres utilise un stockage PostgreSQL sur NVMe, les branches sont restaurées à partir de sauvegardes plutôt que créées via des mécanismes de copy-on-write au niveau du stockage. Par conséquent, la création d&#39;une branche n&#39;est pas instantanée.
+
+Le délai de création d&#39;une branche varie généralement de quelques minutes à plusieurs dizaines de minutes, selon :
+
+* Taille de la base de données
+* Taille de la sauvegarde
+* Point de récupération
+* Quantité de WAL à rejouer
+* Configuration globale du cluster
+
+Pour la plupart des déploiements, les branches sont disponibles en quelques minutes. Les bases de données plus volumineuses peuvent nécessiter plus de temps.
+
+Si le délai de création d&#39;une branche devient un goulot d&#39;étranglement dans votre flux de travail, contactez l&#39;équipe ClickHouse. Dans bien des cas, les performances de récupération de la branche peuvent être optimisées en fonction des caractéristiques de la charge de travail et des exigences de récupération.
+
+<div id="branches-v-local-dev">
+  ## Branches ou développement local
+</div>
+
+Une question fréquente est de savoir si chaque développeur doit utiliser une branche de production comme environnement de développement.
+
+Bien que les branches soient utiles pour les workflows de test, de validation et de préproduction, elles ne sont généralement pas l’approche recommandée pour le développement quotidien des applications. Chaque branche est un déploiement PostgreSQL distinct qui doit être restauré depuis des sauvegardes et maintenu de manière indépendante. La création d’un grand nombre de branches peut augmenter les coûts d’infrastructure et la complexité opérationnelle.
+
+Pour la plupart des organisations, nous recommandons :
+
+* D’utiliser les branches PostgreSQL pour les workflows de préproduction, de test, de débogage et de validation.
+* D’utiliser des environnements PostgreSQL locaux pour le développement au quotidien.
+* De générer des jeux de données de développement synthétiques ou d’utiliser, lorsque c’est pertinent, des jeux de données assainis.
+* D’éviter le développement courant directement sur des branches dérivées de la production.
+
+Cette approche réduit la charge sur les systèmes de production, accélère le développement et contribue à garantir que les données de production restent correctement protégées.
+
+Pour savoir comment créer des environnements de développement PostgreSQL locaux avec Docker, consultez [Environnements de développement locaux](/fr/products/managed-postgres/local-development).
+
+<div id="recommended-workflow">
+  ## Workflow recommandé
+</div>
+
+Un workflow courant se présente ainsi :
+
+```text
+Production Database
+        │
+        ├─────────────► Branch
+        │                  │
+        │                  ├── Staging
+        │                  ├── Validation
+        │                  ├── Migration Testing
+        │                  └── Incident Investigation
+        │
+        └─────────────► Local Development
+                               │
+                               ├── Docker PostgreSQL
+                               ├── Application Migrations
+                               └── Synthetic Test Data
+```
+
+Les branches sont particulièrement adaptées aux environnements qui nécessitent une copie de base de données proche de la production. Pour le développement courant, les environnements PostgreSQL locaux offrent généralement un workflow plus rapide, moins coûteux et plus facile à faire évoluer.

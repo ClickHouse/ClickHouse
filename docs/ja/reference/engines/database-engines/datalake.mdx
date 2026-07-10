@@ -1,0 +1,91 @@
+---
+description: 'DataLakeCatalog データベースエンジンを使用すると、ClickHouse を外部データカタログに接続し、オープンテーブル形式のデータをクエリできます'
+sidebarTitle: 'DataLakeCatalog'
+slug: /engines/database-engines/datalakecatalog
+title: 'DataLakeCatalog'
+doc_type: 'reference'
+---
+
+`DataLakeCatalog` データベースエンジンを使用すると、ClickHouse を外部
+データカタログに接続し、データを複製することなくオープンテーブル形式のデータを
+クエリできます。これにより、ClickHouse は既存の
+データレイクインフラストラクチャとシームレスに連携する強力なクエリエンジンとなります。
+
+<div id="supported-catalogs">
+  ## サポートされるカタログ
+</div>
+
+`DataLakeCatalog` エンジンは、以下のデータカタログに対応しています。
+
+* **AWS Glue カタログ** - AWS 環境内の Iceberg テーブル向け
+* **Databricks Unity Catalog** - Delta Lake および Iceberg テーブル向け
+* **Hive Metastore** - 従来の Hadoop エコシステムで使われるカタログ
+* **REST Catalogs** - Iceberg REST 仕様をサポートする任意のカタログ
+
+<div id="creating-a-database">
+  ## データベースの作成
+</div>
+
+`DataLakeCatalog` エンジンを使用するには、以下の関連設定を有効にする必要があります。
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_database_unity_catalog = 1;
+SET allow_experimental_database_glue_catalog = 1;
+SET allow_experimental_database_hms_catalog = 1;
+SET allow_experimental_database_paimon_rest_catalog = 1;
+```
+
+`DataLakeCatalog` エンジンを使用するデータベースは、次の構文で作成できます。
+
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog(catalog_endpoint[, user, password])
+SETTINGS
+catalog_type,
+[...]
+```
+
+以下の設定をサポートしています:
+
+| 設定                      | 説明                                                                               |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `catalog_type`          | カタログのタイプ: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg) |
+| `warehouse`             | カタログで使用する warehouse/データベース名。                                                     |
+| `catalog_credential`    | カタログの認証情報 (例: API key またはトークン)                                                   |
+| `auth_header`           | カタログサービスで認証を行うためのカスタム HTTP header                                                |
+| `auth_scope`            | 認証用の OAuth2 スコープ (OAuth を使用する場合)                                                 |
+| `storage_endpoint`      | 基盤となるストレージのエンドポイント URL                                                           |
+| `oauth_server_uri`      | 認証用 OAuth2 認可サーバーの URI                                                           |
+| `vended_credentials`    | カタログから提供される認証情報を使用するかどうかを示すブール値 (AWS S3 および Azure ADLS Gen2 をサポート)               |
+| `aws_access_key_id`     | S3/Glue へのアクセスに使用する AWS access key ID (提供された認証情報を使用しない場合)                        |
+| `aws_secret_access_key` | S3/Glue へのアクセスに使用する AWS secret access key (提供された認証情報を使用しない場合)                    |
+| `region`                | サービスの AWS リージョン (例: `us-east-1`)                                                 |
+| `dlf_access_key_id`     | DLF へのアクセスに使用する access key ID                                                    |
+| `dlf_access_key_secret` | DLF へのアクセスに使用する access key secret                                                |
+
+<div id="examples">
+  ## 例
+</div>
+
+`DataLakeCatalog` エンジン の使用例については、以下のセクションを参照してください。
+
+* [Unity Catalog](/ja/guides/use-cases/data-warehousing/unity-catalog)
+* [Glue カタログ](/ja/guides/use-cases/data-warehousing/glue-catalog)
+* OneLake Catalog
+  `allow_experimental_database_iceberg` または `allow_database_iceberg` を有効にすると使用できます。
+
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog(catalog_endpoint)
+SETTINGS
+    catalog_type = 'onelake',
+    warehouse = warehouse,
+    onelake_tenant_id = tenant_id,
+    oauth_server_uri = server_uri,
+    auth_scope = auth_scope,
+    onelake_client_id = client_id,
+    onelake_client_secret = client_secret;
+SHOW TABLES IN database_name;
+SELECT count() from database_name.table_name;
+```

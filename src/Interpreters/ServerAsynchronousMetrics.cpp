@@ -19,6 +19,8 @@
 #include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TCPSocketMemInfo.h>
+#include <Common/UDFProcessRegistry.h>
+#include <Common/setThreadName.h>
 
 
 #include "config.h"
@@ -34,6 +36,12 @@
 #endif
 
 #include <Coordination/KeeperAsynchronousMetrics.h>
+
+#if defined(OS_DARWIN)
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
+#include <mach/vm_statistics.h>
+#endif
 
 #if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
 namespace HistogramMetrics
@@ -155,10 +163,34 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     bool update_jemalloc_epoch_,
     bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, global_context_)
+    , AsynchronousMetrics(
+        update_period_seconds,
+        protocol_server_metrics_func_,
+        update_jemalloc_epoch_,
+        update_rss_,
+        global_context_)
     , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
+#if defined(OS_LINUX)
+    /// Only open `/proc/self/smaps` when heavy metrics are enabled. The
+    /// `MemoryThreadStacks*` values are emitted from the heavy-metrics
+    /// path, so without it the fd is unused and the failure-to-open
+    /// warning would be noise on default servers in restricted containers.
+    if (update_heavy_metrics)
+    {
+        try
+        {
+            vm_smaps.emplace("/proc/self/smaps");
+        }
+        catch (...)
+        {
+            /// /proc/self/smaps may not be accessible (sandbox, restricted container, etc.).
+            /// The thread-stack metrics will simply not be published in that case.
+            LOG_WARNING(log, "MemoryThreadStacks* metrics are disabled: failed to access /proc/self/smaps. {}", getCurrentExceptionMessage(/*with_stacktrace=*/ true));
+        }
+    }
+#endif
 }
 
 ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
@@ -192,10 +224,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of
     /// requested bytes, as a ratio of two ProfileEvents' deltas over the interval (idle -> 0).
     {
-        const UInt64 cost_us = static_cast<UInt64>(
-            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds].load(std::memory_order_relaxed));
-        const UInt64 req_bytes = static_cast<UInt64>(
-            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes].load(std::memory_order_relaxed));
+        const UInt64 cost_us = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds]);
+        const UInt64 req_bytes = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes]);
         if (!first_run)
         {
             const UInt64 d_cost = cost_us - prev_reader_executor_cost_us;
@@ -222,6 +252,25 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
         "The server uptime in seconds. It includes the time spent for server initialization before accepting connections." };
+
+#if defined(OS_LINUX)
+    try
+    {
+        const auto udf_processes_sample = UDFProcessRegistry::instance().sample();
+        new_values["ExecutableUserDefinedFunctionMemoryResidentBytes"] = { udf_processes_sample.memory_resident_bytes,
+            "Sum of the resident set size (VmRSS) over all live processes of executable and executable_pool user-defined"
+            " functions and their descendant processes, in bytes. Idle executable_pool workers are included."
+            " Shared pages are counted once per process, so the sum is an upper bound that can exceed the unique"
+            " physical memory footprint of the UDF processes." };
+        new_values["ExecutableUserDefinedFunctionProcesses"] = { udf_processes_sample.process_count,
+            "Number of live processes spawned for executable and executable_pool user-defined functions,"
+            " including their descendant processes." };
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+#endif
 
     if (const auto stats = getHashTablesCacheStatistics())
     {
@@ -324,7 +373,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -510,7 +559,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        const auto user_info = getContext()->getProcessList().getUserInfo(true);
+        const auto user_info = getContext()->getProcessList().getUserInfo(false);
         size_t queries_memory_usage = 0;
         size_t queries_peak_memory_usage = 0;
         for (const auto & [user, info] : user_info)
@@ -565,7 +614,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (db.second->isExternal())
             continue;
@@ -619,6 +668,235 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     mutation_stats = current_mutation_stats;
 }
 
+void ServerAsynchronousMetrics::updateThreadStackStats()
+{
+#if defined(OS_LINUX)
+    if (!vm_smaps)
+        return;
+
+    if (isThreadStackVMANamingUnsupported())
+    {
+        /// Pre-5.17 kernel: `prctl(PR_SET_VMA_ANON_NAME)` returned EINVAL, so
+        /// no smaps entry will ever carry the tag. Surface it once in
+        /// `system.warnings` and the server log (we only get here when the
+        /// user opted into heavy metrics).
+        constexpr const char * msg
+            = "MemoryThreadStacks* async metrics require Linux 5.17 or newer "
+              "(PR_SET_VMA_ANON_NAME). Detected an older kernel; the metrics will not populate.";
+        getContext()->addOrUpdateWarningMessage(
+            Context::WarningType::MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE,
+            PreformattedMessage::create(msg));
+        static std::atomic<bool> logged{false};
+        bool expected = false;
+        if (logged.compare_exchange_strong(expected, true))
+            LOG_WARNING(log, "{}", msg);
+        return;
+    }
+
+    try
+    {
+        /// Walk /proc/self/smaps and sum `Size:` / `Rss:` of every VMA whose
+        /// header line ends with `[anon:clickhouse_stack]` — the tag added by
+        /// `setThreadName` via `prctl(PR_SET_VMA_ANON_NAME)` on Linux 5.17+.
+        /// On older kernels the tag is absent and the metric reports zero
+        /// stacks; setThreadName emits a one-shot warning in that case.
+        ///
+        /// The parse is allocation-free: we walk the ReadBuffer's internal
+        /// buffer byte-by-byte and accumulate the current line into a small
+        /// stack buffer, never growing the heap.
+        ///
+        /// Format of /proc/PID/smaps is set by the kernel in
+        /// fs/proc/task_mmu.c (functions `show_vma_header_prefix`,
+        /// `show_smap`, `__show_smap`):
+        ///   - The VMA header line begins with `<start>-<end>` written by
+        ///     `seq_put_hex_ll(...)` — lowercase hex, '-' separator.
+        ///   - When a VMA has an anonymous name set via PR_SET_VMA_ANON_NAME,
+        ///     the kernel appends `[anon:<name>]` to that same header line.
+        ///   - Detail lines are written by `SEQ_PUT_DEC(str, val)` which is
+        ///     `seq_put_decimal_ull_width(m, str, val >> 10, 8)`, so every
+        ///     `Size:` / `Rss:` / `Pss:` / etc. value is an integer kB
+        ///     right-aligned in width 8, followed by " kB\n".
+
+        vm_smaps->rewind();
+
+        UInt64 stack_rss_kb = 0;
+        UInt64 stack_size_kb = 0;
+        UInt64 stack_count = 0;
+        bool current_is_stack = false;
+
+        constexpr size_t line_buf_size = 1024;
+        char line_buf[line_buf_size];
+        size_t line_len = 0;
+
+        const std::string_view stack_tag = THREAD_STACK_VMA_NAME;
+        const std::string_view needle_prefix = "[anon:";
+
+        auto process_line = [&](const char * data, size_t len)
+        {
+            if (len == 0)
+                return;
+            char first = data[0];
+            bool is_header = ((first >= '0' && first <= '9') || (first >= 'a' && first <= 'f'));
+            if (is_header)
+            {
+                /// Look for `[anon:<stack_tag>]` at the end of the line.
+                std::string_view header{data, len};
+                bool tagged = false;
+                if (header.size() > needle_prefix.size() + stack_tag.size() + 1)
+                {
+                    auto pos = header.rfind('[');
+                    if (pos != std::string_view::npos
+                        && header.compare(pos, needle_prefix.size(), needle_prefix) == 0
+                        && header.compare(pos + needle_prefix.size(), stack_tag.size(), stack_tag) == 0
+                        && pos + needle_prefix.size() + stack_tag.size() < header.size()
+                        && header[pos + needle_prefix.size() + stack_tag.size()] == ']')
+                    {
+                        tagged = true;
+                    }
+                }
+                current_is_stack = tagged;
+                if (current_is_stack)
+                    ++stack_count;
+            }
+            else if (current_is_stack)
+            {
+                UInt64 * dest = nullptr;
+                size_t value_offset = 0;
+                if (len >= 4 && data[0] == 'R' && data[1] == 's' && data[2] == 's' && data[3] == ':')
+                {
+                    dest = &stack_rss_kb;
+                    value_offset = 4;
+                }
+                else if (len >= 5 && data[0] == 'S' && data[1] == 'i' && data[2] == 'z' && data[3] == 'e' && data[4] == ':')
+                {
+                    dest = &stack_size_kb;
+                    value_offset = 5;
+                }
+                if (dest)
+                {
+                    while (value_offset < len && data[value_offset] == ' ')
+                        ++value_offset;
+                    UInt64 value = 0;
+                    while (value_offset < len && data[value_offset] >= '0' && data[value_offset] <= '9')
+                    {
+                        value = value * 10 + static_cast<UInt64>(data[value_offset] - '0');
+                        ++value_offset;
+                    }
+                    *dest += value;
+                }
+            }
+        };
+
+        while (!vm_smaps->eof())
+        {
+            char c = *vm_smaps->position();
+            ++vm_smaps->position();
+            if (c == '\n')
+            {
+                process_line(line_buf, line_len);
+                line_len = 0;
+            }
+            else if (line_len < line_buf_size)
+            {
+                line_buf[line_len++] = c;
+            }
+            /// Lines longer than line_buf_size get truncated. We only need
+            /// the first few bytes for either the header start address or
+            /// the metric key + value, so truncation is harmless for smaps.
+        }
+        if (line_len > 0)
+            process_line(line_buf, line_len);
+
+        /// stack_rss_kb and stack_size_kb are in integer kB (the kernel's
+        /// unit in /proc/self/smaps); multiply by 1024 to expose bytes.
+        thread_stack_stats.count = stack_count;
+        thread_stack_stats.resident_bytes = stack_rss_kb * 1024;
+        thread_stack_stats.virtual_bytes = stack_size_kb * 1024;
+        thread_stack_stats.available = true;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        try
+        {
+            vm_smaps.emplace("/proc/self/smaps");
+        }
+        catch (...)
+        {
+            vm_smaps.reset();
+            LOG_WARNING(log, "MemoryThreadStacks* metrics are disabled: failed to access /proc/self/smaps. {}", getCurrentExceptionMessage(/*with_stacktrace=*/ true));
+        }
+    }
+#elif defined(OS_DARWIN)
+    /// Darwin: every pthread stack VMA is tagged with `VM_MEMORY_STACK` by
+    /// libpthread at allocation time, so there is no userspace registry and no
+    /// equivalent of `prctl(PR_SET_VMA_ANON_NAME)` to set up. Walk the task's
+    /// VM map with `mach_vm_region_recurse` and sum the matching regions.
+    ///
+    /// The kernel tags both the writable stack region and its inaccessible
+    /// guard region with `VM_MEMORY_STACK` (this is what `vmmap` prints as
+    /// `Stack` and `STACK GUARD` respectively). The guard region is
+    /// `VM_PROT_NONE` and, for the main thread, spans tens of MiB, so it must
+    /// be excluded or the virtual size and stack count are wildly inflated.
+    /// Filtering on a non-`VM_PROT_NONE` protection keeps only the real stacks,
+    /// matching `vmmap`'s `Stack` totals exactly.
+    ///
+    /// `mach_vm_region_recurse` is not a flat iterator: an entry can be a
+    /// submap (e.g. the shared region) whose real object entries live one
+    /// level deeper, and `pages_resident`/`user_tag` are only meaningful for
+    /// leaf object entries. `depth` is in/out -- the kernel descends up to
+    /// `depth` levels and reports the depth it reached. So we descend into any
+    /// submap (without advancing `addr`) and only accumulate leaf entries,
+    /// rather than assuming pthread stacks are never nested.
+    mach_vm_address_t addr = 0;
+    natural_t depth = 0;
+    UInt64 stack_count = 0;
+    UInt64 stack_size_bytes = 0;
+    UInt64 stack_rss_bytes = 0;
+
+    while (true)
+    {
+        mach_vm_size_t size = 0;
+        vm_region_submap_info_data_64_t info;
+        mach_msg_type_number_t info_count = VM_REGION_SUBMAP_INFO_COUNT_64;
+
+        kern_return_t kr = mach_vm_region_recurse(
+            mach_task_self(),
+            &addr,
+            &size,
+            &depth,
+            reinterpret_cast<vm_region_recurse_info_t>(&info),
+            &info_count);
+
+        if (kr != KERN_SUCCESS)
+            break; /// KERN_INVALID_ADDRESS once we walk past the last region.
+
+        if (info.is_submap)
+        {
+            /// Descend into the submap on the next call; do not advance `addr`
+            /// and never accumulate a submap aggregate (its `pages_resident`
+            /// is not a valid RSS sample).
+            ++depth;
+            continue;
+        }
+
+        if (info.user_tag == VM_MEMORY_STACK && info.protection != VM_PROT_NONE)
+        {
+            ++stack_count;
+            stack_size_bytes += size;
+            stack_rss_bytes += static_cast<UInt64>(info.pages_resident) * vm_page_size;
+        }
+
+        addr += size; /// Advance past this leaf region.
+    }
+
+    thread_stack_stats.count = stack_count;
+    thread_stack_stats.resident_bytes = stack_rss_bytes;
+    thread_stack_stats.virtual_bytes = stack_size_bytes;
+    thread_stack_stats.available = true;
+#endif
+}
+
 void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
 {
     const auto time_since_previous_update = current_time - heavy_metric_previous_update_time;
@@ -635,6 +913,13 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
         updateMutationAndDetachedPartsStats();
+
+        /// /proc/self/smaps is gated here because it forces the kernel to
+        /// walk page tables for every VMA of the process. The result is
+        /// cached in `thread_stack_stats`; the metric values themselves
+        /// are emitted unconditionally below so they remain present on
+        /// every scrape.
+        updateThreadStackStats();
 
         watch.stop();
 
@@ -682,6 +967,56 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };
     new_values["NumberOfPendingMutations"] = { mutation_stats.pending_mutations, "The total number of mutations that are in left to be mutated." };
     new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// Re-emit cached thread-stack stats on every scrape so the metrics stay
+    /// present between heavy-cadence refreshes. They are emitted only after a
+    /// successful sample; in environments where the source cannot be read, or
+    /// on Linux kernels older than 5.17 that do not support
+    /// `PR_SET_VMA_ANON_NAME`, the metrics stay absent rather than reporting a
+    /// fake zero. On Linux, `updateThreadStackStats` surfaces the kernel
+    /// limitation via `system.warnings` and a one-shot log line.
+    if (thread_stack_stats.available)
+    {
+#if defined(OS_LINUX)
+        new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
+            "Approximate resident set size of pthread stacks, summed from `Rss:`"
+            " of /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]` via"
+            " `prctl(PR_SET_VMA_ANON_NAME)`. Refreshed on the heavy-metrics"
+            " cadence. Requires Linux 5.17 or newer; absent on older kernels"
+            " (see the `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
+            " `system.warnings`)." };
+        new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
+            "Approximate virtual size of pthread stacks, summed from `Size:` of"
+            " /proc/self/smaps VMAs tagged with `[anon:clickhouse_stack]`."
+            " Refreshed on the heavy-metrics cadence. Requires Linux 5.17 or"
+            " newer; absent on older kernels (see the"
+            " `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
+            " `system.warnings`)." };
+        new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
+            "Number of pthread stack VMAs tagged with `[anon:clickhouse_stack]`"
+            " in /proc/self/smaps. Refreshed on the heavy-metrics cadence."
+            " Requires Linux 5.17 or newer; absent on older kernels (see the"
+            " `MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE` entry in"
+            " `system.warnings`)." };
+#elif defined(OS_DARWIN)
+        new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
+            "Approximate resident set size of pthread stacks, summed from the"
+            " resident pages of the task's VM regions tagged `VM_MEMORY_STACK`"
+            " (excluding the inaccessible guard regions). Refreshed on the"
+            " heavy-metrics cadence." };
+        new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
+            "Approximate virtual size of pthread stacks, summed from the sizes"
+            " of the task's VM regions tagged `VM_MEMORY_STACK` (excluding the"
+            " inaccessible guard regions). Refreshed on the heavy-metrics"
+            " cadence." };
+        new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
+            "Number of the task's VM regions tagged `VM_MEMORY_STACK`"
+            " (excluding the inaccessible guard regions). Refreshed on the"
+            " heavy-metrics cadence." };
+#endif
+    }
+#endif
 }
 
 }

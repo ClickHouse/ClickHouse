@@ -24,11 +24,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace ServerSetting
-{
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
-}
-
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsSeconds zookeeper_session_expiration_check_period;
@@ -181,11 +176,9 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.mutations_finalizing_task->activateAndSchedule();
     storage.merge_selecting_task->activateAndSchedule();
     storage.cleanup_thread.start();
-    storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
 
-    if (storage.getContext()->getServerSettings()[ServerSetting::insert_deduplication_version].value != InsertDeduplicationVersions::OLD_SEPARATE_HASHES)
-        storage.deduplication_hashes_cache.start();
+    storage.deduplication_hashes_cache.start();
 
     LOG_DEBUG(log, "Table started successfully");
     return true;
@@ -226,7 +219,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         const bool replica_metadata_version_exists = replica_metadata_version != -1;
         if (replica_metadata_version_exists)
         {
-            storage.setInMemoryMetadata(storage.getInMemoryMetadataPtr(storage.getContext(), false)->withMetadataVersion(replica_metadata_version));
+            auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+            storage.setInMemoryMetadata(storage_metadata_snapshot->withMetadataVersion(replica_metadata_version));
         }
         else
         {

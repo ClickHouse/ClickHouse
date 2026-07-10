@@ -21,6 +21,7 @@ public:
     bool pollImpl(Poco::Timespan & timeout, int mode) override;
     int sendBytes(const void * buffer, int length, int flags) override;
     int receiveBytes(void * buffer, int length, int flags) override;
+    void setBlocking(bool flag) override;
     bool supportsExternalPolling() const override { return false; }
 };
 

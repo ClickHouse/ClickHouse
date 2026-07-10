@@ -1,0 +1,128 @@
+---
+title: 让我们用 SQL 计算 pi
+description: 今天是圆周率日！让我们用 ClickHouse SQL 来计算 pi
+date: 2023-03-14
+tags: ['用例']
+keywords: ['计算 Pi', 'SQL']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="its-pi-day-lets-calculate-pi-using-sql">
+  ## 今天是圆周率日！让我们用 SQL 来计算圆周率吧
+</div>
+
+圆周率日快乐！我们想着用 ClickHouse 的 SQL 查询来计算圆周率应该挺有意思的，以下是我们目前的一些成果……
+
+1. 这个示例使用 ClickHouse 的 `numbers_mt` 表函数返回 10 亿行，完成运算仅需 40ms：
+
+```sql
+SELECT 4 * sum(if(number % 2, -1, 1) / ((number * 2) + 1)) AS pi
+FROM numbers_mt(1000000000.)
+
+┌────────────────pi─┐
+│ 3.141592652589797 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.432 sec. Processed 1.00 billion rows, 8.00 GB (2.32 billion rows/s., 18.53 GB/s.)
+```
+
+2. 下面这个示例同样会处理 10 亿个数字，只是速度稍慢一些：
+
+```sql
+SELECT 3 + (4 * sum(if((number % 2) = 0, if((number % 4) = 0, -1 / ((number * (number + 1)) * (number + 2)), 1 / ((number * (number + 1)) * (number + 2))), 0))) AS pi
+FROM numbers_mt(2, 10000000000)
+
+┌─────────────────pi─┐
+│ 3.1415926525808087 │
+└────────────────────┘
+
+1 row in set. Elapsed: 9.825 sec. Processed 10.00 billion rows, 80.00 GB (1.02 billion rows/s., 8.14 GB/s.)
+```
+
+3. 显然，这是我们在 ClickHouse 里最喜欢的一种方法 (而且也是最精确的！) ：
+
+```sql
+SELECT pi()
+
+┌──────────────pi()─┐
+│ 3.141592653589793 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.008 sec.
+```
+
+4. 这题一看就是懂三角函数的人写的：
+
+```sql
+SELECT 2 * asin(1) AS pi
+
+┌────────────────pi─┐
+│ 3.141592653589793 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+5. 这里有一个很实用的 API，可让你指定想要的位数：
+
+```sql
+SELECT *
+FROM url('https://api.pi.delivery/v1/pi?start=0&numberOfDigits=100', 'JSONEachRow')
+
+┌───────────────content─┐
+│ 3.1415926535897933e99 │
+└───────────────────────┘
+
+1 row in set. Elapsed: 0.556 sec.
+```
+
+6. 这个思路很巧妙  - 它用到了 ClickHouse 的距离函数：
+
+```sql
+WITH random_points AS
+    (
+        SELECT (rand64(1) / pow(2, 64), rand64(2) / pow(2, 64)) AS point
+        FROM numbers(1000000000)
+    )
+SELECT (4 * countIf(L2Norm(point) < 1)) / count() AS pi
+FROM random_points
+
+┌──────────pi─┐
+│ 3.141627208 │
+└─────────────┘
+
+1 row in set. Elapsed: 4.742 sec. Processed 1.00 billion rows, 8.00 GB (210.88 million rows/s., 1.69 GB/s.)
+```
+
+7. 如果你是物理学家，你一定会喜欢这个：
+
+```sql
+SELECT 22 / 7
+
+┌─────divide(22, 7)─┐
+│ 3.142857142857143 │
+└───────────────────┘
+```
+
+8. 另一种间接方法 (由 Alexey Milovidov 提出) 可精确到小数点后 7 位，而且速度很快：
+
+```sql
+WITH
+    10 AS length,
+    (number / 1000000000.) * length AS x
+SELECT pow((2 * length) * avg(exp(-(x * x))), 2) AS pi
+FROM numbers_mt(1000000000.)
+
+┌─────────────────pi─┐
+│ 3.1415926890388595 │
+└────────────────────┘
+
+1 row in set. Elapsed: 1.245 sec. Processed 1.00 billion rows, 8.00 GB (803.25 million rows/s., 6.43 GB/s.)
+```
+
+<Note>
+  如果你还有更多内容，欢迎补充贡献。谢谢！
+</Note>

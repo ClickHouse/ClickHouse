@@ -1,0 +1,109 @@
+---
+title: Corriger l’erreur de vérification du développeur dans macOS
+description: Découvrez comment corriger l’erreur de vérification du développeur dans MacOS lors de l’exécution de commandes ClickHouse, via les Réglages Système ou le terminal.
+date: 2024-01-09
+tags: ['Erreurs et exceptions']
+keywords: ['Vérification du développeur', 'MacOS']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* tronqué */}
+
+***
+
+<div id="fix-the-developer-verification-error-in-macos">
+  ## Corriger l’erreur de vérification du développeur dans MacOS
+</div>
+
+Si vous installez ClickHouse avec `brew`, vous pouvez rencontrer une erreur de MacOS.
+Par défaut, MacOS n’exécute pas les applications ou les outils créés par un développeur dont l’identité ne peut pas être vérifiée.
+
+Lorsque vous essayez d’exécuter une commande `clickhouse`, cette erreur peut s’afficher :
+
+<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="Boîte de dialogue d’erreur de vérification du développeur sur MacOS" border />
+
+Pour contourner cette erreur de vérification, vous devez retirer l’application de la quarantaine de MacOS, soit en trouvant le réglage approprié dans la fenêtre Réglages Système, soit en utilisant le terminal, soit en réinstallant ClickHouse.
+
+<div id="system-settings-process">
+  ## Procédure via les réglages système
+</div>
+
+Le moyen le plus simple de retirer l’exécutable `clickhouse` de la quarantaine est le suivant :
+
+1. Ouvrez **Réglages Système**.
+
+2. Accédez à **Confidentialité et sécurité** :
+
+   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="Vue par défaut des réglages MacOS Confidentialité et sécurité" border />
+
+3. Faites défiler jusqu’en bas de la fenêtre pour trouver un message indiquant que *« clickhouse-macos-aarch64 »* a été bloqué, car il ne provient pas d’un développeur identifié.
+
+4. Cliquez sur **Autoriser quand même**.
+
+   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="Réglages MacOS Confidentialité et sécurité affichant le bouton Autoriser quand même" border />
+
+5. Saisissez le mot de passe de votre compte MacOS.
+
+Vous devriez maintenant pouvoir exécuter les commandes `clickhouse` dans votre terminal.
+
+<div id="terminal-process">
+  ## Processus dans le terminal
+</div>
+
+Parfois, cliquer sur le bouton `Autoriser quand même` ne suffit pas à résoudre ce problème. Dans ce cas, vous pouvez également effectuer cette procédure en ligne de commande.
+Ou peut-être préférez-vous simplement utiliser la ligne de commande !
+
+Commencez par repérer où Homebrew a installé l’exécutable `clickhouse` :
+
+```shell
+which clickhouse
+```
+
+Cela devrait afficher quelque chose comme :
+
+```shell
+/opt/homebrew/bin/clickhouse
+```
+
+Supprimez `clickhouse` de la zone de quarantaine en exécutant `xattr -d com.apple.quarantine`, puis en ajoutant le chemin renvoyé par la commande précédente :
+
+```shell
+xattr -d com.apple.quarantine /opt/homebrew/bin/clickhouse
+```
+
+Vous devriez maintenant pouvoir lancer l’exécutable `clickhouse` :
+
+```shell
+clickhouse
+```
+
+Cela devrait afficher quelque chose comme :
+
+```shell
+Use one of the following commands:
+clickhouse local [args]
+clickhouse client [args]
+clickhouse benchmark [args]
+...
+```
+
+<div id="fix-the-issue-by-reinstalling-clickhouse">
+  ## Résolvez le problème en réinstallant ClickHouse
+</div>
+
+Brew propose une option en ligne de commande qui évite, dès le départ, de mettre en quarantaine les binaires installés.
+
+Commencez par désinstaller ClickHouse :
+
+```shell
+brew uninstall clickhouse
+```
+
+Réinstallez ensuite ClickHouse avec `--no-quarantine` :
+
+```shell
+brew install --no-quarantine clickhouse
+```

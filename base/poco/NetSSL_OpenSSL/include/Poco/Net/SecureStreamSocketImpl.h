@@ -237,6 +237,9 @@ namespace Net
         /// Has no effect once the SSL handshake has been initiated (i.e. once
         /// any I/O has happened). If never called, `BIO_s_socket()` is used.
 
+        void setMutex(std::unique_ptr<SecureSocketImpl::RecursiveMutex> mutex);
+        /// Replace the lock guarding SSL operations on the underlying impl.
+
 
     protected:
         void acceptSSL();

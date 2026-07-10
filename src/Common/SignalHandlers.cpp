@@ -6,6 +6,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/FramePointers.h>
 #include <Common/ErrnoException.h>
+#include <Common/setThreadName.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
 #include <base/sleep.h>
@@ -222,6 +223,45 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
 
 #if defined(SANITIZER)
 extern "C" void __sanitizer_set_death_callback(void (*)());
+extern "C" void __sanitizer_on_print(const char * str);
+
+/// Captures sanitizer runtime output into a preallocated global buffer,
+/// so that the core dump analyzer can read it.
+extern "C"
+{
+char sanitizer_report[1 << 20];
+unsigned long sanitizer_report_size = 0;
+}
+
+static char sanitizer_report_lock;
+
+static DISABLE_SANITIZER_INSTRUMENTATION void appendToSanitizerReport(const char * str)
+{
+    unsigned long i = sanitizer_report_size;
+    while (*str != '\0' && i < sizeof(sanitizer_report) - 1)
+        sanitizer_report[i++] = *str++;
+    sanitizer_report_size = i;
+}
+
+extern "C" DISABLE_SANITIZER_INSTRUMENTATION void __sanitizer_on_print(const char * str)
+{
+    /// Writing to sanitizer_report_size by previous thread must happen-before reading from sanitizer_report_size by this thread.
+    /// Hence, we need acquire-release.
+    while (__atomic_test_and_set(&sanitizer_report_lock, __ATOMIC_ACQUIRE))
+        ;
+
+    /// The preamble makes the buffer discoverable by scanning the core dump.
+    /// It is assembled from parts so its only full copy is in this buffer.
+    if (sanitizer_report_size == 0)
+    {
+        appendToSanitizerReport("CLICKHOUSE");
+        appendToSanitizerReport(" SANITIZER");
+        appendToSanitizerReport(" REPORT\n");
+    }
+    appendToSanitizerReport(str);
+
+    __atomic_clear(&sanitizer_report_lock, __ATOMIC_RELEASE);
+}
 
 /// You should be very careful on which functions is called from the death callback, in some cases sanitizers will deadlock.
 /// So let's disable instrumentation to avoid possible issues, but note:
@@ -300,6 +340,8 @@ SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRe
 
 void SignalListener::run()
 {
+    setThreadName(ThreadName::SIGNAL_LISTENER);
+
     if (daemon)
     {
         build_id = [this]{ return daemon->build_id; };

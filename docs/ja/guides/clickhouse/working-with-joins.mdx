@@ -1,0 +1,460 @@
+---
+title: 'ClickHouseでJOINを使う'
+description: 'ClickHouseでJOINを使う方法の入門ガイド'
+keywords: ['JOINs', 'SQL', 'INNER JOIN', 'OUTER JOIN', 'CROSS JOIN', 'SEMI JOIN', 'ANTI JOIN', 'ANY JOIN', 'ASOF JOIN']
+sidebarTitle: 'ClickHouseでJOINを使う'
+slug: /guides/working-with-joins
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse は標準的な SQL JOIN を完全にサポートしており、効率的なデータ分析を可能にします。
+このガイドでは、よく使われる JOIN の種類の一部とその使い方を、ベン図と、[relational dataset repository](https://relational.fit.cvut.cz/dataset/IMDb) 由来の正規化された [IMDB](https://en.wikipedia.org/wiki/IMDb) データセットに対するクエリ例を使って紹介します。
+
+<div id="test-data-and-resources">
+  ## テストデータとリソース
+</div>
+
+テーブルの作成と読み込みの手順は、[こちら](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/guides)にあります。
+ローカルでテーブルを作成して読み込みたくない場合は、[playground](https://sql.clickhouse.com?query_id=AACTS8ZBT3G7SSGN8ZJBJY)でもこのデータセットを利用できます。
+
+以下の4つのテーブルを例のデータセットから使用します。
+
+<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="IMDB スキーマ" />
+
+これら4つのテーブルのデータは、1つまたは複数のジャンルを持つ映画を表しています。
+映画の役は俳優が演じます。
+
+上の図の矢印は、[外部キーと主キーの関係](https://en.wikipedia.org/wiki/Foreign_key)を表しています。たとえば、`genres`テーブルのある行の`movie_id`カラムには、`movies`テーブルのある行の`id`の値が入ります。
+
+映画と俳優の間には、[多対多の関係](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\))があります。
+この多対多の関係は、`roles`テーブルを使うことで2つの[一対多の関係](https://en.wikipedia.org/wiki/One-to-many_\(data_model\))に正規化されます。
+`roles`テーブルの各行には、`movies`テーブルと`actors`テーブルの`id`カラムの値が含まれます。
+
+<div id="join-types-supported-in-clickhouse">
+  ## ClickHouseでサポートされているJOINの種類
+</div>
+
+ClickHouseは、次のJOINの種類をサポートしています。
+
+* [INNER JOIN](#inner-join)
+* [OUTER JOIN](#left--right--full-outer-join)
+* [CROSS JOIN](#cross-join)
+* [SEMI JOIN](#left--right-semi-join)
+* [ANTI JOIN](#left--right-anti-join)
+* [ANY JOIN](#left--right--inner-any-join)
+* [ASOF JOIN](#asof-join)
+
+以降の各セクションでは、上記の各JOINの種類ごとにクエリ例を示します。
+
+<div id="inner-join">
+  ## INNER JOIN
+</div>
+
+`INNER JOIN` は、結合キーで一致する各行の組み合わせごとに、左側のテーブルの行のカラム値と右側のテーブルの行のカラム値を組み合わせて返します。
+1 つの行に複数の一致がある場合は、該当するすべての一致が返されます (つまり、結合キーが一致する行については [デカルト積](https://en.wikipedia.org/wiki/Cartesian_product) が生成されます) 。
+
+<Image img="/images/starter_guides/joins/inner_join.webp" alt="Inner Join" />
+
+このクエリは、`movies` テーブルと `genres` テーブルを結合して、各映画のジャンルを取得します。
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+INNER JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─name───────────────────────────────────┬─genre─────┐
+│ Harry Potter and the Half-Blood Prince │ Action    │
+│ Harry Potter and the Half-Blood Prince │ Adventure │
+│ Harry Potter and the Half-Blood Prince │ Family    │
+│ Harry Potter and the Half-Blood Prince │ Fantasy   │
+│ Harry Potter and the Half-Blood Prince │ Thriller  │
+│ DragonBall Z                           │ Action    │
+│ DragonBall Z                           │ Adventure │
+│ DragonBall Z                           │ Comedy    │
+│ DragonBall Z                           │ Fantasy   │
+│ DragonBall Z                           │ Sci-Fi    │
+└────────────────────────────────────────┴───────────┘
+```
+
+<Note>
+  `INNER` キーワードは省略できます。
+</Note>
+
+`INNER JOIN` の動作は、以下のいずれかの結合タイプを使用することで拡張または変更できます。
+
+<div id="left--right--full-outer-join">
+  ## (LEFT / RIGHT / FULL) OUTER JOIN
+</div>
+
+`LEFT OUTER JOIN` は `INNER JOIN` と同様に動作します。これに加えて、左テーブルで一致しない行については、ClickHouse は右テーブルのカラムに [デフォルト値](/ja/reference/statements/create/table#default_values) を返します。
+
+`RIGHT OUTER JOIN` のクエリも同様で、右テーブルで一致しない行の値を、左テーブルのカラムのデフォルト値とともに返します。
+
+`FULL OUTER JOIN` のクエリは `LEFT OUTER JOIN` と `RIGHT OUTER JOIN` を組み合わせたもので、左テーブルおよび右テーブルで一致しない行の値を、それぞれ右テーブルおよび左テーブルのカラムのデフォルト値とともに返します。
+
+<Image img="/images/starter_guides/joins/outer_join.webp" alt="Outer Join" />
+
+<Note>
+  ClickHouse は、[設定](/ja/reference/settings/session-settings#join_use_nulls)により [デフォルト値](/ja/reference/statements/create/table#default_values) の代わりに [NULL](/ja/reference/syntax#null) を返すようにできます (ただし、[パフォーマンス上の理由](/ja/reference/data-types/nullable#storage-features)から、あまり推奨されません) 。
+</Note>
+
+このクエリは、`genres` テーブルに一致する行がない `movies` テーブルのすべての行を取得し、その結果 `movie_id` カラムに (クエリ実行時に) デフォルト値 0 が入るため、ジャンルを持たない映画をすべて見つけます。
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT JOIN genres AS g ON m.id = g.movie_id
+WHERE g.movie_id = 0
+ORDER BY
+    m.year DESC,
+    m.name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<Note>
+  `OUTER` キーワードは省略可能です。
+</Note>
+
+<div id="cross-join">
+  ## CROSS JOIN
+</div>
+
+`CROSS JOIN` は、結合キーを考慮せずに、2つのテーブルの完全なデカルト積を生成します。
+左側のテーブルの各行は、右側のテーブルの各行と組み合わされます。
+
+<Image img="/images/starter_guides/joins/cross_join.webp" alt="クロス結合" />
+
+したがって、次のクエリでは、`movies` テーブルの各行が `genres` テーブルの各行と組み合わされます。
+
+```sql
+SELECT
+    m.name,
+    m.id,
+    g.movie_id,
+    g.genre
+FROM movies AS m
+CROSS JOIN genres AS g
+LIMIT 10;
+```
+
+```response
+┌─name─┬─id─┬─movie_id─┬─genre───────┐
+│ #28  │  0 │        1 │ Documentary │
+│ #28  │  0 │        1 │ Short       │
+│ #28  │  0 │        2 │ Comedy      │
+│ #28  │  0 │        2 │ Crime       │
+│ #28  │  0 │        5 │ Western     │
+│ #28  │  0 │        6 │ Comedy      │
+│ #28  │  0 │        6 │ Family      │
+│ #28  │  0 │        8 │ Animation   │
+│ #28  │  0 │        8 │ Comedy      │
+│ #28  │  0 │        8 │ Short       │
+└──────┴────┴──────────┴─────────────┘
+```
+
+前の例のクエリだけではあまり意味がありませんでしたが、これに `WHERE` 句を追加して一致する行を対応付けることで、各映画のジャンルを見つけるための `INNER JOIN` の挙動を再現できます。
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+`CROSS JOIN` の別の構文では、`FROM` 句内で複数のテーブルをカンマ区切りで指定します。
+
+クエリの `WHERE` 句に結合条件の式がある場合、ClickHouse は `CROSS JOIN` を `INNER JOIN` に[書き換えます](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/Core/Settings.h#L896)。
+
+サンプルのクエリについては、[EXPLAIN SYNTAX](/ja/reference/statements/explain#explain-syntax) で確認できます (これは、クエリが[実行](https://youtu.be/hP6G2Nlz_cA)される前に書き換えられる、構文的に最適化されたバージョンを返します) 。
+
+```sql
+EXPLAIN SYNTAX
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─explain─────────────────────────────────────┐
+│ SELECT                                      │
+│     name AS name,                           │
+│     genre AS genre                          │
+│ FROM movies AS m                            │
+│ ALL INNER JOIN genres AS g ON id = movie_id │
+│ WHERE id = movie_id                         │
+│ ORDER BY                                    │
+│     year DESC,                              │
+│     name ASC,                               │
+│     genre ASC                               │
+│ LIMIT 10                                    │
+└─────────────────────────────────────────────┘
+```
+
+構文的に最適化された `CROSS JOIN` クエリ版の `INNER JOIN` 句には、`ALL` キーワードが含まれています。これは、`INNER JOIN` に書き換えられた場合でも `CROSS JOIN` のデカルト積のセマンティクスを維持できるよう、明示的に追加されたものです。`INNER JOIN` では、デカルト積を[無効化](/ja/reference/settings/session-settings#join_default_strictness)できるためです。
+
+```sql
+ALL
+```
+
+また、前述のとおり、`RIGHT OUTER JOIN` では `OUTER` キーワードを省略でき、さらに任意で `ALL` キーワードを追加することもできるため、`ALL RIGHT JOIN` と書いても正しく動作します。
+
+<div id="left--right-semi-join">
+  ## (LEFT / RIGHT) SEMI JOIN
+</div>
+
+`LEFT SEMI JOIN`クエリは、右テーブルに少なくとも1つの結合キーの一致がある左テーブルの各行について、カラム値を返します。
+返されるのは最初に見つかった一致のみです (デカルト積は無効化されています) 。
+
+`RIGHT SEMI JOIN`クエリも同様で、左テーブルに少なくとも1つの一致がある右テーブルのすべての行について値を返しますが、返されるのは最初に見つかった一致のみです。
+
+<Image img="/images/starter_guides/joins/semi_join.webp" alt="セミ結合" />
+
+このクエリは、2023年に映画に出演したすべての俳優・女優を見つけます。
+通常の (`INNER`) JOINでは、2023年に複数の役を演じていた場合、同じ俳優・女優が複数回表示されることに注意してください。
+
+```sql
+SELECT
+    a.first_name,
+    a.last_name
+FROM actors AS a
+LEFT SEMI JOIN roles AS r ON a.id = r.actor_id
+WHERE toYear(created_at) = '2023'
+ORDER BY id ASC
+LIMIT 10;
+```
+
+```response
+┌─first_name─┬─last_name──────────────┐
+│ Michael    │ 'babeepower' Viera     │
+│ Eloy       │ 'Chincheta'            │
+│ Dieguito   │ 'El Cigala'            │
+│ Antonio    │ 'El de Chipiona'       │
+│ José       │ 'El Francés'           │
+│ Félix      │ 'El Gato'              │
+│ Marcial    │ 'El Jalisco'           │
+│ José       │ 'El Morito'            │
+│ Francisco  │ 'El Niño de la Manola' │
+│ Víctor     │ 'El Payaso'            │
+└────────────┴────────────────────────┘
+```
+
+<div id="left--right-anti-join">
+  ## (LEFT / RIGHT) ANTI JOIN
+</div>
+
+`LEFT ANTI JOIN` は、左テーブルのうち一致しないすべての行のカラム値を返します。
+
+同様に、`RIGHT ANTI JOIN` は、右テーブルのうち一致しないすべての行のカラム値を返します。
+
+<Image img="/images/starter_guides/joins/anti_join.webp" alt="Anti Join" />
+
+前の外部結合のクエリ例は、データセット内にジャンルを持たない映画を見つけるために、anti join を使って次のように表現することもできます:
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT ANTI JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    year DESC,
+    name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<div id="left--right--inner-any-join">
+  ## (LEFT / RIGHT / INNER) ANY JOIN
+</div>
+
+`LEFT ANY JOIN` は `LEFT OUTER JOIN` と `LEFT SEMI JOIN` を組み合わせたもので、ClickHouse は左テーブルの各行に対して、右テーブルに一致する行があればその行のカラム値を結合して返し、一致する行がなければ右テーブルのデフォルトのカラム値を結合して返します。
+左テーブルのある行に対して右テーブルに複数の一致がある場合、ClickHouse は最初に見つかった一致との結合結果のカラム値だけを返します (デカルト積は無効化されています) 。
+
+同様に、`RIGHT ANY JOIN` は `RIGHT OUTER JOIN` と `RIGHT SEMI JOIN` を組み合わせたものです。
+
+また、`INNER ANY JOIN` はデカルト積を無効化した `INNER JOIN` です。
+
+<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+
+次の例では、[values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [table function](/ja/reference/functions/table-functions/index) を使って構築した 2 つの一時テーブル (`left_table` と `right_table`) による抽象的な例で、`LEFT ANY JOIN` を示します。
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+LEFT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   1 │   0 │
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+`RIGHT ANY JOIN`を使用した同じクエリは次のとおりです:
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+RIGHT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   2 │   2 │
+│   3 │   3 │
+│   3 │   3 │
+│   0 │   4 │
+└─────┴─────┘
+```
+
+`INNER ANY JOIN` を使用したクエリは次のとおりです。
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+INNER ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+<div id="asof-join">
+  ## ASOF JOIN
+</div>
+
+`ASOF JOIN` は、厳密ではない一致を可能にします。
+左側のテーブルの行に対して右側のテーブルに完全一致する行がない場合は、代わりに右側のテーブルから最も近い行が一致として使われます。
+
+これは時系列分析で特に有用で、クエリの複雑さを大幅に抑えられます。
+
+<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+
+次の例では、株式市場データの時系列分析を行います。
+`quotes` テーブルには、1日の特定時刻における株式シンボルのクオートが含まれます。
+この例のデータでは、価格は 10 秒ごとに更新されます。
+`trades` テーブルにはシンボルの取引が記録されています。つまり、あるシンボルの特定数量が特定時刻に買われたことを表します。
+
+<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+
+各取引の実際のコストを計算するには、取引を最も近いクオート時刻に対応付ける必要があります。
+
+これは `ASOF JOIN` を使うことで簡潔に記述できます。`ON` 句で厳密一致の条件を指定し、`AND` 句で最も近い一致の条件を指定します。つまり、特定のシンボル (厳密一致) について、そのシンボルの取引時刻と同時刻またはそれ以前 (非厳密一致) で、`quotes` テーブル内の時刻が最も近い行を探します。
+
+```sql
+SELECT
+    t.symbol,
+    t.volume,
+    t.time AS trade_time,
+    q.time AS closest_quote_time,
+    q.price AS quote_price,
+    t.volume * q.price AS final_price
+FROM trades t
+ASOF LEFT JOIN quotes q ON t.symbol = q.symbol AND t.time >= q.time
+FORMAT Vertical;
+```
+
+```response
+Row 1:
+──────
+symbol:             ABC
+volume:             200
+trade_time:         2023-02-22 14:09:05
+closest_quote_time: 2023-02-22 14:09:00
+quote_price:        32.11
+final_price:        6422
+
+Row 2:
+──────
+symbol:             ABC
+volume:             300
+trade_time:         2023-02-22 14:09:28
+closest_quote_time: 2023-02-22 14:09:20
+quote_price:        32.15
+final_price:        9645
+```
+
+<Note>
+  `ASOF JOIN` の `ON` 句は必須で、`AND` 句の非厳密一致条件に加えて、厳密一致条件を指定します。
+</Note>
+
+<div id="summary">
+  ## 概要
+</div>
+
+このガイドでは、ClickHouse が標準的な SQL JOIN の型をすべてサポートしているほか、分析クエリに対応するための特殊な JOIN もサポートしていることを説明します。
+JOIN の詳細については、[JOIN](/ja/reference/statements/select/join)ステートメントのドキュメントを参照してください。

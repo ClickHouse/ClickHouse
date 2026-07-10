@@ -391,6 +391,10 @@ namespace Net
         /// Returns true iff an external poller can drive this socket's
         /// readiness (the non-blocking / EAGAIN model).
 
+        virtual bool connectionOpen();
+        /// Returns true iff the peer has not closed the connection,
+        /// checked without consuming pending data or blocking.
+
         int socketError();
         /// Returns the value of the SO_ERROR socket option.
 

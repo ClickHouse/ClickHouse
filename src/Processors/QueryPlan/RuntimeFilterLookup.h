@@ -110,9 +110,7 @@ public:
         UInt64 exact_values_limit_
     )
         : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
-        , argument_can_have_nulls(hasNullable(filter_column_target_type) ||
-            WhichDataType(filter_column_target_type).isDynamic() ||
-            WhichDataType(filter_column_target_type).isVariant())
+        , argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type))
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
         , exact_values(std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls))
@@ -150,7 +148,7 @@ public:
         if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls)
         {
             values_count = ValuesCount::ONE;
-            single_element_in_set = (*exact_values->getSetElements().front())[0];
+            single_element_column = exact_values->getSetElements().front();
             return;
         }
 
@@ -191,7 +189,7 @@ private:
 
     bool is_full = false;
 
-    std::optional<Field> single_element_in_set;
+    ColumnPtr single_element_column;
 };
 
 class ExactContainsRuntimeFilter : public RuntimeFilterBase<false>
@@ -248,7 +246,8 @@ public:
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_hash_functions_,
-        Float64 max_ratio_of_set_bits_in_bloom_filter_);
+        Float64 max_ratio_of_set_bits_in_bloom_filter_,
+        std::optional<UInt64> distinct_keys_hint_);
 
     void insert(ColumnPtr values) override;
 
@@ -270,6 +269,8 @@ private:
 
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
+    /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
+    const std::optional<UInt64> distinct_keys_hint;
 
     BloomFilterPtr bloom_filter;
 };

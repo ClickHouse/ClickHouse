@@ -1,0 +1,56 @@
+---
+sidebarTitle: 'التوسيع الأفقي'
+slug: /cloud/features/autoscaling/horizontal
+description: 'التوسيع الأفقي اليدوي في ClickHouse Cloud'
+keywords: ['التوسيع الأفقي', 'التوسّع', 'النسخ المتماثلة', 'التوسّع اليدوي', 'الزيادات المفاجئة', 'الطفرات']
+title: 'التوسيع الأفقي'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<div id="manual-horizontal-scaling">
+  ## التوسيع الأفقي اليدوي
+</div>
+
+<ScalePlanFeatureBadge feature="التوسيع الأفقي اليدوي" />
+
+يمكنك استخدام [واجهات برمجة التطبيقات العامة](/api-reference/organization/get-list-of-available-organizations#/paths/~1v1~1organizations~1:organizationId~1services~1:serviceId~1scaling/patch) في ClickHouse Cloud لتوسيع خدمتك من خلال تحديث إعدادات التوسيع الخاصة بالخدمة، أو تعديل عدد النسخ المتماثلة من Cloud Console.
+
+كما تدعم الفئتَان **Scale** و**Enterprise** الخدمات ذات النسخة المتماثلة الواحدة. وبعد توسيع الخدمات أفقيًا، يمكن تقليصها مجددًا إلى حد أدنى يبلغ نسخة متماثلة واحدة. لاحظ أن الخدمات ذات النسخة المتماثلة الواحدة تكون أقل توافراً، ولا يُنصح باستخدامها في بيئات الإنتاج.
+
+<Note>
+  يمكن توسيع الخدمات أفقيًا حتى حد أقصى يبلغ 20 نسخة متماثلة. إذا كنت بحاجة إلى نسخ متماثلة إضافية، يُرجى التواصل مع فريق الدعم لدينا.
+</Note>
+
+<div id="horizontal-scaling-via-api">
+  ### التوسع الأفقي عبر API
+</div>
+
+لتوسيع عنقود أفقيًا، أرسل طلب `PATCH` عبر API لتعديل عدد النسخ المتماثلة. تُظهر لقطات الشاشة أدناه استدعاءً إلى API لتوسيع عنقود من `3` نسخ متماثلة إلى `6` نسخ متماثلة، بالإضافة إلى الاستجابة المقابلة.
+
+<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="طلب PATCH للتوسع" border />
+
+*طلب `PATCH` لتحديث `numReplicas`*
+
+<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="استجابة PATCH للتوسع" border />
+
+*الاستجابة لطلب `PATCH`*
+
+إذا أرسلت طلب توسع جديدًا، أو عدة طلبات متتالية، بينما يوجد طلب قيد التنفيذ بالفعل، فستتجاهل خدمة التوسع الحالات الوسيطة وتستقر على العدد النهائي للنسخ المتماثلة.
+
+<div id="horizontal-scaling-via-ui">
+  ### التوسيع الأفقي عبر UI
+</div>
+
+لتوسيع الخدمة أفقيًا من خلال UI، يمكنك تعديل عدد النُسخ المتماثلة للخدمة في صفحة **الإعدادات**.
+
+<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="إعدادات تهيئة التوسيع" border />
+
+*إعدادات توسيع الخدمة من وحدة تحكم ClickHouse Cloud*
+
+بعد اكتمال توسيع الخدمة، ينبغي أن تعرض لوحة بيانات المقاييس في وحدة تحكم ClickHouse Cloud التخصيص الصحيح للخدمة. وتُظهر لقطة الشاشة أدناه أن العنقود قد توسّع ليصل إجمالي الذاكرة إلى `96 GiB`، أي `6` نُسخ متماثلة، مع تخصيص ذاكرة قدره `16 GiB` لكل نسخة.
+
+<Image img="/images/cloud/manage/scaling-memory-allocation.webp" size="md" alt="تخصيص الذاكرة للتوسيع" border />

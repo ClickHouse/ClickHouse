@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -198,7 +199,10 @@ public:
     void addAliases(const NamesWithAliases & aliases);
 
     /// Add alias actions. Also specify result columns order in outputs.
-    void project(const NamesWithAliases & projection);
+    /// `keep_inputs` are forwarded to the internal `removeUnusedActions` as `used_inputs`: source
+    /// constants get re-created as free-standing COLUMN outputs by folding, orphaning their INPUTs;
+    /// keeping the INPUTs lets the columns keep flowing (needed at distributed stage boundaries).
+    void project(const NamesWithAliases & projection, const std::unordered_set<const Node *> & keep_inputs = {});
 
     /// Add input for every column from sample_block which is not mapped to existing input.
     void appendInputsForUnusedColumns(const Block & sample_block);
@@ -219,12 +223,12 @@ public:
     /// Remove actions that are not needed to compute output nodes.
     /// Returns true if any of the actions were removed.
     /// Outputs remain unchanged.
-    bool removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
+    bool removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true, bool evaluate_constants = false);
 
     /// Remove actions that are not needed to compute output nodes. Keep inputs from used_inputs.
     /// Returns true if any of the actions were removed.
     /// Outputs remain unchanged.
-    bool removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true);
+    bool removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true, bool evaluate_constants = false);
 
     /// Remove actions that are not needed to compute output nodes with required names.
     /// Returns true if any of the actions were removed or if the outputs are changed.
@@ -243,6 +247,10 @@ public:
     size_t removeNodes(const std::unordered_set<const Node *> & to_remove);
 
     void removeAliasesForFilter(const std::string & filter_name);
+
+    /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
+    /// outputs preserve their names via aliases when needed, dead nodes are pruned
+    void deduplicateSubtrees();
 
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs
@@ -285,6 +293,9 @@ public:
 
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases);
+
+    /// Replace each node listed in `substitutions` (a node of this DAG) with a constant COLUMN node.
+    void substitute(const std::unordered_map<const Node *, ColumnWithTypeAndName> & substitutions);
 
     /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
     /// Special handling for logical AND: non-computable children are replaced with constant true.
@@ -372,7 +383,8 @@ public:
         bool ignore_constant_values = false,
         bool add_cast_columns = false,
         NameToNameMap * new_names = nullptr,
-        NameSet * columns_contain_compiled_function = nullptr);
+        NameSet * columns_contain_compiled_function = nullptr,
+        bool materialize_constants=true);
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnConstPtr column, DataTypePtr type, std::string name);
     static ActionsDAG makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value);
