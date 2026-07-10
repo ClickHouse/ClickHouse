@@ -29,6 +29,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -1022,6 +1024,46 @@ void logExceptionBeforeStart(
         auditLog(elem, context, ast);
 }
 
+/// Extract affected object names (as `database.table`) directly from the AST.
+/// Used for queries that fail before `logQueryStart` populates `elem.query_tables`
+/// (EXCEPTION_BEFORE_START), so a failed DDL/DML statement still records which object it
+/// targeted in `OBJECT_NAMES` instead of leaving the field empty.
+static String extractObjectNamesFromAST(const IAST & ast)
+{
+    String result;
+    const auto append = [&](const String & database, const String & table)
+    {
+        if (database.empty() && table.empty())
+            return;
+        if (!result.empty())
+            result += ",";
+        if (!database.empty())
+        {
+            result += database;
+            result += ".";
+        }
+        result += table;
+    };
+
+    if (const auto * rename = ast.as<ASTRenameQuery>())
+    {
+        for (const auto & element : rename->getElements())
+        {
+            append(element.from.getDatabase(), element.from.getTable());
+            append(element.to.getDatabase(), element.to.getTable());
+        }
+    }
+    else if (const auto * insert = ast.as<ASTInsertQuery>())
+        append(insert->getDatabase(), insert->getTable());
+    /// `CREATE`, `DROP`, `TRUNCATE`, `ALTER`, `OPTIMIZE`, `EXISTS`, `DESCRIBE`, ... all derive
+    /// from `ASTQueryWithTableAndOutput`. Use `dynamic_cast` (not `as<>`, which matches the exact
+    /// dynamic type) to handle the whole family through the common base.
+    else if (const auto * with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(&ast))
+        append(with_table->getDatabase(), with_table->getTable());
+
+    return result;
+}
+
 void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & ast)
 {
     auto * audit_log = DB::getAuditLog();
@@ -1134,16 +1176,12 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
             }
         }
 
-        /// `CREATE DATABASE` / `DROP DATABASE` do not populate `query_databases` (the database
-        /// name lives only in the AST), so fall back to the AST for these. Identified by a set
-        /// database name and an empty table name.
+        /// When the access info carries no object names — either a database-level statement such
+        /// as `CREATE DATABASE` / `DROP DATABASE`, or a statement that failed before
+        /// `logQueryStart` populated `query_tables` (e.g. a `RENAME`/`DROP` of a missing table) —
+        /// fall back to the object names carried by the AST so the target is still recorded.
         if (object_names.empty() && ast)
-        {
-            if (const auto * create = ast->as<ASTCreateQuery>(); create && !create->getDatabase().empty() && create->getTable().empty())
-                object_names = create->getDatabase();
-            else if (const auto * drop = ast->as<ASTDropQuery>(); drop && !drop->getDatabase().empty() && drop->getTable().empty())
-                object_names = drop->getDatabase();
-        }
+            object_names = extractObjectNamesFromAST(*ast);
     }
 
     std::string host = elem.client_info.current_address ? elem.client_info.current_address->host().toString() : "Unknown Host";
