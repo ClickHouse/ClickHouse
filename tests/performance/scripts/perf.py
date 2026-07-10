@@ -794,9 +794,10 @@ for query_index in queries_to_run:
     # archived per-test raw .tsv (the per-test stderr log is not uploaded).
     # compare.sh parses raw .tsv by known leading tag and ignores the rest, so
     # adding this tag is safe.
-    if q_item["kind"] == "shell" and len(no_errors) < len(all_connections):
+    if q_item["kind"] == "shell" and len(no_errors) < len(prewarm_connection_indices):
         failed = []
-        for i, e in enumerate(query_error_on_connection):
+        for i in prewarm_connection_indices:
+            e = query_error_on_connection[i]
             if e:
                 failed.append(i)
                 print(f"run-error\t{query_index}\t{i}\t{tsv_escape(e)}")
