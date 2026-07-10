@@ -100,11 +100,19 @@ def sync_and_assert_eq_with_retry(
     # recovery (cloneMetadataIfNeeded). A single SYSTEM SYNC REPLICA before the
     # read can return before that entry exists, so re-sync inside the retry loop
     # until the structure converges.
+    #
+    # While the structure is still the old one, the sync/query pair can also
+    # raise (e.g. the read references a not-yet-applied column -> UNKNOWN_IDENTIFIER),
+    # not just return the wrong rows. Catch exceptions inside the loop and keep
+    # retrying, like assert_eq_with_retry, so a transient error does not exit early.
     for _ in range(retry_count):
-        node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
-        node.query(f"SYSTEM SYNC REPLICA {database}.{table}")
-        if TSV(node.query(query)) == TSV(expected):
-            return
+        try:
+            node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+            node.query(f"SYSTEM SYNC REPLICA {database}.{table}")
+            if TSV(node.query(query)) == TSV(expected):
+                return
+        except Exception as ex:
+            logging.exception(f"sync_and_assert_eq_with_retry exception {ex}")
         time.sleep(sleep_time)
     # Final attempt raises AssertionError with a helpful diff.
     assert_eq_with_retry(node, query, expected, retry_count=3)
