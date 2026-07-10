@@ -835,17 +835,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             if (is_propagated_metadata)
             {
                 /// Reuse the propagated metadata - and, when `s3_validate_etag_on_read` is enabled, pin
-                /// this read to the coordinator's generation via `If-Match` - only where it helps and is
-                /// safe:
-                ///   - only S3 enforces `StoredObject::etag` on the GET (other backends ignore it);
-                ///   - only when `_tags` was not requested (the propagated metadata carries no tags);
-                ///   - not in ignore-missing mode (`s3_ignore_file_doesnt_exist`), which must probe the
-                ///     object so a concurrently-deleted one is gracefully skipped instead of throwing.
-                /// Otherwise fetch: for S3 keep the pinned ETag/size/timestamp and take only the freshly
-                /// listed tags so the pin is preserved; for any other backend fetch fresh as before.
-                const bool is_s3 = object_storage->getType() == ObjectStorageType::S3;
-                const bool honor = is_s3 && !with_tags && !query_settings.ignore_non_existent_file;
-                if (!honor)
+                /// this read to the coordinator's generation via `If-Match` (S3 is the only backend that
+                /// enforces `StoredObject::etag` on the GET) - unless `_tags` was requested: the propagated
+                /// metadata carries no tags, so they must be fetched. Ignore-missing mode reuses it too:
+                /// a pre-read probe cannot close the list-to-read race anyway (the object can still vanish
+                /// between the probe and the GET), so it would only cost an extra request.
+                const bool reuse_propagated_metadata = !with_tags;
+                if (!reuse_propagated_metadata)
                 {
                     std::optional<ObjectMetadata> fetched;
                     if (query_settings.ignore_non_existent_file)
@@ -857,8 +853,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     else
                         fetched = object_storage->getObjectMetadata(metadata_object, with_tags);
 
-                    if (is_s3)
+                    if (object_storage->getType() == ObjectStorageType::S3)
                     {
+                        /// Keep the pinned ETag/size/timestamp and take only the freshly listed tags,
+                        /// so the pin to the coordinator's generation is preserved.
                         ObjectMetadata pinned = *propagated_metadata;
                         pinned.tags = std::move(fetched->tags);
                         object_info->setObjectMetadata(pinned);

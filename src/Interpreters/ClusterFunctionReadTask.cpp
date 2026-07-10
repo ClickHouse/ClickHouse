@@ -46,18 +46,17 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     read_source_index = object->relative_path_with_metadata.read_source_index;
     file_bucket_info = object->file_bucket_info;
 
-    /// Propagate whatever object metadata the coordinator already has (see `etag` in the header) so the
-    /// worker can skip its own metadata HEAD. It is available for free from the coordinator's listing
-    /// (S3 `ListObjectsV2` carries the ETag/size) and, on the bucket-split path, is refreshed to the
-    /// generation the coordinator read to compute bucket boundaries. Only a non-empty ETag is useful for
-    /// pinning; when the coordinator has none (e.g. explicit keys with skipped metadata, non-S3 without an
-    /// ETag) we leave it empty and the worker fetches its own metadata, as before.
-    if (auto object_metadata = object->getObjectMetadata())
+    /// Propagate object metadata available from the List request to the worker to avoid re-fetching it
+    /// again. Only real (fetched) metadata: the `skip_object_metadata` placeholder carries no usable
+    /// size/time and the worker must fetch its own instead.
+    if (auto object_metadata = object->getObjectMetadata(); object_metadata && object_metadata->is_fetched)
     {
+        has_object_metadata = true;
         etag = object_metadata->etag;
         size_bytes = object_metadata->size_bytes;
         is_size_known = object_metadata->is_size_known;
         last_modified_epoch_us = static_cast<UInt64>(object_metadata->last_modified.epochMicroseconds());
+        is_last_modified_known = object_metadata->is_last_modified_known;
     }
 }
 
@@ -92,14 +91,15 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     object->file_bucket_info = file_bucket_info;
 
     /// Rebuild the propagated split-time metadata (see `etag` in the header) so the worker's ranged GETs
-    /// validate against it. Only when an ETag was captured; otherwise leave it empty (worker fetches its own).
-    if (!etag.empty())
+    /// validate against it.
+    if (has_object_metadata)
     {
         ObjectMetadata object_metadata;
         object_metadata.etag = etag;
         object_metadata.size_bytes = size_bytes;
         object_metadata.is_size_known = is_size_known;
         object_metadata.last_modified = Poco::Timestamp(static_cast<Poco::Timestamp::TimeVal>(last_modified_epoch_us));
+        object_metadata.is_last_modified_known = is_last_modified_known;
         object->setObjectMetadata(object_metadata);
         /// Mark it as coordinator-propagated (carries no tags) so the worker's read path reuses it -
         /// skipping its own HEAD - yet still fetches tags when `_tags` is requested.
@@ -183,10 +183,28 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_OBJECT_METADATA)
     {
-        writeStringBinary(etag, out);
-        writeVarUInt(size_bytes, out);
-        writeVarUInt(is_size_known ? UInt64(1) : UInt64(0), out);
-        writeVarUInt(last_modified_epoch_us, out);
+        writeBinary(has_object_metadata, out);
+        if (has_object_metadata)
+        {
+            writeStringBinary(etag, out);
+            writeVarUInt(size_bytes, out);
+            writeBinary(is_size_known, out);
+            writeVarUInt(last_modified_epoch_us, out);
+            writeBinary(is_last_modified_known, out);
+        }
+    }
+    else if (file_bucket_info && !etag.empty())
+    {
+        /// Fail closed: a bucket-split task carries offsets computed from the generation this ETag
+        /// identifies. A worker that cannot receive the ETag would pin nothing (or its own fresh HEAD)
+        /// and could apply those offsets to different bytes after a concurrent overwrite - the very
+        /// misread the propagation exists to prevent.
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry the object metadata required to pin a bucket-split "
+            "read to the coordinator's generation (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_OBJECT_METADATA);
     }
 }
 
@@ -256,12 +274,15 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_OBJECT_METADATA)
     {
-        readStringBinary(etag, in);
-        readVarUInt(size_bytes, in);
-        UInt64 is_size_known_flag = 0;
-        readVarUInt(is_size_known_flag, in);
-        is_size_known = is_size_known_flag != 0;
-        readVarUInt(last_modified_epoch_us, in);
+        readBinary(has_object_metadata, in);
+        if (has_object_metadata)
+        {
+            readStringBinary(etag, in);
+            readVarUInt(size_bytes, in);
+            readBinary(is_size_known, in);
+            readVarUInt(last_modified_epoch_us, in);
+            readBinary(is_last_modified_known, in);
+        }
     }
 }
 

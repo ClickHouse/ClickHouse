@@ -32,13 +32,15 @@ struct ClusterFunctionReadTaskResponse
     /// it read to compute bucket boundaries. Propagated so the worker skips its own metadata HEAD and,
     /// when `s3_validate_etag_on_read` is enabled, pins its read to that SAME generation via read-time
     /// ETag validation instead of a possibly newer (overwritten) one - which for a bucket-split read would
-    /// otherwise apply stale bucket offsets to new bytes without `S3_OBJECT_CHANGED_DURING_READ`. An empty
-    /// `etag` means "not available" (e.g. explicit keys with skipped metadata, non-S3 without an ETag) -
-    /// the worker fetches the metadata itself, as before.
+    /// otherwise apply stale bucket offsets to new bytes without `S3_OBJECT_CHANGED_DURING_READ`.
+    /// `has_object_metadata` marks whether the coordinator had any metadata at all (an ETag-less backend
+    /// like HDFS still propagates size/time); when false the worker fetches the metadata itself, as before.
+    bool has_object_metadata = false;
     String etag;
     UInt64 size_bytes = 0;
     bool is_size_known = true;
     UInt64 last_modified_epoch_us = 0;
+    bool is_last_modified_known = true;
 
     /// Convert received response into ObjectInfo.
     ObjectInfoPtr getObjectInfo() const;
