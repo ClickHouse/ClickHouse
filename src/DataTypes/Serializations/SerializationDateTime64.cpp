@@ -118,6 +118,90 @@ static inline bool tryReadText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, 
     }
 }
 
+/// Reads an unquoted numeric DateTime64 as used in containers (arrays/tuples/maps) and JSON.
+/// A bare integer is a scaled tick count, e.g. `1783585473954` for scale 3 (unchanged, backward compatible).
+/// If a decimal point follows, the integer part is whole seconds and the fraction is subseconds,
+/// e.g. `1783585473.954`, matching how scalar columns already parse the fractional unix-timestamp form.
+template <typename ReturnType>
+static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    bool is_negative = (!istr.eof() && *istr.position() == '-');
+
+    time_t whole = 0;
+    if constexpr (throw_exception)
+        readIntText(whole, istr);
+    else if (!tryReadIntText(whole, istr))
+        return ReturnType(false);
+
+    if (istr.eof() || *istr.position() != '.')
+    {
+        /// No fractional part: the integer is a scaled tick count.
+        x = static_cast<DateTime64::NativeType>(whole);
+        return ReturnType(true);
+    }
+
+    ++istr.position();
+
+    DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
+    int negative_fraction_multiplier = 1;
+
+    /// Read digits, up to 'scale' positions.
+    for (size_t i = 0; i < scale; ++i)
+    {
+        if (!istr.eof() && isNumericASCII(*istr.position()))
+        {
+            components.fractional *= 10;
+            components.fractional += *istr.position() - '0';
+            ++istr.position();
+        }
+        else
+        {
+            /// Adjust to scale.
+            components.fractional *= 10;
+        }
+    }
+
+    /// Ignore digits that are out of precision.
+    while (!istr.eof() && isNumericASCII(*istr.position()))
+        ++istr.position();
+
+    /// Fractional part (subseconds) is treated as positive by users, but represented as a negative number.
+    /// Mirror the handling in readDateTimeTextImpl for negative timestamps with a fractional part.
+    if (!is_negative && components.whole < 0 && components.fractional != 0)
+    {
+        const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
+        ++components.whole;
+        components.fractional = scale_multiplier - components.fractional;
+        if (!components.whole)
+            negative_fraction_multiplier = -1;
+    }
+
+    if constexpr (throw_exception)
+    {
+        x = DecimalUtils::decimalFromComponents<DateTime64>(components, scale) * negative_fraction_multiplier;
+        return;
+    }
+    else
+    {
+        if (!DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, x))
+            return ReturnType(false);
+        x *= negative_fraction_multiplier;
+        return ReturnType(true);
+    }
+}
+
+static inline void readNumericText(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
+{
+    readNumericTextImpl<void>(x, scale, istr);
+}
+
+static inline bool tryReadNumericText(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
+{
+    return readNumericTextImpl<bool>(x, scale, istr);
+}
+
 SerializationPtr SerializationDateTime64::create(UInt32 scale_, const TimezoneMixin & time_zone_)
 {
     return ISerialization::pooled(getHash(scale_, time_zone_), [&] { return new SerializationDateTime64(scale_, time_zone_); });
@@ -164,9 +248,9 @@ void SerializationDateTime64::deserializeTextQuoted(IColumn & column, ReadBuffer
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
-    else /// Just 1504193808 or 01504193808
+    else /// Just 1504193808 or 01504193808 or 1504193808.808
     {
-        readIntText(x, istr);
+        readNumericText(x, scale, istr);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
@@ -179,9 +263,9 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
             return false;
     }
-    else /// Just 1504193808 or 01504193808
+    else /// Just 1504193808 or 01504193808 or 1504193808.808
     {
-        if (!tryReadIntText(x, istr))
+        if (!tryReadNumericText(x, scale, istr))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
@@ -205,7 +289,7 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     }
     else
     {
-        readIntText(x, istr);
+        readNumericText(x, scale, istr);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
@@ -220,7 +304,7 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        if (!tryReadNumericText(x, scale, istr))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
