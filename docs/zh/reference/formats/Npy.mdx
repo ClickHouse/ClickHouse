@@ -1,0 +1,87 @@
+---
+alias: []
+description: 'Npy 格式文档'
+input_format: true
+keywords: ['Npy']
+output_format: true
+slug: /interfaces/formats/Npy
+title: 'Npy'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 说明
+</div>
+
+`Npy` 格式用于将 `.npy` 文件中的 NumPy 数组加载到 ClickHouse。
+NumPy 文件格式是一种二进制格式，用于高效存储数值数据数组。
+导入时，ClickHouse 会将顶层维度视为由单个列组成的行数组。
+
+下表列出了受支持的 Npy 数据类型及其在 ClickHouse 中对应的类型：
+
+<div id="data_types-matching">
+  ## 数据类型匹配
+</div>
+
+| Npy 数据类型 (`INSERT`) | ClickHouse 数据类型                                  | Npy 数据类型 (`SELECT`) |
+| ------------------- | ------------------------------------------------ | ------------------- |
+| `i1`                | [Int8](/zh/reference/data-types/int-uint)           | `i1`                |
+| `i2`                | [Int16](/zh/reference/data-types/int-uint)          | `i2`                |
+| `i4`                | [Int32](/zh/reference/data-types/int-uint)          | `i4`                |
+| `i8`                | [Int64](/zh/reference/data-types/int-uint)          | `i8`                |
+| `u1`, `b1`          | [UInt8](/zh/reference/data-types/int-uint)          | `u1`                |
+| `u2`                | [UInt16](/zh/reference/data-types/int-uint)         | `u2`                |
+| `u4`                | [UInt32](/zh/reference/data-types/int-uint)         | `u4`                |
+| `u8`                | [UInt64](/zh/reference/data-types/int-uint)         | `u8`                |
+| `f2`, `f4`          | [Float32](/zh/reference/data-types/float)           | `f4`                |
+| `f8`                | [Float64](/zh/reference/data-types/float)           | `f8`                |
+| `S`, `U`            | [String](/zh/reference/data-types/string)           | `S`                 |
+|                     | [FixedString](/zh/reference/data-types/fixedstring) | `S`                 |
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+<div id="saving-an-array-in-npy-format-using-python">
+  ### 使用 Python 将数组保存为 .npy 格式
+</div>
+
+```Python
+import numpy as np
+arr = np.array([[[1],[2],[3]],[[4],[5],[6]]])
+np.save('example_array.npy', arr)
+```
+
+<div id="reading-a-numpy-file-in-clickhouse">
+  ### 在 ClickHouse 中读取 NumPy 文件
+</div>
+
+```sql title="Query"
+SELECT *
+FROM file('example_array.npy', Npy)
+```
+
+```response title="Response"
+┌─array─────────┐
+│ [[1],[2],[3]] │
+│ [[4],[5],[6]] │
+└───────────────┘
+```
+
+<div id="selecting-data">
+  ### 选择数据
+</div>
+
+您可以使用以下 `clickhouse-client` 命令从 ClickHouse 表中查询数据，并将其以 Npy 格式保存到文件中：
+
+```bash
+$ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}
+```
+
+<div id="format-settings">
+  ## 格式设置
+</div>

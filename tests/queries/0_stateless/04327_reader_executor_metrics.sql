@@ -6,11 +6,13 @@
 --
 -- Checks that the experimental ReaderExecutor emits its observability metrics.
 -- Reads a MergeTree table with `use_reader_executor = 1` and verifies, via the
--- per-query ProfileEvents in `system.query_log`, that the live counters moved,
--- the KPI inputs hold their invariants, and the not-yet-implemented inputs
--- (cache / connection reuse) stay 0. The exact modeled-cost formula and the KPI
--- ratio are checked deterministically in the gtest (single executor); here the
--- per-executor integer rounding makes only sign / relational checks reliable.
+-- per-query ProfileEvents in `system.query_log`, that the live counters moved and
+-- the KPI inputs hold their invariants. Long connections are off here so the
+-- base-executor metrics stay deterministic (no gap-bridging over-read, no held
+-- connections to drop) under randomized settings like `max_threads`; the reuse
+-- path is covered by 04341/04342 and the gtests. The exact modeled-cost formula
+-- and the KPI ratio are checked deterministically in the gtest (single executor);
+-- here the per-executor integer rounding makes only sign / relational checks reliable.
 
 DROP TABLE IF EXISTS t_reader_executor_metrics;
 
@@ -29,6 +31,9 @@ SELECT number, number * 2, concat('row_', toString(number))
 FROM numbers(300000);
 
 SET use_reader_executor = 1;
+-- Base-executor metrics only: long-connection reuse (covered by 04341/04342) would add
+-- gap-bridging over-read and incomplete-connection counts that swing with max_threads.
+SET reader_executor_use_long_connections = 0;
 -- Disable the stages the executor does not implement so it actually runs on
 -- object storage too (no-ops on local disk).
 SET remote_filesystem_read_method = 'read';
@@ -45,10 +50,11 @@ SYSTEM FLUSH LOGS query_log;
 -- Columns (all expected 1):
 --   1: source requests happened
 --   2: bytes were read from source
---   3: requested bytes == source bytes (no over-read / cache divergence yet)
+--   3: requested bytes == source bytes (no over-read: gap-bridging needs long connections, off here)
 --   4: total work time was recorded
 --   5: modeled cost >= 30ms-per-source-request floor (the byte term only adds to it)
---   6,7,8: cache get / cache populate / incomplete connections stay 0 (not implemented)
+--   6,7: cache get / cache populate stay 0 (not implemented)
+--   8: incomplete connections stay 0 (no held connections to drop with long connections off)
 SELECT
     ProfileEvents['ReaderExecutorSourceRequests'] > 0,
     ProfileEvents['ReaderExecutorBytesFromSource'] > 0,
