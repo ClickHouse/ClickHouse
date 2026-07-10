@@ -2778,7 +2778,7 @@ Calculates the unit vector of a given vector (the elements of the tuple or array
     FunctionDocumentation::Arguments arguments_l1_normalize = {
         {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l1_normalize = {"Returns the unit vector.", {"Tuple(Float64)", "Array(Float64)"}};
+    FunctionDocumentation::ReturnedValue returned_value_l1_normalize = {"Returns the unit vector. For `Array` inputs, returns `Array(Float32)` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Array(Float64)`. For `Tuple` inputs, always returns `Tuple(Float64)`.", {"Tuple(Float64)", "Array(Float32)", "Array(Float64)"}};
     FunctionDocumentation::Examples examples_l1_normalize = {
         {
             "Basic usage",
@@ -2806,7 +2806,7 @@ Calculates the unit vector of a given vector (the elements of the tuple or array
     FunctionDocumentation::Arguments arguments_l2_normalize = {
         {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_normalize = {"Returns the unit vector.", {"Tuple(Float64)", "Array(Float64)"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_normalize = {"Returns the unit vector. For `Array` inputs, returns `Array(Float32)` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Array(Float64)`. For `Tuple` inputs, always returns `Tuple(Float64)`.", {"Tuple(Float64)", "Array(Float32)", "Array(Float64)"}};
     FunctionDocumentation::Examples examples_l2_normalize = {
         {
             "Basic usage",
@@ -2834,7 +2834,7 @@ Calculates the unit vector of a given vector (the elements of the tuple or array
     FunctionDocumentation::Arguments arguments_linf_normalize = {
         {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_linf_normalize = {"Returns the unit vector.", {"Tuple(Float64)", "Array(Float64)"}};
+    FunctionDocumentation::ReturnedValue returned_value_linf_normalize = {"Returns the unit vector. For `Array` inputs, returns `Array(Float32)` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Array(Float64)`. For `Tuple` inputs, always returns `Tuple(Float64)`.", {"Tuple(Float64)", "Array(Float32)", "Array(Float64)"}};
     FunctionDocumentation::Examples examples_linf_normalize = {
         {
             "Basic usage",
@@ -2864,7 +2864,7 @@ Calculates the unit vector of a given vector (the elements of the tuple or array
             {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}},
             {"p", "The power. Possible values are any number in the range range from `[1; inf)`.", {"UInt*", "Float*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value_lp_normalize = {"Returns the unit vector.", {"Tuple(Float64)", "Array(Float64)"}};
+        FunctionDocumentation::ReturnedValue returned_value_lp_normalize = {"Returns the unit vector. For `Array` inputs, returns `Array(Float32)` if the least common supertype of the element types is `Float32` or `BFloat16`, otherwise `Array(Float64)`. For `Tuple` inputs, always returns `Tuple(Float64)`.", {"Tuple(Float64)", "Array(Float32)", "Array(Float64)"}};
         FunctionDocumentation::Examples examples_lp_normalize = {
             {
                 "Usage example",
