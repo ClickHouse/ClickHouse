@@ -1,0 +1,18 @@
+text hasToken String
+1
+text hasToken LowCardinality
+1
+text equals LowCardinality
+1
+text hasToken LowCardinality(Nullable)
+1
+tokenbf hasToken String
+1
+tokenbf hasToken LowCardinality
+1
+ngrambf hasToken String
+1
+ngrambf hasToken LowCardinality
+1
+correctness
+1	500

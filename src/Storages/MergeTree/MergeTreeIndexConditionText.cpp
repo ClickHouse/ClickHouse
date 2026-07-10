@@ -4,6 +4,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -753,6 +754,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
 
+    /// Strip the type wrapper off the constant before the string-type gate; the Field is
+    /// already a plain value. Nullable is stripped only for a non-null value (mirroring
+    /// RPNBuilderTreeNode::tryGetConstant) so a NULL needle stays rejected by the gate.
+    value_type = removeLowCardinality(value_type);
+    if (!value_field.isNull())
+        value_type = removeNullable(value_type);
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
