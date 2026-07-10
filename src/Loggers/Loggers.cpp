@@ -201,24 +201,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             ProfileEvents::AsyncLoggingErrorFileLogDroppedMessages);
     }
 
-    const auto auditlog_path_prop = config.getString("logger.auditlog", "");
-    if (!auditlog_path_prop.empty())
-    {
-        DB::setGlobalAuditLog(nullptr);
-        if (audit_log)
-        {
-            audit_log->close();
-            audit_log.reset();
-        }
-
-        bool async = config.getBool("logger.async", true);
-        auto queue_size = config.getUInt("logger.async_queue_max_size", 65536);
-        audit_log = std::make_unique<DB::AuditLog>(async, static_cast<size_t>(queue_size));
-        const auto auditlog_path = renderFileNameTemplate(now, auditlog_path_prop);
-        audit_log->configure(config, auditlog_path);
-        audit_log->open();
-        DB::setGlobalAuditLog(audit_log.get());
-    }
+    createAuditLog(config, now);
 
     if (config.getBool("logger.use_syslog", false))
     {
@@ -358,6 +341,41 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             }
         }
     }
+}
+
+void Loggers::createAuditLog(Poco::Util::AbstractConfiguration & config, time_t now)
+{
+    const auto auditlog_path_prop = config.getString("logger.auditlog", "");
+
+    /// Audit logging is experimental and gated by `allow_experimental_audit_log`. Only create and
+    /// open the writer when the feature is enabled, so that a staged-but-disabled configuration has
+    /// no startup side effects: no audit file is created or rotated, and an unwritable audit-log
+    /// path does not abort startup while the feature is off.
+    if (auditlog_path_prop.empty() || !config.getBool("allow_experimental_audit_log", false))
+        return;
+
+    /// Keep an already-created writer alive. It is torn down only at shutdown, never on reload,
+    /// so that concurrent LOG_AUDIT callers cannot use a freed writer.
+    if (audit_log)
+        return;
+
+    bool async = config.getBool("logger.async", true);
+    auto queue_size = config.getUInt("logger.async_queue_max_size", 65536);
+    audit_log = std::make_unique<DB::AuditLog>(async, static_cast<size_t>(queue_size));
+    const auto auditlog_path = renderFileNameTemplate(now, auditlog_path_prop);
+    audit_log->configure(config, auditlog_path);
+    audit_log->open();
+    DB::setGlobalAuditLog(audit_log.get());
+}
+
+void Loggers::updateAuditLog(Poco::Util::AbstractConfiguration & config)
+{
+    /// Called on configuration reload. Lazily create the audit writer the first time the
+    /// experimental feature is enabled, so it can be turned on without a server restart.
+    /// Disabling is handled by `Context::loadOrReloadAuditTypes`, which flips the runtime emission
+    /// gate off; the writer itself is intentionally kept alive to avoid a use-after-free with
+    /// in-flight LOG_AUDIT calls.
+    createAuditLog(config, std::time({}));
 }
 
 void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger)

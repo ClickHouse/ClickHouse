@@ -8344,9 +8344,11 @@ void Context::resetAuditTypes() const
 
 void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & config)
 {
-    /// The audit writer is created at startup whenever logger.auditlog is configured,
-    /// regardless of allow_experimental_audit_log.  The flag controls emission only:
-    /// toggling it at runtime enables or disables audit without a restart.
+    /// The audit writer is created (in Loggers) only while `allow_experimental_audit_log` is
+    /// enabled, so that a disabled feature has no startup side effects. Once created, the writer is
+    /// kept alive for the process lifetime; this flag is the runtime gate that toggles emission on
+    /// reload without a restart. When the feature is off (or the writer was never created because it
+    /// started disabled), keep audit emission off.
     if (!config.getBool("allow_experimental_audit_log", false)
         || !hasGlobalAuditLog())
     {

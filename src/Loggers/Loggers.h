@@ -31,6 +31,10 @@ public:
 
     void updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger);
 
+    /// Lazily create the experimental audit writer on configuration reload, so enabling
+    /// `allow_experimental_audit_log` at runtime starts audit logging without a server restart.
+    void updateAuditLog(Poco::Util::AbstractConfiguration & config);
+
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
 
@@ -45,6 +49,11 @@ protected:
     virtual bool allowTextLog() const { return true; }
 
 private:
+    /// Create and open the standalone audit writer, but only when the experimental feature is
+    /// enabled. Idempotent: keeps an already-created writer (the writer is torn down only at
+    /// shutdown, never on reload, so concurrent LOG_AUDIT callers cannot use-after-free).
+    void createAuditLog(Poco::Util::AbstractConfiguration & config, time_t now);
+
     Poco::AutoPtr<Poco::FileChannel> log_file;
     Poco::AutoPtr<Poco::FileChannel> error_log_file;
     Poco::AutoPtr<Poco::Channel> syslog_channel;
