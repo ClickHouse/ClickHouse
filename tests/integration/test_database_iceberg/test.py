@@ -2336,3 +2336,70 @@ def test_namespace_prefix_row_policy_authorization(started_cluster):
         node.query(
             f"DROP ROW POLICY IF EXISTS {policy} ON {CATALOG_NAME}.`{namespace}.{table_name}`"
         )
+
+
+def test_namespace_prefix_show_tables_scope_and_wildcard_policy(started_cluster):
+    """
+    SHOW TABLES under USE db.namespace lists only the selected namespace, and
+    wildcard row-policy targets are rejected (they would silently never match).
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_scope_{uuid.uuid4().hex[:8]}"
+    ns_1 = f"ns1_{test_ref}"
+    ns_2 = f"ns2_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns_1)
+    catalog.create_namespace(ns_2)
+    create_table(catalog, ns_1, "scoped_table")
+    create_table(catalog, ns_2, "other_table")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    tables = node.query(f"USE {CATALOG_NAME}.{ns_1}; SHOW TABLES")
+    assert f"{ns_1}.scoped_table" in tables, f"missing namespace table: {tables}"
+    assert ns_2 not in tables, f"SHOW TABLES leaked other namespaces: {tables}"
+
+    _, err = node.query_and_get_answer_with_error(
+        f"CREATE ROW POLICY pol_{test_ref} ON {CATALOG_NAME}.{ns_1}.* USING 1 TO ALL"
+    )
+    assert "SYNTAX_ERROR" in err or "Syntax error" in err, (
+        f"wildcard row policy target must be rejected: {err}"
+    )
+
+
+def test_namespace_prefix_mysql_init_db(started_cluster):
+    """
+    COM_INIT_DB (mysql select_db) must split "catalog.namespace" like SQL USE.
+    """
+    import pymysql
+
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_initdb_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "initdb_test_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+    iceberg_table.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    conn = pymysql.connect(
+        host=started_cluster.get_instance_ip("node1"),
+        port=9004,
+        user="default",
+        password="",
+        database="default",
+    )
+    try:
+        conn.select_db(f"{CATALOG_NAME}.{namespace}")
+        with conn.cursor() as cursor:
+            cursor.execute(f"SELECT count() FROM {table_name}")
+            (count,) = cursor.fetchone()
+        assert int(count) == 2, f"COM_INIT_DB namespace lost: {count}"
+    finally:
+        conn.close()

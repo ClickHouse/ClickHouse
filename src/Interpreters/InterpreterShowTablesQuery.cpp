@@ -190,7 +190,16 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << "is_temporary";
     }
     else
+    {
         rewritten_query << "database = " << DB::quote << database;
+        /// Under `USE db.namespace` (DataLakeCatalog) list only the selected namespace.
+        if (query.getFrom().empty())
+        {
+            const auto current_db_info = getContext()->getCurrentDatabaseInfo();
+            if (!current_db_info.table_prefix.empty())
+                rewritten_query << " AND startsWith(name, " << DB::quote << (current_db_info.table_prefix + ".") << ")";
+        }
+    }
 
     if (!query.like.empty())
         rewritten_query

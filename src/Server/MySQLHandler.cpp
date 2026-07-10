@@ -537,9 +537,11 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
-    /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
-    session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
-    session->sessionContext()->setCurrentDatabase(database);
+    /// Mirror the SQL `USE database` statement (InterpreterUseQuery): "db.namespace" selects
+    /// a namespace inside a DataLakeCatalog database, and access is checked on the database.
+    const auto [database_name, table_prefix] = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(database);
+    session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database_name);
+    session->sessionContext()->setCurrentDatabase(database_name, table_prefix);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1));
 }
 
