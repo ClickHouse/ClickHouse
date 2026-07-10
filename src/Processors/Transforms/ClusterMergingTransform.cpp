@@ -100,6 +100,16 @@ void mergeAggregateStates(
         auto & data = agg_col->getData();
         const auto & func = agg_col->getAggregateFunction();
 
+        /// A zero-size-state aggregate (e.g. `AggregateFunctionNothing`, produced by `min(NULL)`,
+        /// `max(NULL)`, `any(NULL)` and friends) has nothing to accumulate, so merging is a no-op.
+        /// It also cannot be given distinct per-row states: a zero-byte arena allocation does not
+        /// advance the arena, so every row's state pointer aliases the same address (which
+        /// `ensureAggregateStateOwnership` cannot de-alias either). Skip it, both because the merge
+        /// is unnecessary and because `IAggregateFunction::merge` asserts the source and destination
+        /// states do not alias.
+        if (func->sizeOfData() == 0)
+            continue;
+
         /// `groupArray`-family aggregates allocate during `merge`; passing nullptr would
         /// dereference null on reallocation. The arena is owned by `agg_col`.
         func->merge(data[dst], data[src], &agg_col->createOrGetArena());
