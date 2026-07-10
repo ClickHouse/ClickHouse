@@ -234,6 +234,21 @@ void DatabaseDataLake::initialize() const
                 Context::getGlobalContextInstance());
             break;
         }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
+        {
+            /// Databricks Delta Sharing speaks plain Iceberg REST; it differs only in having flat
+            /// (single-level) namespaces, which `DeltaSharingCatalog` reports via its catalog type.
+            catalog_impl = std::make_shared<DataLake::DeltaSharingCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::auth_scope].value,
+                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::oauth_server_uri].value,
+                settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                Context::getGlobalContextInstance());
+            break;
+        }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
             catalog_impl = std::make_shared<DataLake::OneLakeCatalog>(
@@ -426,6 +441,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
         case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+        case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
         {
             switch (type)
             {
@@ -1213,6 +1229,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
             case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+            case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
             {
                 if (!args.create_query.attach
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
@@ -1352,7 +1369,7 @@ The following settings are supported:
 
 | Setting                 | Description                                                                             |
 |-------------------------|-----------------------------------------------------------------------------------------|
-| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg) |
+| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
