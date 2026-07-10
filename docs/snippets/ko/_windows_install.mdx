@@ -1,0 +1,109 @@
+---
+title: Windows에서 설치
+---
+
+<div id="install-clickhouse-on-windows-with-wsl">
+  # WSL을 사용해 Windows에 ClickHouse 설치
+</div>
+
+<div id="requirements">
+  ## 요구 사항
+</div>
+
+<Note>
+  Windows에 ClickHouse를 설치하려면 WSL(Windows Subsystem for Linux)이 필요합니다.
+</Note>
+
+<Steps>
+  <Step>
+    ## WSL 설치
+
+    관리자 권한으로 Windows PowerShell을 열고 다음 명령을 실행하세요:
+
+    ```bash
+    wsl --install
+    ```
+
+    새 UNIX 사용자 이름과 비밀번호를 입력하라는 메시지가 표시됩니다. 원하는 사용자 이름과 비밀번호를
+    입력하면 다음과 비슷한 메시지가 표시됩니다:
+
+    ```bash
+    Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 5.15.133.1-microsoft-WSL2 x86_64)
+    ```
+  </Step>
+
+  <Step>
+    ## curl을 사용해 스크립트로 ClickHouse 설치
+
+    curl을 사용해 스크립트로 ClickHouse를 설치하려면 다음 명령을 실행하세요:
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    스크립트가 성공적으로 실행되면 다음 메시지가 표시됩니다:
+
+    ```bash
+    Successfully downloaded the ClickHouse binary, you can run it as:
+      ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## clickhouse-local 시작
+
+    `clickhouse-local`을 사용하면 별도 구성 없이도 ClickHouse의
+    강력한 SQL 구문으로 로컬 및 원격 파일을 처리할 수 있습니다. 테이블 데이터는
+    임시 위치에 저장되므로 `clickhouse-local`을 다시 시작하면
+    이전에 생성한 테이블은 더 이상 사용할 수 없습니다.
+
+    [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local)을 시작하려면 다음 명령을 실행하세요:
+
+    ```bash
+    ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## clickhouse-server 시작
+
+    데이터를 영구적으로 저장하려면 `clickhouse-server`를 실행해야 합니다. 다음 명령으로
+    ClickHouse 서버를 시작할 수 있습니다:
+
+    ```bash
+    ./clickhouse server
+    ```
+  </Step>
+
+  <Step>
+    ## clickhouse-client 시작
+
+    서버가 실행 중이면 새 터미널 창을 열고 다음 명령을 실행하여
+    `clickhouse-client`를 시작하세요:
+
+    ```bash
+    ./clickhouse client
+    ```
+
+    다음과 비슷한 내용이 표시됩니다:
+
+    ```response
+    ./clickhouse client
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    테이블 데이터는 현재 디렉터리에 저장되며
+    ClickHouse 서버를 다시 시작한 후에도 계속 사용할 수 있습니다. 필요한 경우
+    `./clickhouse server`에 추가 명령줄 인수로
+    `-C config.xml`을 전달하고 설정 파일에서 추가 구성을
+    지정할 수 있습니다. 사용 가능한 모든 구성 설정은 [여기](/ko/reference/settings/server-settings/settings)와
+    [예시 설정 파일
+    템플릿](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)에 문서화되어 있습니다.
+
+    이제 ClickHouse에 SQL 명령을 보낼 준비가 되었습니다!
+  </Step>
+</Steps>

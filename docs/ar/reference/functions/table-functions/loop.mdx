@@ -1,0 +1,70 @@
+---
+description: 'تُستخدَم دالة جدول loop في ClickHouse لإرجاع نتائج query
+  ضمن حلقة لا نهائية.'
+slug: /sql-reference/table-functions/loop
+title: 'loop'
+doc_type: 'reference'
+---
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+SELECT ... FROM loop(database, table);
+SELECT ... FROM loop(database.table);
+SELECT ... FROM loop(table);
+SELECT ... FROM loop(other_table_function(...));
+```
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+| الوسيطة                     | الوصف                                                                                                            |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `database`                  | اسم قاعدة البيانات.                                                                                              |
+| `table`                     | اسم الجدول.                                                                                                      |
+| `other_table_function(...)` | دالة جدول أخرى. مثال: `SELECT * FROM loop(numbers(10));` وهنا تكون `other_table_function(...)` هي `numbers(10)`. |
+
+<div id="returned_values">
+  ## القيم المُعادة
+</div>
+
+حلقة لا نهائية تُعيد نتائج الاستعلام.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+استرجاع البيانات من ClickHouse:
+
+```sql
+SELECT * FROM loop(test_database, test_table);
+SELECT * FROM loop(test_database.test_table);
+SELECT * FROM loop(test_table);
+```
+
+أو باستخدام دوال جداول أخرى:
+
+```sql
+SELECT * FROM loop(numbers(3)) LIMIT 7;
+   ┌─number─┐
+1. │      0 │
+2. │      1 │
+3. │      2 │
+   └────────┘
+   ┌─number─┐
+4. │      0 │
+5. │      1 │
+6. │      2 │
+   └────────┘
+   ┌─number─┐
+7. │      0 │
+   └────────┘
+```
+
+```sql
+SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
+...
+```

@@ -1,0 +1,72 @@
+---
+title: 'Contrôler la synchronisation d’un MySQL ClickPipe'
+description: 'Documentation sur le contrôle de la synchronisation d’un MySQL ClickPipe'
+slug: /integrations/clickpipes/mysql/sync_control
+sidebarTitle: 'Contrôler les synchronisations'
+keywords: ['MySQL ClickPipe', 'contrôle de la synchronisation de ClickPipe', 'réplication MySQL CDC', 'connecteur MySQL ClickHouse', 'synchronisation de base de données ClickHouse']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Ce document décrit comment gérer la synchronisation d’un MySQL ClickPipe lorsque le ClickPipe est en **mode CDC (Running)**.
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+Les ClickPipes pour bases de données reposent sur une architecture composée de deux processus parallèles : la récupération depuis la base de données source et l’envoi vers la base de données cible. Le processus de récupération est piloté par une configuration de synchronisation qui définit la fréquence de récupération des données et la quantité de données récupérées à chaque fois. Par « à chaque fois », nous entendons un lot, puisque le ClickPipe récupère et envoie les données par lots.
+
+Il existe deux principales façons de contrôler la synchronisation d’un MySQL ClickPipe. Le ClickPipe commencera à envoyer les données dès que l’un des paramètres ci-dessous entrera en jeu.
+
+<div id="interval">
+  ### Intervalle de synchronisation
+</div>
+
+L’intervalle de synchronisation du pipe correspond à la durée (en secondes) pendant laquelle le ClickPipe récupère les enregistrements depuis la base de données source. Le temps nécessaire pour envoyer les données récupérées vers ClickHouse n’est pas inclus dans cet intervalle.
+
+La valeur par défaut est de **1 minute**.
+L’intervalle de synchronisation peut être défini sur n’importe quel entier positif, mais il est recommandé de le maintenir au-dessus de 10 secondes.
+
+<div id="batch-size">
+  ### Taille du lot d’extraction
+</div>
+
+La taille du lot d’extraction correspond au nombre d’enregistrements que le ClickPipe récupère depuis la base de données source en un seul lot. Par enregistrements, on entend les insertions, mises à jour et suppressions effectuées sur les tables incluses dans le pipe.
+
+La valeur par défaut est de **100 000** enregistrements.
+Une limite maximale sûre est de 10 millions.
+
+<div id="transactions">
+  ### Une exception : les transactions longues sur la base de données source
+</div>
+
+Lorsqu&#39;une transaction s&#39;exécute sur la base de données source, le ClickPipe attend de recevoir le COMMIT de la transaction avant de poursuivre. Cela **prend le pas sur** l&#39;intervalle de synchronisation et la taille du lot d&#39;extraction.
+
+<div id="configuring">
+  ### Configuration des paramètres de synchronisation
+</div>
+
+Vous pouvez définir l’intervalle de synchronisation et la taille du lot d’extraction lorsque vous créez un ClickPipe ou modifiez un ClickPipe existant.
+Lors de la création d’un ClickPipe, ces paramètres apparaissent à la deuxième étape de l’assistant de création, comme illustré ci-dessous :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="Créer les paramètres de synchronisation" size="md" />
+
+Lorsque vous modifiez un ClickPipe existant, accédez à l’onglet **Settings** du pipe, mettez le pipe en pause, puis cliquez sur **Configure** ici :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="Bouton de modification de la synchronisation" size="md" />
+
+Cela ouvrira un volet latéral contenant les paramètres de synchronisation, dans lequel vous pourrez modifier l’intervalle de synchronisation et la taille du lot d’extraction :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="Modifier les paramètres de synchronisation" size="md" />
+
+<div id="monitoring">
+  ### Surveillance du comportement du contrôle de synchronisation
+</div>
+
+Vous pouvez voir combien de temps prend chaque lot dans la table **CDC Syncs**, dans l’onglet **Métriques** du ClickPipe. Notez que la durée indiquée ici inclut le temps d’envoi et que, même si aucune ligne n’arrive, le ClickPipe attend ; ce temps d’attente est également inclus dans la durée.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="Table CDC Syncs" size="md" />

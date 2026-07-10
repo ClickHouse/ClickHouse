@@ -1,0 +1,49 @@
+---
+description: 'EXECUTE AS ステートメントのリファレンス'
+sidebarTitle: 'EXECUTE AS'
+slug: /sql-reference/statements/execute_as
+title: 'EXECUTE AS ステートメント'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+別のユーザーとしてクエリを実行できます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+EXECUTE AS target_user;
+EXECUTE AS target_user subquery;
+```
+
+最初の形式 (`subquery` なし) では、現在のセッションで以降に実行されるすべてのクエリが、指定した `target_user` として実行されるようになります。
+
+2 番目の形式 (`subquery` あり) では、指定した `subquery` のみが、指定した `target_user` として実行されます。
+
+どちらの形式も使用するには、設定 `access_control_improvements.allow_impersonate_user`
+を `1` に設定し、`IMPERSONATE` 権限が付与されている必要があります。たとえば、次のコマンド
+
+```sql
+GRANT IMPERSONATE ON user1 TO user2;
+GRANT IMPERSONATE ON * TO user3;
+```
+
+ユーザー `user2` に `EXECUTE AS user1 ...` コマンドの実行を許可し、さらにユーザー `user3` には任意のユーザーとしてコマンドを実行することを許可します。
+
+別のユーザーとして実行している間は、関数 [currentUser()](/ja/reference/functions/regular-functions/other-functions#currentUser) はそのユーザー名を返し、
+関数 [authenticatedUser()](/ja/reference/functions/regular-functions/other-functions#authenticatedUser) は実際に認証されたユーザー名を返します。
+
+<div id="examples">
+  ## 例
+</div>
+
+```sql
+SELECT currentUser(), authenticatedUser(); -- 出力: "default    default"
+CREATE USER james;
+EXECUTE AS james SELECT currentUser(), authenticatedUser(); -- 出力: "james    default"
+```

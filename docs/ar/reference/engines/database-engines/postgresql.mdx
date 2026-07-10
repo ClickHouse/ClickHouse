@@ -1,0 +1,156 @@
+---
+description: 'يتيح الاتصال بقواعد البيانات على خادم PostgreSQL بعيد.'
+sidebarTitle: 'PostgreSQL'
+slug: /engines/database-engines/postgresql
+title: 'PostgreSQL'
+doc_type: 'guide'
+---
+
+يتيح الاتصال بقواعد البيانات على خادم [PostgreSQL](https://www.postgresql.org) بعيد. ويدعم عمليات القراءة والكتابة (استعلامات `SELECT` و`INSERT`) لتبادل البيانات بين ClickHouse وPostgreSQL.
+
+يوفّر وصولًا في الوقت الفعلي إلى قائمة الجداول وبنية الجداول على خادم PostgreSQL البعيد باستخدام استعلامَي `SHOW TABLES` و`DESCRIBE TABLE`.
+
+ويدعم تعديل بنية الجداول (`ALTER TABLE ... ADD|DROP COLUMN`). إذا جرى تعيين المَعلمة `use_table_cache` (انظر معلمات المحرك أدناه) إلى `1`، فستُخزَّن بنية الجدول مؤقتًا ولن يُتحقق من حدوث أي تعديل عليها، ولكن يمكن تحديثها باستخدام استعلامَي `DETACH` و`ATTACH`.
+
+<div id="creating-a-database">
+  ## إنشاء قاعدة بيانات
+</div>
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
+```
+
+**معلمات المحرّك**
+
+* `host:port` — عنوان خادم PostgreSQL.
+* `database` — اسم قاعدة البيانات البعيدة.
+* `user` — مستخدم PostgreSQL.
+* `password` — كلمة مرور المستخدم.
+* `schema` — مخطط PostgreSQL.
+* `use_table_cache` — يحدّد ما إذا كانت بنية جدول قاعدة البيانات مخزنة مؤقتًا أم لا. اختياري. القيمة الافتراضية: `0`.
+
+<div id="data_types-support">
+  ## دعم أنواع البيانات
+</div>
+
+| PostgreSQL       | ClickHouse                                                     |
+| ---------------- | -------------------------------------------------------------- |
+| DATE             | [Date](/ar/reference/data-types/date)                             |
+| TIMESTAMP        | [DateTime](/ar/reference/data-types/datetime)                     |
+| REAL             | [Float32](/ar/reference/data-types/float)                         |
+| DOUBLE           | [Float64](/ar/reference/data-types/float)                         |
+| DECIMAL, NUMERIC | [Decimal](/ar/reference/data-types/decimal) (انظر الملاحظة أدناه) |
+| SMALLINT         | [Int16](/ar/reference/data-types/int-uint)                        |
+| INTEGER          | [Int32](/ar/reference/data-types/int-uint)                        |
+| BIGINT           | [Int64](/ar/reference/data-types/int-uint)                        |
+| SERIAL           | [UInt32](/ar/reference/data-types/int-uint)                       |
+| BIGSERIAL        | [UInt64](/ar/reference/data-types/int-uint)                       |
+| TEXT, CHAR       | [String](/ar/reference/data-types/string)                         |
+| INTEGER          | Nullable([Int32](/ar/reference/data-types/int-uint))              |
+| ARRAY            | [Array](/ar/reference/data-types/array)                           |
+
+<Note>
+  يُحوَّل `numeric(p, 0)` في PostgreSQL عندما تكون الدقة `p` أكبر من 76 (وهو الحد الأقصى الذي يدعمه `Decimal256`) — على سبيل المثال `numeric(78, 0)`، وهو يُستخدم عادةً لتخزين أعداد صحيحة بعرض 256 بت — إلى [`Int256`](/ar/reference/data-types/int-uint) بدلًا من `Decimal`. وتُرفض القيم التي لا تقع ضمن نطاق `Int256` مع ظهور error.
+</Note>
+
+<div id="examples-of-use">
+  ## أمثلة على الاستخدام
+</div>
+
+قاعدة بيانات في ClickHouse تتبادل البيانات مع خادم PostgreSQL:
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
+```
+
+```sql
+SHOW DATABASES;
+```
+
+```text
+┌─name──────────┐
+│ default       │
+│ test_database │
+│ system        │
+└───────────────┘
+```
+
+```sql
+SHOW TABLES FROM test_database;
+```
+
+```text
+┌─name───────┐
+│ test_table │
+└────────────┘
+```
+
+قراءة البيانات من جدول PostgreSQL:
+
+```sql
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─id─┬─value─┐
+│  1 │     2 │
+└────┴───────┘
+```
+
+كتابة البيانات في جدول PostgreSQL:
+
+```sql
+INSERT INTO test_database.test_table VALUES (3,4);
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```
+
+لنفترض أنه جرى تعديل بنية الجدول في PostgreSQL:
+
+```sql
+postgre> ALTER TABLE test_table ADD COLUMN data Text
+```
+
+بما أن المعلمة `use_table_cache` ضُبطت على `1` عند إنشاء قاعدة البيانات، فقد كانت بنية الجدول في ClickHouse مخزنة مؤقتًا، ولذلك لم تُعدَّل:
+
+```sql
+DESCRIBE TABLE test_database.test_table;
+```
+
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+└────────┴───────────────────┘
+```
+
+بعد فصل الجدول ثم إعادة إرفاقه، تم تحديث البنية:
+
+```sql
+DETACH TABLE test_database.test_table;
+ATTACH TABLE test_database.test_table;
+DESCRIBE TABLE test_database.test_table;
+```
+
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+│ data   │ Nullable(String)  │
+└────────┴───────────────────┘
+```
+
+<div id="related-content">
+  ## محتوى ذي صلة
+</div>
+
+* مدونة: [ClickHouse و PostgreSQL - توافق مثالي في عالم البيانات - الجزء 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+* مدونة: [ClickHouse و PostgreSQL - توافق مثالي في عالم البيانات - الجزء 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

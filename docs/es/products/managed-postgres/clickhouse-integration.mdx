@@ -1,0 +1,88 @@
+---
+slug: /cloud/managed-postgres/clickhouse-integration
+sidebarTitle: 'ClickHouse integration'
+title: 'ClickHouse integration'
+description: 'Replica tus datos de Postgres en ClickHouse con las capacidades integradas de CDC'
+keywords: ['postgres', 'clickhouse integration', 'cdc', 'replicación', 'clickpipes', 'sincronización de datos']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
+
+Cada instancia de Managed Postgres incluye capacidades de CDC integradas para cualquiera de tus servicios de ClickHouse. Esto te permite mover parte o la totalidad de los datos de tu instancia de Postgres a ClickHouse y hacer que los cambios en los datos de Postgres se reflejen en ClickHouse de forma continua y casi en tiempo real. Todo esto se basa internamente en [ClickPipes](/es/integrations/clickpipes/home).
+
+Para acceder, haz clic en **ClickHouse Integration** en la barra lateral de tu instancia de Postgres.
+
+<Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="Página principal de ClickHouse Integration que muestra la opción de integración en la barra lateral" size="md" border />
+
+<Note>
+  Antes de continuar, asegúrate de que tu servicio de Postgres sea accesible para el servicio ClickPipes. Normalmente esto ya está configurado así, pero si has restringido el acceso por IP, puede que tengas que conceder acceso a algunas IP de origen de [esta](/es/integrations/clickpipes/home#list-of-static-ips) lista según la región en la que se encuentre tu **ClickHouse service**.
+</Note>
+
+Haz clic en **Replicate data in ClickHouse** para empezar a configurar tu ClickPipe.
+
+<Steps>
+  <Step>
+    ## Configura el servicio de replicación
+
+    Completa la configuración de replicación:
+
+    * **Integration name**: Un nombre para este ClickPipe
+    * **ClickHouse service**: Selecciona un servicio existente de ClickHouse Cloud o crea uno nuevo
+    * **Postgres database**: La base de datos de origen desde la que se replicarán los datos
+    * **Replication method**: Elige una de las siguientes opciones:
+      * **Initial load + CDC**: Importa los datos existentes y mantiene las tablas actualizadas con los cambios nuevos (recomendado)
+      * **Initial load only**: Snapshot único de los datos existentes sin actualizaciones continuas
+      * **CDC only**: Omite el snapshot inicial y solo captura los cambios nuevos a partir de ese momento
+
+    <Image img="/images/managed-postgres/replication-service-step.webp" alt="Configuración del servicio de replicación que muestra el nombre de la integración, el servicio de destino y las opciones del método de replicación" size="md" border />
+
+    Haz clic en **Next** para continuar.
+  </Step>
+
+  <Step>
+    ## Configura los ajustes de replicación
+
+    Ajusta cómo se replican los datos:
+
+    * **Sync interval (seconds)**: Frecuencia con la que se extraen los cambios de Postgres (predeterminado: 60)
+    * **Parallel threads for initial load**: Número de threads usados durante el snapshot inicial (predeterminado: 4)
+    * **Pull batch size**: Número de filas obtenidas por lote durante la replicación (predeterminado: 100000)
+    * **Snapshot number of rows per partition**: Filas por partición durante el snapshot inicial (predeterminado: 100000)
+    * **Snapshot number of tables in parallel**: Cuántas tablas se procesan en snapshot en paralelo (predeterminado: 1)
+
+    <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="Paso de ajustes de replicación que muestra el intervalo de sincronización, los threads en paralelo, el tamaño del lote de extracción y las opciones de configuración del snapshot" size="md" border />
+
+    Haz clic en **Next** para continuar.
+  </Step>
+
+  <Step>
+    ## Selecciona las tablas que se van a replicar
+
+    Elige una base de datos de destino y selecciona qué tablas quieres replicar:
+
+    * **Destination database**: Selecciona una base de datos existente de ClickHouse o crea una nueva
+    * **Prefix default destination table names with schema name**: Añade el schema de Postgres como prefijo para evitar conflictos de nombres
+    * **Preserve NULL values from source**: Mantiene los valores NULL en lugar de convertirlos en valores predeterminados
+    * **Remove deleted rows during merges**: Para las tablas [ReplacingMergeTree](/es/reference/engines/table-engines/mergetree-family/replacingmergetree), elimina físicamente las filas borradas durante las background merges
+
+    Expande los schemas y selecciona las tablas individuales que quieres replicar. También puedes personalizar los nombres de las tablas de destino y la configuración de columna.
+
+    <Image img="/images/managed-postgres/select-tables-step.webp" alt="Paso de selección de tablas que muestra la selección de la base de datos, las opciones de replicación y el selector de tablas agrupado por schema" size="md" border />
+
+    Haz clic en **Replicate data to ClickHouse** para iniciar la replicación.
+  </Step>
+
+  <Step>
+    ## Supervisa tu ClickPipe
+
+    Una vez que el ClickPipe se inicie, lo verás en la lista dentro del mismo menú. El snapshot inicial de todos los datos puede tardar un tiempo, según el tamaño de tus tablas.
+
+    <Image img="/images/managed-postgres/integration-running.webp" alt="Lista de ClickHouse Integration que muestra un ClickPipe en ejecución con su servicio de destino y estado" size="md" border />
+
+    Haz clic en el nombre de la integración para ver el estado detallado, supervisar el progreso, ver errores y administrar el ClickPipe. Consulta [Lifecycle of a Postgres ClickPipe](/es/integrations/clickpipes/postgres/lifecycle) para entender los distintos estados en los que puede estar tu ClickPipe.
+  </Step>
+</Steps>

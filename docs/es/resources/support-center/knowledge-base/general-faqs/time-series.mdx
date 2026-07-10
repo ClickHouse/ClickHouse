@@ -1,0 +1,19 @@
+---
+slug: /faq/use-cases/time-series
+title: '¿Puedo usar ClickHouse como base de datos de series temporales?'
+toc_hidden: true
+toc_priority: 101
+description: 'Página que describe cómo usar ClickHouse como base de datos de series temporales'
+doc_type: 'guide'
+keywords: ['series temporales', 'datos temporales', 'caso de uso', 'análisis basado en el tiempo', 'timeseries']
+---
+
+*Nota: Consulta el blog [Working with Time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse) para ver más ejemplos del uso de ClickHouse para el análisis de series temporales.*
+
+ClickHouse es una solución genérica de almacenamiento de datos para cargas de trabajo [OLAP](/es/resources/support-center/knowledge-base/general-faqs/olap), mientras que existen muchos [sistemas de gestión de bases de datos de series temporales](https://clickhouse.com/engineering-resources/what-is-time-series-database) especializados. No obstante, el [enfoque de ClickHouse en la velocidad de ejecución de consultas](/es/get-started/about/why-clickhouse-is-so-fast) le permite superar a los sistemas especializados en muchos casos. Hay muchas comparativas independientes sobre este tema, así que no vamos a hacer una aquí. En su lugar, centrémonos en las funcionalidades de ClickHouse que conviene usar en este caso.
+
+En primer lugar, existen **[codecs especializados](/es/reference/statements/create/table#specialized-codecs)** muy adecuados para series temporales, ya sean algoritmos comunes como `DoubleDelta` y `Gorilla` o algoritmos específicos de ClickHouse como `T64`.
+
+En segundo lugar, las consultas de series temporales suelen acceder solo a datos recientes, por ejemplo, de hace un día o una semana. Tiene sentido usar servidores que cuenten tanto con unidades NVMe/SSD rápidas como con unidades HDD de gran capacidad. La funcionalidad [TTL](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de ClickHouse permite configurar la conservación de los datos recientes en unidades rápidas y moverlos gradualmente a unidades más lentas a medida que envejecen. También es posible consolidar o eliminar datos aún más antiguos si así lo requieren sus necesidades.
+
+Aunque va en contra de la filosofía de ClickHouse de almacenar y procesar datos sin procesar, puede usar [vistas materializadas](/es/reference/statements/create/view) para cumplir requisitos aún más estrictos de latencia o costes.

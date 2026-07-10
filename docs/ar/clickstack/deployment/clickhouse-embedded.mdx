@@ -1,0 +1,170 @@
+---
+slug: /use-cases/observability/clickstack/deployment/clickhouse-embedded
+title: 'مضمّن في ClickHouse'
+description: 'استخدام ClickStack المضمّن في خادم ClickHouse - حزمة observability الخاصة بـ ClickHouse'
+doc_type: 'guide'
+keywords: ['ClickStack المضمّن', 'ClickHouse المضمّن', 'ClickStack على خادم ClickHouse', 'observability مضمّنة']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يأتي ClickStack مضمّنًا مباشرةً داخل الملف التنفيذي لخادم ClickHouse. وهذا يعني أنه يمكنك الوصول إلى واجهة مستخدم ClickStack ‏(HyperDX) من خلال مثيل ClickHouse لديك من دون الحاجة إلى نشر أي مكوّنات إضافية. ويشبه هذا النشر العرض التوضيحي العام المتاح على [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)، لكنه يعمل على مثيل ClickHouse وبياناتك الخاصة.
+
+<div id="suitable-for">
+  ### مناسب لـ
+</div>
+
+* تجربة ClickStack بأقل قدر من الإعداد
+* استكشاف بيانات ClickHouse الخاصة بك باستخدام واجهة Observability
+* العروض التوضيحية والتقييمات
+
+<div id="limitations">
+  ### القيود
+</div>
+
+هذه النسخة المضمّنة **غير مصممة للاستخدام في بيئات الإنتاج**. الميزات التالية غير متاحة مقارنةً بـ [عمليات نشر OSS الجاهزة للإنتاج](/ar/clickstack/deployment/oss):
+
+* [التنبيهات](/ar/clickstack/features/alerts)
+* استمرارية [لوحة المعلومات](/ar/clickstack/features/dashboards/overview) و[البحث](/ar/clickstack/features/search) — لا تُحفَظ لوحات المعلومات وعمليات البحث المحفوظة بين الجلسات
+* إعدادات الاستعلام القابلة للتخصيص
+* [أنماط الأحداث](/ar/clickstack/features/event-patterns)
+
+<div id="deployment-steps">
+  ## خطوات النشر
+</div>
+
+<Tabs>
+  <Tab title="Docker">
+    <Steps>
+      <Step>
+        ### ابدأ ClickHouse
+
+        اسحب صورة خادم ClickHouse وشغّلها مع تعيين كلمة مرور:
+
+        ```shell
+        docker run --rm -it -p 8123:8123 -e CLICKHOUSE_PASSWORD=password clickhouse/clickhouse-server:head-alpine
+        ```
+
+        <Tip>
+          **التشغيل من دون كلمة مرور**
+
+          إذا كنت تفضّل التشغيل من دون كلمة مرور، فيجب تمكين إدارة الوصول الافتراضية صراحةً:
+
+          ```shell
+          docker run --rm -it -p 8123:8123 -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 clickhouse/clickhouse-server:head-alpine
+          ```
+        </Tip>
+      </Step>
+
+      <Step>
+        ### افتح واجهة ClickStack
+
+        افتح [http://localhost:8123](http://localhost:8123) في المتصفح وانقر على **ClickStack**.
+
+        أدخل اسم المستخدم `default` وكلمة المرور `password` للاتصال بالمثيل المحلي.
+
+        <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="المصادقة" size="lg" />
+      </Step>
+
+      <Step>
+        ### أنشئ مصدرًا
+
+        إذا كانت لديك جداول OpenTelemetry موجودة، فسيكتشفها ClickStack وينشئ المصادر تلقائيًا.
+
+        في التثبيت الجديد، سيُطلب منك إنشاء مصدر. املأ حقل **Table** باسم الجدول المناسب (مثل `otel_logs`) ثم انقر على **Save New Source**.
+
+        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="إنشاء مصدر" size="lg" />
+
+        إذا لم تكن لديك بيانات بعد، فراجع [إدخال البيانات](/ar/clickstack/ingesting-data/index) للاطلاع على الخيارات المتاحة.
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="الملف التنفيذي">
+    <Steps>
+      <Step>
+        ### ابدأ ClickHouse
+
+        نزّل ClickHouse وابدأ تشغيله:
+
+        ```shell
+        curl https://clickhouse.com/ | sh
+        ```
+
+        <Accordion title="اختياري: فعّل جداول سجلات النظام">
+          لاستكشاف السجلات والمقاييس الداخلية الخاصة بـ ClickHouse نفسه، أنشئ مقتطف تهيئة في دليل العمل قبل بدء الخادم:
+
+          ```shell
+          mkdir -p config.d && cat > config.d/query_logs.xml << 'EOF'
+          <clickhouse>
+              <query_log>
+                  <database>system</database>
+                  <table>query_log</table>
+              </query_log>
+              <query_thread_log>
+                  <database>system</database>
+                  <table>query_thread_log</table>
+              </query_thread_log>
+              <query_views_log>
+                  <database>system</database>
+                  <table>query_views_log</table>
+              </query_views_log>
+              <metric_log>
+                  <database>system</database>
+                  <table>metric_log</table>
+              </metric_log>
+              <asynchronous_metric_log>
+                  <database>system</database>
+                  <table>asynchronous_metric_log</table>
+              </asynchronous_metric_log>
+          </clickhouse>
+          EOF
+          ```
+
+          بعد تفعيل ذلك، يمكنك إنشاء **Log Source** يشير إلى `system.query_log` بعد فتح ClickStack:
+
+          | الإعداد              | القيمة                                                                                                                                  |
+          | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+          | **Name**             | `Query Logs`                                                                                                                            |
+          | **Database**         | `system`                                                                                                                                |
+          | **Table**            | `query_log`                                                                                                                             |
+          | **Timestamp Column** | `event_time`                                                                                                                            |
+          | **Default Select**   | `event_time, query_kind, query, databases, tables, initial_user, projections, memory_usage, written_rows, read_rows, query_duration_ms` |
+        </Accordion>
+
+        ابدأ تشغيل الخادم:
+
+        ```shell
+        ./clickhouse server
+        ```
+      </Step>
+
+      <Step>
+        ### افتح واجهة ClickStack
+
+        افتح [http://localhost:8123](http://localhost:8123) في المتصفح وانقر على **ClickStack**. سيُنشأ اتصال بالمثيل المحلي تلقائيًا.
+      </Step>
+
+      <Step>
+        ### أنشئ مصدرًا
+
+        إذا كانت لديك جداول OpenTelemetry موجودة، فسيكتشفها ClickStack وينشئ المصادر تلقائيًا.
+
+        إذا لم تكن لديك بيانات بعد، فراجع [إدخال البيانات](/ar/clickstack/ingesting-data/index) للاطلاع على الخيارات المتاحة.
+
+        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="إنشاء مصدر" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+إذا كنت مستعدًا للانتقال إلى ما بعد مرحلة التقييم، ففكّر في نشرٍ جاهزٍ للإنتاج:
+
+* [All-in-One](/ar/clickstack/deployment/all-in-one) — حاوية واحدة تضم جميع المكونات، بما في ذلك التخزين الدائم والمصادقة
+* [Docker Compose](/ar/clickstack/deployment/docker-compose) — مكونات منفصلة لمزيد من التحكم
+* [Helm](/ar/clickstack/deployment/helm) — موصى به لعمليات النشر على Kubernetes في بيئات الإنتاج
+* [Managed ClickStack](/ar/clickstack/getting-started/managed) — مُدار بالكامل على ClickHouse Cloud
