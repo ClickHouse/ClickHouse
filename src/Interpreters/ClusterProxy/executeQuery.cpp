@@ -44,6 +44,8 @@
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 
+#include <algorithm>
+
 
 namespace ProfileEvents
 {
@@ -817,6 +819,10 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
             continue;
         pools_to_use.emplace_back(std::move(pool.pool));
     }
+
+    /// The load balancing policy may restrict the candidate set to fewer replicas
+    /// than requested (e.g. `load_balancing = first` keeps only the first replica).
+    max_replicas_to_use = std::min(max_replicas_to_use, pools_to_use.size());
 
     return {pools_to_use, max_replicas_to_use};
 }

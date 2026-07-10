@@ -987,6 +987,7 @@ ClickHouse supports the following algorithms of choosing replicas:
 - [In order](#load_balancing-in_order)
 - [First or random](#load_balancing-first_or_random)
 - [Round robin](#load_balancing-round_robin)
+- [First](#load_balancing-first)
 
 See also:
 
@@ -1105,9 +1106,21 @@ load_balancing = round_robin
 ```
 
 This algorithm uses a round-robin policy across replicas with the same number of errors (only the queries with `round_robin` policy is accounted).
+
+### First {#load_balancing-first}
+
+```sql
+load_balancing = first
+```
+
+Just like `first_or_random`, the query is sent to the first replica in the set, but if the first replica is unavailable, the query fails instead of falling back to another replica.
+
+Combined with [`load_balancing_first_offset`](#load_balancing_first_offset), this pins every query to the replica at the given offset in configuration order and fails the query when that replica is unavailable.
+
+This mode restricts replica selection for queries. Operations that must reach every replica of a shard (such as an `INSERT` into a `Distributed` table without `internal_replication`) still use all replicas.
 )", 0) \
     DECLARE(UInt64, load_balancing_first_offset, 0, R"(
-Which replica to preferably send a query when FIRST_OR_RANDOM load balancing strategy is used.
+Which replica to preferably send a query when `first_or_random` or `first` load balancing strategy is used.
 )", 0) \
     \
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, R"(

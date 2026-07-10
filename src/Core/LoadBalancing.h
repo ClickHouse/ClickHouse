@@ -26,6 +26,9 @@ enum class LoadBalancing : uint8_t
     FIRST_OR_RANDOM,
     // round robin across replicas with the same number of errors.
     ROUND_ROBIN,
+    /// just like FIRST_OR_RANDOM, but if the first replica is unavailable,
+    /// fail the query instead of falling back to another replica
+    FIRST,
 };
 
 }

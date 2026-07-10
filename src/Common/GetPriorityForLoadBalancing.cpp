@@ -50,6 +50,7 @@ GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t 
         case LoadBalancing::RANDOM:
             break;
         case LoadBalancing::FIRST_OR_RANDOM:
+        case LoadBalancing::FIRST:
             get_priority = [offset](size_t i) { return i != offset ? Priority{1} : Priority{0}; };
             break;
         case LoadBalancing::ROUND_ROBIN:
@@ -106,6 +107,8 @@ bool GetPriorityForLoadBalancing::hasOptimalNode() const
             return true;
         case LoadBalancing::ROUND_ROBIN:
             return false;
+        case LoadBalancing::FIRST:
+            return true;
     }
 }
 

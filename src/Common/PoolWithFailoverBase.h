@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <ctime>
 #include <cstdlib>
 #include <climits>
@@ -108,13 +109,16 @@ public:
     /// Returns at least min_entries and at most max_entries connections (at most one connection per nested pool).
     /// The method will throw if it is unable to get min_entries alive connections or
     /// if fallback_to_stale_replicas is false and it is unable to get min_entries connections to up-to-date replicas.
+    /// If only_preferred_pools is true, pools that get_priority ranks worse than the best-ranked pool
+    /// are excluded from the candidate set entirely instead of being tried after it (no failover to them).
     std::vector<TryResult> getMany(
             size_t min_entries, size_t max_entries, size_t max_tries,
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
             bool skip_read_only_replicas,
             const TryGetEntryFunc & try_get_entry,
-            const GetPriorityFunc & get_priority);
+            const GetPriorityFunc & get_priority,
+            bool only_preferred_pools = false);
 
     // Returns if the TryResult provided is an invalid one that cannot be used. Used to prevent logical errors.
     bool isTryResultInvalid(const TryResult & result, bool skip_read_only_replicas) const
@@ -142,14 +146,15 @@ protected:
 
     /// Returns a single connection.
     Entry get(size_t max_ignored_errors, bool fallback_to_stale_replicas,
-        const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc());
+        const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority = GetPriorityFunc(),
+        bool only_preferred_pools = false);
 
     /// This function returns a copy of pool states to avoid race conditions when modifying shared pool states.
     PoolStates updatePoolStates(size_t max_ignored_errors);
 
     void updateErrorCounts(PoolStates & states, time_t & last_decrease_time) const;
 
-    std::vector<ShuffledPool> getShuffledPools(size_t max_ignored_errors, const GetPriorityFunc & get_priority, bool use_slowdown_count = false);
+    std::vector<ShuffledPool> getShuffledPools(size_t max_ignored_errors, const GetPriorityFunc & get_priority, bool use_slowdown_count = false, bool only_preferred_pools = false);
 
     inline void updateSharedErrorCounts(std::vector<ShuffledPool> & shuffled_pools);
 
@@ -179,7 +184,7 @@ protected:
 template <typename TNestedPool>
 std::vector<typename PoolWithFailoverBase<TNestedPool>::ShuffledPool>
 PoolWithFailoverBase<TNestedPool>::getShuffledPools(
-    size_t max_ignored_errors, const PoolWithFailoverBase::GetPriorityFunc & get_priority, bool use_slowdown_count)
+    size_t max_ignored_errors, const PoolWithFailoverBase::GetPriorityFunc & get_priority, bool use_slowdown_count, bool only_preferred_pools)
 {
     /// Update random numbers and error counts.
     PoolStates pool_states = updatePoolStates(max_ignored_errors);
@@ -195,6 +200,17 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
         shuffled_pools.emplace_back(ShuffledPool{.pool = nested_pools[i], .state = &pool_states[i], .index = i});
+
+    if (only_preferred_pools && get_priority && !pool_states.empty())
+    {
+        /// The filter is by best `priority` rather than by position in the sorted order:
+        /// the sort ranks `error_count` above `priority`, so a pool with accumulated errors
+        /// stays the (only) candidate instead of being silently replaced by another pool.
+        const Priority best_priority = std::min_element(
+            pool_states.begin(), pool_states.end(),
+            [](const PoolState & lhs, const PoolState & rhs) { return lhs.priority < rhs.priority; })->priority;
+        std::erase_if(shuffled_pools, [best_priority](const ShuffledPool & pool) { return pool.state->priority != best_priority; });
+    }
 
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
@@ -244,7 +260,7 @@ inline void PoolWithFailoverBase<TNestedPool>::incrementErrorCount(NestedPoolPtr
 template <typename TNestedPool>
 typename TNestedPool::Entry
 PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_to_stale_replicas,
-    const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
+    const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority, bool only_preferred_pools)
 {
     std::vector<TryResult> results = getMany(
         /* min_entries= */ 1,
@@ -253,7 +269,7 @@ PoolWithFailoverBase<TNestedPool>::get(size_t max_ignored_errors, bool fallback_
         max_ignored_errors,
         fallback_to_stale_replicas,
         /* skip_read_only_replicas= */ false,
-        try_get_entry, get_priority);
+        try_get_entry, get_priority, only_preferred_pools);
     if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
                 "PoolWithFailoverBase::getMany() returned less than min_entries entries.");
@@ -268,9 +284,10 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         bool fallback_to_stale_replicas,
         bool skip_read_only_replicas,
         const TryGetEntryFunc & try_get_entry,
-        const GetPriorityFunc & get_priority)
+        const GetPriorityFunc & get_priority,
+        bool only_preferred_pools)
 {
-    std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority);
+    std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority, /* use_slowdown_count= */ false, only_preferred_pools);
 
     /// Limit `max_tries` value by `max_error_cap` to avoid unlimited number of retries
     max_tries = std::min(max_tries, max_error_cap);
@@ -295,7 +312,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         for (size_t i = 0; i < shuffled_pools.size(); ++i)
         {
             if (up_to_date_count >= max_entries /// Already enough good entries.
-                || entries_count + failed_pools_count >= nested_pools.size()) /// No more good entries will be produced.
+                || entries_count + failed_pools_count >= shuffled_pools.size()) /// No more good entries will be produced.
             {
                 finished = true;
                 break;

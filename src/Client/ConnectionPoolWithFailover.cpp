@@ -89,8 +89,9 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
 
     const UInt64 max_ignored_errors = settings[Setting::distributed_replica_max_ignored_errors];
     const bool fallback_to_stale_replicas = settings[Setting::fallback_to_stale_replicas_for_distributed_queries];
+    const bool only_preferred_pools = settings[Setting::load_balancing] == LoadBalancing::FIRST;
 
-    return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
+    return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority, only_preferred_pools);
 }
 
 ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
@@ -232,13 +233,20 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown pool allocation mode");
     }
 
+    /// `load_balancing = first` must not fail over to non-first replicas.
+    /// An explicit priority_func overrides the load_balancing-based selection, and GET_ALL
+    /// bypasses replica selection altogether (every replica must be used), so both are exempt.
+    const bool only_preferred_pools = !priority_func
+        && settings[Setting::load_balancing] == LoadBalancing::FIRST
+        && pool_mode != PoolMode::GET_ALL;
+
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);
 
     UInt64 max_ignored_errors = settings[Setting::distributed_replica_max_ignored_errors].value;
     bool fallback_to_stale_replicas = settings[Setting::fallback_to_stale_replicas_for_distributed_queries].value;
 
-    return Base::getMany(min_entries, max_entries, max_tries, max_ignored_errors, fallback_to_stale_replicas, skip_read_only_replicas, try_get_entry, priority_func);
+    return Base::getMany(min_entries, max_entries, max_tries, max_ignored_errors, fallback_to_stale_replicas, skip_read_only_replicas, try_get_entry, priority_func, only_preferred_pools);
 }
 
 ConnectionPoolWithFailover::TryResult
@@ -284,11 +292,13 @@ ConnectionPoolWithFailover::tryGetEntry(
 std::vector<ConnectionPoolWithFailover::Base::ShuffledPool>
 ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPriorityForLoadBalancing::Func priority_func, bool use_slowdown_count)
 {
+    const bool only_preferred_pools = !priority_func && settings[Setting::load_balancing] == LoadBalancing::FIRST;
+
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);
 
     UInt64 max_ignored_errors = settings[Setting::distributed_replica_max_ignored_errors].value;
-    return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count);
+    return Base::getShuffledPools(max_ignored_errors, priority_func, use_slowdown_count, only_preferred_pools);
 }
 
 }
