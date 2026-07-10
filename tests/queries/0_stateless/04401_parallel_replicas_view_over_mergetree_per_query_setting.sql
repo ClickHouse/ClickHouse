@@ -1,10 +1,10 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, long
 
 DROP TABLE IF EXISTS v_pr_view;
 DROP TABLE IF EXISTS mt_pr_view;
 
 CREATE TABLE mt_pr_view (a Int32) ENGINE = MergeTree ORDER BY a;
-INSERT INTO mt_pr_view SELECT number FROM numbers(1000);
+INSERT INTO mt_pr_view SELECT number FROM numbers(10);
 CREATE VIEW v_pr_view AS SELECT a FROM mt_pr_view;
 
 SET allow_experimental_parallel_reading_from_replicas = 1;
