@@ -3358,6 +3358,7 @@ IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
 
 std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::checkDataNext");
     auto * data_validation_tasks = assert_cast<DataValidationTasks *>(check_task_list.get());
     auto local_context = data_validation_tasks->context;
     if (auto part = data_validation_tasks->next())
