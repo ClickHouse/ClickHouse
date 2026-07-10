@@ -1,0 +1,112 @@
+---
+description: 'يتيح هذا المحرك معالجة ملفات السجل الخاصة بالتطبيق كتدفّق من
+  السجلات.'
+sidebarTitle: 'FileLog'
+slug: /engines/table-engines/special/filelog
+title: 'محرك الجدول FileLog'
+doc_type: 'reference'
+---
+
+يتيح هذا المحرك معالجة ملفات السجل الخاصة بالتطبيق كتدفّق من السجلات.
+
+يتيح لك `FileLog` ما يلي:
+
+* الاشتراك في ملفات السجل.
+* معالجة السجلات الجديدة فور إضافتها إلى ملفات السجل المشترَك فيها.
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = FileLog('path_to_logs', 'format_name') SETTINGS
+    [poll_timeout_ms = 0,]
+    [poll_max_batch_size = 0,]
+    [max_block_size = 0,]
+    [max_threads = 0,]
+    [poll_directory_watch_events_backoff_init = 500,]
+    [poll_directory_watch_events_backoff_max = 32000,]
+    [poll_directory_watch_events_backoff_factor = 2,]
+    [handle_error_mode = 'default']
+```
+
+وسائط المحرك:
+
+* `path_to_logs` – المسار إلى ملفات السجل المراد متابعتها. يمكن أن يكون مسارًا إلى دليل يحتوي على ملفات سجل أو إلى ملف سجل واحد. لاحظ أن ClickHouse لا يسمح إلا بالمسارات الموجودة داخل الدليل `user_files`.
+* `format_name` - تنسيق السجل. لاحظ أن FileLog يعالج كل سطر في الملف كسجل منفصل، لذلك ليست كل تنسيقات البيانات مناسبة له.
+
+المعلمات الاختيارية:
+
+* `poll_timeout_ms` - مهلة عملية استطلاع واحدة من ملف السجل. القيمة الافتراضية: [stream&#95;poll&#95;timeout&#95;ms](/ar/reference/settings/session-settings#stream_poll_timeout_ms).
+* `poll_max_batch_size` — الحد الأقصى لعدد السجلات التي يمكن استطلاعها في عملية استطلاع واحدة. القيمة الافتراضية: [max&#95;block&#95;size](/ar/reference/settings/session-settings#max_block_size).
+* `max_block_size` — الحد الأقصى لحجم الدفعة (بعدد السجلات) لعملية الاستطلاع. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#max_insert_block_size).
+* `max_threads` - الحد الأقصى لعدد الخيوط المستخدمة لتحليل الملفات، والقيمة الافتراضية هي 0، ما يعني أن العدد سيكون max(1, physical&#95;cpu&#95;cores / 4).
+* `poll_directory_watch_events_backoff_init` - مدة الانتظار الأولية لخيط مراقبة أحداث الدليل. القيمة الافتراضية: `500`.
+* `poll_directory_watch_events_backoff_max` - مدة الانتظار القصوى لخيط مراقبة أحداث الدليل. القيمة الافتراضية: `32000`.
+* `poll_directory_watch_events_backoff_factor` - معدل التراجع، ويكون أُسيًا افتراضيًا. القيمة الافتراضية: `2`.
+* `handle_error_mode` — كيفية التعامل مع الأخطاء في محرك FileLog. القيم الممكنة: default (سيتم طرح الاستثناء إذا تعذر علينا تحليل رسالة)، stream (سيتم حفظ رسالة الاستثناء والرسالة الخام في الأعمدة الافتراضية `_error` و `_raw_message`).
+
+<div id="description">
+  ## الوصف
+</div>
+
+تُتبع السجلات المُسلَّمة تلقائيًا، لذلك لا يُحتسب أي سجل في ملف السجل إلا مرة واحدة فقط.
+
+لا يُعد `SELECT` مفيدًا كثيرًا لقراءة السجلات (إلا لأغراض تصحيح الأخطاء)، لأن كل سجل لا يمكن قراءته إلا مرة واحدة فقط. والأكثر عملية هو إنشاء تدفقات آنية باستخدام [العروض المادية](/ar/reference/statements/create/view). للقيام بذلك:
+
+1. استخدم المحرك لإنشاء جدول FileLog واعتبره تدفق بيانات.
+2. أنشئ جدولًا بالبنية المطلوبة.
+3. أنشئ عرضًا ماديًا يحوّل البيانات من المحرك ويضعها في جدول أُنشئ مسبقًا.
+
+عند ربط `MATERIALIZED VIEW` بالمحرك، يبدأ في جمع البيانات في الخلفية. يتيح لك ذلك الاستمرار في تلقي السجلات من ملفات السجل وتحويلها إلى التنسيق المطلوب باستخدام `SELECT`.
+يمكن لجدول FileLog واحد أن يحتوي على أي عدد تريده من العروض المادية؛ فهي لا تقرأ البيانات من الجدول مباشرة، بل تستقبل السجلات الجديدة (على شكل كتل). وبهذه الطريقة يمكنك الكتابة إلى عدة جداول بمستويات مختلفة من التفاصيل (مع التجميع وبدونه).
+
+مثال:
+
+```sql
+  CREATE TABLE logs (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+
+  CREATE TABLE daily (
+    day Date,
+    level String,
+    total UInt64
+  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+
+  CREATE MATERIALIZED VIEW consumer TO daily
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
+    FROM logs GROUP BY day, level;
+
+  SELECT level, sum(total) FROM daily GROUP BY level;
+```
+
+لإيقاف استقبال بيانات التدفقات أو تغيير منطق التحويل، افصل العرض المادي:
+
+```sql
+  DETACH TABLE consumer;
+  ATTACH TABLE consumer;
+```
+
+إذا أردت تغيير الجدول الهدف باستخدام `ALTER`، فنوصي بتعطيل العرض المادي لتجنّب حدوث اختلافات بين الجدول الهدف والبيانات التي ينتجها العرض.
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_filename` - اسم ملف السجل. نوع البيانات: `LowCardinality(String)`.
+* `_offset` - الإزاحة في ملف السجل. نوع البيانات: `UInt64`.
+
+أعمدة افتراضية إضافية عندما تكون قيمة `handle_error_mode='stream'`:
+
+* `_raw_record` - السجل الخام الذي تعذّر تحليله بنجاح. نوع البيانات: `Nullable(String)`.
+* `_error` - رسالة الاستثناء الناتجة أثناء فشل التحليل. نوع البيانات: `Nullable(String)`.
+
+ملاحظة: لا تُملأ الأعمدة الافتراضية `_raw_record` و `_error` إلا عند حدوث استثناء أثناء التحليل، وتكون دائمًا `NULL` عند تحليل الرسالة بنجاح.

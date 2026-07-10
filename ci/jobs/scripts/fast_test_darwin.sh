@@ -18,6 +18,10 @@ for i in $(seq 2 21); do
     ifconfig lo0 | grep -qF "127.0.0.$i " || sudo ifconfig lo0 alias 127.0.0.$i up || exit 1
 done
 
+# Match the Linux fast-test image timezone (its Dockerfile sets ENV TZ=Europe/Amsterdam) so
+# timezone-dependent test references reproduce; the macOS runner's default timezone differs.
+export TZ=Europe/Amsterdam
+
 # Forward praktika's appended run selectors (--test, --param, ...) to fast_test.py.
 python3 ./ci/jobs/fast_test.py "$@"
 rc=$?

@@ -1,0 +1,54 @@
+---
+description: 'Crea una tabla temporal con la estructura especificada y el motor de tabla Null.
+  Esta función se usa para facilitar la escritura de pruebas y las demostraciones.'
+sidebarTitle: 'función null'
+slug: /sql-reference/table-functions/null
+title: 'null'
+doc_type: 'reference'
+---
+
+Crea una tabla temporal con la estructura especificada y el [motor de tabla Null](/es/reference/engines/table-engines/special/null). De acuerdo con las propiedades del motor `Null`, los datos de la tabla se ignoran y la propia tabla se elimina inmediatamente después de ejecutar la consulta. Esta función se usa para facilitar la escritura de pruebas y las demostraciones.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+null('structure')
+```
+
+<div id="argument">
+  ## Argumento
+</div>
+
+* `structure` — Una lista de columnas y sus tipos. [String](/es/reference/data-types/string).
+
+<div id="returned_value">
+  ## Valor devuelto
+</div>
+
+Una tabla temporal del motor `Null` con la estructura especificada.
+
+<div id="example">
+  ## Ejemplo
+</div>
+
+Consulta con la función `null`:
+
+```sql
+INSERT INTO function null('x UInt64') SELECT * FROM numbers_mt(1000000000);
+```
+
+puede reemplazar tres consultas:
+
+```sql
+CREATE TABLE t (x UInt64) ENGINE = Null;
+INSERT INTO t SELECT * FROM numbers_mt(1000000000);
+DROP TABLE IF EXISTS t;
+```
+
+<div id="related">
+  ## Relacionados
+</div>
+
+* [motor de tabla Null](/es/reference/engines/table-engines/special/null)

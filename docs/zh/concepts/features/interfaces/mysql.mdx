@@ -1,0 +1,179 @@
+---
+description: '关于 ClickHouse 中 MySQL 协议接口的文档，允许
+  MySQL 客户端连接到 ClickHouse'
+sidebarTitle: 'MySQL 接口'
+slug: /interfaces/mysql
+title: 'MySQL 接口'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse 支持 MySQL wire 协议。这使得某些没有原生 ClickHouse 连接器的客户端可以改用 MySQL 协议，并且已在以下 BI 工具中完成验证：
+
+* [Looker Studio](/zh/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
+* [Tableau Online](/zh/integrations/connectors/data-visualization/tableau/tableau-online-and-clickhouse)
+* [QuickSight](/zh/integrations/connectors/data-visualization/quicksight-and-clickhouse)
+
+如果你在尝试其他尚未测试的客户端或集成，请注意，可能存在以下限制：
+
+* SSL 实现可能无法完全兼容；也可能存在 [TLS SNI](https://www.cloudflare.com/learning/ssl/what-is-sni/) 问题。
+* 某些工具可能依赖尚未实现的方言特性 (例如 MySQL 特有的函数或设置) 。
+
+如果有可用的原生驱动 (例如 [DBeaver](/zh/integrations/connectors/sql-clients/dbeaver)) ，始终建议优先使用它，而不是 MySQL 接口。此外，虽然大多数 MySQL 语言客户端通常都能正常工作，但 MySQL 接口并不能保证可作为现有 MySQL 查询代码库的即插即用替代方案。
+
+如果你的使用场景涉及某个没有原生 ClickHouse 驱动的工具，并且你希望通过 MySQL 接口使用它，同时发现了某些兼容性问题，请在 ClickHouse repository 中[创建 issue](https://github.com/ClickHouse/ClickHouse/issues)。
+
+::::note
+为了更好地支持上述 BI 工具的 SQL 方言，ClickHouse 的 MySQL 接口会在运行 SELECT 查询时隐式启用设置 [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/zh/reference/settings/session-settings#prefer_column_name_to_alias)。
+此行为无法关闭，在极少数边缘情况下，可能会导致发送到 ClickHouse 常规查询接口与 MySQL 查询接口的查询表现不同。
+::::
+
+<div id="enabling-the-mysql-interface-on-clickhouse-cloud">
+  ## 在 ClickHouse Cloud 上启用 MySQL 接口
+</div>
+
+1. 创建 ClickHouse Cloud 服务后，点击 `Connect` 按钮。
+
+<br />
+
+<Image img="/images/interfaces/mysql0.webp" alt="凭据界面 - Prompt" size="md" />
+
+2. 将 `Connect with` 下拉菜单切换为 `MySQL`。
+
+<br />
+
+<Image img="/images/interfaces/mysql1.webp" alt="凭据界面 - 已选择 MySQL" size="md" />
+
+3. 切换开关，为该特定服务启用 MySQL 接口。这样会为该服务开放端口 `3306`，并显示 MySQL 连接界面，其中包含你专属的 MySQL 用户名。密码与该服务默认用户的密码相同。
+
+<br />
+
+<Image img="/images/interfaces/mysql2.webp" alt="凭据界面 - 已启用 MySQL" size="md" />
+
+复制显示的 MySQL 连接字符串。
+
+<Image img="/images/interfaces/mysql3.webp" alt="凭据界面 - 连接字符串" size="md" />
+
+<div id="creating-multiple-mysql-users-in-clickhouse-cloud">
+  ## 在 ClickHouse Cloud 中创建多个 MySQL 用户
+</div>
+
+默认情况下，系统内置了一个 `mysql4<subdomain>` 用户，它与 `default` 用户使用相同的密码。`<subdomain>` 部分是你的 ClickHouse Cloud 主机名的第一个段。之所以采用这种格式，是为了兼容那些支持安全连接、但在其 [TLS 握手中不提供 SNI 信息](https://www.cloudflare.com/learning/ssl/what-is-sni) 的工具；如果用户名中没有额外提示，就无法完成内部路由 (MySQL 控制台客户端就是这类工具之一) 。
+
+因此，我们&#95;强烈建议&#95;在为 MySQL 接口 创建新用户时使用 `mysql4<subdomain>_<username>` 格式，其中 `<subdomain>` 用于标识你的 Cloud 服务，`<username>` 则是你自定义的任意后缀。
+
+<Tip>
+  对于 `foobar.us-east1.aws.clickhouse.cloud` 这样的 ClickHouse Cloud 主机名，`<subdomain>` 部分就是 `foobar`，自定义 MySQL 用户名可以类似于 `mysql4foobar_team1`。
+</Tip>
+
+例如，如果你需要应用额外设置，可以额外创建一些供 MySQL 接口 使用的用户。
+
+1. 可选：创建一个要应用到自定义用户的 [settings profile](/zh/reference/statements/create/settings-profile)。例如，创建 `my_custom_profile`，并添加一个额外设置，这样当稍后使用所创建的用户连接时，该设置会默认生效：
+
+   ```sql
+   CREATE SETTINGS PROFILE my_custom_profile SETTINGS prefer_column_name_to_alias=1;
+   ```
+
+   这里的 `prefer_column_name_to_alias` 仅作示例，你也可以使用其他设置。
+
+2. 按以下格式[创建用户](/zh/reference/statements/create/user)：`mysql4<subdomain>_<username>` ([见上文](#creating-multiple-mysql-users-in-clickhouse-cloud)) 。密码必须采用 double SHA1 格式。例如：
+
+   ```sql
+   CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$';
+   ```
+
+   或者，如果你想为该用户使用自定义 profile：
+
+   ```sql
+   CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$' SETTINGS PROFILE 'my_custom_profile';
+   ```
+
+   其中，`my_custom_profile` 是你之前创建的 profile 名称。
+
+3. [授予](/zh/reference/statements/grant)新用户与目标表或数据库交互所需的权限。例如，如果你只想授予其对 `system.query_log` 的访问权限：
+
+   ```sql
+   GRANT SELECT ON system.query_log TO mysql4foobar_team1;
+   ```
+
+4. 使用已创建的用户通过 MySQL 接口 连接到你的 ClickHouse Cloud 服务。
+
+<div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
+  ### 在 ClickHouse Cloud 中排查多个 MySQL 用户的相关问题
+</div>
+
+如果你新建了一个 MySQL 用户，并且在通过 MySQL CLI 客户端连接时看到以下错误：
+
+```sql
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 54
+```
+
+在这种情况下，请确保用户名采用 `mysql4<subdomain>_<username>` 格式，如[上文](#creating-multiple-mysql-users-in-clickhouse-cloud)所述。
+
+<div id="enabling-the-mysql-interface-on-self-managed-clickhouse">
+  ## 在自管理 ClickHouse 上启用 MySQL 接口
+</div>
+
+将 [mysql&#95;port](/zh/reference/settings/server-settings/settings#mysql_port) 设置添加到服务器的配置文件中。例如，你可以在 `config.d/` [文件夹](/zh/concepts/features/configuration/server-config/configuration-files)中的一个新 XML 文件中定义该端口：
+
+```xml
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
+```
+
+启动 ClickHouse server，并查找类似以下内容的日志消息，其中会提到 Listening for MySQL compatibility protocol：
+
+```bash
+{} <Information> Application: Listening for MySQL compatibility protocol: 127.0.0.1:9004
+```
+
+<div id="connect-mysql-to-clickhouse">
+  ## 使用 MySQL 连接到 ClickHouse
+</div>
+
+以下命令演示如何使用 MySQL 客户端 `mysql` 连接到 ClickHouse：
+
+```bash
+mysql --protocol tcp -h [hostname] -u [username] -P [port_number] [database_name]
+```
+
+例如：
+
+```bash
+$ mysql --protocol tcp -h 127.0.0.1 -u default -P 9004 default
+```
+
+连接成功后的输出：
+
+```text
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 4
+Server version: 20.2.1.1-ClickHouse
+
+Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql>
+```
+
+为兼容所有 MySQL 客户端，建议在[配置文件](/zh/concepts/features/configuration/settings/settings-users#user-namepassword)中使用 [double SHA1](/zh/concepts/features/configuration/settings/settings-users#user-namepassword) 指定用户密码。
+如果使用 [SHA256](/zh/reference/functions/regular-functions/hash-functions#SHA256) 指定用户密码，某些客户端将无法通过身份验证 (mysqljs 以及旧版本的 MySQL 和 MariaDB 命令行工具) 。
+
+限制：
+
+* 不支持预处理语句
+
+* 某些数据类型会以字符串形式发送
+
+如需取消长时间运行的查询，请使用 `KILL QUERY connection_id` 语句 (执行时会被替换为 `KILL QUERY WHERE query_id = connection_id`) 。例如：
+
+```bash
+$ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
+```

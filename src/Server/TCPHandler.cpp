@@ -15,6 +15,7 @@
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -97,6 +98,7 @@ namespace Setting
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
+    extern const SettingsBool discard_query_data;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
@@ -1505,6 +1507,9 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 {
     auto & pipeline = state.io.pipeline;
 
+    const bool discard_query_data = state.query_context->getSettingsRef()[Setting::discard_query_data]
+        && state.query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+
     /// Send header-block, to allow client to prepare output format for data to send.
     {
         const auto & header = pipeline.getHeader();
@@ -1551,7 +1556,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     sendLogs(state);
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
-                    if (!block.empty() && !state.io.null_format)
+                    if (!block.empty() && !state.io.null_format && !discard_query_data)
                         sendData(state, block);
                 }
             }
@@ -1575,8 +1580,11 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
         receivePacketsExpectCancel(state);
 
-        sendTotals(state, executor.getTotalsBlock());
-        sendExtremes(state, executor.getExtremesBlock());
+        if (!discard_query_data)
+        {
+            sendTotals(state, executor.getTotalsBlock());
+            sendExtremes(state, executor.getExtremesBlock());
+        }
         sendProfileInfo(state, executor.getProfileInfo());
         sendProgress(state);
         sendLogs(state);
@@ -2650,7 +2658,8 @@ bool TCPHandler::receiveQueryPlan(QueryState & state)
     bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
     auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
 
-    auto plan_and_sets = QueryPlan::deserialize(*in, context);
+    /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
+    auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));
     LOG_TRACE(log, "Received query plan");
 
     if (!state.skipping_data && unexpected_packet)
