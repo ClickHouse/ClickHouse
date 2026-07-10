@@ -1,0 +1,132 @@
+---
+noindex: true
+title: "Set Up Hydra (Compute-Compute Separation)"
+sidebarTitle: "Set up Hydra (compute separation)"
+description: "This guide walks you through provisioning Hydra child instances for an existing ClickHouse Private cluster."
+---
+
+This guide walks you through provisioning Hydra child instances for an existing ClickHouse Private cluster. Hydra lets you run multiple independent compute groups against a shared dataset, each with its own sizing and endpoint.
+
+For a conceptual overview of how Hydra works, see [Hydra Compute Separation](/products/clickhouse-private/explanation/hydra-compute-separation).
+
+## Prerequisites
+
+- A running ClickHouse Private cluster to serve as the **parent** (this guide uses `default-xx-01`)
+
+- The ClickHouse operator installed with the Hydra feature flag enabled:
+
+  ``` text
+  --set operator.featureFlags.privateHydraEnabled="true"
+  ```
+
+  If the operator was installed without this flag, upgrade it with the flag set to `true` before proceeding.
+
+- Access to the Helm registry and the `onprem-clickhouse-cluster` chart
+
+<Steps>
+
+<Step>
+
+## 1. Identify the Parent Cluster
+
+Before creating a child, note the parent cluster's **name** and **namespace**. The parent must be in a running state -- children cannot be provisioned if the parent is stopped, terminated, or idled.
+
+For a cluster named `default-xx-01`, the defaults are:
+
+| Property     | Value              |
+|--------------|--------------------|
+| Cluster name | `default-xx-01`    |
+| Namespace    | `ns-default-xx-01` |
+
+</Step>
+
+<Step>
+
+## 2. Create a Child Instance
+
+<Warning>
+
+Each ClickHouseCluster instance must live in its own namespace. Do not deploy a child instance into the same namespace as the parent. The Operator assumes one ClickHouseCluster per namespace, and violating this causes degraded clusters.
+
+</Warning>
+
+Deploy a new `ClickHouseCluster` using the same Helm chart you used for the parent, adding the `parentCluster` values to link it:
+
+``` bash
+helm install default-xx-02 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+    --version=$CR_HELM_TAG \
+    --namespace ns-default-xx-02 \
+    --create-namespace \
+    --set-json='parentCluster.name="c-default-xx-01"' \
+    --set-json='parentCluster.namespace="ns-default-xx-01"' \
+    --set-json="server.replicas=$SERVER_REPLICAS" \
+    --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+    --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+```
+
+The child instance will:
+
+- Share the parent's ClickHouse Keeper ensemble (no separate Keeper deployment needed)
+- Share the parent's S3 data prefix
+- Run its own ClickHouse Server pods with independent resource allocations
+- Expose its own Kubernetes Service endpoint
+
+</Step>
+
+<Step>
+
+## 3. Create a Read-Only Child (Optional)
+
+To create a child that can query data but cannot write to it, add the `isReadonly` flag:
+
+``` bash
+helm install default-xx-03 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+    --version=$CR_HELM_TAG \
+    --namespace ns-default-xx-03 \
+    --create-namespace \
+    --set-json='parentCluster.name="c-default-xx-01"' \
+    --set-json='parentCluster.namespace="ns-default-xx-01"' \
+    --set-json='isReadonly=true' \
+    --set-json="server.replicas=$SERVER_REPLICAS" \
+    --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+    --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+```
+
+Read-only children are suitable for reporting, dashboards, or analytics workloads where write access is unnecessary.
+
+</Step>
+
+<Step>
+
+## 4. Verify the Child Instance
+
+After the child is deployed, verify it is running:
+
+``` bash
+kubectl get clickhousecluster -n ns-default-xx-02
+```
+
+Connect via the child's own service endpoint:
+
+``` bash
+kubectl port-forward svc/c-default-xx-02-server-any 9000:9000 -n ns-default-xx-02
+clickhouse client --host localhost --port 9000 --password $PASSWORD
+```
+
+Run a query to confirm data access:
+
+``` sql
+SELECT count() FROM system.tables;
+```
+
+</Step>
+
+</Steps>
+
+## Limitations
+
+1.  **Parent must be running.** You cannot provision child instances if the parent instance is stopped, terminated, or idled. The parent must be in a running state because children depend on the parent's Keeper ensemble and shared data configuration.
+
+2.  **Delete children before the parent.** You must delete all child instances before deleting the parent cluster. Attempting to delete a parent with active children will fail.
+
+3.  **Password resets apply to the parent.** Password resets cannot be performed on Hydra child instances. To reset the password for a child instance, reset it on the parent instance instead. See [how-to/reset-passwords.md](/products/clickhouse-private/guides/reset-user-passwords).

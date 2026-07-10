@@ -1,0 +1,102 @@
+---
+sidebarTitle: '追加オプション'
+keywords: ['clickhouse', 'python', '追加オプション', '設定']
+description: 'ClickHouse Connect の追加オプション'
+slug: /integrations/language-clients/python/additional-options
+title: '追加オプション'
+doc_type: 'reference'
+---
+
+ClickHouse Connect には、より高度な用途に対応する追加オプションがいくつか用意されています。
+
+<div id="global-settings">
+  ## グローバル設定
+</div>
+
+ClickHouse Connect の動作をグローバルに制御する設定は、ごくわずかです。これらの設定には、トップレベルの `common` パッケージからアクセスできます。
+
+```python
+from clickhouse_connect import common
+
+common.set_setting('autogenerate_session_id', False)
+common.get_setting('invalid_setting_action')
+'drop'
+```
+
+<Note>
+  これらの共通設定 `autogenerate_session_id`、`product_name`、`readonly` は、`clickhouse_connect.get_client` メソッドでクライアントを作成する前に、*必ず* 変更してください。クライアント作成後にこれらの設定を変更しても、既存のクライアントの動作には影響しません。
+</Note>
+
+現在、以下のグローバル設定が定義されています。
+
+| Setting Name                                    | Default         | Options                                         | Description                                                                                                                                                                                                              |
+| ----------------------------------------------- | --------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| autogenerate&#95;session&#95;id                 | True            | True, False                                     | 各クライアントセッションについて、新しい UUID(1) のセッション ID を自動生成します (指定されていない場合) 。セッション ID が指定されていない場合 (クライアントレベルまたはクエリレベルのいずれでも) 、ClickHouse は各クエリごとにランダムな内部 ID を生成します。                                                                     |
+| dict&#95;parameter&#95;format                   | &#39;json&#39;  | &#39;json&#39;, &#39;map&#39;                   | パラメータ化クエリで、Python の dictionary を JSON に変換するか、ClickHouse の Map 構文に変換するかを制御します。`json` は JSON カラムへの insert、`map` は ClickHouse Map カラムに使用してください。                                                                             |
+| invalid&#95;setting&#95;action                  | &#39;error&#39; | &#39;drop&#39;, &#39;send&#39;, &#39;error&#39; | 無効な設定または readonly 設定が指定された場合 (クライアントセッションまたはクエリのいずれか) に取る動作です。`drop` の場合はその設定を無視し、`send` の場合はその設定を ClickHouse に送信し、`error` の場合はクライアント側で ProgrammingError を発生させます。                                                        |
+| max&#95;connection&#95;age                      | 600             |                                                 | HTTP Keep Alive 接続を開いたまま保持・再利用する最大秒数です。これにより、ロードバランサー/proxy 配下の単一の ClickHouse ノードに接続が偏るのを防ぎます。デフォルトは 10 分です。                                                                                                             |
+| product&#95;name                                |                 |                                                 | ClickHouse Connect を使用しているアプリを追跡するために、クエリとともに ClickHouse に渡される文字列です。形式は &lt;product name;&amp;gl/&lt;product version&gt; にする必要があります。                                                                                     |
+| readonly                                        | 0               | 0, 1                                            | 19.17 より前のバージョン向けの暗黙的な &quot;read&#95;only&quot; ClickHouse settings です。非常に古い ClickHouse バージョンでも動作できるように、settings 用の ClickHouse の &quot;read&#95;only&quot; 値に合わせて設定できます。                                                |
+| send&#95;os&#95;user                            | True            | True, False                                     | 検出された OS ユーザーを、ClickHouse に送信されるクライアント情報 (HTTP ユーザーエージェント文字列) に含めます。                                                                                                                                                     |
+| send&#95;integration&#95;tags                   | True            | True, False                                     | 使用しているインテグレーションのライブラリ/バージョン (例: Pandas/SQLAlchemy など) を、ClickHouse に送信されるクライアント情報 (HTTP ユーザーエージェント文字列) に含めます。                                                                                                            |
+| use&#95;protocol&#95;version                    | True            | True, False                                     | クライアントのプロトコル version を使用します。これは `DateTime` の timezone カラムには必要ですが、現在のバージョンの chproxy では動作しません。                                                                                                                             |
+| max&#95;error&#95;size                          | 1024            |                                                 | クライアントの error メッセージとして返される最大文字数です。完全な ClickHouse error メッセージを取得するには、この設定を 0 にしてください。デフォルトは 1024 文字です。                                                                                                                    |
+| http&#95;buffer&#95;size                        | 10MB            |                                                 | HTTP ストリーミングクエリに使用される「メモリ内」buffer のサイズ (バイト単位) です。                                                                                                                                                                       |
+| preserve&#95;pandas&#95;datetime&#95;resolution | False           | True, False                                     | True で pandas 2.x を使用している場合、datetime64/timedelta64 dtype の resolution (例: &#39;s&#39;、&#39;ms&#39;、&#39;us&#39;、&#39;ns&#39;) を保持します。False の場合 (または pandas &lt;2.x の場合) は、互換性のためナノ秒 (&#39;ns&#39;) resolution に強制変換されます。 |
+
+<div id="compression">
+  ## 圧縮
+</div>
+
+ClickHouse Connect は、クエリ結果と insert の両方で、lz4、zstd、brotli、gzip による圧縮をサポートしています。圧縮の利用では通常、ネットワーク帯域幅/転送速度と CPU 使用率 (クライアント側と server 側の両方) の間でトレードオフが発生することを、常に念頭に置いてください。
+
+圧縮データを受信するには、ClickHouse server の `enable_http_compression` を 1 に設定するか、ユーザーにクエリごとにこの設定を変更する権限が必要です。
+
+圧縮は、`clickhouse_connect.get_client` ファクトリーメソッドの呼び出し時に `compress` パラメータで制御します。デフォルトでは `compress` は `True` に設定されており、デフォルトの圧縮設定が適用されます。`query`、`query_np`、`query_df` クライアントメソッドで実行されるクエリでは、ClickHouse Connect は `Accept-Encoding` header に
+`lz4`、`zstd`、`br` (brotli ライブラリがインストールされている場合) 、`gzip`、`deflate` のエンコーディングを追加し、`query` クライアントメソッド (および間接的に `query_np` と `query_df`) で実行されるクエリに付与します。 (ほとんどのリクエストでは、ClickHouse
+server は `zstd` で圧縮された payload を返します。) insert では、デフォルトで ClickHouse Connect は insert block を `lz4` で圧縮し、`Content-Encoding: lz4` HTTP header を送信します。
+
+`get_client` の `compress` パラメータには、`lz4`、`zstd`、`br`、`gzip` のいずれかの圧縮方式を指定することもできます。その場合、その方式が insert とクエリ結果の両方に使用されます (ClickHouse server が対応している場合) 。必要な `zstd` および `lz4` の圧縮ライブラリは、現在では ClickHouse Connect にデフォルトで含まれています。`br`/brotli を指定する場合は、brotli ライブラリを別途インストールする必要があります。
+
+`raw*` クライアントメソッドでは、クライアント設定で指定した圧縮は使用されない点に注意してください。
+
+また、`gzip` 圧縮の使用は推奨しません。データの圧縮・展開の両方で、他の選択肢より大幅に低速だからです。
+
+<div id="http-proxy-support">
+  ## HTTPプロキシサポート
+</div>
+
+ClickHouse Connect は、`urllib3` ライブラリを使用して基本的な HTTPプロキシサポートを提供します。標準の `HTTP_PROXY` および `HTTPS_PROXY` 環境変数を認識します。これらの環境変数を使用すると、`clickhouse_connect.get_client` メソッドで作成されたすべてのクライアントに適用される点に注意してください。クライアントごとに設定する場合は、get&#95;client メソッドの `http_proxy` または `https_proxy` 引数を使用できます。HTTPプロキシサポートの実装の詳細については、[urllib3](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#http-and-https-proxies) のドキュメントを参照してください。
+
+SOCKSプロキシを使用するには、`urllib3` の `SOCKSProxyManager` を `pool_mgr` 引数として `get_client` に渡します。これには、PySocks ライブラリを直接インストールするか、`urllib3` 依存関係の `[socks]` オプションを使用してインストールする必要があります。
+
+<div id="old-json-data-type">
+  ## 「古い」JSONデータ型
+</div>
+
+実験的な `Object` (または `Object('json')`) データ型は非推奨であり、本番環境での使用は避けるべきです。ClickHouse Connect は後方互換性のため、このデータ型に対する限定的なサポートを引き続き提供しています。なお、このサポートには、「トップレベル」または「親」の JSON 値を辞書またはそれに相当する形式で返すことが想定されるクエリは含まれておらず、そのようなクエリでは例外が発生します。
+
+<div id="new-variantdynamicjson-datatypes-experimental-feature">
+  ## 「新しい」Variant/Dynamic/JSON データ型 (実験的機能)
+</div>
+
+`clickhouse-connect` は 0.8.0 リリース以降、新しい (これら自体も実験的な) ClickHouse の型 Variant、Dynamic、JSON を試験的にサポートしています。
+
+<div id="usage-notes">
+  ### 使用上の注意
+</div>
+
+* JSON データは、Python の辞書、または JSON オブジェクト `{}` を含む JSON 文字列として挿入できます。それ以外の形式の JSON データはサポートされていません。
+* これらの型に対してサブカラム/パスを使用するクエリは、サブカラムの型を返します。
+* その他の使用上の注意については、ClickHouse のメインの[ドキュメント](/ja/)を参照してください。
+
+<div id="known-limitations">
+  ### 既知の制限事項
+</div>
+
+* これらの各型は、使用前に ClickHouse settings で有効にする必要があります。
+* 「新しい」JSON 型は、ClickHouse 24.8 リリースから利用できます。
+* 内部フォーマットの変更により、`clickhouse-connect` が Variant 型と互換性を持つのは ClickHouse 24.7 リリース以降のみです。
+* 返される JSON オブジェクトには、`max_dynamic_paths` 個までの要素しか含まれません (デフォルトは 1024) 。これは今後のリリースで修正される予定です。
+* `Dynamic` カラムへの insert では、常に Python の値の文字列表現が使用されます。これは https://github.com/ClickHouse/ClickHouse/issues/70395 が修正され次第、今後のリリースで修正される予定です。
+* 新しい型の実装は C コードで最適化されていないため、より単純で確立されたデータ型と比べて、パフォーマンスがやや低下する可能性があります。

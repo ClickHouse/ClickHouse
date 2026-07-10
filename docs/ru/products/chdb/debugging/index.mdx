@@ -1,0 +1,338 @@
+---
+title: 'Отладка DataStore'
+sidebarTitle: 'Обзор'
+slug: /chdb/debugging
+description: 'Отлаживайте операции DataStore с помощью explain(), данных профилирования и логирования'
+keywords: ['chdb', 'datastore', 'отладка', 'explain', 'данные профилирования', 'логирование']
+doc_type: 'guide'
+---
+
+DataStore предоставляет полный набор инструментов для отладки, которые помогают понять и оптимизировать конвейеры обработки данных.
+
+<div id="overview">
+  ## Обзор инструментов для отладки
+</div>
+
+| Инструмент    | Назначение                   | Когда использовать                  |
+| ----------- | ---------------------------- | ----------------------------------- |
+| `explain()` | Просмотр плана выполнения    | Понять, какой SQL будет выполнен    |
+| профилировщик   | Измерение производительности | Найти медленные операции            |
+| Логирование | Просмотр деталей выполнения  | Разобраться в неожиданном поведении |
+
+<div id="decision-matrix">
+  ## Краткая матрица выбора
+</div>
+
+| Потребность                 | Инструмент    | Команда                     |
+| --------------------------- | ------------- | --------------------------- |
+| Посмотреть план выполнения  | `explain()`   | `ds.explain()`              |
+| Измерить производительность | Профилировщик | `config.enable_profiling()` |
+| Отладить SQL-запросы        | Логирование   | `config.enable_debug()`     |
+| Всё перечисленное           | Комбинация    | См. ниже                    |
+
+<div id="quick-setup">
+  ## Быстрый запуск
+</div>
+
+<div id="enable-all">
+  ### Включить полный режим отладки
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Включить все отладочные функции
+config.enable_debug()        # Подробное логирование
+config.enable_profiling()    # Данные профилирования
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+
+# Просмотр плана выполнения
+result.explain()
+
+# Получить отчёт профилировщика
+from chdb.datastore.config import get_profiler
+profiler = get_profiler()
+profiler.report()
+```
+
+***
+
+<div id="explain">
+  ## Метод explain()
+</div>
+
+Просмотрите план выполнения запроса перед его запуском.
+
+```python title="Query"
+ds = pd.read_csv("data.csv")
+
+query = (ds
+    .filter(ds['amount'] > 1000)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean']})
+)
+
+# Просмотр плана
+query.explain()
+```
+
+```text title="Response"
+Pipeline:
+  Source: file('data.csv', 'CSVWithNames')
+  Filter: amount > 1000
+  GroupBy: region
+  Aggregate: sum(amount), avg(amount)
+
+Generated SQL:
+SELECT region, SUM(amount) AS sum, AVG(amount) AS mean
+FROM file('data.csv', 'CSVWithNames')
+WHERE amount > 1000
+GROUP BY region
+```
+
+Подробнее см. в [документации по explain()](/ru/products/chdb/debugging/explain).
+
+***
+
+<div id="profiling">
+  ## Данные профилирования
+</div>
+
+Измеряйте время выполнения каждой операции.
+
+```python title="Query"
+from chdb.datastore.config import config, get_profiler
+
+# Включить профилирование
+config.enable_profiling()
+
+# Выполнить операции
+ds = pd.read_csv("large_data.csv")
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# Просмотреть отчёт
+profiler = get_profiler()
+profiler.report(min_duration_ms=0.1)
+```
+
+```text title="Response"
+Отчёт о производительности
+==================
+Шаг                           Duration    Вызовы
+----                          --------    -----
+read_csv                      1.234s      1
+filter                        0.002s      1
+groupby                       0.001s      1
+agg                           0.089s      1
+sort                          0.045s      1
+head                          0.001s      1
+to_df (SQL execution)         0.567s      1
+----                          --------    -----
+Итого                         1.939s      7
+```
+
+Подробности см. в [Руководстве по профилированию](/ru/products/chdb/debugging/profiling).
+
+***
+
+<div id="logging">
+  ## Логирование
+</div>
+
+Просматривайте подробные журналы выполнения.
+
+```python
+from chdb.datastore.config import config
+
+# Включить отладочное логирование
+config.enable_debug()
+
+# Выполнить операции — в журнале будет показано:
+# - сгенерированные SQL-запросы
+# - используемый движок выполнения
+# - попадания/промахи кэша
+# - информация о времени выполнения
+```
+
+Пример вывода логов:
+
+```text
+DEBUG - DataStore: Creating from file 'data.csv'
+DEBUG - Query: SELECT region, SUM(amount) FROM ... WHERE amount > 1000 GROUP BY region
+DEBUG - Engine: Using chdb for aggregation
+DEBUG - Execution time: 0.089s
+DEBUG - Cache: Storing result (key: abc123)
+```
+
+Подробности см. в разделе [Конфигурация логирования](/ru/products/chdb/debugging/logging).
+
+***
+
+<div id="scenarios">
+  ## Типичные сценарии отладки
+</div>
+
+<div id="scenario-wrong-results">
+  ### 1. Запрос не возвращает ожидаемых результатов
+</div>
+
+```python
+# Шаг 1: Просмотр плана выполнения
+query = ds.filter(ds['age'] > 25).groupby('city').sum()
+query.explain(verbose=True)
+
+# Шаг 2: Включить логирование для просмотра SQL
+config.enable_debug()
+
+# Шаг 3: Выполнить запрос и проверить журнал
+result = query.to_df()
+```
+
+<div id="scenario-slow">
+  ### 2. Запрос выполняется медленно
+</div>
+
+```python
+# Шаг 1: Включить данные профилирования
+config.enable_profiling()
+
+# Шаг 2: Выполнить запрос
+result = process_data()
+
+# Шаг 3: Проверить отчёт профилировщика
+profiler = get_profiler()
+profiler.report()
+
+# Шаг 4: Определить медленные операции и оптимизировать
+```
+
+<div id="scenario-engine">
+  ### 3. Разбор выбора движка
+</div>
+
+```python
+# Включить подробное логирование
+config.enable_debug()
+
+# Выполнить операции
+result = ds.filter(ds['x'] > 10).apply(custom_func)
+
+# В журнале будет указано, какой движок использовался для каждой операции:
+# DEBUG - filter: Using chdb engine
+# DEBUG - apply: Using pandas engine (custom function)
+```
+
+<div id="scenario-cache">
+  ### 4. Диагностика проблем с кэшем
+</div>
+
+```python
+# Включить отладку для просмотра операций кэширования
+config.enable_debug()
+
+# Первый запуск
+result1 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Промах кэша, выполняется запрос
+
+# Второй запуск (должен использовать кэш)
+result2 = ds.filter(ds['x'] > 10).to_df()
+# LOG: Попадание в кэш, возвращается кэшированный результат
+
+# Если кэширование не работает, как ожидается, проверьте:
+# - Идентичны ли операции?
+# - Включено ли кэширование? config.cache_enabled
+```
+
+***
+
+<div id="best-practices">
+  ## Рекомендации
+</div>
+
+<div id="best-practice-1">
+  ### 1. Отлаживайте в среде Development, а не в продакшне
+</div>
+
+```python
+# Разработка
+config.enable_debug()
+config.enable_profiling()
+
+# Продакшн
+config.set_log_level(logging.WARNING)
+config.set_profiling_enabled(False)
+```
+
+<div id="best-practice-2">
+  ### 2. Используйте explain() перед запуском ресурсоёмких запросов
+</div>
+
+```python
+# Построить запрос
+query = ds.filter(...).groupby(...).agg(...)
+
+# Сначала проверить план
+query.explain()
+
+# Если план выглядит корректно, выполнить
+result = query.to_df()
+```
+
+<div id="best-practice-3">
+  ### 3. Соберите данные профилирования перед оптимизацией
+</div>
+
+```python
+# Не гадайте, что работает медленно — измерьте это
+config.enable_profiling()
+result = your_pipeline()
+get_profiler().report()
+```
+
+<div id="best-practice-4">
+  ### 4. Проверьте SQL-запрос, если результаты неверны
+</div>
+
+```python
+# Просмотр сгенерированного SQL
+print(query.to_sql())
+
+# Сравнить с ожидаемым SQL
+# Выполнить SQL напрямую в ClickHouse для проверки
+```
+
+***
+
+<div id="summary">
+  ## Сводка по инструментам отладки
+</div>
+
+| Инструмент              | Команда                     | Вывод                             |
+| ----------------------- | --------------------------- | --------------------------------- |
+| План выполнения         | `ds.explain()`              | Шаги выполнения + SQL             |
+| Подробный explain       | `ds.explain(verbose=True)`  | + Метаданные                      |
+| Показать SQL            | `ds.to_sql()`               | Строка SQL-запроса                |
+| Включить отладку        | `config.enable_debug()`     | Подробные журналы                 |
+| Включить данные профилирования | `config.enable_profiling()` | Данные о времени выполнения       |
+| Отчёт профилировщика          | `get_profiler().report()`   | Сводка производительности         |
+| Очистить профилировщик       | `get_profiler().reset()`    | Сброс данных о времени выполнения |
+
+***
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+* [Метод explain()](/ru/products/chdb/debugging/explain) - Подробная документация по плану выполнения
+* [Руководство по данным профилирования](/ru/products/chdb/debugging/profiling) - Измерение производительности
+* [Конфигурация логирования](/ru/products/chdb/debugging/logging) - Настройка уровня логирования и формата

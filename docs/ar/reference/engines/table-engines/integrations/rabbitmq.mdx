@@ -1,0 +1,221 @@
+---
+description: 'يتيح هذا المحرك تكامل ClickHouse مع RabbitMQ.'
+sidebarTitle: 'RabbitMQ'
+slug: /engines/table-engines/integrations/rabbitmq
+title: 'محرك جدول RabbitMQ'
+doc_type: 'guide'
+---
+
+يتيح هذا المحرك تكامل ClickHouse مع [RabbitMQ](https://www.rabbitmq.com).
+
+يتيح لك `RabbitMQ` ما يلي:
+
+* نشر تدفقات البيانات أو الاشتراك بها.
+* معالجة التدفقات بمجرد توفرها.
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = RabbitMQ SETTINGS
+    rabbitmq_host_port = 'host:port' [or rabbitmq_address = 'amqp(s)://guest:guest@localhost/vhost'],
+    rabbitmq_exchange_name = 'exchange_name',
+    rabbitmq_format = 'data_format'[,]
+    [rabbitmq_exchange_type = 'exchange_type',]
+    [rabbitmq_routing_key_list = 'key1,key2,...',]
+    [rabbitmq_secure = 0,]
+    [rabbitmq_schema = '',]
+    [rabbitmq_num_consumers = N,]
+    [rabbitmq_num_queues = N,]
+    [rabbitmq_queue_base = 'queue',]
+    [rabbitmq_persistent = 0,]
+    [rabbitmq_skip_broken_messages = N,]
+    [rabbitmq_max_block_size = N,]
+    [rabbitmq_flush_interval_ms = N,]
+    [rabbitmq_queue_settings_list = 'x-dead-letter-exchange=my-dlx,x-max-length=10,x-overflow=reject-publish',]
+    [rabbitmq_queue_consume = false,]
+    [rabbitmq_address = '',]
+    [rabbitmq_vhost = '/',]
+    [rabbitmq_username = '',]
+    [rabbitmq_password = '',]
+    [rabbitmq_commit_on_select = false,]
+    [rabbitmq_max_rows_per_message = 1,]
+    [rabbitmq_handle_error_mode = 'default']
+```
+
+المعلمات المطلوبة:
+
+* `rabbitmq_host_port` – المضيف:المنفذ (على سبيل المثال، `localhost:5672`).
+* `rabbitmq_exchange_name` – اسم الـ exchange في RabbitMQ.
+* `rabbitmq_format` – تنسيق الرسالة. يستخدم الاصطلاح نفسه المستخدم في دالة SQL ‏`FORMAT`، مثل `JSONEachRow`. لمزيد من المعلومات، راجع قسم [التنسيقات](/ar/reference/formats/index).
+
+المعلمات الاختيارية:
+
+* `rabbitmq_exchange_type` – نوع RabbitMQ exchange: ‏`direct` و`fanout` و`topic` و`headers` و`consistent_hash`. القيمة الافتراضية: `fanout`.
+* `rabbitmq_routing_key_list` – قائمة بمفاتيح التوجيه مفصولة بفواصل.
+* `rabbitmq_schema` – معلمة يجب استخدامها إذا كانت `format` تتطلب تعريف `schema`. على سبيل المثال، يتطلب [Cap&#39;n Proto](https://capnproto.org/) مسار ملف `schema` واسم الكائن الجذر `schema.capnp:Message`.
+* `rabbitmq_num_consumers` – عدد الـ المستهلكين لكل table. حدّد عددًا أكبر من الـ المستهلكين إذا كان `throughput` الخاص بـ مستهلك واحد غير كافٍ. القيمة الافتراضية: `1`
+* `rabbitmq_num_queues` – العدد الإجمالي لـ قوائم الانتظار. قد تؤدي زيادة هذا العدد إلى تحسين الأداء بشكل ملحوظ. القيمة الافتراضية: `1`.
+* `rabbitmq_queue_base` - حدّد بادئة لأسماء الـ قوائم الانتظار. ترد حالات استخدام هذا الإعداد أدناه.
+* `rabbitmq_persistent` - إذا ضُبطت على 1 (`true`)، فسيُضبط وضع تسليم `insert query` على 2 (لوضع علامة على الرسائل بأنها &#39;persistent&#39;). القيمة الافتراضية: `0`.
+* `rabbitmq_skip_broken_messages` – مستوى تحمّل RabbitMQ message parser للرسائل غير المتوافقة مع `schema` لكل كتلة. إذا كانت `rabbitmq_skip_broken_messages = N` فإن الـ engine يتخطى *N* من رسائل RabbitMQ التي يتعذر `parse` لها (الرسالة الواحدة تعادل row بيانات واحدة). القيمة الافتراضية: `0`.
+* `rabbitmq_max_block_size` - عدد الـ row التي تُجمع قبل `flush` البيانات من RabbitMQ. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#max_insert_block_size).
+* `rabbitmq_flush_interval_ms` - `timeout` الخاص بعملية `flush` البيانات من RabbitMQ. القيمة الافتراضية: [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings#stream_flush_interval_ms).
+* `rabbitmq_queue_settings_list` - يتيح ضبط إعدادات RabbitMQ عند إنشاء قائمة انتظار. الإعدادات المتاحة: `x-max-length` و`x-max-length-bytes` و`x-message-ttl` و`x-expires` و`x-priority` و`x-max-priority` و`x-overflow` و`x-dead-letter-exchange` و`x-queue-type`. يتم تمكين الإعداد `durable` تلقائيًا للـ قائمة انتظار.
+* `rabbitmq_address` - عنوان الـ connection. استخدم هذا الإعداد أو `rabbitmq_host_port`.
+* `rabbitmq_vhost` - ‏RabbitMQ vhost. القيمة الافتراضية: `'/'`.
+* `rabbitmq_queue_consume` - استخدم قوائم انتظار معرّفة من قبل المستخدم، ولا تُجرِ أي إعداد لـ RabbitMQ: تعريف exchanges وقوائم الانتظار وbindings. القيمة الافتراضية: `false`.
+* `rabbitmq_username` - اسم مستخدم RabbitMQ.
+* `rabbitmq_password` - كلمة مرور RabbitMQ.
+* `reject_unhandled_messages` - ارفض الرسائل (أرسل إقرارًا سلبيًا إلى RabbitMQ) عند حدوث `error`. يتم تمكين هذا الإعداد تلقائيًا إذا كان هناك `x-dead-letter-exchange` معرّف في `rabbitmq_queue_settings_list`.
+* `rabbitmq_commit_on_select` - نفّذ `commit` للرسائل عند تنفيذ `select query`. القيمة الافتراضية: `false`.
+* `rabbitmq_max_rows_per_message` — الحد الأقصى لعدد الـ rows المكتوبة في رسالة RabbitMQ واحدة للتنسيقات المعتمدة على الصفوف. القيمة الافتراضية: `1`.
+* `rabbitmq_empty_queue_backoff_start_ms` — نقطة بداية `backoff` لإعادة جدولة القراءة إذا كانت RabbitMQ قائمة انتظار فارغة.
+* `rabbitmq_empty_queue_backoff_end_ms` — نقطة نهاية `backoff` لإعادة جدولة القراءة إذا كانت RabbitMQ قائمة انتظار فارغة.
+* `rabbitmq_empty_queue_backoff_step_ms` — قيمة خطوة `backoff` لإعادة جدولة القراءة إذا كانت RabbitMQ قائمة انتظار فارغة.
+* `rabbitmq_handle_error_mode` — كيفية التعامل مع `error` في RabbitMQ engine. القيم الممكنة: default (سيتم طرح الاستثناء إذا فشلنا في `parse` رسالة)، stream (سيتم حفظ رسالة الاستثناء والرسالة الخام في أعمدة افتراضية `_error` و`_raw_message`)، dead&#95;letter&#95;queue (سيتم حفظ البيانات المرتبطة بالخطأ في system.dead&#95;letter&#95;queue).
+
+<div id="ssl-connection">
+  ### اتصال SSL
+</div>
+
+استخدم إما `rabbitmq_secure = 1` أو `amqps` في عنوان الاتصال: `rabbitmq_address = 'amqps://guest:guest@localhost/vhost'`.
+السلوك الافتراضي للمكتبة المستخدمة هو عدم التحقق مما إذا كان اتصال TLS المُنشأ آمنًا بما يكفي. فسواء كانت الشهادة منتهية الصلاحية أو موقَّعة ذاتيًا أو مفقودة أو غير صالحة، يُسمح بالاتصال بكل بساطة. وقد يُطبَّق في المستقبل تحقّق أكثر صرامة من الشهادات.
+
+يمكن أيضًا إضافة إعدادات التنسيق إلى جانب الإعدادات المتعلقة بـ rabbitmq.
+
+مثال:
+
+```sql
+  CREATE TABLE queue (
+    key UInt64,
+    value UInt64,
+    date DateTime
+  ) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'localhost:5672',
+                            rabbitmq_exchange_name = 'exchange1',
+                            rabbitmq_format = 'JSONEachRow',
+                            rabbitmq_num_consumers = 5,
+                            date_time_input_format = 'best_effort';
+```
+
+يجب إضافة تهيئة خادم RabbitMQ باستخدام ملف إعدادات ClickHouse.
+
+التهيئة المطلوبة:
+
+```xml
+ <rabbitmq>
+    <username>root</username>
+    <password>clickhouse</password>
+ </rabbitmq>
+```
+
+تهيئة إضافية:
+
+```xml
+ <rabbitmq>
+    <vhost>clickhouse</vhost>
+ </rabbitmq>
+```
+
+<div id="description">
+  ## الوصف
+</div>
+
+لا يُعد `SELECT` مفيدًا كثيرًا لقراءة الرسائل (إلا لأغراض Debug)، لأن كل رسالة لا يمكن قراءتها إلا مرة واحدة. والأكثر عملية هو إنشاء مسارات في الوقت الفعلي باستخدام [العروض المادية](/ar/reference/statements/create/view). وللقيام بذلك:
+
+1. استخدم المحرّك لإنشاء مستهلك RabbitMQ واعتبره تدفق بيانات.
+2. أنشئ جدولًا بالبنية المطلوبة.
+3. أنشئ عرضًا ماديًا يحوّل البيانات من المحرّك ويضعها في جدول أُنشئ مسبقًا.
+
+عند ربط `MATERIALIZED VIEW` بالمحرّك، يبدأ في جمع البيانات في الخلفية. يتيح لك ذلك الاستمرار في تلقي الرسائل من RabbitMQ وتحويلها إلى التنسيق المطلوب باستخدام `SELECT`.
+يمكن لجدول RabbitMQ واحد أن يحتوي على أي عدد تريده من العروض المادية.
+
+يمكن توجيه البيانات استنادًا إلى `rabbitmq_exchange_type` و`rabbitmq_routing_key_list` المحددَين.
+لا يمكن أن يوجد أكثر من exchange واحد لكل جدول. ويمكن مشاركة exchange واحد بين عدة جداول، مما يتيح التوجيه إلى عدة جداول في الوقت نفسه.
+
+خيارات نوع exchange:
+
+* `direct` - يعتمد التوجيه على المطابقة التامة للمفاتيح. مثال على قائمة مفاتيح الجدول: `key1,key2,key3,key4,key5`، ويمكن أن يطابق مفتاح الرسالة أيًا منها.
+* `fanout` - توجيه إلى جميع الجداول (حيث يكون اسم exchange نفسه) بغض النظر عن المفاتيح.
+* `topic` - يعتمد التوجيه على patterns بمفاتيح مفصولة بنقاط. أمثلة: `*.logs`, `records.*.*.2020`, `*.2018,*.2019,*.2020`.
+* `headers` - يعتمد التوجيه على مطابقات `key=value` مع الإعداد `x-match=all` أو `x-match=any`. مثال على قائمة مفاتيح الجدول: `x-match=all,format=logs,type=report,year=2020`.
+* `consistent_hash` - تُوزَّع البيانات بالتساوي بين جميع الجداول المرتبطة (حيث يكون اسم exchange نفسه). لاحظ أن نوع exchange هذا يجب تمكينه عبر إضافة RabbitMQ: `rabbitmq-plugins enable rabbitmq_consistent_hash_exchange`.
+
+يمكن استخدام الإعداد `rabbitmq_queue_base` في الحالات التالية:
+
+* للسماح لجداول مختلفة بمشاركة قوائم الانتظار، بحيث يمكن تسجيل عدة مستهلكين لقوائم الانتظار نفسها، مما يحسن الأداء. وعند استخدام الإعدادين `rabbitmq_num_consumers` و/أو `rabbitmq_num_queues`، تتحقق المطابقة التامة لقوائم الانتظار إذا كانت هذه المعلمات متماثلة.
+* لإتاحة استعادة القراءة من قوائم انتظار durable محددة عندما لا تكون كل الرسائل قد استُهلكت بنجاح. لاستئناف الاستهلاك من قائمة انتظار واحدة محددة، اضبط اسمها في الإعداد `rabbitmq_queue_base` ولا تحدد `rabbitmq_num_consumers` و`rabbitmq_num_queues` (القيمة الافتراضية هي 1). ولاستئناف الاستهلاك من جميع قوائم الانتظار التي أُعلنت لجدول محدد، ما عليك سوى تحديد الإعدادات نفسها: `rabbitmq_queue_base` و`rabbitmq_num_consumers` و`rabbitmq_num_queues`. افتراضيًا، ستكون أسماء قوائم الانتظار فريدة لكل جدول.
+* لإعادة استخدام قوائم الانتظار لأنها مُعلنة كـ durable ولا تُحذف تلقائيًا. (يمكن حذفها عبر أي أداة من أدوات RabbitMQ CLI.)
+
+لتحسين الأداء، تُجمَّع الرسائل المستلمة في blocks بحجم [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#max_insert_block_size). وإذا لم تتشكّل الكتلة خلال [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/server-settings/settings) مللي ثانية، فستُفرَّغ البيانات إلى الجدول بغض النظر عن اكتمال الكتلة.
+
+إذا تم تحديد الإعدادين `rabbitmq_num_consumers` و/أو `rabbitmq_num_queues` مع `rabbitmq_exchange_type`، فعندئذٍ:
+
+* يجب تمكين إضافة `rabbitmq-consistent-hash-exchange`.
+* يجب تحديد الخاصية `message_id` للرسائل المنشورة (فريدة لكل رسالة/Batch).
+
+بالنسبة إلى insert query، توجد بيانات وصفية للرسالة تُضاف لكل رسالة منشورة: `messageID` والعَلم `republished` (تكون قيمته true إذا نُشرت أكثر من مرة) — ويمكن الوصول إليهما عبر headers الرسالة.
+
+لا تستخدم الجدول نفسه لعمليات insert والعروض المادية.
+
+مثال:
+
+```sql
+  CREATE TABLE queue (
+    key UInt64,
+    value UInt64
+  ) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'localhost:5672',
+                            rabbitmq_exchange_name = 'exchange1',
+                            rabbitmq_exchange_type = 'headers',
+                            rabbitmq_routing_key_list = 'format=logs,type=report,year=2020',
+                            rabbitmq_format = 'JSONEachRow',
+                            rabbitmq_num_consumers = 5;
+
+  CREATE TABLE daily (key UInt64, value UInt64)
+    ENGINE = MergeTree() ORDER BY key;
+
+  CREATE MATERIALIZED VIEW consumer TO daily
+    AS SELECT key, value FROM queue;
+
+  SELECT key, value FROM daily ORDER BY key;
+```
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_exchange_name` - اسم الـ exchange في RabbitMQ. نوع البيانات: `String`.
+* `_channel_id` - معرّف القناة ChannelID التي أُعلن عليها المستهلك الذي استلم الرسالة. نوع البيانات: `String`.
+* `_delivery_tag` - قيمة DeliveryTag للرسالة المستلمة. وهي ضمن نطاق كل قناة. نوع البيانات: `UInt64`.
+* `_redelivered` - العلامة `redelivered` الخاصة بالرسالة. نوع البيانات: `UInt8`.
+* `_message_id` - قيمة messageID للرسالة المستلمة؛ وتكون غير فارغة إذا كان قد جرى تعيينها عند نشر الرسالة. نوع البيانات: `String`.
+* `_timestamp` - الطابع الزمني للرسالة المستلمة؛ ويكون غير فارغ إذا كان قد جرى تعيينه عند نشر الرسالة. نوع البيانات: `UInt64`.
+
+أعمدة افتراضية إضافية عندما يكون `rabbitmq_handle_error_mode='stream'`:
+
+* `_raw_message` - الرسالة الخام التي تعذّر تحليلها بنجاح. نوع البيانات: `Nullable(String)`.
+* `_error` - رسالة الاستثناء التي حدثت أثناء فشل التحليل. نوع البيانات: `Nullable(String)`.
+
+ملاحظة: لا تُملأ الأعمدة الافتراضية `_raw_message` و `_error` إلا عند حدوث استثناء أثناء التحليل، وتكون دائمًا `NULL` عندما تُحلَّل الرسالة بنجاح.
+
+<div id="caveats">
+  ## محاذير
+</div>
+
+على الرغم من أنه يمكنك تحديد [تعبيرات الأعمدة الافتراضية](/ar/reference/statements/create/table#default_values) (مثل `DEFAULT` و`MATERIALIZED` و`ALIAS`) في تعريف الجدول، فسيتم تجاهلها. وبدلاً من ذلك، ستُملأ الأعمدة بالقيم الافتراضية المقابلة لأنواعها.
+
+<div id="data-formats-support">
+  ## دعم تنسيقات البيانات
+</div>
+
+يدعم محرك RabbitMQ جميع [التنسيقات](/ar/reference/formats/index) التي يدعمها ClickHouse.
+يعتمد عدد الصفوف في رسالة RabbitMQ الواحدة على ما إذا كان التنسيق يعتمد على الصفوف أو على الكتل:
+
+* بالنسبة إلى التنسيقات المعتمدة على الصفوف، يمكن التحكم في عدد الصفوف في رسالة RabbitMQ الواحدة من خلال ضبط `rabbitmq_max_rows_per_message`.
+* بالنسبة إلى التنسيقات المعتمدة على الكتل، لا يمكن تقسيم الكتلة إلى أجزاء أصغر، ولكن يمكن التحكم في عدد الصفوف في الكتلة الواحدة باستخدام الإعداد العام [max&#95;block&#95;size](/ar/reference/settings/session-settings#max_block_size).

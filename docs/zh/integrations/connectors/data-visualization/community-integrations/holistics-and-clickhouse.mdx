@@ -1,0 +1,114 @@
+---
+sidebarTitle: 'Holistics'
+slug: /integrations/holistics
+keywords: ['clickhouse', 'Holistics', 'AI', '集成', 'BI', '数据可视化']
+description: 'Holistics 是一个由 AI 驱动的平台，提供自助式 BI 和嵌入式分析，通过治理完善且易于访问的指标，帮助所有人做出更好的决策。'
+title: '将 ClickHouse 连接到 Holistics'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Holistics](https://www.holistics.io/) 是一个 AI 原生的自助式 BI 平台，提供可编程的语义层，确保指标一致且可信。
+
+将 ClickHouse 连接到 Holistics 后，您的团队即可获得快速、可靠且由 AI 驱动的自助式体验，并以代码化语义层为基础。业务用户可以借助拖放和 AI 自信地探索数据，而您则能让指标定义保持可复用、可组合，并在 Git 中进行版本控制。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+连接前，请确保已满足以下条件：
+
+* **权限：**您必须是 Holistics 中的 Admin，才能添加新的数据源。
+* **网络访问：**您的 ClickHouse server 必须可从 [Holistics 的 IP 地址](https://docs.holistics.io/docs/connect/ip-whitelisting) 访问。
+* **数据库用户：**请为 Holistics 创建一个专用的只读用户，不要使用管理员账户。
+
+<div id="recommended-privileges">
+  ### 建议的权限
+</div>
+
+专用用户需要对你要查询的表以及 `system` 表 (用于 schema 检测) 拥有 `SELECT` 权限。
+
+```sql
+-- 示例：授予对特定数据库的读取权限
+GRANT SELECT ON my_database.* TO holistics_user;
+
+-- 授予对系统元数据的访问权限
+GRANT SELECT ON system.* TO holistics_user;
+```
+
+<Steps>
+  <Step>
+    ## 收集连接信息
+
+    要通过 HTTP(S) 连接到 ClickHouse，你需要准备以下信息：
+
+    | **Parameter**     | **Description**                                                            |
+    | ----------------- | -------------------------------------------------------------------------- |
+    | **Host**          | 你的 ClickHouse server 的主机名 (例如 `mz322.eu-central-1.aws.clickhouse.cloud`) 。 |
+    | **Port**          | ClickHouse Cloud (SSL/TLS) 使用 **8443**。不使用 SSL 的自管理实例使用 **8123**。          |
+    | **Database Name** | 要连接的数据库名称，默认通常为 `default`。                                                 |
+    | **Username**      | 数据库用户，默认是 `default`。                                                       |
+    | **Password**      | 该数据库用户的密码。                                                                 |
+
+    你可以在 ClickHouse Cloud 控制台中点击 **Connect** 按钮，然后选择 **HTTPS** 来查看这些连接信息。
+
+    <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="ClickHouse Cloud 控制台中 Connect 按钮的位置" border />
+  </Step>
+
+  <Step>
+    ## 配置网络访问
+
+    由于 Holistics 是云端应用，其服务器必须能够访问你的数据库。你有两个选项：
+
+    1. **Direct Connection (推荐) ：** 在你的防火墙或 ClickHouse Cloud IP Access List 中将 Holistics 的 IP 地址加入白名单。你可以在 [IP Whitelisting guide](https://docs.holistics.io/docs/connect/ip-whitelisting) 中查看 IP 列表。
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_02.webp" alt="ClickHouse Cloud 中 IP 白名单配置示例" border />
+
+    2. **Reverse SSH Tunnel：** 如果你的数据库位于私有网络 (VPC) 中且无法对公网开放，请使用 [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel)。
+  </Step>
+
+  <Step>
+    ## 在 Holistics 中添加数据源
+
+    1. 在 Holistics 中，前往 **Settings → Data Sources**。
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="在 Holistics 设置中前往 Data Sources" border />
+
+    2. 点击 **New Data Source**，然后选择 **ClickHouse**。
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="从新建数据源列表中选择 ClickHouse" border />
+
+    3. 使用步骤 1 中收集的信息填写表单。
+
+       | **Field**         | **Setting**                                      |
+       | ----------------- | ------------------------------------------------ |
+       | **Host**          | 你的 ClickHouse 主机名                                |
+       | **Port**          | `8443` (或 `8123`)                                |
+       | **Require SSL**   | 如果使用 8443 端口，请切换为 **ON** (ClickHouse Cloud 必需) 。 |
+       | **Database Name** | `default` (或你的特定 DB)                             |
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_05.webp" alt="在 Holistics 中填写 ClickHouse 连接信息" border />
+
+    4. 点击 **Test Connection**。
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_06.webp" alt="Holistics 中成功通过 ClickHouse 连接测试" border />
+
+       * **Success：** 点击 **Save**。
+       * **Failure：** 检查你的用户名和密码，并确认已将 [Holistics IP 地址加入白名单](https://docs.holistics.io/docs/connect/ip-whitelisting)。
+  </Step>
+</Steps>
+
+<div id="known-limitations">
+  ## 已知限制
+</div>
+
+Holistics 支持 ClickHouse 中大多数标准 SQL 功能，但以下情况除外：
+
+* **运行总计：** ClickHouse 目前对这一分析函数的支持有限。
+* **嵌套数据类型：** 对于深度嵌套的 JSON 或 Array 结构，可能需要先通过 SQL 模型将其展平后再进行可视化。
+
+如需查看完整的受支持功能列表，请参阅[数据库特定限制页面](https://docs.holistics.io/docs/connect/faqs/clickhouse-limitations)。

@@ -1,0 +1,119 @@
+---
+sidebarTitle: 'Guide de migration'
+slug: /migrations/snowflake
+description: 'Migrer depuis Snowflake vers ClickHouse'
+keywords: ['Snowflake']
+title: 'Migrer depuis Snowflake vers ClickHouse'
+show_related_blogs: false
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+> Ce guide explique comment migrer des données de Snowflake vers ClickHouse.
+
+La migration de données entre Snowflake et ClickHouse nécessite l&#39;utilisation d&#39;un stockage objet,
+tel que S3, comme espace de stockage intermédiaire pour le transfert. Le processus de migration
+repose également sur l&#39;utilisation de la commande `COPY INTO` de Snowflake et de la commande `INSERT INTO SELECT`
+de ClickHouse.
+
+<Steps>
+  <Step>
+    ## Exporter des données depuis Snowflake
+
+    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Migrer de Snowflake vers ClickHouse" />
+
+    L&#39;exportation de données depuis Snowflake nécessite l&#39;utilisation d&#39;un stage externe, comme illustré dans le schéma ci-dessus.
+
+    Supposons que nous voulions exporter une table Snowflake avec le schéma suivant :
+
+    ```sql
+    CREATE TABLE MYDATASET (
+       timestamp TIMESTAMP,
+       some_text varchar,
+       some_file OBJECT,
+       complex_data VARIANT,
+    ) DATA_RETENTION_TIME_IN_DAYS = 0;
+    ```
+
+    Pour transférer les données de cette table vers une base de données ClickHouse, nous devons d&#39;abord les copier vers un stage externe. Lors de cette copie, nous recommandons Parquet comme format intermédiaire, car il permet de conserver les informations de type, préserve la précision, se compresse bien et prend nativement en charge les structures imbriquées courantes en analytique.
+
+    Dans l&#39;exemple ci-dessous, nous créons dans Snowflake un format de fichier nommé pour représenter Parquet et les options de fichier souhaitées. Nous indiquons ensuite quel bucket contiendra notre dataset copié. Enfin, nous copions le dataset vers ce bucket.
+
+    ```sql
+    CREATE FILE FORMAT my_parquet_format TYPE = parquet;
+
+    -- Créer le stage externe qui spécifie le bucket S3 de destination
+    CREATE OR REPLACE STAGE external_stage
+    URL='s3://mybucket/mydataset'
+    CREDENTIALS=(AWS_KEY_ID='<key>' AWS_SECRET_KEY='<secret>')
+    FILE_FORMAT = my_parquet_format;
+
+    -- Appliquer le préfixe "mydataset" à tous les fichiers et spécifier une taille de fichier maximale de 150mb
+    -- Le paramètre `header=true` est requis pour obtenir les noms de colonnes
+    COPY INTO @external_stage/mydataset from mydataset max_file_size=157286400 header=true;
+    ```
+
+    Pour un dataset d&#39;environ 5 To avec une taille de fichier maximale de 150 Mo, et en utilisant un warehouse Snowflake 2X-Large situé dans la même région AWS `us-east-1`, la copie des données vers le bucket S3 prendra environ 30 minutes.
+  </Step>
+
+  <Step>
+    ## Importer dans ClickHouse
+
+    Une fois les données placées dans un stockage d&#39;objets intermédiaire, des fonctions ClickHouse telles que la [fonction de table s3](/fr/reference/functions/table-functions/s3) peuvent être utilisées pour insérer les données dans une table, comme indiqué ci-dessous.
+
+    Cet exemple utilise la [fonction de table s3](/fr/reference/functions/table-functions/s3) pour AWS S3, mais la [fonction de table gcs](/fr/reference/functions/table-functions/gcs) peut être utilisée pour Google Cloud Storage, et la [fonction de table azureBlobStorage](/fr/reference/functions/table-functions/azureBlobStorage) pour Azure Blob Storage.
+
+    En supposant le schéma de table cible suivant :
+
+    ```sql
+    CREATE TABLE default.mydataset
+    (
+      `timestamp` DateTime64(6),
+      `some_text` String,
+      `some_file` Tuple(filename String, version String),
+      `complex_data` Tuple(name String, description String),
+    )
+    ENGINE = MergeTree
+    ORDER BY (timestamp)
+    ```
+
+    Nous pouvons ensuite utiliser la commande `INSERT INTO SELECT` pour insérer les données depuis S3 dans une table ClickHouse :
+
+    ```sql
+    INSERT INTO mydataset
+    SELECT
+      timestamp,
+      some_text,
+      JSONExtract(
+        ifNull(some_file, '{}'),
+        'Tuple(filename String, version String)'
+      ) AS some_file,
+      JSONExtract(
+        ifNull(complex_data, '{}'),
+        'Tuple(filename String, description String)'
+      ) AS complex_data,
+    FROM s3('https://mybucket.s3.amazonaws.com/mydataset/mydataset*.parquet')
+    SETTINGS input_format_null_as_default = 1, -- Veiller à ce que les colonnes soient insérées avec leur valeur par défaut si les valeurs sont NULL
+    input_format_parquet_case_insensitive_column_matching = 1 -- La correspondance des colonnes entre les données sources et la table cible doit être insensible à la casse
+    ```
+
+    <Info>
+      **Remarque sur les structures de colonnes imbriquées**
+
+      Les colonnes `VARIANT` et `OBJECT` du schéma de table Snowflake d&#39;origine sont produites sous forme de chaînes JSON par défaut, ce qui nous oblige à les convertir lors de leur insertion dans ClickHouse.
+
+      Les structures imbriquées telles que `some_file` sont converties en chaînes JSON par Snowflake lors de la copie. L&#39;importation de ces données nous oblige à transformer ces structures en Tuples au moment de l&#39;insertion dans ClickHouse, à l&#39;aide de la [fonction JSONExtract](/fr/reference/functions/regular-functions/json-functions#JSONExtract), comme illustré ci-dessus.
+    </Info>
+  </Step>
+
+  <Step>
+    ## Tester la réussite de l&#39;exportation des données
+
+    Pour vérifier que vos données ont bien été insérées, exécutez simplement une requête `SELECT` sur votre nouvelle table :
+
+    ```sql
+    SELECT * FROM mydataset LIMIT 10;
+    ```
+  </Step>
+</Steps>

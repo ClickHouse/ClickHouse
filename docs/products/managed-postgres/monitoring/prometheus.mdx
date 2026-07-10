@@ -1,0 +1,168 @@
+---
+slug: /cloud/managed-postgres/monitoring/prometheus
+sidebarTitle: 'Prometheus endpoint'
+title: 'Managed Postgres Prometheus integration'
+description: 'Scrape Managed Postgres metrics into Prometheus, Grafana, Datadog, or any OpenMetrics-compatible collector'
+keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'metrics', 'openmetrics', 'observability']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
+
+Managed Postgres exposes two Prometheus-compatible metrics endpoints
+on the [ClickHouse Cloud API][cloud-api]:
+
+| Endpoint | Path                                                                 | Returns                                            |
+| -------- | -------------------------------------------------------------------- | -------------------------------------------------- |
+| Org      | `/v1/organizations/{orgId}/postgres/prometheus`                      | Metrics for every Managed Postgres service in the org |
+| Instance | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus`               | Metrics for a single service                       |
+
+<Note>
+The org-level endpoint returns metrics for up to 100 services. If your
+organization has more than 100 Managed Postgres services, [contact
+support](https://clickhouse.com/support/program).
+</Note>
+
+## Authentication {#authentication}
+
+The endpoint uses the same [API keys] as the rest of the OpenAPI; see
+the [OpenAPI guide](/products/managed-postgres/openapi) for how to create
+them and look up your organization and service IDs.
+
+```bash
+KEY_ID=mykeyid
+KEY_SECRET=mykeysecret
+ORG_ID=myorgid
+PG_ID=mypgid
+```
+
+## Scraping all services in an organization {#scrape-org}
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/prometheus"
+```
+
+## Scraping a single service {#scrape-instance}
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/prometheus"
+```
+
+## Sample response {#sample-response}
+
+```response
+# HELP PostgresServiceInfo Information about PostgreSQL service, including status and version.
+# TYPE PostgresServiceInfo gauge
+PostgresServiceInfo{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",postgres_status="running",postgres_version="18"} 1
+
+# HELP PostgresServer_ActiveConnections Number of active connections by state.
+# TYPE PostgresServer_ActiveConnections gauge
+PostgresServer_ActiveConnections{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",state="active"} 1
+PostgresServer_ActiveConnections{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",state="idle"} 4
+
+# HELP PostgresServer_CacheHitRatio Buffer cache hit ratio: blocks served from cache vs. total blocks accessed (%).
+# TYPE PostgresServer_CacheHitRatio gauge
+PostgresServer_CacheHitRatio{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres"} 100
+```
+
+For the full list of metrics and their meanings, see the
+[metrics reference](/products/managed-postgres/monitoring/metrics).
+
+## Configuring Prometheus {#configuring-prometheus}
+
+This config scrapes the org-level endpoint every 60 seconds:
+
+```yaml
+scrape_configs:
+  - job_name: "managed-postgres"
+    scheme: https
+    metrics_path: "/v1/organizations/<ORG_ID>/postgres/prometheus"
+    static_configs:
+      - targets: ["api.clickhouse.cloud"]
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+    scrape_interval: 60s
+```
+
+The endpoint refreshes metrics once per minute. Scraping faster than
+`60s` duplicates samples and produces a stair-step pattern on gauge
+panels.
+
+Set `honor_labels: true` so the `postgres_service` and
+`postgres_service_name` labels from the endpoint are preserved instead
+of being overwritten by Prometheus.
+
+To scrape a single service, append `/<PG_ID>` to the `metrics_path`.
+
+## Pre-built Grafana dashboard {#grafana-dashboard}
+
+A ready-made Grafana dashboard visualizes every metric the endpoint
+exposes — a sortable services table, CPU and memory utilization, disk
+usage with threshold alerts, connections by state, transactions and
+rollback ratio, tuple activity, I/O, per-database storage, and
+deadlocks.
+
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Grafana dashboard of Managed Postgres Services" size="md" border/>
+
+### Importing the dashboard {#import-dashboard}
+
+<Steps>
+<Step>
+#### Download the dashboard JSON {#download}
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Download the dashboard JSON</TrackedLink>.
+</Step>
+<Step>
+#### Open the import flow in Grafana {#open-import}
+
+Go to **Dashboards → New → Import**. Upload the JSON file or paste its contents.
+</Step>
+<Step>
+#### Pick your Prometheus datasource {#pick-datasource}
+
+When prompted for the `DS_PROMETHEUS` input, select the Prometheus datasource scraping the endpoint configured in the [previous section](#configuring-prometheus).
+</Step>
+</Steps>
+
+For provisioned Grafana deployments, drop the JSON into your
+dashboards provisioning path. Grafana matches the `${DS_PROMETHEUS}`
+reference to a Prometheus datasource available in the instance.
+
+### Template variables {#template-variables}
+
+The dashboard exposes three variables:
+
+- **Data source** — the Prometheus datasource backing the dashboard.
+- **Service** — multi-select filter over `postgres_service_name`.
+  Defaults to *All*; pick one or more services to scope every panel.
+- **Scrape interval** — hidden constant, defaults to `60s`. Drives
+  Grafana's `$__rate_interval` calculation. Change this value in the
+  JSON if your scrape interval differs.
+
+### Filter to a single service for drill-in {#drill-in}
+
+Several panels are designed for drill-in once you filter to a single
+service via the **Service** variable. The CPU by mode panel, for
+example, stacks `user`, `system`, `iowait`, `steal`, and other CPU
+modes so you can tell whether a spike is application code, kernel
+work, disk waits, or hypervisor contention.
+
+## Integrating with Grafana and Datadog {#third-party-integrations}
+
+The endpoint follows the same shape as the [ClickHouse Prometheus
+endpoint](/products/cloud/features/monitoring/prometheus), so the Grafana Cloud, Grafana
+Alloy, and Datadog OpenMetrics agent configurations described there
+apply here too. Point `metrics_path` at the Managed Postgres org or
+instance path instead of the ClickHouse one.
+
+[cloud-api]: /products/cloud/features/admin-features/api/index "Cloud API"
+[API keys]: /products/cloud/features/admin-features/api/openapi "Managing API Keys"

@@ -1,0 +1,374 @@
+---
+slug: /use-cases/observability/clickstack/integrations/mongodb-logs
+title: 'Supervision des logs MongoDB avec ClickStack'
+sidebarTitle: 'Logs MongoDB'
+description: 'Supervision des logs MongoDB avec ClickStack'
+doc_type: 'guide'
+keywords: ['MongoDB', 'logs', 'OTEL', 'ClickStack', 'supervision de base de données', 'requête lente']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **En bref**
+
+  Collectez et visualisez les journaux du serveur MongoDB (format JSON 4.4+) dans ClickStack à l’aide du receiver OTel `filelog`. Comprend un jeu de données de démonstration et un tableau de bord préconfiguré.
+</Info>
+
+<div id="existing-mongodb">
+  ## Intégration avec une instance MongoDB existante
+</div>
+
+Cette section explique comment configurer votre installation MongoDB existante pour envoyer des logs à ClickStack en modifiant la configuration du ClickStack OTel collector.
+Si vous souhaitez tester l’intégration MongoDB avant de configurer votre propre environnement, vous pouvez utiliser notre configuration préconfigurée et des données d’exemple dans la section [&quot;Jeu de données de démonstration&quot;](/fr/clickstack/integration-examples/mongodb-logs#demo-dataset).
+
+<div id="prerequisites">
+  ### Prérequis
+</div>
+
+* Instance ClickStack opérationnelle
+* Installation MongoDB auto-gérée existante (version 4.4 ou ultérieure)
+* Accès aux fichiers journaux de MongoDB
+
+<Steps>
+  <Step>
+    #### Vérifier la configuration de journalisation de MongoDB
+
+    MongoDB 4.4+ génère par défaut des logs JSON structurés. Vérifiez l’emplacement de votre fichier de logs :
+
+    ```bash
+    cat /etc/mongod.conf | grep -A 5 systemLog
+    ```
+
+    Emplacements courants des journaux MongoDB :
+
+    * **Linux (apt/yum)** : `/var/log/mongodb/mongod.log`
+    * **macOS (Homebrew)** : `/usr/local/var/log/mongodb/mongo.log`
+    * **Docker** : les journaux sont souvent envoyés vers stdout, mais il peut être configuré pour écrire dans `/var/log/mongodb/mongod.log`
+
+    Si MongoDB envoie ses journaux vers stdout, configurez-le pour qu’il les écrive dans un fichier en mettant à jour `mongod.conf` :
+
+    ```yaml
+    systemLog:
+      destination: file
+      path: /var/log/mongodb/mongod.log
+      logAppend: true
+    ```
+
+    Après avoir modifié la configuration, redémarrez MongoDB :
+
+    ```bash
+    # For systemd
+    sudo systemctl restart mongod
+
+    # For Docker
+    docker restart <mongodb-container>
+    ```
+  </Step>
+
+  <Step>
+    #### Créer une configuration personnalisée de l’OTel collector pour MongoDB
+
+    ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement. La configuration personnalisée est fusionnée avec la configuration de base gérée par HyperDX via OpAMP.
+
+    Créez un fichier nommé `mongodb-monitoring.yaml` avec la configuration suivante :
+
+    ```yaml
+    receivers:
+      filelog/mongodb:
+        include:
+          - /var/log/mongodb/mongod.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000-07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-production"
+
+    service:
+      pipelines:
+        logs/mongodb:
+          receivers: [filelog/mongodb]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    <Note>
+      * Dans la configuration personnalisée, vous définissez uniquement de nouveaux receivers et pipelines. Les processors (`memory_limiter`, `transform`, `batch`) et l’exporter (`clickhouse`) sont déjà définis dans la configuration ClickStack de base — il suffit simplement d’y faire référence par leur nom.
+      * Cette configuration utilise `start_at: beginning` pour lire tous les logs existants au démarrage du collector. Pour les déploiements en production, remplacez-le par `start_at: end` afin d’éviter de réingérer les logs lors des redémarrages du collector.
+    </Note>
+  </Step>
+
+  <Step>
+    #### Configurer ClickStack pour charger une configuration personnalisée
+
+    Pour activer une configuration personnalisée du collecteur dans votre déploiement ClickStack existant, vous devez :
+
+    1. Monter le fichier de configuration personnalisé à l’emplacement `/etc/otelcol-contrib/custom.config.yaml`
+    2. Définir la variable d’environnement `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+    3. Monter le répertoire des journaux MongoDB afin que le collecteur puisse les lire
+
+    <Tabs>
+      <Tab title="Docker Compose">
+        Mettez à jour la configuration de votre déploiement ClickStack :
+
+        ```yaml
+        services:
+          clickstack:
+            # ... configuration existante ...
+            environment:
+              - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+              # ... autres variables d’environnement ...
+            volumes:
+              - ./mongodb-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+              - /var/log/mongodb:/var/log/mongodb:ro
+              # ... autres volumes ...
+        ```
+      </Tab>
+
+      <Tab title="Docker Run (image tout-en-un)">
+        Si vous utilisez l’image tout-en-un avec Docker, exécutez :
+
+        ```bash
+        docker run --name clickstack \
+          -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+          -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+          -v "$(pwd)/mongodb-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+          -v /var/log/mongodb:/var/log/mongodb:ro \
+          clickhouse/clickstack-all-in-one:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      Assurez-vous que le collecteur ClickStack dispose des autorisations appropriées pour lire les fichiers journaux MongoDB. En production, utilisez des montages en lecture seule (`:ro`) et respectez le principe du moindre privilège.
+    </Note>
+  </Step>
+
+  <Step>
+    #### Vérifier les logs dans HyperDX
+
+    Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les logs arrivent bien :
+
+    <Image img="/images/clickstack/mongodb/search-view.webp" alt="vue Search des logs MongoDB" />
+
+    <Image img="/images/clickstack/mongodb/log-view.webp" alt="vue détaillée d’un log MongoDB" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## Jeu de données de démonstration
+</div>
+
+Testez l’intégration MongoDB avec un jeu de données d’exemple pré-généré avant de configurer vos systèmes de production.
+
+<Steps>
+  <Step>
+    #### Télécharger le jeu de données d’exemple
+
+    Téléchargez le fichier de logs d’exemple :
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mongodb/mongod.log
+    ```
+  </Step>
+
+  <Step>
+    #### Créer une configuration de collector de test
+
+    Créez un fichier nommé `mongodb-demo.yaml` avec la configuration suivante :
+
+    ```yaml
+    cat > mongodb-demo.yaml << 'EOF'
+    receivers:
+      filelog/mongodb:
+        include:
+          - /tmp/mongodb-demo/mongod.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.t.$$date
+              layout: '2006-01-02T15:04:05.000-07:00'
+              layout_type: gotime
+            severity:
+              parse_from: attributes.s
+              overwrite_text: true
+              mapping:
+                fatal: F
+                error: E
+                warn: W
+                info: I
+                debug:
+                  - D1
+                  - D2
+                  - D3
+                  - D4
+                  - D5
+
+          - type: move
+            from: attributes.msg
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "mongodb-demo"
+
+          - type: add
+            field: resource["service.name"]
+            value: "mongodb-demo"
+
+    service:
+      pipelines:
+        logs/mongodb-demo:
+          receivers: [filelog/mongodb]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### Exécuter ClickStack avec la configuration de démonstration
+
+    Exécutez ClickStack avec les logs et la configuration de démonstration :
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/mongodb-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/mongod.log:/tmp/mongodb-demo/mongod.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    ## Vérifier les logs dans HyperDX
+
+    Une fois ClickStack lancé :
+
+    1. Ouvrez [HyperDX](http://localhost:8080/) et connectez-vous à votre compte (vous devrez peut-être d’abord en créer un)
+    2. Accédez à la vue Search et définissez la source sur `Logs`
+    3. Définissez l’intervalle de temps de manière à inclure **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
+
+    <Image img="/images/clickstack/mongodb/search-view.webp" alt="Vue Search des logs MongoDB" />
+
+    <Image img="/images/clickstack/mongodb/log-view.webp" alt="Vue détaillée d’un log MongoDB" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## Tableaux de bord et visualisation
+</div>
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  </Step>
+
+  <Step>
+    #### Importer un tableau de bord préconfiguré
+
+    1. Ouvrez HyperDX et accédez à la section tableaux de bord.
+    2. Cliquez sur &quot;Import Dashboard&quot; dans l&#39;angle supérieur droit, dans le menu à trois points.
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Importer un tableau de bord" />
+
+    3. Téléversez le fichier mongodb-logs-dashboard.json, puis cliquez sur &quot;Finish import&quot;.
+
+    <Image img="/images/clickstack/mongodb/finish-import.webp" alt="Terminer l'importation du tableau de bord des logs MongoDB" />
+  </Step>
+
+  <Step>
+    #### Le tableau de bord sera créé avec toutes les visualisations préconfigurées
+
+    Pour le jeu de données de démonstration, définissez l&#39;intervalle de temps de manière à inclure **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
+
+    <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="Tableau de bord des logs MongoDB" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+<div id="no-logs">
+  ### Aucun log ne s’affiche dans HyperDX
+</div>
+
+Vérifiez que la configuration effective inclut votre filelog receiver :
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+Vérifiez les logs du collector à la recherche d’erreurs :
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log
+```
+
+<div id="logs-not-parsing">
+  ### Les logs ne sont pas correctement analysés
+</div>
+
+Vérifiez que MongoDB génère des logs au format JSON (4.4+) :
+
+```bash
+tail -1 /var/log/mongodb/mongod.log | python3 -m json.tool
+```
+
+Si la sortie n’est pas un JSON valide, il se peut que votre version de MongoDB utilise l’ancien format de journalisation en texte brut (antérieur à la version 4.4). Vous devrez remplacer l’opérateur `json_parser` par `regex_parser`, ou passer à MongoDB 4.4+.
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* Configurez des [alertes](/fr/clickstack/features/alerts) pour les événements critiques (pics d’erreurs, seuils de requêtes lentes)
+* Créez des [tableaux de bord](/fr/clickstack/features/dashboards/overview) supplémentaires pour des cas d’utilisation spécifiques (surveillance d’un Replica Set, suivi des connexions)
+
+<div id="going-to-production">
+  ## Mise en production
+</div>
+
+Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une configuration rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers le point de terminaison OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.
