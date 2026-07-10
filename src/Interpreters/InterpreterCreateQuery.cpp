@@ -2721,8 +2721,8 @@ BlockIO InterpreterCreateQuery::execute()
         else
         {
             /// `USE catalog; CREATE TABLE namespace.table ...`
-            auto resolved = getContext()->resolveStorageID({create.getDatabase(), create.getTable()}, Context::ResolveGlobal);
-            if (resolved.database_name != create.getDatabase())
+            auto resolved = getContext()->tryResolveStorageID({create.getDatabase(), create.getTable()}, Context::ResolveGlobal);
+            if (resolved && resolved.database_name != create.getDatabase())
             {
                 create.setDatabase(resolved.database_name);
                 create.setTable(resolved.table_name);
@@ -2733,12 +2733,16 @@ BlockIO InterpreterCreateQuery::execute()
     }
 
     /// Normalize the `AS <table>` source through the shared resolver so DataLakeCatalog
-    /// namespaces are honored, before access checks and ON CLUSTER shipping.
+    /// namespaces are honored, before access checks and ON CLUSTER shipping. On resolution
+    /// failure the names are kept and downstream code reports the error after authorization.
     if (!create.as_table.empty())
     {
-        auto as_table_id = getContext()->resolveStorageID({create.as_database, create.as_table}, Context::ResolveOrdinary);
-        create.as_database = as_table_id.database_name;
-        create.as_table = as_table_id.table_name;
+        if (auto as_table_id = getContext()->tryResolveStorageID({create.as_database, create.as_table}, Context::ResolveOrdinary);
+            as_table_id && as_table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+        {
+            create.as_database = as_table_id.database_name;
+            create.as_table = as_table_id.table_name;
+        }
     }
 
     bool is_create_database = create.database && !create.table;

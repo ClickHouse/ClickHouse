@@ -27,7 +27,9 @@ String InterpreterShowIndexesQuery::getRewrittenQuery()
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
     /// Resolve through the central storage resolver so DataLakeCatalog namespaces are honored
     /// (`USE db.namespace` prefixes and `namespace.table` qualifiers under `USE catalog`).
-    auto storage_id = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary);
+    auto storage_id = getContext()->tryResolveStorageID({query.database, query.table}, Context::ResolveOrdinary);
+    if (!storage_id)
+        storage_id = StorageID{getContext()->resolveDatabase(query.database), query.table};
     String table = escapeString(storage_id.table_name);
     String resolved_database = storage_id.database_name;
     String database = escapeString(resolved_database);
@@ -127,7 +129,9 @@ ORDER BY index_type, expression, seq_in_index;)", database, table, where_express
 BlockIO InterpreterShowIndexesQuery::execute()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String database = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary).database_name;
+    String database = getContext()->tryResolveStorageID({query.database, query.table}, Context::ResolveOrdinary).database_name;
+    if (database.empty())
+        database = getContext()->resolveDatabase(query.database);
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");

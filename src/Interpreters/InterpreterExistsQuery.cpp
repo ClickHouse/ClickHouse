@@ -44,9 +44,13 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
 
     /// Resolve through the central storage resolver so DataLakeCatalog namespaces are honored
     /// (`USE db.namespace` prefixes and `namespace.table` qualifiers under `USE catalog`).
+    /// The try-variant keeps EXISTS tolerant of missing databases (it must answer 0, not
+    /// throw) and keeps the access check ahead of any existence disclosure.
     auto resolve_table = [&](const ASTQueryWithTableAndOutput & q)
     {
-        return getContext()->resolveStorageID({q.getDatabase(), q.getTable()}, Context::ResolveOrdinary);
+        if (auto resolved = getContext()->tryResolveStorageID({q.getDatabase(), q.getTable()}, Context::ResolveOrdinary))
+            return resolved;
+        return StorageID{getContext()->resolveDatabase(q.getDatabase()), q.getTable()};
     };
 
     if ((exists_query = query_ptr->as<ASTExistsTableQuery>()))

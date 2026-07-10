@@ -550,7 +550,9 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     const auto session_context = session->sessionContext();
     /// Resolve through the central storage resolver so DataLakeCatalog namespaces are honored
     /// (a default database "db.namespace" selects a namespace for unqualified table names).
-    auto storage_id = session_context->resolveStorageID({"", packet.table}, Context::ResolveOrdinary);
+    auto storage_id = session_context->tryResolveStorageID({"", packet.table}, Context::ResolveOrdinary);
+    if (!storage_id)
+        storage_id = StorageID{session_context->getCurrentDatabase(), packet.table};
     const String & database = storage_id.database_name;
     /// Mirror the access check of the SQL `DESCRIBE`/`SHOW COLUMNS` statements (InterpreterDescribeQuery).
     /// Check before getTable() so this command does not become a table-existence oracle.

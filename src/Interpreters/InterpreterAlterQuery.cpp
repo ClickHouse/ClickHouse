@@ -418,7 +418,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// sync so access checks and ON CLUSTER serialization target the executed table.
         auto & alter_query = query_ptr->as<ASTAlterQuery &>();
         alter_query.setDatabase(table_id.database_name);
-        alter_query.setTable(table_id.table_name);
+        /// A temporary table resolves to its internal global name — keep the user-visible one.
+        if (table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+            alter_query.setTable(table_id.table_name);
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 
@@ -429,19 +431,29 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         for (const auto & child : alter.command_list->children)
         {
             auto * command_ast = child->as<ASTAlterCommand>();
-            if (!command_ast->from_table.empty())
+            /// Temporary tables (e.g. REPLACE PARTITION FROM tmp) and missing databases keep
+            /// their names untouched: downstream code resolves them with master semantics.
+            if (!command_ast->from_table.empty()
+                && !getContext()->tryResolveStorageID(
+                    {command_ast->from_database, command_ast->from_table}, Context::ResolveExternal))
             {
-                auto from_id = getContext()->resolveStorageID(
-                    {command_ast->from_database, command_ast->from_table}, Context::ResolveOrdinary);
-                command_ast->from_database = from_id.database_name;
-                command_ast->from_table = from_id.table_name;
+                if (auto from_id = getContext()->tryResolveStorageID(
+                        {command_ast->from_database, command_ast->from_table}, Context::ResolveOrdinary))
+                {
+                    command_ast->from_database = from_id.database_name;
+                    command_ast->from_table = from_id.table_name;
+                }
             }
-            if (!command_ast->to_table.empty())
+            if (!command_ast->to_table.empty()
+                && !getContext()->tryResolveStorageID(
+                    {command_ast->to_database, command_ast->to_table}, Context::ResolveExternal))
             {
-                auto to_id = getContext()->resolveStorageID(
-                    {command_ast->to_database, command_ast->to_table}, Context::ResolveOrdinary);
-                command_ast->to_database = to_id.database_name;
-                command_ast->to_table = to_id.table_name;
+                if (auto to_id = getContext()->tryResolveStorageID(
+                        {command_ast->to_database, command_ast->to_table}, Context::ResolveOrdinary))
+                {
+                    command_ast->to_database = to_id.database_name;
+                    command_ast->to_table = to_id.table_name;
+                }
             }
         }
     }
