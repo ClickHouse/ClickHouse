@@ -8,6 +8,7 @@ final opt-out partition target	2
 left join pk target	2
 mixed conjunction inferred atom	2
 mixed conjunction skipped atom	1
+runtime filters rerun	1
 plain correctness	0
 partition correctness	0
 skip index correctness	0

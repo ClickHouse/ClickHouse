@@ -152,6 +152,19 @@ FROM (
     WHERE o.k = 42 AND sipHash64(o.k) % 2 >= 0
 );
 
+-- The post-runtime-filter push-down rerun must respect the gate too: with runtime filters
+-- enabled the non-pruning inferred copy must still be absent
+SELECT 'runtime filters rerun',
+       countIf(explain LIKE '%ilter column:%k = 12345%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM gate_src AS o
+    INNER JOIN gate_plain AS l ON o.k = l.k
+    WHERE o.k = 12345
+    SETTINGS enable_join_runtime_filters = 1
+);
+
 -- Correctness: same result with and without the gate for every outcome
 SELECT 'plain correctness',
        (SELECT count() FROM gate_src AS o INNER JOIN gate_plain AS l ON o.k = l.k
