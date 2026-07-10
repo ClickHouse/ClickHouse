@@ -1501,6 +1501,11 @@ extern FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLpNorm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_);
 
+extern FunctionPtr createFunctionArrayL1Normalize(ContextPtr context_);
+extern FunctionPtr createFunctionArrayL2Normalize(ContextPtr context_);
+extern FunctionPtr createFunctionArrayLpNormalize(ContextPtr context_);
+extern FunctionPtr createFunctionArrayLinfNormalize(ContextPtr context_);
+
 extern FunctionPtr createFunctionArrayL1Distance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Distance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_);
@@ -1562,6 +1567,38 @@ struct LinfNormTraits
 
     static constexpr auto CreateTupleFunction = FunctionLinfNorm::create;
     static constexpr auto CreateArrayFunction = createFunctionArrayLinfNorm;
+};
+
+struct L1NormalizeTraits
+{
+    static constexpr auto name = "L1Normalize";
+
+    static constexpr auto CreateTupleFunction = FunctionL1Normalize::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayL1Normalize;
+};
+
+struct L2NormalizeTraits
+{
+    static constexpr auto name = "L2Normalize";
+
+    static constexpr auto CreateTupleFunction = FunctionL2Normalize::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayL2Normalize;
+};
+
+struct LpNormalizeTraits
+{
+    static constexpr auto name = "LpNormalize";
+
+    static constexpr auto CreateTupleFunction = FunctionLpNormalize::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayLpNormalize;
+};
+
+struct LinfNormalizeTraits
+{
+    static constexpr auto name = "LinfNormalize";
+
+    static constexpr auto CreateTupleFunction = FunctionLinfNormalize::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayLinfNormalize;
 };
 
 struct L1DistanceTraits
@@ -1674,6 +1711,11 @@ using TupleOrArrayFunctionL2Norm = TupleOrArrayFunction<L2NormTraits>;
 using TupleOrArrayFunctionL2SquaredNorm = TupleOrArrayFunction<L2SquaredNormTraits>;
 using TupleOrArrayFunctionLpNorm = TupleOrArrayFunction<LpNormTraits>;
 using TupleOrArrayFunctionLinfNorm = TupleOrArrayFunction<LinfNormTraits>;
+
+using TupleOrArrayFunctionL1Normalize = TupleOrArrayFunction<L1NormalizeTraits>;
+using TupleOrArrayFunctionL2Normalize = TupleOrArrayFunction<L2NormalizeTraits>;
+using TupleOrArrayFunctionLpNormalize = TupleOrArrayFunction<LpNormalizeTraits>;
+using TupleOrArrayFunctionLinfNormalize = TupleOrArrayFunction<LinfNormalizeTraits>;
 
 using TupleOrArrayFunctionL1Distance = TupleOrArrayFunction<L1DistanceTraits>;
 using TupleOrArrayFunctionL2Distance = TupleOrArrayFunction<L2DistanceTraits>;
@@ -2730,13 +2772,13 @@ SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM q
 
     /// L1Normalize documentation
     FunctionDocumentation::Description description_l1_normalize = R"(
-Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
+Calculates the unit vector of a given vector (the elements of the tuple or array are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
     )";
-    FunctionDocumentation::Syntax syntax_l1_normalize = "L1Normalize(tuple)";
+    FunctionDocumentation::Syntax syntax_l1_normalize = "L1Normalize(vector)";
     FunctionDocumentation::Arguments arguments_l1_normalize = {
-        {"tuple", "A tuple of numeric values.", {"Tuple(T)"}}
+        {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l1_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
+    FunctionDocumentation::ReturnedValue returned_value_l1_normalize = {"Returns the unit vector.", {"Tuple(Float64)", "Array(Float64)"}};
     FunctionDocumentation::Examples examples_l1_normalize = {
         {
             "Basic usage",
@@ -2753,18 +2795,18 @@ SELECT L1Normalize((1, 2))
     FunctionDocumentation::Category category_l1_normalize = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_l1_normalize = {description_l1_normalize, syntax_l1_normalize, arguments_l1_normalize, {}, returned_value_l1_normalize, examples_l1_normalize, introduced_in_l1_normalize, category_l1_normalize};
 
-    factory.registerFunction<FunctionL1Normalize>(documentation_l1_normalize);
-    factory.registerAlias("normalizeL1", FunctionL1Normalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<TupleOrArrayFunctionL1Normalize>(documentation_l1_normalize);
+    factory.registerAlias("normalizeL1", TupleOrArrayFunctionL1Normalize::name, FunctionFactory::Case::Insensitive);
 
     /// L2Normalize documentation
     FunctionDocumentation::Description description_l2_normalize = R"(
-Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in Euclidean space (using [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
+Calculates the unit vector of a given vector (the elements of the tuple or array are the coordinates) in Euclidean space (using [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
     )";
-    FunctionDocumentation::Syntax syntax_l2_normalize = "L2Normalize(tuple)";
+    FunctionDocumentation::Syntax syntax_l2_normalize = "L2Normalize(vector)";
     FunctionDocumentation::Arguments arguments_l2_normalize = {
-        {"tuple", "A tuple of numeric values.", {"Tuple(T)"}}
+        {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_l2_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
+    FunctionDocumentation::ReturnedValue returned_value_l2_normalize = {"Returns the unit vector.", {"Tuple(Float64)", "Array(Float64)"}};
     FunctionDocumentation::Examples examples_l2_normalize = {
         {
             "Basic usage",
@@ -2781,18 +2823,18 @@ SELECT L2Normalize((3, 4))
     FunctionDocumentation::Category category_l2_normalize = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_l2_normalize = {description_l2_normalize, syntax_l2_normalize, arguments_l2_normalize, {}, returned_value_l2_normalize, examples_l2_normalize, introduced_in_l2_normalize, category_l2_normalize};
 
-    factory.registerFunction<FunctionL2Normalize>(documentation_l2_normalize);
-    factory.registerAlias("normalizeL2", FunctionL2Normalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<TupleOrArrayFunctionL2Normalize>(documentation_l2_normalize);
+    factory.registerAlias("normalizeL2", TupleOrArrayFunctionL2Normalize::name, FunctionFactory::Case::Insensitive);
 
     /// LinfNormalize documentation
     FunctionDocumentation::Description description_linf_normalize = R"(
-Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in `L_{inf}` space (using [maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
+Calculates the unit vector of a given vector (the elements of the tuple or array are the coordinates) in `L_{inf}` space (using [maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
     )";
-    FunctionDocumentation::Syntax syntax_linf_normalize = "LinfNormalize(tuple)";
+    FunctionDocumentation::Syntax syntax_linf_normalize = "LinfNormalize(vector)";
     FunctionDocumentation::Arguments arguments_linf_normalize = {
-        {"tuple", "A tuple of numeric values.", {"Tuple(T)"}}
+        {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_linf_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
+    FunctionDocumentation::ReturnedValue returned_value_linf_normalize = {"Returns the unit vector.", {"Tuple(Float64)", "Array(Float64)"}};
     FunctionDocumentation::Examples examples_linf_normalize = {
         {
             "Basic usage",
@@ -2809,20 +2851,20 @@ SELECT LinfNormalize((3, 4))
     FunctionDocumentation::Category category_linf_normalize = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_linf_normalize = {description_linf_normalize, syntax_linf_normalize, arguments_linf_normalize, {}, returned_value_linf_normalize, examples_linf_normalize, introduced_in_linf_normalize, category_linf_normalize};
 
-    factory.registerFunction<FunctionLinfNormalize>(documentation_linf_normalize);
-    factory.registerAlias("normalizeLinf", FunctionLinfNormalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<TupleOrArrayFunctionLinfNormalize>(documentation_linf_normalize);
+    factory.registerAlias("normalizeLinf", TupleOrArrayFunctionLinfNormalize::name, FunctionFactory::Case::Insensitive);
 
     /// LpNormalize documentation
     {
         FunctionDocumentation::Description description_lp_normalize = R"(
-Calculates the unit vector of a given vector (the elements of the tuple are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
+Calculates the unit vector of a given vector (the elements of the tuple or array are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
         )";
-        FunctionDocumentation::Syntax syntax_lp_normalize = "LpNormalize(tuple, p)";
+        FunctionDocumentation::Syntax syntax_lp_normalize = "LpNormalize(vector, p)";
         FunctionDocumentation::Arguments arguments_lp_normalize = {
-            {"tuple", "A tuple of numeric values.", {"Tuple(T)"}},
+            {"vector", "A tuple or array of numeric values.", {"Tuple(T)", "Array(T)"}},
             {"p", "The power. Possible values are any number in the range range from `[1; inf)`.", {"UInt*", "Float*"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value_lp_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
+        FunctionDocumentation::ReturnedValue returned_value_lp_normalize = {"Returns the unit vector.", {"Tuple(Float64)", "Array(Float64)"}};
         FunctionDocumentation::Examples examples_lp_normalize = {
             {
                 "Usage example",
@@ -2839,8 +2881,8 @@ SELECT LpNormalize((3, 4), 5)
         FunctionDocumentation::Category category_lp_normalize = FunctionDocumentation::Category::Distance;
         FunctionDocumentation documentation_lp_normalize = {description_lp_normalize, syntax_lp_normalize, arguments_lp_normalize, {}, returned_value_lp_normalize, examples_lp_normalize, introduced_in_lp_normalize, category_lp_normalize};
 
-        factory.registerFunction<FunctionLpNormalize>(documentation_lp_normalize);
+        factory.registerFunction<TupleOrArrayFunctionLpNormalize>(documentation_lp_normalize);
     }
-    factory.registerAlias("normalizeLp", FunctionLpNormalize::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("normalizeLp", TupleOrArrayFunctionLpNormalize::name, FunctionFactory::Case::Insensitive);
 }
 }
