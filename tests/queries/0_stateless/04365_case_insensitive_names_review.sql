@@ -316,3 +316,12 @@ SELECT '--- Recursive CTE quoted column survives AST round-trip ---';
 -- The synthetic `SELECT ... FROM cte` projection must re-emit the quote pin. (Seed-alias form:
 -- viewExplain does not support recursive CTE column lists even in default mode.)
 SELECT count() FROM viewExplain('EXPLAIN QUERY TREE', 'run_passes = 1, dump_ast = 1', (WITH RECURSIVE cte AS (SELECT 1 AS "MyCol" UNION ALL SELECT "MyCol" + 1 FROM cte WHERE "MyCol" < 3) SELECT * FROM cte)) WHERE explain LIKE '%SELECT "MyCol"%';
+
+SELECT '--- Duplicate folded transformer targets are ambiguous ---';
+CREATE TABLE t_dup_tgt (FIRSTNAME String, other Int32) ENGINE = Memory;
+INSERT INTO t_dup_tgt VALUES ('x', 1);
+SELECT * EXCEPT (FirstName, firstname) FROM t_dup_tgt; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT * REPLACE ('a' AS FirstName, 'b' AS firstname) FROM t_dup_tgt; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT * REPLACE ('a' AS firstname) FROM t_dup_tgt;
+SELECT * EXCEPT (firstname) FROM t_dup_tgt;
+DROP TABLE t_dup_tgt;

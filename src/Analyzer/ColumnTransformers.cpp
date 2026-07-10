@@ -250,6 +250,8 @@ void canonicalizeTargetsImpl(
     const std::vector<std::vector<bool>> & target_parts_double_quoted,
     const Names & visible_column_names)
 {
+    const Names original_targets = targets;
+    std::vector<bool> target_was_rewritten(targets.size(), false);
     for (size_t i = 0; i < targets.size(); ++i)
     {
         const bool quoted = i < target_parts_double_quoted.size()
@@ -270,12 +272,23 @@ void canonicalizeTargetsImpl(
         if (folded_matches.size() == 1)
         {
             target = folded_matches.front();
+            target_was_rewritten[i] = true;
             /// Keep the parsed parts consistent: clone rebuilds names from parts, and equality
             /// compares parts, so hash/equality/clone must all see the canonical spelling.
             if (i < target_parts.size() && target_parts[i].size() == 1)
                 target_parts[i][0] = target;
         }
     }
+
+    /// Distinct spellings collapsing onto one column after folding are ambiguous — otherwise
+    /// matching silently uses whichever canonical duplicate comes first. Exact duplicates
+    /// written by the user keep their pre-existing behavior.
+    for (size_t i = 0; i < targets.size(); ++i)
+        for (size_t j = i + 1; j < targets.size(); ++j)
+            if (targets[i] == targets[j] && (target_was_rewritten[i] || target_was_rewritten[j]))
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "Column transformer targets '{}' and '{}' both match column '{}' after case-insensitive matching",
+                    original_targets[i], original_targets[j], targets[i]);
 }
 
 }
