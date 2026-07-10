@@ -1,0 +1,42 @@
+---
+description: 'Un jeu de données qui est toujours en RAM. Il est destiné à être utilisé sur le côté droit
+  de l’opérateur `IN`.'
+sidebarTitle: 'Set'
+slug: /engines/table-engines/special/set
+title: 'Moteur de table Set'
+doc_type: 'référence'
+---
+
+<Note>
+  Dans ClickHouse Cloud, si votre service a été créé avec une version antérieure à 25.4, vous devrez définir la compatibilité sur au moins 25.4 à l’aide de `SET compatibility=25.4`.
+</Note>
+
+Un jeu de données qui est toujours en RAM. Il est destiné à être utilisé sur le côté droit de l’opérateur `IN` (voir la section &quot;opérateurs `IN`&quot;).
+
+Vous pouvez utiliser `INSERT` pour insérer des données dans la table. Les nouveaux éléments seront ajoutés au jeu de données, tandis que les doublons seront ignorés.
+Mais vous ne pouvez pas effectuer de `SELECT` sur la table. La seule façon de récupérer des données est de l’utiliser dans la partie droite de l’opérateur `IN`.
+
+Les données résident toujours en RAM. Pour `INSERT`, les blocs de données insérées sont également écrits dans le répertoire des tables sur le disque. Au démarrage du serveur, ces données sont chargées en RAM. En d’autres termes, après un redémarrage, les données restent en place.
+
+En cas de redémarrage brutal du serveur, le bloc de données présent sur le disque peut être perdu ou endommagé. Dans ce dernier cas, vous devrez peut-être supprimer manuellement le fichier contenant les données endommagées.
+
+<div id="join-limitations-and-settings">
+  ### Limitations et paramètres
+</div>
+
+Lors de la création d&#39;une table, les paramètres suivants s&#39;appliquent :
+
+<div id="persistent">
+  #### Persistent
+</div>
+
+Désactive la persistance pour les moteurs de table Set et [Join](/fr/reference/engines/table-engines/special/join).
+
+Réduit la surcharge d’E/S. Convient aux scénarios où la performance prime et où la persistance n’est pas nécessaire.
+
+Valeurs possibles :
+
+* 1 — Activé.
+* 0 — Désactivé.
+
+Valeur par défaut : `1`.

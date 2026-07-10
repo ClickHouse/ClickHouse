@@ -1,0 +1,56 @@
+---
+description: 'Retorna uma tabela conectada via driver JDBC.'
+sidebarTitle: 'jdbc'
+slug: /sql-reference/table-functions/jdbc
+title: 'jdbc'
+doc_type: 'reference'
+---
+
+<Note>
+  clickhouse-jdbc-bridge contém código Experimental e não tem mais suporte. Pode conter problemas de confiabilidade e vulnerabilidades de segurança. Use por sua conta e risco.
+  O ClickHouse recomenda usar funções de tabela nativas do ClickHouse, que oferecem uma alternativa melhor para cenários de consultas ad hoc (Postgres, MySQL, MongoDB etc.).
+</Note>
+
+A função de tabela JDBC retorna uma tabela conectada por meio de um driver JDBC.
+
+Esta função de tabela exige que o programa [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) esteja em execução separadamente.
+Ela oferece suporte a tipos Nullable (com base no DDL da tabela remota consultada).
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+jdbc(datasource, external_database, external_table)
+jdbc(datasource, external_table)
+jdbc(named_collection)
+```
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+Em vez do nome de um banco de dados externo, é possível especificar um esquema:
+
+```sql
+SELECT * FROM jdbc('jdbc:mysql://localhost:3306/?user=root&password=root', 'schema', 'table')
+```
+
+```sql
+SELECT * FROM jdbc('mysql://localhost:3306/?user=root&password=root', 'select * from schema.table')
+```
+
+```sql
+SELECT * FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1}}'') as num')
+```
+
+```sql
+SELECT *
+FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1}}'') as num')
+```
+
+```sql
+SELECT a.datasource AS server1, b.datasource AS server2, b.name AS db
+FROM jdbc('mysql-dev?datasource_column', 'show databases') a
+INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.name
+```

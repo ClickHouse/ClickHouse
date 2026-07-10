@@ -1,0 +1,248 @@
+---
+title: Docker에서 ODBC를 사용하여 Microsoft SQL Server (MSSQL) 데이터베이스에 연결하는 ClickHouse 설정 방법
+description: "Docker에서 ODBC를 사용하여 Microsoft SQL Server (MSSQL) 데이터베이스에 연결하는 ClickHouse 설정 방법"
+date: 2024-05-29
+tags: ['네이티브 클라이언트 및 인터페이스']
+keywords: ['Docker', 'ODBC', 'Microsoft SQL Server', 'MSSQL']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## 질문
+</div>
+
+Docker image를 사용해 Microsoft SQL Server에 연결하도록 ClickHouse를 설정하려면 어떻게 해야 합니까?
+
+<div id="answer">
+  ## 답변
+</div>
+
+***이 예시에 대한 참고 사항***
+
+* ClickHouse Docker Ubuntu 이미지를 사용합니다
+* FreeTDS Driver를 사용합니다
+* MSSQL Server 2012R2를 사용합니다
+* 이 예시에서 Windows 호스트명은 `MARSDB2.marsnet2.local`이고 IP는 `192.168.1.133`입니다(환경에 맞게 호스트명 및/또는 IP를 수정하십시오)
+* MSSQL 인스턴스 이름은 `MARSDB2`입니다
+* MSSQL 로그인 및 DB 사용자는 `sql_user`입니다
+
+<div id="example-setup-in-mssql-for-testing-">
+  ### 테스트를 위한 MSSQL 예시 설정
+</div>
+
+MSSQL에서 생성한 데이터베이스 및 테이블:
+
+<Image img="/images/knowledgebase/ikb273/c8a5492f-5910-4454-bfbc-5c6ceda15ccd.webp" size="md" alt="MSSQL 데이터베이스 및 테이블 구조" border />
+
+MSSQL 로그인 사용자 `sql_user`:
+
+<Image img="/images/knowledgebase/ikb273/568f1143-475e-422f-a26a-2c23ac324771.webp" size="md" alt="MSSQL 로그인 사용자 구성" border />
+
+`sql_user`의 데이터베이스 멤버십 역할:
+
+<Image img="/images/knowledgebase/ikb273/63992978-7078-4985-b661-a3c095099ea7.webp" size="md" alt="MSSQL 데이터베이스 멤버십 역할" border />
+
+로그인이 연결된 데이터베이스 사용자:
+
+<Image img="/images/knowledgebase/ikb273/15a407ca-53c1-45b1-9beb-ddd8eedde64a.webp" size="md" alt="로그인이 연결된 MSSQL 데이터베이스 사용자" border />
+
+<div id="configuring-clickhouse-with-odbc">
+  ### ODBC로 ClickHouse 구성하기
+</div>
+
+작업 디렉터리를 생성합니다:
+
+```sh
+mkdir ch-odbc-mssql
+cd ch-odbc-mssql
+```
+
+`odbc.ini` 파일을 생성하세요:
+
+```sh
+vim odbc.ini
+```
+
+다음 항목을 추가하여 DSN 이름과 IP를 업데이트하세요.
+
+```sh
+[marsdb2_mssql]
+Driver = FreeTDS
+Server = 192.168.1.133
+```
+
+`odbcinst.ini` 파일을 만듭니다:
+
+```sh
+vim odbcinst.ini
+```
+
+다음 항목을 추가하세요(trace는 선택 사항이지만 디버깅에 도움이 됩니다):
+
+```sh
+[ODBC]
+Trace = Yes
+TraceFile = /tmp/odbc.log
+
+[FreeTDS]
+Description = FreeTDS
+Driver = /usr/lib/aarch64-linux-gnu/odbc/libtdsodbc.so
+Setup = /usr/lib/x86_64-linux-gnu/odbc/libtdsS.so
+UsageCount = 1
+```
+
+<div id="configure-a-dockerfile-to-download-the-image-and-add-the-tds-and-required-odbc-libraries">
+  ### 이미지를 다운로드하고 TDS 및 필수 ODBC 라이브러리를 추가하도록 Dockerfile 구성하기
+</div>
+
+Dockerfile을 생성합니다:
+
+```sh
+vim Dockerfile
+```
+
+Dockerfile에 다음 내용을 추가합니다:
+
+```sh
+FROM clickhouse/clickhouse-server:23.10
+
+# ODBC 드라이버 설치
+
+RUN apt-get update && apt-get install -y --no-install-recommends unixodbc \
+    && apt-get install -y freetds-bin freetds-common freetds-dev libct4 libsybdb5 \
+	&& apt-get install tdsodbc
+```
+
+새 Docker 이미지를 빌드하세요:
+
+```sh
+docker build . -t marsnet/clickhouse-odbc:23.10
+```
+
+`docker-compose.yml` 파일을 만드세요:
+
+```sh
+vim docker-compose.yml
+```
+
+YAML에 다음 내용을 추가하세요:
+
+```sh
+version: '3.7'
+services:
+  clickhouse:
+    image: marsnet/clickhouse-odbc:23.10
+    container_name: clickhouse-odbc
+    hostname: clickhouse-host
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+      - "9009:9009"
+    volumes:
+      - ./odbc.ini:/etc/odbc.ini
+      - ./odbcinst.ini:/etc/odbcinst.ini
+    restart: always
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 262144
+        hard: 262144
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+```
+
+컨테이너를 시작하세요:
+
+```sh
+docker compose up --detach
+```
+
+컨테이너를 시작하면 다음과 비슷한 내용이 표시됩니다:
+
+```sh
+ch-odbc-mssql % docker compose up --detach
+[+] Running 1/1
+ ✔ Container clickhouse-odbc  Started
+```
+
+컨테이너가 실행 중인지 확인하세요:
+
+```sh
+ch-odbc-mssql % docker ps
+CONTAINER ID   IMAGE                           COMMAND            CREATED          STATUS              PORTS                                                                    NAMES
+87a400b803ce   marsnet/clickhouse-odbc:23.10   "/entrypoint.sh"   57 minutes ago   Up About a minute   0.0.0.0:8123->8123/tcp, 0.0.0.0:9000->9000/tcp, 0.0.0.0:9009->9009/tcp   clickhouse-odbc
+```
+
+<div id="test-odbc-connection">
+  ### ODBC 연결 테스트
+</div>
+
+ClickHouse client로 로그인합니다:
+
+```sh
+./clickhouse client
+```
+
+원격 MSSQL 데이터베이스의 테이블에 `odbc` 테이블 함수를 사용한 `SELECT`를 테스트합니다:
+
+```
+clickhouse-host :) SELECT * from odbc('DSN=marsdb2_mssql;port=1433;Uid=sql_user;Pwd=ClickHouse123;Database=db1', 'table1');
+
+SELECT *
+FROM odbc('DSN=marsdb2_mssql;port=1433;Uid=sql_user;Pwd=ClickHouse123;Database=db1', 'table1')
+
+Query id: 23494da2-6e12-4ade-95fa-372a0420cac1
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+│  2 │ def     │
+│  3 │ ghi     │
+└────┴─────────┘
+
+3 rows in set. Elapsed: 0.188 sec. 
+```
+
+`odbc` 테이블 엔진으로 원격 테이블을 생성할 수도 있습니다:
+
+```sql
+CREATE TABLE table1_odbc_mssql
+(
+    `id` Int32,
+    `column1` String
+)
+ENGINE = ODBC('DSN=marsdb2_mssql;port=1433;Uid=sql_user;Pwd=ClickHouse123;Database=db1', 'dbo', 'table1')
+```
+
+새 원격 테이블을 테스트하려면 `SELECT` 쿼리를 사용하세요:
+
+```
+clickhouse-host :) select * from table1_odbc_mssql;
+
+SELECT *
+FROM table1_odbc_mssql
+
+Query id: 94724368-485d-4364-ae58-a435a225c37d
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+│  2 │ def     │
+│  3 │ ghi     │
+└────┴─────────┘
+
+3 rows in set. Elapsed: 0.218 sec. 
+```
+
+자세한 내용은 다음 링크를 참조하십시오:
+
+* [https://hub.docker.com/&#95;/clickhouse](https://hub.docker.com/_/clickhouse)
+* [https://clickhouse.com/docs/engines/table-engines/integrations/odbc](/ko/reference/engines/table-engines/integrations/odbc)
+* [https://github.com/ClickHouse/clickhouse-odbc](https://github.com/ClickHouse/clickhouse-odbc)

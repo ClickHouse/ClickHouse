@@ -1,0 +1,339 @@
+---
+sidebarTitle: 'Databricks'
+slug: /integrations/data-ingestion/apache-spark/databricks
+description: '集成 ClickHouse 与 Databricks'
+keywords: ['clickhouse', 'databricks', 'spark', 'unity catalog', 'data']
+title: '集成 ClickHouse 与 Databricks'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+ClickHouse Spark connector 可与 Databricks 无缝集成。本指南介绍 Databricks 的平台专属配置、安装和使用方式。
+
+<div id="api-selection">
+  ## Databricks 的 API 选择
+</div>
+
+默认情况下，Databricks 使用 Unity Catalog，这会阻止 Spark 目录注册。在这种情况下，你**必须**使用 **TableProvider API** (基于格式的访问) 。
+
+不过，如果你通过创建访问模式为 **No isolation shared** 的集群来禁用 Unity Catalog，则可以改用 **Catalog API**。Catalog API 提供集中式配置和原生 Spark SQL 集成。
+
+| Unity Catalog 状态               | 推荐 API                    | 说明                                            |
+| ------------------------------ | ------------------------- | --------------------------------------------- |
+| **已启用** (默认)                   | TableProvider API (基于格式)  | Unity Catalog 会阻止 Spark 目录注册                  |
+| **已禁用** (No isolation shared)  | Catalog API               | 需要使用访问模式为 &quot;No isolation shared&quot; 的集群 |
+
+<div id="installation">
+  ## 在 Databricks 上进行安装
+</div>
+
+<div id="installation-ui">
+  ### 选项 1：通过 Databricks UI 上传 JAR
+</div>
+
+1. 构建或[下载](https://repo1.maven.org/maven2/com/clickhouse/spark/)运行时 JAR：
+   ```bash
+   clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
+   ```
+
+2. 将 JAR 上传到 Databricks 工作区：
+   * 前往 **Workspace** → 导航到所需文件夹
+   * 点击 **Upload** → 选择 JAR 文件
+   * JAR 将存储在你的工作区中
+
+3. 在集群上安装该库：
+   * 前往 **Compute** → 选择你的集群
+   * 点击 **Libraries** 选项卡
+   * 点击 **Install New**
+   * 选择 **DBFS** 或 **Workspace** → 导航到已上传的 JAR 文件
+   * 点击 **Install**
+
+<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp')} alt="Databricks Libraries 选项卡" />
+
+<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp')} alt="从工作区卷安装库" />
+
+4. 重启集群以加载该库
+
+<div id="installation-cli">
+  ### 选项 2：通过 Databricks CLI 安装
+</div>
+
+```bash
+# 上传 JAR 到 DBFS
+databricks fs cp clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar \
+  dbfs:/FileStore/jars/
+
+# 在集群上安装
+databricks libraries install \
+  --cluster-id <your-cluster-id> \
+  --jar dbfs:/FileStore/jars/clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
+```
+
+<div id="installation-maven">
+  ### 选项 3：Maven 坐标 (推荐)
+</div>
+
+1. 进入你的 Databricks 工作区：
+   * 前往 **Compute** → 选择你的集群
+   * 点击 **Libraries** 选项卡
+   * 点击 **Install New**
+   * 选择 **Maven** 选项卡
+
+2. 添加 Maven 坐标：
+
+```text
+com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
+```
+
+<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp')} alt="Databricks Maven 库配置" />
+
+3. 点击 **Install**，然后重启集群以加载该库
+
+<div id="tableprovider-api">
+  ## 使用 TableProvider API
+</div>
+
+启用 Unity Catalog (默认) 时，你**必须**使用 TableProvider API (基于 format 的访问) ，因为 Unity Catalog 会阻止 Spark 目录 注册。如果你使用访问模式为 &quot;No isolation shared&quot; 的集群 并禁用了 Unity Catalog，则可以改用 [Catalog API](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required)。
+
+<div id="reading-data-table-provider">
+  ### 读取数据
+</div>
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # 使用 TableProvider API 从 ClickHouse 中读取数据
+    df = spark.read \
+        .format("clickhouse") \
+        .option("host", "your-clickhouse-cloud-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "events") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .load()
+
+    # 自动推断 schema
+    df.display()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    val df = spark.read
+      .format("clickhouse")
+      .option("host", "your-clickhouse-cloud-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "events")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .load()
+
+    df.show()
+    ```
+  </Tab>
+</Tabs>
+
+<div id="writing-data-unity">
+  ### 写入数据
+</div>
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # 将数据写入 ClickHouse - 如果表不存在，会自动创建
+    df.write \
+        .format("clickhouse") \
+        .option("host", "your-clickhouse-cloud-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "events_copy") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .option("order_by", "id") \  # 必需：创建新表时需指定 ORDER BY
+        .option("settings.allow_nullable_key", "1") \  # 如果 ORDER BY 包含可为空的列，则 ClickHouse Cloud 需要此项
+        .mode("append") \
+        .save()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    df.write
+      .format("clickhouse")
+      .option("host", "your-clickhouse-cloud-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "events_copy")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .option("order_by", "id")  // 必需：创建新表时需指定 ORDER BY
+      .option("settings.allow_nullable_key", "1")  // 如果 ORDER BY 包含可为空的列，则 ClickHouse Cloud 需要此项
+      .mode("append")
+      .save()
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  此示例假定 Databricks 中已预先配置好 secret scope (机密作用域) 。有关设置说明，请参阅 Databricks 的[机密管理文档](https://docs.databricks.com/aws/en/security/secrets/)。
+</Note>
+
+<div id="considerations">
+  ## Databricks 特定注意事项
+</div>
+
+<div id="access-mode">
+  ### 访问模式要求
+</div>
+
+ClickHouse Spark Connector 要求使用 **Dedicated** (原为 Single User) 访问模式。启用 Unity Catalog 时，不支持 **Standard** (原为 Shared) 访问模式，因为在该配置下，Databricks 会阻止外部 DataSource V2 连接器。
+
+| 访问模式                    | Unity Catalog | 是否支持 |
+| ----------------------- | ------------- | ---- |
+| Dedicated (Single User) | 已启用           | ✅ 是  |
+| Dedicated (Single User) | 已禁用           | ✅ 是  |
+| Standard (Shared)       | 已启用           | ❌ 否  |
+| Standard (Shared)       | 已禁用           | ✅ 是  |
+
+<div id="secret-management">
+  ### 机密管理
+</div>
+
+使用 Databricks secret scope (机密作用域) 安全存储 ClickHouse 凭据：
+
+```python
+# 访问 Secret
+password = dbutils.secrets.get(scope="clickhouse", key="password")
+```
+
+有关设置步骤，请参阅 Databricks 的[机密管理 文档](https://docs.databricks.com/aws/en/security/secrets/)。
+
+{/* TODO: 添加 Databricks secret scope（机密作用域）配置的屏幕截图 */}
+
+<div id="clickhouse-cloud">
+  ### ClickHouse Cloud 连接
+</div>
+
+从 Databricks 连接 ClickHouse Cloud 时：
+
+1. 使用 **HTTPS 协议** (`protocol: https`, `http_port: 8443`)
+2. 启用 **SSL** (`ssl: true`)
+
+<div id="examples">
+  ## 示例
+</div>
+
+<div id="workflow-example">
+  ### 完整工作流示例
+</div>
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    from pyspark.sql import SparkSession
+    from pyspark.sql.functions import col
+
+    # 使用 ClickHouse 连接器初始化 Spark
+    spark = SparkSession.builder \
+        .config("spark.jars.packages", "com.clickhouse.spark:clickhouse-spark-runtime-3.4_2.12:0.9.0") \
+        .getOrCreate()
+
+    # 从 ClickHouse 读取数据
+    df = spark.read \
+        .format("clickhouse") \
+        .option("host", "your-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "source_table") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .load()
+
+    # 转换数据
+    transformed_df = df.filter(col("status") == "active")
+
+    # 将数据写入 ClickHouse
+    transformed_df.write \
+        .format("clickhouse") \
+        .option("host", "your-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "target_table") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .option("order_by", "id") \
+        .mode("append") \
+        .save()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    import org.apache.spark.sql.SparkSession
+    import org.apache.spark.sql.functions.col
+
+    // 使用 ClickHouse 连接器初始化 Spark
+    val spark = SparkSession.builder
+      .config("spark.jars.packages", "com.clickhouse.spark:clickhouse-spark-runtime-3.4_2.12:0.9.0")
+      .getOrCreate()
+
+    // 从 ClickHouse 读取数据
+    val df = spark.read
+      .format("clickhouse")
+      .option("host", "your-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "source_table")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .load()
+
+    // 转换数据
+    val transformedDF = df.filter(col("status") === "active")
+
+    // 将数据写入 ClickHouse
+    transformedDF.write
+      .format("clickhouse")
+      .option("host", "your-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "target_table")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .option("order_by", "id")
+      .mode("append")
+      .save()
+    ```
+  </Tab>
+</Tabs>
+
+<div id="related">
+  ## 相关文档
+</div>
+
+* [Spark Native Connector 指南](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - 完整的连接器文档
+* [TableProvider API 文档](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - 基于格式的访问详情
+* [Catalog API 文档](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - 基于 目录 的访问详情

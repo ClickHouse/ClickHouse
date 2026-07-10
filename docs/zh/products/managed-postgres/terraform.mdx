@@ -1,0 +1,186 @@
+---
+slug: /cloud/managed-postgres/terraform
+sidebarTitle: 'Terraform'
+title: 'Managed Postgres Terraform 参考文档'
+description: '使用 ClickHouse Terraform 提供商 管理 ClickHouse Managed Postgres 服务的参考文档。'
+keywords: ['managed postgres', 'terraform', '基础设施即代码', 'iac', 'provider', '程序化']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.terraform-beta" />
+
+可通过 [ClickHouse Terraform 提供商](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service) 中的 `clickhouse_postgres_service` 资源创建和管理 ClickHouse Managed Postgres 服务。本文介绍该资源及其配套数据源的 提供商 设置与配置示例。
+
+<Note>
+  此资源目前处于 alpha 阶段，其行为可能会在未来的 提供商 版本中发生变化。它随常规 提供商 build 一同发布，并从 提供商 版本 **v3.17.1** 开始可用——详情请参阅 [提供商 发行版](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)。
+</Note>
+
+<div id="provider-setup">
+  ## 提供商设置
+</div>
+
+将 ClickHouse 提供商添加到 Terraform 配置中：
+
+```hcl
+terraform {
+  required_providers {
+    clickhouse = {
+      source  = "ClickHouse/clickhouse"
+      version = ">= 3.17.1"
+    }
+  }
+}
+
+provider "clickhouse" {
+  organization_id = var.organization_id
+  token_key       = var.token_key
+  token_secret    = var.token_secret
+}
+```
+
+有关如何创建供提供商使用的 API 密钥，请参阅[管理 API 密钥](/zh/products/cloud/features/admin-features/api/openapi)。
+
+<div id="resource-overview">
+  ## 资源概览
+</div>
+
+`clickhouse_postgres_service` 资源具有以下参数：
+
+| 参数                         | 必需      | 描述                                                                                |
+| -------------------------- | ------- | --------------------------------------------------------------------------------- |
+| `name`                     | 是       | 服务的易读名称。不可变——修改后会销毁并重新创建该服务。                                                      |
+| `cloud_provider`           | 标准创建时必填 | 托管该实例的云提供商。目前仅支持 `aws`。对于只读副本或时间点恢复，请省略 (将从源服务继承) 。                               |
+| `region`                   | 标准创建时必填 | 云区域 (例如 `us-east-1`) 。对于只读副本或时间点恢复，请省略 (将从源服务继承) 。                                |
+| `size`                     | 标准创建时必填 | 实例规格 (VM SKU) ，例如 `m6gd.large`。支持原地调整大小。对于时间点恢复，请省略 (恢复后的实例将使用备份时的规格启动) 。         |
+| `postgres_version`         | 否       | Postgres 主版本 (例如 `18`) 。更改主版本会销毁并重新创建该服务。                                         |
+| `ha_type`                  | 否       | 高可用模式：`none`、`async` 或 `sync`。请参见[高可用](#high-availability)。                       |
+| `password`                 | 否       | 超级用户密码。省略时由服务器自动生成。会存储在 (敏感) 状态中。                                                 |
+| `pg_config`                | 否       | 以键值映射形式提供的 Postgres 服务器参数。                                                        |
+| `pgbouncer_config`         | 否       | 以键值映射形式提供的 PgBouncer 连接池参数。                                                       |
+| `tags`                     | 否       | 以键值映射形式提供的资源标签。                                                                   |
+| `read_replica_of`          | 否       | 要复制的主服务 ID。请参见[只读副本](#read-replicas)。与 `restore_to_point_in_time` 互斥。             |
+| `restore_to_point_in_time` | 否       | 通过将另一个服务恢复到某个时间点来创建该服务。请参见[时间点恢复](#point-in-time-restore)。与 `read_replica_of` 互斥。 |
+
+以下属性为只读，并由 ClickHouse Cloud 在创建后填充：`id`、`state`、`created_at`、`is_primary`、`hostname`、`port`、`username` 和 `connection_string` (敏感) 。
+
+<Warning>
+  `password` 会以明文形式存储在你的 Terraform 状态 中。请相应保护好 state 文件——例如，使用启用静态加密的远程后端。如果省略 `password`，服务器会生成一个密码，并且提供商会在每次 refresh 时将其读回 state。
+</Warning>
+
+<div id="create-a-service">
+  ## 创建服务
+</div>
+
+```hcl
+resource "clickhouse_postgres_service" "example" {
+  name           = "my-postgres"
+  cloud_provider = "aws"
+  region         = "us-east-1"
+  size           = "m6gd.large"
+
+  # High-availability mode — number of standby replicas:
+  #   "none"  – primary only, no standby (default)
+  #   "async" – 1 standby, asynchronous replication
+  #   "sync"  – 2 standbys, synchronous replication
+  ha_type = "async"
+
+  tags = {
+    environment = "production"
+    team        = "data"
+  }
+}
+```
+
+如果要自行管理密码，请设置 `password`——其长度必须至少为 12 个字符，且至少包含一个小写字母、一个大写字母和一个数字。若省略，server 会自动生成一个。
+
+<div id="high-availability">
+  ## 高可用
+</div>
+
+`ha_type` 参数用于控制待机副本的数量：
+
+| `ha_type` | 待机节点     | 复制                     |
+| --------- | -------- | ---------------------- |
+| `none`    | 无 (仅主节点) | —                      |
+| `async`   | 1 个待机节点  | 异步 — 写入提交时无需等待待机节点     |
+| `sync`    | 2 个待机节点  | 同步 — 主节点会等待至少一个待机节点的确认 |
+
+`ha_type` 在创建后仍可修改；更改该值会触发 HA 切换。详见 [高可用](/zh/products/managed-postgres/high-availability)。
+
+<div id="read-replicas">
+  ## 只读副本
+</div>
+
+要创建流式只读副本，请将 `read_replica_of` 设置为主服务的 `id`。副本会继承主服务的 `cloud_provider`、`region`、`postgres_version` 和超级用户——请省略这些字段 (以及 `password`) ：
+
+```hcl
+resource "clickhouse_postgres_service" "replica" {
+  name            = "my-postgres-replica"
+  size            = "m6gd.large"
+  read_replica_of = clickhouse_postgres_service.example.id
+}
+```
+
+详情请参阅[只读副本](/zh/products/managed-postgres/read-replicas)。
+
+<div id="point-in-time-restore">
+  ## 时间点恢复
+</div>
+
+设置 `restore_to_point_in_time`，即可通过将另一项服务的备份恢复到某个时间点来创建服务。`cloud_provider`、`region` 和 `postgres_version` 继承自源服务 (请省略这些字段) ；`size` 和 `ha_type` 也必须省略：
+
+```hcl
+resource "clickhouse_postgres_service" "restored" {
+  name = "my-postgres-restored"
+
+  restore_to_point_in_time = {
+    source_id      = clickhouse_postgres_service.example.id
+    restore_target = "2026-06-01T12:00:00Z"
+  }
+}
+```
+
+整个配置块仅在创建时使用：更改 `source_id` 或 `restore_target`，或删除此配置块，都会销毁并重新创建该服务。详情请参阅[备份与恢复](/zh/products/managed-postgres/backup-and-restore)。
+
+<div id="data-sources">
+  ## 数据源
+</div>
+
+三个配套的数据源可帮助您查找现有服务：
+
+```hcl
+# A single service by ID.
+data "clickhouse_postgres_service" "example" {
+  id = clickhouse_postgres_service.example.id
+}
+
+# All Managed Postgres services in the organization.
+data "clickhouse_postgres_services" "all" {}
+
+# The CA certificates for a service, for TLS connections.
+data "clickhouse_postgres_service_ca_certificates" "certs" {
+  service_id = clickhouse_postgres_service.example.id
+}
+```
+
+<div id="importing-existing-services">
+  ## 导入现有服务
+</div>
+
+现有的 Managed Postgres 服务可以通过服务 ID 导入到 Terraform 状态中。导入时会一并恢复密码——服务器会在执行 `GET` 时回显该密码：
+
+```bash
+terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+<div id="unsupported-operations">
+  ## 不支持的操作
+</div>
+
+以下内容刻意未纳入资源 schema：
+
+* 运维命令 (restart、promote、switchover) 。
+* IP 允许列表、专用终结点、备份配置、维护窗口、客户管理的加密密钥，以及 BYOC。
+* 不支持可配置的生命周期超时设置——不存在 `timeouts {}` 块。

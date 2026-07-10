@@ -1,0 +1,231 @@
+---
+description: 'تتيح لك محركات الجداول `Executable` و`ExecutablePool` تعريف
+  جدول تُنشأ صفوفه بواسطة برنامج نصي تحدده أنت (عبر كتابة الصفوف إلى **stdout**).'
+sidebarTitle: 'Executable/ExecutablePool'
+slug: /engines/table-engines/special/executable
+title: 'محركا الجدول Executable وExecutablePool'
+doc_type: 'reference'
+---
+
+تتيح لك محركات الجداول `Executable` و`ExecutablePool` تعريف جدول تُنشأ صفوفه بواسطة برنامج نصي تحدده أنت (عبر كتابة الصفوف إلى **stdout**). يُخزَّن البرنامج النصي التنفيذي في الدليل `user_scripts` ويمكنه قراءة البيانات من أي مصدر.
+
+* جداول `Executable`: يُشغَّل البرنامج النصي مع كل استعلام
+* جداول `ExecutablePool`: تحتفظ بمجموعة من العمليات الدائمة، وتسحب منها عمليات لعمليات القراءة
+
+يمكنك اختياريًا تضمين استعلام إدخال واحد أو أكثر لتمرير نتائجه إلى **stdin** كي يقرأها البرنامج النصي.
+
+<div id="creating-an-executable-table">
+  ## إنشاء جدول `Executable`
+</div>
+
+يتطلب محرك الجدول `Executable` مُعاملين: اسم البرنامج النصي وتنسيق البيانات الواردة. ويمكنك اختياريًا تمرير استعلام إدخال واحد أو أكثر:
+
+```sql
+Executable(script_name, format, [input_query...])
+```
+
+فيما يلي الإعدادات ذات الصلة لجدول `Executable`:
+
+* `send_chunk_header`
+  * الوصف: إرسال عدد الصفوف في كل chunk قبل إرسالها للمعالجة. يمكن أن يساعد هذا الإعداد في كتابة البرنامج النصي بطريقة أكثر كفاءة عبر التخصيص المسبق لبعض الموارد
+  * القيمة الافتراضية: false
+* `command_termination_timeout`
+  * الوصف: مهلة إنهاء الأمر بالثواني
+  * القيمة الافتراضية: 10
+* `command_read_timeout`
+  * الوصف: مهلة قراءة البيانات من `stdout` الخاص بالأمر، بالمللي ثانية
+  * القيمة الافتراضية: 10000
+* `command_write_timeout`
+  * الوصف: مهلة كتابة البيانات إلى `stdin` الخاص بالأمر، بالمللي ثانية
+  * القيمة الافتراضية: 10000
+
+لنلقِ نظرة على مثال. برنامج بايثون النصي التالي اسمه `my_script.py` ومحفوظ في المجلد `user_scripts`. يقرأ العدد `i` ويطبع `i` سلاسل عشوائية، بحيث تسبق كلَّ سلسلةٍ قيمةٌ رقمية يفصل بينها وبين السلسلة محرف tab:
+
+```python
+#!/usr/bin/python3
+
+import sys
+import string
+import random
+
+def main():
+
+    # Read input value
+    for number in sys.stdin:
+        i = int(number)
+
+        # Generate some random rows
+        for id in range(0, i):
+            letters = string.ascii_letters
+            random_string =  ''.join(random.choices(letters ,k=10))
+            print(str(id) + '\t' + random_string + '\n', end='')
+
+        # Flush results to stdout
+        sys.stdout.flush()
+
+if __name__ == "__main__":
+    main()
+```
+
+يُنشأ `my_executable_table` التالي من مخرجات `my_script.py`، والذي سيولّد 10 سلاسل نصية عشوائية في كل مرة تُنفّذ فيها `SELECT` على `my_executable_table`:
+
+```sql
+CREATE TABLE my_executable_table (
+   x UInt32,
+   y String
+)
+ENGINE = Executable('my_script.py', TabSeparated, (SELECT 10))
+```
+
+يكتمل إنشاء الجدول فورًا ولا يستدعي البرنامج النصي. ويؤدي الاستعلام عن `my_executable_table` إلى استدعاء البرنامج النصي:
+
+```sql
+SELECT * FROM my_executable_table
+```
+
+```response
+┌─x─┬─y──────────┐
+│ 0 │ BsnKBsNGNH │
+│ 1 │ mgHfBCUrWM │
+│ 2 │ iDQAVhlygr │
+│ 3 │ uNGwDuXyCk │
+│ 4 │ GcFdQWvoLB │
+│ 5 │ UkciuuOTVO │
+│ 6 │ HoKeCdHkbs │
+│ 7 │ xRvySxqAcR │
+│ 8 │ LKbXPHpyDI │
+│ 9 │ zxogHTzEVV │
+└───┴────────────┘
+```
+
+<div id="passing-query-results-to-a-script">
+  ## تمرير نتائج الاستعلام إلى برنامج نصي
+</div>
+
+يترك مستخدمو موقع Hacker News تعليقات. تتضمن بايثون مجموعة أدوات لمعالجة اللغة الطبيعية (`nltk`) تحتوي على `SentimentIntensityAnalyzer` لتحديد ما إذا كانت التعليقات إيجابية أو سلبية أو محايدة، مع إسناد قيمة بين -1 (تعليق سلبي جدًا) و1 (تعليق إيجابي جدًا). لننشئ جدول `Executable` يحسب انطباع تعليقات Hacker News باستخدام `nltk`.
+
+يستخدم هذا المثال جدول `hackernews` الموصوف [هنا](/ar/reference/engines/table-engines/mergetree-family/textindexes#hacker-news-dataset). يتضمن جدول `hackernews` عمود `id` من النوع `UInt64` وعمودًا من النوع `String` باسم `comment`. لنبدأ بتعريف جدول `Executable`:
+
+```sql
+CREATE TABLE sentiment (
+   id UInt64,
+   sentiment Float32
+)
+ENGINE = Executable(
+    'sentiment.py',
+    TabSeparated,
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20)
+);
+```
+
+بعض الملاحظات حول جدول `sentiment`:
+
+* يُحفَظ الملف `sentiment.py` في المجلد `user_scripts` (وهو المجلد الافتراضي للإعداد `user_scripts_path`)
+* يعني التنسيق `TabSeparated` أن برنامج `بايثون` النصي لدينا يحتاج إلى توليد صفوف من البيانات الخام تحتوي على قيم مفصولة بعلامات تبويب
+* يختار الاستعلام عمودين من `hackernews`. وسيحتاج برنامج `بايثون` النصي إلى استخراج قيم هذين العمودين من الصفوف الواردة
+
+فيما يلي تعريف `sentiment.py`:
+
+```python
+#!/usr/local/bin/python3.9
+
+import sys
+import nltk
+from nltk.sentiment import SentimentIntensityAnalyzer
+
+def main():
+    sentiment_analyzer = SentimentIntensityAnalyzer()
+
+    while True:
+        try:
+            row = sys.stdin.readline()
+            if row == '':
+                break
+
+            split_line = row.split("\t")
+
+            id = str(split_line[0])
+            comment = split_line[1]
+
+            score = sentiment_analyzer.polarity_scores(comment)['compound']
+            print(id + '\t' + str(score) + '\n', end='')
+            sys.stdout.flush()
+        except BaseException as x:
+            break
+
+if __name__ == "__main__":
+    main()
+```
+
+بعض الملاحظات حول برنامجنا النصي المكتوب بلغة `بايثون`:
+
+* لكي يعمل هذا، ستحتاج إلى تشغيل `nltk.downloader.download('vader_lexicon')`. كان من الممكن وضع ذلك داخل البرنامج النصي، لكن عندئذٍ سيُنزَّل في كل مرة يُنفَّذ فيها استعلام على جدول `sentiment`، وهذا غير فعّال
+* كل قيمة في `row` ستمثل صفًا في مجموعة النتائج الخاصة بالاستعلام `SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20`
+* الصف الوارد مفصول بعلامات تبويب، لذا نستخرج `id` و`comment` باستخدام الدالة `split` في `بايثون`
+* ناتج `polarity_scores` هو كائن JSON يحتوي على عدد من القيم. وقد قررنا الاكتفاء بأخذ القيمة `compound` من كائن JSON هذا
+* تذكّر أن جدول `sentiment` في ClickHouse يستخدم التنسيق `TabSeparated` ويحتوي على عمودين، لذا فإن الدالة `print` تفصل بين هذين العمودين بعلامة تبويب
+
+في كل مرة تكتب فيها استعلامًا يسترجع صفوفًا من جدول `sentiment`، يُنفَّذ الاستعلام `SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20` وتُمرَّر النتيجة إلى `sentiment.py`. لِنجرّب ذلك:
+
+```sql
+SELECT *
+FROM sentiment
+```
+
+تكون الاستجابة كما يلي:
+
+```response
+┌───────id─┬─sentiment─┐
+│  7398199 │    0.4404 │
+│ 21640317 │    0.1779 │
+│ 21462000 │         0 │
+│ 25168863 │         0 │
+│ 25168978 │   -0.1531 │
+│ 25169359 │         0 │
+│ 25169394 │   -0.9231 │
+│ 25169766 │    0.4137 │
+│ 25172570 │    0.7469 │
+│ 25173687 │    0.6249 │
+│ 28291534 │         0 │
+│ 28291669 │   -0.4767 │
+│ 28291731 │         0 │
+│ 28291949 │   -0.4767 │
+│ 28292004 │    0.3612 │
+│ 28292050 │    -0.296 │
+│ 28292322 │         0 │
+│ 28295172 │    0.7717 │
+│ 28295288 │    0.4404 │
+│ 21465723 │   -0.6956 │
+└──────────┴───────────┘
+```
+
+<div id="creating-an-executablepool-table">
+  ## إنشاء جدول `ExecutablePool`
+</div>
+
+صيغة `ExecutablePool` مشابهة لـ `Executable`، لكن توجد بعض الإعدادات الخاصة بجدول `ExecutablePool` وذات الصلة به:
+
+* `pool_size`
+  * الوصف: حجم مجموعة العمليات. إذا كانت القيمة 0، فلن تكون هناك أي قيود على الحجم
+  * القيمة الافتراضية: 16
+* `max_command_execution_time`
+  * الوصف: الحد الأقصى لمدة تنفيذ الأمر بالثواني
+  * القيمة الافتراضية: 10
+
+يمكننا بسهولة تحويل جدول `sentiment` أعلاه لاستخدام `ExecutablePool` بدلًا من `Executable`:
+
+```sql
+CREATE TABLE sentiment_pooled (
+   id UInt64,
+   sentiment Float32
+)
+ENGINE = ExecutablePool(
+    'sentiment.py',
+    TabSeparated,
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20000)
+)
+SETTINGS
+    pool_size = 4;
+```
+
+سيُبقي ClickHouse أربع عمليات جاهزة عند الطلب عندما يُجري عميلك استعلامًا على الجدول `sentiment_pooled`.

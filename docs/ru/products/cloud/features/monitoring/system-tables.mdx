@@ -1,0 +1,113 @@
+---
+title: "Запросы к системной базе данных ClickHouse"
+slug: /cloud/monitoring/system-tables
+description: 'Отслеживайте ClickHouse Cloud, напрямую запрашивая системные таблицы'
+keywords: ['облако', 'мониторинг', 'системные таблицы', 'query_log', 'clusterAllReplicas', 'панель обсервабилити']
+sidebarTitle: 'Системные таблицы'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Во всех экземплярах ClickHouse есть набор [системных таблиц](/ru/reference/system-tables/overview) в базе данных `system`, которые содержат информацию о:
+
+* Состоянии сервера, процессах и окружении.
+* Внутренних процессах сервера.
+* Параметрах, использованных при сборке бинарного файла ClickHouse.
+
+Запросы к этим таблицам полезны для мониторинга развертываний ClickHouse, особенно для углублённой интроспекции и отладки.
+
+<div id="using-cloud-console">
+  ## Использование консоли ClickHouse Cloud
+</div>
+
+Консоль ClickHouse Cloud включает [SQL-консоль](/ru/products/cloud/features/sql-console-features/sql-console) и [инструменты для создания панелей мониторинга](/ru/products/cloud/features/sql-console-features/dashboards), которые можно использовать для выполнения запросов к системным таблицам. Например, приведённый ниже запрос показывает, сколько новых частей создаётся за последние два часа и как часто это происходит:
+
+```sql
+SELECT
+    count() AS new_parts,
+    toStartOfMinute(event_time) AS modification_time_m,
+    table,
+    sum(rows) AS total_written_rows,
+    formatReadableSize(sum(size_in_bytes)) AS total_bytes_on_disk
+FROM clusterAllReplicas(default, system.part_log)
+WHERE (event_type = 'NewPart') AND (event_time > (now() - toIntervalHour(2)))
+GROUP BY
+    modification_time_m,
+    table
+ORDER BY
+    modification_time_m ASC,
+    table DESC
+```
+
+<Tip>
+  **Дополнительные примеры запросов**
+
+  Дополнительные запросы для мониторинга см. в следующих материалах:
+
+  * [Полезные запросы для устранения неполадок](/ru/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+  * [Мониторинг и устранение неполадок при выполнении INSERT-запросов](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
+  * [Мониторинг и устранение неполадок при выполнении SELECT-запросов](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)
+
+  Эти запросы также можно использовать, чтобы [создать собственную панель мониторинга](https://clickhouse.com/blog/essential-monitoring-queries-creating-a-dashboard-in-clickHouse-cloud) в консоли ClickHouse Cloud.
+</Tip>
+
+<div id="built-in-advanced-observability-dashboard">
+  ## Встроенная расширенная панель обсервабилити
+</div>
+
+В ClickHouse есть встроенная расширенная панель обсервабилити, доступная по адресу `$HOST:$PORT/dashboard` (требуются имя пользователя и пароль), которая показывает метрики Cloud Overview из `system.dashboards`.
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Встроенная расширенная панель обсервабилити" border />
+
+<Note>
+  Для этой панели мониторинга требуется прямая аутентификация в экземпляре ClickHouse; она не связана с [консолью ClickHouse Cloud Advanced Dashboard](/ru/products/cloud/features/monitoring/cloud-console#advanced-dashboard), которая доступна через интерфейс консоли ClickHouse Cloud без дополнительной аутентификации.
+</Note>
+
+Дополнительные сведения о доступных визуализациях и их использовании для устранения неполадок см. в [документации по Advanced Dashboard](/ru/products/cloud/features/monitoring/advanced-dashboard).
+
+<div id="querying-across-nodes">
+  ## Выполнение запросов на разных узлах и в разных версиях
+</div>
+
+Чтобы получить полное представление обо всём кластере, пользователи могут использовать функцию `clusterAllReplicas` в сочетании с функцией `merge`. Функция `clusterAllReplicas` позволяет выполнять запросы к системным таблицам на всех репликах в кластере &quot;default&quot;, объединяя данные отдельных узлов в единый результат. В сочетании с функцией `merge` это позволяет обращаться ко всем системным данным для конкретной таблицы в кластере.
+
+Например, чтобы найти 5 самых длительных запросов среди всех реплик за последний час:
+
+```sql
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type = 'QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+Этот подход особенно полезен для мониторинга и отладки операций в масштабе всего кластера, помогая пользователям эффективно анализировать состояние и производительность своего развертывания ClickHouse Cloud.
+
+Подробнее см. в разделе [выполнение запросов на всех узлах](/ru/reference/system-tables/overview#querying-across-nodes).
+
+<div id="system-considerations">
+  ## Что следует учитывать
+</div>
+
+<Warning>
+  Прямые запросы к системным таблицам создают дополнительную нагрузку на ваш продуктивный сервис, не позволяют экземплярам ClickHouse Cloud переходить в режим простоя (что может повлиять на расходы) и ставят доступность мониторинга в зависимость от состояния продуктивной системы. Если продуктивная система выйдет из строя, мониторинг также может быть затронут.
+</Warning>
+
+Для мониторинга продуктивной среды в реальном времени с операционным разделением рассмотрите [Prometheus-совместимую конечную точку метрик](/ru/products/cloud/features/monitoring/prometheus) или [панели мониторинга консоли ClickHouse Cloud](/ru/products/cloud/features/monitoring/cloud-console): оба варианта используют уже собранные метрики и не выполняют запросы к базовому сервису.
+
+<div id="related">
+  ## Связанные страницы
+</div>
+
+* [Справочник по системным таблицам](/ru/reference/system-tables/overview) — Полный справочник по всем доступным системным таблицам
+* [Мониторинг в консоли ClickHouse Cloud](/ru/products/cloud/features/monitoring/cloud-console) — Панели мониторинга, не требующие настройки и не влияющие на производительность сервиса
+* [Конечная точка Prometheus](/ru/products/cloud/features/monitoring/prometheus) — Экспорт метрик во внешние инструменты мониторинга
+* [Advanced dashboard](/ru/products/cloud/features/monitoring/advanced-dashboard) — Подробное описание визуализаций панели мониторинга

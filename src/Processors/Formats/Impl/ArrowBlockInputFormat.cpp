@@ -15,6 +15,8 @@
 #include <arrow/result.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCBlockInputFormat.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCSchemaReader.h>
 
 
 namespace DB
@@ -295,9 +297,12 @@ void registerInputFormatArrow(FormatFactory & factory)
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & format_settings)
+           const FormatSettings & format_settings) -> InputFormatPtr
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
+            auto header = std::make_shared<const Block>(sample);
+            if (format_settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCBlockInputFormat>(buf, header, false, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, header, false, format_settings);
         });
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
@@ -305,10 +310,14 @@ void registerInputFormatArrow(FormatFactory & factory)
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & format_settings)
+           const FormatSettings & format_settings) -> InputFormatPtr
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
+            auto header = std::make_shared<const Block>(sample);
+            if (format_settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCBlockInputFormat>(buf, header, true, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, header, true, format_settings);
         });
+    factory.markFormatSupportsSubsetOfColumns("ArrowStream");
 
     factory.setDocumentation("Arrow", Documentation{
         .description = R"DOCS_MD(
@@ -358,10 +367,8 @@ Arrays can be nested and can have a value of the `Nullable` type as an argument.
 
 The `DICTIONARY` type is supported for `INSERT` queries, and for `SELECT` queries there is an [`output_format_arrow_low_cardinality_as_dictionary`](/operations/settings/formats#output_format_arrow_low_cardinality_as_dictionary) setting that allows to output [LowCardinality](/sql-reference/data-types/lowcardinality.md) type as a `DICTIONARY` type. Note that there might be unused values in `LowCardinality` dictionary, which can lead to unused values in Arrow `DICTIONARY` during output.
 
-Unsupported Arrow data types: 
-- `FIXED_SIZE_BINARY`
+Unsupported Arrow data types:
 - `JSON`
-- `UUID`
 - `ENUM`.
 
 The data types of ClickHouse table columns do not have to match the corresponding Arrow data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
@@ -392,11 +399,14 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 | `input_format_arrow_case_insensitive_column_matching`                                                                    | Ignore case when matching Arrow columns with CH columns.                                           | `0`          |
 | `input_format_arrow_import_nested`                                                                                       | Obsolete setting, does nothing.                                                                    | `0`          |
 | `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`                                             | Skip columns with unsupported types while schema inference for format Arrow                        | `0`          |
+| `input_format_arrow_use_native_reader`                                                                                   | Use the native ClickHouse reader for the `Arrow` and `ArrowStream` formats instead of the Apache Arrow library. Set to `0` to use the Apache Arrow library reader. | `1`          |
 | `output_format_arrow_compression_method`                                                                                 | Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, none (uncompressed) | `lz4_frame`  |
 | `output_format_arrow_fixed_string_as_fixed_byte_array`                                                                   | Use Arrow FIXED_SIZE_BINARY type instead of Binary for FixedString columns.                        | `1`          |
 | `output_format_arrow_low_cardinality_as_dictionary`                                                                      | Enable output LowCardinality type as Dictionary Arrow type                                         | `0`          |
 | `output_format_arrow_string_as_string`                                                                                   | Use Arrow String type instead of Binary for String columns                                         | `1`          |
+| `output_format_arrow_unsupported_types_as_binary`                                                                        | Output a type that has no Arrow equivalent (e.g. `BFloat16`, `AggregateFunction`) as raw binary data. If false, such a type raises an exception. Applies to both the native and the Apache Arrow library writer. | `1`          |
 | `output_format_arrow_use_64_bit_indexes_for_dictionary`                                                                  | Always use 64 bit integers for dictionary indexes in Arrow format                                  | `0`          |
+| `output_format_arrow_use_native_writer`                                                                                  | Use the native ClickHouse writer for the `Arrow` and `ArrowStream` formats instead of the Apache Arrow library. Set to `0` to use the Apache Arrow library writer. | `1`          |
 | `output_format_arrow_use_signed_indexes_for_dictionary`                                                                  | Use signed integers for dictionary indexes in Arrow format                                         | `1`          |
 )DOCS_MD"});
 
@@ -421,25 +431,43 @@ void registerArrowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "Arrow",
-        [](ReadBuffer & buf, const FormatSettings & settings)
+        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
+            if (settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCSchemaReader>(buf, false, settings);
             return std::make_shared<ArrowSchemaReader>(buf, false, settings);
         });
 
     factory.registerAdditionalInfoForSchemaCacheGetter("Arrow", [](const FormatSettings & settings)
     {
-        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+        return fmt::format(
+            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};"
+            "use_native_reader={};skip_columns_with_unsupported_types={};allow_geoparquet_parser={}",
+            settings.schema_inference_make_columns_nullable,
+            settings.schema_inference_allow_nullable_tuple_type,
+            settings.arrow.input_use_native_reader,
+            settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
+            settings.parquet.allow_geoparquet_parser);
     });
     factory.registerSchemaReader(
         "ArrowStream",
-        [](ReadBuffer & buf, const FormatSettings & settings)
+        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
+            if (settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCSchemaReader>(buf, true, settings);
             return std::make_shared<ArrowSchemaReader>(buf, true, settings);
         });
 
     factory.registerAdditionalInfoForSchemaCacheGetter("ArrowStream", [](const FormatSettings & settings)
     {
-       return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+        return fmt::format(
+            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};"
+            "use_native_reader={};skip_columns_with_unsupported_types={};allow_geoparquet_parser={}",
+            settings.schema_inference_make_columns_nullable,
+            settings.schema_inference_allow_nullable_tuple_type,
+            settings.arrow.input_use_native_reader,
+            settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
+            settings.parquet.allow_geoparquet_parser);
     });
 }
 
