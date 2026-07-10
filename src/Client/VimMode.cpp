@@ -42,6 +42,145 @@ static int iswhitespace(unsigned char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r';
 }
 
+/* Special case if we are at the last word of a line and we are using an operator. */
+static int wordForward(const std::string &text, int pos, int reps, bool bigword, bool op_pending)
+{
+    int length = static_cast<int>(text.length());
+    int limit = op_pending ? length : length - 1;
+    for (int rep = 0; rep < reps; rep++)
+    {
+        int prev = pos;
+        bool stop_at_eol = op_pending && rep == reps - 1;
+        int break_on_char = 0;
+        for (; pos < limit; pos++)
+        {
+            if (stop_at_eol && pos > prev && text[pos] == '\n')
+                break;
+            if (bigword)
+            {
+                if (break_on_char && !iswhitespace(text[pos]))
+                    break;
+
+                if (iswhitespace(text[pos]))
+                    break_on_char = 1;
+            }
+            else
+            {
+                if (break_on_char & 1 && iskeyword(text[pos]))
+                    break;
+                if (break_on_char & 2 && !iskeyword(text[pos]) && !iswhitespace(text[pos]))
+                    break;
+
+                if (iswhitespace(text[pos]))
+                    break_on_char = 3;
+                else if (iskeyword(text[pos]))
+                    break_on_char |= 2;
+                else
+                    break_on_char |= 1;
+            }
+        }
+        if (pos == prev)
+            break;
+    }
+    return pos;
+}
+
+static bool atWordEnd(const std::string &text, int pos, bool bigword)
+{
+    int length = static_cast<int>(text.length());
+    if (pos < 0 || pos >= length || iswhitespace(text[pos]))
+        return false;
+    if (pos + 1 >= length)
+        return true;
+    unsigned char next = text[pos + 1];
+    if (bigword)
+        return iswhitespace(next);
+    if (iskeyword(text[pos]))
+        return !iskeyword(next);
+    return iswhitespace(next) || iskeyword(next);
+}
+
+static int wordEndForward(const std::string &text, int pos, int reps, bool bigword, bool stop)
+{
+    int length = static_cast<int>(text.length());
+    for (int rep = 0; rep < reps; rep++)
+    {
+        if (stop)
+        {
+            stop = false;
+            if (atWordEnd(text, pos, bigword))
+                continue;
+        }
+        int prev = pos;
+        if (pos < length - 1)
+            pos++;
+        int break_on_char = 0;
+        for (; pos < length - 1; pos++)
+        {
+            if (bigword)
+            {
+                if (!iswhitespace(text[pos]))
+                    break_on_char = 1;
+
+                if (break_on_char && iswhitespace(text[pos + 1]))
+                    break;
+            }
+            else
+            {
+                if (iskeyword(text[pos]))
+                    break_on_char = 1;
+                else if (!iswhitespace(text[pos]))
+                    break_on_char = 2;
+
+                if (break_on_char & 1 && !iskeyword(text[pos + 1]))
+                    break;
+                if (break_on_char & 2 && (iswhitespace(text[pos + 1]) || iskeyword(text[pos + 1])))
+                    break;
+            }
+        }
+        if (pos == prev)
+            break;
+    }
+    return pos;
+}
+
+static int wordBackward(const std::string &text, int pos, int reps, bool bigword)
+{
+    for (int rep = 0; rep < reps; rep++)
+    {
+        int prev = pos;
+        if (pos > 0)
+            pos--;
+        int break_on_char = 0;
+        for (; pos > 0; pos--)
+        {
+            if (bigword)
+            {
+                if (!iswhitespace(text[pos]))
+                    break_on_char = 1;
+
+                if (break_on_char && iswhitespace(text[pos - 1]))
+                    break;
+            }
+            else
+            {
+                if (iskeyword(text[pos]))
+                    break_on_char = 1;
+                else if (!iswhitespace(text[pos]))
+                    break_on_char = 2;
+
+                if (break_on_char & 1 && !iskeyword(text[pos - 1]))
+                    break;
+                if (break_on_char & 2 && (iswhitespace(text[pos - 1]) || iskeyword(text[pos - 1])))
+                    break;
+            }
+        }
+        if (pos == prev)
+            break;
+    }
+    return pos;
+}
+
 template <typename T>
 void ReplxxLineReader::bindKey(char32_t key, T && f, int mode) {
     using F = std::decay_t<T>;
@@ -70,6 +209,60 @@ void ReplxxLineReader::recomputeCurswant(int pos, std::string &text) {
         if (prev_newline <= length && text[prev_newline] == '\n')
             break;
     curswant = std::max(text[prev_newline] != '\n' || pos == 0 ? pos + rx.prompt_indentation() + 1 : pos - prev_newline, 1);
+}
+
+void ReplxxLineReader::vimWordMotion(int &pos, std::string &text, char motion)
+{
+    /* Not implemented yet. */
+    if (flag)
+    {
+        resetVim();
+        return;
+    }
+
+    bool bigword = motion == 'W' || motion == 'E' || motion == 'B';
+    char kind = bigword ? motion - 'A' + 'a' : motion;
+    int oldpos = pos;
+    int reps = vimReps();
+
+    /* Special case, cw on a blank line acts like ce (dw acts normally though). */
+    if (kind == 'w' && op == OPERATOR_C && pos < static_cast<int>(text.length()) && !iswhitespace(text[pos]))
+    {
+        pos = wordEndForward(text, pos, reps, bigword, true);
+        text.erase(oldpos, pos - oldpos + 1 - inclusivity_flip);
+        pos = oldpos;
+        rx.set_editing_mode(MODE_INSERT);
+        resetVim();
+        return;
+    }
+
+    if (kind == 'w')
+        pos = wordForward(text, pos, reps, bigword, op != 0);
+    else if (kind == 'e')
+        pos = wordEndForward(text, pos, reps, bigword, false);
+    else
+        pos = wordBackward(text, pos, reps, bigword);
+
+    bool moved = pos != oldpos;
+    if (op)
+    {
+        if (pos > oldpos)
+        {
+            text.erase(oldpos, pos - oldpos + (kind == 'e' ? 1 - inclusivity_flip : inclusivity_flip));
+            pos = oldpos;
+        }
+        else if (pos < oldpos)
+        {
+            text.erase(pos, oldpos - pos + inclusivity_flip);
+        }
+    }
+    if (op == OPERATOR_C && moved)
+    {
+        rx.set_editing_mode(MODE_INSERT);
+        resetVim();
+    }
+    else
+        resetVim(&pos, &text);
 }
 
 void ReplxxLineReader::setupVimKeybindings()
@@ -486,139 +679,13 @@ void ReplxxLineReader::setupVimKeybindings()
         }, MODE_REPLACE);
     }
 
-    bindKey('w', [this](int &pos, std::string &text, char32_t) {
-        int length = static_cast<int>(text.length());
-        int reps = vimReps();
-        for (int rep = 0; rep < reps; rep++) {
-            int prev = pos;
-            int break_on_char = 0;
-            for (; pos < length - 1; pos++) {
-                if (break_on_char & 1 && iskeyword(text[pos]))
-                    break;
-                if (break_on_char & 2 && !iskeyword(text[pos]) && !iswhitespace(text[pos]))
-                    break;
-
-                if (iswhitespace(text[pos]))
-                    break_on_char = 3;
-                else if (iskeyword(text[pos]))
-                    break_on_char |= 2;
-                else if (!iswhitespace(text[pos]))
-                    break_on_char |= 1;
-            }
-            if (pos == prev)
-                break;
-        }
-        resetVim(&pos, &text);
-    }, MODE_NORMAL);
-
-    bindKey('e', [this](int &pos, std::string &text, char32_t) {
-        int length = static_cast<int>(text.length());
-        int reps = vimReps();
-        for (int rep = 0; rep < reps; rep++) {
-            int prev = pos;
-            if (pos < length - 1)
-                pos++;
-            int break_on_char = 0;
-            for (; pos < length - 1; pos++) {
-                if (iskeyword(text[pos]))
-                    break_on_char = 1;
-                else if (!iswhitespace(text[pos]))
-                    break_on_char = 2;
-
-                if (break_on_char & 1 && !iskeyword(text[pos + 1]))
-                    break;
-                if (break_on_char & 2 && (iswhitespace(text[pos + 1]) || iskeyword(text[pos + 1])))
-                    break;
-            }
-            if (pos == prev)
-                break;
-        }
-        resetVim(&pos, &text);
-    }, MODE_NORMAL);
-
-    bindKey('b', [this](int &pos, std::string &text, char32_t) {
-        int reps = vimReps();
-        for (int rep = 0; rep < reps; rep++) {
-            int prev = pos;
-            if (pos > 0)
-                pos--;
-            int break_on_char = 0;
-            for (; pos > 0; pos--) {
-                if (iskeyword(text[pos]))
-                    break_on_char = 1;
-                else if (!iswhitespace(text[pos]))
-                    break_on_char = 2;
-
-                if (break_on_char & 1 && !iskeyword(text[pos - 1]))
-                    break;
-                if (break_on_char & 2 && (iswhitespace(text[pos - 1]) || iskeyword(text[pos - 1])))
-                    break;
-            }
-            if (pos == prev)
-                break;
-        }
-        resetVim(&pos, &text);
-    }, MODE_NORMAL);
-
-    bindKey('W', [this](int &pos, std::string &text, char32_t) {
-        int length = static_cast<int>(text.length());
-        int reps = vimReps();
-        for (int rep = 0; rep < reps; rep++) {
-            int prev = pos;
-            int break_on_char = 0;
-            for (; pos < length - 1; pos++) {
-                if (break_on_char && !iswhitespace(text[pos]))
-                    break;
-
-                if (iswhitespace(text[pos]))
-                    break_on_char = 1;
-            }
-            if (pos == prev)
-                break;
-        }
-        resetVim(&pos, &text);
-    }, MODE_NORMAL);
-
-    bindKey('E', [this](int &pos, std::string &text, char32_t) {
-        int length = static_cast<int>(text.length());
-        int reps = vimReps();
-        for (int rep = 0; rep < reps; rep++) {
-            int prev = pos;
-            if (pos < length - 1)
-                pos++;
-            int break_on_char = 0;
-            for (; pos < length - 1; pos++) {
-                if (!iswhitespace(text[pos]))
-                    break_on_char = 1;
-
-                if (break_on_char && iswhitespace(text[pos + 1]))
-                    break;
-            }
-            if (pos == prev)
-                break;
-        }
-        resetVim(&pos, &text);
-    }, MODE_NORMAL);
-
-    bindKey('B', [this](int &pos, std::string &text, char32_t) {
-        int reps = vimReps();
-        for (int rep = 0; rep < reps; rep++) {
-            int prev = pos;
-            if (pos > 0)
-                pos--;
-            int break_on_char = 0;
-            for (; pos > 0; pos--) {
-                if (!iswhitespace(text[pos]))
-                    break_on_char = 1;
-
-                if (break_on_char && iswhitespace(text[pos - 1]))
-                    break;
-            }
-            if (pos == prev)
-                break;
-        }
-        resetVim(&pos, &text);
-    }, MODE_NORMAL);
+    for (char motion : {'w', 'e', 'b', 'W', 'E', 'B'})
+    {
+        bindKey(motion, [this, motion](int &pos, std::string &text, char32_t)
+        {
+            vimWordMotion(pos, text, motion);
+        }, MODE_NORMAL);
+    }
 
     bindKey('G', [this](int &pos, std::string &text, char32_t) {
         int oldpos = pos;
