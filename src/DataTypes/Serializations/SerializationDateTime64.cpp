@@ -269,6 +269,18 @@ static ReturnType deserializeNonQuotedJSON(
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+    /// Bare integer timestamp is by far the common case; avoid PeekableReadBuffer's allocation for it.
+    if (istr.eof() || (*istr.position() != 'n' && *istr.position() != 'I'))
+    {
+        if constexpr (throw_exception)
+        {
+            readIntText(x, istr);
+            return;
+        }
+        else
+            return ReturnType(tryReadIntText(x, istr));
+    }
+
     PeekableReadBuffer peekable_buf(istr, true);
     peekable_buf.setCheckpoint();
     SCOPE_EXIT(peekable_buf.dropCheckpoint());
