@@ -1233,35 +1233,6 @@ static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::fu
     return ok;
 }
 
-/// Forward the FINAL limit-pushdown hint (see `optimize_final_limit_pushdown`) into the child
-/// `MergeTree` reads of a `Merge` table so their FINAL merge can terminate early. A child is only
-/// eligible when it is provably safe to truncate its merge output:
-///   - there is no `FilterStep` between the child-plan root and the reading step: a WHERE or
-///     row-policy filter applied *after* the FINAL merge would otherwise drop rows that an early
-///     limit already discarded, yielding fewer than `LIMIT` results;
-///   - the reading step has no filter deferred past FINAL and is not a `SAMPLE` query, for the same
-///     reason (both run after the merge).
-/// `filter_on_path` tracks whether a `FilterStep` was seen on the way down from the child-plan root
-/// (such steps execute after the reading step). Children that are not eligible are simply left to
-/// perform the full FINAL merge, which is always correct - the setting only affects performance.
-static void forwardFinalLimitToSafeReadingSteps(QueryPlan::Node * node, UInt64 final_limit, bool filter_on_path)
-{
-    bool filter_on_path_for_children = filter_on_path || typeid_cast<FilterStep *>(node->step.get()) != nullptr;
-
-    for (auto * child : node->children)
-        forwardFinalLimitToSafeReadingSteps(child, final_limit, filter_on_path_for_children);
-
-    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
-    {
-        if (!filter_on_path
-            && read_from_merge_tree->isQueryWithFinal()
-            && !read_from_merge_tree->isQueryWithSampling()
-            && !read_from_merge_tree->getDeferredRowLevelFilter()
-            && !read_from_merge_tree->getDeferredPrewhereInfo())
-            read_from_merge_tree->setFinalLimit(final_limit);
-    }
-}
-
 QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     ChildPlan & child,
     QueryProcessingStage::Enum processed_stage) const
@@ -1756,7 +1727,7 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
-bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit, size_t final_limit)
+bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit)
 {
     filterTablesAndCreateChildrenPlans();
 
@@ -1782,14 +1753,6 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
 
     if (!ok)
         return false;
-
-    /// Propagate the FINAL limit-pushdown hint to child MergeTree reads that can safely early-terminate.
-    /// Unlike `requestReadingInOrder` above, this must not fail the whole request: it is applied
-    /// per-child and children that are not eligible simply fall back to the full FINAL merge.
-    if (final_limit > 0)
-        for (const auto & child_plan : *child_plans)
-            if (child_plan.plan.isInitialized())
-                forwardFinalLimitToSafeReadingSteps(child_plan.plan.getRootNode(), final_limit, /*filter_on_path=*/ false);
 
     order_info = order_info_;
     query_info.input_order_info = order_info;
