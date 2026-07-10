@@ -105,7 +105,7 @@ public:
             return;
 
         /// Deserialize and merge the sketch
-        auto sk = datasketches::hll_sketch::deserialize(data_ptr, data_size);
+        auto sk = deserializeSketch<datasketches::hll_sketch>(data_ptr, data_size);
         getHLLUnion()->update(sk);
     }
 
@@ -149,7 +149,7 @@ public:
         readVectorBinary(bytes, in);
         if (!bytes.empty())
         {
-            auto sk = datasketches::hll_sketch::deserialize(bytes.data(), bytes.size());
+            auto sk = deserializeSketch<datasketches::hll_sketch>(bytes.data(), bytes.size());
             getHLLUnion()->update(sk);
         }
     }

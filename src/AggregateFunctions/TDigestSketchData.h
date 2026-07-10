@@ -7,6 +7,7 @@
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <tdigest.hpp>
+#include <AggregateFunctions/SketchDataUtils.h>
 #include <Core/Types.h>
 
 namespace DB
@@ -41,7 +42,7 @@ public:
         if (data == nullptr || size == 0)
             return;
 
-        auto sk = datasketches::tdigest<double>::deserialize(data, size);
+        auto sk = deserializeSketch<datasketches::tdigest<double>>(data, size);
         getTDigest()->merge(sk);
     }
 
@@ -69,7 +70,7 @@ public:
         readVectorBinary(bytes, in);
         if (!bytes.empty())
         {
-            auto tdigest_local = datasketches::tdigest<double>::deserialize(bytes.data(), bytes.size());
+            auto tdigest_local = deserializeSketch<datasketches::tdigest<double>>(bytes.data(), bytes.size());
             getTDigest()->merge(tdigest_local);
         }
     }

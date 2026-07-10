@@ -52,7 +52,7 @@ public:
             return;
 
         /// Deserialize and merge the sketch
-        auto sk = datasketches::quantiles_sketch<double>::deserialize(data_ptr, data_size);
+        auto sk = deserializeSketch<datasketches::quantiles_sketch<double>>(data_ptr, data_size);
         getQuantilesSketch()->merge(sk);
     }
 
@@ -112,7 +112,7 @@ public:
         readVectorBinary(bytes, in);
         if (!bytes.empty())
         {
-            auto quantile_sketch_local = datasketches::quantiles_sketch<double>::deserialize(bytes.data(), bytes.size());
+            auto quantile_sketch_local = deserializeSketch<datasketches::quantiles_sketch<double>>(bytes.data(), bytes.size());
             getQuantilesSketch()->merge(quantile_sketch_local);
         }
     }

@@ -3,10 +3,40 @@
 #include <string_view>
 #include <string>
 #include <algorithm>
+#include <utility>
 #include <Common/Base64.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
+/// Deserialize an Apache DataSketches sketch, translating the library's own std exceptions
+/// (for example `std::invalid_argument` with the message "Attempt to deserialize unknown object type")
+/// into a regular ClickHouse exception with a declared error code. Without this, malformed sketch
+/// bytes supplied by a user (for example to `mergeSerializedHLL`) would escape as an uncaught
+/// `std::exception` and be reported as a logical error. We fail-close here: an invalid sketch surfaces
+/// as an error rather than being silently ignored.
+template <typename Sketch, typename... Args>
+Sketch deserializeSketch(Args &&... args)
+{
+    try
+    {
+        return Sketch::deserialize(std::forward<Args>(args)...);
+    }
+    catch (const Exception &)
+    {
+        throw;
+    }
+    catch (const std::exception & e)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize a sketch from the provided data: {}", e.what());
+    }
+}
 
 /// Fast check if string looks like base64 (avoids expensive decode attempt for binary data)
 /// This is a heuristic check that examines the first few bytes to determine if data
