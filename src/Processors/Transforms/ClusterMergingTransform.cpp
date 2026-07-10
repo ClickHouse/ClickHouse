@@ -242,10 +242,80 @@ void readClusterValues(
         return;
     }
 
-    /// `+ 0.0` canonicalizes `-0.0` → `+0.0` so numerically equal values share a bit
-    /// pattern (used by the `distance == 0` fast path that buckets by raw bits).
+    /// `+ 0.0` canonicalizes `-0.0` → `+0.0` so numerically equal values share a value.
     for (size_t i = 0; i < total_rows; ++i)
         out[i] = col.getFloat64(i) + 0.0;
+}
+
+/// Fill `out` with a collision-free `Int64` bucket key per row for the `distance == 0`
+/// exact-match path. Unlike `readClusterValues`, this never routes wide 64-bit keys through
+/// `Float64` and never applies the `2^53` range guard: at distance 0 no arithmetic is
+/// performed, so keys only ever need to be compared for exact equality, and the guard (which
+/// exists because `Float64` cannot represent a wide 64-bit range exactly) would otherwise
+/// reject perfectly valid exact-match queries with `BAD_ARGUMENTS`.
+/// `UInt64` / `Int64` / `DateTime64` / `Time64` keep their exact 64-bit representation; every
+/// other supported type (narrow integers, `Date` / `Date32`, `DateTime`, `Time`, and floats)
+/// fits `Float64`'s exact-integer range, so a canonicalized (`+ 0.0`, which merges `-0.0` and
+/// `+0.0` into one cluster) bit-cast is exact for them. A column has a single type per query,
+/// so these key spaces never overlap.
+void readExactBucketKeys(
+    const IColumn & col,
+    const DataTypePtr & type,
+    size_t total_rows,
+    std::vector<Int64> & out)
+{
+    out.resize(total_rows);
+
+    if (total_rows == 0)
+        return;
+
+    WhichDataType which(type);
+    static_assert(sizeof(Int64) == sizeof(Float64));
+
+    if (which.isUInt64())
+    {
+        const auto & data = assert_cast<const ColumnVector<UInt64> &>(col).getData();
+        for (size_t i = 0; i < total_rows; ++i)
+        {
+            Int64 key = 0;
+            std::memcpy(&key, &data[i], sizeof(Int64));
+            out[i] = key;
+        }
+        return;
+    }
+
+    if (which.isInt64())
+    {
+        const auto & data = assert_cast<const ColumnVector<Int64> &>(col).getData();
+        for (size_t i = 0; i < total_rows; ++i)
+            out[i] = data[i];
+        return;
+    }
+
+    if (which.isDateTime64())
+    {
+        const auto & data = assert_cast<const ColumnDecimal<DateTime64> &>(col).getData();
+        for (size_t i = 0; i < total_rows; ++i)
+            out[i] = data[i].value;
+        return;
+    }
+
+    if (which.isTime64())
+    {
+        const auto & data = assert_cast<const ColumnDecimal<Time64> &>(col).getData();
+        for (size_t i = 0; i < total_rows; ++i)
+            out[i] = data[i].value;
+        return;
+    }
+
+    /// Remaining supported types fit Float64's exact-integer range; canonicalize `-0.0`.
+    for (size_t i = 0; i < total_rows; ++i)
+    {
+        Float64 v = col.getFloat64(i) + 0.0;
+        Int64 key = 0;
+        std::memcpy(&key, &v, sizeof(Int64));
+        out[i] = key;
+    }
 }
 
 }
@@ -420,32 +490,40 @@ Chunk ClusterMergingTransform::generate1D()
     /// merging — guards against SipHash collisions.
     std::unordered_map<UInt64, absl::InlinedVector<size_t, 1>> bucket_map;
 
+    /// At `distance > 0` we bucket by `floor(cluster_key / distance)`, which needs the keys in
+    /// Float64's exact-integer range (hence the translation and the `2^53` guards). At
+    /// `distance == 0` we bucket by exact equality only, so we read collision-free integer keys
+    /// directly and skip the Float64 translation entirely — otherwise wide 64-bit keys would be
+    /// wrongly rejected with `BAD_ARGUMENTS` even though no arithmetic is needed.
     std::vector<Float64> cluster_vals;
-    readClusterValues(*merged_columns[cluster_key_pos],
-                      header.getByPosition(cluster_key_pos).type, total_rows, cluster_vals);
-
+    std::vector<Int64> exact_bucket_ids;
     if (cluster_distance > 0)
     {
+        readClusterValues(*merged_columns[cluster_key_pos],
+                          header.getByPosition(cluster_key_pos).type, total_rows, cluster_vals);
         Float64 max_abs = 0;
         for (size_t i = 0; i < total_rows; ++i)
             max_abs = std::max(max_abs, std::fabs(cluster_vals[i]));
         checkBucketQuotientPrecision(max_abs, cluster_distance);
     }
+    else
+        readExactBucketKeys(*merged_columns[cluster_key_pos],
+                            header.getByPosition(cluster_key_pos).type, total_rows, exact_bucket_ids);
 
     for (size_t i = 0; i < total_rows; ++i)
     {
-        Float64 cluster_val = cluster_vals[i];
-
         Int64 bucket_id = 0;
+        /// `min/max_cluster_key` bound each bucket for the `distance > 0` cross-bucket range
+        /// check. At `distance == 0` every row in a bucket shares an identical key, so the
+        /// bounds are unused (Phase B is skipped) and the leader stays the first row seen.
+        Float64 cluster_val = 0.0;
         if (cluster_distance > 0)
-            bucket_id = safeFloorToInt64(cluster_val / cluster_distance);
-        else
         {
-            /// `distance == 0`: bit-cast canonicalized Float64 → Int64 so numerically
-            /// equal values share `bucket_id`.
-            static_assert(sizeof(Float64) == sizeof(Int64));
-            std::memcpy(&bucket_id, &cluster_val, sizeof(Int64));
+            cluster_val = cluster_vals[i];
+            bucket_id = safeFloorToInt64(cluster_val / cluster_distance);
         }
+        else
+            bucket_id = exact_bucket_ids[i];
 
         UInt64 hash = computeBucketHash(merged_columns, non_cluster_key_positions, i, bucket_id);
 
@@ -724,13 +802,18 @@ Chunk ClusterMergingTransform::generate2D()
         return std::numeric_limits<size_t>::max();
     };
 
+    /// As in `generate1D`, the Float64 coordinates (and their range guard) are only needed for
+    /// the `d > 0` cell arithmetic. At `d == 0` we bucket by exact per-axis equality, so we read
+    /// collision-free integer keys directly and skip the lossy Float64 translation.
     std::vector<Float64> x_vals;
     std::vector<Float64> y_vals;
-    readClusterValues(x_col, header.getByPosition(x_pos).type, total_rows, x_vals);
-    readClusterValues(y_col, header.getByPosition(y_pos).type, total_rows, y_vals);
-
+    std::vector<Int64> x_exact;
+    std::vector<Int64> y_exact;
     if (d > 0)
     {
+        readClusterValues(x_col, header.getByPosition(x_pos).type, total_rows, x_vals);
+        readClusterValues(y_col, header.getByPosition(y_pos).type, total_rows, y_vals);
+
         /// The cell index is `floor(coord / a)`, so guard the coordinate/cell-side ratio.
         Float64 max_abs_coord = 0;
         for (size_t i = 0; i < total_rows; ++i)
@@ -740,23 +823,32 @@ Chunk ClusterMergingTransform::generate2D()
         }
         checkBucketQuotientPrecision(max_abs_coord, a);
     }
+    else
+    {
+        readExactBucketKeys(x_col, header.getByPosition(x_pos).type, total_rows, x_exact);
+        readExactBucketKeys(y_col, header.getByPosition(y_pos).type, total_rows, y_exact);
+    }
 
     for (size_t i = 0; i < total_rows; ++i)
     {
-        Float64 xv = x_vals[i];
-        Float64 yv = y_vals[i];
         Int64 cx = 0;
         Int64 cy = 0;
-        if (d == 0)
+        /// `min/max_[xy]` bound each cell for the `d > 0` neighbor search; at `d == 0` every row
+        /// in a cell shares its exact coordinates, so the bounds are unused (Phase B is skipped)
+        /// and the leader stays the first row seen.
+        Float64 xv = 0.0;
+        Float64 yv = 0.0;
+        if (d > 0)
         {
-            static_assert(sizeof(Float64) == sizeof(Int64));
-            std::memcpy(&cx, &xv, sizeof(Int64));
-            std::memcpy(&cy, &yv, sizeof(Int64));
+            xv = x_vals[i];
+            yv = y_vals[i];
+            cx = safeFloorToInt64(xv / a);
+            cy = safeFloorToInt64(yv / a);
         }
         else
         {
-            cx = safeFloorToInt64(xv / a);
-            cy = safeFloorToInt64(yv / a);
+            cx = x_exact[i];
+            cy = y_exact[i];
         }
 
         UInt64 h = computeCellHash(merged_columns, non_cluster_key_positions, i, cx, cy);
@@ -796,7 +888,7 @@ Chunk ClusterMergingTransform::generate2D()
     DisjointSetUnion dsu(cells.size());
 
     /// Phase B: for each cell, probe forward neighbors in a 5x5 window and unite cells
-    /// holding rows within `d`. For `d == 0` Phase A's exact bit-cast keys are the
+    /// holding rows within `d`. For `d == 0` Phase A's exact per-axis keys are the
     /// final answer; skip cross-cell merging entirely.
     for (size_t ci = 0; d > 0 && ci < cells.size(); ++ci)
     {
