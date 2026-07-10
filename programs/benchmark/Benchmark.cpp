@@ -725,7 +725,11 @@ private:
             cur_interval = interval;
         }
 
-        ConnectionPool::Entry entry = connections[connection_index]->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
+        /// Do not ping the connection before sending the query: for a hot pooled connection the
+        /// Ping-Pong round trip only doubles the measured latency of small queries. A stale
+        /// connection is handled by the query itself failing, which is treated as a normal error.
+        ConnectionPool::Entry entry = connections[connection_index]->get(
+            ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings), settings, /*force_connected=*/false);
 
         bool should_reconnect = false;
         {
