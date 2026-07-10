@@ -9,6 +9,9 @@ neg_frac	['1925-12-12 13:14:15.123']
 csv_neg_zero_frac	1969-12-31 23:59:59.877
 json_neg_zero_frac	1969-12-31 23:59:59.123
 csv_neg_one_frac	1969-12-31 23:59:58.877
+scalar_neg_zero_frac	1969-12-31 23:59:59.877
+scalar_eq_container_neg_zero	1
+scalar_eq_container_neg_one	1
 scale0	['2026-07-09 08:24:33']
 scale6_extra	['2026-07-09 08:24:33.954321']
 scale3_short	['2026-07-09 08:24:33.950']

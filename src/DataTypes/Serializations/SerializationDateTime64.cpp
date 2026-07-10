@@ -145,7 +145,6 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
     ++istr.position();
 
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
-    int negative_fraction_multiplier = 1;
 
     /// Read digits, up to 'scale' positions.
     for (size_t i = 0; i < scale; ++i)
@@ -167,13 +166,8 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
     while (!istr.eof() && isNumericASCII(*istr.position()))
         ++istr.position();
 
-    /// readIntText normalises "-0" to 0, so the sign is lost for pre-epoch sub-second
-    /// values whose whole part is zero (e.g. -0.123 s == 1969-12-31 23:59:59.877).
-    /// For a non-zero whole the sign is already carried by `components.whole`
-    /// (e.g. -1.123 -> decimalFromComponents(-1, 123) == -1123 ticks), so only the
-    /// zero-whole case needs the sign restored via the multiplier.
-    if (is_negative && components.whole == 0 && components.fractional != 0)
-        negative_fraction_multiplier = -1;
+    /// Shared with the scalar readDateTime64Text path so both agree on pre-epoch sub-second signs.
+    int negative_fraction_multiplier = adjustFractionalDateTimeSign(components, is_negative, scale);
 
     if constexpr (throw_exception)
     {

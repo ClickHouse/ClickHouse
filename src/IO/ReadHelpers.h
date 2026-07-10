@@ -1159,6 +1159,34 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
     return readTimeTextFallback<ReturnType, t64_mode>(time, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }
 
+/// Finalizes the sign of a DateTime64/Time64 parsed from the `[-]whole.fractional` form and
+/// returns the multiplier (-1 or 1) to apply to the assembled decimal.
+/// Two independent cases (mutually exclusive on `is_negative`):
+///   1. A pre-epoch negative whole part (e.g. an ISO datetime like `1925-12-12 13:14:15.123`
+///      parses to whole < 0 without a leading '-'): fold the fraction into the internal
+///      `<whole+1>.<scale-fraction>` representation, flipping the sign when the whole rolls to 0.
+///   2. An explicit leading '-' with a zero whole part (e.g. `-0.123` s == 1969-12-31 23:59:59.877):
+///      readIntText normalises "-0" to 0, so the sign must be restored via the multiplier.
+template <typename DecimalType>
+inline int adjustFractionalDateTimeSign(DB::DecimalUtils::DecimalComponents<DecimalType> & components, bool is_negative, UInt32 scale)
+{
+    int negative_fraction_multiplier = 1;
+
+    if (!is_negative && components.whole < 0 && components.fractional != 0)
+    {
+        const auto scale_multiplier = DecimalUtils::scaleMultiplier<typename DecimalType::NativeType>(scale);
+        ++components.whole;
+        components.fractional = scale_multiplier - components.fractional;
+        if (!components.whole)
+            negative_fraction_multiplier = -1;
+    }
+
+    if (is_negative && components.whole == 0 && components.fractional != 0)
+        negative_fraction_multiplier = -1;
+
+    return negative_fraction_multiplier;
+}
+
 template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true)
 {
@@ -1217,20 +1245,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
 
-        /// Fractional part (subseconds) is treated as positive by users, but represented as a negative number.
-        /// E.g. `1925-12-12 13:14:15.123` is represented internally as timestamp `-1390214744.877`.
-        /// Thus need to convert <negative_timestamp>.<fractional> to <negative_timestamp+1>.<1-0.<fractional>>
-        /// Also, setting fractional part to be negative when whole is 0 results in wrong value, in this case multiply result by -1.
-        if (!is_negative_timestamp && components.whole < 0 && components.fractional != 0)
-        {
-            const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
-            ++components.whole;
-            components.fractional = scale_multiplier - components.fractional;
-            if (!components.whole)
-            {
-                negative_fraction_multiplier = -1;
-            }
-        }
+        negative_fraction_multiplier = adjustFractionalDateTimeSign(components, is_negative_timestamp, scale);
     }
     /// 10413792000 is time_t value for 2300-01-01 UTC (a bit over the last year supported by DateTime64)
     else if (whole >= 10413792000LL)
@@ -1344,23 +1359,7 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
 
-        /// Fractional part (subseconds) is treated as positive by users, but represented as a negative number.
-        /// E.g. `hhh:mm:ss.123` is represented internally as timestamp `-<timestamp>.877` when timestamp is negative.
-        /// Thus need to convert <negative_timestamp>.<fractional> to <negative_timestamp+1>.<1-0.<fractional>>
-        /// Also, setting fractional part to be negative when whole is 0 results in wrong value, in this case multiply result by -1.
-        if (!is_negative_timestamp && components.whole < 0 && components.fractional != 0)
-        {
-            const auto scale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(scale);
-            ++components.whole;
-            components.fractional = scale_multiplier - components.fractional;
-            if (!components.whole)
-            {
-                negative_fraction_multiplier = -1;
-            }
-        }
-
-        if (is_negative_timestamp && components.whole == 0 && components.fractional != 0)
-            negative_fraction_multiplier = -1;
+        negative_fraction_multiplier = adjustFractionalDateTimeSign(components, is_negative_timestamp, scale);
     }
     /// prevent overflow (taken from DateTime)
     else if (parse_success && whole >= 10413792000LL)

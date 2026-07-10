@@ -31,6 +31,17 @@ SELECT 'csv_neg_zero_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(
 SELECT 'json_neg_zero_frac', toString(x[1]) FROM format(JSONEachRow, 'x Array(DateTime64(3))', '{"x":[-0.877]}');
 SELECT 'csv_neg_one_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[-1.123]"');
 
+-- The scalar readDateTime64Text path shares the same sign restoration, so a scalar
+-- -0.xxx must parse identically to the container element (regression for the earlier
+-- scalar/container divergence). Basic input format exercises readDateTime64Text directly.
+SELECT 'scalar_neg_zero_frac', toString(x) FROM format(CSV, 'x DateTime64(3)', '-0.123') SETTINGS date_time_input_format = 'basic';
+SELECT 'scalar_eq_container_neg_zero',
+    (SELECT x FROM format(CSV, 'x DateTime64(3)', '-0.123') SETTINGS date_time_input_format = 'basic')
+  = (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3))', '"[-0.123]"'));
+SELECT 'scalar_eq_container_neg_one',
+    (SELECT x FROM format(CSV, 'x DateTime64(3)', '-1.123') SETTINGS date_time_input_format = 'basic')
+  = (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3))', '"[-1.123]"'));
+
 -- Fraction is truncated / padded to the column scale.
 SELECT 'scale0', [1783585473.954]::Array(DateTime64(0));
 SELECT 'scale6_extra', [1783585473.954321987]::Array(DateTime64(6));
