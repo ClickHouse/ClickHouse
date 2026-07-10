@@ -16,26 +16,26 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity
 
 INSERT INTO tab SELECT number, if(number = 42, 'the rare token here', concat('common filler ', toString(number))) FROM numbers(128);
 
--- Bare atom prunes to a single granule: this is the baseline every positive wrapper must match.
-SELECT 'bare', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare')) WHERE explain ILIKE '%Granules: 1/128%';
-
--- Positive wrappers must build the same index condition and prune identically.
-SELECT '= true', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = true) WHERE explain ILIKE '%Granules: 1/128%';
-SELECT '!= false', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') != false) WHERE explain ILIKE '%Granules: 1/128%';
-SELECT 'IN (true)', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IN (true)) WHERE explain ILIKE '%Granules: 1/128%';
-SELECT 'IS TRUE', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IS TRUE) WHERE explain ILIKE '%Granules: 1/128%';
-SELECT 'true = atom', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE true = hasToken(s, 'rare')) WHERE explain ILIKE '%Granules: 1/128%';
+-- Assertions key off the text skip index by name (`Name: idx`) so they isolate text-index behavior
+-- from unrelated primary-key / constant-folding pruning that the merged-with-master build may add.
+-- Positive wrappers: the text index is applied AND prunes to a single granule, like the bare atom.
+SELECT 'bare', countIf(explain ILIKE '%Name: idx%') = 1 AND countIf(explain ILIKE '%Granules: 1/128%') = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare'));
+SELECT '= true', countIf(explain ILIKE '%Name: idx%') = 1 AND countIf(explain ILIKE '%Granules: 1/128%') = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = true);
+SELECT '!= false', countIf(explain ILIKE '%Name: idx%') = 1 AND countIf(explain ILIKE '%Granules: 1/128%') = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') != false);
+SELECT 'IN (true)', countIf(explain ILIKE '%Name: idx%') = 1 AND countIf(explain ILIKE '%Granules: 1/128%') = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IN (true));
+SELECT 'IS TRUE', countIf(explain ILIKE '%Name: idx%') = 1 AND countIf(explain ILIKE '%Granules: 1/128%') = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IS TRUE);
+SELECT 'true = atom', countIf(explain ILIKE '%Name: idx%') = 1 AND countIf(explain ILIKE '%Granules: 1/128%') = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE true = hasToken(s, 'rare'));
 
 -- Works through a wrapped supported atom other than hasToken (equals).
-SELECT 'equals = true', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE (s = 'the rare token here') = true) WHERE explain ILIKE '%Granules%' AND explain NOT ILIKE '%Granules: 128/128%';
+SELECT 'equals = true', countIf(explain ILIKE '%Name: idx%') = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE (s = 'the rare token here') = true);
 
--- Negative wrappers give no pruning benefit (NOT of a granule mask is always true), so the index
--- must NOT prune: the full 128/128 granules are read (the index may still be listed).
-SELECT '= false no prune', countIf(explain ILIKE '%Granules: 128/128%') = countIf(explain ILIKE '%Granules:%') FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = false);
-SELECT '!= true no prune', countIf(explain ILIKE '%Granules: 128/128%') = countIf(explain ILIKE '%Granules:%') FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') != true);
+-- Negative wrappers give no pruning benefit (NOT of a granule mask is always true), so the text
+-- index must NOT be applied.
+SELECT '= false no prune', countIf(explain ILIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = false);
+SELECT '!= true no prune', countIf(explain ILIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') != true);
 
--- `= 5` is not a boolean spelling: leave to row-level evaluation, no pruning.
-SELECT '= 5 no prune', countIf(explain ILIKE '%Granules: 128/128%') = countIf(explain ILIKE '%Granules:%') FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = 5);
+-- `= 5` is not a boolean spelling: leave to row-level evaluation, the text index must NOT be applied.
+SELECT '= 5 no prune', countIf(explain ILIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = 5);
 
 -- Results stay correct in every case.
 SELECT 'results',
