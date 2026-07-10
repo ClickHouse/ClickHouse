@@ -13,6 +13,7 @@
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReaderExecutor.h>
+#include <IO/DiskCacheProvider.h>
 #include <IO/PipelineReadBuffer.h>
 #include <IO/LocalSourceReader.h>
 #include <IO/ObjectStorageSourceReader.h>
@@ -203,20 +204,36 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     if (!settings.reader_executor.enabled)
         return nullptr;
 
-    /// The executor does not implement caches, async prefetch, or the distributed cache, so
-    /// fall back rather than silently drop a configured stage. Decryption IS supported (fed
-    /// below), so it no longer forces a fallback.
-    if (distributed_cache || memory_cache || !filesystem_caches.empty() || async_prefetch)
+    /// The executor does not implement the page (memory) cache, async prefetch, or the distributed
+    /// cache, so fall back rather than silently drop a configured stage. Decryption and the
+    /// filesystem cache ARE supported (fed below).
+    if (distributed_cache || memory_cache || async_prefetch)
     {
         LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path "
-            "(caches not yet supported by the executor)");
+            "(page/distributed cache or async prefetch not yet supported by the executor)");
         return nullptr;
+    }
+
+    /// A per-object custom cache key (single-object, etag-keyed flow) is not handled by the
+    /// executor's cache provider yet; fall back when any filesystem-cache stage sets one.
+    for (const auto & fc : filesystem_caches)
+    {
+        if (fc.custom_cache_key)
+        {
+            LOG_DEBUG(log,
+                "use_reader_executor: falling back to the legacy read path "
+                "(custom filesystem-cache key not yet supported by the executor)");
+            return nullptr;
+        }
     }
 
     /// Only local files and object storage are supported; other sources fall back.
     std::shared_ptr<IFileBasedSourceReader> source_reader;
     size_t block_size = 0;
+    /// Read-through cache chain (front = fastest). Built from the configured filesystem caches for
+    /// object-storage reads only; a filesystem cache never applies to local files.
+    CacheChain cache_chain;
     if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
     {
         LOG_DEBUG(log, "build: using ReaderExecutor for local file, {} objects, path={}",
@@ -244,6 +261,15 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
             source->objects.size(), gather);
         source_reader = std::make_shared<ObjectStorageSourceReader>(obj_src->storage, settings);
         block_size = settings.remote_fs_settings.buffer_size;
+
+        /// The executor consults and populates these per window, in the foreground.
+        for (const auto & fc : filesystem_caches)
+        {
+            const size_t boundary_alignment
+                = fc.cache_settings.boundary_alignment.value_or(fc.cache->getBoundaryAlignment());
+            cache_chain.push_back(std::make_shared<DiskCacheProvider>(
+                fc.cache, fc.custom_origin.value_or(FileCache::getCommonOrigin()), boundary_alignment));
+        }
     }
 
     if (!source_reader)
@@ -260,7 +286,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
             .max_tail_for_drain = settings.reader_executor.max_tail_for_drain,
             .long_connection_limit = long_connection_limit,
             /// Null unless a random-object-key encrypted disk allowed it (see DiskEncrypted::prepareRead).
-            .encryption_header_cache = encryption_header_cache});
+            .encryption_header_cache = encryption_header_cache,
+            .cache_chain = std::move(cache_chain)});
 
     /// Feed the decryption layers (if any): the executor owns decryption internally and serves
     /// plaintext, so it replaces the legacy `ReadBufferFromEncryptedFile` wrapping. `initDecryption`
