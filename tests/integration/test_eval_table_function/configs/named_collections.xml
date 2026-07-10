@@ -4,5 +4,9 @@
             <addresses_expr>remote</addresses_expr>
             <table>unused</table>
         </remote_eval>
+        <remote_eval_scalar>
+            <addresses_expr>remote</addresses_expr>
+            <table>one</table>
+        </remote_eval_scalar>
     </named_collections>
 </clickhouse>

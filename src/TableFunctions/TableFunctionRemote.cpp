@@ -13,6 +13,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/Macros.h>
@@ -65,7 +66,9 @@ bool isDatabaseOverrideWithTableFunctionValue(const ASTPtr & argument)
         return false;
 
     const auto * value_function = function_args_expr->children[1]->as<ASTFunction>();
-    return value_function && TableFunctionFactory::instance().isTableFunctionName(value_function->name);
+    return value_function
+        && TableFunctionFactory::instance().isTableFunctionName(value_function->name)
+        && !UserDefinedSQLFunctionFactory::instance().has(value_function->name);
 }
 
 }

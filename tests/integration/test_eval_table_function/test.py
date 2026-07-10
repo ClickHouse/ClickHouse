@@ -231,6 +231,21 @@ def test_remote_named_collection_eval_database_override_resolves_alias_on_initia
     )
 
 
+def test_remote_named_collection_database_override_preserves_scalar_eval_udf():
+    initiator.query("DROP FUNCTION IF EXISTS eval")
+    initiator.query("CREATE FUNCTION eval AS x -> 'system'")
+
+    try:
+        assert (
+            initiator.query(
+                "SELECT count() FROM remote(remote_eval_scalar, database = eval(1))"
+            )
+            == "1\n"
+        )
+    finally:
+        initiator.query("DROP FUNCTION IF EXISTS eval")
+
+
 def test_remote_sharding_key_preserves_scalar_eval_udf_argument():
     initiator.query("DROP FUNCTION IF EXISTS eval")
     initiator.query("CREATE FUNCTION eval AS x -> x + 1")
