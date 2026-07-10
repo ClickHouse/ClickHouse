@@ -132,7 +132,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 }
 
 
-class SyncKillQuerySource : public ISource
+class SyncKillQuerySource final : public ISource
 {
 public:
     SyncKillQuerySource(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
@@ -293,7 +293,8 @@ BlockIO InterpreterKillQueryQuery::execute()
                         getContext()->getSettingsRef()[Setting::max_parser_depth],
                         getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
-                        command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
+                        command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name,
+                        InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(storage, getContext()));
                     if (!access->isGranted(required_access_rights))
                     {
                         access_denied = true;
@@ -357,7 +358,8 @@ BlockIO InterpreterKillQueryQuery::execute()
                     alter_command.type = ASTAlterCommand::MOVE_PARTITION;
                     alter_command.move_destination_type = DataDestinationType::SHARD;
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
-                        alter_command, table_id.database_name, table_id.table_name);
+                        alter_command, table_id.database_name, table_id.table_name,
+                        InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(storage, getContext()));
                     if (!access->isGranted(required_access_rights))
                     {
                         access_denied = true;
@@ -477,6 +479,7 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
     return required_access;
 }
 
+void registerInterpreterKillQueryQuery(InterpreterFactory & factory);
 void registerInterpreterKillQueryQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

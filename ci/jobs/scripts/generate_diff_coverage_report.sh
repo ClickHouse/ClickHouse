@@ -22,12 +22,17 @@ fi
 IFS=',' read -ra COMMITS <<< "${PREV_30_COMMITS}"
 
 FOUND=0
+FIRST_BASE_COMMIT=""
 for TEST_COMMIT in "${COMMITS[@]}"; do
 COVERAGE_URL="https://clickhouse-builds.s3.amazonaws.com/REFs/master/${TEST_COMMIT}/llvm_coverage/llvm_coverage.info"
 echo "Checking coverage file for commit ${TEST_COMMIT}..."
 if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
 echo "Found coverage file at ${COVERAGE_URL}"
 wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
+FIRST_BASE_COMMIT="${TEST_COMMIT}"
+# Record which commit this baseline came from so line-number remapping
+# in print_newly_covered_code.py can compute git diffs against extras.
+echo "${TEST_COMMIT}" > base_llvm_coverage.sha
 FOUND=1
 break
 fi
@@ -38,14 +43,35 @@ if [ $FOUND -eq 0 ]; then
   exit 1
 fi
 
+# Note: additional older master baselines for cross-validation in the
+# newly-covered analysis are downloaded on demand in llvm_coverage_job.py,
+# only when the newly-covered analysis will actually run (tests-only PR,
+# binary unchanged). Doing it here would fetch ~530 MB per baseline even for
+# PRs where the analysis is suppressed.
+
 export CURRENT_COMMIT
 export BASE_COMMIT
+export FIRST_BASE_COMMIT
 export PR_NUMBER
 export REPO_NAME
 
+# Two separate ranges serve two different purposes:
+#
+# 1. changes.diff (for genhtml --diff-file): anchored at FIRST_BASE_COMMIT so
+#    the diff maps the baseline's line numbers to current. The baseline .info was
+#    produced at FIRST_BASE_COMMIT, so the "before" side of the diff must match.
+#
+# 2. changed_files (for pattern extraction and downstream analysis): anchored at
+#    BASE_COMMIT (the actual PR merge base) so we only see files the PR itself
+#    changed. Using FIRST_BASE_COMMIT here would pull in unrelated master commits
+#    from the gap between FIRST_BASE_COMMIT and BASE_COMMIT — a src/Foo.cpp edit
+#    from that gap would appear in patterns, set _diff_ran=True, and then cause
+#    llvm_coverage_job.py to parse it into _changed_paths, flipping
+#    _binary_unchanged=False and suppressing the newly-covered analysis even
+#    though the PR binary is genuinely unchanged.
 gh api \
   -H "Accept: application/vnd.github.v3.diff" \
-  repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT} \
+  repos/ClickHouse/ClickHouse/compare/${FIRST_BASE_COMMIT}...${CURRENT_COMMIT} \
   > changes.diff
 changed_files=$(gh api \
   repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT} \
@@ -84,6 +110,23 @@ lcov --extract base_llvm_coverage.info "${patterns[@]}" \
   --quiet \
   -o baseline.changed.info
 
+# Extract the same changed-file slice from each extra master baseline that was
+# downloaded by llvm_coverage_job.py for LBC cross-validation. These small
+# files (one per changed C/C++ file, same patterns as baseline.changed.info)
+# are passed to print_uncovered_code.py which intersects them to avoid
+# false-positive LBC alerts caused by lines that only occasionally fire in
+# background/async code.
+for slot in 2 3 4 5 6; do
+  src="base_llvm_coverage_${slot}.info"
+  if [ -f "$src" ] && [ -s "$src" ]; then
+    lcov --extract "$src" "${patterns[@]}" \
+      --ignore-errors inconsistent,corrupt,empty,unsupported,unused \
+      --quiet \
+      -o "baseline_${slot}.changed.info"
+    echo "Extracted changed-file slice from extra baseline #${slot}."
+  fi
+done
+
 current_sf_count=$(grep -c '^SF:' current.changed.info 2>/dev/null || true)
 baseline_sf_count=$(grep -c '^SF:' baseline.changed.info 2>/dev/null || true)
 
@@ -108,7 +151,7 @@ fi
 genhtml \
   --header-title "${HEADER_TITLE}" \
   --title "branch=${BRANCH}, current_commit=${CURRENT_COMMIT}" \
-  --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${BASE_COMMIT}" \
+  --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${FIRST_BASE_COMMIT}" \
   --baseline-file baseline.changed.info \
   --diff-file changes.diff \
   --output-directory llvm_coverage_diff_html_report \

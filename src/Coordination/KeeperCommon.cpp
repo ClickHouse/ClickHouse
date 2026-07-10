@@ -9,7 +9,9 @@
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/CoordinationSettings.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <base/find_symbols.h>
 
 namespace DB
 {
@@ -25,12 +27,27 @@ bool isLocalDisk(const IDisk & disk)
     return dynamic_cast<const DiskLocal *>(&disk) != nullptr;
 }
 
+uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path)
+{
+    std::filesystem::path path(snapshot_path);
+    std::string filename = path.stem();
+    std::vector<std::string_view> name_parts;
+    splitInto<'_', '.'>(name_parts, filename);
+    return parse<uint64_t>(name_parts[1]);
+}
+
+std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path)
+{
+    const uint64_t up_to_log_idx = getLogIdxFromSnapshotPath(snapshot_path);
+    return fmt::format("snapshot_{}.bin{}", up_to_log_idx, snapshot_path.ends_with(".zstd") ? ".zstd" : "");
+}
+
 void moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,
     DiskPtr disk_to,
     const std::string & path_to,
-    std::function<void()> before_file_remove_op,
+    std::function<bool()> before_file_remove_op,
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context)
 {
@@ -96,8 +113,11 @@ void moveFileBetweenDisks(
     if (!run_with_retries([&] { disk_to->removeFileIfExists(tmp_file_name); }, "removing temporary file"))
         return;
 
-    if (before_file_remove_op)
-        before_file_remove_op();
+    if (before_file_remove_op && !before_file_remove_op())
+    {
+        LOG_DEBUG(logger, "Move of {} to disk {} was rejected by the caller, keeping the source file", path_from, disk_to->getName());
+        return;
+    }
 
     if (!run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk"))
         return;

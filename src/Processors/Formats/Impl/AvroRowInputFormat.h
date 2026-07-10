@@ -26,6 +26,12 @@ namespace ErrorCodes
 
 class Block;
 
+/// Maximum nesting depth for Avro schemas. Passed to the Avro library to
+/// prevent stack overflow on deeply nested schemas (e.g. crafted inputs with
+/// thousands of nested arrays/records). Real-world schemas rarely exceed 10-20
+/// levels, so 256 is more than enough.
+static constexpr size_t MAX_AVRO_SCHEMA_DEPTH = 256;
+
 class ConfluentSchemaRegistry;
 class AvroInputStreamReadBufferAdapter : public avro::InputStream
 {
@@ -70,7 +76,7 @@ private:
         enum Type {Noop, Deserialize, Skip, Record, Union, Nested};
         Type type;
         /// Deserialize
-        int target_column_idx;
+        int target_column_idx{};
         DeserializeFn deserialize_fn;
         /// Skip
         SkipFn skip_fn;
@@ -210,16 +216,20 @@ private:
     FormatSettings format_settings;
 };
 
-class AvroSchemaReader : public ISchemaReader
+class AvroSchemaReader final : public ISchemaReader
 {
 public:
     AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
 
-    static DataTypePtr avroNodeToDataType(avro::NodePtr node);
+    /// If `allow_nullable_tuple_type` is false, a union [null, record] is converted to a plain
+    /// Tuple instead of Nullable(Tuple). Schema inference passes
+    /// schema_inference_allow_nullable_tuple_type here, because otherwise it would return a type
+    /// that CREATE TABLE rejects.
+    static DataTypePtr avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type = true);
 private:
-    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names);
+    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type);
 
     bool confluent;
     const FormatSettings format_settings;

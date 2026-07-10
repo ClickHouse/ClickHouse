@@ -1,0 +1,47 @@
+---
+alias: []
+description: 'RowBinaryWithDefaults 포맷 문서'
+input_format: true
+keywords: ['RowBinaryWithDefaults']
+output_format: false
+slug: /interfaces/formats/RowBinaryWithDefaults
+title: 'RowBinaryWithDefaults'
+doc_type: '참고'
+---
+
+import RowBinaryFormatSettings from '/snippets/ko/common-row-binary-format-settings.mdx';
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✗  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+[`RowBinary`](/ko/reference/formats/RowBinary/RowBinary) 포맷과 비슷하지만, 각 컬럼 앞에 기본값을 사용해야 하는지 나타내는 바이트가 하나 더 있습니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+예시:
+
+```sql title="Query"
+SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
+```
+
+```response title="Response"
+┌──x─┬─y─┐
+│ 42 │ 1 │
+└────┴───┘
+```
+
+* 컬럼 `x`에는 기본값을 사용해야 함을 나타내는 1바이트 `01`만 있으며, 이 바이트 뒤에는 추가 데이터가 없습니다.
+* 컬럼 `y`의 데이터는 해당 컬럼에 실제 값이 있음을 나타내는 바이트 `00`으로 시작하며, 이후의 데이터 `01000000`에서 값을 읽어야 합니다.
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>
+
+<RowBinaryFormatSettings />

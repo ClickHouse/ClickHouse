@@ -1,0 +1,76 @@
+---
+sidebarTitle: 'SAML SSO の削除'
+slug: /cloud/security/saml-removal
+title: 'SAML SSO の削除'
+description: 'ClickHouse Cloud で SAML SSO を削除する方法'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'シングルサインオン', 'IdP']
+---
+
+ID プロバイダーの変更などの理由で、組織から SAML インテグレーションを削除する必要が生じる場合があります。SAML ユーザーは、他の種類のユーザーとは別個の ID として扱われます。別の認証方法に切り替えるには、以下の手順に従ってください。
+
+<Warning>
+  この操作は元に戻せません。SAML インテグレーションを削除すると、SAML ユーザーは無効になり、復元できなくなります。組織へのアクセスを維持できるよう、以下の手順に注意して従ってください。
+</Warning>
+
+<div id="before-you-begin">
+  ## 始める前に
+</div>
+
+組織には、SAML を削除した後にユーザーを組織へ再招待できるよう、別の認証方法を持つ管理ユーザーが 1 人必要です。これらの手順を実行するには、Admin 権限を持つ ClickHouse Cloud ユーザーが必要です。
+
+<Steps>
+  <Step>
+    ### 招待を有効にする
+
+    [ClickHouse Cloud](https://console.clickhouse.cloud) にログインし、件名を `Enable invitations for SAML organization` としてサポートチケットを送信します。これは、SAML 以外の方法でユーザーを追加できるようにするための依頼です。
+  </Step>
+
+  <Step>
+    ### 再招待するユーザーを確認する
+
+    左下の組織名をクリックし、`Users and Roles` を選択します。各ユーザーの `Provider` カラムを確認します。`Signed in with SSO` と表示されているユーザーは、SAML を削除した後に組織へ再招待する必要があります。
+
+    SAML が削除された後にアカウントへアクセスするには、新しい招待を承諾する必要があることを、ユーザーに必ず伝えてください。
+  </Step>
+</Steps>
+
+<div id="add-non-saml-users">
+  ## 組織に非 SAML ユーザーを追加する
+</div>
+
+<Steps>
+  <Step>
+    ### ユーザーを招待する
+
+    左下にある組織名をクリックし、`Users and Roles` を選択します。[Invite users](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users) の手順に従ってください。
+  </Step>
+
+  <Step>
+    ### ユーザーが招待を承諾する
+
+    ユーザーは、招待を承諾する前に、SAML 接続から完全にログアウトしておく必要があります。Google または Microsoft のソーシャルログインで招待を承諾する場合は、`Continue with Google` または `Continue with Microsoft` ボタンをクリックしてください。メールアドレスとパスワードを使用するユーザーは、https://console.clickhouse.cloud/?with=email にアクセスしてログインし、招待を承諾してください。
+
+    <Note>
+      SAML 設定に基づく自動リダイレクトを確実に避けるには、招待承諾用のリンクをコピーし、別のブラウザーまたはプライベートブラウジング / シークレットモードのセッションに貼り付けて、そこで招待を承諾するのが最も確実です。
+    </Note>
+  </Step>
+
+  <Step>
+    ### クエリとダッシュボードを保存する
+
+    ユーザーは新しい ID でサインインした後、いったんログアウトし、SAML アカウントで再度ログインして、保存済みのクエリやダッシュボードを新しい ID と共有する必要があります。最後に、新しい ID でコピーを保存してこの手順を完了してください。
+  </Step>
+</Steps>
+
+<div id="remove-saml">
+  ## SAML の削除
+</div>
+
+以下の項目が完了していることを慎重に確認してください。
+
+* 組織内に、Admin ロールが割り当てられた非 SAML ログインのユーザーが少なくとも 1 人いる
+* 必要なすべてのユーザーが、別の認証方法で再招待されている
+* 保存済みのすべてのクエリとダッシュボードが、非 SAML ユーザーに移行されている
+
+これらの項目が完了している場合は、組織設定タブに移動し、`Enable SAML single sign-on` 設定を切り替えます。すると警告が表示されます。`Disable` をクリックします。SAML ユーザーを削除するには、Users and roles タブに移動します。

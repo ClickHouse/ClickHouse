@@ -147,7 +147,7 @@ void TTLDeleteFilterTransform::extractTimestamps(const IColumn * ttl_column, siz
         /// Same inner-type dispatch as ITTLAlgorithm::getTimestampByIndex,
         /// but only executed once for the constant value.
         const auto & inner = col_const->getDataColumn();
-        Int64 value;
+        Int64 value = 0;
         if (typeid_cast<const ColumnUInt16 *>(&inner))
             value = date_lut.fromDayNum(DayNum(col_const->getValue<UInt16>()));
         else if (typeid_cast<const ColumnUInt32 *>(&inner))

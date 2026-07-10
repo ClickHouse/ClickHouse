@@ -91,12 +91,14 @@ def _parse_info(path: str) -> dict:
                 continue
             elif line.startswith("DA:"):
                 parts = line[3:].split(",", 2)
-                ln, cnt = int(parts[0]), int(parts[1])
+                # Use float() first: lcov may emit scientific notation (e.g. 3.69e+19)
+                # when merging many .info files and counts overflow.
+                ln, cnt = int(parts[0]), int(float(parts[1]))
                 data[cur_rel]["lines"][ln] = data[cur_rel]["lines"].get(ln, 0) + cnt
             elif line.startswith("FNDA:"):
                 rest = line[5:]
                 cnt_str, name = rest.split(",", 1)
-                data[cur_rel]["fns"][name] = data[cur_rel]["fns"].get(name, 0) + int(cnt_str)
+                data[cur_rel]["fns"][name] = data[cur_rel]["fns"].get(name, 0) + int(float(cnt_str))
             elif line == "end_of_record":
                 cur = cur_rel = None
     return data
@@ -176,7 +178,7 @@ def _remap_line(old_line: int, hunks: list) -> int | None:
     Returns None only for pure deletions with no replacement (new_count == 0).
 
     For lines that were replaced/commented-out (new_count > 0), returns an
-    approximate new line position so that LBC analysis can still report them.
+    approximate new line position so the line can still be found in the current file.
     This is important for the common case of "commenting out tests": the test
     code appears as '-' lines in the diff, so without this approximation the
     coverage loss would be silently ignored.
@@ -275,7 +277,7 @@ if __name__ == "__main__":
                 # DA:<line>,<count>[,<checksum>]
                 parts = line[3:].split(",", 2)
                 ln = int(parts[0])
-                cnt = int(parts[1])
+                cnt = int(float(parts[1]))
 
                 # check if ln is in any changed range (ranges are small; linear scan OK)
                 in_changed = any(a <= ln <= b for a, b in active_ranges)
@@ -293,16 +295,43 @@ if __name__ == "__main__":
                 else:
                     uncovered.append((active_rel, ln))
 
-    CONTEXT = 2  # lines before/after
+    CONTEXT = 2  # lines before/after each uncovered block
+    # If two uncovered lines are at most MERGE_GAP apart, fold them into a
+    # single block instead of printing two adjacent blocks whose CONTEXT
+    # windows would touch or overlap.  Picked so that nearby uncovered lines
+    # in the same function (e.g. lines 2013, 2018, 2022 of a 10-line body)
+    # render as one contiguous excerpt with the unaffected lines shown as
+    # plain context.
+    MERGE_GAP = 2 * CONTEXT + 2
     MAX_PRINT = 200  # max uncovered lines to print total
 
+    def _merge_blocks(sorted_lines: list[int]) -> list[tuple[int, int]]:
+        """Merge a sorted list of line numbers into (start, end) ranges.
+
+        Two adjacent line numbers are folded into the same range if their gap
+        is at most MERGE_GAP.  Merged ranges may contain lines that are not in
+        the input list — callers must use the original set to decide which
+        lines to mark with `>>` when rendering.
+        """
+        ranges: list[tuple[int, int]] = []
+        start = prev = sorted_lines[0]
+        for ln in sorted_lines[1:]:
+            if ln - prev <= MERGE_GAP:
+                prev = ln
+            else:
+                ranges.append((start, prev))
+                start = prev = ln
+        ranges.append((start, prev))
+        return ranges
+
+    print("Changed-lines coverage:")
     if total == 0:
         msg = "N/A (no coverable changed lines)"
-        print(f"PR changed-lines coverage: {msg}")
+        print(f"  PR changed C/C++ lines covered by tests: {msg}")
     else:
         pct = 100.0 * covered / total
         msg = f"{pct:.2f}% ({covered}/{total})"
-        print(msg)
+        print(f"  PR changed C/C++ lines covered by tests: {msg}")
 
     if uncovered:
         print("\nUncovered changed code (with context):\n")
@@ -324,138 +353,28 @@ if __name__ == "__main__":
                 print(f"  [source file not found: {abs_path}]")
                 continue
 
-            # sort + deduplicate
-            file_lines = sorted(set(by_file[rel]))
+            uncovered_set = set(by_file[rel])
+            blocks = _merge_blocks(sorted(uncovered_set))
 
-            # merge contiguous lines into blocks
-            blocks = []
-            start = prev = file_lines[0]
-
-            for ln in file_lines[1:]:
-                if ln == prev + 1:
-                    prev = ln
-                else:
-                    blocks.append((start, prev))
-                    start = prev = ln
-            blocks.append((start, prev))
-
-            # print blocks
             for block_start, block_end in blocks:
                 start_line = max(1, block_start - CONTEXT)
                 end_line = min(len(lines), block_end + CONTEXT)
 
                 print(f"\n--- uncovered block {block_start}-{block_end} ---")
 
+                # `>>` marks only the lines actually reported as uncovered; lines
+                # folded into the block by MERGE_GAP are shown as plain context.
                 for i in range(start_line, end_line + 1):
-                    prefix = ">>" if block_start <= i <= block_end else "  "
+                    prefix = ">>" if i in uncovered_set else "  "
                     code = lines[i - 1].rstrip("\n")
                     print(f"{prefix} {i:6d} | {code}")
     else:
         print("No uncovered changed lines found.")
 
-    # --- Lost Baseline Coverage (LBC) ---
-    # Detect lines/functions that were covered in the master baseline but are no longer
-    # covered in the current PR build.  This catches regressions introduced by test
-    # modifications that silently drop existing coverage.
-    #
-    # Line numbers in baseline.changed.info may differ from current.changed.info
-    # because the PR itself edited those files.  We remap them through the unified
-    # diff in pure Python (lcov --diff was removed in lcov 2.x).
-    BASELINE_INFO = f"{temp_dir}/baseline.changed.info"
-
-    lbc_lines: list[tuple[str, int]] = []     # (relpath, lineno)
-    lbc_fns: list[tuple[str, str]] = []       # (relpath, fn_name)
-
-    if os.path.exists(BASELINE_INFO) and os.path.getsize(BASELINE_INFO) > 0:
-        diff_hunks = _parse_diff_hunks(DIFF)
-        base_data = _parse_info(BASELINE_INFO)
-        curr_data = _parse_info(INFO)
-
-        _empty: dict = {"lines": {}, "fns": {}}
-        for rel in sorted(base_data):
-            b = base_data[rel]
-            # Use empty coverage when the SF is absent from current entirely
-            # (e.g. a test file was commented out and produced zero coverage).
-            c = curr_data.get(rel, _empty)
-            hunks = diff_hunks.get(rel, [])
-
-            for old_ln, bcnt in b["lines"].items():
-                if bcnt == 0:
-                    continue
-                new_ln = _remap_line(old_ln, hunks)
-                if new_ln is None:
-                    continue  # line was deleted by this PR — expected
-                # Only report if the current build actually has a DA entry for
-                # new_ln (count == 0 means coverable but not hit).  A missing
-                # entry means the line is not coverable (blank line, comment,
-                # preprocessor directive) — often caused by imprecise line
-                # remapping landing on such a line.
-                curr_cnt = c["lines"].get(new_ln)
-                if curr_cnt is not None and curr_cnt == 0 and not _is_noise(rel, new_ln):
-                    lbc_lines.append((rel, new_ln))
-
-            for fn, bcnt in b["fns"].items():
-                if bcnt > 0 and c["fns"].get(fn, 0) == 0:
-                    lbc_fns.append((rel, fn))
-
-    if lbc_lines:
-        print(f"\n=== Lost Baseline Coverage: {len(lbc_lines)} lines ===\n")
-
-        by_file: dict[str, list[int]] = defaultdict(list)
-        for rel, ln in lbc_lines[:MAX_PRINT]:
-            by_file[rel].append(ln)
-
-        for rel in sorted(by_file.keys()):
-            lines = _load_source(rel)
-
-            print("=" * 80)
-            print(rel)
-            print("=" * 80)
-
-            if not lines:
-                abs_path = os.path.join(repo_root, rel)
-                print(f"  [source file not found: {abs_path}]")
-                continue
-
-            file_lines = sorted(set(by_file[rel]))
-            blocks = []
-            start = prev = file_lines[0]
-            for ln in file_lines[1:]:
-                if ln == prev + 1:
-                    prev = ln
-                else:
-                    blocks.append((start, prev))
-                    start = prev = ln
-            blocks.append((start, prev))
-
-            for block_start, block_end in blocks:
-                start_line = max(1, block_start - CONTEXT)
-                end_line = min(len(lines), block_end + CONTEXT)
-                print(f"\n--- lost coverage block {block_start}-{block_end} ---")
-                for i in range(start_line, end_line + 1):
-                    prefix = ">>" if block_start <= i <= block_end else "  "
-                    code = lines[i - 1].rstrip("\n")
-                    print(f"{prefix} {i:6d} | {code}")
+    if total == 0:
+        full_msg = "Changed C/C++ lines covered: 0/0 (nothing coverable)"
     else:
-        print("No lost baseline coverage found.")
-
-    if lbc_fns:
-        print(f"\n=== Lost Baseline Coverage: {len(lbc_fns)} functions ===\n")
-        for rel, fn in lbc_fns[:MAX_PRINT]:
-            print(f"  {rel}: {fn}")
-
-    lbc_count = len(lbc_lines)
-    lbc_fn_count = len(lbc_fns)
-
-    parts = [msg]
-    if lbc_count > 0 or lbc_fn_count > 0:
-        lbc_details = []
-        if lbc_count > 0:
-            lbc_details.append(f"{lbc_count} line(s)")
-        if lbc_fn_count > 0:
-            lbc_details.append(f"{lbc_fn_count} function(s)")
-        parts.append(f"lost baseline coverage: {', '.join(lbc_details)}")
-    full_msg = " | ".join(parts)
+        full_msg = f"Changed C/C++ lines covered: {covered}/{total} ({pct:.2f}%)"
 
     r = Result.create_from(
         name="Print Uncovered Code",
@@ -467,6 +386,4 @@ if __name__ == "__main__":
     r.ext["changed_lines_total"] = total
     r.ext["changed_lines_covered"] = covered
     r.ext["changed_lines_cov"] = pct if total > 0 else 0.0
-    r.ext["lbc_lines"] = lbc_count
-    r.ext["lbc_fns"] = lbc_fn_count
     r.dump()

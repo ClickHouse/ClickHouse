@@ -6,6 +6,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/TransactionLog.h>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -14,7 +15,7 @@ namespace DB
 namespace
 {
 
-class FunctionTransactionID : public FunctionConstantBase<FunctionTransactionID, Tuple, DataTypeNothing>
+class FunctionTransactionID final : public FunctionConstantBase<FunctionTransactionID, Tuple, DataTypeNothing>
 {
 public:
     static constexpr auto name = "transactionID";
@@ -34,7 +35,7 @@ public:
     explicit FunctionTransactionID(ContextPtr context) : FunctionConstantBase(getValue(context->getCurrentTransaction()), context->isDistributed()) {}
 };
 
-class FunctionTransactionLatestSnapshot : public FunctionConstantBase<FunctionTransactionLatestSnapshot, UInt64, DataTypeUInt64>
+class FunctionTransactionLatestSnapshot final : public FunctionConstantBase<FunctionTransactionLatestSnapshot, UInt64, DataTypeUInt64>
 {
     static UInt64 getLatestSnapshot(ContextPtr context)
     {
@@ -47,7 +48,7 @@ public:
     explicit FunctionTransactionLatestSnapshot(ContextPtr context) : FunctionConstantBase(getLatestSnapshot(context), context->isDistributed()) {}
 };
 
-class FunctionTransactionOldestSnapshot : public FunctionConstantBase<FunctionTransactionOldestSnapshot, UInt64, DataTypeUInt64>
+class FunctionTransactionOldestSnapshot final : public FunctionConstantBase<FunctionTransactionOldestSnapshot, UInt64, DataTypeUInt64>
 {
     static UInt64 getOldestSnapshot(ContextPtr context)
     {

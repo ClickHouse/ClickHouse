@@ -43,11 +43,11 @@ TableStateSnapshot TableStateSnapshot::deserialize(ReadBuffer & in, const int da
         readStringBinary(state.metadata_file_path, in);
         readVarInt(state.metadata_version, in);
         readVarInt(state.schema_id, in);
-        char snapshot_has_value;
+        char snapshot_has_value = 0;
         readChar(snapshot_has_value, in);
         if (snapshot_has_value != 0)
         {
-            Int64 snapshot_value;
+            Int64 snapshot_value = 0;
             readVarInt(snapshot_value, in);
             state.snapshot_id = snapshot_value;
         }

@@ -1,0 +1,349 @@
+---
+description: 'Descripción general del sistema de integración continua de ClickHouse'
+sidebarTitle: 'Integración continua (CI)'
+slug: /development/continuous-integration
+title: 'Integración continua (CI)'
+doc_type: 'reference'
+---
+
+Cuando envías un pull request, el sistema de [integración continua (CI)](/es/resources/develop-contribute/contribute/tests#test-automation) de ClickHouse ejecuta algunas comprobaciones automatizadas sobre tu código.
+Esto ocurre después de que un responsable del repositorio (alguien del equipo de ClickHouse) haya revisado tu código y haya añadido la etiqueta `can be tested` a tu pull request.
+Los resultados de las comprobaciones aparecen en la página del pull request de GitHub, como se describe en la [documentación sobre comprobaciones de GitHub](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-status-checks).
+Si una comprobación falla, puede que tengas que corregirla.
+Esta página ofrece una descripción general de las comprobaciones con las que te puedes encontrar y de lo que puedes hacer para corregirlas.
+
+Si parece que el fallo de la comprobación no está relacionado con tus cambios, puede tratarse de un fallo transitorio o de un problema de infraestructura.
+Haz push de un commit vacío al pull request para reiniciar las comprobaciones de CI:
+
+```shell
+git commit --allow-empty
+git push
+```
+
+Si no estás seguro de qué hacer, pide ayuda a un responsable del proyecto.
+
+<div id="merge-with-master">
+  ## Fusionar con master
+</div>
+
+Verifica que la PR pueda fusionarse con master.
+Si no es así, fallará con el mensaje `Cannot fetch mergecommit`.
+Para corregir esta comprobación, resuelve el conflicto como se describe en la [documentación de GitHub](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/resolving-a-merge-conflict-on-github), o fusiona la rama `master` en la rama de tu pull request usando git.
+
+<div id="docs-check">
+  ## Comprobación de la documentación
+</div>
+
+Intenta compilar el sitio web de documentación de ClickHouse.
+Puede fallar si has cambiado algo en la documentación.
+La causa más probable es que algún enlace interno de la documentación sea incorrecto.
+Ve al informe de la comprobación y busca mensajes `ERROR` y `WARNING`.
+
+<div id="description-check">
+  ## Comprobación de la descripción
+</div>
+
+Comprueba que la descripción de tu pull request se ajuste a la plantilla [PULL&#95;REQUEST&#95;TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
+Tienes que especificar una categoría del changelog para tu cambio (por ejemplo, Corrección de errores) y escribir un mensaje claro para el usuario que describa el cambio para [CHANGELOG.md](/es/resources/changelogs/oss/2026)
+
+<div id="docker-image">
+  ## Imagen de Docker
+</div>
+
+Compila las imágenes de Docker del servidor de ClickHouse y de Keeper para verificar que se compilan correctamente.
+
+<div id="official-docker-library-tests">
+  ### Pruebas oficiales de la biblioteca de Docker
+</div>
+
+Ejecuta las pruebas de la [biblioteca oficial de Docker](https://github.com/docker-library/official-images/tree/master/test#alternate-config-files) para verificar que la imagen de Docker `clickhouse/clickhouse-server` funcione correctamente.
+
+Para añadir nuevas pruebas, crea un directorio `ci/jobs/scripts/docker_server/tests/$test_name` y el script `run.sh` allí.
+
+Puedes encontrar más detalles sobre las pruebas en la [documentación de los scripts de jobs de CI](https://github.com/ClickHouse/ClickHouse/tree/master/ci/jobs/scripts/docker_server).
+
+<div id="marker-check">
+  ## Comprobación de marcador
+</div>
+
+Esta comprobación significa que el sistema de CI ha comenzado a procesar el pull request.
+Cuando tiene el estado &#39;pending&#39;, significa que aún no se han iniciado todas las comprobaciones.
+Una vez iniciadas todas las comprobaciones, el estado cambia a &#39;success&#39;.
+
+<div id="style-check">
+  ## Comprobación de estilo
+</div>
+
+Realiza varias comprobaciones de estilo en la base de código. Cada una de las subcomprobaciones que se indican a continuación corresponde a un `testname` en [`ci/jobs/check_style.py`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/check_style.py) y puede ejecutarse individualmente con `--test <name>` (véase más abajo).
+
+<div id="cpp">
+  ##### cpp
+</div>
+
+Comprobaciones del estilo de C++ basadas en expresiones regulares mediante [`check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh). Si falla, corrige los problemas de estilo según la [guía de estilo de código](/es/resources/develop-contribute/contribute/style).
+
+<div id="whitespace-check">
+  ##### whitespace_check
+</div>
+
+Marca los espacios dobles después de las comas en C++ que no forman parte de la alineación de columnas.
+
+<div id="catch-all">
+  ##### catch_all
+</div>
+
+Prohíbe `catch (...)` fuera de los destructores, `main` y los puntos de entrada del fuzzer, donde no es seguro ignorar una excepción desconocida.
+
+<div id="yamllint">
+  ##### yamllint
+</div>
+
+Comprueba los archivos YAML de flujo de trabajo en `.github/` con `.yamllint`.
+
+<div id="xmllint">
+  ##### xmllint
+</div>
+
+Valida los archivos XML en `tests/` y `programs/`.
+
+<div id="functional-tests-check">
+  ##### functional_tests_check
+</div>
+
+Verifica las pruebas sin estado: las consultas que filtran por `event_date` deben usar `>= yesterday()` en lugar de `today()` (para evitar comportamientos inestables alrededor de la medianoche), y los nombres de los archivos de prueba no deben contener `fail`.
+
+<div id="test-numbers-check">
+  ##### test_numbers_check
+</div>
+
+Detecta grandes huecos en la numeración de las pruebas sin estado (`tests/queries/0_stateless/<NNNNN>_*`).
+
+<div id="symlinks">
+  ##### enlaces simbólicos
+</div>
+
+Detecta enlaces simbólicos rotos en el repositorio.
+
+<div id="various">
+  ##### varios
+</div>
+
+Comprobaciones varias del repositorio mediante [`various_checks.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/various_checks.sh): las consultas sobre `system.query_log` / `system.parts` / etc. deben filtrar por `currentDatabase`, las rutas de ZooKeeper de `Replicated*MergeTree` deben incluir un prefijo específico para cada prueba, los directorios de pruebas de integración deben tener `__init__.py`, no debe haber BOM UTF, los archivos fuente o de datos no deben tener bits de ejecución, no debe haber tags `:latest` en imágenes de Docker Compose de terceros, entre otras comprobaciones.
+
+<div id="running-style-check-locally">
+  ### Ejecutar localmente el job de comprobación de estilo
+</div>
+
+El job completo de *Style Check* puede ejecutarse localmente en un contenedor Docker con:
+
+```sh
+python -m ci.praktika run "Style check"
+```
+
+Para ejecutar una comprobación específica (p. ej., la comprobación *cpp*):
+
+```sh
+python -m ci.praktika run "Style check" --test cpp
+```
+
+Estos comandos descargan la imagen de Docker `clickhouse/style-test` y ejecutan el job en un entorno contenerizado.
+No se requieren dependencias aparte de Python 3 y Docker.
+
+<div id="running-stateless-tests">
+  ## Ejecución de pruebas sin estado
+</div>
+
+Una instalación local de ClickHouse con la configuración predeterminada puede funcionar para algunos casos de prueba concretos, pero no puede ejecutar correctamente todas las consultas de prueba. En CI, cada job instala una configuración específica de ClickHouse (por ejemplo, almacenamiento S3 o réplicas paralelas), lo que puede ser engorroso de reproducir manualmente. Para evitarlo, puedes reproducir cualquier job de CI en local usando la misma orquestación que en CI, sin necesidad de configuración manual.
+
+<div id="ci-prerequisites">
+  #### Requisitos previos
+</div>
+
+* Python 3 (solo la biblioteca estándar)
+* Docker
+
+Instala Docker en Ubuntu si es necesario y vuelve a iniciar sesión:
+
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker "$USER"
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "ipv6": true,
+  "ip6tables": true
+}
+EOF
+sudo systemctl restart docker
+```
+
+<div id="run-ci-job-locally">
+  #### Ejecutar un job de CI localmente
+</div>
+
+Elige el nombre de cualquier job de un informe de CI y ejecútalo localmente:
+
+```bash
+python -m ci.praktika run "<JOB_NAME>"
+```
+
+* Pon siempre entre comillas el nombre del job exactamente como aparece en el informe de CI (puede contener espacios y comas), p. ej.: `"Stateless tests (amd_debug, parallel)"`. Esto aplica la misma configuración de ClickHouse y ejecuta las mismas pruebas que en CI.
+* La arquitectura y el tipo de compilación del nombre del job (p. ej., `amd_debug`) son etiquetas específicas de CI. Al ejecutarlo localmente, no tienen ningún efecto: el job usará el binario que proporciones, en la arquitectura en la que lo estés ejecutando. El nombre del job solo determina la configuración de ClickHouse y el conjunto de pruebas (salvo que se sobrescriba con `--test`).
+* En CI, las pruebas funcionales se dividen en lotes para aprovechar mejor los recursos. Por ejemplo, `"Stateless tests (amd_debug, parallel)"` y `"Stateless tests (amd_debug, sequential)"` cubren conjuntamente todo el alcance: las pruebas seguras para ejecutarse en paralelo se ejecutan de forma concurrente, y el resto se ejecuta de forma secuencial. Esta división reduce el tiempo total de CI al maximizar el paralelismo siempre que sea posible. Para reproducir localmente todo el alcance de las pruebas, ejecuta ambos lotes.
+* También hay un job de CI `"Fast test"` que ejecuta un conjunto limitado de pruebas funcionales para verificar la funcionalidad básica de ClickHouse: usa una compilación sin todos los módulos opcionales y es la forma más rápida de detectar regresiones. Puedes ejecutarlo localmente de la misma manera. Coloca tu binario de ClickHouse en una de las rutas de búsqueda predeterminadas (`./ci/tmp/clickhouse`, `./build/programs/clickhouse`, o `./clickhouse`); de lo contrario, el job intentará compilar ClickHouse primero:
+  ```bash
+  python -m ci.praktika run "Fast test"
+  ```
+
+<div id="run-specific-tests-within-ci-job">
+  #### Ejecutar pruebas específicas dentro de un job de CI
+</div>
+
+Con `--test`, el job prepara la misma configuración de ClickHouse que se usa en CI, pero ejecuta solo las pruebas seleccionadas:
+
+```bash
+python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
+  --test 00001_select1
+```
+
+* Puedes pasar varios nombres de pruebas:
+  ```bash
+  python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
+    --test 00001_select1 00002_log_and_exception_messages_formatting
+  ```
+* Consejo: Si te sirve cualquier configuración de ClickHouse y solo necesitas ejecutar pruebas específicas, usa el alias `functional` en lugar del nombre completo del job:
+  ```bash
+  python -m ci.praktika run functional --test 00001_select1
+  ```
+
+<div id="additional-customization-options">
+  #### Opciones adicionales de personalización
+</div>
+
+* `--path PATH` — ruta personalizada al binario de ClickHouse. De forma predeterminada, el ejecutor busca en este orden: `./ci/tmp/clickhouse`, `./build/programs/clickhouse`, `./clickhouse`.
+* `--count N` — repite cada prueba N veces.
+* `--workers N` — reemplaza el cálculo automático del número de workers en paralelo en función de la capacidad de la máquina.
+
+<div id="build-check">
+  ## Comprobación de compilación
+</div>
+
+Compila ClickHouse en distintas configuraciones para usarlo en los pasos siguientes.
+
+<div id="running-builds-locally">
+  ### Ejecutar compilaciones en local
+</div>
+
+La compilación puede ejecutarse localmente en un entorno similar al de CI mediante:
+
+```bash
+python -m ci.praktika run "<BUILD_JOB_NAME>"
+```
+
+No se requieren más dependencias que Python 3 y Docker.
+
+<div id="available-build-jobs">
+  #### Jobs de compilación disponibles
+</div>
+
+Los nombres de los jobs de compilación son exactamente los que aparecen en el informe de CI:
+
+**Compilaciones AMD64:**
+
+* `Build (amd_debug)` - Compilación de depuración con símbolos
+* `Build (amd_release)` - Compilación optimizada de release
+* `Build (amd_asan)` - Compilación con Address Sanitizer
+* `Build (amd_tsan)` - Compilación con Thread Sanitizer
+* `Build (amd_msan)` - Compilación con Memory Sanitizer
+* `Build (amd_ubsan)` - Compilación con Undefined Behavior Sanitizer
+* `Build (amd_binary)` - Compilación rápida de release sin Thin LTO
+* `Build (amd_compat)` - Compilación de compatibilidad para sistemas más antiguos
+* `Build (amd_musl)` - Compilación con musl libc
+* `Build (amd_darwin)` - Compilación para macOS
+* `Build (amd_freebsd)` - Compilación para FreeBSD
+
+**Compilaciones ARM64:**
+
+* `Build (arm_release)` - Compilación optimizada de release para ARM64
+* `Build (arm_asan)` - Compilación con Address Sanitizer para ARM64
+* `Build (arm_coverage)` - Compilación para ARM64 con instrumentación de cobertura
+* `Build (arm_binary)` - Compilación rápida de release para ARM64 sin Thin LTO
+* `Build (arm_darwin)` - Compilación para macOS ARM64
+* `Build (arm_v80compat)` - Compilación de compatibilidad para ARMv8.0
+
+**Otras arquitecturas:**
+
+* `Build (ppc64le)` - PowerPC de 64 bits Little Endian
+* `Build (riscv64)` - RISC-V de 64 bits
+* `Build (s390x)` - IBM System/390 de 64 bits
+* `Build (loongarch64)` - LoongArch de 64 bits
+
+Si el job se completa correctamente, los resultados de la compilación estarán disponibles en el directorio `<repo_root>/ci/tmp/build`.
+
+**Nota:** En las compilaciones que no pertenecen a la categoría &quot;Otras arquitecturas&quot; (que usan compilación cruzada), la arquitectura de la máquina local debe coincidir con el tipo de compilación para generar la compilación solicitada por `BUILD_JOB_NAME`.
+
+<div id="example-run-local">
+  #### Ejemplo
+</div>
+
+Para ejecutar una compilación local en modo depuración:
+
+```bash
+python -m ci.praktika run "Build (amd_debug)"
+```
+
+Si el método anterior no le funciona, use las opciones de cmake del registro de compilación y siga el [proceso general de compilación](/es/resources/develop-contribute/build/build).
+
+<div id="functional-stateless-tests">
+  ## Pruebas funcionales sin estado
+</div>
+
+Ejecuta [pruebas funcionales sin estado](/es/resources/develop-contribute/contribute/tests#functional-tests) para binarios de ClickHouse compilados con varias configuraciones: release, debug, con sanitizers, etc.
+Consulta el informe para ver qué pruebas fallan y, a continuación, reproduce el fallo localmente como se describe [aquí](/es/resources/develop-contribute/contribute/tests#functional-tests).
+Ten en cuenta que debes usar la configuración de compilación correcta para reproducirlo: una prueba puede fallar con AddressSanitizer, pero pasar en Debug.
+Descarga el binario desde la [página de comprobaciones de compilación de CI](/es/get-started/setup/self-managed/advanced) o compílalo localmente.
+
+<div id="integration-tests">
+  ## Pruebas de integración
+</div>
+
+Ejecuta las [pruebas de integración](/es/resources/develop-contribute/contribute/tests#integration-tests).
+
+<div id="bugfix-validate-check">
+  ## Comprobación de validación de correcciones de errores
+</div>
+
+Comprueba que haya una prueba nueva (funcional o de integración) o alguna prueba modificada que falle con el binario compilado en la rama master.
+Esta comprobación se activa cuando la pull request tiene la etiqueta &quot;pr-bugfix&quot;.
+
+<div id="stress-test">
+  ## Prueba de estrés
+</div>
+
+Ejecuta pruebas funcionales sin estado de forma concurrente desde varios clientes para detectar errores de concurrencia. Si falla:
+
+* Primero, corrige todos los demás fallos de las pruebas;
+  * Consulta el informe para encontrar los logs del servidor y revísalos para identificar posibles causas
+    del error.
+
+<div id="compatibility-check">
+  ## Comprobación de compatibilidad
+</div>
+
+Verifica que el binario `clickhouse` funcione en distribuciones con versiones antiguas de libc.
+Si falla, pide ayuda a un mantenedor.
+
+<div id="ast-fuzzer">
+  ## AST fuzzer
+</div>
+
+Ejecuta consultas generadas aleatoriamente para detectar errores del programa.
+Si falla, pide ayuda a un responsable del proyecto.
+
+<div id="performance-tests">
+  ## Pruebas de rendimiento
+</div>
+
+Mide los cambios en el rendimiento de las consultas.
+Esta es la comprobación más larga y tarda algo menos de 6 horas en ejecutarse.
+El informe de pruebas de rendimiento se describe en detalle [aquí](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report).

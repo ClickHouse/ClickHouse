@@ -139,7 +139,7 @@ Chunk ReplicatedDatabaseQueryStatusSource::stopWaitingOfflineHosts()
 
 void ReplicatedDatabaseQueryStatusSource::handleNonZeroStatusCode(const ExecutionStatus & status, const String & host_id)
 {
-    assert(status.code != 0);
+    chassert(status.code != 0);
 
     if (!first_exception && context->getSettingsRef()[Setting::distributed_ddl_output_mode] != DistributedDDLOutputMode::NEVER_THROW)
     {

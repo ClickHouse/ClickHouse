@@ -1,0 +1,120 @@
+---
+sidebarTitle: 'BladePipe'
+keywords: ['clickhouse', 'BladePipe', 'connect', 'integrate', 'cdc', 'etl', 'integración de datos']
+slug: /integrations/bladepipe
+description: 'Transfiere datos a ClickHouse mediante las canalizaciones de datos de BladePipe'
+title: 'Conectar BladePipe a ClickHouse'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<a href="https://www.bladepipe.com/" target="_blank">BladePipe</a> es una herramienta de integración de datos de extremo a extremo en tiempo real, con latencia inferior a un segundo, que facilita un flujo de datos fluido entre plataformas.
+
+ClickHouse es uno de los conectores preconfigurados de BladePipe, lo que permite a los usuarios integrar automáticamente datos de diversas fuentes en ClickHouse. En esta página se muestra paso a paso cómo cargar datos en ClickHouse en tiempo real.
+
+<div id="supported-sources">
+  ## Fuentes compatibles
+</div>
+
+Actualmente, BladePipe admite la integración de datos con ClickHouse desde las siguientes fuentes:
+
+* MySQL/MariaDB/AuroraMySQL
+* Oracle
+* PostgreSQL/AuroraPostgreSQL
+* MongoDB
+* Kafka
+* PolarDB-MySQL
+* OceanBase
+* TiDB
+
+Próximamente se admitirán más fuentes.
+
+<Steps>
+  <Step>
+    ## Descargar y ejecutar BladePipe
+
+    1. Inicia sesión en <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a>.
+
+    2. Sigue las instrucciones de <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">Instalar Worker (Docker)</a> o <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">Instalar Worker (binario)</a> para descargar e instalar un Worker de BladePipe.
+
+    <Note>
+      Como alternativa, puedes descargar y desplegar <a href="https://doc.bladepipe.com/productOP/onPremise/installation/install_all_in_one_binary" target="_blank">BladePipe Enterprise</a>.
+    </Note>
+  </Step>
+
+  <Step>
+    ## Agregar ClickHouse como destino
+
+    <Note>
+      1. BladePipe admite ClickHouse versión `20.12.3.3` o posterior.
+      2. Para usar ClickHouse como destino, asegúrese de que el usuario tenga permisos de SELECT, INSERT y DDL habituales.
+    </Note>
+
+    1. En BladePipe, haga clic en &quot;DataSource&quot; &gt; &quot;Add DataSource&quot;.
+
+    2. Seleccione `ClickHouse` y complete la configuración indicando el host y el puerto de ClickHouse, el nombre de usuario y la contraseña; luego haga clic en &quot;Test Connection&quot;.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp" size="lg" border alt="Agregar ClickHouse como destino" />
+
+    3. Haga clic en &quot;Add DataSource&quot; en la parte inferior para agregar una instancia de ClickHouse.
+  </Step>
+
+  <Step>
+    ## Agregar MySQL como fuente
+
+    En este tutorial, usamos una instancia de MySQL como fuente y explicamos el proceso para cargar datos de MySQL en ClickHouse.
+
+    <Note>
+      Para usar MySQL como fuente, asegúrese de que el usuario tenga los <a href="https://doc.bladepipe.com/dataMigrationAndSync/datasource_func/MySQL/privs_for_mysql" target="_blank">permisos necesarios</a>.
+    </Note>
+
+    1. En BladePipe, haga clic en &quot;DataSource&quot; &gt; &quot;Add DataSource&quot;.
+
+    2. Seleccione `MySQL` y complete la configuración con el host y el puerto de MySQL, el nombre de usuario y la contraseña; luego haga clic en &quot;Test Connection&quot;.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp" size="lg" border alt="Agregar MySQL como fuente" />
+
+    3. Haga clic en &quot;Add DataSource&quot; en la parte inferior y se agregará una instancia de MySQL.
+  </Step>
+
+  <Step>
+    ## Crear un pipeline
+
+    1. En BladePipe, haz clic en &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;.
+
+    2. Selecciona las instancias de MySQL y ClickHouse que has agregado y haz clic en &quot;Test Connection&quot; para comprobar que BladePipe esté conectado a ellas. Luego, selecciona las bases de datos que se van a mover.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp" size="lg" border alt="Seleccionar origen y destino" />
+
+    3. Selecciona &quot;Incremental&quot; en DataJob Type, junto con la opción &quot;Full Data&quot;.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp" size="lg" border alt="Seleccionar tipo de sincronización" />
+
+    4. Selecciona las tablas que se van a replicar.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp" size="lg" border alt="Seleccionar tablas" />
+
+    5. Selecciona las columnas que se van a replicar.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp" size="lg" border alt="Seleccionar columnas" />
+
+    6. Confirma la creación del DataJob y este se ejecutará automáticamente.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob en ejecución" />
+  </Step>
+
+  <Step>
+    ## Verifique los datos
+
+    1. Detenga la escritura de datos en la instancia de MySQL y espere a que ClickHouse complete la fusión de los datos.
+
+    <Note>
+      Como el momento en que ClickHouse realiza la fusión automática es impredecible, puede forzar manualmente una fusión ejecutando el comando `OPTIMIZE TABLE xxx FINAL;`. Tenga en cuenta que es posible que esta fusión manual no siempre se complete correctamente.
+
+      Como alternativa, puede ejecutar el comando `CREATE VIEW xxx_v AS SELECT * FROM xxx FINAL;` para crear una vista y realizar consultas en ella a fin de asegurarse de que los datos se hayan fusionado por completo.
+    </Note>
+
+    2. Cree un <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">DataJob de verificación</a>. Una vez que se complete el DataJob de verificación, revise los resultados para confirmar que los datos de ClickHouse sean los mismos que los de MySQL.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp" size="lg" border alt="Verificar datos" />
+  </Step>
+</Steps>

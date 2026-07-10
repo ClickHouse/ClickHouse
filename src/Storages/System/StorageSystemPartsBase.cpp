@@ -1,6 +1,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Common/escapeForFileName.h>
@@ -87,7 +88,8 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
 MergeTreeData::ProjectionPartsVector
 StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
 {
-    if (data->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->projections.empty())
+    auto metadata_snapshot = data->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    if (metadata_snapshot->projections.empty())
         return {};
 
     using State = MergeTreeData::DataPartState;

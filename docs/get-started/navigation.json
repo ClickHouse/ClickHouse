@@ -1,0 +1,208 @@
+{
+  "item": "Get started",
+  "icon": "/images/icons/icon-get-started.svg",
+  "pages": [
+    {
+      "group": "Get started",
+      "icon": "/images/menu-icon-lightning.svg",
+      "root": "get-started/index",
+      "pages": [
+        {
+          "group": "Introduction",
+          "expandable": true,
+          "expanded": true,
+          "pages": [
+            "get-started/about/intro",
+            "get-started/about/why-clickhouse-is-so-fast",
+            "get-started/about/distinctive-features"
+          ]
+        },
+        {
+          "group": "Use cases",
+          "expanded": true,
+          "root": "get-started/use-cases/overview",
+          "pages": [
+            "get-started/use-cases/real-time-analytics",
+            "get-started/use-cases/observability",
+            "get-started/use-cases/data-warehousing",
+            "get-started/use-cases/agentic-analytics"
+          ]
+        },
+        "get-started/about/deployment-modes",
+        "get-started/quickstarts/home"
+      ]
+    },
+    {
+      "group": "Setup",
+      "icon": "/images/menu-icon-gear.svg",
+      "root": "get-started/setup/install",
+      "expanded": true,
+      "pages": [
+        "get-started/setup/cloud",
+        {
+          "group": "Self-managed",
+          "expanded": true,
+          "root": "get-started/setup/self-managed/overview",
+          "pages": [
+            {
+              "group": "Local development",
+              "pages": [
+                "get-started/setup/self-managed/quick-install",
+                "get-started/setup/self-managed/clickhousectl",
+                "get-started/setup/self-managed/docker",
+                "get-started/setup/self-managed/advanced"
+              ]
+            },
+            {
+              "group": "Production server",
+              "pages": [
+                "get-started/setup/self-managed/debian-ubuntu",
+                "get-started/setup/self-managed/redhat",
+                "get-started/setup/self-managed/nixos",
+                "get-started/setup/self-managed/other-linux"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Sample datasets",
+      "icon": "/images/menu-icon-database.svg",
+      "expanded": true,
+      "root": "get-started/sample-datasets/index",
+      "pages": [
+        "get-started/sample-datasets/playground",
+        {
+          "group": "Benchmarks",
+          "pages": [
+            "get-started/sample-datasets/amplab-benchmark",
+            "get-started/sample-datasets/brown-benchmark",
+            "get-started/sample-datasets/criteo",
+            "get-started/sample-datasets/job",
+            "get-started/sample-datasets/star-schema",
+            "get-started/sample-datasets/tpcds",
+            "get-started/sample-datasets/tpch"
+          ]
+        },
+        {
+          "group": "Vector search & embeddings",
+          "pages": [
+            "get-started/sample-datasets/dbpedia",
+            "get-started/sample-datasets/hacker-news-vector-search",
+            "get-started/sample-datasets/laion",
+            "get-started/sample-datasets/laion5b"
+          ]
+        },
+        {
+          "group": "Web & social analytics",
+          "pages": [
+            "get-started/sample-datasets/amazon-reviews",
+            "get-started/sample-datasets/anon-web-analytics-metrica",
+            "get-started/sample-datasets/github",
+            "get-started/sample-datasets/github-events",
+            "get-started/sample-datasets/hacker-news",
+            "get-started/sample-datasets/stackoverflow",
+            "get-started/sample-datasets/youtube-dislikes"
+          ]
+        },
+        {
+          "group": "Geo & location",
+          "pages": [
+            "get-started/sample-datasets/cell-towers",
+            "get-started/sample-datasets/foursquare-os-places",
+            "get-started/sample-datasets/nyc-taxi"
+          ]
+        },
+        {
+          "group": "Time series & sensors",
+          "pages": [
+            "get-started/sample-datasets/environmental-sensors",
+            "get-started/sample-datasets/noaa",
+            "get-started/sample-datasets/tw-weather",
+            "get-started/sample-datasets/wikistat"
+          ]
+        },
+        {
+          "group": "Public records & open data",
+          "pages": [
+            "get-started/sample-datasets/covid19",
+            "get-started/sample-datasets/menus",
+            "get-started/sample-datasets/nypd-complaint-data",
+            "get-started/sample-datasets/ontime",
+            "get-started/sample-datasets/uk-price-paid"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Migrate",
+      "icon": "/images/caret-double-right.svg",
+      "expanded": true,
+      "root": "get-started/migrate/overview",
+      "pages": [
+        {
+          "group": "PostgreSQL",
+          "root": "get-started/migrate/postgres/index",
+          "pages": [
+            "get-started/migrate/postgres/overview",
+            {
+              "group": "Migration guide",
+              "pages": [
+                "get-started/migrate/postgres/migration-guide/migration-guide-part1",
+                "get-started/migrate/postgres/migration-guide/migration-guide-part2",
+                "get-started/migrate/postgres/migration-guide/migration-guide-part3"
+              ]
+            },
+            "get-started/migrate/postgres/appendix"
+          ]
+        },
+        {
+          "group": "BigQuery",
+          "root": "get-started/migrate/bigquery/index",
+          "pages": [
+            "get-started/migrate/bigquery/overview",
+            "get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
+            "get-started/migrate/bigquery/loading-data"
+          ]
+        },
+        {
+          "group": "Snowflake",
+          "pages": [
+            "get-started/migrate/snowflake/overview",
+            "get-started/migrate/snowflake/migration-guide",
+            "get-started/migrate/snowflake/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "Elasticsearch",
+          "pages": [
+            "get-started/migrate/elastic/overview"
+          ]
+        },
+        {
+          "group": "Redshift",
+          "pages": [
+            "get-started/migrate/redshift/overview",
+            "get-started/migrate/redshift/migration-guide",
+            "get-started/migrate/redshift/sql-translation-reference"
+          ]
+        },
+        {
+          "group": "OSS to Cloud",
+          "pages": [
+            "get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+          ]
+        },
+        {
+          "group": "Other methods",
+          "pages": [
+            "get-started/migrate/other-methods/clickhouse-local-etl",
+            "get-started/migrate/other-methods/etl-tool-to-clickhouse",
+            "get-started/migrate/other-methods/object-storage-to-clickhouse"
+          ]
+        }
+      ]
+    }
+  ]
+}

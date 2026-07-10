@@ -1,0 +1,59 @@
+---
+sidebarTitle: 'Middleware'
+slug: /integrations/middleware
+keywords: ['clickhouse', 'middleware', '可观测性', '集成', '监控']
+description: '将 Middleware 连接到 ClickHouse，以监控并分析 ClickHouse 的指标和日志。'
+title: '连接 Middleware 与 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Middleware](https://middleware.io/) 是一个云端可观测性平台，用于监控基础设施、日志和应用性能。
+
+您可以将 ClickHouse 连接到 Middleware，将数据库遥测数据纳入更广泛的监控工作流中进行采集和可视化。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 一个正在运行的 ClickHouse 服务 (Cloud 或自管理) 
+* 可获取你的 ClickHouse 主机、端口、用户名和密码
+* 一个 Middleware 账户
+
+<div id="connect-clickhouse-in-middleware">
+  ## 在 Middleware 中连接 ClickHouse
+</div>
+
+1. 登录 Middleware 账户。
+2. 前往 **Integrations** 并搜索 **ClickHouse**。
+3. 选择 ClickHouse 集成并输入连接信息：
+   * 主机
+   * 端口
+   * 数据库
+   * 用户名
+   * 密码
+4. 保存该集成并执行连接测试。
+
+<div id="verify-data-collection">
+  ## 验证数据采集
+</div>
+
+设置完成后，请确认您可以在 Middleware 仪表盘中看到 ClickHouse 指标和/或日志。
+
+如果连接验证失败，请确认：
+
+* ClickHouse 允许来自 Middleware 的传入连接
+* SSL/TLS 设置与您的 ClickHouse 端点一致
+* 凭据和数据库权限配置正确
+
+<div id="additional-resources">
+  ## 更多资源
+</div>
+
+* [Middleware 官网](https://middleware.io/)

@@ -33,6 +33,12 @@ For official integrations please see the [integrations page](/integrations).
 </details>
 
 <details>
+<summary>Schema migration tools</summary>
+
+- [clicko](https://github.com/arsura/clicko) - Cluster-aware and Go integration.
+</details>
+
+<details>
 <summary>Message queues</summary>
   
 - [Kafka](https://kafka.apache.org)

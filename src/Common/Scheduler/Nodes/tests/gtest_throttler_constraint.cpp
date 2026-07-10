@@ -3,8 +3,8 @@
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/Nodes/FairPolicy.h>
-#include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 
 using namespace DB;
 
@@ -13,7 +13,7 @@ using ResourceTest = ResourceTestClass;
 TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     t.add<ThrottlerConstraint>("/", "<max_burst>20.0</max_burst><max_speed>10.0</max_speed>");
@@ -43,7 +43,7 @@ TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
 TEST(SchedulerThrottlerConstraint, Unlimited)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     t.add<ThrottlerConstraint>("/", "");
@@ -60,7 +60,7 @@ TEST(SchedulerThrottlerConstraint, Unlimited)
 TEST(SchedulerThrottlerConstraint, Pacing)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     // Zero burst allows you to send one request of any `size` and than throttle for `size/max_speed` seconds.
@@ -80,7 +80,7 @@ TEST(SchedulerThrottlerConstraint, Pacing)
 TEST(SchedulerThrottlerConstraint, BucketFilling)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     t.add<ThrottlerConstraint>("/", "<max_burst>100.0</max_burst><max_speed>10.0</max_speed>");
@@ -114,7 +114,7 @@ TEST(SchedulerThrottlerConstraint, BucketFilling)
 TEST(SchedulerThrottlerConstraint, PeekAndAvgLimits)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     // Burst = 100 token
@@ -142,7 +142,7 @@ TEST(SchedulerThrottlerConstraint, PeekAndAvgLimits)
 TEST(SchedulerThrottlerConstraint, ThrottlerAndFairness)
 {
     ResourceTest t;
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, 0);
 
     t.add<ThrottlerConstraint>("/", "<max_burst>100.0</max_burst><max_speed>10.0</max_speed>");
