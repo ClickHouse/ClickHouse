@@ -1,0 +1,248 @@
+---
+description: 'Документация по движку таблицы MySQL'
+sidebarTitle: 'MySQL'
+slug: /engines/table-engines/integrations/mysql
+title: 'Движок таблицы MySQL'
+doc_type: 'reference'
+---
+
+Движок MySQL позволяет выполнять запросы `SELECT` и `INSERT` к данным, которые хранятся на удалённом сервере MySQL.
+
+<div id="creating-a-table">
+  ## Создание таблицы
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = MySQL({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
+SETTINGS
+    [ connection_pool_size=16, ]
+    [ connection_max_tries=3, ]
+    [ connection_wait_timeout=5, ]
+    [ connection_auto_close=true, ]
+    [ connect_timeout=10, ]
+    [ read_write_timeout=300, ]
+    [ enable_compression=false ]
+;
+```
+
+См. подробное описание запроса [CREATE TABLE](/ru/reference/statements/create/table).
+
+Структура таблицы может отличаться от структуры исходной таблицы MySQL:
+
+* Имена столбцов должны совпадать с именами в исходной таблице MySQL, но можно использовать только часть этих столбцов и в любом порядке.
+* Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [преобразовать](/ru/reference/engines/database-engines/mysql#data_types-support) значения в типы данных ClickHouse.
+* Настройка [external&#95;table&#95;functions&#95;use&#95;nulls](/ru/reference/settings/session-settings#external_table_functions_use_nulls) определяет, как обрабатывать столбцы Nullable. Значение по умолчанию: 1. Если установлено значение 0, функция таблицы не создаёт столбцы типа Nullable и вместо NULL выполняет вставку значений по умолчанию. Это также применимо к значениям NULL внутри массивов.
+
+**Параметры движка**
+
+* `host:port` — адрес сервера MySQL.
+* `database` — имя удалённой базы данных.
+* `table` — имя удалённой таблицы.
+* `user` — пользователь MySQL.
+* `password` — пароль пользователя.
+* `replace_query` — флаг, преобразующий запросы `INSERT INTO` в `REPLACE INTO`. Если `replace_query=1`, запрос заменяется.
+* `on_duplicate_clause` — выражение `ON DUPLICATE KEY on_duplicate_clause`, которое добавляется к запросу `INSERT`.
+  Пример: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, где `on_duplicate_clause` — это `UPDATE c2 = c2 + 1`. См. [документацию MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html), чтобы узнать, какие `on_duplicate_clause` можно использовать с секцией `ON DUPLICATE KEY`.
+  Чтобы указать `on_duplicate_clause`, нужно передать `0` в параметр `replace_query`. Если одновременно передать `replace_query = 1` и `on_duplicate_clause`, ClickHouse сгенерирует исключение.
+
+Аргументы также можно передавать с помощью [именованных коллекций](/ru/concepts/features/configuration/server-config/named-collections). В этом случае `host` и `port` следует указывать отдельно. Этот подход рекомендуется для продакшн-среды.
+
+Простые условия `WHERE`, такие как `=, !=, >, >=, <, <=`, выполняются на сервере MySQL.
+
+Остальные условия и ограничение выборки `LIMIT` выполняются в ClickHouse только после завершения запроса к MySQL.
+
+Поддерживается несколько реплик, которые должны быть перечислены через `|`. Например:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
+
+<div id="usage-example">
+  ## Пример использования
+</div>
+
+Создайте таблицу в MySQL:
+
+```text
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from test;
++------+----------+-----+----------+
+| int_id | int_nullable | float | float_nullable |
++------+----------+-----+----------+
+|      1 |         NULL |     2 |           NULL |
++------+----------+-----+----------+
+1 row in set (0,00 sec)
+```
+
+Создайте таблицу в ClickHouse, используя обычные аргументы:
+
+```sql
+CREATE TABLE mysql_table
+(
+    `float_nullable` Nullable(Float32),
+    `int_id` Int32
+)
+ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
+```
+
+Или с помощью [именованных коллекций](/ru/concepts/features/configuration/server-config/named-collections):
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = 'localhost',
+        port = 3306,
+        database = 'test',
+        user = 'bayonet',
+        password = '123';
+CREATE TABLE mysql_table
+(
+    `float_nullable` Nullable(Float32),
+    `int_id` Int32
+)
+ENGINE = MySQL(creds, table='test')
+```
+
+Получение данных из таблицы MySQL:
+
+```sql
+SELECT * FROM mysql_table
+```
+
+```text
+┌─float_nullable─┬─int_id─┐
+│           ᴺᵁᴸᴸ │      1 │
+└────────────────┴────────┘
+```
+
+<div id="mysql-settings">
+  ## Настройки
+</div>
+
+Настройки по умолчанию не очень эффективны, поскольку при них даже не переиспользуются соединения. Эти настройки позволяют увеличить число запросов, выполняемых сервером в секунду.
+
+<div id="connection-auto-close">
+  ### `connection_auto_close`
+</div>
+
+Позволяет автоматически закрывать соединение после выполнения запроса, то есть отключать его повторное использование.
+
+Возможные значения:
+
+* 1 — автоматическое закрытие соединения разрешено, поэтому его повторное использование отключено
+* 0 — автоматическое закрытие соединения не разрешено, поэтому его повторное использование включено
+
+Значение по умолчанию: `1`.
+
+<div id="connection-max-tries">
+  ### `connection_max_tries`
+</div>
+
+Задаёт число повторных попыток в пуле с failover.
+
+Возможные значения:
+
+* Положительное целое число.
+* 0 — Для пула с failover повторные попытки не выполняются.
+
+Значение по умолчанию: `3`.
+
+<div id="connection-pool-size">
+  ### `connection_pool_size`
+</div>
+
+Размер пула соединений (если все соединения заняты, запрос будет ждать, пока одно из них не освободится).
+
+Возможные значения:
+
+* Положительное целое число.
+
+Значение по умолчанию: `16`.
+
+<div id="connection-wait-timeout">
+  ### `connection_wait_timeout`
+</div>
+
+Тайм-аут (в секундах) ожидания свободного соединения (если уже имеется `connection_pool_size` активных соединений), 0 — не ждать.
+
+Возможные значения:
+
+* Положительное целое число.
+
+Значение по умолчанию: `5`.
+
+<div id="connect-timeout">
+  ### `connect_timeout`
+</div>
+
+Тайм-аут подключения (в секундах).
+
+Возможные значения:
+
+* Положительное целое число.
+
+Значение по умолчанию: `10`.
+
+<div id="read-write-timeout">
+  ### `read_write_timeout`
+</div>
+
+Тайм-аут операций чтения/записи (в секундах).
+
+Возможные значения:
+
+* Положительное целое число.
+
+Значение по умолчанию: `300`.
+
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
+
+Включает сжатие для соединения по протоколу MySQL.
+
+Значение по умолчанию: `false`.
+
+Этот параметр применяется к:
+
+* движку таблицы `MySQL`;
+* движку базы данных `MySQL`;
+* табличной функции `mysql`;
+* именованным коллекциям, используемым в интеграциях MySQL.
+
+Когда этот параметр включен, ClickHouse запрашивает сжатие для соединения.
+
+Пример:
+
+```sql
+CREATE TABLE mysql_engine_compression
+(
+    id UInt32,
+    name String,
+    age UInt32,
+    money UInt32
+)
+ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
+SETTINGS enable_compression = 1;
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [Табличная функция MySQL](/ru/reference/functions/table-functions/mysql)
+* [Использование MySQL в качестве источника данных для словаря](/ru/reference/statements/create/dictionary/sources/mysql)

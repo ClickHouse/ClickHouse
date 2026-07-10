@@ -1,0 +1,52 @@
+---
+position: 1
+slug: /clickhouse-operator/overview
+title: 'ClickHouse Operator'
+keywords: ['kubernetes']
+description: 'Страница обзора ClickHouse Operator — Kubernetes-оператора, который автоматизирует развертывание, настройку и управление кластерами ClickHouse и кластерами ClickHouse Keeper на Kubernetes.'
+doc_type: 'guide'
+sidebarTitle: 'Обзор'
+---
+
+ClickHouse Operator — это Kubernetes-оператор, который автоматизирует развертывание, настройку и управление кластерами ClickHouse и кластерами ClickHouse Keeper на Kubernetes.
+Он обеспечивает декларативное управление кластерами через пользовательские ресурсы, позволяя легко создавать отказоустойчивые развертывания ClickHouse.
+
+Оператор управляет полным жизненным циклом кластеров ClickHouse, включая масштабирование, обновления и управление конфигурацией.
+
+<div id="features">
+  ## Возможности
+</div>
+
+* **Управление кластерами ClickHouse**: Создание кластеров ClickHouse и управление ими
+* **Интеграция с ClickHouse Keeper**: Встроенная поддержка кластеров ClickHouse Keeper для распределённой координации
+* **Подготовка хранилища**: Настраиваемые persistent volume claims с выбором класса хранилища
+* **Высокая доступность**: Отказоустойчивые развертывания для кластеров ClickHouse и Keeper
+* **Безопасность**: Встроенные возможности безопасности, поддержка TLS/SSL для защищённого взаимодействия внутри кластера
+* **Мониторинг**: Интеграция метрик Prometheus для обсервабилити
+
+<div id="installation">
+  ## Установка
+</div>
+
+Выберите подходящий способ установки:
+
+* [Установка с помощью манифестов](/ru/products/kubernetes-operator/install/kubectl) - Установка через kubectl/kustomize
+* [Установка с помощью Helm](/ru/products/kubernetes-operator/install/helm) - Установка с помощью Helm-чартов
+* [Установка с помощью Operator Lifecycle Manager (OLM)](/ru/products/kubernetes-operator/install/olm) - Установка с помощью OLM
+
+<div id="guides">
+  ## Руководства
+</div>
+
+* **[Введение](/ru/products/kubernetes-operator/guides/introduction)** - Общий обзор концепций ClickHouse Operator
+* **[Руководство по настройке](/ru/products/kubernetes-operator/guides/configuration)** - Настройка кластеров ClickHouse и Keeper
+* **[Мониторинг](/ru/products/kubernetes-operator/guides/monitoring)** - Метрики Prometheus и проверки работоспособности оператора
+* **[Масштабирование](/ru/products/kubernetes-operator/guides/scaling)** - Масштабирование реплик, сегментов и кворума Keeper
+* **[Защита с помощью TLS](/ru/products/kubernetes-operator/guides/tls)** - Сквозное шифрование кластеров с cert-manager
+* **[Сетевые политики](/ru/products/kubernetes-operator/guides/network-policies)** - Ограничение входящего трафика к конечным точкам метрик и вебхука оператора
+
+<div id="reference">
+  ## Справочник
+</div>
+
+* **[Справочник по API](/ru/products/kubernetes-operator/reference/api-reference)** - Полная документация по API для пользовательских ресурсов

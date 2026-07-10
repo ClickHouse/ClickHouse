@@ -1,0 +1,32 @@
+---
+title: 'Community and partner integrations'
+slug: /cloud/monitoring/integrations
+description: 'Third-party monitoring integrations and the Billing & Usage API for ClickHouse Cloud'
+keywords: ['cloud', 'monitoring', 'datadog', 'grafana', 'community', 'billing', 'usage api']
+sidebarTitle: 'Integrations'
+doc_type: 'guide'
+---
+
+import CommunityMonitoring from '/snippets/_community_monitoring.mdx';
+
+## Direct Datadog integration {#direct-datadog}
+
+Datadog offers a ClickHouse Monitoring plugin for its agent which queries system tables directly. This integration provides comprehensive database monitoring with cluster awareness through `clusterAllReplicas` functionality.
+
+<Warning>
+**Not recommended for ClickHouse Cloud**
+
+The direct Datadog agent integration that queries system tables isn't recommended for ClickHouse Cloud deployments due to incompatibility with cost-optimizing idle behavior and operational limitations of the cloud proxy layer.
+</Warning>
+
+Instead, use the Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux) and [OpenMetrics integration](https://docs.datadoghq.com/integrations/openmetrics/) to collect metrics from the ClickHouse Cloud Prometheus endpoint. This approach respects service idling behavior and maintains operational separation between monitoring and production workloads. For configuration guidance, see [Datadog's Prometheus and OpenMetrics integration documentation](https://docs.datadoghq.com/integrations/openmetrics/).
+
+For Prometheus endpoint setup details, see the [Prometheus integration page](/products/cloud/features/monitoring/prometheus#integrating-with-datadog).
+
+<CommunityMonitoring/>
+
+## Billing and Usage API {#billing-usage-api}
+
+The Billing & Usage API can be used to programmatically access your Cloud organization's billing and usage records. This is useful for building custom cost monitoring dashboards or integrating billing data into existing financial reporting workflows.
+
+For full API reference, see the [Billing API documentation](/api-reference/organization/get-list-of-available-organizations#tag/Billing).

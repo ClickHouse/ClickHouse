@@ -449,6 +449,20 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 
     plain_file->finalize();
     marks_file->finalize();
+
+    /// Release the data (`data.bin`) and marks (`data.cmrk*`) file descriptors now that everything
+    /// has been flushed and synced. Otherwise the writer keeps these handles open until it is
+    /// destroyed, which happens only after the part's temporary directory has been renamed to its
+    /// final name. Renaming a directory that still has open file descriptors inside fails on
+    /// filesystems backed by Windows (WSL, CIFS/SMB, Docker Desktop bind mounts).
+    /// See https://github.com/ClickHouse/ClickHouse/issues/56288.
+    ///
+    /// Only plain_file and marks_file own the file descriptors. The wrapper buffers
+    /// (plain_hashing, streams_by_codec, marks_*_hashing, marks_compressor) were already finalized in
+    /// fillDataChecksums, and a finalized WriteBuffer never touches its underlying buffer on
+    /// destruction, so releasing the file streams here is safe even though the wrappers outlive them.
+    plain_file = nullptr;
+    marks_file = nullptr;
 }
 
 static void fillIndexGranularityImpl(
@@ -591,7 +605,14 @@ void MergeTreeDataPartWriterCompact::cancel() noexcept
 
     plain_hashing.cancel();
 
-    plain_file->cancel();
+    /// plain_file and marks_file may already be released: finishDataSerialization resets them as
+    /// soon as the data is flushed and synced, before the part is committed. cancel() can still run
+    /// afterwards (e.g. MergeTreeTemporaryPart::cancel from the sink destructor when a quorum INSERT
+    /// finishes the part but the subsequent quorum wait throws), so guard against the null streams.
+    /// The wrapper buffers above were finalized, so their cancel() is a no-op and never touches the
+    /// underlying file. This mirrors the null guards in MergeTreeDataPartWriterOnDisk::cancel.
+    if (plain_file)
+        plain_file->cancel();
 
     if (marks_source_hashing)
         marks_source_hashing->cancel();
@@ -601,7 +622,8 @@ void MergeTreeDataPartWriterCompact::cancel() noexcept
 
     marks_file_hashing->cancel();
 
-    marks_file->cancel();
+    if (marks_file)
+        marks_file->cancel();
 
     Base::cancel();
 }

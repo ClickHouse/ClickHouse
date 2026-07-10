@@ -1,0 +1,147 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/agno
+sidebarTitle: 'Интеграция с Agno'
+title: 'Как создать AI Agent с Agno и MCP-сервером ClickHouse'
+description: 'Узнайте, как создать AI Agent с Agno и MCP-сервером ClickHouse'
+keywords: ['ClickHouse', 'MCP', 'Agno']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+В этом руководстве вы узнаете, как создать AI Agent на базе [Agno](https://github.com/agno-agi/agno), который может взаимодействовать с [Песочницей ClickHouse](https://sql.clickhouse.com/) с помощью [MCP-сервера ClickHouse](https://github.com/ClickHouse/mcp-clickhouse).
+
+<Info>
+  **Пример ноутбука**
+
+  Этот пример доступен в виде ноутбука в [репозитории examples](https://github.com/ClickHouse/examples/blob/main/ai/mcp/agno/agno.ipynb).
+</Info>
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* На вашей системе должен быть установлен Python.
+* На вашей системе должен быть установлен `pip`.
+* Вам понадобится API key Anthropic или API key другого провайдера LLM
+
+Следующие шаги можно выполнить либо в Python REPL, либо с помощью скрипта.
+
+<Steps>
+  <Step>
+    ## Установка библиотек
+
+    Установите библиотеку Agno, выполнив следующие команды:
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q agno
+    pip install -q ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## Настройка учетных данных
+
+    Далее вам потребуется указать API-ключ Anthropic:
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="Response"
+    Enter Anthropic API Key: ········
+    ```
+
+    <Info>
+      **Использование другого провайдера LLM**
+
+      Если у вас нет API-ключа Anthropic и вы хотите использовать другого провайдера LLM,
+      инструкции по настройке учетных данных можно найти в [документации Agno](https://docs.agno.com/concepts/models/introduction)
+    </Info>
+
+    Затем определите учетные данные, необходимые для подключения к Песочнице ClickHouse:
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## Инициализируйте MCP-сервер ClickHouse и агент Agno
+
+    Теперь настройте MCP-сервер ClickHouse так, чтобы он указывал на Песочницу ClickHouse,
+    а затем инициализируйте агент Agno и задайте ему вопрос:
+
+    ```python
+    from agno.agent import Agent
+    from agno.tools.mcp import MCPTools
+    from agno.models.anthropic import Claude
+    ```
+
+    ```python
+    async with MCPTools(command="uv run --with mcp-clickhouse --python 3.13 mcp-clickhouse", env=env, timeout_seconds=60) as mcp_tools:
+        agent = Agent(
+            model=Claude(id="claude-3-5-sonnet-20240620"),
+            markdown=True,
+            tools = [mcp_tools]
+        )
+    await agent.aprint_response("What's the most starred project in 2025?", stream=True)
+    ```
+
+    ```response title="Response"
+    ▰▱▱▱▱▱▱ Thinking...
+    ┏━ Message ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    ┃                                                                                                                 ┃
+    ┃ Какой проект набрал больше всего звёзд в 2025 году?                                                             ┃
+    ┃                                                                                                                 ┃
+    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    ┏━ Tool Calls ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    ┃                                                                                                                 ┃
+    ┃ • list_tables(database=github, like=%)                                                                          ┃
+    ┃ • run_select_query(query=SELECT                                                                                 ┃
+    ┃     repo_name,                                                                                                  ┃
+    ┃     SUM(count) AS stars_2025                                                                                    ┃
+    ┃ FROM github.repo_events_per_day                                                                                 ┃
+    ┃ WHERE event_type = 'WatchEvent'                                                                                 ┃
+    ┃     AND created_at >= '2025-01-01'                                                                              ┃
+    ┃     AND created_at < '2026-01-01'                                                                               ┃
+    ┃ GROUP BY repo_name                                                                                              ┃
+    ┃ ORDER BY stars_2025 DESC                                                                                        ┃
+    ┃ LIMIT 1)                                                                                                        ┃
+    ┃                                                                                                                 ┃
+    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    ┏━ Response (34.9s) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    ┃                                                                                                                 ┃
+    ┃ Чтобы ответить на ваш вопрос о проекте с наибольшим числом звёзд в 2025 году, мне нужно выполнить запрос к     ┃
+    ┃ базе данных ClickHouse. Но сначала необходимо собрать некоторые сведения и убедиться, что мы работаем с         ┃
+    ┃ нужными данными. Сначала проверю доступные базы данных и таблицы. Спасибо за предоставленный список баз         ┃
+    ┃ данных. Вижу, что есть база данных "github" — она, скорее всего, содержит нужную нам информацию.               ┃
+    ┃ Проверим таблицы в этой базе данных. Теперь, когда у нас есть сведения о таблицах в базе данных github,        ┃
+    ┃ можно выполнить запрос к нужным данным и ответить на ваш вопрос о проекте с наибольшим числом звёзд в          ┃
+    ┃ 2025 году. Воспользуемся таблицей repo_events_per_day, которая содержит ежедневное количество событий для       ┃
+    ┃ каждого репозитория, включая события добавления звезды (WatchEvents).                                           ┃
+    ┃                                                                                                                 ┃
+    ┃ Составим запрос для поиска проекта с наибольшим числом звёзд в 2025 году. По результатам запроса могу          ┃
+    ┃ ответить на ваш вопрос о проекте с наибольшим числом звёзд в 2025 году:                                         ┃
+    ┃                                                                                                                 ┃
+    ┃ Проектом с наибольшим числом звёзд в 2025 году стал deepseek-ai/DeepSeek-R1 — за этот год он набрал 84 962 звезды.┃
+    ┃                                                                                                                 ┃
+    ┃ Этот проект, DeepSeek-R1, судя по всему, является репозиторием организации DeepSeek AI, связанным с             ┃
+    ┃ искусственным интеллектом. В 2025 году он вызвал широкий интерес и приобрёл большую популярность в             ┃
+    ┃ сообществе GitHub, набрав больше звёзд, чем любой другой проект за этот год.                                    ┃
+    ┃                                                                                                                 ┃
+    ┃ Стоит отметить, что эти данные основаны на событиях GitHub, зафиксированных в базе данных, и отражают           ┃
+    ┃ звёзды (WatchEvents), накопленные именно в течение 2025 года. Общее число звёзд этого проекта может быть        ┃
+    ┃ выше, если учитывать весь период его существования.                                                             ┃
+    ┃                                                                                                                 ┃
+    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    ```
+  </Step>
+</Steps>

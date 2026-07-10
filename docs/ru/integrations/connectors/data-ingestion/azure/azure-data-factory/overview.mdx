@@ -1,0 +1,29 @@
+---
+sidebarTitle: 'Обзор'
+slug: /integrations/azure-data-factory/overview
+description: 'Перенос данных из Azure в ClickHouse — обзор'
+keywords: ['azure data factory', 'azure', 'microsoft', 'данные']
+title: 'Перенос данных из Azure в ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Microsoft Azure предлагает широкий набор инструментов для хранения, преобразования и анализа
+данных. Однако во многих сценариях ClickHouse обеспечивает значительно более высокую
+производительность при обработке и выполнении низколатентных запросов к огромным наборам данных. Кроме
+того, столбцовое хранение и сжатие в ClickHouse могут существенно снизить
+стоимость запросов к большим объёмам аналитических данных по сравнению с базами данных Azure общего назначения.
+
+В этом разделе документации мы рассмотрим два способа приёма данных из Microsoft Azure
+в ClickHouse:
+
+| Метод                                                                                                                                     | Описание                                                                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [С помощью табличной функции `azureBlobStorage`](/ru/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage) | Предполагает использование [табличной функции `azureBlobStorage` в ClickHouse](/ru/reference/functions/table-functions/azureBlobStorage) для прямой передачи данных из Azure Blob Storage.                                                 |
+| [С помощью HTTP-интерфейса ClickHouse](/ru/integrations/connectors/data-ingestion/azure/azure-data-factory/using-http-interface)             | Использует [HTTP-интерфейс ClickHouse](/ru/concepts/features/interfaces/http) в качестве источника данных в Azure Data Factory, что позволяет копировать данные или использовать их в операциях потоков данных в составе ваших конвейеров. |

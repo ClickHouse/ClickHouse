@@ -1,0 +1,36 @@
+---
+title: 'Интеграции с решениями сообщества и партнеров'
+slug: /cloud/monitoring/integrations
+description: 'Сторонние интеграции для мониторинга и API Billing & Usage в ClickHouse Cloud'
+keywords: ['облако', 'мониторинг', 'datadog', 'grafana', 'сообщество', 'биллинг', 'api использования']
+sidebarTitle: 'Интеграции'
+doc_type: 'guide'
+---
+
+import CommunityMonitoring from '/snippets/ru/_community_monitoring.mdx';
+
+<div id="direct-datadog">
+  ## Прямая интеграция Datadog
+</div>
+
+Datadog предлагает для своего агента плагин ClickHouse Monitoring, который напрямую опрашивает системные таблицы. Эта интеграция обеспечивает комплексный мониторинг базы данных с учетом кластера благодаря функции `clusterAllReplicas`.
+
+<Warning>
+  **Не рекомендуется для ClickHouse Cloud**
+
+  Прямая интеграция с агентом Datadog, которая опрашивает системные таблицы, не рекомендуется для развертываний ClickHouse Cloud из-за несовместимости с режимом простоя, используемым для оптимизации затрат, а также из-за эксплуатационных ограничений слоя облачного прокси.
+</Warning>
+
+Вместо этого используйте Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux) и [интеграцию OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) для сбора метрик с конечной точки Prometheus ClickHouse Cloud. Такой подход учитывает режим простоя сервиса и сохраняет операционное разделение между мониторингом и боевыми рабочими нагрузками. Рекомендации по настройке см. в [документации Datadog по интеграции Prometheus и OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/).
+
+Подробнее о настройке конечной точки Prometheus см. на [странице интеграции Prometheus](/ru/products/cloud/features/monitoring/prometheus#integrating-with-datadog).
+
+<CommunityMonitoring />
+
+<div id="billing-usage-api">
+  ## API биллинга и использования
+</div>
+
+Billing &amp; Usage API позволяет программно получать доступ к данным о биллинге и использовании вашей организации в Cloud. Это полезно при создании собственных панелей мониторинга затрат или интеграции данных о биллинге в существующие процессы финансовой отчетности.
+
+Полное справочное описание API см. в [документации Billing API](/ru/api-reference/organization/get-list-of-available-organizations#tag/Billing).

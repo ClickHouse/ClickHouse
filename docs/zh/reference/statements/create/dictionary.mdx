@@ -1,0 +1,103 @@
+---
+description: '关于创建和配置字典的文档'
+sidebarTitle: '概述'
+slug: /sql-reference/statements/create/dictionary
+title: 'CREATE DICTIONARY'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudSupportedBadge from "/snippets/zh/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+
+字典是一种映射 (`key -> attributes`) ，适合用于各种类型的参考列表。
+ClickHouse 支持用于操作字典的专用函数，这些函数可在查询中使用。与将参考表执行 `JOIN` 相比，使用函数配合字典更简单、更高效。
+
+字典可以通过以下两种方式创建：
+
+* [使用 DDL 查询](#creating-a-dictionary-with-a-ddl-query) (推荐)
+* [使用配置文件](#creating-a-dictionary-with-a-configuration-file)
+
+<div id="creating-a-dictionary-with-a-ddl-query">
+  ## 使用 DDL 查询创建字典
+</div>
+
+<CloudSupportedBadge />
+
+可以使用 DDL 查询创建字典。
+这是推荐的方法，因为通过 DDL 创建的字典具有以下优势：
+
+* 无需在服务器配置文件中添加额外记录。
+* 字典可以像表或视图这类一等实体一样使用。
+* 可以使用熟悉的 `SELECT` 语法直接读取数据，而无需使用字典表函数。请注意，通过 `SELECT` 语句直接访问字典时，cached 字典只会返回已缓存的数据，而非 cached 字典则会返回其存储的全部数据。
+* 可以轻松重命名字典。
+
+<div id="syntax">
+  ### 语法
+</div>
+
+```sql
+CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
+(
+    key1  type1  [DEFAULT | EXPRESSION expr1] [IS_OBJECT_ID],
+    key2  type2  [DEFAULT | EXPRESSION expr2],
+    attr1 type2  [DEFAULT | EXPRESSION expr3] [HIERARCHICAL|INJECTIVE],
+    attr2 type2  [DEFAULT | EXPRESSION expr4] [HIERARCHICAL|INJECTIVE]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME({MIN min_val MAX max_val | max_val})
+SETTINGS(setting_name = setting_value, setting_name = setting_value, ...)
+COMMENT 'Comment'
+```
+
+| 子句                                                                   | 描述                                           |
+| -------------------------------------------------------------------- | -------------------------------------------- |
+| [属性](/zh/reference/statements/create/dictionary/attributes)             | 字典属性的指定方式与表列类似。唯一必需的属性是类型，其他属性都可以设置默认值。      |
+| PRIMARY KEY                                                          | 定义字典查找使用的键列。根据布局，可以将一个或多个属性指定为键。             |
+| [`SOURCE`](/zh/reference/statements/create/dictionary/sources/overview) | 定义字典的数据源 (例如 ClickHouse 表、HTTP、PostgreSQL) 。 |
+| [`LAYOUT`](/zh/reference/statements/create/dictionary/layouts/overview) | 控制字典在内存中的存储方式 (例如 `FLAT`、`HASHED`、`CACHE`) 。 |
+| [`LIFETIME`](/zh/reference/statements/create/dictionary/lifetime)       | 设置字典的刷新时间间隔。                                 |
+| [`ON CLUSTER`](/zh/reference/statements/distributed-ddl)                | 在集群上创建字典。可选。                                 |
+| `SETTINGS`                                                           | 额外的字典设置。可选。                                  |
+| `COMMENT`                                                            | 为字典添加文本注释。可选。                                |
+
+<div id="creating-a-dictionary-with-a-configuration-file">
+  ## 使用配置文件创建字典
+</div>
+
+<CloudNotSupportedBadge />
+
+<Note>
+  ClickHouse Cloud 不支持使用配置文件创建字典。请使用 DDL (见上文) ，并以 `default` 用户身份创建字典。
+</Note>
+
+字典配置文件格式如下：
+
+```xml
+<clickhouse>
+    <comment>可选元素，可包含任意内容。ClickHouse server 会忽略此元素。</comment>
+
+    <!--可选元素。包含替换内容的文件名-->
+    <include_from>/etc/metrika.xml</include_from>
+
+    <dictionary>
+        <!-- 字典配置。-->
+        <!-- 一个配置文件中可以包含任意数量的字典部分。-->
+    </dictionary>
+
+</clickhouse>
+```
+
+你可以在同一文件中配置任意数量的字典。
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* [布局](/zh/reference/statements/create/dictionary/layouts/overview) — 字典在内存中的存储方式
+* [数据源](/zh/reference/statements/create/dictionary/sources/overview) — 连接到数据源
+* [生命周期](/zh/reference/statements/create/dictionary/lifetime) — 自动刷新配置
+* [属性](/zh/reference/statements/create/dictionary/attributes) — 键和属性的配置
+* [嵌入式字典](/zh/reference/statements/create/dictionary/embedded) — 内置的 geobase 字典
+* [system.dictionaries](/zh/reference/system-tables/dictionaries) — 包含字典信息的系统表

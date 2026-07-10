@@ -1,0 +1,35 @@
+---
+title: ClickHouse 23.9 リリース後の取り込み失敗を解決するには？
+description: "`async_inserts` を使用するテーブルで、ClickHouse 23.9 で導入されたより厳密な権限チェックが原因で発生する取り込み失敗を解決する方法を説明します。エラーを解消するには、GRANT を更新してください。"
+date: 2022-11-17
+tags: ['エラーと例外']
+keywords: ['GRANT', '権限エラー']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="resolving-ingest-failures-after-clickhouse-239-release">
+  ## ClickHouse 23.9 リリース後の取り込み失敗の解消
+</div>
+
+これらの権限エラーの根本原因は特定されており、新しいリリースで [`async_inserts`](/ja/concepts/features/operations/insert/asyncinserts) に対する GRANT のチェックがこれまでより厳密になったことにあります。
+
+この問題を解決するには、サービスが正常に動作するよう GRANT を更新する必要があります。不足している GRANT を示すエラーメッセージを確認し、必要な GRANT を手動で追加してください。`async_inserts` を使用するテーブルで追加で必要になる GRANT は、`SELECT` または `dictGet` のいずれかです。
+
+<div id="add-necessary-grants-to-affected-tables-and-dictionaries">
+  ## 対象のテーブルとディクショナリに必要なGRANTを付与する
+</div>
+
+```
+-- SELECT権限を追加する
+GRANT SELECT ON mydb.insertTable TO insert_role WITH GRANT OPTION
+
+-- dictGet権限を追加する
+GRANT dictGet ON mydb.insertDictionary TO insert_role
+```
+
+`GRANT` コマンドの詳細については、[こちらのページ](/ja/reference/statements/grant)を参照してください。
+
+この変更を実行できない場合は、[ClickHouse Support](https://clickhouse.com/support/program) までお問い合わせください。
