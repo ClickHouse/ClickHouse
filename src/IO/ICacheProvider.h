@@ -44,7 +44,8 @@ public:
 
 using ICacheProviderPtr = std::shared_ptr<ICacheProvider>;
 
-/// Ordered cache chain; front = fastest tier probed first, populated first on a miss.
-using CacheChain = std::vector<ICacheProviderPtr>;
+/// Ordered cache chain; front = fastest tier probed first, populated first on a miss. A tiny
+/// setup-time vector (one entry per cache tier), so std::vector is fine here.
+using CacheChain = std::vector<ICacheProviderPtr>; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 }
