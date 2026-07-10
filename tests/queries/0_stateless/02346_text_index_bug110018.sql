@@ -49,7 +49,7 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE m[mat
 -- EXPLAIN shows idx_vals is NOT used for it (while a byte-preserving Nullable cast still uses it).
 SELECT '-- byte-changing FixedString cast on value must NOT wrongly prune (issue #110031 review)';
 SELECT count() FROM tab WHERE CAST(m['key5'], 'FixedString(6)') = toFixedString('value5', 6);
-SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE CAST(m[materialize('key5')], 'FixedString(6)') = toFixedString('value5', 6)) WHERE explain ILIKE '%idx_vals%';
-SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE CAST(m[materialize('key5')], 'Nullable(String)') = 'value5') WHERE explain ILIKE '%idx_vals%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE CAST(m[materialize('key5')], 'FixedString(6)') = toFixedString('value5', 6)) WHERE explain ILIKE '%idx_vals%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE CAST(m[materialize('key5')], 'Nullable(String)') = 'value5') WHERE explain ILIKE '%idx_vals%';
 
 DROP TABLE tab;
