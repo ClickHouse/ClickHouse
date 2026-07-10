@@ -90,6 +90,28 @@ void mergeAggregateStates(
     }
 }
 
+/// The transform folds aggregate states together in place (`func->merge(data[dst], data[src])`).
+/// `ColumnAggregateFunction` state ownership cannot be shared per individual row (only for the
+/// whole column), and right after `merged_columns` is assembled two rows may even alias the same
+/// state pointer, which trips the `place != rhs` assertion in `IAggregateFunction::merge`. Take
+/// unique ownership of every state up front so in-place merges are safe and self-merge is impossible.
+void ensureAggregateStateOwnership(
+    MutableColumns & merged_columns,
+    const ColumnsMask & aggregates_mask)
+{
+    for (size_t col_idx = 0; col_idx < merged_columns.size(); ++col_idx)
+    {
+        if (!aggregates_mask[col_idx])
+            continue;
+
+        auto * agg_col = typeid_cast<ColumnAggregateFunction *>(merged_columns[col_idx].get());
+        if (!agg_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnAggregateFunction");
+
+        agg_col->ensureOwnership();
+    }
+}
+
 UInt64 computeBucketHash(
     const MutableColumns & merged_columns,
     const std::vector<size_t> & non_cluster_key_positions,
@@ -285,6 +307,8 @@ Chunk ClusterMergingTransform::generate1D()
 
     if (total_rows == 0)
         return {};
+
+    ensureAggregateStateOwnership(merged_columns, aggregates_mask);
 
     size_t cluster_key_pos = header.getPositionByName(cluster_key_names[0]);
 
@@ -626,6 +650,8 @@ Chunk ClusterMergingTransform::generate2D()
     if (total_rows == 0)
         return {};
 
+    ensureAggregateStateOwnership(merged_columns, aggregates_mask);
+
     /// The analyzer flattens the tuple `(x, y)` into two scalar aggregation keys upstream.
     size_t x_pos = header.getPositionByName(cluster_key_names[0]);
     size_t y_pos = header.getPositionByName(cluster_key_names[1]);
@@ -876,6 +902,8 @@ Chunk ClusterMergingTransform::generateString()
 
     if (total_rows == 0)
         return {};
+
+    ensureAggregateStateOwnership(merged_columns, aggregates_mask);
 
     size_t cluster_key_pos = header.getPositionByName(cluster_key_names[0]);
     const IColumn & key_col = *merged_columns[cluster_key_pos];
