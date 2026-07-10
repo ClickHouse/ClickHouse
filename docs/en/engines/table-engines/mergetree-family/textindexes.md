@@ -451,7 +451,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAllTokens(col, str)](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | yes | all | yes |
 | [hasAnyTokens(col, arr)](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
-| [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
+| [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` | yes |
 | [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                      | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                          | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [like](/sql-reference/functions/string-search-functions.md/#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
@@ -738,7 +738,7 @@ Function [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhr
 Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
 The search phrase is tokenized using the same tokenizer configured for the index column.
 When the text index uses a postprocessor, the search phrase is normalized before the index lookup as well.
-Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK` tokenizers.
+Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, or `icu` tokenizers.
 
 Example:
 
@@ -1147,7 +1147,7 @@ Within those granules, ClickHouse then verifies exact token adjacency.
 This process is relatively costly and slower than regular text search queries.
 To speed phrase search queries up, please enable position storage in the text index (see `Optional parameters` above).
 
-`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
+`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, and `icu`.
 The given phrase string is tokenized using the index's tokenizer.
 Separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')`, assuming `splitByNonAlpha` is used as tokenizer.
 
