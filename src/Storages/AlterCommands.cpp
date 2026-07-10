@@ -1762,9 +1762,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (all_columns.hasAlias(column_name))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+                /// A codec-only `MODIFY COLUMN x CODEC(...)` does not restate the type, so `command.data_type`
+                /// is null here. Fall back to the existing column type (exactly as `AlterCommand::apply` does),
+                /// otherwise a width-dependent codec such as `Chimp` would be rejected as widthless for a
+                /// column that actually has a determined type.
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
-                    command.data_type,
+                    command.data_type ? command.data_type : all_columns.get(column_name).type,
                     !context->getSettingsRef()[Setting::allow_suspicious_codecs],
                     context->getSettingsRef()[Setting::allow_experimental_codecs]);
             }

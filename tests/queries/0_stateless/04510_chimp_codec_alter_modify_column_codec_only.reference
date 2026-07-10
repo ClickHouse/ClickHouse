@@ -1,0 +1,4 @@
+x	CODEC(Chimp(8))
+y	CODEC(Chimp(4), LZ4)
+x	CODEC(Chimp(8), ZSTD(1))
+1000	499500	499500
