@@ -53,6 +53,22 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
 {
 }
 
+namespace
+{
+
+/// Whether the type is a Decimal or contains a nested Decimal.
+bool typeNestsDecimal(const IDataType & type)
+{
+    if (WhichDataType(type).isDecimal())
+        return true;
+
+    bool nests_decimal = false;
+    type.forEachChild([&](const IDataType & child) { nests_decimal |= WhichDataType(child).isDecimal(); });
+    return nests_decimal;
+}
+
+}
+
 ValuesBlockInputFormat::ValuesBlockInputFormat(
     std::unique_ptr<PeekableReadBuffer> buf_,
     SharedHeader header_,
@@ -65,6 +81,9 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(
         rows_parsed_using_template(num_columns), templates(num_columns), types(header_->getDataTypes()), serializations(header_->getSerializations())
     , block_missing_values(getPort().getHeader().columns())
 {
+    column_nests_decimal.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        column_nests_decimal[i] = typeNestsDecimal(*types[i]);
 }
 
 /// Can be used in fileSegmentationEngine for parallel parsing of Values
@@ -295,6 +314,101 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
 
 bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 {
+    std::optional<bool> read = column_nests_decimal[column_idx]
+        ? tryReadValueStreamingWithExceptions(column, column_idx)
+        : tryReadValueStreaming(column, column_idx);
+
+    if (read)
+        return *read;
+
+    /// We might hit something like ('{\'key1\':1, \'key2\':10}') which is valid, but escaped text
+    /// for Map/Array/Tuple. Try reading it here rather than falling back to the more expensive
+    /// expression parser.
+    if (!buf->eof() && *buf->position() == '\'')
+    {
+        WhichDataType which(removeNullable(removeLowCardinality(types[column_idx])));
+        if (which.isMap() || which.isArray() || which.isTuple())
+        {
+            String string_value;
+            const bool parsed_string = tryReadQuotedStringWithSQLStyle(string_value, *buf)
+                && checkDelimiterAfterValue(column_idx);
+
+            if (parsed_string)
+            {
+                ReadBufferFromString in_buffer(string_value);
+                if (serializations[column_idx]->tryDeserializeWholeText(column, in_buffer, format_settings))
+                    return true;
+            }
+
+            /// Deserialization failed or delimiter not found after the string
+            /// Rollback and let the SQL parser handle it.
+            buf->rollbackToCheckpoint();
+        }
+    }
+
+    /// Switch to SQL parser and don't try to use streaming parser for complex expressions
+    return parseExpression(column, column_idx);
+}
+
+/// The streaming parser that does not create exceptions for values it cannot read.
+/// A failure to read a value here is not an error: it just means that the value is not
+/// a plain literal and has to be processed by the SQL expression parser. Exceptions are
+/// avoided not only because of their cost (collecting a stack trace for each such value
+/// is very slow), but also because every created exception is counted in system.errors
+/// and system.error_log even when it is caught and handled, which produces confusing
+/// error records for perfectly successful queries.
+std::optional<bool> ValuesBlockInputFormat::tryReadValueStreaming(IColumn & column, size_t column_idx)
+{
+    bool read = true;
+    bool parsed = true;
+
+    if (!buf->eof() && (*buf->position() == 'D' || *buf->position() == 'd'))
+    {
+        /// In the streaming parser a value can start with 'D' only if it is the DEFAULT keyword.
+        parsed = checkStringCaseInsensitive("DEFAULT", *buf);
+        if (parsed)
+        {
+            column.insertDefault();
+            read = false;
+        }
+    }
+    else
+    {
+        const auto & type = types[column_idx];
+        const auto & serialization = serializations[column_idx];
+        /// Let Enum conversion functions handle the null value.
+        if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
+        {
+            bool is_null = false;
+            parsed = SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization, is_null);
+            read = !is_null;
+        }
+        else
+        {
+            parsed = serialization->tryDeserializeTextQuoted(column, *buf, format_settings);
+        }
+    }
+
+    if (parsed)
+    {
+        if (checkDelimiterAfterValue(column_idx))
+            return read;
+
+        /// The value was read, but it is not followed by a delimiter: e.g. it is a prefix
+        /// of an expression like `1 + 1`. Remove the read value and let the SQL parser handle it.
+        column.popBack(1);
+    }
+
+    buf->rollbackToCheckpoint();
+    return std::nullopt;
+}
+
+/// The streaming parser for columns that nest a Decimal. It cannot use the non-throwing
+/// deserialization: an overflowing decimal literal must fail the query with ARGUMENT_OUT_OF_BOUND
+/// instead of being passed to the SQL expression parser, which would read it as a Float64 literal
+/// and silently lose precision.
+std::optional<bool> ValuesBlockInputFormat::tryReadValueStreamingWithExceptions(IColumn & column, size_t column_idx)
+{
     bool rollback_on_exception = false;
     try
     {
@@ -330,35 +444,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
             column.popBack(1);
 
         buf->rollbackToCheckpoint();
-
-        /// We might hit something like ('{\'key1\':1, \'key2\':10}') which is valid, but escaped text
-        /// for Map/Array/Tuple. Try reading it here rather than falling back to the more expensive
-        /// expression parser.
-        if (!buf->eof() && *buf->position() == '\'')
-        {
-            WhichDataType which(removeNullable(removeLowCardinality(types[column_idx])));
-            if (which.isMap() || which.isArray() || which.isTuple())
-            {
-                String string_value;
-                const bool parsed_string = tryReadQuotedStringWithSQLStyle(string_value, *buf)
-                    && checkDelimiterAfterValue(column_idx);
-
-                if (parsed_string)
-                {
-                    ReadBufferFromString in_buffer(string_value);
-                    if (serializations[column_idx]->tryDeserializeWholeText(column, in_buffer, format_settings))
-                        return true;
-                }
-
-                /// Deserialization failed or delimiter not found after the string
-                /// Rollback and let the SQL parser handle it.
-                buf->rollbackToCheckpoint();
-            }
-        }
-
-        /// Switch to SQL parser and don't try to use streaming parser for complex expressions
-        /// Note: Throwing exceptions for each expression may be very slow because of stacktraces
-        return parseExpression(column, column_idx);
+        return std::nullopt;
     }
 }
 

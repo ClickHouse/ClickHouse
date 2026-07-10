@@ -65,6 +65,13 @@ private:
 
     bool tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
     ALWAYS_INLINE inline bool tryReadValue(IColumn & column, size_t column_idx);
+
+    /// Streaming parser helpers for tryReadValue. On success they return whether the value was read
+    /// (false means a default value was inserted). On failure they return std::nullopt with the column
+    /// unchanged and the buffer rolled back to the checkpoint at the beginning of the value.
+    std::optional<bool> tryReadValueStreaming(IColumn & column, size_t column_idx);
+    std::optional<bool> tryReadValueStreamingWithExceptions(IColumn & column, size_t column_idx);
+
     bool parseExpression(IColumn & column, size_t column_idx);
 
     ALWAYS_INLINE inline void assertDelimiterAfterValue(size_t column_idx);
@@ -100,6 +107,11 @@ private:
 
     const DataTypes types;
     Serializations serializations;
+
+    /// Whether the column type is a Decimal or contains a nested Decimal. For such columns
+    /// the streaming parser uses the code path with exceptions to distinguish a decimal
+    /// overflow (which must fail the query) from a genuine parse failure.
+    std::vector<UInt8> column_nests_decimal;
 
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;

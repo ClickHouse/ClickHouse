@@ -614,6 +614,12 @@ bool SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(DB::IColu
 bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization)
 {
     bool is_null = false;
+    return tryDeserializeNullAsDefaultOrNestedTextQuoted(nested_column, istr, settings, nested_serialization, is_null);
+}
+
+bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextQuoted(DB::IColumn & nested_column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, const DB::SerializationPtr & nested_serialization, bool & is_null)
+{
+    is_null = false;
     return deserializeTextQuotedImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
 }
 
