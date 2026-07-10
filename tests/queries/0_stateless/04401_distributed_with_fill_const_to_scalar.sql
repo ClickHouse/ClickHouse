@@ -6,6 +6,14 @@
 -- causing "Bad cast from type DB::FunctionNode to DB::ConstantNode".
 -- optimize_const_name_size = 0 replaces ALL constants with __getScalar calls.
 
+-- WITH FILL sort descriptions do not support query plan serialization yet
+-- (serializeSortDescription throws NOT_IMPLEMENTED), and the `distributed plan`
+-- CI configuration enables serialize_query_plan = 1 server-wide, which would send
+-- the serialized plan to the remote shard. The bug this test covers is in the
+-- planner on the initiator (extractWithFillValue), independent of serialization,
+-- so disable serialize_query_plan here to keep the test meaningful in that config.
+SET serialize_query_plan = 0;
+
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;
 
