@@ -1,0 +1,134 @@
+---
+slug: /cloud/manage/postman
+sidebarTitle: '通过 Postman 以编程方式访问 API'
+title: '通过 Postman 以编程方式访问 API'
+description: '本指南将帮助您使用 Postman 测试 ClickHouse Cloud API'
+doc_type: 'guide'
+keywords: ['api', 'postman', 'rest api', 'Cloud 管理', '集成']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本指南将帮助你使用 [Postman](https://www.postman.com/product/what-is-postman/) 测试 ClickHouse Cloud API。
+你可以直接在 Web 浏览器中使用 Postman 应用程序，也可以将其下载到桌面端。
+
+<div id="create-an-account">
+  ### 创建账户
+</div>
+
+* 可在 [https://www.postman.com](https://www.postman.com) 注册免费账户。
+
+<Image img="/images/cloud/manage/postman/postman1.webp" size="md" alt="Postman 网站" border />
+
+<div id="create-a-workspace">
+  ### 创建工作区
+</div>
+
+* 给工作区命名并设置可见性级别。
+
+<Image img="/images/cloud/manage/postman/postman2.webp" size="md" alt="创建工作区" border />
+
+<div id="create-a-collection">
+  ### 创建集合
+</div>
+
+* 在左上角菜单中，点击 &quot;Explore&quot; 下方的 &quot;Import&quot;：
+
+<Image img="/images/cloud/manage/postman/postman3.webp" size="md" alt="Explore > 导入" border />
+
+* 此时会弹出一个模态窗口：
+
+<Image img="/images/cloud/manage/postman/postman4.webp" size="md" alt="API URL 输入项" border />
+
+* 输入 API 地址：&quot;https://api.clickhouse.cloud/v1&quot;，然后按下 &#39;Enter&#39;：
+
+* 点击 &quot;Import&quot; 按钮，选择 &quot;Postman Collection&quot;：
+
+<Image img="/images/cloud/manage/postman/postman6.webp" size="md" alt="集合 > 导入" border />
+
+<div id="interface-with-the-clickhouse-cloud-api-spec">
+  ### 使用 ClickHouse Cloud API 规范
+</div>
+
+* “ClickHouse Cloud 的 API 规范”现在会显示在“Collections” (左侧导航) 中。
+
+<Image img="/images/cloud/manage/postman/postman7.webp" size="md" alt="导入 API" border />
+
+* 点击“ClickHouse Cloud 的 API 规范”，然后在中间面板中选择“Authorization”选项卡：
+
+<Image img="/images/cloud/manage/postman/postman8.webp" size="md" alt="导入完成" border />
+
+<div id="set-authorization">
+  ### 设置授权
+</div>
+
+* 在下拉菜单中选择“Basic Auth”：
+
+<Image img="/images/cloud/manage/postman/postman9.webp" size="md" alt="Basic Auth" border />
+
+* 输入您在设置 ClickHouse Cloud API keys 时收到的用户名和密码：
+
+<Image img="/images/cloud/manage/postman/postman10.webp" size="md" alt="凭据" border />
+
+<div id="enable-variables">
+  ### 启用变量
+</div>
+
+* [变量](https://learning.postman.com/docs/sending-requests/variables/)可用于在 Postman 中存储和重复使用值，从而简化 API 测试。
+
+<div id="set-the-organization-id-and-service-id">
+  #### 设置 Organization ID 和 Service ID
+</div>
+
+* 在“Collection”中，点击中间窗格里的“Variable”选项卡 (Base URL 已在之前导入 API 时设置) ：
+* 在 `baseURL` 下方，点击空白字段“Add new value”，然后填入你的 Organization ID 和 Service ID：
+
+<Image img="/images/cloud/manage/postman/postman11.webp" size="md" alt="Organization ID 和 Service ID" border />
+
+<div id="test-the-clickhouse-cloud-api-functionalities">
+  ## 测试 ClickHouse Cloud API 的各项功能
+</div>
+
+<div id="test-get-list-of-available-organizations">
+  ### 测试“GET 可用组织列表”
+</div>
+
+* 在“ClickHouse Cloud 的 OpenAPI 规范”下，展开 &gt; V1 &gt; organizations 文件夹
+* 点击“GET 可用组织列表”，然后点击右侧蓝色的“Send”按钮：
+
+<Image img="/images/cloud/manage/postman/postman12.webp" size="md" alt="测试获取组织信息" border />
+
+* 返回结果应显示你的组织详细信息，且 `"status": 200`。 (如果你收到 `"status": 400`，但没有任何组织信息，则说明配置不正确。) 
+
+<Image img="/images/cloud/manage/postman/postman13.webp" size="md" alt="状态" border />
+
+<div id="test-get-organizational-details">
+  ### 测试“GET organizational details”
+</div>
+
+* 在 `organizationid` 文件夹下，找到“GET organizational details”：
+* 在中间窗格菜单的 Params 下，需要填写 `organizationid`。
+
+<Image img="/images/cloud/manage/postman/postman14.webp" size="md" alt="测试获取组织详细信息" border />
+
+* 将此值改为花括号中的 `orgid`：`{{orgid}}` (如果你之前已设置过该值，会出现一个包含该值的菜单) ：
+
+<Image img="/images/cloud/manage/postman/postman15.webp" size="md" alt="提交测试" border />
+
+* 点击“Save”按钮后，再点击屏幕右上角蓝色的“Send”按钮。
+
+<Image img="/images/cloud/manage/postman/postman16.webp" size="md" alt="返回值" border />
+
+* 返回结果应包含你的组织详细信息，且 &quot;status&quot;: 200。 (如果返回的是 &quot;status&quot; 400 且没有组织信息，则说明你的配置不正确) 。
+
+<div id="test-get-service-details">
+  ### 测试“GET service details”
+</div>
+
+* 点击“GET service details”
+* 分别将 `organizationid` 和 `serviceid` 的值编辑为 `{{orgid}}` 和 `{{serviceid}}`。
+* 点击“Save”，然后点击右侧蓝色的“Send”按钮。
+
+<Image img="/images/cloud/manage/postman/postman17.webp" size="md" alt="服务列表" border />
+
+* 返回结果应显示你的服务列表及其详细信息，且 `"status": 200`。 (如果你收到 `"status"` 400，且没有任何服务信息，则说明你的配置不正确) 。

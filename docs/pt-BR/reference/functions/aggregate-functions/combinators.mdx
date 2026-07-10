@@ -1,0 +1,343 @@
+---
+description: 'Documentação sobre combinadores de funções de agregação'
+sidebarTitle: 'Combinadores'
+slug: /sql-reference/aggregate-functions/combinators
+title: 'Combinadores de funções de agregação'
+doc_type: 'reference'
+---
+
+O nome de uma função de agregação pode receber um sufixo. Isso altera a forma como a função de agregação opera.
+
+<div id="-if">
+  ## -If
+</div>
+
+O sufixo -If pode ser acrescentado ao nome de qualquer função de agregação. Nesse caso, a função de agregação aceita um argumento extra — uma condição (tipo Uint8). A função de agregação processa apenas as linhas que atendem à condição. Se a condição não for atendida nenhuma vez, ela retorna um valor padrão (geralmente zeros ou strings vazias).
+
+Exemplos: `sumIf(column, cond)`, `countIf(cond)`, `avgIf(x, cond)`, `quantilesTimingIf(level1, level2)(x, cond)`, `argMinIf(arg, val, cond)` e assim por diante.
+
+Com funções de agregação condicionais, você pode calcular agregados para várias condições ao mesmo tempo, sem usar subconsultas nem `JOIN`s. Por exemplo, funções de agregação condicionais podem ser usadas para implementar a funcionalidade de comparação de segmentos.
+
+<div id="-array">
+  ## -Array
+</div>
+
+O sufixo -Array pode ser anexado a qualquer função de agregação. Nesse caso, a função de agregação recebe argumentos do tipo &#39;Array(T)&#39; (arrays) em vez de argumentos do tipo &#39;T&#39;. Se a função de agregação aceitar vários argumentos, eles deverão ser arrays de comprimentos iguais. Ao processar arrays, a função de agregação funciona como a função de agregação original sobre todos os elementos do array.
+
+Exemplo 1: `sumArray(arr)` - Soma todos os elementos de todos os arrays &#39;arr&#39;. Neste exemplo, também poderia ser escrito de forma mais simples: `sum(arraySum(arr))`.
+
+Exemplo 2: `uniqArray(arr)` – Conta o número de elementos únicos em todos os arrays &#39;arr&#39;. Isso também poderia ser feito de uma forma mais simples: `uniq(arrayJoin(arr))`, mas nem sempre é possível adicionar &#39;arrayJoin&#39; a uma consulta.
+
+-If e -Array podem ser combinados. No entanto, &#39;Array&#39; deve vir primeiro e, depois, &#39;If&#39;. Exemplos: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Devido a essa ordem, o argumento &#39;cond&#39; não será um array.
+
+<div id="-map">
+  ## -Map
+</div>
+
+O sufixo -Map pode ser anexado a qualquer função de agregação. Isso cria uma função de agregação que recebe o tipo Map como argumento e agrega separadamente os valores de cada chave do map usando a função de agregação especificada. O resultado também é do tipo Map.
+
+**Exemplo**
+
+```sql
+CREATE TABLE map_map(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO map_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [10, 10, 10]));
+
+SELECT
+    timeslot,
+    sumMap(status),
+    avgMap(status),
+    minMap(status)
+FROM map_map
+GROUP BY timeslot;
+
+┌────────────timeslot─┬─sumMap(status)───────────────────────┬─avgMap(status)───────────────────────┬─minMap(status)───────────────────────┐
+│ 2000-01-01 00:00:00 │ {'a':10,'b':10,'c':20,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │
+│ 2000-01-01 00:01:00 │ {'d':10,'e':10,'f':20,'g':20}        │ {'d':10,'e':10,'f':10,'g':10}        │ {'d':10,'e':10,'f':10,'g':10}        │
+└─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="-simplestate">
+  ## -SimpleState
+</div>
+
+Ao aplicar este combinador, a função de agregação retorna o mesmo valor, mas com um tipo diferente. Trata-se de uma [SimpleAggregateFunction(...)](/pt-BR/reference/data-types/simpleaggregatefunction) que pode ser armazenada em uma tabela para funcionar com tabelas [AggregatingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
+
+**Sintaxe**
+
+```sql
+<aggFunction>SimpleState(x)
+```
+
+**Argumentos**
+
+* `x` — Parâmetros da função de agregação.
+
+**Valores retornados**
+
+O valor de uma função de agregação do tipo `SimpleAggregateFunction(...)`.
+
+**Exemplo**
+
+```sql title="Query"
+WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
+```
+
+```text title="Response"
+┌─toTypeName(c)────────────────────────┬─c─┐
+│ SimpleAggregateFunction(any, UInt64) │ 0 │
+└──────────────────────────────────────┴───┘
+```
+
+<div id="-state">
+  ## -State
+</div>
+
+Se você aplicar este combinador, a função de agregação não retorna o valor resultante (como o número de valores únicos da função [uniq](/pt-BR/reference/functions/aggregate-functions/uniq)), mas um estado intermediário da agregação (para `uniq`, isso é a tabela hash usada para calcular o número de valores únicos). Trata-se de um `AggregateFunction(...)` que pode ser usado em processamento adicional ou armazenado em uma tabela para concluir a agregação depois.
+
+<Note>
+  Observe que -MapState não é invariante para os mesmos dados, pois a ordem dos dados no estado intermediário pode mudar, embora isso não afete a ingestão desses dados.
+</Note>
+
+Para trabalhar com esses estados, use:
+
+* [AggregatingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/aggregatingmergetree) como mecanismo de tabela.
+* A função [finalizeAggregation](/pt-BR/reference/functions/regular-functions/other-functions#finalizeAggregation).
+* A função [runningAccumulate](/pt-BR/reference/functions/regular-functions/other-functions#runningAccumulate).
+* O combinador [-Merge](#-merge).
+* O combinador [-MergeState](#-mergestate).
+
+<div id="-merge">
+  ## -Merge
+</div>
+
+Se você aplicar este combinador, a função de agregação usa o estado intermediário de agregação como argumento, combina os estados para finalizar a agregação e retorna o valor resultante.
+
+<div id="-mergestate">
+  ## -MergeState
+</div>
+
+Mescla os estados intermediários de agregação da mesma forma que o combinador -Merge. No entanto, não retorna o valor resultante, mas sim um estado intermediário de agregação, semelhante ao combinador -State.
+
+<div id="-foreach">
+  ## -ForEach
+</div>
+
+Converte uma função de agregação para tabelas em uma função de agregação para arrays, que agrega os elementos correspondentes dos arrays e retorna um array de resultados. Por exemplo, `sumForEach` para os arrays `[1, 2]`, `[3, 4, 5]` e `[6, 7]` retorna o resultado `[10, 13, 5]` após somar os elementos correspondentes dos arrays.
+
+<div id="-distinct">
+  ## -Distinct
+</div>
+
+Cada combinação exclusiva de argumentos será agregada apenas uma vez. Valores repetidos são ignorados.
+Exemplos: `sum(DISTINCT x)` (ou `sumDistinct(x)`), `groupArray(DISTINCT x)` (ou `groupArrayDistinct(x)`), `corrStable(DISTINCT x, y)` (ou `corrStableDistinct(x, y)`) e assim por diante.
+
+<div id="-ordefault">
+  ## -OrDefault
+</div>
+
+Altera o comportamento de uma função de agregação.
+
+Se uma função de agregação não tiver valores de entrada, com este combinador ela retorna o valor padrão do tipo de dado de retorno. Aplica-se a funções de agregação que podem receber dados de entrada vazios.
+
+`-OrDefault` pode ser usado com outros combinadores.
+
+**Sintaxe**
+
+```sql
+<aggFunction>OrDefault(x)
+```
+
+**Argumentos**
+
+* `x` — Parâmetros da função de agregação.
+
+**Valores retornados**
+
+Retorna o valor padrão do tipo de retorno da função de agregação se não houver nada para agregar.
+
+O tipo depende da função de agregação usada.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT avg(number), avgOrDefault(number) FROM numbers(0)
+```
+
+```text title="Response"
+┌─avg(number)─┬─avgOrDefault(number)─┐
+│         nan │                    0 │
+└─────────────┴──────────────────────┘
+```
+
+Também é possível usar `-OrDefault` com outros combinadores. Isso é útil quando a função de agregação não aceita uma entrada vazia.
+
+```sql title="Query"
+SELECT avgOrDefaultIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+```text title="Response"
+┌─avgOrDefaultIf(x, greater(x, 10))─┐
+│                              0.00 │
+└───────────────────────────────────┘
+```
+
+<div id="-ornull">
+  ## -OrNull
+</div>
+
+Altera o comportamento de uma função agregada.
+
+Esse combinador converte o resultado de uma função agregada para o tipo de dado [Nullable](/pt-BR/reference/data-types/nullable). Se a função agregada não tiver valores para calcular, ela retornará [NULL](/pt-BR/reference/settings/formats#input_format_null_as_default).
+
+`-OrNull` pode ser usado com outros combinadores.
+
+**Sintaxe**
+
+```sql
+<aggFunction>OrNull(x)
+```
+
+**Argumentos**
+
+* `x` — Parâmetros da função de agregação.
+
+**Valores retornados**
+
+* O resultado da função de agregação, convertido para o tipo de dado `Nullable`.
+* `NULL`, se não houver nada para agregar.
+
+Tipo: `Nullable(tipo de retorno da função de agregação)`.
+
+**Exemplo**
+
+Adicione `-orNull` ao final do nome da função de agregação.
+
+```sql title="Query"
+SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
+```
+
+```text title="Response"
+┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
+│              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
+└───────────────────┴───────────────────────────────┘
+```
+
+Além disso, `-OrNull` também pode ser usado com outros combinadores. Isso é útil quando a função de agregação não aceita entrada vazia.
+
+```sql title="Query"
+SELECT avgOrNullIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+```text title="Response"
+┌─avgOrNullIf(x, greater(x, 10))─┐
+│                           ᴺᵁᴸᴸ │
+└────────────────────────────────┘
+```
+
+<div id="-resample">
+  ## -Resample
+</div>
+
+Permite dividir os dados em grupos e, em seguida, agregá-los separadamente em cada grupo. Os grupos são criados ao dividir os valores de uma coluna em intervalos.
+
+```sql
+<aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
+```
+
+**Argumentos**
+
+* `start` — Valor inicial de todo o intervalo necessário para os valores de `resampling_key`.
+* `stop` — Valor final de todo o intervalo necessário para os valores de `resampling_key`. O intervalo completo não inclui o valor `stop` `[start, stop)`.
+* `step` — Passo para separar todo o intervalo em subintervalos. A `aggFunction` é executada em cada um desses subintervalos de forma independente.
+* `resampling_key` — Coluna cujos valores são usados para separar os dados em intervalos.
+* `aggFunction_params` — Parâmetros de `aggFunction`.
+
+**Valores retornados**
+
+* Array de resultados de `aggFunction` para cada subintervalo.
+
+**Exemplo**
+
+Considere a tabela `people` com os seguintes dados:
+
+```text
+┌─name───┬─age─┬─wage─┐
+│ John   │  16 │   10 │
+│ Alice  │  30 │   15 │
+│ Mary   │  35 │    8 │
+│ Evelyn │  48 │ 11.5 │
+│ David  │  62 │  9.9 │
+│ Brian  │  60 │   16 │
+└────────┴─────┴──────┘
+```
+
+Vamos obter os nomes das pessoas cujas idades estão nos intervalos `[30,60)` e `[60,75)`. Como usamos representação inteira para a idade, obtemos idades nos intervalos `[30, 59]` e `[60,74]`.
+
+Para agregar nomes em um Array, usamos a função de agregação [groupArray](/pt-BR/reference/functions/aggregate-functions/groupArray). Ela recebe um argumento. No nosso caso, é a coluna `name`. A função `groupArrayResample` deve usar a coluna `age` para agregar nomes por idade. Para definir os intervalos necessários, passamos os argumentos `30, 75, 30` para a função `groupArrayResample`.
+
+```sql
+SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
+```
+
+```text
+┌─groupArrayResample(30, 75, 30)(name, age)─────┐
+│ [['Alice','Mary','Evelyn'],['David','Brian']] │
+└───────────────────────────────────────────────┘
+```
+
+Considere os resultados.
+
+`John` ficou fora da amostra porque é jovem demais. As outras pessoas foram distribuídas de acordo com os intervalos de idade especificados.
+
+Agora, vamos contar o número total de pessoas e a média salarial delas nos intervalos de idade especificados.
+
+```sql
+SELECT
+    countResample(30, 75, 30)(name, age) AS amount,
+    avgResample(30, 75, 30)(wage, age) AS avg_wage
+FROM people
+```
+
+```text
+┌─amount─┬─avg_wage──────────────────┐
+│ [3,2]  │ [11.5,12.949999809265137] │
+└────────┴───────────────────────────┘
+```
+
+<div id="-argmin">
+  ## -ArgMin
+</div>
+
+O sufixo -ArgMin pode ser anexado ao nome de qualquer função de agregação. Nesse caso, a função de agregação aceita um argumento adicional, que deve ser qualquer expressão comparável. A função de agregação processa apenas as linhas que têm o valor mínimo da expressão extra especificada.
+
+Exemplos: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` e assim por diante.
+
+<div id="-argmax">
+  ## -ArgMax
+</div>
+
+Semelhante ao sufixo -ArgMin, mas processa apenas as linhas com o valor máximo da expressão extra especificada.
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Uso de combinadores de agregação no ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

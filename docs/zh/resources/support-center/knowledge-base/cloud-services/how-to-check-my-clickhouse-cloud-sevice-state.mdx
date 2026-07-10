@@ -1,0 +1,56 @@
+---
+title: 如何检查您的 ClickHouse Cloud 服务状态
+description: 了解如何使用 ClickHouse Cloud API 在不唤醒服务的情况下，检查其处于已停止、空闲还是运行中状态。
+date: 2023-11-16
+tags: ['Cloud 管理']
+keywords: ['Cloud 服务状态']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="how-to-check-your-clickhouse-cloud-service-state">
+  ## 如何检查您的 ClickHouse Cloud 服务状态
+</div>
+
+如何查看我的 ClickHouse Cloud 服务状态？我想确认服务当前是已停止、空闲还是运行中，但又不想在检查时将其唤醒。
+
+<div id="answer">
+  ## 答案
+</div>
+
+[ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 非常适合用来检查云服务的状态。使用 Cloud API 之前，你需要先在服务中创建一个 API 密钥。你可以在 ClickHouse Cloud [clickhouse.cloud](https://console.clickhouse.cloud) 中完成此操作：
+
+* [API 概览](/zh/products/cloud/features/admin-features/api/api-overview)
+* [Swagger](/zh/api-reference/organization/get-list-of-available-organizations)
+
+1. 要检查服务状态，请运行以下命令。请务必将 `Key-ID` 和 `Key-Secret` 替换为你自己的相应信息：
+
+   ```shell
+   curl --user '[Key-ID]:[Key-Secret]' https://api.clickhouse.cloud/v1/organizations/[Org-ID]/services/[Service-ID]
+   ```
+
+   输出内容类似如下：
+
+   ```json
+   result":{"id":"[Service-ID]","name":"[Service-Name]","provider":"aws","region":"us-east-1","state":"**idle**","endpoints":[{"protocol":"nativesecure","host":"[Connect-URL]","port":9440},{"protocol":"https","host":"[Connect-URL]","port":8443}],"tier":"development","idleScaling":true,"idleTimeoutMinutes":15,"ipAccessList":[{"source":"[my-IP]","description":"[my-IP-name]"}],"createdAt":"2023-04-13T23:47:47Z"},"status":200}
+   ```
+
+2. 你可以使用 [JQ 工具](https://jqlang.github.io/jq/) 提取 `state` 键：
+
+   ```shell
+   curl --user '[Key-ID]:[Key-Secret]' https://api.clickhouse.cloud/v1/organizations/[Org-ID]/services/[Service-ID] | jq '.state'
+   ```
+
+   输出内容类似如下：
+
+   ```json
+   **idle**
+   ```
+
+3. 对正在运行的服务执行相同命令时，将输出：
+
+   ```json
+   **running**
+   ```

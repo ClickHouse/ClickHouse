@@ -1,0 +1,75 @@
+---
+sidebarTitle: 'Architecture'
+slug: /cloud/reference/architecture
+title: 'Architecture de ClickHouse Cloud'
+description: 'Cette page décrit l’architecture de ClickHouse Cloud'
+keywords: ['ClickHouse Cloud', 'architecture cloud', 'séparation du stockage et du calcul']
+doc_type: 'référence'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Architecture de Cloud" />
+
+<div id="storage-backed-by-object-store">
+  ## Stockage reposant sur un stockage objet
+</div>
+
+* Stockage quasiment illimité
+* Pas besoin de segmenter manuellement les données
+* Coût de stockage des données nettement inférieur, en particulier pour les données consultées moins fréquemment
+
+<div id="compute">
+  ## Ressources de calcul
+</div>
+
+* Mise à l’échelle et mise en veille automatiques : inutile de dimensionner à l’avance ou de surprovisionner pour les pics d’utilisation
+* Mise en veille automatique et reprise : inutile de laisser des ressources de calcul inutilisées en cours d’exécution lorsque personne ne s’en sert
+* Sécurisé et hautement disponible par défaut
+
+<div id="administration">
+  ## Administration
+</div>
+
+* La configuration, la supervision, les sauvegardes et la facturation sont entièrement prises en charge.
+* Les contrôles des coûts sont activés par défaut et peuvent être ajustés dans la console Cloud.
+
+<div id="service-isolation">
+  ## Isolation du service
+</div>
+
+<div id="network-isolation">
+  ### Isolation réseau
+</div>
+
+Tous les services sont isolés au niveau du réseau.
+
+<div id="compute-isolation">
+  ### Isolation des ressources de calcul
+</div>
+
+Tous les services sont déployés dans des pods distincts au sein de leurs espaces de noms Kubernetes respectifs, avec une isolation au niveau réseau.
+
+<div id="storage-isolation">
+  ### Isolation du stockage
+</div>
+
+Tous les services utilisent un sous-chemin distinct dans un bucket partagé (AWS, GCP) ou un conteneur de stockage partagé (Azure).
+
+Pour AWS, l’accès au stockage est contrôlé via AWS IAM, et chaque IAM role est propre à un service. Pour le service Enterprise, [CMEK](/fr/products/cloud/guides/security/cmek) peut être activé afin d’offrir une isolation avancée des données au repos. CMEK est actuellement pris en charge uniquement pour les services AWS.
+
+Pour GCP et Azure, les services bénéficient d’une isolation du stockage objet (tous les services disposent de leurs propres buckets ou de leur propre conteneur de stockage).
+
+<div id="compute-compute-separation">
+  ## Compute-compute separation
+</div>
+
+[Compute-compute separation](/fr/products/cloud/features/infrastructure/warehouses) vous permet de créer plusieurs groupes de nœuds de calcul, chacun disposant de sa propre URL de service, tout en utilisant le même stockage objet partagé. Cette fonctionnalité permet d’isoler les ressources de calcul selon différents cas d’usage, par exemple en séparant les lectures des écritures, tout en partageant les mêmes données. Elle permet également une utilisation plus efficace des ressources grâce à une mise à l’échelle indépendante des groupes de calcul selon les besoins.
+
+<div id="concurrency-limits">
+  ## Limites de concurrence
+</div>
+
+Il n’existe aucune limite au nombre de requêtes par seconde (QPS) dans votre service ClickHouse Cloud. Il existe toutefois une limite de 1 000 requêtes concurrentes par réplique. Le QPS dépend au final du temps d’exécution moyen de vos requêtes et du nombre de répliques dans votre service.
+
+L’un des principaux avantages de ClickHouse Cloud par rapport à une instance ClickHouse autogérée ou à d’autres bases de données/entrepôts de données est que vous pouvez facilement augmenter la concurrence en [ajoutant plus de répliques (mise à l’échelle horizontale)](/fr/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling).

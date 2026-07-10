@@ -1,0 +1,70 @@
+---
+description: 'La función de tabla loop de ClickHouse se utiliza para devolver los resultados
+  de consultas en un bucle infinito.'
+slug: /sql-reference/table-functions/loop
+title: 'loop'
+doc_type: 'reference'
+---
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+SELECT ... FROM loop(database, table);
+SELECT ... FROM loop(database.table);
+SELECT ... FROM loop(table);
+SELECT ... FROM loop(other_table_function(...));
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+| Argumento                   | Descripción                                                                                                            |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `database`                  | nombre de la base de datos.                                                                                            |
+| `table`                     | nombre de la tabla.                                                                                                    |
+| `other_table_function(...)` | otra función de tabla. Ejemplo: `SELECT * FROM loop(numbers(10));` aquí, `other_table_function(...)` es `numbers(10)`. |
+
+<div id="returned_values">
+  ## Valores devueltos
+</div>
+
+Bucle infinito que devuelve resultados de consultas.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Consultar datos de ClickHouse:
+
+```sql
+SELECT * FROM loop(test_database, test_table);
+SELECT * FROM loop(test_database.test_table);
+SELECT * FROM loop(test_table);
+```
+
+O bien, usando otras funciones de tabla:
+
+```sql
+SELECT * FROM loop(numbers(3)) LIMIT 7;
+   ┌─number─┐
+1. │      0 │
+2. │      1 │
+3. │      2 │
+   └────────┘
+   ┌─number─┐
+4. │      0 │
+5. │      1 │
+6. │      2 │
+   └────────┘
+   ┌─number─┐
+7. │      0 │
+   └────────┘
+```
+
+```sql
+SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
+...
+```

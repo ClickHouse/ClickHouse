@@ -654,6 +654,7 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
 
     auto transform = std::make_shared<LimitsCheckingTransform>(output->getSharedHeader(), limits);
     transform->setQuota(quota_);
+    transform->setNormalizedQueryHash(normalized_query_hash);
     connect(*output, transform->getInputPort());
     output = &transform->getOutputPort();
     processors->emplace_back(std::move(transform));
@@ -821,6 +822,7 @@ std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() c
 
     callback->setProgressCallback(progress_callback);
     callback->setQuota(quota);
+    callback->setNormalizedQueryHash(normalized_query_hash);
     callback->setProcessListElement(process_list_element);
 
     if (!update_profile_events)

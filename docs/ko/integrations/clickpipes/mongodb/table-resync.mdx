@@ -1,0 +1,34 @@
+---
+title: '특정 테이블 resync'
+description: 'MongoDB ClickPipe에서 특정 테이블 resync'
+slug: /integrations/clickpipes/mongodb/table_resync
+sidebarTitle: '테이블 resync'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+파이프의 특정 테이블만 다시 동기화해야 할 때가 있습니다. 예를 들어 MongoDB에서 스키마(schema)가 크게 변경되었거나, ClickHouse에서 데이터를 다시 모델링한 경우가 여기에 해당합니다.
+
+버튼 클릭 한 번으로 개별 테이블을 resync하는 기능은 아직 개발 중이지만, 이 가이드에서는 현재 MongoDB ClickPipe에서 이를 수행하는 방법을 안내합니다.
+
+<div id="removing-table">
+  ### 1. 파이프에서 테이블 제거
+</div>
+
+이 작업은 [테이블 제거 가이드](/ko/integrations/clickpipes/mongodb/remove-table)를 따르면 됩니다.
+
+<div id="truncate-drop-table">
+  ### 2. ClickHouse에서 테이블을 TRUNCATE하거나 삭제합니다
+</div>
+
+이 단계는 다음 단계에서 이 테이블을 다시 추가할 때 데이터 중복을 방지하기 위한 것입니다. ClickHouse Cloud의 **SQL 콘솔** 탭으로 이동해 쿼리를 실행하면 됩니다.
+ClickHouse에 테이블이 이미 존재하고 비어 있지 않은 경우에는 테이블 추가가 차단되도록 검증되어 있으니 유의하십시오.
+
+<div id="add-table-again">
+  ### 3. 테이블을 ClickPipe에 다시 추가하세요
+</div>
+
+[테이블 추가 가이드](/ko/integrations/clickpipes/mongodb/add-table)를 따라 진행하면 됩니다.

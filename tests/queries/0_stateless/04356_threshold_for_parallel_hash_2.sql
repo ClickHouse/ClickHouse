@@ -12,6 +12,9 @@ insert into rhs select * from numbers_mt(1e6);
 set enable_parallel_replicas = 0; -- join optimization (and table size estimation) disabled with parallel replicas
 set enable_analyzer = 1, use_query_condition_cache = 0;
 set query_plan_optimize_join_order_limit = 10; -- CI may inject 0; chooseJoinOrder skipped → estimation does not run
+SET query_plan_optimize_join_order_randomize = 0;
+
+SET use_statistics = 0; -- statistics does not override estimation from cache
 
 set join_algorithm = 'direct,parallel_hash,hash'; -- default
 set parallel_hash_join_threshold = 100001;

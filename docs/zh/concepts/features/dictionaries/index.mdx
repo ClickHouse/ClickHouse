@@ -1,0 +1,371 @@
+---
+slug: /dictionary
+title: 字典
+keywords: ['字典', '字典']
+description: '字典提供了一种用于快速查找的键值数据表示形式。'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse 中的字典提供了一种以内存中的[键值](https://en.wikipedia.org/wiki/Key%E2%80%93value_database)形式表示数据的方式，这些数据可来自各种[内部和外部数据源](/zh/reference/statements/create/dictionary/sources/overview#dictionary-sources)，并针对超低延迟查找查询进行了优化。
+
+字典的用途包括：
+
+* 提升查询性能，尤其是在配合 `JOIN` 使用时
+* 在不拖慢摄取过程的情况下，实时富化摄取的数据
+
+<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse 中字典的使用场景" />
+
+<div id="speeding-up-joins-using-a-dictionary">
+  ## 使用字典加速 JOIN
+</div>
+
+字典可用于加速一种特定类型的 `JOIN`：[`LEFT ANY` 类型](/zh/reference/statements/select/join#supported-types-of-join)。在这种情况下，连接键需要与底层键值存储的键属性相匹配。
+
+<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="将字典与 LEFT ANY JOIN 结合使用" />
+
+如果满足这一条件，ClickHouse 就可以利用字典执行 [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join)。这是 ClickHouse 最快的 JOIN 算法，适用于右侧表所使用的底层[表引擎](/zh/reference/engines/table-engines/index)支持低延迟键值请求的场景。ClickHouse 有三种表引擎具备这一能力：[Join](/zh/reference/engines/table-engines/special/join) (本质上是一个预先计算好的哈希表) 、[EmbeddedRocksDB](/zh/reference/engines/table-engines/integrations/embedded-rocksdb) 和 [Dictionary](/zh/reference/engines/table-engines/special/dictionary)。这里我们将介绍基于字典的方法，不过这三种引擎的实现机制是相同的。
+
+直接 JOIN 算法要求右侧表以字典为底层支撑，这样，待连接的数据就已经以内存中的低延迟键值数据结构形式存在。
+
+<div id="example">
+  ### 示例
+</div>
+
+使用 [Stack Overflow 数据集](/zh/get-started/sample-datasets/stackoverflow)，我们来回答这样一个问题：
+*Hacker News 上关于 SQL 的哪篇帖子最具争议？*
+
+我们将“有争议”定义为帖子获得的赞成票和反对票数量相近。我们计算两者的绝对差值，数值越接近 0，争议就越大。我们假设该帖子至少要有 10 张赞成票和 10 张反对票——没人投票的帖子谈不上有多大争议。
+
+由于数据已经归一化，这个查询目前需要对 `posts` 和 `votes` 表执行 `JOIN`：
+
+```sql
+WITH PostIds AS
+(
+         SELECT Id
+         FROM posts
+         WHERE Title ILIKE '%SQL%'
+)
+SELECT
+    Id,
+    Title,
+    UpVotes,
+    DownVotes,
+    abs(UpVotes - DownVotes) AS Controversial_ratio
+FROM posts
+INNER JOIN
+(
+    SELECT
+         PostId,
+         countIf(VoteTypeId = 2) AS UpVotes,
+         countIf(VoteTypeId = 3) AS DownVotes
+    FROM votes
+    WHERE PostId IN (PostIds)
+    GROUP BY PostId
+    HAVING (UpVotes > 10) AND (DownVotes > 10)
+) AS votes ON posts.Id = votes.PostId
+WHERE Id IN (PostIds)
+ORDER BY Controversial_ratio ASC
+LIMIT 1
+```
+
+```response
+Row 1:
+──────
+Id:                     25372161
+Title:                  How to add exception handling to SqlDataSource.UpdateCommand
+UpVotes:                13
+DownVotes:              13
+Controversial_ratio: 0
+
+1 rows in set. Elapsed: 1.283 sec. Processed 418.44 million rows, 7.23 GB (326.07 million rows/s., 5.63 GB/s.)
+Peak memory usage: 3.18 GiB.
+```
+
+> **在 `JOIN` 右侧使用更小的数据集**：这个查询看起来似乎比实际需要的更冗长，因为外层查询和子查询中都对 `PostId` 进行了过滤。这是一种性能优化，可确保查询响应速度足够快。为了获得最佳性能，务必确保 `JOIN` 的右侧是较小的数据集，而且越小越好。有关优化 JOIN 性能以及了解可用算法的技巧，我们推荐阅读[这一系列博客文章](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)。
+
+虽然这个查询速度很快，但要获得良好性能，仍然依赖于我们谨慎地编写 `JOIN`。理想情况下，我们只需先将 posts 过滤为包含 &quot;SQL&quot; 的记录，然后再查看这部分博客子集的 `UpVote` 和 `DownVote` 计数，以计算相应指标。
+
+<div id="applying-a-dictionary">
+  #### 使用字典
+</div>
+
+为说明这些概念，我们将为投票数据使用一个字典。由于字典通常存储在内存中 ([ssd&#95;cache](/zh/reference/statements/create/dictionary/layouts/ssd-cache) 是个例外) ，你应当注意数据的大小。先确认一下 `votes` 表的大小：
+
+```sql
+SELECT table,
+        formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+        formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+        round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table IN ('votes')
+GROUP BY table
+```
+
+```response
+┌─table───────────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ votes           │ 1.25 GiB        │ 3.79 GiB          │  3.04 │
+└─────────────────┴─────────────────┴───────────────────┴───────┘
+```
+
+数据将在我们的字典中以未压缩形式存储，因此如果要将所有列都存入字典 (我们并不会这么做) ，至少需要 4GB 内存。该字典会复制到整个集群中，因此每个节点都需要预留这么多内存。
+
+> 在下面的示例中，字典的数据源自 ClickHouse 表。虽然这是字典最常见的数据来源，但也支持[多种来源](/zh/reference/statements/create/dictionary/sources/overview#dictionary-sources)，包括文件、http 以及数据库 (如 [Postgres](/zh/reference/statements/create/dictionary/sources/postgresql)) 。正如我们将展示的，字典可以自动刷新，因此非常适合用来确保经常变动的小型数据集可用于直接 JOIN。
+
+我们的字典需要一个用于执行查找的主键。从概念上讲，这与事务型数据库中的主键完全相同，并且应当唯一。上面的查询需要基于连接键 `PostId` 进行查找。相应地，字典中应填充 `votes` 表里每个 `PostId` 的赞成票和反对票总数。下面是获取该字典数据的查询：
+
+```sql
+SELECT PostId,
+   countIf(VoteTypeId = 2) AS UpVotes,
+   countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY PostId
+```
+
+要创建我们的字典，需要使用以下 DDL——请注意，这里用到了上面的查询：
+
+```sql
+CREATE DICTIONARY votes_dict
+(
+  `PostId` UInt64,
+  `UpVotes` UInt32,
+  `DownVotes` UInt32
+)
+PRIMARY KEY PostId
+SOURCE(CLICKHOUSE(QUERY 'SELECT PostId, countIf(VoteTypeId = 2) AS UpVotes, countIf(VoteTypeId = 3) AS DownVotes FROM votes GROUP BY PostId'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+```response
+0 rows in set. Elapsed: 36.063 sec.
+```
+
+> 在自管理 OSS 中，上述命令需要在所有节点上执行。在 ClickHouse Cloud 中，字典会自动复制到所有节点。上述操作是在一台配备 64GB RAM 的 ClickHouse Cloud 节点上执行的，加载耗时 36 秒。
+
+要确认字典占用的内存：
+
+```sql
+SELECT formatReadableSize(bytes_allocated) AS size
+FROM system.dictionaries
+WHERE name = 'votes_dict'
+```
+
+```response
+┌─size─────┐
+│ 4.00 GiB │
+└──────────┘
+```
+
+现在只需使用简单的 `dictGet` 函数，即可获取特定 `PostId` 的赞成票和反对票。下面我们来获取帖子 `11227902` 的值：
+
+```sql
+SELECT dictGet('votes_dict', ('UpVotes', 'DownVotes'), '11227902') AS votes
+```
+
+```response
+┌─votes──────┐
+│ (34999,32) │
+└────────────┘
+```
+
+利用这一点，我们可以在前面的查询中去掉 JOIN：
+
+```sql
+WITH PostIds AS
+(
+        SELECT Id
+        FROM posts
+        WHERE Title ILIKE '%SQL%'
+)
+SELECT Id, Title,
+        dictGet('votes_dict', 'UpVotes', Id) AS UpVotes,
+        dictGet('votes_dict', 'DownVotes', Id) AS DownVotes,
+        abs(UpVotes - DownVotes) AS Controversial_ratio
+FROM posts
+WHERE (Id IN (PostIds)) AND (UpVotes > 10) AND (DownVotes > 10)
+ORDER BY Controversial_ratio ASC
+LIMIT 3
+```
+
+```response
+3 rows in set. Elapsed: 0.551 sec. Processed 119.64 million rows, 3.29 GB (216.96 million rows/s., 5.97 GB/s.)
+Peak memory usage: 552.26 MiB.
+```
+
+这条查询不仅简单得多，而且速度也提升到了两倍以上！如果只将赞成票和反对票总数超过 10 的帖子加载到字典中，并且仅存储预先计算好的争议值，还可以进一步优化。
+
+<div id="query-time-enrichment">
+  ## 查询时富集
+</div>
+
+字典可用于在查询时查找值。这些值既可以在结果中返回，也可以用于聚合。假设我们创建一个字典，将用户 ID 映射到其位置：
+
+```sql
+CREATE DICTIONARY users_dict
+(
+  `Id` Int32,
+  `Location` String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(QUERY 'SELECT Id, Location FROM stackoverflow.users'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+我们可以使用这个字典为 post 结果补充信息：
+
+```sql
+SELECT
+        Id,
+        Title,
+        dictGet('users_dict', 'Location', CAST(OwnerUserId, 'UInt64')) AS location
+FROM posts
+WHERE Title ILIKE '%clickhouse%'
+LIMIT 5
+FORMAT PrettyCompactMonoBlock
+```
+
+```response
+┌───────Id─┬─Title─────────────────────────────────────────────────────────┬─Location──────────────┐
+│ 52296928 │ Comparison between two Strings in ClickHouse                  │ Spain                 │
+│ 52345137 │ How to use a file to migrate data from mysql to a clickhouse? │ 中国江苏省Nanjing Shi   │
+│ 61452077 │ How to change PARTITION in clickhouse                         │ Guangzhou, 广东省中国   │
+│ 55608325 │ Clickhouse select last record without max() on all table      │ Moscow, Russia        │
+│ 55758594 │ ClickHouse create temporary table                             │ Perm', Russia         │
+└──────────┴───────────────────────────────────────────────────────────────┴───────────────────────┘
+
+5 rows in set. Elapsed: 0.033 sec. Processed 4.25 million rows, 82.84 MB (130.62 million rows/s., 2.55 GB/s.)
+Peak memory usage: 249.32 MiB.
+```
+
+与上面的 join 示例类似，我们也可以使用同一个字典，高效确定大多数帖子来自哪里：
+
+```sql
+SELECT
+        dictGet('users_dict', 'Location', CAST(OwnerUserId, 'UInt64')) AS location,
+        count() AS c
+FROM posts
+WHERE location != ''
+GROUP BY location
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─location───────────────┬──────c─┐
+│ India                  │ 787814 │
+│ Germany                │ 685347 │
+│ United States          │ 595818 │
+│ London, United Kingdom │ 538738 │
+│ United Kingdom         │ 537699 │
+└────────────────────────┴────────┘
+
+5 rows in set. Elapsed: 0.763 sec. Processed 59.82 million rows, 239.28 MB (78.40 million rows/s., 313.60 MB/s.)
+Peak memory usage: 248.84 MiB.
+```
+
+<div id="index-time-enrichment">
+  ## 索引时富集
+</div>
+
+在上面的示例中，我们在查询时使用了字典来避免一次 join。字典也可以用于在写入时对行进行富集。如果富集值不会发生变化，并且存在于可用于填充字典的外部数据源中，那么这种方式通常很合适。在这种情况下，在写入时对行进行富集，可以避免查询时对字典进行查找。
+
+假设 Stack Overflow 中用户的 `Location` 永远不会变化 (实际上会变化) ——具体来说，是 `users` 表中的 `Location` 列。假设我们希望按位置对 `posts` 表执行分析查询。该表中包含一个 `UserId`。
+
+字典提供了从用户 id 到位置的映射，底层由 `users` 表提供支持：
+
+```sql
+CREATE DICTIONARY users_dict
+(
+    `Id` UInt64,
+    `Location` String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(QUERY 'SELECT Id, Location FROM users WHERE Id >= 0'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+> 我们排除了 `Id < 0` 的用户，因此可以使用 `Hashed` 字典类型。`Id < 0` 的用户属于系统用户。
+
+为了在 posts 表的写入时利用该字典，我们需要修改 schema：
+
+```sql
+CREATE TABLE posts_with_location
+(
+    `Id` UInt32,
+    `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+     ...
+    `Location` MATERIALIZED dictGet(users_dict, 'Location', OwnerUserId::'UInt64')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+在上面的示例中，`Location` 被声明为 `MATERIALIZED` 列。这意味着该值可以在 `INSERT` 查询中提供，但始终会被计算。
+
+> ClickHouse 也支持 [`DEFAULT` 列](/zh/reference/statements/create/table#default_values) (即可以插入该值；如果未提供，也会自动计算) 。
+
+要填充该表，我们可以像平常一样使用从 S3 执行的 `INSERT INTO SELECT`：
+
+```sql
+INSERT INTO posts_with_location SELECT Id, PostTypeId::UInt8, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 36.830 sec. Processed 238.98 million rows, 2.64 GB (6.49 million rows/s., 71.79 MB/s.)
+```
+
+现在我们可以获取大多数帖子来源地的名称：
+
+```sql
+SELECT Location, count() AS c
+FROM posts_with_location
+WHERE Location != ''
+GROUP BY Location
+ORDER BY c DESC
+LIMIT 4
+```
+
+```response
+┌─Location───────────────┬──────c─┐
+│ India                  │ 787814 │
+│ Germany                │ 685347 │
+│ United States          │ 595818 │
+│ London, United Kingdom │ 538738 │
+└────────────────────────┴────────┘
+
+4 rows in set. Elapsed: 0.142 sec. Processed 59.82 million rows, 1.08 GB (420.73 million rows/s., 7.60 GB/s.)
+Peak memory usage: 666.82 MiB.
+```
+
+<div id="advanced-dictionary-topics">
+  ## 字典高级主题
+</div>
+
+有关字典布局的选择、何时使用字典而非 JOIN，以及如何监控字典使用情况，请参阅 [字典最佳实践](/zh/concepts/features/dictionaries/best-practices)。
+
+<div id="refreshing-dictionaries">
+  ### 刷新字典
+</div>
+
+我们已为该字典指定 `LIFETIME` 为 `MIN 600 MAX 900`。`LIFETIME` 是字典的更新间隔，此处的取值会使字典每隔 600 到 900 秒以随机间隔定期重新加载。之所以需要这种随机间隔，是为了在大量服务器更新时分散字典源上的负载。在更新期间，仍然可以查询字典的旧版本，只有初始加载会阻塞查询。请注意，设置 `(LIFETIME(0))` 会阻止字典更新。
+可以使用 `SYSTEM RELOAD DICTIONARY` 命令强制重新加载字典。
+
+对于 ClickHouse 和 Postgres 等数据库源，你可以设置一个查询，使字典仅在确实发生变化时才更新 (由该查询的响应决定) ，而不是按固定周期更新。更多详细信息请参见[此处](/zh/reference/statements/create/dictionary/lifetime)。
+
+<div id="other-dictionary-types">
+  ### 其他字典类型
+</div>
+
+ClickHouse 还支持 [分层](/zh/reference/statements/create/dictionary/layouts/hierarchical)、[Polygon](/zh/reference/statements/create/dictionary/layouts/polygon) 和[正则表达式](/zh/reference/statements/create/dictionary/layouts/regexp-tree) 字典。
+
+<div id="more-reading">
+  ### 更多阅读
+</div>
+
+* [字典最佳实践](/zh/concepts/features/dictionaries/best-practices) — 布局选择、字典与 JOIN 的比较、监控
+* [使用字典加速查询](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
+* [字典高级配置](/zh/reference/statements/create/dictionary)

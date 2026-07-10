@@ -1,0 +1,167 @@
+---
+sidebarTitle: 'Streamkap을 ClickHouse에 연결하기'
+keywords: ['clickhouse', 'Streamkap', 'CDC', '연결', '통합', 'etl', '데이터 통합', '변경 데이터 캡처']
+slug: /integrations/sttreamkap
+description: 'Airbyte 데이터 파이프라인을 사용해 데이터를 ClickHouse로 스트리밍합니다'
+
+title: 'Streamkap을 ClickHouse에 연결하기'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://www.streamkap.com/'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<a href="https://www.streamkap.com/" target="_blank">Streamkap</a>은 스트리밍 CDC(Change Data Capture)와 스트림 처리를 전문으로 하는 실시간 데이터 통합 플랫폼입니다. Apache Kafka, Apache Flink, Debezium을 사용하는 고처리량의 확장 가능한 스택을 기반으로 구축되었으며, SaaS 또는 BYOC(Bring Your Own Cloud) 배포 방식의 완전 관리형 서비스로 제공됩니다.
+
+Streamkap을 사용하면 PostgreSQL, MySQL, SQL Server, MongoDB 등과 <a href="https://streamkap.com/connectors" target="_blank">그 외 다양한 데이터 소스</a>의 모든 삽입, 업데이트, 삭제를 밀리초 단위의 지연 시간으로 ClickHouse에 직접 스트리밍할 수 있습니다.
+
+따라서 실시간 분석 대시보드 구축, 운영 분석, 머신 러닝 모델에 라이브 데이터 제공에 매우 적합합니다.
+
+<div id="key-features">
+  ## 주요 기능
+</div>
+
+* **실시간 스트리밍 CDC:** Streamkap은 데이터베이스 로그에서 변경 사항을 직접 캡처하여 ClickHouse의 데이터가 원본의 실시간 레플리카가 되도록 합니다.
+  간소화된 스트림 처리: 데이터가 ClickHouse에 적재되기 전에 실시간으로 변환, 보강, 라우팅, 포맷 지정, 임베딩 생성을 수행합니다. Flink 기반이지만 복잡성은 없습니다.
+
+* **완전관리형 및 확장성:** 프로덕션 환경에서 바로 사용할 수 있는, 유지 관리가 거의 필요 없는 파이프라인을 제공하므로 Kafka, Flink, Debezium 또는 스키마 레지스트리 인프라를 직접 운영할 필요가 없습니다. 이 플랫폼은 고처리량 워크로드를 위해 설계되었으며 수십억 개의 이벤트를 처리할 수 있도록 선형적으로 확장됩니다.
+
+* **자동 스키마 진화:** Streamkap은 원본 데이터베이스의 스키마 변경을 자동으로 감지해 ClickHouse에 반영합니다. 수동 개입 없이 새 컬럼을 추가하거나 컬럼 타입을 변경할 수 있습니다.
+
+* **ClickHouse에 최적화:** 이 통합은 ClickHouse의 기능을 효율적으로 활용하도록 구축되었습니다. 기본적으로 ReplacingMergeTree 엔진을 사용하여 원본 시스템의 업데이트와 삭제를 자연스럽게 처리합니다.
+
+* **안정적인 전달:** 이 플랫폼은 최소 1회(at-least-once) 전달 보장을 제공하여 원본과 ClickHouse 간의 데이터 일관성을 보장합니다. 업서트 작업의 경우 기본 키를 기준으로 중복 제거를 수행합니다.
+
+<div id="started">
+  ## 시작하기
+</div>
+
+이 가이드는 Streamkap 파이프라인을 설정해 데이터를 ClickHouse에 적재하는 방법을 개괄적으로 설명합니다.
+
+<div id="prerequisites">
+  ### 사전 준비 사항
+</div>
+
+* <a href="https://app.streamkap.com/account/sign-up" target="_blank">Streamkap 계정</a>.
+* ClickHouse 클러스터 연결 정보: 호스트명, 포트, 사용자명, 비밀번호.
+* CDC가 가능하도록 구성된 원본 데이터베이스(예: PostgreSQL, SQL Server). 자세한 설정 가이드는 Streamkap 문서에서 확인할 수 있습니다.
+
+<div id="configure-clickhouse-source">
+  ### 1단계: Streamkap에서 소스 구성
+</div>
+
+1. Streamkap 계정에 로그인합니다.
+2. 사이드바에서 **Connectors**로 이동한 다음 **Sources** 탭을 선택합니다.
+3. **+ Add**를 클릭하고 원본 데이터베이스 유형(예: SQL Server RDS)을 선택합니다.
+4. 엔드포인트, 포트, 데이터베이스 이름, 사용자 자격 증명을 포함한 연결 정보를 입력합니다.
+5. 커넥터를 저장합니다.
+
+<div id="configure-clickhouse-dest">
+  ### 2단계: ClickHouse 대상 구성
+</div>
+
+1. **Connectors** 섹션에서 **Destinations** 탭을 선택합니다.
+2. **+ Add**를 클릭하고 목록에서 **ClickHouse**를 선택합니다.
+3. ClickHouse 서비스의 연결 정보를 입력합니다:
+   * **Hostname:** ClickHouse 인스턴스의 호스트명입니다(예: `abc123.us-west-2.aws.clickhouse.cloud`)
+   * **Port:** 보안 HTTPS 포트로, 일반적으로 `8443`입니다
+   * **Username and Password:** ClickHouse 사용자의 자격 증명입니다
+   * **Database:** ClickHouse의 대상 데이터베이스 이름입니다
+4. 대상을 저장합니다.
+
+<div id="run-pipeline">
+  ### 3단계: 파이프라인 생성 및 실행
+</div>
+
+1. 사이드바에서 **Pipelines**로 이동한 다음 **+ Create**를 클릭합니다.
+2. 방금 구성한 Source와 Destination을 선택합니다.
+3. 스트리밍할 스키마와 테이블을 선택합니다.
+4. 파이프라인 이름을 지정한 다음 **Save**를 클릭합니다.
+
+파이프라인이 생성되면 활성화됩니다. Streamkap은 먼저 기존 데이터의 스냅샷을 만든 다음, 이후 발생하는 새 변경 사항을 스트리밍하기 시작합니다.
+
+<div id="verify-data-clickhoouse">
+  ### 4단계: ClickHouse에서 데이터 확인
+</div>
+
+ClickHouse 클러스터에 연결한 다음 쿼리를 실행하여 데이터가 대상 테이블에 수신되는지 확인합니다.
+
+```sql
+SELECT * FROM your_table_name LIMIT 10;
+```
+
+<div id="how-it-works-with-clickhouse">
+  ## ClickHouse에서의 작동 방식
+</div>
+
+Streamkap의 통합은 ClickHouse에서 CDC 데이터를 효율적으로 관리할 수 있도록 설계되었습니다.
+
+<div id="table-engine-data-handling">
+  ### 테이블 엔진 및 데이터 처리
+</div>
+
+기본적으로 Streamkap은 업서트 수집 모드를 사용합니다. ClickHouse에서 테이블을 생성할 때 ReplacingMergeTree 엔진을 사용합니다. 이 엔진은 CDC 이벤트 처리에 적합합니다.
+
+* 원본 테이블의 기본 키(primary key)는 ReplacingMergeTree 테이블 정의에서 ORDER BY 키로 사용됩니다.
+
+* 원본의 **업데이트**는 ClickHouse에 새 행으로 기록됩니다. 백그라운드 머지 과정에서 ReplacingMergeTree는 이러한 행을 병합해 ORDER BY 키를 기준으로 가장 최신 버전만 유지합니다.
+
+* **삭제**는 ReplacingMergeTree의 `is_deleted` 매개변수에 전달되는 메타데이터 플래그를 통해 처리됩니다. 원본에서 삭제된 행은 즉시 제거되지 않고 삭제된 것으로 표시됩니다.
+  * 필요에 따라 삭제된 레코드를 분석 목적으로 ClickHouse에 유지할 수 있습니다
+
+<div id="metadata-columns">
+  ### 메타데이터 컬럼
+</div>
+
+Streamkap은 데이터 상태를 관리할 수 있도록 각 테이블에 여러 메타데이터 컬럼을 추가합니다.
+
+| 컬럼 이름                     | 설명                                                  |
+| ------------------------- | --------------------------------------------------- |
+| `_STREAMKAP_SOURCE_TS_MS` | 원본 데이터베이스에서 발생한 이벤트의 타임스탬프(밀리초)입니다.                 |
+| `_STREAMKAP_TS_MS`        | Streamkap이 이벤트를 처리한 시점의 타임스탬프(밀리초)입니다.              |
+| `__DELETED`               | 원본에서 해당 행이 삭제되었는지를 나타내는 불리언 플래그(`true`/`false`)입니다. |
+| `_STREAMKAP_OFFSET`       | Streamkap 내부 로그의 오프셋 값으로, 정렬 및 디버깅에 유용합니다.          |
+
+<div id="query-latest-data">
+  ### 최신 데이터 쿼리
+</div>
+
+ReplacingMergeTree는 업데이트와 삭제를 백그라운드에서 처리하므로, 단순한 SELECT * 쿼리에서는 머지가 완료되기 전에 과거 데이터나 삭제된 행이 표시될 수 있습니다. 데이터의 최신 상태를 확인하려면 삭제된 레코드를 필터링하고 각 행의 최신 버전만 선택해야 합니다.
+
+이 작업은 FINAL 수정자를 사용해 수행할 수 있습니다. 편리하지만 쿼리 성능에 영향을 줄 수 있습니다:
+
+```sql
+-- FINAL을 사용하여 올바른 현재 상태(state) 조회
+SELECT * FROM your_table_name FINAL WHERE __DELETED = 'false';
+SELECT * FROM your_table_name FINAL LIMIT 10;
+SELECT * FROM your_table_name FINAL WHERE <filter by keys in ORDER BY clause>;
+SELECT count(*) FROM your_table_name FINAL;
+```
+
+대규모 테이블에서 더 나은 성능을 얻고자 할 때, 특히 모든 컬럼을 읽을 필요가 없고 일회성 분석 쿼리인 경우에는 `argMax` 함수를 사용해 각 기본 키의 최신 레코드를 수동으로 선택할 수 있습니다:
+
+```sql
+SELECT key,
+       argMax(col1, version) AS col1,
+       argMax(col2, version) AS col2
+FROM t
+WHERE <프레디케이트 조건>
+GROUP BY key;
+```
+
+프로덕션 환경과 동시다발적이고 반복적인 최종 사용자 쿼리 워크로드에서는 구체화된 뷰(Materialized View)를 사용해 데이터를 후속 액세스 패턴에 더 잘 맞도록 모델링할 수 있습니다.
+
+<div id="further-reading">
+  ## 추가 자료
+</div>
+
+* <a href="https://streamkap.com/" target="_blank">Streamkap 웹사이트</a>
+* <a href="https://docs.streamkap.com/clickhouse" target="_blank">ClickHouse용 Streamkap 문서</a>
+* <a href="https://streamkap.com/blog/streaming-with-change-data-capture-to-clickhouse" target="_blank">블로그: Change Data Capture를 사용한 ClickHouse 스트리밍</a>
+* <a href="https://streamkap.com/blog/streaming-with-change-data-capture-to-clickhouse" target="_blank">ClickHouse 문서: ReplacingMergeTree</a>
