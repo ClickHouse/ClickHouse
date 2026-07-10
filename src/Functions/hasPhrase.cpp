@@ -189,6 +189,7 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
         ITokenizer::Type::SplitByNonAlpha,
         ITokenizer::Type::SplitByString,
         ITokenizer::Type::AsciiCJK,
+        ITokenizer::Type::Icu,
         ITokenizer::Type::Ngrams,
     };
     if (!supported_types.contains(tokenizer->getType()))

@@ -72,6 +72,15 @@ SELECT id FROM tab         WHERE hasAllTokens(doc, ['日本', '都市']) ORDER B
 SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '日本語', 'icu(''ja'')') ORDER BY id;
 SELECT id FROM tab_noindex WHERE hasAllTokens(doc, 'コンピュータのプログラミング', 'icu(''ja'')') ORDER BY id;
 SELECT id FROM tab_noindex WHERE hasAllTokens(doc, ['日本', '都市'], 'icu(''ja'')') ORDER BY id;
+
+-- hasPhrase needs an ordered token stream, which the icu tokenizer provides. The tokenizer is inferred
+-- from the index, so no tokenizer argument is needed; the explicit form must also be accepted (not rejected).
+SELECT id FROM tab WHERE hasPhrase(doc, '日本語') ORDER BY id;
+SELECT id FROM tab WHERE hasPhrase(doc, '日本語を勉強') ORDER BY id;
+-- The same tokens in a different order do not form the phrase.
+SELECT id FROM tab WHERE hasPhrase(doc, '勉強を日本語') ORDER BY id;
+-- Explicit tokenizer argument must be accepted rather than rejected with BAD_ARGUMENTS.
+SELECT id FROM tab WHERE hasPhrase(doc, '日本語', 'icu(''ja'')') ORDER BY id;
 -- { echoOff }
 
 DROP TABLE tab;
