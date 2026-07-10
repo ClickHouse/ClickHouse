@@ -49,6 +49,7 @@ constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
 constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
 constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
+constexpr Int32 DELETION_VECTOR_MAX_KEY = std::numeric_limits<Int32>::max() - 1;
 
 UInt32 readBigEndianUInt32(const UInt8 * data)
 {
@@ -321,7 +322,7 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
         ptr += sizeof(Int32);
         remaining -= sizeof(Int32);
 
-        if (key < 0)
+        if (key < 0 || key > DELETION_VECTOR_MAX_KEY)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector bitmap key: {}", key);
         if (key <= last_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap keys must be sorted in ascending order");
