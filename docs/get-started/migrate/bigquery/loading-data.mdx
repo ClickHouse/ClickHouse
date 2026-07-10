@@ -26,8 +26,7 @@ Exporting data from BigQuery to ClickHouse is dependent on the size of your data
 | Total                                                                                             | 8.26 billion  | 23,577         | 3.982TB   | 8 min 3 sec     | \> 6 days 5 hrs | 53 mins 45 secs   |
 
 <Steps>
-<Step>
-## Export table data to GCS {#1-export-table-data-to-gcs}
+<Step title="Export table data to GCS" id="1-export-table-data-to-gcs">
 
 In this step, we utilize the [BigQuery SQL workspace](https://cloud.google.com/bigquery/docs/bigquery-web-ui) to execute our SQL commands. Below, we export a BigQuery table named `mytable` to a GCS bucket using the [`EXPORT DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements) statement.
 
@@ -63,8 +62,7 @@ This approach has a number of advantages:
 - Exports produce multiple files automatically, limiting each to a maximum of 1GB of table data. This is beneficial to ClickHouse since it allows imports to be parallelized.
 - Parquet, as a column-oriented format, represents a better interchange format since it is inherently compressed and faster for BigQuery to export and ClickHouse to query
 </Step>
-<Step>
-## Importing data into ClickHouse from GCS {#2-importing-data-into-clickhouse-from-gcs}
+<Step title="Importing data into ClickHouse from GCS" id="2-importing-data-into-clickhouse-from-gcs">
 
 Once the export is complete, we can import this data into a ClickHouse table. You can use the [ClickHouse SQL console](/integrations/connectors/sql-clients/sql-console) or [`clickhouse-client`](/concepts/features/interfaces/cli) to execute the commands below.
 
@@ -117,8 +115,7 @@ In the above query, we use the [`ifNull` function](/reference/functions/regular-
 Alternatively, you can `SET input_format_null_as_default=1` and any missing or NULL values will be replaced by default values for their respective columns, if those defaults are specified.
 </Info>
 </Step>
-<Step>
-## Testing successful data export {#3-testing-successful-data-export}
+<Step title="Testing successful data export" id="3-testing-successful-data-export">
 
 To test whether your data was properly inserted, simply run a `SELECT` query on your new table:
 

@@ -1,29 +1,42 @@
 #!/usr/bin/env python3
 """
-Unit tests for the pure helpers in `pr_version_info.py`. Run with
-`python -m unittest` from `tests/ci/`, or with
-`pytest tests/ci/test_pr_version_info.py` from the repo root.
+Unit tests for the pure helpers in `pr_version_info.py`. Run as part of the
+`ci/tests/` suite with `pytest ci/tests/test_pr_version_info.py` from the repo
+root.
 
 `pr_version_info` keeps its GitHub / CIDB imports inside `main()`, so importing
 the helpers here pulls in no heavyweight dependencies.
 """
 
+import os
+import sys
 import unittest
 
-from pr_version_info import (
-    SECTION_END,
-    SECTION_START,
-    MergedPR,
-    has_backport_label,
-    has_ignore_label,
-    original_pr_number_from_backport_ref,
-    partition_merged_prs,
-    release_from_backport_ref,
-    render_issue_section,
-    render_section,
-    upsert_section,
-    version_key,
+# `pr_version_info` lives under `tests/ci` and imports sibling modules by bare
+# name, so put that directory on `sys.path` only while importing it and remove
+# it again afterwards to avoid leaking it into the rest of the pytest session.
+_CI_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "tests", "ci")
 )
+sys.path.insert(0, _CI_DIR)
+try:
+    # pylint: disable=import-error
+    from pr_version_info import (
+        SECTION_END,
+        SECTION_START,
+        MergedPR,
+        has_backport_label,
+        has_ignore_label,
+        original_pr_number_from_backport_ref,
+        partition_merged_prs,
+        release_from_backport_ref,
+        render_issue_section,
+        render_section,
+        upsert_section,
+        version_key,
+    )
+finally:
+    sys.path.remove(_CI_DIR)
 
 
 class TestRenderSection(unittest.TestCase):

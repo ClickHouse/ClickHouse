@@ -119,11 +119,11 @@ public:
         else
             result_col = ResultDataType::ColumnType::create(input_rows_count);
 
-        auto date_time_col = arguments[0].column->convertToFullIfNeeded();
+        auto date_time_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         const auto & date_time_col_data = typeid_cast<const typename InputDataType::ColumnType &>(*date_time_col).getData();
 
         auto value_col = castColumn(arguments[1], std::make_shared<DataTypeFloat64>());
-        value_col = value_col->convertToFullIfNeeded();
+        value_col = value_col->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         const auto & value_col_data = typeid_cast<const ColumnFloat64 &>(*value_col).getData();
 
         auto & result_col_data = result_col->getData();

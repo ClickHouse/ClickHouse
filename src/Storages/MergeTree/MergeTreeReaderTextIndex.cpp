@@ -950,7 +950,7 @@ void MergeTreeReaderTextIndex::fillColumnFallback(
 
     /// The predicate result can be sparse/const (inputs may be sparse), so make it full before the dense cast.
     const auto & result_col = slice.getByName(column_name);
-    auto result_full = result_col.column->convertToFullIfNeeded();
+    auto result_full = result_col.column->convertToFullIfWrapped();
     const auto & result_data = assert_cast<const ColumnUInt8 &>(*result_full).getData();
     chassert(result_data.size() == num_rows);
 

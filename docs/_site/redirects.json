@@ -26256,6 +26256,10 @@
     "destination": "/reference/settings/merge-tree-settings"
   },
   {
+    "source": "/operations/settings/oom-canary",
+    "destination": "/concepts/features/performance/troubleshoot/oom-canary"
+  },
+  {
     "source": "/operations/settings/overview",
     "destination": "/concepts/features/configuration/settings/overview"
   },
