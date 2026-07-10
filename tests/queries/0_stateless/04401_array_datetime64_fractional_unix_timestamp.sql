@@ -52,6 +52,15 @@ SELECT 'scalar_eq_container_neg_shorthand',
     (SELECT x FROM format(CSV, 'x DateTime64(3)', '-.123') SETTINGS date_time_input_format = 'basic')
   = (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3))', '"[-.123]"'));
 
+-- Leading '+' must be rejected in the container/JSON path, matching scalar DateTime64 basic
+-- parsing (which rejects it) and the pre-PR container behavior. readIntText would silently
+-- accept it, so the helper filters it explicitly. Both scalar and container must reject.
+SELECT 'container_plus_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[+1783585473.954]"'); -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'container_plus_zero_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[+0.123]"'); -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'container_plus_shorthand', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[+.123]"'); -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'container_plus_bare_int', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[+1783585473954]"'); -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'scalar_plus_frac', toString(x) FROM format(CSV, 'x DateTime64(3)', '+1783585473.954') SETTINGS date_time_input_format = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
+
 -- Fraction is truncated / padded to the column scale.
 SELECT 'scale0', [1783585473.954]::Array(DateTime64(0));
 SELECT 'scale6_extra', [1783585473.954321987]::Array(DateTime64(6));

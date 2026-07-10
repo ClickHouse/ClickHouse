@@ -128,6 +128,18 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+    /// Reject a leading '+' to stay in parity with scalar DateTime64 basic parsing, which
+    /// rejects it (readDateTimeTextFallback only special-cases '-'). readIntText would
+    /// silently accept it, so filter it here before reading the whole part. This also
+    /// matches the pre-PR container behavior, which parsed elements through readDateTime64Text.
+    if (!istr.eof() && *istr.position() == '+')
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number with a leading '+' sign");
+        else
+            return ReturnType(false);
+    }
+
     bool is_negative = (!istr.eof() && *istr.position() == '-');
 
     time_t whole = 0;
