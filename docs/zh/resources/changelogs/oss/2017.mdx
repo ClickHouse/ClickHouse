@@ -1,0 +1,334 @@
+---
+slug: /whats-new/changelog/2017
+sidebarTitle: '2017'
+title: '2017 年更新日志'
+description: '2017 年的更新日志'
+doc_type: 'changelog'
+keywords: ['ClickHouse 2017', '2017 更新日志', '发行说明', '版本历史', '早期发布']
+---
+
+<div id="clickhouse-release-1-1-54327-2017-12-21">
+  ### 发行版 1.1.54327, 2017-12-21
+</div>
+
+此版本包含对上一版本 1.1.54318 的缺陷修复：
+
+* 修复了复制过程中可能出现的竞态条件缺陷，该问题可能导致数据丢失。此问题影响 1.1.54310 和 1.1.54318 版本。如果你使用的是这两个版本之一，且使用了复制表，强烈建议升级。该问题会在日志中显示为类似 `Part ... from own log does not exist.` 的警告消息。即使你没有在日志中看到这些消息，此问题仍然存在。
+
+<div id="clickhouse-release-1-1-54318-2017-11-30">
+  ### 发行版 1.1.54318, 2017-11-30
+</div>
+
+此版本包含对上一版本 1.1.54310 的错误修复：
+
+* 修复了 SummingMergeTree 引擎在合并期间错误删除行的问题
+* 修复了非复制 MergeTree 引擎中的内存泄漏问题
+* 修复了 MergeTree 引擎在频繁插入时的性能下降问题
+* 修复了导致复制队列停止运行的问题
+* 修复了服务器日志的轮转和归档问题
+
+<div id="clickhouse-release-1-1-54310-2017-11-01">
+  ### 发行版 1.1.54310，2017-11-01
+</div>
+
+<div id="new-features">
+  #### 新功能：
+</div>
+
+* MergeTree 家族表引擎现已支持自定义分区键。
+* [Kafka](/zh/reference/engines/table-engines/integrations/kafka) 表引擎。
+* 新增对加载 [CatBoost](https://yandex.com/dev/catboost/) 模型并将其应用于存储在 ClickHouse 中的数据的支持。
+* 新增对相对于 UTC 存在非整数偏移时区的支持。
+* 新增对时间间隔算术运算的支持。
+* Date 和 DateTime 类型的取值范围已扩展至 2105 年。
+* 新增 `CREATE MATERIALIZED VIEW x TO y` 查询 (指定使用现有表来存储 materialized view 的数据) 。
+* 新增不带参数的 `ATTACH TABLE` 查询。
+* 在 SummingMergeTree 表中，名称以 -Map 结尾的 Nested 列的处理逻辑已提取到 sumMap 聚合函数中。现在可以显式指定这类列。
+* IP trie 字典的最大大小已增加到 1.28 亿条目。
+* 新增 getSizeOfEnumType 函数。
+* 新增 sumWithOverflow 聚合函数。
+* 新增对 Cap&#39;n Proto 输入格式的支持。
+* 现在使用 zstd 算法时可以自定义压缩级别。
+
+<div id="backward-incompatible-changes">
+  #### 向后不兼容的变更：
+</div>
+
+* 不允许创建使用 Memory 以外引擎的临时表。
+* 不允许显式创建使用 View 或 MaterializedView 引擎的表。
+* 在创建表时，新增了一项检查，用于验证采样键表达式是否包含在主键中。
+
+<div id="bug-fixes">
+  #### 缺陷修复：
+</div>
+
+* 修复了同步向 分布式表 插入数据时发生卡住的问题。
+* 修复了复制表中添加和删除 parts 时的非原子性问题。
+* 插入到 materialized view 中的数据不再经过不必要的去重。
+* 当本地副本落后且远程副本不可用时，对 分布式表 执行查询不再报错。
+* 现在创建临时表时不再需要具备对 `default` 数据库的访问权限。
+* 修复了在不带参数的情况下指定 Array 类型时发生崩溃的问题。
+* 修复了当存放服务器日志的磁盘卷已满时发生卡住的问题。
+* 修复了 `toRelativeWeekNum` 函数在 Unix 纪元第一周发生溢出的问题。
+
+<div id="build-improvements">
+  #### 构建改进：
+</div>
+
+* 更新了多个第三方库 (尤其是 Poco) ，并将它们改为 git 子模块。
+
+<div id="clickhouse-release-1-1-54304-2017-10-19">
+  ### 发行版 1.1.54304，2017-10-19
+</div>
+
+<div id="new-features-1">
+  #### 新功能:
+</div>
+
+* 原生协议中的 TLS 支持 (要启用此功能，请在 `config.xml` 中设置 `tcp_ssl_port`) 。
+
+<div id="bug-fixes">
+  #### 缺陷修复：
+</div>
+
+* 现在，针对复制表的 `ALTER` 会尽快开始执行。
+* 修复了在设置 `preferred_block_size_bytes=0.` 时读取数据发生崩溃的问题。
+* 修复了按下 `Page Down` 时 `clickhouse-client` 崩溃的问题。
+* 修复了对包含 `GLOBAL IN` 和 `UNION ALL` 的某些复杂查询的解析错误。
+* `FREEZE PARTITION` 现在始终以原子方式执行。
+* 空的 POST 请求现在会返回状态码为 411 的响应。
+* 修复了对 `CAST(1 AS Nullable(UInt8)).` 这类表达式的解析错误。
+* 修复了从 `MergeTree` 表中读取 `Array(Nullable(String))` 列时出现的错误。
+* 修复了解析诸如 `SELECT dummy AS dummy, dummy AS b` 之类的查询时发生崩溃的问题。
+* 即使 `users.xml` 无效，也能正确更新用户。
+* 修复了当可执行字典返回非零响应码时的处理错误。
+
+<div id="clickhouse-release-1-1-54292-2017-09-20">
+  ### 发行版 1.1.54292，2017-09-20
+</div>
+
+<div id="new-features">
+  #### 新功能：
+</div>
+
+* 新增了 `pointInPolygon` 函数，用于处理坐标平面上的坐标点。
+* 新增了 `sumMap` 聚合函数，用于计算数组的总和，类似于 `SummingMergeTree`。
+* 新增了 `trunc` 函数。提升了舍入函数 (`round`, `floor`, `ceil`, `roundToExp2`) 的性能，并修正了其实现逻辑。修改了 `roundToExp2` 函数对分数和负数的处理逻辑。
+* ClickHouse 可执行文件现在对 libc 版本的依赖更低了。同一个 ClickHouse 可执行文件可以在多种 Linux 系统上运行。使用编译查询时仍然存在依赖 (设置 `compile = 1`，默认情况下不会启用) 。
+* 缩短了查询动态编译所需的时间。
+
+<div id="bug-fixes-2">
+  #### Bug Fixes:
+</div>
+
+* 修复了一个错误：该错误有时会产生 `part ... intersects previous part` 消息，并削弱副本一致性。
+* 修复了一个错误：如果在关闭期间 ZooKeeper 不可用，server 会锁死。
+* 删除了恢复副本时产生的过多日志。
+* 修复了 UNION ALL 实现中的一个错误。
+* 修复了 concat 函数中的一个错误：如果块中的第一列是 Array 类型，就会触发该错误。
+* 现在 Progress 会在 system.merges 表中正确显示。
+
+<div id="clickhouse-release-1-1-54289-2017-09-13">
+  ### 发行版 1.1.54289，2017-09-13
+</div>
+
+<div id="new-features">
+  #### 新功能：
+</div>
+
+* 新增用于服务器管理的 `SYSTEM` 查询：`SYSTEM RELOAD DICTIONARY`、`SYSTEM RELOAD DICTIONARIES`、`SYSTEM DROP DNS CACHE`、`SYSTEM SHUTDOWN`、`SYSTEM KILL`。
+* 新增用于处理数组的函数：`concat`、`arraySlice`、`arrayPushBack`、`arrayPushFront`、`arrayPopBack`、`arrayPopFront`。
+* 为 ZooKeeper 配置新增了 `root` 和 `identity` 参数，从而可以在同一个 ZooKeeper 集群上隔离不同用户。
+* 新增聚合函数 `groupBitAnd`、`groupBitOr` 和 `groupBitXor` (为保持兼容性，也可使用 `BIT_AND`、`BIT_OR` 和 `BIT_XOR` 这些名称) 。
+* 外部字典可通过在文件系统中指定套接字从 MySQL 加载。
+* 外部字典支持通过 SSL 从 MySQL 加载 (`ssl_cert`、`ssl_key`、`ssl_ca` 参数) 。
+* 新增 `max_network_bandwidth_for_user` 设置，用于限制每个用户查询的总带宽占用。
+* 支持对临时表执行 `DROP TABLE`。
+* 支持从 `CSV` 和 `JSONEachRow` 格式中读取 Unix 时间戳格式的 `DateTime` 值。
+* 在分布式查询中，落后的副本现在默认会被排除 (默认阈值为 5 分钟) 。
+* ALTER 期间使用 FIFO 锁：ALTER 查询不会因持续运行的查询而被无限期阻塞。
+* 可在配置文件中设置 `umask`。
+* 提升了带 `DISTINCT` 的查询性能。
+
+<div id="bug-fixes">
+  #### 缺陷修复：
+</div>
+
+* 改进了在 ZooKeeper 中删除旧节点的流程。此前，如果 `insert` 非常频繁，旧节点有时不会被删除，这会导致 server 关闭缓慢等问题。
+* 修复了为连接 ZooKeeper 选择主机时随机化处理的问题。
+* 修复了在分布式查询中，当副本为 localhost 时未排除落后副本的问题。
+* 修复了一个错误：对 `Nested` 结构中的某个元素执行 `ALTER MODIFY` 后，`ReplicatedMergeTree` 表中的数据分区片段可能会损坏。
+* 修复了可能导致 SELECT 查询“卡住”的错误。
+* 改进了分布式 DDL 查询。
+* 修复了查询 `CREATE TABLE ... AS <materialized view>`。
+* 解决了 `Buffer` 表中 `ALTER ... CLEAR COLUMN IN PARTITION` 查询的死锁问题。
+* 修复了在使用 `JSONEachRow` 和 `TSKV` 格式时，`Enum` 的默认值无效的问题 (为 0 而非最小值) 。
+* 解决了在使用带有 `executable` source 的字典时出现僵尸进程的问题。
+* 修复了 HEAD 查询的段错误问题。
+
+<div id="improved-workflow-for-developing-and-assembling-clickhouse">
+  #### 改进了 ClickHouse 的开发与构建工作流程：
+</div>
+
+* 你可以使用 `pbuilder` 来构建 ClickHouse。
+* 在 Linux 上构建时，你可以使用 `libc++` 代替 `libstdc++`。
+* 新增了使用静态代码分析工具的说明：`Coverage`、`clang-tidy`、`cppcheck`。
+
+<div id="please-note-when-upgrading">
+  #### 升级时请注意：
+</div>
+
+* MergeTree 设置 `max_bytes_to_merge_at_max_space_in_pool` 现在的默认值更高了 (要合并的数据分区片段的最大总大小，单位为字节) ：已从 100 GiB 提高到 150 GiB。这可能会导致服务器升级后运行大型 merge，从而增加磁盘子系统的负载。如果服务器上的可用空闲空间小于正在运行的 merge 总量的两倍，所有其他 merge 都会停止运行，包括小型数据分区片段的 merge。因此，INSERT 查询将失败，并显示消息 &quot;Merges are processing significantly slower than inserts.&quot;。请使用 `SELECT * FROM system.merges` 查询来监控这一情况。你还可以检查 `system.metrics` 表中的 `DiskSpaceReservedForMerge` 指标，或在 Graphite 中查看。你无需采取任何措施来修复此问题，因为大型 merge 完成后，此问题会自行解决。如果你认为这无法接受，可以将 `max_bytes_to_merge_at_max_space_in_pool` 设置恢复为之前的值。为此，请进入 config.xml 中的 `<merge_tree>` 部分，设置 `<merge_tree>``<max_bytes_to_merge_at_max_space_in_pool>107374182400</max_bytes_to_merge_at_max_space_in_pool>`，然后重启服务器。
+
+<div id="clickhouse-release-1-1-54284-2017-08-29">
+  ### 发行版 1.1.54284, 2017-08-29
+</div>
+
+* 这是对之前 1.1.54282 版本的错误修复发布，修复了 ZooKeeper 中 parts 目录泄漏的问题。
+
+<div id="clickhouse-release-1-1-54282-2017-08-23">
+  ### 发行版 1.1.54282，2017-08-23
+</div>
+
+此版本包含对上一版本 1.1.54276 的错误修复：
+
+* 修复了向 分布式表 插入数据时出现的 `DB::Exception: Assertion violation: !_path.empty()`。
+* 修复了使用 RowBinary format 插入时，如果输入数据以 `;` 开头会导致的解析问题。
+* 修复了某些聚合函数 (例如 `groupArray()`) 在运行时编译期间出现的错误。
+
+<div id="clickhouse-release-1-1-54276-2017-08-16">
+  ### 发行版 1.1.54276，2017-08-16
+</div>
+
+<div id="new-features">
+  #### 新功能：
+</div>
+
+* 为 SELECT 查询新增了可选的 WITH 部分。示例查询：`WITH 1+1 AS a SELECT a, a*a`
+* 现在可以在 分布式表 中同步执行 INSERT：只有当所有数据都已保存到全部分片后，才会返回 OK。可通过设置 insert&#95;distributed&#95;sync=1 启用。
+* 新增了 UUID 数据类型，用于处理 16 字节标识符。
+* 为兼容 Tableau，新增了 CHAR、FLOAT 及其他类型的别名。
+* 新增了 toYYYYMM、toYYYYMMDD 和 toYYYYMMDDhhmmss 函数，用于将时间转换为数字。
+* 现在可以使用 IP 地址 (连同主机名) 来标识参与集群 DDL 查询的服务器。
+* 函数 `substring(str, pos, len).` 现已支持非常量参数和负偏移量。
+* 为 `groupArray(max_size)(column)` 聚合函数新增了 max&#95;size 参数，并优化了其性能。
+
+<div id="main-changes">
+  #### 主要变更：
+</div>
+
+* 安全性改进：所有 server 文件均以 0640 权限创建 (可通过 `<umask>` 配置参数更改) 。
+* 改进了语法无效的查询的错误消息。
+* 在合并大块 MergeTree 数据时，显著降低了内存消耗并提升了性能。
+* 显著提升了 ReplacingMergeTree 引擎的数据合并性能。
+* 通过合并多个源插入，显著提升了来自 分布式表 的异步插入性能。要启用此功能，请使用设置 distributed&#95;directory&#95;monitor&#95;batch&#95;inserts=1。
+
+<div id="backward-incompatible-changes-1">
+  #### 向后不兼容的更改：
+</div>
+
+* 更改了数组 `groupArray(array_column)` 函数聚合状态的二进制格式。
+
+<div id="complete-list-of-changes">
+  #### 完整变更列表：
+</div>
+
+* 新增了 `output_format_json_quote_denormals` setting，可在 JSON 格式中输出 nan 和 inf 值。
+* 优化了从 分布式表 读取时的 stream 分配。
+* 如果值不发生变化，则可在只读模式下配置 Settings。
+* 新增了读取 MergeTree 引擎非整数粒度的能力，以满足 `preferred_block_size_bytes` setting 中指定的块大小限制。这样做的目的是在处理包含大列的表查询时减少 RAM 占用，并提高缓存局部性。
+* 提高了对包含 `toStartOfHour(x)` 这类 expression 的索引的利用效率，适用于 `toStartOfHour(x) op сonstexpr.` 这类 conditions。
+* 为 MergeTree 引擎新增了 settings (config.xml 中的 merge&#95;tree 部分) ：
+  * replicated&#95;deduplication&#95;window&#95;seconds 设置 Replicated 表中 inserts 去重允许的秒数。
+  * cleanup&#95;delay&#95;period 设置启动清理以移除过期数据的频率。
+  * replicated&#95;can&#95;become&#95;leader 可阻止副本成为 leader (以及分配 merges) 。
+* 加快了从 ZooKeeper 中清理过期数据的速度。
+* 对集群 DDL queries 进行了多项改进和修复。其中尤其值得关注的是新 setting `distributed_ddl_task_timeout`，它限制等待 cluster 中 server 响应的时间。如果某个 ddl request 尚未在所有主机上执行，响应将包含 timeout error，并且该请求会以 async mode 执行。
+* 改进了 server logs 中堆栈跟踪的显示效果。
+* 为压缩方法新增了 `"none"` 值。
+* 可以在 config.xml 中使用多个 dictionaries&#95;config 段。
+* 现在可以通过文件系统中的套接字连接到 MySQL。
+* system.parts 表新增了一列，提供 marks 大小 (以字节为单位) 的信息。
+
+<div id="bug-fixes">
+  #### 缺陷修复：
+</div>
+
+* 使用 Merge 表的分布式表现在能够正确处理对 `_table` 字段带条件的 SELECT 查询。
+* 修复了 ReplicatedMergeTree 在检查数据分区片段时一种罕见的竞态条件。
+* 修复了服务器启动时在“leader 选举”过程中可能卡住的问题。
+* 使用数据源的本地副本时，`max_replica_delay_for_distributed_queries` 设置此前会被忽略。现已修复。
+* 修复了在尝试清理不存在的列时，`ALTER TABLE CLEAR COLUMN IN PARTITION` 的错误行为。
+* 修复了在使用空数组或空字符串时 multiIf 函数中的异常。
+* 修复了反序列化 Native format 时内存分配过多的问题。
+* 修复了 Trie 字典自动更新不正确的问题。
+* 修复了在使用 SAMPLE 时，从 Merge 表执行带有 GROUP BY 子句的查询时出现的异常。
+* 修复了在使用 distributed&#95;aggregation&#95;memory&#95;efficient=1 时 GROUP BY 崩溃的问题。
+* 现在可以在 IN 和 JOIN 的右侧指定 database.table。
+* 并行 aggregation 使用了过多线程。现已修复。
+* 修复了 &quot;if&quot; 函数处理 FixedString 参数时的错误行为。
+* 对于权重为 0 的分片，从 分布式表 执行 SELECT 的行为此前不正确。现已修复。
+* `CREATE VIEW IF EXISTS` 不再导致崩溃。
+* 修复了在设置 input&#95;format&#95;skip&#95;unknown&#95;fields=1 且存在负数时的错误行为。
+* 修复了当字典中存在无效数据时，`dictGetHierarchy()` 函数中的无限循环问题。
+* 修复了在 IN 或 JOIN 子句中使用带子查询的分布式查询和 Merge 表时出现的 `Syntax error: unexpected (...)` 错误。
+* 修复了对 Dictionary 表的 SELECT 查询解释不正确的问题。
+* 修复了在 IN 和 JOIN 子句中使用超过 20 亿个元素的数组时出现的 &quot;Cannot mremap&quot; 错误。
+* 修复了以 MySQL 作为源的字典的故障转移问题。
+
+<div id="improved-workflow-for-developing-and-assembling-clickhouse">
+  #### 改进了 ClickHouse 的开发与构建工作流程：
+</div>
+
+* 可在 Arcadia 中完成构建。
+* 可以使用 gcc 7 编译 ClickHouse。
+* 现在，使用 ccache+distcc 进行并行构建的速度更快。
+
+<div id="clickhouse-release-1-1-54245-2017-07-04">
+  ### 发行版 1.1.54245，2017-07-04
+</div>
+
+<div id="new-features">
+  #### 新功能：
+</div>
+
+* 分布式 DDL (例如 `CREATE TABLE ON CLUSTER`)
+* 支持复制执行的查询 `ALTER TABLE CLEAR COLUMN IN PARTITION.`
+* 用于字典表的引擎 (以表的形式访问字典数据) 。
+* 字典数据库引擎 (这种类型的数据库会自动为所有已连接的外部字典提供字典表) 。
+* 你可以通过向数据源发送请求来检查字典是否有更新。
+* 带限定符的列名
+* 使用双引号引用标识符。
+* HTTP 接口中的会话。
+* 针对 Replicated 表的 OPTIMIZE 查询不仅可以在 leader 上运行。
+
+<div id="backward-incompatible-changes-1">
+  #### 向后不兼容的更改：
+</div>
+
+* 已移除 SET GLOBAL。
+
+<div id="minor-changes">
+  #### 次要更改：
+</div>
+
+* 现在，告警触发后，日志会打印完整的堆栈跟踪信息。
+* 放宽了启动时对损坏/多余数据分区片段数量的校验 (此前误报过多) 。
+
+<div id="bug-fixes">
+  #### 缺陷修复：
+</div>
+
+* 修复了向分布式表插入数据时错误连接“卡住”的问题。
+* 现在，来自 Merge 表且访问分布式表的查询也支持 GLOBAL IN 了。
+* 修复了 Google Compute Engine 虚拟机上 CPU 核心数检测错误的问题。
+* 调整了 cached external dictionaries 的 executable source 的工作机制。
+* 修复了包含空字符的字符串比较问题。
+* 修复了 Float32 主键字段与常量比较时的问题。
+* 此前，对 field 大小的错误估算可能导致分配过多内存。
+* 修复了查询通过 ALTER 添加到表中的 Nullable 列时发生崩溃的问题。
+* 修复了按 Nullable 列排序时，在行数少于 LIMIT 的情况下发生崩溃的问题。
+* 修复了仅由常量值组成的 ORDER BY 子查询的问题。
+* 此前，Replicated 表在 DROP TABLE 失败后可能会一直处于无效状态。
+* 结果为空的 scalar 子查询的别名不再丢失。
+* 现在，使用了编译的查询即使 .so 文件损坏也不会因报错而失败。

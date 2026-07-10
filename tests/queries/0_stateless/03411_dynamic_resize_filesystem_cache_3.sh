@@ -18,10 +18,20 @@ CREATE TABLE ${table_name} (a String) engine=MergeTree() ORDER BY tuple() SETTIN
 INSERT INTO ${table_name} SELECT randomString(10000000);
 "
 
-$CLICKHOUSE_CLIENT --enable_filesystem_cache 1 --query "SELECT * FROM ${table_name} FORMAT Null"
+# `s3_cache` is shared, so a concurrent test dropping the filesystem cache (or eviction) can
+# transiently empty it between the warm-up read and the check. Re-warm and re-check in a short
+# bounded loop so a transient empty instant does not fail the test.
+cache_populated=0
+for _ in {1..10}
+do
+    $CLICKHOUSE_CLIENT --enable_filesystem_cache 1 --query "SELECT * FROM ${table_name} FORMAT Null"
+    cache_populated=$($CLICKHOUSE_CLIENT --query "SELECT current_size > 0 FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
+    [ "$cache_populated" = "1" ] && break
+    sleep 0.5
+done
+echo "$cache_populated"
 
 prev_max_size=$($CLICKHOUSE_CLIENT --query "SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
-$CLICKHOUSE_CLIENT --query "SELECT current_size > 0 FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name' FORMAT TabSeparated"
 
 config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/storage_conf.xml
 
