@@ -815,11 +815,15 @@ namespace
 /// stateless (it only stores the locale) and avoids re-creating the iterator for every string.
 icu::BreakIterator & getThreadLocalIcuWordIterator(const String & locale)
 {
+    static constexpr size_t max_cached_iterators = 32;
     thread_local std::unordered_map<String, std::unique_ptr<icu::BreakIterator>> iterators;
 
     auto it = iterators.find(locale);
     if (it == iterators.end())
     {
+        if (iterators.size() >= max_cached_iterators)
+            iterators.clear();
+
         UErrorCode status = U_ZERO_ERROR;
         std::unique_ptr<icu::BreakIterator> iterator(
             icu::BreakIterator::createWordInstance(icu::Locale::createCanonical(locale.c_str()), status));
