@@ -4038,12 +4038,21 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
     dummy_alter.alter_version = zk_metadata_version;
     dummy_alter.create_time = time(nullptr);
 
-    /// Create the entry in our replication queue, exactly like cloneMetadataIfNeeded(). It is applied by the normal
-    /// queue loading/processing (setTableStructure). We deliberately do NOT insert it into the in-memory queue here:
-    /// injecting an ALTER_METADATA into an already-running alters sequence corrupts its ordering invariants.
+    /// Create the entry in our replication queue, exactly like cloneMetadataIfNeeded().
     String path_created = zookeeper->create(replica_path + "/queue/queue-", dummy_alter.toString(), zkutil::CreateMode::PersistentSequential);
     LOG_INFO(log, "Created an ALTER_METADATA entry {} to force metadata update after recovery. Entry: {}",
              path_created, dummy_alter.toString());
+
+    /// cloneMetadataIfNeeded() can rely on the queue.load() that ReplicatedMergeTreeRestartingThread::tryStartup()
+    /// runs right after it, in the same startup, to pull the new /queue entry into RAM. This recovery path has no
+    /// such following load: recoverLostReplica() runs from the DDL worker after the table already started and loaded
+    /// its queue (DatabaseReplicated::startupDatabaseAsync -> initDDLWorker runs only after all table startup tasks
+    /// complete), so the entry would otherwise sit in Keeper and never reach the in-memory queue. Load it now.
+    /// load() is idempotent (it skips znode names already in the queue) and takes pull_logs_to_queue_mutex, so it
+    /// cannot race the live queue updater; it rebuilds the alters sequence only for the new entry. This is safe (no
+    /// ordering corruption) because dummy_alter.alter_version is the authoritative metadata version from ZooKeeper,
+    /// which is >= every version already in the sequence, so it is never inserted ahead of an in-flight lower alter.
+    queue.load(zookeeper);
     return true;
 }
 
