@@ -1,0 +1,494 @@
+---
+slug: /use-cases/observability/clickstack/integrations/mysql-logs
+title: 'ClickStack을 사용한 MySQL 로그 모니터링'
+sidebarTitle: 'MySQL 로그'
+description: 'ClickStack을 사용한 MySQL 로그 모니터링'
+doc_type: 'guide'
+keywords: ['MySQL', '로그', 'OTEL', 'ClickStack', '데이터베이스 모니터링', '느린 쿼리']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **핵심 요약**
+
+  OTel `filelog` 수신기를 사용해 ClickStack에서 MySQL 오류 로그와 느린 쿼리 로그를 수집하고 시각화합니다. 데모 데이터세트와 사전 구축된 대시보드가 포함되어 있습니다.
+</Info>
+
+<div id="existing-mysql">
+  ## 기존 MySQL 통합
+</div>
+
+이 섹션에서는 ClickStack OTel collector 구성을 수정하여 기존 MySQL 설치에서 ClickStack으로 로그를 전송하도록 설정하는 방법을 설명합니다.
+
+기존 환경을 직접 구성하기 전에 MySQL 로그 통합을 테스트해 보려면, [&quot;데모 데이터세트&quot;](/ko/clickstack/integration-examples/mysql#demo-dataset) 섹션의 사전 구성된 설정과 샘플 데이터를 사용해 테스트할 수 있습니다.
+
+<div id="prerequisites">
+  ##### 사전 요구 사항
+</div>
+
+* 실행 중인 ClickStack 인스턴스
+* 기존 MySQL 설치 환경(버전 5.7 이상)
+* MySQL 설정 파일을 수정할 수 있는 액세스 권한
+* 로그 파일을 저장할 수 있는 충분한 디스크 공간
+
+<Steps>
+  <Step>
+    #### MySQL 로깅 구성
+
+    MySQL은 여러 유형의 로그를 지원합니다. OpenTelemetry를 사용해 포괄적으로 모니터링하려면 오류 로그와 느린 쿼리 로그를 활성화하는 것이 좋습니다.
+
+    `my.cnf` 또는 `my.ini` 설정 파일은 일반적으로 다음 위치에 있습니다.
+
+    * **Linux (apt/yum)**: `/etc/mysql/my.cnf` 또는 `/etc/my.cnf`
+    * **macOS (Homebrew)**: `/usr/local/etc/my.cnf` 또는 `/opt/homebrew/etc/my.cnf`
+    * **Docker**: 구성은 일반적으로 환경 변수 또는 마운트된 설정 파일을 통해 지정합니다
+
+    `[mysqld]` 섹션에 다음 설정을 추가하거나 수정하십시오.
+
+    ```ini
+    [mysqld]
+    # 오류 로그 구성
+    log_error = /var/log/mysql/error.log
+
+    # 느린 쿼리 로그 구성
+    slow_query_log = ON
+    slow_query_log_file = /var/log/mysql/mysql-slow.log
+    long_query_time = 1
+    log_queries_not_using_indexes = ON
+
+    # 선택 사항: 일반 쿼리 로그 (상세 출력, 프로덕션 환경에서는 주의하여 사용)
+    # general_log = ON
+    # general_log_file = /var/log/mysql/mysql-general.log
+    ```
+
+    <Note>
+      느린 쿼리 로그는 `long_query_time`초를 초과하는 쿼리를 기록합니다. 애플리케이션의 성능 요구 사항에 맞게 이 임계값을 조정하십시오. 너무 낮게 설정하면 로그가 과도하게 생성됩니다.
+    </Note>
+
+    이 변경 사항을 적용한 후 MySQL을 다시 시작하세요:
+
+    ```bash
+    # systemd의 경우
+    sudo systemctl restart mysql
+
+    # Docker의 경우
+    docker restart <mysql-container>
+    ```
+
+    로그가 기록되는지 확인하십시오:
+
+    ```bash
+    # 오류 로그 확인
+    tail -f /var/log/mysql/error.log
+
+    # 느린 쿼리 로그 확인
+    tail -f /var/log/mysql/mysql-slow.log
+    ```
+  </Step>
+
+  <Step>
+    #### 사용자 지정 OTel collector 구성 생성
+
+    ClickStack에서는 사용자 지정 설정 파일을 마운트하고 환경 변수를 설정해 기본 OpenTelemetry Collector 구성을 확장할 수 있습니다. 사용자 지정 구성은 OpAMP를 통해 HyperDX가 관리하는 기본 구성과 병합됩니다.
+
+    다음 내용으로 `mysql-logs-monitoring.yaml` 파일을 생성하세요:
+
+    ```yaml
+    receivers:
+      filelog/mysql_error:
+        include:
+          - /var/log/mysql/error.log
+        start_at: end
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+        operators:
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}[+-]\d{2}:\d{2})\s+(?P<thread_id>\d+)\s+\[(?P<level>[^\]]+)\]\s+(\[(?P<error_code>[^\]]+)\]\s+)?(?P<message>.*)$'
+            
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999-07:00'
+            parse_to: body
+          
+          - type: add
+            field: attributes.source
+            value: "mysql-error"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-production"
+
+      filelog/mysql_slow:
+        include:
+          - /var/log/mysql/mysql-slow.log
+        start_at: end
+        multiline:
+          line_start_pattern: '^# Time:'
+        operators:
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '^# Time: (?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\n# User@Host: (?P<user>[^\[]+)\[(?P<user_host>[^\]]*)\]\s+@\s+(?P<host>[^\[]*)\[(?P<ip>[^\]]*)\].*\n# Query_time: (?P<query_time>[\d.]+)\s+Lock_time: (?P<lock_time>[\d.]+)\s+Rows_sent: (?P<rows_sent>\d+)\s+Rows_examined: (?P<rows_examined>\d+)'
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999Z'
+            parse_to: body
+          
+          - type: add
+            field: attributes.source
+            value: "mysql-slow"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-production"
+
+    service:
+      pipelines:
+        logs/mysql:
+          receivers: [filelog/mysql_error, filelog/mysql_slow]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    이 구성은 다음을 수행합니다.
+
+    * 표준 위치에서 MySQL 오류 로그와 느린 쿼리 로그를 읽습니다
+    * 여러 줄로 이루어진 로그 항목을 처리합니다(느린 쿼리는 여러 줄에 걸쳐 있습니다)
+    * 두 로그 포맷을 모두 파싱하여 구조화된 필드(level, error&#95;code, query&#95;time, rows&#95;examined)를 추출합니다
+    * 원본 로그 타임스탬프를 유지합니다
+    * HyperDX에서 필터링할 수 있도록 `source: mysql-error` 및 `source: mysql-slow` 속성을 추가합니다
+    * 전용 파이프라인을 통해 로그를 ClickHouse exporter로 라우팅합니다
+
+    <Note>
+      MySQL 오류 로그와 느린 쿼리 로그는 포맷이 완전히 다르므로 수신기 2개가 필요합니다. `time_parser`는 MySQL의 시간대 오프셋이 포함된 ISO8601 타임스탬프 포맷을 처리하기 위해 `gotime` 레이아웃을 사용합니다.
+    </Note>
+  </Step>
+
+  <Step>
+    #### 사용자 지정 구성을 로드하도록 ClickStack 구성하기
+
+    기존 ClickStack 배포에서 사용자 지정 collector 구성을 활성화하려면 사용자 지정 구성 파일을 `/etc/otelcol-contrib/custom.config.yaml`에 마운트하고, 환경 변수 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`를 설정하십시오.
+
+    ClickStack 배포 구성을 업데이트하세요:
+
+    ```yaml
+    services:
+      clickstack:
+        # ... 기존 구성 ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+          # ... 기타 환경 변수 ...
+        volumes:
+          - ./mysql-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - /var/log/mysql:/var/log/mysql:ro
+          # ... 기타 볼륨 ...
+    ```
+
+    <Note>
+      ClickStack collector에 MySQL 로그 파일을 읽을 수 있는 적절한 권한이 부여되었는지 확인하세요. 읽기 전용 마운트(`:ro`)를 사용하고 최소 권한 원칙을 준수하십시오.
+    </Note>
+  </Step>
+
+  <Step>
+    #### HyperDX에서 로그 확인
+
+    구성이 완료되면 HyperDX에 로그인하여 로그가 정상적으로 유입되는지 확인합니다:
+
+    1. Search view로 이동합니다
+    2. source를 Logs로 설정합니다
+    3. `source:mysql-error` 또는 `source:mysql-slow`로 필터링하여 MySQL 관련 로그를 확인합니다
+    4. `level`, `error_code`, `message`(오류 로그), `query_time`, `rows_examined`, `query`(느린 쿼리 로그) 등의 필드가 포함된 구조화된 로그 항목이 표시되어야 합니다
+
+    <Image img="/images/clickstack/mysql/search-view.webp" alt="Search view" />
+
+    <Image img="/images/clickstack/mysql/log-view.webp" alt="Log view" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## 데모 데이터세트
+</div>
+
+운영 시스템을 구성하기 전에 MySQL 로그 통합을 테스트하려는 사용자를 위해, 실제와 유사한 패턴의 미리 생성된 MySQL 로그 예제 데이터세트를 제공합니다.
+
+<Steps>
+  <Step>
+    #### 샘플 데이터셋 다운로드
+
+    샘플 로그 파일을 다운로드하세요:
+
+    ```bash
+    # 오류 로그 다운로드
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/error.log
+
+    # 느린 쿼리 로그 다운로드
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/mysql-slow.log
+    ```
+
+    데이터셋에는 다음이 포함됩니다:
+
+    * 오류 로그 항목(시작 메시지, 경고, 연결 오류, InnoDB 메시지)
+    * 실제 성능 특성을 반영한 느린 쿼리
+    * 연결 수명 주기 이벤트
+    * 데이터베이스 서버의 시작 및 종료 과정
+  </Step>
+
+  <Step>
+    #### 테스트용 collector 구성 만들기
+
+    다음 구성으로 `mysql-logs-demo.yaml` 파일을 생성하세요.
+
+    ```yaml
+    cat > mysql-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/mysql_error:
+        include:
+          - /tmp/mysql-demo/error.log
+        start_at: beginning  # 데모 데이터를 처음부터 읽기
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+        operators:
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}[+-]\d{2}:\d{2})\s+(?P<thread_id>\d+)\s+\[(?P<level>[^\]]+)\]\s+(\[(?P<error_code>[^\]]+)\]\s+)?(?P<message>.*)$'
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999-07:00'
+            parse_to: body
+          - type: add
+            field: attributes.source
+            value: "mysql-demo-error"
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-demo"
+
+      filelog/mysql_slow:
+        include:
+          - /tmp/mysql-demo/mysql-slow.log
+        start_at: beginning  # 데모 데이터를 처음부터 읽기
+        multiline:
+          line_start_pattern: '^# Time:'
+        operators:
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '^# Time: (?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\n# User@Host: (?P<user>[^\[]+)\[(?P<user_host>[^\]]*)\]\s+@\s+(?P<host>[^\[]*)\[(?P<ip>[^\]]*)\].*\n# Query_time: (?P<query_time>[\d.]+)\s+Lock_time: (?P<lock_time>[\d.]+)\s+Rows_sent: (?P<rows_sent>\d+)\s+Rows_examined: (?P<rows_examined>\d+)'
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999Z'
+            parse_to: body
+          - type: add
+            field: attributes.source
+            value: "mysql-demo-slow"
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-demo"
+
+    service:
+      pipelines:
+        logs/mysql-demo:
+          receivers: [filelog/mysql_error, filelog/mysql_slow]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### 데모 구성으로 ClickStack 실행
+
+    데모 로그 및 구성으로 ClickStack을 실행합니다:
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/mysql-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/error.log:/tmp/mysql-demo/error.log:ro" \
+      -v "$(pwd)/mysql-slow.log:/tmp/mysql-demo/mysql-slow.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### HyperDX에서 로그 확인
+
+    ClickStack이 실행되면 다음을 수행하십시오:
+
+    1. ClickStack이 완전히 초기화될 때까지 잠시 기다리십시오(일반적으로 30~60초).
+    2. [HyperDX](http://localhost:8080/)를 열고 계정에 로그인하십시오(먼저 계정을 만들어야 할 수 있습니다).
+    3. Search view로 이동한 다음 source를 `Logs`로 설정하십시오.
+    4. 시간 범위를 **2025-11-13 00:00:00 - 2025-11-16 00:00:00**으로 설정하십시오.
+    5. 총 40개의 로그가 표시되어야 합니다(`source:mysql-demo-error` 오류 로그 30개 + `source:mysql-demo-slow` 느린 쿼리 10개).
+
+    <Note>
+      40개의 로그가 바로 모두 표시되지 않으면 collector가 처리를 마칠 때까지 약 1분 정도 기다리십시오. 기다린 후에도 로그가 표시되지 않으면 `docker restart clickstack-demo`를 실행한 뒤 1분 후 다시 확인하십시오. 이는 `start_at: beginning`으로 기존 파일을 일괄 로드할 때 OpenTelemetry filelog 수신기에서 발생하는 알려진 문제입니다. `start_at: end`를 사용하는 프로덕션 배포에서는 로그가 기록되는 즉시 실시간으로 처리되므로 이 문제가 발생하지 않습니다.
+    </Note>
+
+    <Image img="/images/clickstack/mysql/search-view.webp" alt="Search view" />
+
+    <Image img="/images/clickstack/mysql/log-view.webp" alt="Log view" />
+
+    <Info>
+      **시간대 표시**
+
+      HyperDX는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터 범위는 **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**입니다. 넓은 시간 범위를 지정했기 때문에 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## 대시보드 및 시각화
+</div>
+
+ClickStack로 MySQL 모니터링을 시작할 수 있도록 MySQL 로그용 핵심 시각화를 제공합니다.
+
+<Steps>
+  <Step>
+    #### 대시보드 구성 파일 <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">다운로드</TrackedLink>
+  </Step>
+
+  <Step>
+    #### 사전 구축된 대시보드 가져오기
+
+    1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
+    2. 오른쪽 상단의 점 3개 메뉴에서 **Import Dashboard**를 클릭합니다
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기 버튼" />
+
+    3. `mysql-logs-dashboard.json` 파일을 업로드한 다음 **Finish Import**를 클릭합니다
+
+    <Image img="/images/clickstack/mysql/finish-import.webp" alt="가져오기 완료" />
+  </Step>
+
+  <Step>
+    #### 대시보드 보기
+
+    대시보드는 모든 시각화가 미리 구성된 상태로 생성됩니다.
+
+    <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="예시 대시보드" />
+
+    <Note>
+      데모 데이터세트를 사용하는 경우 시간 범위를 **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 문제 해결
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### 사용자 지정 구성이 로드되지 않음
+</div>
+
+환경 변수가 설정되어 있는지 확인하세요:
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+사용자 지정 구성 파일이 마운트되어 있으며 읽을 수 있는 상태인지 확인하세요:
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
+```
+
+<div id="no-logs">
+  ### HyperDX에 로그가 표시되지 않음
+</div>
+
+적용 중인 구성에 filelog 수신기가 포함되어 있는지 확인하세요:
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+collector 로그에서 오류가 있는지 확인하세요:
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i mysql
+```
+
+데모 데이터세트를 사용하는 경우 로그 파일에 접근 가능한지 확인하세요:
+
+```bash
+docker exec <container> cat /tmp/mysql-demo/error.log | wc -l
+docker exec <container> cat /tmp/mysql-demo/mysql-slow.log | wc -l
+```
+
+<div id="no-slow-queries">
+  ### 느린 쿼리 로그가 표시되지 않는 경우
+</div>
+
+MySQL에서 느린 쿼리 로그가 활성화되어 있는지 확인하십시오:
+
+```sql
+SHOW VARIABLES LIKE 'slow_query_log';
+SHOW VARIABLES LIKE 'long_query_time';
+```
+
+MySQL이 느린 쿼리를 기록하는지 확인하세요:
+
+```bash
+tail -f /var/log/mysql/mysql-slow.log
+```
+
+테스트용 느린 쿼리를 생성하세요:
+
+```sql
+SELECT SLEEP(2);
+```
+
+<div id="logs-not-parsing">
+  ### 로그가 올바르게 파싱되지 않는 경우
+</div>
+
+MySQL 로그 포맷이 예상한 포맷과 일치하는지 확인하세요. 이 가이드의 정규식 패턴은 MySQL 5.7+ 및 8.0+의 기본 포맷에 맞게 설계되었습니다.
+
+오류 로그에서 몇 줄을 확인하세요:
+
+```bash
+head -5 /var/log/mysql/error.log
+```
+
+예상 포맷:
+
+```text
+2025-11-14T10:23:45.123456+00:00 0 [System] [MY-010116] [Server] /usr/sbin/mysqld (mysqld 8.0.35) starting as process 1
+```
+
+포맷이 크게 다르면 구성에서 정규식 패턴을 조정하십시오.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* 중요한 이벤트(연결 실패, 임계값을 초과한 느린 쿼리, 오류 급증)에 대한 [알림](/ko/clickstack/features/alerts)을 설정하세요
+* 쿼리 패턴별로 느린 쿼리를 분석할 수 있는 맞춤형 대시보드를 생성하세요
+* 확인된 쿼리 성능 패턴에 따라 `long_query_time`을 조정하세요
+
+<div id="going-to-production">
+  ## 프로덕션 환경으로 전환하기
+</div>
+
+이 가이드는 빠르게 설정할 수 있도록 ClickStack에 기본 제공되는 OpenTelemetry Collector를 확장해 사용합니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

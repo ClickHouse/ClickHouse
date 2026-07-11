@@ -255,7 +255,21 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
     auto generator = std::make_shared<Generator>();
     const auto * tagged_paths = benchmark_context.getTaggedPaths().empty() ? nullptr : &benchmark_context.getTaggedPaths();
-    generator->startup(*config_ptr, *zookeepers[0], thread_state.thread_idx, tagged_paths);
+    auto list_children = [&zk = *zookeepers[0]](const std::string & parent_path) -> std::vector<std::string>
+    {
+        auto list_promise = std::make_shared<std::promise<Coordination::ListResponse>>();
+        auto list_future = list_promise->get_future();
+        auto callback = [list_promise] (const Coordination::ListResponse & response)
+        {
+            if (response.error != Coordination::Error::ZOK)
+                list_promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
+            else
+                list_promise->set_value(response);
+        };
+        zk.list(parent_path, Coordination::ListRequestType::ALL, std::move(callback), {}, false, false);
+        return list_future.get().names;
+    };
+    generator->startup(*config_ptr, list_children, thread_state.thread_idx, tagged_paths);
     generator->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
         [stats = info](const Coordination::WatchResponse &)
         {
@@ -376,31 +390,23 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         auto promise = std::make_shared<std::promise<RequestResult>>();
         auto future = promise->get_future();
 
-        auto success_callbacks = std::make_shared<std::vector<std::function<void()>>>(std::move(request_with_callbacks.on_success_callbacks));
-        auto failure_callbacks = std::make_shared<std::vector<std::function<void()>>>(std::move(request_with_callbacks.on_failure_callbacks));
+        auto inner_callback = std::move(request_with_callbacks.callback);
 
         auto watch = std::make_shared<Stopwatch>();
 
         Coordination::ResponseCallback callback =
             [promise,
-             success_callbacks,
-             failure_callbacks,
+             inner_callback,
              watch,
              generator](const Coordination::Response & response)
         {
             auto elapsed = watch->elapsedMicroseconds();
+            if (inner_callback)
+                inner_callback(&response);
             if (response.error == Coordination::Error::ZOK)
-            {
-                for (const auto & cb : *success_callbacks)
-                    cb();
                 promise->set_value(RequestResult{response.bytesSize(), elapsed});
-            }
             else
-            {
-                for (const auto & cb : *failure_callbacks)
-                    cb();
                 promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-            }
         };
 
         auto & request = request_with_callbacks.request;
@@ -424,8 +430,8 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         }
         catch (...) // Ok: handle_request_exception logs and counts the error
         {
-            for (const auto & cb : *failure_callbacks)
-                cb();
+            if (inner_callback)
+                inner_callback(nullptr);
             handle_request_exception(slot.request);
         }
     }
@@ -840,7 +846,7 @@ struct SetupNodeCollector
         if (snapshot_result.storage == nullptr)
         {
             std::cerr << "No initial snapshot found" << std::endl;
-            initial_storage = std::make_unique<Coordination::KeeperMemoryStorage>(
+            initial_storage = std::make_unique<Coordination::KeeperStorage>(
                 /* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
             initial_storage->initializeSystemNodes();
         }
@@ -979,7 +985,7 @@ struct SetupNodeCollector
 
         std::cerr << "Generating snapshot with starting data" << std::endl;
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(initial_storage->getZXID(), 1, std::make_shared<nuraft::cluster_config>());
-        DB::KeeperStorageSnapshot<Coordination::KeeperMemoryStorage> snapshot(initial_storage.get(), snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
+        DB::KeeperStorageSnapshot snapshot(initial_storage.get(), snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
         snapshot_manager->serializeSnapshotToDisk(snapshot);
 
         new_nodes = false;
@@ -987,9 +993,9 @@ struct SetupNodeCollector
 
     std::mutex nodes_mutex;
     DB::KeeperContextPtr keeper_context;
-    std::shared_ptr<Coordination::KeeperMemoryStorage> initial_storage;
+    std::shared_ptr<Coordination::KeeperStorage> initial_storage;
     std::unordered_set<std::string> nodes_created_during_replay;
-    std::optional<Coordination::KeeperSnapshotManager<Coordination::KeeperMemoryStorage>> snapshot_manager;
+    std::optional<Coordination::KeeperSnapshotManager> snapshot_manager;
     bool new_nodes = false;
 };
 

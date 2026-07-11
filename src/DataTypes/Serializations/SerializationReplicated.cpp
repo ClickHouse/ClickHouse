@@ -116,10 +116,6 @@ void SerializationReplicated::serializeBinaryBulkWithMultipleStreams(
     if (!indexes_stream)
         return;
 
-    /// Avoid serializing rows that are not referenced by the index.
-    ColumnIndex compacted_index(column_replicated.getIndexesColumn()->cloneResized(column_replicated.getIndexesColumn()->size()));
-    ColumnPtr compacted_nested_column = compacted_index.removeUnusedRowsInIndexedData(column_replicated.getNestedColumn());
-
     /// We write ColumnReplicated data in the following format:
     /// - number of rows in column
     /// - size of indexes type
@@ -128,22 +124,22 @@ void SerializationReplicated::serializeBinaryBulkWithMultipleStreams(
     /// - data of nested column
 
     writeVarUInt(UInt64(limit), *indexes_stream);
-    auto size_of_indexes_type = compacted_index.getSizeOfIndexType();
+    auto size_of_indexes_type = column_replicated.getIndexes().getSizeOfIndexType();
     writeBinaryLittleEndian(UInt8(size_of_indexes_type), *indexes_stream);
 
     switch (size_of_indexes_type)
     {
         case sizeof(UInt8):
-            SerializationNumber<UInt8>::create()->serializeBinaryBulk(*compacted_index.getIndexes(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt8>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt16):
-            SerializationNumber<UInt16>::create()->serializeBinaryBulk(*compacted_index.getIndexes(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt16>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt32):
-            SerializationNumber<UInt32>::create()->serializeBinaryBulk(*compacted_index.getIndexes(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt32>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         case sizeof(UInt64):
-            SerializationNumber<UInt64>::create()->serializeBinaryBulk(*compacted_index.getIndexes(), *indexes_stream, offset, limit);
+            SerializationNumber<UInt64>::create()->serializeBinaryBulk(*column_replicated.getIndexesColumn(), *indexes_stream, offset, limit);
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnReplicated: {}", size_of_indexes_type);
@@ -156,8 +152,8 @@ void SerializationReplicated::serializeBinaryBulkWithMultipleStreams(
     if (!elements_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationReplicated elements.");
 
-    writeVarUInt(UInt64(compacted_nested_column->size()), *elements_stream);
-    nested->serializeBinaryBulkWithMultipleStreams(*compacted_nested_column, 0, 0, settings, state);
+    writeVarUInt(UInt64(column_replicated.getNestedColumn()->size()), *elements_stream);
+    nested->serializeBinaryBulkWithMultipleStreams(*column_replicated.getNestedColumn(), 0, 0, settings, state);
 }
 
 void SerializationReplicated::serializeBinaryBulkStateSuffix(

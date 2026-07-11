@@ -1,0 +1,27 @@
+---
+title: Comment ignorer les paramètres incorrects dans ClickHouse
+description: Découvrez comment utiliser l’option `skip_check_for_incorrect_settings` pour permettre à ClickHouse de démarrer même lorsque des paramètres au niveau de l’utilisateur sont mal spécifiés.
+date: 2023-03-01
+tags: ['Paramètres']
+keywords: ['Ignorer les paramètres incorrects']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="ignoring-incorrect-settings-in-clickhouse">
+  ## Ignorer les paramètres incorrects dans ClickHouse
+</div>
+
+Lorsqu’un paramètre au niveau de l’utilisateur est spécifié au mauvais endroit, le serveur ne démarre pas et un message d’exception est consigné dans le journal. Cependant, vous pouvez demander à ClickHouse d’ignorer ce paramètre incorrect à l’aide du paramètre `skip_check_for_incorrect_settings`.
+
+Ajoutez ce qui suit à `config.xml` :
+
+```xml
+<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+```
+
+<Note>
+  Les paramètres au niveau de l’utilisateur doivent être spécifiés dans `users.xml`, à l’intérieur d’une section `<profile>` pour le profil utilisateur concerné, (ou dans `<default>` pour les paramètres par défaut.
+</Note>

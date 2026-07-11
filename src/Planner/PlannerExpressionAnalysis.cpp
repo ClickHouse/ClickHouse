@@ -197,7 +197,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                             continue;
 
                         auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                        auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                        ColumnPtr column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : ColumnPtr(expression_dag_node->column);
                         available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                         aggregation_keys.push_back(expression_dag_node->result_name);
                         before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
@@ -249,7 +249,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                         continue;
 
                     auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                    auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                    ColumnPtr column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : ColumnPtr(expression_dag_node->column);
 
                     available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                     aggregation_keys.push_back(expression_dag_node->result_name);
@@ -581,12 +581,8 @@ SortAnalysisResult analyzeSort(
         before_interpolate_actions->dag = std::move(before_interpolate_actions_dag);
     }
 
-    if (before_interpolate_actions)
-    {
-        auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
-        actions_chain.addStep(std::move(actions_step_before_interpolate));
-    }
-
+    /// before_interpolate_actions is intentionally not added to the chain here;
+    /// buildExpressionAnalysisResult appends it after analyzeLimitBy so the chain order matches plan execution order.
     return SortAnalysisResult{std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions)};
 }
 
@@ -637,7 +633,8 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & planner_query_processing_info)
+    const PlannerQueryProcessingInfo & planner_query_processing_info,
+    const NameSet & source_constants)
 {
     auto & query_node = query_tree->as<QueryNode &>();
 
@@ -776,6 +773,20 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
+    /** Add before_interpolate_actions to the chain AFTER the limit by step.
+      * This matches the query plan execution order where Before INTERPOLATE runs after LIMIT BY.
+      * Previously it was added before LIMIT BY in the chain (inside analyzeSort), which caused
+      * the LIMIT BY DAG to expect interpolated column names (e.g. 's') that don't exist yet
+      * in the block at that point in the plan.
+      */
+    if (sort_analysis_result_optional.has_value() && sort_analysis_result_optional->before_interpolate_actions)
+    {
+        auto & before_interpolate_actions = sort_analysis_result_optional->before_interpolate_actions;
+        auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
+        actions_chain.addStep(std::move(actions_step_before_interpolate));
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
+
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : current_output_columns;
 
@@ -823,6 +834,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     auto project_names_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     project_names_actions->dag = ActionsDAG(project_names_input);
 
+    /// Keep source-constant INPUTs (`source_constants`) so `project`/`removeUnusedActions` does not
+    /// fold-and-drop them; they must keep flowing as required inputs to stay in the stream at
+    /// distributed stage boundaries. Literals and re-creatable alias constants stay foldable.
+    std::unordered_set<const ActionsDAG::Node *> keep_inputs;
+    if (!source_constants.empty())
+        for (const auto * input : project_names_actions->dag.getInputs())
+            if (input->column && source_constants.contains(input->result_name))
+                keep_inputs.insert(input);
+
     if (query_node.hasInterpolate())
     {
         auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
@@ -835,15 +855,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             if (interpolate_names.contains(alias))
                 name = alias;
 
-        project_names_actions->dag.project(project_names);
+        project_names_actions->dag.project(project_names, keep_inputs);
     }
     else
-        project_names_actions->dag.project(projection_analysis_result.projection_column_names_with_display_aliases);
+        project_names_actions->dag.project(projection_analysis_result.projection_column_names_with_display_aliases, keep_inputs);
 
     project_names_actions->project_input = true;
     actions_chain.addStep(std::make_unique<ActionsChainStep>(project_names_actions));
 
-    actions_chain.finalize();
+    actions_chain.finalize(source_constants);
 
     projection_analysis_result.project_names_actions = std::move(project_names_actions);
 

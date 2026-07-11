@@ -75,7 +75,7 @@ CREATE TABLE table
 (
     key UInt64,
     str String,
-    INDEX text_idx(str) TYPE text(
+    INDEX text_idx str TYPE text(
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
@@ -85,6 +85,8 @@ CREATE TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
+                                [, positions = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -108,7 +110,7 @@ Alternatively, to add a text index to an existing table:
 
 ```sql title="Query"
 ALTER TABLE table
-    ADD INDEX text_idx(str) TYPE text(
+    ADD INDEX text_idx str TYPE text(
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
@@ -118,6 +120,8 @@ ALTER TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
+                                [, positions = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -197,20 +201,28 @@ If the text index was build on a column of type `Nullable(T)` or `LowCardinality
 
 Examples:
 
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col)))`
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = removeDiacriticsUTF8(caseFoldUTF8(col)))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col)))`
+- `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = removeDiacriticsUTF8(caseFoldUTF8(col)))`
 
 Also, the preprocessor expression must only reference the column or expression on top of which the text index is defined.
 
 Examples:
 
-- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = upper(lower(col)))`
-- `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(col), lower(col)))`
-- Not allowed: `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(col, col))`
+- `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = upper(lower(col)))`
+- `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(col), lower(col)))`
+- Not allowed: `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(col, col))`
 
-Using non-deterministic functions is disallowed.
+Usage of non-deterministic functions is disallowed.
+
+:::note
+Preprocessors are in principle equivalent to wrapping the index column or expression by the preprocessor expression.
+For example, the `lower` preprocessor in `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))` can be emulated by `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha')`.
+The latter form has the disadvantage that the emulated preprocessor is only applied if it matches the filter condition in the WHERE clause.
+For example, `WHERE hasAllTokens(lower(col), [...])` matches while `WHERE hasAllTokens(col, [...])` does not.
+For an optimal user experience, we therefore recommend using preprocessor expressions.
+:::
 
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens), [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) use the preprocessor to first transform the search term before tokenizing it.
 Note that because the preprocessor is only applied on the text index path, results from these functions may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
@@ -221,7 +233,7 @@ For example,
 CREATE TABLE table
 (
     str String,
-    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -235,7 +247,7 @@ is equivalent to:
 CREATE TABLE table
 (
     str String,
-    INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha')
+    INDEX idx lower(str) TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -279,7 +291,193 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
-**Other arguments (optional)**.
+**Postprocessor argument (optional)**. The postprocessor refers to an expression which is applied to each output token after tokenization.
+
+Unlike the preprocessor, which transforms the entire input string before the tokenizer splits it into tokens, the postprocessor operates on the tokens themselves, one at a time.
+This is the natural place for transformations that are inherently token-level.
+
+Typical use cases for the postprocessor argument include:
+1. **Filtering stop words (extremely frequent tokens)**. Very common tokens such as "the", "a", and "is" carry little search relevancy and inflate the index.
+   You can use the postprocessor to discard them by converting them to empty tokens — empty tokens are ignored, i.e., not added to the index.
+   Example: `if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)`
+2. **Timestamp removal**. Log lines often begin with or contain a structured timestamp such as `2024-01-15T10:23:45`.
+   Indexing timestamp tokens bloats the index with strings that carry no search relevance.
+   There are two complementary approaches to ignore timestamps:
+   - **Postprocessor approach**: use the `splitByString` tokenizer (whitespace split) so that the entire timestamp becomes a single token, then use `parseDateTimeOrNull` to detect and drop it.
+     Example: `if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
+     For timestamps with timezone offsets or fractional seconds, use `parseDateTimeBestEffortOrNull(str)` without an explicit format string.
+   - **Preprocessor approach**: strip the timestamp from the full log line *before* tokenization with a regular expression.
+     Example: `replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
+     This works with any tokenizer and is more efficient as timestamp characters are never tokenized.
+   Both approaches can be combined: the preprocessor strips the timestamp while the postprocessor normalizes or filters the remaining tokens (e.g., lowercase + drop severity words like `ERROR` or `INFO`).
+3. **Stemming**. Mapping each token to its stem improves search recall by matching morphological variants that share the same root.
+   For example, with English stemming "running", "runs", and "run" all stem to "run", so a query for any of these variants matches all of them.
+   ClickHouse provides a built-in [stem](/sql-reference/functions/string-functions.md/#stem) function for several languages.
+   Example: `stem(str, 'en')`
+4. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8).
+   For lower-and upper casing, we recommend a preprocessor instead of a postprocessor.
+
+The postprocessor expression transforms tokens of type [String](/sql-reference/data-types/string.md) to tokens of the same type.
+Also, the postprocessor expression must only reference the column or expression on top of which the text index is defined.
+When the column is of type `Array(String)`, the postprocessor still operates on individual tokens as plain `String` values.
+
+Usage of non-deterministic functions is disallowed.
+
+The postprocessor is applied to each generated token during index build (for the `array` tokenizer, each array element is a token). At query time, the behavior depends on the function:
+- For `hasToken`, `hasAllTokens`, `hasAnyTokens`, and `hasPhrase` (with any supported tokenizer): the postprocessor is applied to both the haystack tokens and the search needle, enabling fully normalized matching (e.g., case-insensitive search). For `hasPhrase`, the postprocessed tokens are positioned densely, so a token the postprocessor drops leaves no positional gap and the phrase still matches across it — e.g. with a stop-word postprocessor that drops `the`, `hasPhrase(col, 'see cat')` matches a document `see the cat`.
+- For all other functions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): only the search needle is postprocessed for the index-hint lookup; the row-level predicate still compares against the original column values.
+
+Examples:
+
+- Remove stop words using a postprocessor expression:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+- Remove timestamps using a postprocessor expression:
+
+```sql
+-- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
+-- The splitByString tokenizer (default: whitespace) keeps the full timestamp as one token.
+-- parseDateTimeOrNull detects and drops it; non-timestamp words are kept.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByString',
+        postprocessor = if(isNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), line, '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Only message-level words are indexed; timestamp tokens are not stored.
+SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast index lookup
+SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
+```
+
+- Remove timestamps using a preprocessor expression:
+
+```sql
+-- The preprocessor strips the ISO timestamp prefix before tokenization.
+-- Any tokenizer can be used; timestamp characters are never seen by the tokenizer.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer   = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+- Remove timestamps using a combined preprocessor and postprocessor expression:
+
+```sql
+-- Preprocessor strips the timestamp, then lowercases the remainder.
+-- Postprocessor drops the severity word (error, info, warn, debug) after tokenization.
+-- Result: only substantive message words are stored in the index.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByNonAlpha',
+        preprocessor = lower(replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')),
+        postprocessor = if(line IN ('error', 'info', 'warn', 'warning', 'debug', 'critical'), '', line)
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Example log line: '2024-01-15T10:23:45 ERROR connection failed'
+-- After preprocessor:  'error connection failed'
+-- After tokenization:  ['error', 'connection', 'failed']
+-- After postprocessor: ['connection', 'failed']   ← 'error' dropped as severity word
+SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
+```
+
+- Stem tokens using a postprocessor expression:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = stem(str, 'en')
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+-- The query token 'running' is stemmed to 'run' before the lookup,
+-- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
+SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
+```
+
+**Function support**.
+
+For predicates that consult the text index, the preprocessor and postprocessor are applied to the search value before the granule-level check so that the index lookup uses the same tokens that were stored at index build.
+For most functions (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), the text index is used only to skip irrelevant data blocks; ClickHouse still verifies each surviving row using the original predicate against the original column data.
+For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the text index is the primary evaluation path: ClickHouse normalizes the needle through the same preprocessor, tokenizer, and postprocessor that were applied at index build time, and uses this normalized form for both indexed and non-indexed table parts. With a postprocessor, the haystack tokens are also normalized at query time (for any tokenizer, not only `array`), so both sides of the comparison are consistently transformed and the result does not depend on whether the index is read directly (setting `query_plan_direct_read_from_text_index`) or whether a given part has a materialized index — e.g. enabling case-insensitive matching for `hasAllTokens(col, ['FOO'])` with a `lower` postprocessor.
+Without `positions`, `hasPhrase` uses the index only as a hint and verifies each surviving row with the original predicate; a postprocessor additionally normalizes both the phrase and the haystack tokens the same way, so the result is independent of the read path, and tokens the postprocessor drops do not break phrase adjacency. With `positions = 1`, `hasPhrase` uses exact direct reads (still applying the postprocessor, if any).
+Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
+
+| Function | Supports a preprocessor | Compatible tokenizers | Supports a postprocessor |
+|---|---|---|---|
+| `=` | yes | all | yes |
+| `IN` | yes | all | yes |
+| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                   | yes | all (designed for `splitByNonAlpha`) | yes |
+| [hasAnyTokens(col, str)](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) | yes | all | yes |
+| [hasAllTokens(col, str)](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | yes | all | yes |
+| [hasAnyTokens(col, arr)](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
+| [hasAllTokens(col, arr)](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
+| [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
+| [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                      | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                          | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [like](/sql-reference/functions/string-search-functions.md/#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| [match](/sql-reference/functions/string-search-functions.md/#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| [ilike](/sql-reference/functions/string-search-functions.md/#like)                          | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
+| [mapContainsKey](/sql-reference/functions/tuple-map-functions#mapContainsKey)               | yes | all | yes |
+| [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
+| [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike)   | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [has](/sql-reference/functions/array-functions.md/#has)                                     | yes | `array` | yes |
+| [hasAny](/sql-reference/functions/array-functions.md/#hasAny)                               | yes | `array` | yes |
+| [hasAll](/sql-reference/functions/array-functions.md/#hasAll)                               | yes | `array` | yes |
+
+¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
+`LIKE` additionally supports a *direct read (without hint)* (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
+
+² `ILIKE` is only supported via direct read (without hint) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
+There is no fallback to using the index as a hint: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
+The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
+
+**Experimental: Positions argument (optional)**.
+
+Experimental parameter `positions` (default: `0`) controls whether the index stores token positions.
+When set to `1`, the index additionally stores positional data (in a `.pos` file) which enables exact phrase matching via direct reads for the [`hasPhrase`](#functions-example-hasphrase) function.
+Storing positions increases the on-disk size of the index and the write cost, so it is opt-in.
+The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
+Creating an index with `positions = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to be enabled.
+Set `positions = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
+
+:::warning
+This argument is experimental and should only be used for testing.
+Set MergeTree setting [`allow_experimental_text_index_positions`](/operations/settings/merge-tree-settings#allow_experimental_text_index_positions) to enable storing positions.
+:::
 
 <details markdown="1">
 
@@ -297,6 +495,26 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
+
+The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/operations/settings/merge-tree-settings#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/operations/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/operations/settings/merge-tree-settings#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/operations/settings/merge-tree-settings#text_index_posting_list_codec).
+They apply to every text index of the table that does not specify the parameter explicitly.
+
+The main use case of the table-level settings is to change the index parameters of an existing table without dropping and re-creating the text index on all table parts.
+Changing a table-level setting applies the new parameters only to text indexes built for new parts; existing parts keep their current layout.
+
+An argument given in the index definition takes precedence over the table setting, for example:
+
+```sql
+CREATE TABLE table(
+    s String,
+    -- This index uses 'bitpacking', overriding the table-level default below:
+    INDEX idx_a s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking'),
+    -- This index inherits 'none' from the table setting:
+    INDEX idx_b lower(s) TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree()
+ORDER BY tuple()
+SETTINGS text_index_posting_list_codec = 'none';
+```
 </details>
 
 *Index granularity.*
@@ -310,7 +528,7 @@ Example:
 CREATE TABLE table(
     k UInt64,
     s String,
-    INDEX idx(s) TYPE text(tokenizer = ngrams(2)))
+    INDEX idx s TYPE text(tokenizer = ngrams(2)))
 ENGINE = MergeTree()
 ORDER BY k;
 
@@ -341,8 +559,8 @@ If no index exists on a column or table part, the string search functions will f
 
 :::note
 We recommend using functions `hasAnyTokens` and `hasAllTokens` to search the text index, please see [below](#functions-example-hasanytokens-hasalltokens).
-These functions work with all available tokenizers and all possible preprocessor expressions.
-As the other supported functions historically preceded the text index, they had to retain their legacy behavior in many cases (e.g. no preprocessor support).
+These functions work with all available tokenizers and all possible preprocessor and postprocessor expressions.
+As the other supported functions historically preceded the text index, they had to retain their legacy behavior in many cases (e.g. no preprocessor or postprocessor support).
 :::
 
 ### Supported functions {#functions-support}
@@ -413,10 +631,39 @@ Fortunately, there is a special case where ClickHouse can leverage the inverted 
 
 See the [LIKE/ILIKE performance tuning section](#like-ilike-queries-perf) for details.
 
+#### `multiSearchAny` and `multiMatchAny` {#functions-example-multisearchany-multimatchany}
+
+[multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny) and its UTF-8 variant [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8) test whether any of several literal substrings occurs in the haystack, and [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny) tests whether any of several regular expressions matches.
+These functions use the text index under the same conditions as `LIKE` and `match` (see above): ClickHouse must be able to extract complete tokens from each needle, and the list of needles must be constant.
+A granule is read if any needle may be present in it.
+
+For `multiMatchAny`, if a single pattern cannot be reduced to a token requirement (for example `.*`, which matches any document), the text index cannot be used and the query falls back to a full scan.
+
+As with `LIKE` and `match`, substring and regular-expression search work best with the `ngrams` and `sparseGrams` tokenizers.
+These tokenizers index overlapping character n-grams, so a needle is decomposed into n-grams that are present in the index wherever the needle occurs as a substring, regardless of whether it starts or ends in the middle of a word.
+A needle can therefore be used as-is, as long as it is at least as long as the n-gram size.
+
+Example for the text index with `ngrams` tokenizer:
+
+```sql
+SELECT count() FROM table WHERE multiSearchAny(comment, ['clickhouse', 'support']);
+```
+
+The `splitByNonAlpha` tokenizer, in contrast, only indexes complete tokens (whole words).
+Because a needle may begin or end in the middle of a word, ClickHouse drops the leading and trailing tokens of each needle, so the index can prune granules only using complete tokens.
+To make substring and regular-expression search use the index with `splitByNonAlpha`, surround each needle with separator characters (such as spaces) so that it forms one or more complete tokens.
+
+Example for the text index with `splitByNonAlpha` tokenizer:
+
+```sql
+SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' support ']);
+```
+
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
 Similar to `LIKE`, functions [startsWith](/sql-reference/functions/string-functions.md/#startsWith) and [endsWith](/sql-reference/functions/string-functions.md/#endsWith) can only use a text index, if complete tokens can be extracted from the search term.
 For the index with `ngrams` tokenizer, this is the case if the length of the searched strings between wildcards is equal or longer than the ngram length.
+When a text index uses a postprocessor, these functions can still use the index in Hint mode if the extracted hint tokens remain non-empty after normalization. If normalization drops all hint tokens, the index is not used for that predicate.
 
 Example for the text index with `splitByNonAlpha` tokenizer:
 
@@ -439,14 +686,16 @@ Similarly, `endsWith` should be used with a leading space:
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-#### `hasToken` and `hasTokenOrNull` {#functions-example-hastoken-hastokenornull}
+#### `hasToken` {#functions-example-hastoken}
 
 :::note
-Function `hasToken` looks straightforward to use but it has certain pitfalls with non-default tokenizers and preprocessor expressions.
-We recommend using functions `hasAnyTokens` and `hasAllTokens` instead.
+`hasToken` has certain pitfalls when used for lookups in text indexes with non-`splitByNonAlpha` tokenizers and/or preprocessor/postprocessor expressions.
+We recommend using `hasAnyTokens` and `hasAllTokens` instead.
+
+The case-insensitive variants `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` are not text-index-aware — they always run as a full row scan even on text-indexed columns. For case-insensitive matching, use a `lower(...)` preprocessor or postprocessor and combine it with `hasToken` / `hasAllTokens` / `hasAnyTokens`.
 :::
 
-Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken) and [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull) match against a single given token.
+Function [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken) matches against a single given token.
 
 Unlike the previously mentioned functions, they do not tokenize the search term (they assume the input is a single token).
 
@@ -481,6 +730,7 @@ Function [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhr
 
 Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
 The search phrase is tokenized using the same tokenizer configured for the index column.
+When the text index uses a postprocessor, the search phrase is normalized before the index lookup as well.
 Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK` tokenizers.
 
 Example:
@@ -863,24 +1113,44 @@ SELECT * FROM events WHERE data.level IN ('error', 'critical');
 
 ### Phrase search {#text-index-phrase-search}
 
-Text index supports phrase search via the `hasPhrase` function.
-All tokens in the phrase must appear consecutively and in the same order in the document.
+A regular text index search, for example
+
+```sql
+SELECT *
+FROM tab
+WHERE hasAllTokens(col, 'weather in Tokyo')
+```
+
+matches all rows that contain the given tokens in arbitrary order.
+In the example, row `While she stayed in Tokyo, the weather was great.` matches the filter.
+
+In contrast, phrase search means matching the tokens in the given order.
+For example,
+
+```sql
+SELECT *
+FROM tab
+WHERE hasPhrase(col, 'weather in Tokyo')
+```
+
+matches any row that contains the token sequence `weather in Tokyo` like `How is the weather in Tokyo?`?
 
 The text index accelerates phrase search by intersecting the posting lists for all tokens in the phrase to identify candidate granules.
 Within those granules, ClickHouse then verifies exact token adjacency.
+This process is relatively costly and slower than regular text search queries.
+To speed phrase search queries up, please enable position storage in the text index (see `Optional parameters` above).
 
-`hasPhrase` is supported with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
-
-The phrase string is tokenized using the index's configured tokenizer.
-Tokenizer separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')` for the `splitByNonAlpha` tokenizer.
+`hasPhrase` can be used together with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
+The given phrase string is tokenized using the index's tokenizer.
+Separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')`, assuming `splitByNonAlpha` is used as tokenizer.
 
 #### Example {#text-index-phrase-search-example}
 
-```sql title="Query"
+```sql
 CREATE TABLE tab (
     id UInt32,
     text String,
-    INDEX idx(text) TYPE text(tokenizer = splitByNonAlpha)
+    INDEX idx text TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -1053,11 +1323,10 @@ This optimization supports only functions `like` and `ilike`.
 
 ### Caching {#caching}
 
-Different caches are available to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
+Different server-wide caches exist to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
 Currently, there are caches for the deserialized headers, tokens, and posting lists of the text index to reduce I/O.
-They can be enabled via settings [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), [use_text_index_tokens_cache](/operations/settings/settings#use_text_index_tokens_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
+Use settings [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), [use_text_index_tokens_cache](/operations/settings/settings#use_text_index_tokens_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache) to disable reading and writing from/to the individual caches by queries.
 
-By default, all caches are disabled.
 To clear the caches, use statement [SYSTEM CLEAR TEXT INDEX CACHES](../../../sql-reference/statements/system#drop-text-index-caches)
 
 Please refer the following server settings to configure the caches.
@@ -1155,6 +1424,11 @@ The posting lists for all tokens are laid out sequentially in the postings list 
 To save space while still allowing fast intersection and union operations, the posting lists are stored as [roaring bitmaps](https://roaringbitmap.org/).
 If the posting list is larger than `posting_list_block_size`, it is split into multiple blocks that are stored sequentially to the postings lists file.
 
+**Positions file (.pos)**
+
+Optional, only if index argument `positions = 1`.
+Stores the positions of the tokens within matching rows.
+
 **Merging of text indexes**
 
 When data parts are merged, the text index does not need to be rebuilt from scratch; instead, it can be merged efficiently in a separate step of the merge process.
@@ -1225,7 +1499,7 @@ We will use `ALTER TABLE` and add a text index on comment column, then materiali
 
 ```sql
 -- Add the index
-ALTER TABLE hackernews ADD INDEX comment_idx(comment) TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE hackernews ADD INDEX comment_idx comment TYPE text(tokenizer = splitByNonAlpha);
 
 -- Materialize the index for existing data
 ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2;
@@ -1390,8 +1664,12 @@ For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` wo
 
 ## Related content {#related-content}
 
-- Presentation: https://github.com/ClickHouse/clickhouse-presentations/blob/master/2025-tumuchdata-munich/ClickHouse_%20full-text%20search%20-%2011.11.2025%20Munich%20Database%20Meetup.pdf
-- Presentation: https://presentations.clickhouse.com/2026-fosdem-inverted-index/Inverted_indexes_the_what_the_why_the_how.pdf
+- Blog: [Announcing General Availability of ClickHouse Full-text Search](https://clickhouse.com/blog/full-text-search-ga-release)
+- Blog: [Building high-performance full-text search for object storage](https://clickhouse.com/blog/clickhouse-full-text-search-object-storage)
+- Video: [Intro to Full-Text Search in ClickHouse](https://www.youtube.com/watch?v=9zPmf1a_heU)
+- Video: [Under the Hood: Full Text Search at ClickHouse scale and speed](https://www.youtube.com/watch?v=8JbqE_ubfkU)
+- Presentation: [Inside ClickHouse full-text search: fast, native and columnar](https://github.com/ClickHouse/clickhouse-presentations/blob/master/2025-tumuchdata-munich/ClickHouse_%20full-text%20search%20-%2011.11.2025%20Munich%20Database%20Meetup.pdf)
+- Presentation: [Inverted database indexes: The why, the what, and the how, FOSDEM 2026](https://presentations.clickhouse.com/2026-fosdem-inverted-index/Inverted_indexes_the_what_the_why_the_how.pdf)
 
 **Outdated material**
 

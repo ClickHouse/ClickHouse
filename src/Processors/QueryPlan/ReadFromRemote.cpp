@@ -282,20 +282,17 @@ ASTPtr tryBuildAdditionalFilterAST(
         /// Support for IN. The stored AST from the Set is taken.
         if (WhichDataType(node->result_type).isSet())
         {
-            auto maybe_set = node->column;
-            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
-                maybe_set = col_const->getDataColumnPtr();
-
-            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
+            const auto & data_column = node->column->getDataColumnPtr();
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(data_column.get()))
                 node_to_ast[node] = col_set->getData()->getSourceAST();
 
             stack.pop();
             continue;
         }
 
-        if (node->column && isColumnConst(*node->column))
+        if (node->column)
         {
-            auto literal = make_intrusive<ASTLiteral>((*node->column)[0]);
+            auto literal = make_intrusive<ASTLiteral>(node->column->getField());
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
             auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
@@ -383,11 +380,8 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (external_tables && isNameOfGlobalInFunction(func_name))
         {
             const auto * second_arg = node->children.at(1);
-            auto maybe_set = second_arg->column;
-            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
-                maybe_set = col_const->getDataColumnPtr();
-
-            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
+            const auto & data_column = second_arg->column->getDataColumnPtr();
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(data_column.get()))
             {
                 auto future_set = col_set->getData();
                 if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
@@ -594,17 +588,24 @@ void ReadFromRemote::addLazyPipe(
         context->setSetting("cluster_for_parallel_replicas", cluster_name);
     }
 
-    const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
-    const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
-    if (!storage)
+    /// The storage is only consumed by the stale-replica branch below, which applies solely to
+    /// replicated tables. Table functions have an empty main table and reach this path only when the
+    /// use_delayed_remote_source failpoint forces a lazy read, and that branch is skipped for them, so
+    /// resolving the empty StorageID would needlessly throw. This mirrors the guard in addPipe.
+    StoragePtr storage;
+    if (!table_func_ptr)
     {
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
+        const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
+        storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+        if (!storage)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
     }
 
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
+            my_unavailable_shard_tracker = unavailable_shard_tracker,
             query = shard.query, header = shard.header,
-            my_context = context, my_throttler = throttler,
+            my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
             my_stage = stage, my_storage = storage,
@@ -653,7 +654,9 @@ void ReadFromRemote::addLazyPipe(
             use_delayed_remote_source = true;
         });
 
-        if (!use_delayed_remote_source)
+        // The stale-local-replica logic below applies only to real replicated tables. A table function
+        // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
+        if (!use_delayed_remote_source && !my_table_func_ptr)
         {
             const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
             if (!replicated_storage)
@@ -707,7 +710,11 @@ void ReadFromRemote::addLazyPipe(
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
+        remote_query_executor->setLogger(my_log);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
+        /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
+        /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
+        remote_query_executor->setUnavailableShardTracker(my_unavailable_shard_tracker);
 
         auto pipe = createRemoteSourcePipe(
             remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);

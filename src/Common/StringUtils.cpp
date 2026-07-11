@@ -2,7 +2,7 @@
 
 #include <Common/TargetSpecific.h>
 
-#if USE_MULTITARGET_CODE
+#if defined(__AVX2__)
 #include <immintrin.h>
 #endif
 
@@ -22,42 +22,9 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 
 }
 
-DECLARE_DEFAULT_CODE(
-static bool isAllASCII(const UInt8 * data, size_t size)
+bool isAllASCII(const UInt8 * data, size_t size)
 {
-    UInt8 mask = 0;
-    for (size_t i = 0; i < size; ++i)
-        mask |= data[i];
-
-    return !(mask & 0x80);
-})
-
-DECLARE_X86_64_V2_SPECIFIC_CODE(
-/// Copy from https://github.com/lemire/fastvalidate-utf-8/blob/master/include/simdasciicheck.h
-/// See also https://lemire.me/blog/2025/12/20/performance-trick-optimistic-vs-pessimistic-checks/
-static bool isAllASCII(const UInt8 * data, size_t size)
-{
-    __m128i masks = _mm_setzero_si128();
-
-    size_t i = 0;
-    for (; i + 16 <= size; i += 16)
-    {
-        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + i));
-        masks = _mm_or_si128(masks, bytes);
-    }
-    int mask = _mm_movemask_epi8(masks);
-
-    UInt8 tail_mask = 0;
-    for (; i < size; i++)
-        tail_mask |= data[i];
-
-    mask |= (tail_mask & 0x80);
-    return !mask;
-})
-
-DECLARE_X86_64_V3_SPECIFIC_CODE(
-static bool isAllASCII(const UInt8 * data, size_t size)
-{
+#if defined(__AVX2__)
     __m256i masks = _mm256_setzero_si256();
 
     size_t i = 0;
@@ -74,17 +41,13 @@ static bool isAllASCII(const UInt8 * data, size_t size)
 
     mask |= (tail_mask & 0x80);
     return !mask;
-})
+#else
+    UInt8 mask = 0;
+    for (size_t i = 0; i < size; ++i)
+        mask |= data[i];
 
-bool isAllASCII(const UInt8 * data, size_t size)
-{
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(DB::TargetArch::x86_64_v3))
-        return TargetSpecific::x86_64_v3::isAllASCII(data, size);
-    if (isArchSupported(DB::TargetArch::x86_64_v2))
-        return TargetSpecific::x86_64_v2::isAllASCII(data, size);
+    return !(mask & 0x80);
 #endif
-    return TargetSpecific::Default::isAllASCII(data, size);
 }
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
@@ -92,7 +55,12 @@ bool isAllASCII(const UInt8 * data, size_t size)
 /// - (1) the pattern has a wildcard
 /// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
 /// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
-std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
+/// The third returned value `is_exact` is true when the pattern contains no wildcard at all, so it is
+/// equivalent to an exact match of the prefix, e.g. 'a\%b' matches only the string 'a%b'. The prefix
+/// folds escapes exactly as likePatternToRegexp does, so it equals the string LIKE matches (an unknown
+/// escape like '\w' keeps the backslash). When `is_exact` is true the prefix is always returned
+/// regardless of `requires_perfect_prefix`.
+std::tuple<String, bool, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
 {
     String fixed_prefix;
     fixed_prefix.reserve(like_pattern.size());
@@ -110,21 +78,33 @@ std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like
                 if (requires_perfect_prefix)
                 {
                     if (is_perfect_prefix)
-                        return {fixed_prefix, true};
+                        return {fixed_prefix, true, false};
                     else
-                        return {"", false};
+                        return {"", false, false};
                 }
                 else
                 {
-                    return {fixed_prefix, is_perfect_prefix};
+                    return {fixed_prefix, is_perfect_prefix, false};
                 }
             }
             case '\\':
             {
                 ++pos;
+                /// A trailing escape is an invalid pattern the matcher rejects; never report it as exact,
+                /// or a point range would prune the granule and skip that exception.
                 if (pos == end)
-                    break;
-                [[fallthrough]];
+                {
+                    if (requires_perfect_prefix)
+                        return {"", false, false};
+                    return {fixed_prefix, false, false};
+                }
+                /// Fold the escape exactly as likePatternToRegexp does so fixed_prefix equals the string
+                /// LIKE matches: '\%', '\_' and '\\' drop the backslash, but an unknown escape keeps it
+                /// (so '\w' matches the literal "\w", not "w").
+                if (*pos != '%' && *pos != '_' && *pos != '\\')
+                    fixed_prefix += '\\';
+                fixed_prefix += *pos;
+                break;
             }
             default:
             {
@@ -134,10 +114,9 @@ std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like
 
         ++pos;
     }
-    /// If we can reach this code, it means there was no wildcard found in the pattern, so it is not a perfect prefix
-    if (requires_perfect_prefix)
-        return {"", false};
-    return {fixed_prefix, false};
+    /// No wildcard was found, so the pattern is an exact match of `fixed_prefix`. It is not a perfect
+    /// prefix (a perfect prefix requires a trailing '%'), but it is exact, so the prefix is always returned.
+    return {fixed_prefix, false, true};
 }
 
 /** For a given string, get a minimum string that is strictly greater than all strings with this prefix,

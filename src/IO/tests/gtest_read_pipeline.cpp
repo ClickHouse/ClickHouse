@@ -3,12 +3,29 @@
 #include <IO/ReadPipeline.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Common/PageCache.h>
+#include <base/scope_guard.h>
 
+#include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <map>
 
 
 using namespace DB;
+namespace fs = std::filesystem;
+
+namespace DB::FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
+    extern const FileCacheSettingsUInt64 max_size;
+    extern const FileCacheSettingsUInt64 max_elements;
+    extern const FileCacheSettingsUInt64 max_file_segment_size;
+    extern const FileCacheSettingsUInt64 boundary_alignment;
+    extern const FileCacheSettingsUInt64 background_download_threads;
+}
 
 namespace
 {
@@ -89,6 +106,25 @@ StoredObject testObject(const String & path, size_t size)
 StoredObject testObject(size_t size = 100)
 {
     return StoredObject("test/object", "local/object", size);
+}
+
+FileCachePtr createTestFileCache(const String & name)
+{
+    const auto cache_path = fs::current_path() / (name + "_cache");
+    fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+
+    FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_path / "";
+    settings[FileCacheSetting::max_size] = 1024 * 1024;
+    settings[FileCacheSetting::max_elements] = 100;
+    settings[FileCacheSetting::boundary_alignment] = 0;
+    settings[FileCacheSetting::max_file_segment_size] = 1024 * 1024;
+    settings[FileCacheSetting::background_download_threads] = 0;
+
+    auto cache = FileCacheFactory::instance().getOrCreate(name, settings, "");
+    cache->initialize();
+    return cache;
 }
 
 }
@@ -261,6 +297,78 @@ TEST(ReadPipeline, DescribeMultipleStages)
     pipeline.needFilesystemCache(nullptr, FilesystemCacheSettings{});
     pipeline.needGather();
     EXPECT_EQ(pipeline.describe(), "Source(Custom) -> FilesystemCache -> Gather");
+}
+
+
+TEST(ReadPipeline, FilesystemCacheSkipsUnknownSizeObject)
+try
+{
+    const String data = "unknown size data";
+    const String cache_name = "read_pipeline_unknown_size";
+    auto cache = createTestFileCache(cache_name);
+    SCOPE_EXIT({
+        FileCacheFactory::instance().clear();
+        fs::remove_all(fs::current_path() / (cache_name + "_cache"));
+    });
+
+    ReadPipeline pipeline;
+    pipeline.setSource(memoryCreator(data), StoredObjects{testObject(StoredObject::UnknownSize)}, ReadSettings{});
+    pipeline.needFilesystemCache(cache, FilesystemCacheSettings{});
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, data);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, MemoryCacheSkipsUnknownSizeObject)
+try
+{
+    /// Regression: an object served without `Content-Length` arrives with `UnknownSize`.
+    /// The page cache addresses the file by absolute offset and reads `getFileSize()` up front
+    /// (`CachedInMemoryReadBufferFromFile`), so wrapping such an object would throw
+    /// `UNKNOWN_FILE_SIZE` before any bytes are read. `wrapMemoryCache` must skip the page-cache
+    /// stage for unknown-size objects and stream them directly. This mirrors the `DiskObjectStorage`
+    /// read path (e.g. a `web_index` disk entry whose origin sent no `Content-Length`) reading with
+    /// `use_page_cache_for_disks_without_file_cache = 1`, which enables the page cache without
+    /// checking object size; the object storage source already disables it for unknown sizes.
+    const String data = "unknown size data routed through the page cache stage";
+
+    auto page_cache = std::make_shared<PageCache>(
+        std::chrono::milliseconds(0),
+        "SLRU",
+        /*size_ratio=*/ 0.5,
+        /*min_size_in_bytes=*/ 0,
+        /*max_size_in_bytes=*/ 1 << 20,
+        /*free_memory_ratio=*/ 0.0,
+        /*num_shards=*/ 1);
+
+    PageCacheSettings page_cache_settings;
+    page_cache_settings.cache = page_cache;
+
+    ReadPipeline pipeline;
+    pipeline.setSource(memoryCreator(data), StoredObjects{testObject(StoredObject::UnknownSize)}, ReadSettings{});
+    pipeline.needGather();
+    pipeline.needMemoryCache("test:", page_cache_settings);
+
+    /// Without the guard, build() throws `UNKNOWN_FILE_SIZE` while constructing the page-cache wrapper.
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, data);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
 }
 
 

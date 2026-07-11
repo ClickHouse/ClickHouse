@@ -1,0 +1,383 @@
+---
+slug: /use-cases/observability/clickstack/integrations/nginx
+title: 'Мониторинг журналов Nginx с помощью ClickStack'
+sidebarTitle: 'Журналы Nginx'
+description: 'Мониторинг Nginx с помощью ClickStack'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **Кратко**
+
+  Собирайте и визуализируйте логи доступа Nginx (в формате JSON) в ClickStack с помощью приёмника OTel `filelog`. Включает демо-набор данных и преднастроенную панель мониторинга.
+</Info>
+
+<div id="existing-nginx">
+  ## Интеграция с существующим Nginx
+</div>
+
+В этом разделе описано, как настроить существующую установку Nginx для отправки журналов в ClickStack, изменив конфигурацию коллектора ClickStack OTel.
+Если вы хотите протестировать интеграцию перед настройкой собственной среды, воспользуйтесь нашей предварительно настроенной средой и тестовыми данными из [следующего раздела](/ru/clickstack/integration-examples/nginx-logs#demo-dataset).
+
+<div id="prerequisites">
+  ##### Необходимые условия
+</div>
+
+* Работающий экземпляр ClickStack
+* Уже установленный Nginx
+* Доступ для изменения файлов конфигурации Nginx
+
+<Steps>
+  <Step>
+    #### Настройте формат логирования Nginx
+
+    Сначала настройте Nginx так, чтобы он выводил логи в формате JSON для более удобного парсинга. Добавьте это определение формата логирования в файл `nginx.conf`:
+
+    Файл `nginx.conf` обычно находится по одному из следующих путей:
+
+    * **Linux (apt/yum)**: `/etc/nginx/nginx.conf`
+    * **macOS (Homebrew)**: `/usr/local/etc/nginx/nginx.conf` или `/opt/homebrew/etc/nginx/nginx.conf`
+    * **Docker**: конфигурация обычно монтируется как том
+
+    Добавьте это определение формата логирования в блок `http`:
+
+    ```nginx
+    http {
+        log_format json_combined escape=json
+        '{'
+          '"time_local":"$time_local",'
+          '"remote_addr":"$remote_addr",'
+          '"request_method":"$request_method",'
+          '"request_uri":"$request_uri",'
+          '"status":$status,'
+          '"body_bytes_sent":$body_bytes_sent,'
+          '"request_time":$request_time,'
+          '"upstream_response_time":"$upstream_response_time",'
+          '"http_referer":"$http_referer",'
+          '"http_user_agent":"$http_user_agent"'
+        '}';
+
+        access_log /var/log/nginx/access.log json_combined;
+        error_log /var/log/nginx/error.log warn;
+    }
+    ```
+
+    После внесения этого изменения перезагрузите Nginx.
+  </Step>
+
+  <Step>
+    #### Создайте пользовательскую конфигурацию OTel collector
+
+    ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, подключив собственный файл конфигурации и задав переменную окружения. Эта конфигурация объединяется с базовой конфигурацией, которой HyperDX управляет через OpAMP.
+
+    Создайте файл nginx-monitoring.yaml со следующей конфигурацией:
+
+    ```yaml
+    receivers:
+      filelog:
+        include:
+          - /var/log/nginx/access.log
+          - /var/log/nginx/error.log
+        start_at: end 
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.time_local
+            layout: '%d/%b/%Y:%H:%M:%S %z'
+          - type: add
+            field: attributes.source
+            value: "nginx"
+
+    service:
+      pipelines:
+        logs/nginx:
+          receivers: [filelog]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    Эта конфигурация:
+
+    * Считывает журналы Nginx из стандартных мест
+    * Разбирает JSON-записи журнала
+    * Извлекает и сохраняет исходные временные метки журналов
+    * Добавляет атрибут source: Nginx для фильтрации в HyperDX
+    * Направляет журналы в экспортёр ClickHouse через выделенный конвейер
+
+    <Note>
+      - В пользовательской конфигурации вы определяете только новые приёмники и конвейеры
+      - Процессоры (memory&#95;limiter, transform, batch) и экспортёры (clickhouse) уже определены в базовой конфигурации ClickStack — вы просто ссылаетесь на них по имени
+      - Оператор time&#95;parser извлекает временные метки из поля time&#95;local в логах Nginx, чтобы сохранить исходное время журналирования
+      - Конвейеры направляют данные из ваших приёмников в экспортёр ClickHouse через существующие процессоры
+    </Note>
+  </Step>
+
+  <Step>
+    #### Настройка ClickStack для загрузки пользовательской конфигурации
+
+    Чтобы включить пользовательскую конфигурацию collector в существующем развертывании ClickStack, необходимо:
+
+    1. Смонтировать пользовательский файл конфигурации по пути /etc/otelcol-contrib/custom.config.yaml
+    2. Задать переменную окружения CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE=/etc/otelcol-contrib/custom.config.yaml
+    3. Смонтировать каталоги с логами Nginx, чтобы collector мог их читать
+
+    ##### Вариант 1: Docker Compose
+
+    Обновите конфигурацию развертывания ClickStack:
+
+    ```yaml
+    services:
+      clickstack:
+        # ... существующая конфигурация ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+          # ... другие переменные окружения ...
+        volumes:
+          - ./nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - /var/log/nginx:/var/log/nginx:ro
+          # ... другие тома ...
+    ```
+
+    ##### Вариант 2: Docker Run (универсальный образ)
+
+    Если вы используете универсальный образ с `docker run`:
+
+    ```bash
+    docker run --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v /var/log/nginx:/var/log/nginx:ro \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      Убедитесь, что у коллектора ClickStack есть необходимые разрешения на чтение файлов журнала nginx. В продакшне используйте монтирование только для чтения (:ro) и придерживайтесь принципа наименьших привилегий.
+    </Note>
+  </Step>
+
+  <Step>
+    #### Проверка журналов в HyperDX
+
+    После настройки войдите в HyperDX и убедитесь, что журналы поступают:
+
+    1. Перейдите в представление Search
+    2. В поле source выберите Logs и убедитесь, что видите записи журнала с такими полями, как request, request&#95;time, upstream&#95;response&#95;time и т. д.
+
+    Вот пример того, что вы должны увидеть:
+
+    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="представление логов" />
+
+    <Image img="/images/clickstack/log-view.webp" alt="представление логов" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## Демо-набор данных
+</div>
+
+Для пользователей, которые хотят протестировать интеграцию nginx перед настройкой своих систем в продакшне, мы предоставляем пример набора данных с заранее сгенерированными журналами доступа nginx, имитирующими реалистичный трафик.
+
+<Steps>
+  <Step>
+    #### Загрузите пример набора данных
+
+    ```bash
+    # Загрузите логи
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/access.log
+    ```
+
+    Набор данных включает:
+
+    * Записи журнала с реалистичным характером трафика
+    * Различные конечные точки и HTTP-методы
+    * Сочетание успешных запросов и ошибок
+    * Реалистичное время ответа и количество переданных байтов
+  </Step>
+
+  <Step>
+    #### Создайте тестовую конфигурацию коллектора
+
+    Создайте файл с именем `nginx-demo.yaml` со следующей конфигурацией:
+
+    ```yaml
+    cat > nginx-demo.yaml << 'EOF'
+    receivers:
+      filelog:
+        include:
+          - /tmp/nginx-demo/access.log
+        start_at: beginning  # Читать с начала для демо-данных
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.time_local
+            layout: '%d/%b/%Y:%H:%M:%S %z'
+          - type: add
+            field: attributes.source
+            value: "nginx-demo"
+
+    service:
+      pipelines:
+        logs/nginx-demo:
+          receivers: [filelog]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### Запустите ClickStack с демо-конфигурацией
+
+    Запустите ClickStack с демо-журналами и этой конфигурацией:
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/nginx-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/access.log:/tmp/nginx-demo/access.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### Проверьте журналы в HyperDX
+
+    После запуска ClickStack:
+
+    1. Откройте [HyperDX](http://localhost:8080/) и войдите в свою учётную запись (возможно, сначала потребуется создать аккаунт)
+    2. Перейдите в представление Search и установите источник `Logs`
+    3. Установите временной диапазон **2025-10-19 11:00:00 - 2025-10-22 11:00:00**
+
+    Вот что вы должны увидеть в представлении Search:
+
+    <Info>
+      **Отображение часового пояса**
+
+      HyperDX отображает временные метки в локальном часовом поясе вашего браузера. Демо-данные охватывают период 2025-10-20 11:00:00 - 2025-10-21 11:00:00 UTC. Широкий временной диапазон гарантирует, что вы увидите демо-журналы независимо от своего местоположения. После этого можно сузить диапазон до 24 часов для более наглядных визуализаций.
+    </Info>
+
+    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="Представление журналов" />
+
+    <Image img="/images/clickstack/log-view.webp" alt="Представление журналов" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## Панели мониторинга и визуализация
+</div>
+
+Чтобы вам было проще начать мониторинг Nginx с ClickStack, мы подготовили основные визуализации для журналов Nginx.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-logs-dashboard.json'} download="nginx-logs-dashboard.json" eventName="docs.nginx_logs_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
+  </Step>
+
+  <Step>
+    #### Импортируйте преднастроенную панель мониторинга
+
+    1. Откройте HyperDX и перейдите в раздел Dashboards.
+    2. Нажмите &quot;Import Dashboard&quot; в правом верхнем углу в меню с многоточием.
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Импорт панели мониторинга" />
+
+    3. Загрузите файл nginx-logs-dashboard.json и нажмите &quot;Finish Import&quot;.
+
+    <Image img="/images/clickstack/finish-nginx-logs-import.webp" alt="Завершение импорта" />
+  </Step>
+
+  <Step>
+    #### Панель мониторинга будет создана со всеми уже настроенными визуализациями
+
+    <Note>
+      Для демо-набора данных установите временной диапазон **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)** (скорректируйте его в соответствии с вашим местным часовым поясом). По умолчанию для импортированной панели мониторинга временной диапазон не задан.
+    </Note>
+
+    <Image img="/images/clickstack/nginx-logs-dashboard.webp" alt="Пример панели мониторинга" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## Устранение неполадок
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### Пользовательская конфигурация не загружается
+</div>
+
+* Убедитесь, что переменная среды CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE задана корректно
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+* Убедитесь, что файл пользовательской конфигурации смонтирован по пути /etc/otelcol-contrib/custom.config.yaml
+
+```bash
+docker exec <container-name> ls -lh /etc/otelcol-contrib/custom.config.yaml
+```
+
+* Просмотрите содержимое пользовательской конфигурации, чтобы убедиться, что его можно прочитать
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
+```
+
+<div id="no-logs">
+  ### В HyperDX не отображаются журналы
+</div>
+
+* Убедитесь, что nginx записывает журналы в формате JSON
+
+```bash
+tail -f /var/log/nginx/access.log
+```
+
+* Проверьте, что коллектор может читать журналы
+
+```bash
+docker exec `<container>` cat /var/log/nginx/access.log
+```
+
+* Убедитесь, что действующая конфигурация включает ваш ресивер filelog
+
+```bash
+docker exec `<container>` cat /etc/otel/supervisor-data/effective.yaml | grep filelog
+```
+
+* Проверьте журналы collector на наличие ошибок
+
+```bash
+docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
+```
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+* Настройте [оповещения](/ru/clickstack/features/alerts) для критически важных метрик (частота ошибок, пороги задержки)
+* Создайте дополнительные [панели мониторинга](/ru/clickstack/features/dashboards/overview) для конкретных сценариев использования (мониторинг API, события безопасности)
+
+<div id="going-to-production">
+  ## Переход в продакшн
+</div>
+
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel collector и отправлять данные в конечную точку OTLP ClickStack. Сведения о конфигурации для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
