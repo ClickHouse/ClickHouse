@@ -195,7 +195,7 @@ Query:
 
 **Simple case**
 ```sql
-arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
+select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
 SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
@@ -208,7 +208,7 @@ Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
 
 **Single quote as quoting character**
 ```sql
-arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
+select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
 SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
@@ -289,7 +289,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 
 **Escape sequences without escape sequences support**
 ```sql
-arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
+select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
 
 SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 
@@ -322,7 +322,7 @@ Leading escape sequences will be skipped in keys and will be considered invalid 
 
 **Escape sequences with escape sequence support turned on**
 ```sql
-arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
+select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
 
 SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
 

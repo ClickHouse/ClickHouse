@@ -10,7 +10,7 @@ doc_type: 'reference'
 ---
 
 import {CardSecondary} from '@clickhouse/click-ui/bundled';
-import WhenToUseJSON from '@site/docs/best-practices/_snippets/_when-to-use-json.md';
+import WhenToUseJson from '@site/docs/best-practices/_snippets/_when-to-use-json.md';
 import Link from '@docusaurus/Link'
 
 <Link to="/docs/best-practices/use-json-where-appropriate" style={{display: 'flex', textDecoration: 'none', width: 'fit-content'}}>
@@ -54,7 +54,7 @@ Where the parameters in the syntax above are defined as:
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
 
-<WhenToUseJSON />
+<WhenToUseJson />
 
 ## Creating `JSON` {#creating-json}
 
@@ -170,14 +170,14 @@ For example:
 
 ```sql title="Query"
 CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
-INSERT INTO test VALUES ('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), ('{"f" : "Hello, World", "d" : "2020-01-02"}'), ('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
+INSERT INTO test VALUES ('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), ('{"f" : "Hello, World!", "d" : "2020-01-02"}'), ('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
 SELECT json FROM test;
 ```
 
 ```text title="Response"
 ┌─json────────────────────────────────────────────────────────┐
 │ {"a":{"b":42,"g":42.42},"c":["1","2","3"],"d":"2020-01-01"} │
-│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World"}           │
+│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}          │
 │ {"a":{"b":43,"g":43.43},"c":["4","5","6"]}                  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -297,14 +297,14 @@ The `JSON` type supports reading nested objects as sub-columns with type `JSON` 
 
 ```sql title="Query"
 CREATE TABLE test (json JSON) ENGINE = Memory;
-INSERT INTO test VALUES ('{"a" : {"b" : {"c" : 42, "g" : 42.42}}, "c" : [1, 2, 3], "d" : {"e" : {"f" : {"g" : "Hello, World", "h" : [1, 2, 3]}}}}'), ('{"f" : "Hello, World", "d" : {"e" : {"f" : {"h" : [4, 5, 6]}}}}'), ('{"a" : {"b" : {"c" : 43, "e" : 10, "g" : 43.43}}, "c" : [4, 5, 6]}');
+INSERT INTO test VALUES ('{"a" : {"b" : {"c" : 42, "g" : 42.42}}, "c" : [1, 2, 3], "d" : {"e" : {"f" : {"g" : "Hello, World", "h" : [1, 2, 3]}}}}'), ('{"f" : "Hello, World!", "d" : {"e" : {"f" : {"h" : [4, 5, 6]}}}}'), ('{"a" : {"b" : {"c" : 43, "e" : 10, "g" : 43.43}}, "c" : [4, 5, 6]}');
 SELECT json FROM test;
 ```
 
 ```text title="Response"
 ┌─json──────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ {"a":{"b":{"c":"42","g":42.42}},"c":["1","2","3"],"d":{"e":{"f":{"g":"Hello, World","h":["1","2","3"]}}}} │
-│ {"d":{"e":{"f":{"h":["4","5","6"]}}},"f":"Hello, World"}                                                  │
+│ {"d":{"e":{"f":{"h":["4","5","6"]}}},"f":"Hello, World!"}                                                 │
 │ {"a":{"b":{"c":"43","e":"10","g":43.43}},"c":["4","5","6"]}                                               │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```

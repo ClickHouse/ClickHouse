@@ -1,17 +1,21 @@
 #include <Storages/StorageURL.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/StorageFile.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Columns/ColumnConst.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Web/Configuration.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Storages/prepareReadingFromFormat.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Access/Common/AccessType.h>
+#include <Access/Common/AccessFlags.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -56,6 +60,7 @@
 #include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -99,6 +104,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -1923,6 +1929,163 @@ String StorageURL::resolveURLBase(const String & url, const String & base)
     return normalizeDotSegmentsInURL(merged, authority_start);
 }
 
+namespace
+{
+String extractSchemeLower(const String & url)
+{
+    auto pos = url.find("://");
+    if (pos == String::npos)
+        return {};
+    String scheme = url.substr(0, pos);
+    boost::to_lower(scheme);
+    return scheme;
+}
+}
+
+URLSchemeTarget classifyURLScheme(const String & url)
+{
+    const String scheme = extractSchemeLower(url);
+    if (scheme.empty())
+        return URLSchemeTarget::URL;
+
+    if (scheme == "file")
+        return URLSchemeTarget::File;
+
+    /// Only the schemes normalized by the S3 URI mapper without any user configuration are
+    /// dispatched to the `S3` engine: the native `s3`, plus `gs`/`gcs`/`oss` which the default
+    /// `url_scheme_mappers` (and the built-in fallback in `S3::URI`) rewrite to a concrete endpoint.
+    /// Other S3-compatible vendor schemes (`cos`, `cosn`, `obs`, `eos`, `s3express`, ...) are
+    /// region-specific virtual-hosted hostnames rather than scheme mappings, so there is no static
+    /// endpoint to route `<scheme>://bucket/key` to. Leaving them on the plain `URL` path makes them
+    /// fail with a clear "Unsupported scheme" error instead of being silently misparsed by `S3::URI`
+    /// as a custom endpoint with the object key taken as the bucket. Use the `s3` engine/function
+    /// directly (with `url_scheme_mappers` configured) for those backends.
+    if (scheme == "s3" || scheme == "gs" || scheme == "gcs" || scheme == "oss")
+        return URLSchemeTarget::S3;
+
+    if (scheme == "az" || scheme == "azure" || scheme == "abfss" || scheme == "abfs")
+        return URLSchemeTarget::Azure;
+
+    if (scheme == "hdfs")
+        return URLSchemeTarget::HDFS;
+
+    /// http, https, ftp, ... are read by StorageURL itself.
+    return URLSchemeTarget::URL;
+}
+
+const char * storageEngineNameForURLScheme(URLSchemeTarget target)
+{
+    switch (target)
+    {
+        case URLSchemeTarget::URL:   return "URL";
+        case URLSchemeTarget::File:  return "File";
+        case URLSchemeTarget::S3:    return "S3";
+        case URLSchemeTarget::Azure: return "AzureBlobStorage";
+        case URLSchemeTarget::HDFS:  return "HDFS";
+    }
+}
+
+const char * tableFunctionNameForURLScheme(URLSchemeTarget target)
+{
+    switch (target)
+    {
+        case URLSchemeTarget::URL:   return "url";
+        case URLSchemeTarget::File:  return "file";
+        case URLSchemeTarget::S3:    return "s3";
+        case URLSchemeTarget::Azure: return "azureBlobStorage";
+        case URLSchemeTarget::HDFS:  return "hdfs";
+    }
+}
+
+String getLocalPathFromFileURL(const String & url)
+{
+    /// The scheme is case-insensitive (matching `classifyURLScheme`), so derive the path from the
+    /// `://` separator rather than matching a literal lowercase `file://` prefix.
+    auto scheme_pos = url.find("://");
+    if (scheme_pos != String::npos)
+    {
+        String scheme = url.substr(0, scheme_pos);
+        boost::to_lower(scheme);
+        if (scheme == "file")
+            /// `file:///abs/path` -> `/abs/path` (absolute), `file://relative.csv` -> `relative.csv` (relative to user_files).
+            return url.substr(scheme_pos + std::string_view("://").size());
+    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a `file://` URL, got: {}", url);
+}
+
+AzureURLParts parseAzureURL(const String & url)
+{
+    auto scheme_pos = url.find("://");
+    if (scheme_pos == String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed Azure URL: {}", url);
+
+    String scheme = url.substr(0, scheme_pos);
+    boost::to_lower(scheme);
+    String rest = url.substr(scheme_pos + 3);
+
+    /// Split off the query string (a SAS token such as `?sp=...&sig=...`) before parsing the host and
+    /// path. `AzureBlobStorage::processURL` recovers the SAS only from the connection/account URL — it
+    /// splits the `account_url` argument on `?` — so the query must ride on `account_url`, not on the
+    /// blob path. Leaving it on the blob path would drop authentication for SAS-protected links (the
+    /// delegate would try to read a blob whose name literally contains `?sp=...`). Stripping the query
+    /// first is also required for correct parsing: a SAS `sig=` value is base64 and contains `/` and
+    /// `+`, so a `?`-bearing URL would otherwise have its container/blob split on a slash inside the
+    /// signature.
+    String query;
+    if (auto query_pos = rest.find('?'); query_pos != String::npos)
+    {
+        query = rest.substr(query_pos); /// includes the leading `?`
+        rest = rest.substr(0, query_pos);
+    }
+
+    AzureURLParts parts;
+
+    /// Hadoop-style `abfss://<container>@<account>.dfs.core.windows.net/<blob path>`.
+    if (scheme == "abfss" || scheme == "abfs")
+    {
+        auto at_pos = rest.find('@');
+        if (at_pos == String::npos)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Azure `{}` URL must be of the form {}://<container>@<account>.dfs.core.windows.net/<path>, got: {}",
+                scheme, scheme, url);
+
+        parts.container = rest.substr(0, at_pos);
+        const String host_and_path = rest.substr(at_pos + 1);
+        auto slash_pos = host_and_path.find('/');
+        const String host = (slash_pos == String::npos) ? host_and_path : host_and_path.substr(0, slash_pos);
+        parts.blob_path = (slash_pos == String::npos) ? "" : host_and_path.substr(slash_pos + 1);
+
+        auto dot_pos = host.find('.');
+        const String account = (dot_pos == String::npos) ? host : host.substr(0, dot_pos);
+        parts.account_url = "https://" + account + ".blob.core.windows.net" + query;
+        return parts;
+    }
+
+    /// `az://<account>.blob.core.windows.net/<container>/<blob>` or `azure://<host>/<container>/<blob>`.
+    auto slash_pos = rest.find('/');
+    const String host = (slash_pos == String::npos) ? rest : rest.substr(0, slash_pos);
+    const String path = (slash_pos == String::npos) ? "" : rest.substr(slash_pos + 1);
+
+    if (host.find('.') == String::npos)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Azure `{}` URL must include the storage account host, e.g. "
+            "{}://<account>.blob.core.windows.net/<container>/<path>; got: {}. "
+            "Use the `azureBlobStorage` table function for connection-string based access.",
+            scheme, scheme, url);
+
+    parts.account_url = "https://" + host + query;
+    auto path_slash = path.find('/');
+    parts.container = (path_slash == String::npos) ? path : path.substr(0, path_slash);
+    parts.blob_path = (path_slash == String::npos) ? "" : path.substr(path_slash + 1);
+
+    if (parts.container.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Azure URL is missing the container name: {}", url);
+
+    return parts;
+}
+
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
@@ -1940,6 +2103,12 @@ void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_ur
     if (args.empty())
         return;
 
+    /// Skip rewriting when the resolved URL contains userinfo (`user:pass@host`) and the caller asked
+    /// to keep credentials out of the persisted arguments. Credentials may originate from `url_base`
+    /// (e.g. `SET url_base = 'http://user:pass@base/dir/'`) rather than from the user-written engine
+    /// arguments, and persisting them into the CREATE TABLE AST would expose secrets via
+    /// `SHOW CREATE TABLE`. Persistence in this case relies on `url_base` being set with the same value
+    /// at attach/restart time.
     if (skip_userinfo && urlHasUserInfo(resolved_url))
         return;
 
@@ -2037,6 +2206,314 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
 }
 
 
+namespace
+{
+/// Thin wrapper returned when the `URL` engine dispatches to another backend. It forwards reads,
+/// writes and schema inference to the delegate storage, but keeps the persisted engine as
+/// `ENGINE = URL(...)` and preserves the `URL` engine's DDL semantics (metadata-only `RENAME`,
+/// no `TRUNCATE`), so the wrapper does not silently expose the delegate's destructive lifecycle
+/// operations on a table that is declared and shown as `URL`.
+class StorageURLSchemeDispatch final : public StorageProxy
+{
+public:
+    StorageURLSchemeDispatch(
+        StoragePtr nested_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment_,
+        String resolved_url_,
+        String resolved_format_)
+        : StorageProxy(table_id_)
+        , nested(std::move(nested_))
+        , resolved_url(std::move(resolved_url_))
+        , resolved_format(std::move(resolved_format_))
+    {
+        StorageInMemoryMetadata metadata;
+        const auto nested_metadata = nested->getInMemoryMetadataPtr(nullptr, false);
+        /// `columns_` is empty for a schema-inferred `CREATE TABLE ... ENGINE = URL('file://...')`
+        /// without an explicit column list, because the structure is inferred inside the delegate
+        /// storage constructor (the `URL` engine declares `supports_schema_inference`). Copy the
+        /// inferred columns from the delegate so `SHOW CREATE`, `system.columns` and the materialized
+        /// column list in the persisted metadata reflect the real structure instead of being empty.
+        metadata.setColumns(columns_.empty() ? nested_metadata->getColumns() : columns_);
+        metadata.setConstraints(constraints_);
+        metadata.setComment(comment_);
+        /// Expose the delegate's virtual columns (`_path`, `_file`, `_table`, ...) on the wrapper's
+        /// own metadata, matching the plain `URL` engine and the delegate it forwards to. Reads go
+        /// through the delegate, so `StorageProxy::getStorageSnapshot` already swaps in the delegate's
+        /// virtuals at query time; copying them here keeps this storage's standalone metadata (read
+        /// directly by introspection, e.g. `DESCRIBE`/`system.columns`) consistent with the delegate
+        /// instead of advertising no virtual columns at all.
+        metadata.setVirtuals(nested_metadata->virtuals);
+        setInMemoryMetadata(metadata);
+    }
+
+    StoragePtr getNested() const override { return nested; }
+    /// The table was created with `ENGINE = URL(...)`; report it as such for consistency with
+    /// `SHOW CREATE TABLE` and `system.tables`, even though reads/writes go to the delegate.
+    String getName() const override { return "URL"; }
+
+    /// Forward the delegate's subcolumn-optimization contract. `StorageProxy` forwards
+    /// `supportsSubcolumns` to the delegate (true for `File`/object storage), but not
+    /// `supportsOptimizationToSubcolumns`. Without this override the wrapper would fall back to
+    /// `IStorage::supportsOptimizationToSubcolumns`, which defaults to `supportsSubcolumns` and would
+    /// therefore report `true`, while the direct `StorageFile` and plain `StorageURL` deliberately
+    /// return `false`. `FunctionToSubcolumnsPass` reads this bit, so `ENGINE = URL('file://...')`
+    /// would otherwise receive subcolumn rewrites the backend explicitly disables.
+    bool supportsOptimizationToSubcolumns() const override { return nested->supportsOptimizationToSubcolumns(); }
+
+    /// Forward the delegate's narrower PREWHERE contract. `StorageProxy` forwards `supportsPrewhere`,
+    /// but not `supportedPrewhereColumns`/`canMoveConditionsToPrewhere`. Without these overrides the
+    /// wrapper would fall back to `IStorage::supportedPrewhereColumns == std::nullopt` (unrestricted)
+    /// and the `IStorage::canMoveConditionsToPrewhere == supportsPrewhere` default, whereas
+    /// `StorageFile`, `StorageObjectStorage` and plain `StorageURL` restrict `PREWHERE` away from
+    /// columns with default expressions and hive-partition columns. Otherwise `ENGINE = URL('file://...')`
+    /// could accept explicit `PREWHERE` or auto-move conditions onto columns not materialized at
+    /// `PREWHERE` time.
+    std::optional<NameSet> supportedPrewhereColumns() const override { return nested->supportedPrewhereColumns(); }
+    bool canMoveConditionsToPrewhere() const override { return nested->canMoveConditionsToPrewhere(); }
+
+    /// Forward the delegate's trivial-count contract. `StorageProxy` does not forward
+    /// `supportsTrivialCountOptimization`, so without this override the wrapper would fall back to the
+    /// `IStorage` default (`false`), while `StorageFile`, `StorageObjectStorage` and plain `StorageURL`
+    /// all return `true`. The planner (`applyTrivialCountIfPossible`) reads this bit before setting
+    /// `SelectQueryInfo::optimize_trivial_count`, which the delegate's `read()` uses to count rows
+    /// without materializing columns (and which, for object storage, also enables the cached
+    /// `totalRows()` path). Otherwise `SELECT count()` from `ENGINE = URL('file://...')` / `URL('s3://...')`
+    /// would read the external data instead of using the backend's optimized count path.
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
+    {
+        return nested->supportsTrivialCountOptimization(storage_snapshot, query_context);
+    }
+
+    /// Keep the persisted syntax as `URL(...)`, but materialize the `url_base`-resolved URL into the
+    /// stored arguments. Otherwise a relative reference resolved via `url_base` (e.g.
+    /// `URL('data.csv')` with `SET url_base = 'file://.../'`) would persist without a scheme and, after
+    /// `DETACH`/`ATTACH` or restart without that setting, be loaded as a plain `URL` instead of
+    /// re-dispatching to the original backend.
+    void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override
+    {
+        /// Persist the delegate's inferred format into the stored `URL(...)` arguments, mirroring
+        /// `StorageURL::addInferredEngineArgsToCreateQuery` for the plain `URL` engine. Without this,
+        /// a `format = auto` URL without a recognizable extension (e.g. `URL('file://.../data')`)
+        /// would be stored without a format, and `ATTACH`/restart would rebuild the delegate with
+        /// `format = auto` and re-read the external resource to rediscover the format even though the
+        /// schema is already persisted — incurring I/O at startup and risking failure or divergence
+        /// if the resource is unavailable or has changed. This runs before the URL materialization,
+        /// matching the order in `StorageURL::addInferredEngineArgsToCreateQuery`.
+        materializeResolvedFormatInEngineArgs(args, context);
+
+        StorageURL::overrideURLInEngineArgs(args, resolved_url, context, /*skip_userinfo=*/ true);
+    }
+
+    /// Preserve the `URL` engine's metadata-only rename: a plain `URL` table can be renamed without
+    /// touching the external resource, whereas forwarding to the delegate would move/remove backend
+    /// data or throw (e.g. `StorageFile::rename` rejects renaming a user-defined-file table).
+    void rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id) override
+    {
+        /// `StorageProxy::renameInMemory` already does the right thing here: it renames the delegate
+        /// in memory and updates this storage's own id, without touching the external resource.
+        renameInMemory(new_table_id);
+    }
+
+    /// Preserve the `URL` engine semantics: a plain `URL` table does not support `TRUNCATE`.
+    /// Forwarding to the delegate would otherwise truncate local files (`File`) or remove
+    /// object-storage keys (`S3`/`AzureBlobStorage`/`HDFS`) under a table declared as `URL`.
+    bool supportsTruncate() const override { return false; }
+
+    void truncate(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        TableExclusiveLockHolder & lock) override
+    {
+        /// `supportsTruncate() == false` alone is not enough to block truncation: it is only consulted
+        /// by the bulk `TRUNCATE ALL TABLES` / `TRUNCATE DATABASE ... LIKE` paths (which skip tables
+        /// that report it). An explicit `TRUNCATE TABLE` (`InterpreterDropQuery::executeToTableImpl`)
+        /// calls `truncate` directly without checking `supportsTruncate`, so without this override it
+        /// would reach `StorageProxy::truncate` and truncate the backing file/object. Deliberately
+        /// bypass the proxy and use the `IStorage` default, which throws `NOT_IMPLEMENTED`.
+        IStorage::truncate(query, metadata_snapshot, context, lock); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+private:
+    /// Write `resolved_format` into the persisted `URL(...)` engine arguments when it is a concrete
+    /// format. Reuses the plain `URL` engine's materialization path so that both the positional form
+    /// `URL('url' [, format] [, compression])` and the named-collection / key-value forms
+    /// (`URL(nc)`, `URL(url='...')`) get the inferred format persisted. The helper only overrides a
+    /// `format` left as `auto` (or absent), so an explicitly given format is preserved.
+    void materializeResolvedFormatInEngineArgs(ASTs & args, const ContextPtr & context) const
+    {
+        if (resolved_format.empty() || resolved_format == "auto" || args.empty())
+            return;
+
+        TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
+            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false);
+    }
+
+    StoragePtr nested;
+    /// The `url_base`-resolved URL, materialized into the persisted engine args on creation.
+    String resolved_url;
+    /// The delegate's inferred data format, materialized into the persisted engine args on creation.
+    String resolved_format;
+};
+}
+
+/// If the resolved URL scheme maps to another backend, create that storage and return it.
+/// Returns nullptr when the scheme is handled by StorageURL itself (http, https, ...) or when
+/// the arguments are not a shape we can classify (then the plain URL path reports any errors).
+///
+/// The persisted engine stays `ENGINE = URL(...)`: the delegate arguments are built in a separate
+/// list, so `SHOW CREATE`, `DETACH`/`ATTACH` and restart keep the original `URL(...)` syntax and
+/// re-dispatch on reload. The wrapper's `addInferredEngineArgsToCreateQuery` materializes the
+/// `url_base`-resolved URL back into those args so re-dispatch reproduces the original backend even
+/// if `url_base` later changes.
+static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments & args)
+{
+    if (args.engine_args.empty())
+        return nullptr;
+
+    auto context = args.getLocalContext();
+
+    /// Resolve url/format/compression on a clone so the persisted arguments are not modified.
+    /// This also handles positional, key-value and named-collection argument forms uniformly.
+    ASTs probe_args;
+    probe_args.reserve(args.engine_args.size());
+    for (const auto & arg : args.engine_args)
+        probe_args.push_back(arg->clone());
+
+    StorageURL::Configuration configuration;
+    try
+    {
+        configuration = StorageURL::getConfiguration(probe_args, context, &args.table_id);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch) // Ok: not a URL-engine argument shape we can classify; the plain URL path below reports any errors.
+    {
+        return nullptr;
+    }
+
+    const auto target = classifyURLScheme(configuration.url);
+    if (target == URLSchemeTarget::URL)
+        return nullptr;
+
+    const char * engine_name = storageEngineNameForURLScheme(target);
+
+    if (!configuration.headers.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The URL engine does not support headers(...) when dispatching to the {} engine (URL '{}')",
+            engine_name, configuration.url);
+
+    const String & format = configuration.format;
+    const String & compression = configuration.compression_method;
+
+    /// Build the delegate engine arguments in a separate list.
+    ASTs delegate_args;
+    if (target == URLSchemeTarget::File)
+    {
+        /// The `File` engine takes (format, path, [compression]) — format comes first.
+        const String path = getLocalPathFromFileURL(configuration.url);
+        String format_for_file = format.empty() ? "auto" : format;
+        if (format_for_file == "auto")
+            format_for_file = FormatFactory::instance().tryGetFormatFromFileName(path).value_or("auto");
+        delegate_args.push_back(make_intrusive<ASTLiteral>(format_for_file));
+        delegate_args.push_back(make_intrusive<ASTLiteral>(path));
+        if (!compression.empty())
+            delegate_args.push_back(make_intrusive<ASTLiteral>(compression));
+    }
+    else if (target == URLSchemeTarget::Azure)
+    {
+        /// The `AzureBlobStorage` engine takes (account_url, container, blob_path, [format, compression]).
+        auto parts = parseAzureURL(configuration.url);
+        delegate_args.push_back(make_intrusive<ASTLiteral>(parts.account_url));
+        delegate_args.push_back(make_intrusive<ASTLiteral>(parts.container));
+        delegate_args.push_back(make_intrusive<ASTLiteral>(parts.blob_path));
+        if (!format.empty())
+            delegate_args.push_back(make_intrusive<ASTLiteral>(format));
+        if (!compression.empty())
+        {
+            if (format.empty())
+                delegate_args.push_back(make_intrusive<ASTLiteral>(String("auto")));
+            delegate_args.push_back(make_intrusive<ASTLiteral>(compression));
+        }
+    }
+    else
+    {
+        /// `S3` and `HDFS` engines take (url, [format, compression]) — same shape as `URL`.
+        delegate_args.push_back(make_intrusive<ASTLiteral>(configuration.url));
+        if (!format.empty())
+            delegate_args.push_back(make_intrusive<ASTLiteral>(format));
+        if (!compression.empty())
+        {
+            if (format.empty())
+                delegate_args.push_back(make_intrusive<ASTLiteral>(String("auto")));
+            delegate_args.push_back(make_intrusive<ASTLiteral>(compression));
+        }
+    }
+
+    /// Re-check the table engine privilege for the *target* engine on fresh creation. The outer
+    /// creation already verified `TABLE ENGINE ON URL`; without this a user granted only URL could
+    /// create File/S3/Azure/HDFS-backed tables they are not permitted to. We only check on CREATE
+    /// (not ATTACH/restore/startup loading), mirroring where the outer engine privilege is checked.
+    if (args.mode == LoadingStrictnessLevel::CREATE)
+        context->checkAccess(AccessType::TABLE_ENGINE, String(engine_name));
+
+    const auto & storages = StorageFactory::instance().getAllStorages();
+    auto it = storages.find(engine_name);
+    if (it == storages.end())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table engine {} (required to handle URL '{}' in the unified URL engine) is not available in this build",
+            engine_name, configuration.url);
+
+    const String engine_name_str = engine_name;
+    StorageFactory::Arguments delegate_factory_args
+    {
+        .engine_name = engine_name_str,
+        .engine_args = delegate_args,
+        .storage_def = args.storage_def,
+        .query = args.query,
+        .relative_data_path = args.relative_data_path,
+        .table_id = args.table_id,
+        .local_context = args.local_context,
+        .context = args.context,
+        .columns = args.columns,
+        .constraints = args.constraints,
+        .mode = args.mode,
+        .comment = args.comment,
+        .is_restore_from_backup = args.is_restore_from_backup,
+    };
+    auto delegate_storage = it->second.creator_fn(delegate_factory_args);
+
+    /// Resolve the concrete format the delegate inferred (when none was given explicitly), so the
+    /// wrapper can persist it into the stored `URL(...)` arguments and avoid re-inference (and the
+    /// associated external I/O) on `ATTACH`/restart.
+    String resolved_format = configuration.format;
+    if (resolved_format.empty() || resolved_format == "auto")
+    {
+        /// The classified schemes map to exactly two delegate storage types: `file://` -> `StorageFile`,
+        /// and `s3`/`gs`/`gcs`/`oss` (S3), `az`/`azure`/`abfss`/`abfs` (Azure) and `hdfs` ->
+        /// `StorageObjectStorage`. Throw if a future scheme is added to `classifyURLScheme` without
+        /// teaching this format resolution about its delegate type, instead of silently persisting a
+        /// `format = auto` that would force re-inference (and external I/O) on every `ATTACH`/restart.
+        if (const auto * file = typeid_cast<const StorageFile *>(delegate_storage.get()))
+            resolved_format = file->getFormatName();
+        else if (const auto * object_storage = typeid_cast<const StorageObjectStorage *>(delegate_storage.get()))
+            resolved_format = object_storage->getFormatName();
+        else
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected delegate storage '{}' while resolving the inferred format for the unified URL "
+                "engine dispatching scheme of URL '{}' (expected File or object storage)",
+                delegate_storage->getName(), configuration.url);
+    }
+
+    return std::make_shared<StorageURLSchemeDispatch>(
+        std::move(delegate_storage), args.table_id, args.columns, args.constraints, args.comment,
+        configuration.url, std::move(resolved_format));
+}
+
 void registerStorageURL(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory)
 {
@@ -2044,6 +2521,10 @@ void registerStorageURL(StorageFactory & factory)
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
+            /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
+            if (auto dispatched = tryDispatchURLEngineByScheme(args))
+                return dispatched;
+
             ASTs & engine_args = args.engine_args;
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
             auto context = args.getLocalContext();
@@ -2122,9 +2603,11 @@ void registerStorageURL(StorageFactory & factory)
             .description = R"DOCS_MD(
 Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
 
+The `URL` engine is also a unified wrapper that dispatches to the right backend based on the URL scheme, so a recognized non-HTTP scheme is delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
+
 Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
-- The `URL` parameter must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server that uses HTTP or HTTPS. This does not require any additional headers for getting a response from the server.
+- The `URL` parameter must conform to the structure of a Uniform Resource Locator. For an `http`/`https` URL (the default backend), it must point to a server that uses HTTP or HTTPS, and getting a response from the server does not require any additional headers. A URL with a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is instead delegated to the matching engine — see [Dispatching by URL scheme](#scheme-dispatch) below.
 
 - The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/interfaces/formats#formats-overview).
 
@@ -2149,6 +2632,14 @@ The supported `CompressionMethod` should be one of following:
 If `CompressionMethod` is not specified, it defaults to `auto`. This means ClickHouse detects compression method from the suffix of `URL` parameter automatically. If the suffix matches any of compression method listed above, corresponding compression is applied or there won't be any compression enabled.
 
 For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` compression method is applied, but for `URL('http://localhost/test.fr')`, no compression is enabled because the suffix `fr` does not match any compression methods above.
+
+## Dispatching by URL scheme {#scheme-dispatch}
+
+The `URL` engine is a unified wrapper on top of the other file- and object-storage engines: it dispatches to the right backend based on the URL scheme. `http`/`https` (and any unrecognized scheme) are served by the `URL` engine itself; `file://` is served by the [File](../../../engines/table-engines/special/file.md) engine; `s3://`, `gs://`, `gcs://`, `oss://` by the [S3](/engines/table-engines/integrations/s3) engine; `az://`, `azure://`, `abfss://`, `abfs://` by the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) engine; and `hdfs://` by the [HDFS](/engines/table-engines/integrations/hdfs) engine.
+
+Only the S3 schemes that the S3 URI mapper resolves to a concrete endpoint without extra configuration (`s3`, plus `gs`/`gcs`/`oss`) are dispatched. Other S3-compatible vendor schemes (`cos`, `obs`, `eos`, …) are region-specific and have no default endpoint mapping, so passing such a URL to the `URL` engine is treated as an unrecognized scheme and reported as an error; use the [S3](/engines/table-engines/integrations/s3) engine directly (with `url_scheme_mappers` configured) for those backends.
+
+The [url_base](/operations/settings/settings.md#url_base) setting is applied before scheme dispatch, so a relative reference is first resolved against the base and then routed to the matching engine.
 
 ## Usage {#using-the-engine-in-the-clickhouse-server}
 

@@ -216,7 +216,7 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 ```
 
 ```sql
-SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types```
+SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types
 ```
 
 ```text
@@ -257,7 +257,7 @@ Note: converting from `String` type is always performed through parsing, if you 
 SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
 ```
 
-```sql
+```text
 ┌─variant───┬─variant_type─┐
 │ [1, 2, 3] │ String       │
 └───────────┴──────────────┘
@@ -442,6 +442,7 @@ Example:
 
 ```sql
 SET allow_suspicious_variant_types = 1;
+SET allow_suspicious_types_in_order_by = 1;
 CREATE TABLE test (v Variant(UInt32, Int64)) ENGINE=Memory;
 INSERT INTO test VALUES (1::UInt32), (1::Int64), (100::UInt32), (100::Int64);
 SELECT v, variantType(v) FROM test ORDER by v;

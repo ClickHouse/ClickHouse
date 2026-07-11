@@ -26,6 +26,7 @@ import json
 import re
 import shutil
 import sys
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1182,14 +1183,118 @@ def transform_image_logo_to_img(text: str) -> str:
 # Convert `<VerticalStepper>...</VerticalStepper>` (Click UI, splits content by
 # headings of `headerLevel` — defaults to h2) into Mintlify `<Steps>`/`<Step>`
 # blocks. Each matching heading inside the stepper marks the start of a new
-# Step; the heading line (anchor and all) is preserved inside the Step body so
-# existing in-page links keep working. Headings inside fenced code blocks are
-# ignored — e.g. `## comment` inside a `shell` fence is a shell comment, not a
-# Markdown heading.
+# Step and becomes its `title`/`id` props: the `id` carries the heading's
+# `{#anchor}` (or its auto-generated slug) so existing in-page links keep
+# working, and a heading left inside the body would render the step number
+# above the title. Headings inside fenced code blocks are ignored — e.g.
+# `## comment` inside a `shell` fence is a shell comment, not a Markdown
+# heading.
 VERTICAL_STEPPER_RE = re.compile(r"<VerticalStepper\b(?P<attrs>[^>]*)>(?P<body>.*?)</VerticalStepper>", re.DOTALL)
 VERTICAL_STEPPER_SELFCLOSE_RE = re.compile(r"<VerticalStepper\b[^>]*/>\s*\n?")
 HEADER_LEVEL_RE = re.compile(r'\bheaderLevel\s*=\s*"h([1-6])"')
 FENCE_RE = re.compile(r"^[ \t]*(```+|~~~+)", re.MULTILINE)
+STEP_HEADING_RE = re.compile(
+    r"^\s*#{1,6}\s+(?P<title>.*?)(?:\s*\{#(?P<anchor>[^}]+)\})?\s*$"
+)
+# Inline markup that a plain string `title` prop would render literally.
+# Only non-interactive markup (code spans, bold) is serialized into the
+# title; links and JSX are flattened out beforehand (see _flatten_links).
+STEP_TITLE_MARKUP_RE = re.compile(r"`|\*\*")
+STEP_TITLE_TOKEN_RE = re.compile(
+    r"`(?P<code>[^`]+)`"
+    r"|\*\*(?P<bold>[^*]+)\*\*"
+)
+# Interactive content in a step heading: a markdown link or a JSX element
+# (e.g. `<TrackedLink ...>`). The Step title element owns the anchor click
+# handler, so interactive nodes must never be serialized into `title`.
+STEP_TITLE_INTERACTIVE_RE = re.compile(r"\[[^\]]*\]\(|</?[A-Za-z]")
+
+
+def _step_slug(text: str) -> str:
+    # GitHub-style slug of the heading's plain text, for headings without an
+    # explicit `{#anchor}` — matches the anchor the renderer auto-generates.
+    text = re.sub(r"\[([^\]]*)\]\([^)\s]+\)", r"\1", text)
+    text = re.sub(r"</?[A-Za-z][^>]*>", "", text).replace("`", "").replace("**", "")
+    out = []
+    for ch in text.strip().lower():
+        if ch in (" ", "-"):
+            out.append("-")
+        else:
+            cat = unicodedata.category(ch)
+            if cat[0] in ("L", "N", "M") or ch == "_":
+                out.append(ch)
+    return "".join(out)
+
+
+def _flatten_links(title: str) -> str:
+    # Linked text keeps its words, tags are dropped:
+    # `[Download](url) the config` -> `Download the config`,
+    # `<TrackedLink ...>Download</TrackedLink> the config` -> `Download the config`.
+    title = re.sub(r"\[([^\]]*)\]\([^)\s]+\)", r"\1", title)
+    return re.sub(r"</?[A-Za-z][^>]*>", "", title).strip()
+
+
+def _claim_step_anchor(claimed: set[str], title: str, anchor: str | None) -> str:
+    # Register the step's fragment id: the explicit `{#anchor}` verbatim, or
+    # the auto slug suffixed with `-1`, `-2`, ... past ids already claimed.
+    if not anchor:
+        base = anchor = _step_slug(title)
+        n = 0
+        while anchor in claimed:
+            n += 1
+            anchor = f"{base}-{n}"
+    claimed.add(anchor)
+    return anchor
+
+
+def _claimed_ids_before(text: str, end: int) -> set[str]:
+    # Fragment ids claimed by headings before `end`, in document order and
+    # mirroring the renderer's assignment (explicit `{#anchor}` or the auto
+    # slug), so anchorless stepper headings never reuse an earlier fragment.
+    claimed: set[str] = set()
+    in_fence = False
+    for line in text[:end].split("\n"):
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        hm = STEP_HEADING_RE.match(line)
+        if hm:
+            _claim_step_anchor(claimed, hm.group("title").strip(), hm.group("anchor"))
+    return claimed
+
+
+def _jsx_escape(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("{", "&#123;")
+        .replace("}", "&#125;")
+        .replace("<", "&lt;")
+    )
+
+
+def _step_title_attr(title: str) -> str:
+    # A plain string when possible, a JSX fragment when the title carries
+    # non-interactive inline markup (code spans, bold). Links and JSX must be
+    # flattened out with _flatten_links before calling this.
+    if not STEP_TITLE_MARKUP_RE.search(title):
+        if '"' in title:
+            if "'" in title:
+                return 'title="%s"' % title.replace('"', "&quot;")
+            return "title='%s'" % title
+        return 'title="%s"' % title
+    pieces = []
+    pos = 0
+    for m in STEP_TITLE_TOKEN_RE.finditer(title):
+        pieces.append(_jsx_escape(title[pos:m.start()]))
+        if m.group("code") is not None:
+            pieces.append("<code>%s</code>" % _jsx_escape(m.group("code")))
+        else:
+            pieces.append("<strong>%s</strong>" % _jsx_escape(m.group("bold")))
+        pos = m.end()
+    pieces.append(_jsx_escape(title[pos:]))
+    return "title={<>%s</>}" % "".join(pieces)
 
 
 def _heading_positions_outside_fences(body: str, level: int) -> list[int]:
@@ -1240,10 +1345,25 @@ def transform_vertical_stepper(text: str) -> str:
             return body.strip("\n")
         prelude = body[: positions[0]].strip("\n")
         steps = []
+        claimed = _claimed_ids_before(m.string, m.start())
         for i, start in enumerate(positions):
             end = positions[i + 1] if i + 1 < len(positions) else len(body)
             seg = body[start:end].strip("\n")
-            steps.append(f"<Step>\n{seg}\n</Step>")
+            heading, _, rest = seg.partition("\n")
+            hm = STEP_HEADING_RE.match(heading)
+            title = hm.group("title").strip()
+            anchor = _claim_step_anchor(claimed, title, hm.group("anchor"))
+            rest = rest.strip(chr(10))
+            if STEP_TITLE_INTERACTIVE_RE.search(title):
+                # The heading carries a link or JSX. Interactive nodes must
+                # not go into the title (its element owns the anchor click
+                # handler), so the title is flattened to plain text and the
+                # original inline content moves to the top of the step body,
+                # keeping the link usable.
+                rest = title + ("\n\n" + rest if rest else "")
+                title = _flatten_links(title)
+            opener = '<Step %s id="%s">' % (_step_title_attr(title), anchor)
+            steps.append(f"{opener}\n{rest}\n</Step>")
         out = ("" if not prelude else prelude + "\n\n") + "<Steps>\n" + "\n".join(steps) + "\n</Steps>"
         return out
     return VERTICAL_STEPPER_RE.sub(repl, text)

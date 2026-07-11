@@ -59,6 +59,7 @@
     M(RemoteRead, "Number of read with remote reader in fly") \
     M(ReaderExecutorActive, "Number of live ReaderExecutor instances.") \
     M(ReaderExecutorChainedBufferBytes, "Bytes currently held in live ReaderExecutor chain buffers (OwnedChainedBuffer) -- live in-flight read memory, not a cumulative total.") \
+    M(ReaderExecutorLongConnections, "Number of long source connections currently held open by ReaderExecutor for sequential read optimization.") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
     M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSend, "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
@@ -174,6 +175,9 @@
     M(AsynchronousInsertThreads, "Number of threads in the AsynchronousInsert thread pool.") \
     M(AsynchronousInsertThreadsActive, "Number of threads in the AsynchronousInsert thread pool running a task.") \
     M(AsynchronousInsertThreadsScheduled, "Number of queued or active jobs in the AsynchronousInsert thread pool.") \
+    M(QueryRunnerThreads, "Number of threads in the QueryRunner thread pool.") \
+    M(QueryRunnerThreadsActive, "Number of threads in the QueryRunner thread pool running a task.") \
+    M(QueryRunnerThreadsScheduled, "Number of queued or active jobs in the QueryRunner thread pool.") \
     M(AsynchronousInsertQueueSize, "Number of pending tasks in the AsynchronousInsert queue.") \
     M(AsynchronousInsertQueueBytes, "Number of pending bytes in the AsynchronousInsert queue.") \
     M(StartupSystemTablesThreads, "Number of threads in the StartupSystemTables thread pool.") \
@@ -388,6 +392,8 @@
     M(QueryCacheEntries, "Total number of entries in the query cache") \
     M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
+    M(EncryptionHeaderCacheBytes, "Total size of the encryption header cache in bytes") \
+    M(EncryptionHeaderCacheEntries, "Total number of entries in the encryption header cache") \
     M(CompiledExpressionCacheBytes, "Reserved page-block capacity (rounded up to whole pages with a 2x over-provisioning factor) held by `JITModuleMemoryManager` for executable/data sections of cached JIT-compiled functions. NOT the actual bytes of machine code in use (that's smaller). Allocated via `posix_memalign`, which is intercepted into jemalloc, so this is accounted within the dedicated JIT arena and is a subset of `jemalloc.jit_arena.active_bytes`.") \
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled machine code.") \
     M(SerializationCacheBytesInMemoryAllocated, "Total size of the serialization cache in bytes including keys and overhead from empty slots") \

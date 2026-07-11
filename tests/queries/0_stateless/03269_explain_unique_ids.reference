@@ -27,7 +27,7 @@ digraph
 
 
 ('AggregatingTransform_8','Aggregating_4')
-('ConvertingAggregatedToChunksTransform_18','')
+('ConvertingAggregatedToChunksTransform_18','Aggregating_4')
 ('CreatingSetsTransform_2','CreatingSet_19')
 ('EmptySink_3','')
 ('ExpressionTransform_1','Expression_21')
