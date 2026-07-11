@@ -191,7 +191,9 @@ def pr_file_diffs(repo, pr):
         print(result.stderr.strip(), file=sys.stderr)
         return None
     files = {}
-    for obj in json.loads(result.stdout):
+    # --slurp wraps each response page in an outer list, so the output is
+    # list[list[dict]]; flatten the pages before iterating the file objects.
+    for obj in (o for page in json.loads(result.stdout) for o in page):
         status = obj.get("status")
         patch = obj.get("patch")
         entry = {
