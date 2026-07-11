@@ -1,5 +1,7 @@
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
@@ -117,6 +119,96 @@ struct Plan
     } partition_encoder;
 };
 
+/// Build a field-id -> stringified type map for one schema's `fields` array.
+static std::unordered_map<Int64, String> schemaFieldTypes(const Poco::JSON::Array::Ptr & fields)
+{
+    std::unordered_map<Int64, String> id_to_type;
+    if (!fields)
+        return id_to_type;
+    for (size_t i = 0; i < fields->size(); ++i)
+    {
+        auto field = fields->getObject(static_cast<UInt32>(i));
+        id_to_type[field->getValue<Int64>(Iceberg::f_id)] = stringifyJSON(field->get(Iceberg::f_type));
+    }
+    return id_to_type;
+}
+
+/// Compaction physically rewrites every historical data file into the CURRENT schema.
+/// `writeMetadataFiles` keeps the original snapshot ids and their committed schema-ids, so
+/// older snapshots stay reachable for time travel — but their backing files no longer contain
+/// fields that were dropped from the current schema, or that changed to a type the current
+/// schema can't losslessly represent in reverse. Reading such a pre-evolution snapshot after
+/// OPTIMIZE would then return NULL/defaults (or fail).
+///
+/// Renames are safe (the field id and type are preserved, only the name changes) and additive
+/// evolution is safe (old files simply lack the new field, exactly as before compaction). So
+/// reject only LOSSY evolution: a field id present in a still-reachable snapshot's schema that
+/// is missing from the current schema (DROP COLUMN), or whose type differs from the current
+/// schema's field of the same id (any type change — treated as non-reversible for safety).
+/// Fail-closed is appropriate for an experimental feature (allow_experimental_iceberg_compaction).
+static void checkCompactionSupportsSchemaEvolution(const Poco::JSON::Object::Ptr & initial_metadata_object)
+{
+    auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
+    auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
+    if (!schemas)
+        return;
+
+    std::unordered_map<Int64, Poco::JSON::Array::Ptr> schema_fields_by_id;
+    for (size_t i = 0; i < schemas->size(); ++i)
+    {
+        auto schema = schemas->getObject(static_cast<UInt32>(i));
+        schema_fields_by_id[schema->getValue<Int64>(Iceberg::f_schema_id)] = schema->getArray(Iceberg::f_fields);
+    }
+
+    auto current_it = schema_fields_by_id.find(current_schema_id);
+    if (current_it == schema_fields_by_id.end())
+        return;
+    auto current_types = schemaFieldTypes(current_it->second);
+
+    /// Only schema-ids reachable via a snapshot matter for time travel.
+    std::unordered_set<Int64> reachable_schema_ids;
+    if (auto snapshots = initial_metadata_object->getArray(Iceberg::f_snapshots))
+    {
+        for (size_t i = 0; i < snapshots->size(); ++i)
+        {
+            auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+            if (snapshot->has(Iceberg::f_schema_id) && !snapshot->isNull(Iceberg::f_schema_id))
+                reachable_schema_ids.insert(snapshot->getValue<Int64>(Iceberg::f_schema_id));
+        }
+    }
+
+    for (auto reachable_id : reachable_schema_ids)
+    {
+        if (reachable_id == current_schema_id)
+            continue;
+        auto fields_it = schema_fields_by_id.find(reachable_id);
+        if (fields_it == schema_fields_by_id.end())
+            continue;
+        for (const auto & [field_id, old_type] : schemaFieldTypes(fields_it->second))
+        {
+            auto cur_it = current_types.find(field_id);
+            if (cur_it == current_types.end())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Iceberg compaction (OPTIMIZE) is not supported after lossy schema evolution: field id {} present in "
+                    "schema-id {} (reachable via time travel) was dropped from the current schema-id {}. Compaction would rewrite "
+                    "historical files into the current schema and break time travel to older snapshots.",
+                    field_id,
+                    reachable_id,
+                    current_schema_id);
+            if (cur_it->second != old_type)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Iceberg compaction (OPTIMIZE) is not supported after lossy schema evolution: field id {} changed type between "
+                    "schema-id {} (reachable via time travel) and the current schema-id {}. Compaction would rewrite historical "
+                    "files into the current schema and break time travel to older snapshots.",
+                    field_id,
+                    reachable_id,
+                    current_schema_id);
+        }
+    }
+}
+
 static Plan getPlan(
     IcebergHistory snapshots_info,
     const DataLakeStorageSettings & data_lake_settings,
@@ -159,6 +251,8 @@ static Plan getPlan(
         }
     }
     plan.initial_metadata_object = initial_metadata_object;
+
+    checkCompactionSupportsSchemaEvolution(initial_metadata_object);
 
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;

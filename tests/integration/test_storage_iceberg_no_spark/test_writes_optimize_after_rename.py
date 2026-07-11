@@ -103,3 +103,75 @@ def test_optimize_after_rename_column(started_cluster_iceberg_no_spark, storage_
         int(instance.query(f"SELECT count() FROM {TABLE_NAME} WHERE label IS NULL"))
         == 0
     )
+
+
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_optimize_rejected_after_lossy_schema_evolution(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """
+    Compaction physically rewrites every historical data file into the CURRENT schema, while
+    `writeMetadataFiles` keeps the original snapshot ids and their committed schema-ids so old
+    snapshots stay reachable for time travel. After a lossy schema evolution (`DROP COLUMN`) the
+    rewritten files no longer contain the dropped field, so time travel to a pre-drop snapshot
+    would silently return NULL/defaults. OPTIMIZE must be rejected in that case (fail-closed).
+
+    A rename (field id + type preserved) is not lossy and must still be compactable, which the
+    companion test above covers.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_lossy_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value Nullable(String), extra Nullable(String))",
+        2,
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,'a','x1'),(2,'b','x2'),(3,'c','x3');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    pre_drop_snapshot = int(
+        instance.query(
+            f"SELECT snapshot_id FROM system.iceberg_history WHERE table = '{TABLE_NAME}' ORDER BY made_current_at DESC LIMIT 1"
+        )
+    )
+    # DELETE one row -> positional delete file so compaction has work to do.
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # Lossy schema evolution: the field `extra` disappears from the current schema.
+    instance.query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN extra;")
+
+    # OPTIMIZE must be rejected: rewriting historical files into the current schema would drop
+    # `extra` and break time travel to the pre-drop snapshot.
+    assert "NOT_IMPLEMENTED" in instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+
+    # The positional delete is still there (OPTIMIZE did not run).
+    assert (
+        int(
+            instance.query(
+                f"SELECT countIf(content = 'POSITION_DELETE') FROM system.iceberg_files WHERE table = '{TABLE_NAME}'"
+            )
+        )
+        == 1
+    )
+
+    # Time travel to the pre-drop snapshot must still return the original `extra` values.
+    assert (
+        instance.query(
+            f"SELECT id, value, extra FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_snapshot_id = {pre_drop_snapshot}"
+        )
+        == "1\ta\tx1\n2\tb\tx2\n3\tc\tx3\n"
+    )
