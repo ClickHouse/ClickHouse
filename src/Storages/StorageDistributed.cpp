@@ -2187,8 +2187,11 @@ void registerStorageDistributed(StorageFactory & factory)
             /// and reject it here at create time, exactly as `InterpreterCreateQuery` does for
             /// `CREATE TABLE ... AS table_function`. Otherwise, with explicit columns the unsupported
             /// combination would be silently written to metadata and only discovered later at read time.
-            /// Skip the check on ATTACH, where the table already exists and the cluster may be unavailable.
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            /// The check must cover every fresh user-supplied query, including a user-issued `ATTACH TABLE`
+            /// (`LoadingStrictnessLevel::ATTACH`); only skip it when loading from previously-validated
+            /// metadata (server startup / force-restore), where the object was already validated at creation
+            /// and the cluster may be unavailable.
+            if (!isLoadingFromExistingMetadata(args.mode))
             {
                 auto table_function = TableFunctionFactory::instance().get(engine_args[1], local_context);
                 if (!table_function->canBeUsedToCreateTable())
