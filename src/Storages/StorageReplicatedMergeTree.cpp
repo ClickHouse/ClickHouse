@@ -3999,42 +3999,6 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
     if (metadata_snapshot->getMetadataVersion() >= zk_metadata_version)
         return false;
 
-    /// The applied in-memory metadata version being behind does not by itself mean the entry is missing:
-    /// the real ALTER_METADATA may already be pending in our queue (e.g. a restarting replica pulled /log
-    /// first, so fixReplicaMetadataVersionIfNeeded returned 0 while metadata_alters_in_queue != 0), or a
-    /// previous recovery attempt already created a synthetic repair entry but threw before queue.load()
-    /// pulled it into RAM (DatabaseReplicatedDDLWorker retries initializeReplication() without restarting the
-    /// table, so the in-memory queue is empty again on retry). Injecting a second entry with the same
-    /// alter_version would corrupt the alters sequence (ReplicatedMergeTreeAltersSequence keeps a single slot
-    /// per alter_version; the duplicate flips it back to unfinished and the first completion erases it, so the
-    /// second finishMetadataAlter hits its head invariant). So check the authoritative /replicas/<me>/queue in
-    /// ZooKeeper (the same set queue.load() reads), not just the RAM queue: only enqueue the synthetic repair
-    /// if no queued ALTER_METADATA already covers this version.
-    {
-        Strings queue_znodes = zookeeper->getChildren(replica_path + "/queue");
-        Strings queue_entry_paths;
-        queue_entry_paths.reserve(queue_znodes.size());
-        for (const String & znode : queue_znodes)
-            queue_entry_paths.emplace_back(replica_path + "/queue/" + znode);
-
-        auto queue_entry_data = zookeeper->tryGet(queue_entry_paths);
-        for (size_t i = 0; i < queue_entry_paths.size(); ++i)
-        {
-            const auto & res = queue_entry_data[i];
-            if (res.error != Coordination::Error::ZOK)
-                continue;
-            auto queued = ReplicatedMergeTreeLogEntry::parse(res.data, res.stat, format_version);
-            if (queued->type == LogEntry::ALTER_METADATA && queued->alter_version >= zk_metadata_version)
-            {
-                LOG_INFO(log, "Local metadata version ({}) is behind ZooKeeper ({}), but an ALTER_METADATA entry "
-                              "with alter_version {} is already queued in {}; skipping the synthetic metadata resync.",
-                         metadata_snapshot->getMetadataVersion(), zk_metadata_version, queued->alter_version,
-                         queue_entry_paths[i]);
-                return false;
-            }
-        }
-    }
-
     LOG_WARNING(log, "Local metadata version ({}) is behind the metadata version ({}) in ZooKeeper after recovery. "
                      "Forcing a metadata resync from {}.",
                 metadata_snapshot->getMetadataVersion(), zk_metadata_version, zookeeper_path);
@@ -4070,6 +4034,49 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
             LOG_WARNING(log, "Metadata of table {} was changed", zookeeper_path);
         else
             zkutil::KeeperMultiException::check(code, ops, responses);
+    }
+
+    /// The applied in-memory metadata version being behind does not by itself mean the entry is missing:
+    /// the real ALTER_METADATA (version snapshot_metadata_version) may still be present. Injecting a second
+    /// entry with the same alter_version would corrupt the alters sequence (ReplicatedMergeTreeAltersSequence
+    /// keeps a single slot per alter_version; the duplicate flips it back to unfinished and the first completion
+    /// erases it, so the second finishMetadataAlter hits its head invariant). We must only enqueue the synthetic
+    /// repair if the real entry is genuinely gone, and checking /replicas/<me>/queue alone is not enough: the real
+    /// ALTER_METADATA can still be pending in zookeeper_path/log, which SYSTEM SYNC REPLICA / pullLogsToQueue would
+    /// later copy into /queue with the same alter_version. So serialize against log draining: drain /log to head
+    /// first (this advances log_pointer under pull_logs_to_queue_mutex and copies any pending ALTER_METADATA from
+    /// /log into /replicas/<me>/queue and the in-memory queue), then re-check the authoritative /queue. Because a
+    /// versioned set on /metadata and the matching /log entry are written in one atomic multi (see alter()), once
+    /// our snapshot confirms /metadata == snapshot_metadata_version the real entry was in /log at that point; after
+    /// the drain it is either now in /queue (so we suppress the repair) or was already GC'd from /log. In the GC'd
+    /// case the drain has moved log_pointer to head, so no later pullLogsToQueue can re-copy that version (all future
+    /// /log entries carry a strictly greater alter_version), which makes the synthetic entry safe from duplication.
+    queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::SYNC);
+
+    {
+        Strings queue_znodes = zookeeper->getChildren(replica_path + "/queue");
+        Strings queue_entry_paths;
+        queue_entry_paths.reserve(queue_znodes.size());
+        for (const String & znode : queue_znodes)
+            queue_entry_paths.emplace_back(replica_path + "/queue/" + znode);
+
+        auto queue_entry_data = zookeeper->tryGet(queue_entry_paths);
+        for (size_t i = 0; i < queue_entry_paths.size(); ++i)
+        {
+            const auto & res = queue_entry_data[i];
+            if (res.error != Coordination::Error::ZOK)
+                continue;
+            auto queued = ReplicatedMergeTreeLogEntry::parse(res.data, res.stat, format_version);
+            if (queued->type == LogEntry::ALTER_METADATA && queued->alter_version >= snapshot_metadata_version)
+            {
+                LOG_INFO(log, "Local metadata version ({}) is behind ZooKeeper ({}), but an ALTER_METADATA entry "
+                              "with alter_version {} is already queued in {} after draining the log; skipping the "
+                              "synthetic metadata resync.",
+                         metadata_snapshot->getMetadataVersion(), snapshot_metadata_version, queued->alter_version,
+                         queue_entry_paths[i]);
+                return false;
+            }
+        }
     }
 
     ReplicatedMergeTreeLogEntryData dummy_alter;
