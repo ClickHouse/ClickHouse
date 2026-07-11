@@ -3984,12 +3984,18 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
     /// strict re-attach which would throw INCOMPATIBLE_COLUMNS.
     auto zookeeper = getZooKeeper();
 
-    String zk_metadata_version_str;
-    if (!zookeeper->tryGet(zookeeper_path + "/metadata_version", zk_metadata_version_str))
+    /// The authoritative table-wide metadata version is the Coordination::Stat.version of the
+    /// zookeeper_path/metadata znode: each ALTER does a versioned set on it and alter_version =
+    /// getMetadataVersion() + 1 tracks that (the in-memory metadata_version is derived from this
+    /// stat.version at startup). ReplicatedMergeTree has NO table-root /metadata_version node; the
+    /// only metadata_version znodes are per-replica (replica_path/metadata_version).
+    Coordination::Stat table_metadata_stat;
+    String zk_metadata_probe;
+    if (!zookeeper->tryGet(zookeeper_path + "/metadata", zk_metadata_probe, &table_metadata_stat))
         return false;
 
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    Int32 zk_metadata_version = parse<Int32>(zk_metadata_version_str);
+    Int32 zk_metadata_version = table_metadata_stat.version;
     if (metadata_snapshot->getMetadataVersion() >= zk_metadata_version)
         return false;
 
@@ -4034,8 +4040,11 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
                 metadata_snapshot->getMetadataVersion(), zk_metadata_version, zookeeper_path);
 
     /// Read a consistent /metadata + /columns snapshot from the table root (same approach as cloneMetadataIfNeeded).
+    /// Capture the /metadata stat.version of the snapshot we actually take: it may be newer than the version probed
+    /// above if a concurrent ALTER lands here, and it must match the metadata_str/columns_str the entry carries.
     String zk_metadata;
     String zk_columns;
+    Int32 snapshot_metadata_version = 0;
     while (true)
     {
         if (shutdown_called)
@@ -4053,7 +4062,10 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
 
         Coordination::Error code = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
         if (code == Coordination::Error::ZOK)
+        {
+            snapshot_metadata_version = metadata_stat.version;
             break;
+        }
         if (code == Coordination::Error::ZBADVERSION)
             LOG_WARNING(log, "Metadata of table {} was changed", zookeeper_path);
         else
@@ -4068,10 +4080,12 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
     dummy_alter.source_replica = "";
     dummy_alter.metadata_str = zk_metadata;
     dummy_alter.columns_str = zk_columns;
-    /// alter_version must be the table's metadata-version counter (as written by ALTER, see alter_entry->alter_version
-    /// = getMetadataVersion() + 1), NOT a ZooKeeper znode stat.version, otherwise the alters sequence ordering is
-    /// corrupted and finishMetadataAlter hits its queue_state invariant.
-    dummy_alter.alter_version = zk_metadata_version;
+    /// alter_version is the table's metadata-version counter, which is exactly the /metadata znode stat.version:
+    /// each ALTER does a versioned set on /metadata and alter_entry->alter_version = getMetadataVersion() + 1
+    /// tracks that count. Use the stat.version of the consistent snapshot we just took so the version matches the
+    /// metadata_str/columns_str this entry carries and is >= every version already in the alters sequence (never
+    /// inserted ahead of an in-flight lower alter, so finishMetadataAlter's head invariant holds).
+    dummy_alter.alter_version = snapshot_metadata_version;
     dummy_alter.create_time = time(nullptr);
 
     /// Create the entry in our replication queue, exactly like cloneMetadataIfNeeded().
