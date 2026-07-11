@@ -63,6 +63,7 @@ FiberSocket FiberSocket::connectTLS(
         impl->setPeerHostName(sni);
     result.socket.connect(address, ms(timeout_ms));
     result.socket.setNoDelay(true);
+    result.is_plaintext = false;
     return result;
 }
 
@@ -71,6 +72,7 @@ FiberSocket FiberSocket::adoptTLS(int fd, Poco::Net::Context::Ptr context)
     FiberSocket result;
     result.socket = Poco::Net::StreamSocket(new Silk::SecureFiberStreamSocketImpl(fd, context));
     result.socket.setNoDelay(true);
+    result.is_plaintext = false;
     return result;
 }
 #endif

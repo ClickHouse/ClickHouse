@@ -51,9 +51,15 @@ public:
 
     bool initialized() const { return !socket.impl()->initialized() ? false : true; }
     Poco::Net::StreamSocket & raw() { return socket; }
+    int fd() { return socket.impl()->sockfd(); }
+
+    /// True when the socket carries plaintext (no TLS termination on this leg). Only plaintext legs
+    /// can be relayed with splice(2); a TLS-terminated stream must be decrypted in user space.
+    bool plaintext() const { return is_plaintext; }
 
 private:
     Poco::Net::StreamSocket socket;
+    bool is_plaintext = true;
 };
 
 /// A buffered reader over a FiberSocket that keeps every byte it received, so the consumed
