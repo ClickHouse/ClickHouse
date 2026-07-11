@@ -36,15 +36,28 @@ protocol or the inter-server replication protocol.
 | HTTP(S)       | `http`              | Yes (headers, URL parameters, Basic authentication) |
 | Native TCP    | `native`            | Yes (parsed from the `Hello` packet)                |
 | PostgreSQL    | `postgresql`        | Yes (parsed from the `StartupMessage`)              |
-| MySQL         | `mysql`             | No — routed by peer address or default pool         |
+| MySQL         | `mysql`             | By user or database (terminated; see below)         |
 | SSH           | `ssh`               | By the client's public key (terminated; see below)  |
 | TLS by SNI    | `tls`               | By hostname (SNI), without decryption               |
 | Opaque stream | `stream`            | By peer address or default pool                     |
 
+Query-type routing (see below) applies to the HTTP protocol only.
+
+## MySQL {#mysql}
+
 MySQL is server-speaks-first and negotiates TLS in-band, so the proxy cannot read the user name or
-the database before it must answer the greeting; such connections are forwarded transparently and
-routed by peer address or the listener's default pool. Query-type routing (see below) applies to
-the HTTP protocol only.
+the database from a passive first packet. When a routing rule needs the user or the database the
+proxy therefore terminates the handshake: it greets the client, reads the `HandshakeResponse`
+(user, database), and routes on them. Because the client's authentication response is bound to the
+scramble in the greeting, the proxy connects to the chosen backend, reads the backend's scramble,
+and issues an auth-switch so the client re-computes its response against the backend's scramble; the
+proxy forwards that verbatim. The backend performs the real password check — the proxy never learns
+the password. After authentication the connection is spliced byte for byte.
+
+When no routing rule needs the user or the database, MySQL connections are instead forwarded
+transparently and routed by peer address or the listener's default pool (no termination). Only
+`mysql_native_password` is mediated; TLS is not offered to the client on a MySQL listener so that the
+handshake stays readable.
 
 ## SSH {#ssh}
 
