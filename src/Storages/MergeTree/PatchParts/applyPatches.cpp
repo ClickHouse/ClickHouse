@@ -13,9 +13,11 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <absl/container/flat_hash_map.h>
 #include <base/types.h>
+#include <optional>
 #include <shared_mutex>
 
 namespace ProfileEvents
@@ -70,6 +72,44 @@ IColumn::Versions & addDataVersionForColumn(Block & block, const String & column
     return getColumnUInt64Data(block, data_version_name);
 }
 
+/// Builds patch sources for a column from all patch blocks.
+/// @p converted_columns_storage keeps cast results alive while the returned sources reference them.
+VectorWithMemoryTracking<IColumn::Patch::Source> createPatchSources(
+    const Blocks & patch_blocks,
+    const ColumnWithTypeAndName & result_column,
+    Columns & converted_columns_storage)
+{
+    VectorWithMemoryTracking<IColumn::Patch::Source> sources;
+    sources.reserve(patch_blocks.size());
+
+    for (const auto & patch_block : patch_blocks)
+    {
+        const auto & patch_col_with_type = patch_block.getByName(result_column.name);
+        if (!patch_col_with_type.column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} has null data in patch block", result_column.name);
+
+        const IColumn * source_col = patch_col_with_type.column.get();
+
+        /// Patch column may have a different on-disk type when it predates
+        /// an ALTER MODIFY COLUMN that hasn't been materialized yet.
+        if (!result_column.column->structureEquals(*source_col))
+        {
+            converted_columns_storage.push_back(castColumn(patch_col_with_type, result_column.type));
+            source_col = converted_columns_storage.back().get();
+        }
+
+        IColumn::Patch::Source source =
+        {
+            .column = *source_col,
+            .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
+        };
+
+        sources.push_back(std::move(source));
+    }
+
+    return sources;
+}
+
 struct CombinedPatchBuilder
 {
 public:
@@ -80,7 +120,7 @@ public:
 
     /// @p converted_columns_storage keeps cast results alive while the returned Patch references them.
     IColumn::Patch createPatchForColumn(
-        const String & column_name, const ColumnWithTypeAndName & result_column,
+        const ColumnWithTypeAndName & result_column,
         IColumn::Versions & dst_versions, Columns & converted_columns_storage);
 
 private:
@@ -238,42 +278,33 @@ void CombinedPatchBuilder::build()
 }
 
 IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
-    const String & column_name, const ColumnWithTypeAndName & result_column,
+    const ColumnWithTypeAndName & result_column,
     IColumn::Versions & dst_versions, Columns & converted_columns_storage)
 {
-    VectorWithMemoryTracking<IColumn::Patch::Source> sources;
-
-    for (const auto & patch_block : all_patch_blocks)
-    {
-        auto patch_col_with_type = patch_block.getByName(column_name);
-        if (!patch_col_with_type.column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} has null data in patch block", column_name);
-
-        const IColumn * source_col = patch_col_with_type.column.get();
-
-        /// Patch column may have a different on-disk type when it predates
-        /// an ALTER MODIFY COLUMN that hasn't been materialized yet.
-        if (!result_column.column->structureEquals(*source_col))
-        {
-            converted_columns_storage.push_back(castColumn(patch_col_with_type, result_column.type));
-            source_col = converted_columns_storage.back().get();
-        }
-
-        IColumn::Patch::Source source =
-        {
-            .column = *source_col,
-            .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
-        };
-
-        sources.push_back(std::move(source));
-    }
-
     return IColumn::Patch
     {
-        .sources = std::move(sources),
+        .sources = createPatchSources(all_patch_blocks, result_column, converted_columns_storage),
         .src_col_indices = &src_block_indices,
         .src_row_indices = src_row_indices,
         .dst_row_indices = dst_row_indices,
+        .dst_versions = dst_versions,
+    };
+}
+
+/// Builds a patch for a column directly from an already combined PatchToApply
+/// (row indices are version-resolved and result rows are unique and ascending).
+IColumn::Patch createPatchForColumnFromCombined(
+    const PatchToApply & patch_to_apply,
+    const ColumnWithTypeAndName & result_column,
+    IColumn::Versions & dst_versions,
+    Columns & converted_columns_storage)
+{
+    return IColumn::Patch
+    {
+        .sources = createPatchSources(patch_to_apply.patch_blocks, result_column, converted_columns_storage),
+        .src_col_indices = patch_to_apply.getNumSources() > 1 ? &patch_to_apply.patch_block_indices : nullptr,
+        .src_row_indices = patch_to_apply.patch_row_indices,
+        .dst_row_indices = patch_to_apply.result_row_indices,
         .dst_versions = dst_versions,
     };
 }
@@ -421,7 +452,11 @@ void applyPatchesToBlockCombined(
     if (patches.empty())
         return;
 
-    CombinedPatchBuilder builder(patches);
+    /// A single PatchToApply is already combined (e.g. built by applyPatchesMergeOnKey):
+    /// its row indices can be applied directly, without rebuilding them in CombinedPatchBuilder.
+    std::optional<CombinedPatchBuilder> builder;
+    if (patches.size() > 1)
+        builder.emplace(patches);
 
     for (auto & result_column : result_block)
     {
@@ -433,7 +468,9 @@ void applyPatchesToBlockCombined(
 
         /// Local storage so cast results are released after each column update.
         Columns converted_columns;
-        auto multi_patch = builder.createPatchForColumn(result_column.name, result_column, result_versions, converted_columns);
+        auto multi_patch = builder
+            ? builder->createPatchForColumn(result_column, result_versions, converted_columns)
+            : createPatchForColumnFromCombined(*patches.front(), result_column, result_versions, converted_columns);
 
         if (canApplyPatchInplace(*result_column.column))
         {
@@ -633,18 +670,53 @@ ALWAYS_INLINE UInt128 makeBlockIdentity(UInt64 block_number, UInt64 block_offset
     return (UInt128(block_number) << 64) | UInt128(block_offset);
 }
 
+/// Cursor over one patch block in the merge of applyPatchesMergeOnKey.
+struct PatchBlockCursor
+{
+    ColumnRawPtrs sorting_key_columns;
+    const PaddedPODArray<UInt64> * block_number = nullptr;
+    const PaddedPODArray<UInt64> * block_offset = nullptr;
+    const PaddedPODArray<UInt64> * versions = nullptr;
+    /// Group of patch blocks with the same set of updated columns.
+    size_t group_idx = 0;
+    /// Index of the block in the group's patch_blocks.
+    UInt32 block_idx_in_group = 0;
+    size_t row = 0;
+    /// End of the current equal-sort-key run, valid while the cursor is extracted from the heap.
+    size_t run_end = 0;
+    size_t num_rows = 0;
+};
+
+/// Patch blocks with the same set of updated columns, combined into one patch.
+struct PatchColumnsGroup
+{
+    Names updated_columns;
+    std::shared_ptr<PatchToApply> patch;
+};
+
+/// An entry of the per-run hash map in applyPatchesMergeOnKey. For each row identity the map
+/// keeps one entry per group - the matched patch row with the highest data version in that group.
+struct RunEntry
+{
+    static constexpr UInt32 EMPTY_BLOCK = std::numeric_limits<UInt32>::max();
+
+    UInt32 block_idx = EMPTY_BLOCK;
+    UInt32 row_idx = 0;
+    UInt64 version = 0;
+};
+
 }
 
-PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const KeyDescription & sorting_key)
+std::vector<std::pair<Names, PatchToApplyPtr>> applyPatchesMergeOnKey(
+    const Block & result_block,
+    const std::vector<PatchBlockForMergeOnKey> & patch_blocks,
+    const KeyDescription & sorting_key)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchMergeOnKeyMicroseconds);
 
-    auto patch_to_apply = std::make_shared<PatchToApply>();
     size_t main_rows = result_block.rows();
-    size_t patch_rows = patch_block.rows();
-
-    if (main_rows == 0 || patch_rows == 0)
-        return patch_to_apply;
+    if (main_rows == 0 || patch_blocks.empty())
+        return {};
 
     Block result_block_copy;
     for (const auto & name : sorting_key.column_names)
@@ -653,109 +725,374 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     result_block_copy.insert(result_block.getByName(BlockNumberColumn::name));
     result_block_copy.insert(result_block.getByName(BlockOffsetColumn::name));
 
-    Block patch_block_copy = patch_block;
-
     for (auto & column : result_block_copy)
-        column.column = removeSpecialRepresentations(column.column);
-
-    for (auto & column : patch_block_copy)
         column.column = removeSpecialRepresentations(column.column);
 
     const auto & reverse_flags = sorting_key.reverse_flags;
     const auto & result_block_number = getColumnUInt64Data(result_block_copy, BlockNumberColumn::name);
     const auto & result_block_offset = getColumnUInt64Data(result_block_copy, BlockOffsetColumn::name);
-    const auto & patch_block_number = getColumnUInt64Data(patch_block_copy, BlockNumberColumn::name);
-    const auto & patch_block_offset = getColumnUInt64Data(patch_block_copy, BlockOffsetColumn::name);
-
     const auto result_sorting_key = extractSortingKeyColumns(result_block_copy, sorting_key.column_names);
-    const auto patch_sorting_key = extractSortingKeyColumns(patch_block_copy, sorting_key.column_names);
 
-    size_t main_idx = 0;
-    size_t patch_idx = gallopingBinarySearch<true>(patch_sorting_key, 0, patch_rows, result_sorting_key, 0, reverse_flags);
+    std::vector<PatchColumnsGroup> groups;
+    absl::flat_hash_map<UInt128, size_t, UInt128TrivialHash> group_by_hash;
 
-    /// The patch stream is typically much smaller than the main stream, so we drive the merge
-    /// from the patch side using galloping search into main. This skips over long runs of main
-    /// rows below the current patch key in `O(log gap)` comparisons per patch row.
-    while (main_idx < main_rows && patch_idx < patch_rows)
+    /// Sorting key columns (and their physical sources) are stored in patch parts only to
+    /// identify updated rows and are never updated themselves. Exclude them from the updated
+    /// columns of the emitted patches.
+    NameSet sorting_key_columns(sorting_key.column_names.begin(), sorting_key.column_names.end());
+    if (sorting_key.expression)
+        for (const auto & name : sorting_key.expression->getRequiredColumns())
+            sorting_key_columns.insert(name);
+
+    /// Keeps columns referenced by cursors alive.
+    std::vector<Block> block_copies;
+    std::vector<PatchBlockCursor> cursors;
+
+    block_copies.reserve(patch_blocks.size());
+    cursors.reserve(patch_blocks.size());
+
+    for (const auto & patch_block : patch_blocks)
     {
-        main_idx = gallopingBinarySearch<true>(result_sorting_key, main_idx, main_rows, patch_sorting_key, patch_idx, reverse_flags);
-        if (main_idx == main_rows)
-            break;
-
-        /// main[main_idx] > patch[patch_idx]: the current patch row has no match in main. Advance past it.
-        if (compareSortKeyRows(result_sorting_key, main_idx, patch_sorting_key, patch_idx, reverse_flags) > 0)
-        {
-            ++patch_idx;
+        size_t patch_rows = patch_block.block->rows();
+        if (patch_rows == 0)
             continue;
-        }
 
-        /// cmp == 0: equal-sort-key run on both sides. Find the run extents. Gallop on the main side.
-        /// The patch side is scanned linearly because patch_rows is small.
-        size_t main_run_end = gallopingBinarySearch<false>(result_sorting_key, main_idx + 1, main_rows, patch_sorting_key, patch_idx, reverse_flags);
-        size_t patch_run_end = patch_idx + 1;
+        Block block_copy = *patch_block.block;
+        for (auto & column : block_copy)
+            column.column = removeSpecialRepresentations(column.column);
 
-        while (patch_run_end < patch_rows && compareSortKeyRows(patch_sorting_key, patch_run_end, patch_sorting_key, patch_idx, reverse_flags) == 0)
+        /// Group patch blocks by the hash of names and types of updated columns present in the
+        /// block. Types are included because a column may have different types in patch parts
+        /// created before and after an ALTER MODIFY COLUMN that is not materialized yet, and
+        /// blocks of one PatchToApply must have the same structure.
+        SipHash hash;
+        Names block_updated_columns;
+
+        for (const auto & name : *patch_block.updated_columns)
         {
-            ++patch_run_end;
+            if (sorting_key_columns.contains(name))
+                continue;
+
+            const auto * column = block_copy.findByName(name);
+            if (column && column->column)
+            {
+                hash.update(name);
+                hash.update(column->type->getName());
+                block_updated_columns.push_back(name);
+            }
         }
 
-        if (main_run_end - main_idx == 1 && patch_run_end - patch_idx == 1)
+        if (block_updated_columns.empty())
+            continue;
+
+        auto [group_it, group_inserted] = group_by_hash.try_emplace(hash.get128(), groups.size());
+        if (group_inserted)
+        {
+            auto & group = groups.emplace_back();
+            group.updated_columns = block_updated_columns;
+            group.patch = std::make_shared<PatchToApply>();
+        }
+
+        auto & group = groups[group_it->second];
+
+        /// Keep only the updated columns and the data version column in the emitted block.
+        Block emitted_block;
+        for (const auto & name : block_updated_columns)
+            emitted_block.insert(block_copy.getByName(name));
+        emitted_block.insert(block_copy.getByName(PartDataVersionColumn::name));
+
+        auto & cursor = cursors.emplace_back();
+        cursor.sorting_key_columns = extractSortingKeyColumns(block_copy, sorting_key.column_names);
+        cursor.block_number = &getColumnUInt64Data(block_copy, BlockNumberColumn::name);
+        cursor.block_offset = &getColumnUInt64Data(block_copy, BlockOffsetColumn::name);
+        cursor.versions = &getColumnUInt64Data(block_copy, PartDataVersionColumn::name);
+        cursor.group_idx = group_it->second;
+        cursor.block_idx_in_group = static_cast<UInt32>(group.patch->patch_blocks.size());
+        cursor.num_rows = patch_rows;
+        cursor.row = gallopingBinarySearch<true>(cursor.sorting_key_columns, 0, patch_rows, result_sorting_key, 0, reverse_flags);
+
+        group.patch->patch_blocks.push_back(std::move(emitted_block));
+        block_copies.push_back(std::move(block_copy));
+    }
+
+    size_t num_groups = groups.size();
+    size_t main_idx = 0;
+
+    /// Scratch structures for one equal-sort-key run, reused across runs.
+    absl::flat_hash_map<UInt128, UInt32, UInt128TrivialHash> run_map;
+    std::vector<RunEntry> run_entries;
+    std::vector<size_t> equal_cursors;
+
+    /// Processes one run of equal sort keys: matches main rows [main_run_begin, main_run_end)
+    /// with rows [cursor.row, cursor.run_end) of cursors in `equal_cursors` by the
+    /// (block_number, block_offset) identity and emits matches into the groups' patches.
+    auto process_equal_run = [&](size_t main_run_begin, size_t main_run_end, size_t num_patch_rows_in_run)
+    {
+        if (num_patch_rows_in_run == 1 && main_run_end - main_run_begin == 1)
         {
             /// Common case for unique sort keys: no hash map, just compare identity directly.
-            if (result_block_number[main_idx] == patch_block_number[patch_idx] && result_block_offset[main_idx] == patch_block_offset[patch_idx])
+            const auto & cursor = cursors[equal_cursors.front()];
+
+            if ((*cursor.block_number)[cursor.row] == result_block_number[main_run_begin] && (*cursor.block_offset)[cursor.row] == result_block_offset[main_run_begin])
             {
-                patch_to_apply->result_row_indices.push_back(main_idx);
-                patch_to_apply->patch_row_indices.push_back(patch_idx);
+                auto & patch = *groups[cursor.group_idx].patch;
+                patch.result_row_indices.push_back(main_run_begin);
+                patch.patch_block_indices.push_back(cursor.block_idx_in_group);
+                patch.patch_row_indices.push_back(cursor.row);
             }
+
+            return;
         }
-        else
+
+        run_map.clear();
+        run_entries.clear();
+        run_map.reserve(num_patch_rows_in_run);
+
+        for (size_t cursor_idx : equal_cursors)
         {
-            absl::flat_hash_map<UInt128, UInt32, UInt128TrivialHash> local_map;
-            local_map.reserve(patch_run_end - patch_idx);
+            const auto & cursor = cursors[cursor_idx];
 
-            for (size_t i = patch_idx; i < patch_run_end; ++i)
+            for (size_t i = cursor.row; i < cursor.run_end; ++i)
             {
-                local_map.emplace(makeBlockIdentity(patch_block_number[i], patch_block_offset[i]), static_cast<UInt32>(i));
-            }
+                UInt128 identity = makeBlockIdentity((*cursor.block_number)[i], (*cursor.block_offset)[i]);
+                auto [it, inserted] = run_map.try_emplace(identity, static_cast<UInt32>(run_entries.size()));
 
-            for (size_t i = main_idx; i < main_run_end; ++i)
-            {
-                auto it = local_map.find(makeBlockIdentity(result_block_number[i], result_block_offset[i]));
+                if (inserted)
+                    run_entries.resize(run_entries.size() + num_groups);
 
-                if (it != local_map.end())
-                {
-                    patch_to_apply->result_row_indices.push_back(i);
-                    patch_to_apply->patch_row_indices.push_back(it->second);
-                }
+                /// Keep the row with the highest data version within each group. Conflicts
+                /// across groups are resolved by row versions at application time.
+                auto & entry = run_entries[it->second + cursor.group_idx];
+                UInt64 version = (*cursor.versions)[i];
+
+                if (entry.block_idx == RunEntry::EMPTY_BLOCK || version > entry.version)
+                    entry = {cursor.block_idx_in_group, static_cast<UInt32>(i), version};
             }
         }
 
-        main_idx = main_run_end;
-        patch_idx = patch_run_end;
-    }
+        /// Emit matches in the order of main rows, so that result rows are unique and
+        /// ascending in each group, as required by updateFrom and updateInplaceFrom.
+        for (size_t i = main_run_begin; i < main_run_end; ++i)
+        {
+            auto it = run_map.find(makeBlockIdentity(result_block_number[i], result_block_offset[i]));
+            if (it == run_map.end())
+                continue;
 
-    /// Remove all unneeded columns from the patch block (sort-key results and their
-    /// physical source columns, identity columns) and keep only the updated columns.
-    auto erase_patch_column = [&](const String & column_name)
-    {
-        if (patch_block_copy.has(column_name))
-            patch_block_copy.erase(column_name);
+            for (size_t group_idx = 0; group_idx < num_groups; ++group_idx)
+            {
+                const auto & entry = run_entries[it->second + group_idx];
+                if (entry.block_idx == RunEntry::EMPTY_BLOCK)
+                    continue;
+
+                auto & patch = *groups[group_idx].patch;
+                patch.result_row_indices.push_back(i);
+                patch.patch_block_indices.push_back(entry.block_idx);
+                patch.patch_row_indices.push_back(entry.row_idx);
+            }
+        }
     };
 
-    for (const auto & column_name : sorting_key.column_names)
-        erase_patch_column(column_name);
+    /// Patch blocks are typically much smaller than the main stream, so we drive the merge
+    /// from the patch side using galloping search into main. This skips over long runs of main
+    /// rows below the current patch key in `O(log gap)` comparisons per patch row.
+    ///
+    /// With few cursors the minimal key is found by a linear scan: it needs no more key
+    /// comparisons than heap maintenance and the code is simpler and branch-predictable.
+    /// With one cursor it degenerates into a plain two-pointer merge with no overhead.
+    /// A heap pays off only with many cursors.
+    static constexpr size_t max_cursors_for_linear_scan = 8;
 
-    if (sorting_key.expression)
+    if (cursors.size() <= max_cursors_for_linear_scan)
     {
-        for (const auto & column_name : sorting_key.expression->getRequiredColumns())
-            erase_patch_column(column_name);
+        /// Indices of cursors with unprocessed rows.
+        std::vector<size_t> live_cursors;
+        live_cursors.reserve(cursors.size());
+
+        for (size_t i = 0; i < cursors.size(); ++i)
+        {
+            if (cursors[i].row < cursors[i].num_rows)
+                live_cursors.push_back(i);
+        }
+
+        while (main_idx < main_rows && !live_cursors.empty())
+        {
+            /// Find the cursor with the minimal current key.
+            size_t min_pos = 0;
+            for (size_t i = 1; i < live_cursors.size(); ++i)
+            {
+                const auto & cursor = cursors[live_cursors[i]];
+                const auto & min_cursor = cursors[live_cursors[min_pos]];
+
+                if (compareSortKeyRows(cursor.sorting_key_columns, cursor.row, min_cursor.sorting_key_columns, min_cursor.row, reverse_flags) < 0)
+                    min_pos = i;
+            }
+
+            auto & top_cursor = cursors[live_cursors[min_pos]];
+
+            main_idx = gallopingBinarySearch<true>(result_sorting_key, main_idx, main_rows, top_cursor.sorting_key_columns, top_cursor.row, reverse_flags);
+            if (main_idx == main_rows)
+                break;
+
+            /// main[main_idx] > patch[row]: the current patch key has no match in main.
+            /// Advance the cursor to the first key that is not less than the main key.
+            if (compareSortKeyRows(result_sorting_key, main_idx, top_cursor.sorting_key_columns, top_cursor.row, reverse_flags) > 0)
+            {
+                top_cursor.row = gallopingBinarySearch<true>(top_cursor.sorting_key_columns, top_cursor.row, top_cursor.num_rows, result_sorting_key, main_idx, reverse_flags);
+
+                if (top_cursor.row == top_cursor.num_rows)
+                {
+                    live_cursors[min_pos] = live_cursors.back();
+                    live_cursors.pop_back();
+                }
+
+                continue;
+            }
+
+            /// cmp == 0: equal-sort-key run on both sides. Find the run extents. Gallop on the
+            /// main side. The patch side is scanned linearly because patch runs are small.
+            size_t main_run_end = gallopingBinarySearch<false>(result_sorting_key, main_idx + 1, main_rows, result_sorting_key, main_idx, reverse_flags);
+
+            /// Collect cursors with the key equal to the main key. The minimal cursor is equal
+            /// by construction, the rest need one comparison each.
+            equal_cursors.clear();
+            size_t num_patch_rows_in_run = 0;
+
+            for (size_t i = 0; i < live_cursors.size(); ++i)
+            {
+                auto & cursor = cursors[live_cursors[i]];
+
+                if (i != min_pos && compareSortKeyRows(cursor.sorting_key_columns, cursor.row, result_sorting_key, main_idx, reverse_flags) != 0)
+                    continue;
+
+                cursor.run_end = cursor.row + 1;
+                while (cursor.run_end < cursor.num_rows && compareSortKeyRows(cursor.sorting_key_columns, cursor.run_end, result_sorting_key, main_idx, reverse_flags) == 0)
+                    ++cursor.run_end;
+
+                num_patch_rows_in_run += cursor.run_end - cursor.row;
+                equal_cursors.push_back(live_cursors[i]);
+            }
+
+            process_equal_run(main_idx, main_run_end, num_patch_rows_in_run);
+
+            for (size_t cursor_idx : equal_cursors)
+                cursors[cursor_idx].row = cursors[cursor_idx].run_end;
+
+            for (size_t i = 0; i < live_cursors.size();)
+            {
+                if (cursors[live_cursors[i]].row == cursors[live_cursors[i]].num_rows)
+                {
+                    live_cursors[i] = live_cursors.back();
+                    live_cursors.pop_back();
+                }
+                else
+                    ++i;
+            }
+
+            main_idx = main_run_end;
+        }
+    }
+    else
+    {
+        /// Heap of cursors ordered by the sort key of the current row, the smallest key at the top.
+        std::vector<size_t> heap;
+        heap.reserve(cursors.size());
+
+        for (size_t i = 0; i < cursors.size(); ++i)
+        {
+            if (cursors[i].row < cursors[i].num_rows)
+                heap.push_back(i);
+        }
+
+        auto greater = [&](size_t lhs, size_t rhs)
+        {
+            return compareSortKeyRows(
+                cursors[lhs].sorting_key_columns, cursors[lhs].row,
+                cursors[rhs].sorting_key_columns, cursors[rhs].row,
+                reverse_flags) > 0;
+        };
+
+        std::make_heap(heap.begin(), heap.end(), greater);
+
+        while (main_idx < main_rows && !heap.empty())
+        {
+            auto & top_cursor = cursors[heap.front()];
+
+            main_idx = gallopingBinarySearch<true>(result_sorting_key, main_idx, main_rows, top_cursor.sorting_key_columns, top_cursor.row, reverse_flags);
+            if (main_idx == main_rows)
+                break;
+
+            /// main[main_idx] > patch[row]: the current patch key has no match in main.
+            /// Advance the cursor to the first key that is not less than the main key.
+            if (compareSortKeyRows(result_sorting_key, main_idx, top_cursor.sorting_key_columns, top_cursor.row, reverse_flags) > 0)
+            {
+                std::pop_heap(heap.begin(), heap.end(), greater);
+                top_cursor.row = gallopingBinarySearch<true>(top_cursor.sorting_key_columns, top_cursor.row, top_cursor.num_rows, result_sorting_key, main_idx, reverse_flags);
+
+                if (top_cursor.row == top_cursor.num_rows)
+                    heap.pop_back();
+                else
+                    std::push_heap(heap.begin(), heap.end(), greater);
+
+                continue;
+            }
+
+            /// cmp == 0: equal-sort-key run on both sides. Find the run extents. Gallop on the main
+            /// side. The patch side is scanned linearly because patch runs are small.
+            size_t main_run_end = gallopingBinarySearch<false>(result_sorting_key, main_idx + 1, main_rows, result_sorting_key, main_idx, reverse_flags);
+
+            /// Extract all cursors with the key equal to the main key. Cursors are compared against
+            /// the main pivot row because extracted cursors may point one past their run's end.
+            equal_cursors.clear();
+            size_t num_patch_rows_in_run = 0;
+
+            while (!heap.empty())
+            {
+                auto & cursor = cursors[heap.front()];
+                if (compareSortKeyRows(cursor.sorting_key_columns, cursor.row, result_sorting_key, main_idx, reverse_flags) != 0)
+                    break;
+
+                cursor.run_end = cursor.row + 1;
+                while (cursor.run_end < cursor.num_rows && compareSortKeyRows(cursor.sorting_key_columns, cursor.run_end, result_sorting_key, main_idx, reverse_flags) == 0)
+                    ++cursor.run_end;
+
+                num_patch_rows_in_run += cursor.run_end - cursor.row;
+                equal_cursors.push_back(heap.front());
+
+                std::pop_heap(heap.begin(), heap.end(), greater);
+                heap.pop_back();
+            }
+
+            process_equal_run(main_idx, main_run_end, num_patch_rows_in_run);
+
+            for (size_t cursor_idx : equal_cursors)
+            {
+                auto & cursor = cursors[cursor_idx];
+                cursor.row = cursor.run_end;
+
+                if (cursor.row < cursor.num_rows)
+                {
+                    heap.push_back(cursor_idx);
+                    std::push_heap(heap.begin(), heap.end(), greater);
+                }
+            }
+
+            main_idx = main_run_end;
+        }
     }
 
-    erase_patch_column(BlockNumberColumn::name);
-    erase_patch_column(BlockOffsetColumn::name);
-    patch_to_apply->patch_blocks.emplace_back(patch_block_copy);
+    std::vector<std::pair<Names, PatchToApplyPtr>> result;
+    result.reserve(groups.size());
 
-    return patch_to_apply;
+    for (auto & group : groups)
+    {
+        /// Block indices can be omitted in case of one source.
+        if (group.patch->getNumSources() == 1)
+            group.patch->patch_block_indices.clear();
+
+        result.emplace_back(std::move(group.updated_columns), std::move(group.patch));
+    }
+
+    return result;
 }
 
 PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & join_entry)

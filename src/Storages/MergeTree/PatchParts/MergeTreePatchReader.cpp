@@ -142,12 +142,6 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderMerge::readPatches(
     return results;
 }
 
-std::vector<PatchToApplyPtr> MergeTreePatchReaderMerge::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
-{
-    const auto & patch_merge_data = typeid_cast<const PatchMergeReadResult &>(patch_result);
-    return {applyPatchMerge(result_block, patch_merge_data.block, patch_part)};
-}
-
 bool MergeTreePatchReaderMerge::needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch) const
 {
     const auto & old_patch_result = typeid_cast<const PatchMergeReadResult &>(old_patch);
@@ -262,17 +256,6 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
     return results;
 }
 
-std::vector<PatchToApplyPtr> MergeTreePatchReaderJoin::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
-{
-    const auto & patch_join_result = typeid_cast<const PatchJoinReadResult &>(patch_result);
-    std::vector<PatchToApplyPtr> patches;
-
-    for (const auto & entry : patch_join_result.entries)
-        patches.push_back(applyPatchJoin(result_block, *entry));
-
-    return patches;
-}
-
 MergeTreePatchReaderMergeOnKey::MergeTreePatchReaderMergeOnKey(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_)
     : MergeTreePatchReader(std::move(patch_part_), std::move(reader_))
 {
@@ -327,12 +310,6 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderMergeOnKey::readPatches(
     }
 
     return results;
-}
-
-std::vector<PatchToApplyPtr> MergeTreePatchReaderMergeOnKey::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
-{
-    const auto & patch_data = typeid_cast<const PatchMergeOnKeyReadResult &>(patch_result);
-    return {applyPatchMergeOnKey(result_block, patch_data.block, *patch_part.sorting_key)};
 }
 
 static int compareMainAndPatchKeys(

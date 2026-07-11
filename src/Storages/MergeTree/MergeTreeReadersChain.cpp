@@ -4,6 +4,7 @@
 #include <Storages/KeyDescription.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 
@@ -734,6 +735,19 @@ void MergeTreeReadersChain::applyPatches(
     std::unordered_map<Names, PatchesToApply, NamesHash> patches_to_apply;
     UInt64 source_data_version = patch_readers.front()->getPatchPart().source_data_version;
 
+    /// Blocks of MergeOnKey patches, grouped by the sorting key (usually there is one group,
+    /// because sorting keys of patches rarely differ). All blocks of a group are applied
+    /// in one merge pass over the result block.
+    struct MergeOnKeyGroup
+    {
+        const KeyDescription * sorting_key;
+        std::vector<PatchBlockForMergeOnKey> blocks;
+    };
+
+    std::vector<MergeOnKeyGroup> merge_on_key_groups;
+    /// Stable storage for the names referenced by PatchBlockForMergeOnKey.
+    std::vector<Names> updated_columns_by_reader(patch_readers.size());
+
     for (size_t i = 0; i < patch_readers.size(); ++i)
     {
         const auto & patch = patch_readers[i]->getPatchPart();
@@ -752,7 +766,7 @@ void MergeTreeReadersChain::applyPatches(
         if (max_version.has_value() && patchHasHigherDataVersion(*patch.part, *max_version))
             continue;
 
-        Names updated_columns;
+        Names & updated_columns = updated_columns_by_reader[i];
         for (const auto & columns_for_patch : columns_for_patches[i])
         {
             if (suitable_orders.contains(columns_for_patch.order))
@@ -764,16 +778,61 @@ void MergeTreeReadersChain::applyPatches(
 
         std::sort(updated_columns.begin(), updated_columns.end());
 
-        for (const auto & patch_result : patch_results)
+        switch (patch.mode)
         {
-            /// TODO: build indices once and filter them in MergeTreeRangeReader.
-            auto patches = patch_readers[i]->applyPatch(result_block, *patch_result);
-
-            for (auto & patch_to_apply : patches)
+            case PatchMode::Merge:
             {
-                if (!patch_to_apply->empty())
-                    patches_to_apply[updated_columns].push_back(std::move(patch_to_apply));
+                for (const auto & patch_result : patch_results)
+                {
+                    /// TODO: build indices once and filter them in MergeTreeRangeReader.
+                    const auto & patch_data = typeid_cast<const PatchMergeReadResult &>(*patch_result);
+                    auto patch_to_apply = applyPatchMerge(result_block, patch_data.block, patch);
+
+                    if (!patch_to_apply->empty())
+                        patches_to_apply[updated_columns].push_back(std::move(patch_to_apply));
+                }
+                break;
             }
+            case PatchMode::Join:
+            {
+                for (const auto & patch_result : patch_results)
+                {
+                    const auto & patch_data = typeid_cast<const PatchJoinReadResult &>(*patch_result);
+
+                    for (const auto & entry : patch_data.entries)
+                    {
+                        auto patch_to_apply = applyPatchJoin(result_block, *entry);
+
+                        if (!patch_to_apply->empty())
+                            patches_to_apply[updated_columns].push_back(std::move(patch_to_apply));
+                    }
+                }
+                break;
+            }
+            case PatchMode::MergeOnKey:
+            {
+                auto group_it = std::ranges::find_if(merge_on_key_groups, [&](const auto & group) { return group.sorting_key == patch.sorting_key.get(); });
+                if (group_it == merge_on_key_groups.end())
+                    group_it = merge_on_key_groups.insert(merge_on_key_groups.end(), MergeOnKeyGroup{patch.sorting_key.get(), {}});
+
+                for (const auto & patch_result : patch_results)
+                {
+                    const auto & patch_data = typeid_cast<const PatchMergeOnKeyReadResult &>(*patch_result);
+                    group_it->blocks.push_back(PatchBlockForMergeOnKey{&patch_data.block, &updated_columns});
+                }
+                break;
+            }
+        }
+    }
+
+    for (const auto & group : merge_on_key_groups)
+    {
+        auto merge_on_key_patches = applyPatchesMergeOnKey(result_block, group.blocks, *group.sorting_key);
+
+        for (auto & [group_updated_columns, patch_to_apply] : merge_on_key_patches)
+        {
+            if (!patch_to_apply->empty())
+                patches_to_apply[group_updated_columns].push_back(std::move(patch_to_apply));
         }
     }
 
