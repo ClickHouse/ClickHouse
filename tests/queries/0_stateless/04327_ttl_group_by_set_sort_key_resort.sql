@@ -237,3 +237,24 @@ SELECT 'mat subcol consistent', countIf(d = toDate(tup.ts)) = count() FROM t_mat
 SELECT 'mat subcol sorted', (SELECT groupArray(d) FROM (SELECT d FROM t_mat_subcol SETTINGS optimize_read_in_order = 0))
                          = (SELECT groupArray(d) FROM (SELECT d FROM t_mat_subcol ORDER BY d));
 DROP TABLE t_mat_subcol;
+
+-- MATERIALIZED sort-key column defined over an EPHEMERAL source (`sk MATERIALIZED reverse(eph)`,
+-- `ORDER BY sk`), with the SET rewriting a NON-sort-key column. The SET does not touch the sort
+-- key, so the resort gate must simply return false. Collecting materialized-source columns must
+-- include ephemeral columns in the analysis set (as the UPDATE mutation path does) so the analysis
+-- resolves `eph`, then skip the ephemeral-sourced materialized column instead of throwing. Before
+-- the fix this raised UNKNOWN_IDENTIFIER ('Missing columns: eph while processing reverse(eph)').
+DROP TABLE IF EXISTS t_eph_mat;
+CREATE TABLE t_eph_mat (eph String EPHEMERAL, sk String MATERIALIZED reverse(eph), ts DateTime, v UInt32)
+ENGINE = MergeTree ORDER BY sk
+TTL ts + toIntervalDay(1) GROUP BY sk SET v = max(v)
+SETTINGS min_bytes_for_full_part_storage = 128, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_eph_mat;
+INSERT INTO t_eph_mat (eph, ts, v) VALUES ('abc', '2020-01-01 00:00:00', 1), ('xyz', '2020-01-01 00:00:00', 2), ('abc', '2020-01-01 00:00:00', 5);
+SYSTEM START TTL MERGES t_eph_mat;
+OPTIMIZE TABLE t_eph_mat FINAL;
+-- Two groups: 'cba' (v = max(1,5) = 5) and 'zyx' (v = 2). No throw; part sorted by sk.
+SELECT 'eph mat data', sk, v FROM t_eph_mat ORDER BY sk;
+SELECT 'eph mat sorted', (SELECT groupArray(sk) FROM (SELECT sk FROM t_eph_mat SETTINGS optimize_read_in_order = 0))
+                       = (SELECT groupArray(sk) FROM (SELECT sk FROM t_eph_mat ORDER BY sk));
+DROP TABLE t_eph_mat;

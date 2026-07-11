@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/TTLResortUtils.h>
 
+#include <optional>
 #include <unordered_map>
 
 #include <Core/Block.h>
@@ -65,11 +66,15 @@ NameSet getSortKeyStorageDependencies(const StorageMetadataPtr & metadata_snapsh
 
 /// The source columns a MATERIALIZED column's default expression reads from, mapped to their
 /// physical storage columns (the expression may reference a subcolumn). Analyzed the same way the
-/// UPDATE mutation path does in `MutationsInterpreter::prepare`.
-NameSet getMaterializedColumnSourceColumns(
+/// UPDATE mutation path does in `MutationsInterpreter::prepare`. Returns nullopt when the default
+/// expression reads an EPHEMERAL column: such a column cannot be recomputed here (ephemeral columns
+/// are only available during INSERT, never read from disk during a merge/mutation), so it is
+/// skipped instead of analyzed as recomputable.
+std::optional<NameSet> getMaterializedColumnSourceColumns(
     const ColumnDescription & column_desc,
     const NamesAndTypesList & all_columns,
     const NameSet & storage_columns,
+    const NameSet & ephemeral_columns,
     const ContextPtr & context)
 {
     auto query = column_desc.default_desc.expression->clone();
@@ -79,6 +84,8 @@ NameSet getMaterializedColumnSourceColumns(
     NameSet sources;
     for (const auto & source : syntax_result->requiredSourceColumns())
     {
+        if (ephemeral_columns.contains(source))
+            return std::nullopt;
         if (storage_columns.contains(source))
             sources.insert(source);
         else if (auto source_in_storage = Nested::tryGetColumnNameInStorage(source, storage_columns))
@@ -89,22 +96,39 @@ NameSet getMaterializedColumnSourceColumns(
 
 /// The physical storage columns of every MATERIALIZED column, mapped to the physical storage
 /// columns their default expression reads from. Used to walk materialized-dependency chains.
+/// MATERIALIZED columns whose default expression reads an EPHEMERAL column are omitted (they cannot
+/// be recomputed from on-disk data, and since a `SET` target is always a physical column such a
+/// column can never be transitively affected by the `SET` anyway).
 std::unordered_map<String, NameSet> getMaterializedColumnSourcesMap(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
     const auto & columns_desc = metadata_snapshot->getColumns();
-    const auto all_columns = columns_desc.getAllPhysical();
-    const auto storage_columns = all_columns.getNameSet();
+    const auto storage_columns = columns_desc.getAllPhysical().getNameSet();
+
+    /// Include ephemeral columns in the analysis set so `TreeRewriter` can resolve MATERIALIZED
+    /// expressions that reference them, mirroring `MutationsInterpreter::prepare`. Without this the
+    /// analysis throws UNKNOWN_IDENTIFIER for a table such as `eph String EPHEMERAL, sk String
+    /// MATERIALIZED reverse(eph)`.
+    NamesAndTypesList all_columns_with_ephemeral = columns_desc.getAllPhysical();
+    NameSet ephemeral_columns;
+    for (const auto & column : columns_desc.getEphemeral())
+    {
+        ephemeral_columns.insert(column.name);
+        all_columns_with_ephemeral.push_back(column);
+    }
 
     std::unordered_map<String, NameSet> sources_map;
-    for (const auto & column : all_columns)
+    for (const auto & column : columns_desc.getAllPhysical())
     {
         if (!columns_desc.has(column.name))
             continue;
         const auto & column_desc = columns_desc.get(column.name);
         if (column_desc.default_desc.kind != ColumnDefaultKind::Materialized || !column_desc.default_desc.expression)
             continue;
-        sources_map.emplace(column.name, getMaterializedColumnSourceColumns(column_desc, all_columns, storage_columns, context));
+        auto sources = getMaterializedColumnSourceColumns(
+            column_desc, all_columns_with_ephemeral, storage_columns, ephemeral_columns, context);
+        if (sources)
+            sources_map.emplace(column.name, std::move(*sources));
     }
     return sources_map;
 }
