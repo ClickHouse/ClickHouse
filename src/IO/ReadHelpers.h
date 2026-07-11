@@ -373,13 +373,10 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
 
 
 /// Look at readFloatText.h
-template <typename T> void readFloatText(T & x, ReadBuffer & in);
-template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in);
-
 template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in);
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in);
-template <typename T> void readFloatTextFast(T & x, ReadBuffer & in);
-template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
+template <typename T> void readFloatImpreciseForCompatibility(T & x, ReadBuffer & in);
+template <typename T> bool tryReadFloatImpreciseForCompatibility(T & x, ReadBuffer & in);
 
 
 /// simple: all until '\n' or '\t'
@@ -1639,7 +1636,7 @@ inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
 
 inline bool tryReadText(is_floating_point auto & x, ReadBuffer & buf)
 {
-    return tryReadFloatText(x, buf);
+    return tryReadFloatTextPrecise(x, buf);
 }
 
 inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, buf); }
@@ -1648,7 +1645,7 @@ inline bool tryReadText(IPv6 & x, ReadBuffer & buf) { return tryReadIPv6Text(x, 
 
 template <typename T>
 requires is_floating_point<T>
-inline void readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readText(T & x, ReadBuffer & buf) { readFloatTextPrecise(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 

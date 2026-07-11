@@ -1,0 +1,77 @@
+---
+description: '关于应用轻量级更新中的补丁的文档'
+sidebarTitle: 'APPLY PATCHES'
+slug: /sql-reference/statements/alter/apply-patches
+title: '应用轻量级更新中的补丁'
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
+```
+
+该命令会手动触发对由[轻量级 `UPDATE`](/zh/reference/statements/update)语句创建的补丁分区片段进行物理物化。它会仅重写受影响的列，强制将待处理的补丁应用到数据分区片段。
+
+<Note>
+  * 它仅适用于 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族中的表 (包括[复制表](/zh/reference/engines/table-engines/mergetree-family/replication)) 。
+  * 这是一个变更操作，会在后台异步执行。
+</Note>
+
+<div id="when-to-use">
+  ## 何时使用 APPLY PATCHES
+</div>
+
+<Tip>
+  一般情况下，你不需要使用 `APPLY PATCHES`
+</Tip>
+
+启用 [`apply_patches_on_merge`](/zh/reference/settings/merge-tree-settings#apply_patches_on_merge) 设置 (默认) 后，补丁分区片段通常会在合并过程中自动应用。不过，在以下场景中，你可能希望手动触发补丁应用：
+
+* 减少在 `SELECT` 查询期间应用补丁带来的开销
+* 在多个补丁分区片段积累起来之前先将其合并
+* 为备份或导出准备数据，并提前将补丁物化
+* 当 `apply_patches_on_merge` 被禁用，而你希望自行控制补丁的应用时机时
+
+<div id="examples">
+  ## 示例
+</div>
+
+将某个表的所有待处理补丁全部应用：
+
+```sql
+ALTER TABLE my_table APPLY PATCHES;
+```
+
+仅对特定分区应用补丁：
+
+```sql
+ALTER TABLE my_table APPLY PATCHES IN PARTITION '2024-01';
+```
+
+可与其他操作结合使用：
+
+```sql
+ALTER TABLE my_table APPLY PATCHES, UPDATE column = value WHERE condition;
+```
+
+<div id="monitor">
+  ## 监控补丁应用进度
+</div>
+
+你可以使用 [`system.mutations`](/zh/reference/system-tables/mutations) 表来监控补丁应用的进度：
+
+```sql
+SELECT * FROM system.mutations
+WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
+```
+
+<div id="see-also">
+  ## 另请参见
+</div>
+
+* [轻量级 `UPDATE`](/zh/reference/statements/update) - 通过轻量级更新创建补丁分区片段
+* [`apply_patches_on_merge` 设置](/zh/reference/settings/merge-tree-settings#apply_patches_on_merge) - 控制在合并过程中自动应用补丁

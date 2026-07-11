@@ -1,0 +1,146 @@
+---
+description: 'このエンジンは、Amazon S3 上の既存の Delta Lake
+  テーブルに対する読み取り専用のインテグレーションを提供します。'
+sidebarTitle: 'Delta Lake'
+slug: /engines/table-engines/integrations/deltalake
+title: 'Delta Lake テーブルエンジン'
+doc_type: 'reference'
+---
+
+このエンジンは、S3、GCP、Azure ストレージ上の既存の [Delta Lake](https://github.com/delta-io/delta) テーブルとのインテグレーションを提供し、読み取りと書き込みの両方をサポートします (v25.10 以降) 。
+
+<div id="create-table">
+  ## Delta Lake テーブルを作成する
+</div>
+
+Delta Lake テーブルを作成するには、そのテーブルがあらかじめ S3、GCP、または Azure ストレージ上に存在している必要があります。以下のコマンドでは、新しいテーブルを作成するための DDL パラメータは指定できません。
+
+<Tabs>
+  <Tab title="S3">
+    **構文**
+
+    ```sql
+    CREATE TABLE table_name
+    ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,] [extra_credentials])
+    ```
+
+    **エンジンパラメータ**
+
+    * `url` — 既存の Delta Lake テーブルへのパスを含むバケット URL。
+    * `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) アカウントユーザーの長期認証情報です。これらを使用してリクエストを認証できます。このパラメータは任意です。認証情報が指定されていない場合は、設定ファイルのものが使用されます。
+    * `extra_credentials` - 任意。ClickHouse Cloud でロールベースアクセス用の `role_arn` を渡すために使用します。設定手順については、[Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
+
+    エンジンパラメータは、[Named Collections](/ja/concepts/features/configuration/server-config/named-collections) を使用して指定することもできます。
+
+    **例**
+
+    ```sql
+    CREATE TABLE deltalake
+    ENGINE = DeltaLake('http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/test_table/', 'ABC123', 'Abc+123')
+    ```
+
+    Named Collections を使用する場合:
+
+    ```xml
+    <clickhouse>
+        <named_collections>
+            <deltalake_conf>
+                <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
+                <access_key_id>ABC123</access_key_id>
+                <secret_access_key>Abc+123</secret_access_key>
+            </deltalake_conf>
+        </named_collections>
+    </clickhouse>
+    ```
+
+    ```sql
+    CREATE TABLE deltalake
+    ENGINE = DeltaLake(deltalake_conf, filename = 'test_table')
+    ```
+  </Tab>
+
+  <Tab title="GCP">
+    **構文**
+
+    ```sql
+    -- HTTPS URL を使用する（推奨）
+    CREATE TABLE table_name
+    ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
+    ```
+
+    <Info>
+      **サポートされていない gsutil URI**
+
+      `gs://clickhouse-docs-example-bucket` のような gsutil URI はサポートされていないため、`https://storage.googleapis.com` で始まる URL を使用してください。
+    </Info>
+
+    **引数**
+
+    * `url` — Delta Lake テーブルへの GCS バケット URL。`https://storage.googleapis.com/<bucket>/<path>/`
+      形式 (GCS XML API エンドポイント) 、または自動変換される `gs://<bucket>/<path>/` を使用する必要があります。
+    * `access_key_id` — GCS Access Key。Google Cloud Console → Cloud Storage → Settings → Interoperability で作成します。
+    * `secret_access_key` — GCS のシークレット。
+
+    **名前付きコレクション**
+
+    名前付きコレクションも使用できます。
+    たとえば:
+
+    ```sql
+    CREATE NAMED COLLECTION gcs_creds AS
+    access_key_id = '<access_key>',
+    secret_access_key = '<secret>';
+
+    CREATE TABLE gcpDeltaLake
+    ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<path>')
+    ```
+  </Tab>
+
+  <Tab title="Azure">
+    **構文**
+
+    ```sql
+    CREATE TABLE table_name
+    ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ```
+
+    **引数**
+
+    * `connection_string` — Azure の接続文字列
+    * `storage_account_url` — Azure ストレージアカウントの URL (例: https://account.blob.core.windows.net)
+    * `container_name` — Azure コンテナー名
+    * `blobpath` — コンテナー内の Delta Lake テーブルへのパス
+    * `account_name` — Azure ストレージアカウント名
+    * `account_key` — Azure ストレージアカウント キー
+  </Tab>
+</Tabs>
+
+<div id="insert-data">
+  ## Delta Lake テーブルを使用してデータを書き込む
+</div>
+
+Delta Lake テーブルエンジンを使用してテーブルを作成したら、次のようにデータを挿入できます。
+
+```sql
+SET allow_experimental_delta_lake_writes = 1;
+
+INSERT INTO deltalake(id, firstname, lastname, gender, age)
+VALUES (1, 'John', 'Smith', 'M', 32);
+```
+
+<Note>
+  テーブルエンジンを使った書き込みは、delta kernel 経由でのみサポートされています。
+  Azure への書き込みはまだサポートされていませんが、S3 と GCS ではサポートされています。
+</Note>
+
+<div id="data-cache">
+  ### データキャッシュ
+</div>
+
+`Delta Lake` テーブルエンジンおよびテーブル関数は、`S3`、`AzureBlobStorage`、`HDFS` ストレージと同様に、データキャッシュをサポートしています。詳細は [&quot;S3テーブルエンジン&quot;](/ja/reference/engines/table-engines/integrations/s3#data-cache) を参照してください。
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [deltaLake テーブル関数](/ja/reference/functions/table-functions/deltalake)

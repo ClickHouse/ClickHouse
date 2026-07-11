@@ -1,0 +1,53 @@
+---
+title: Requêtes RBAC courantes
+description: "Requêtes pour accorder des permissions spécifiques aux utilisateurs."
+date: 2023-09-28
+tags: ['Sécurité et authentification', 'Gestion du Cloud']
+keywords: ['RBAC', 'Requêtes']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+Voici quelques requêtes courantes pour accorder des permissions spécifiques aux utilisateurs.
+
+<div id="how-do-i-grant-the-same-permissions-as-the-current-user-to-another-user">
+  ## Comment accorder à un autre utilisateur les mêmes permissions que l’utilisateur actuel ?
+</div>
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-based-on-the-grants-of-the-current-user">
+  ## Comment accorder à un utilisateur une permission précise en fonction des privilèges de l’utilisateur courant ?
+</div>
+
+Dans l’exemple ci-dessous, `another_user` pourra exécuter des commandes `SELECT` sur l’ensemble des bases de données et des tables de l’utilisateur courant.
+
+```sql
+GRANT CURRENT GRANTS(SELECT ON *.*) TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-for-a-specific-database-based-on-the-grants-of-the-current-user">
+  ## Comment accorder à un utilisateur une permission spécifique sur une base de données donnée à partir des privilèges de l&#39;utilisateur actuel ?
+</div>
+
+Dans l&#39;exemple ci-dessous, `another_user` pourra exécuter des commandes `INSERT` sur toutes les tables de `my_database`.
+
+```sql
+GRANT INSERT ON my_database.* TO another_user;
+```
+
+<div id="how-do-i-give-access-to-all-grants-for-a-specific-user-based-on-the-default-user">
+  ## Comment accorder à un utilisateur spécifique tous les privilèges de l’utilisateur `default` ?
+</div>
+
+```sql
+GRANT default_role TO another_user;
+```

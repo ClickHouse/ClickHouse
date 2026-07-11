@@ -1,0 +1,135 @@
+---
+title: 'المناطق السحابية المدعومة'
+sidebarTitle: 'المناطق السحابية المدعومة'
+keywords: ['aws', 'gcp', 'Google Cloud', 'azure', 'السحابة', 'المناطق']
+description: 'المناطق المدعومة لـ ClickHouse Cloud'
+slug: /cloud/reference/supported-regions
+doc_type: 'reference'
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="aws-regions">
+  ## مناطق AWS
+</div>
+
+* ap-northeast-1 (طوكيو)
+* ap-northeast-2 (كوريا الجنوبية، سيول)
+* ap-south-1 (مومباي)
+* ap-southeast-1 (سنغافورة)
+* ap-southeast-2 (سيدني)
+* eu-central-1 (فرانكفورت)
+* eu-west-1 (أيرلندا)
+* eu-west-2 (لندن)
+* us-east-1 (شمال فيرجينيا)
+* us-east-2 (أوهايو)
+* us-west-2 (أوريغون)
+* il-central-1 (إسرائيل، تل أبيب)
+
+**منطقة خاصة:**
+
+* ca-central-1 (كندا)
+* af-south-1 (جنوب أفريقيا)
+* eu-north-1 (ستوكهولم)
+* sa-east-1 (أمريكا الجنوبية)
+* ap-southeast-3 (جاكرتا)
+* ap-east-1 (هونغ كونغ)
+* mx-central-1 (المكسيك)
+
+<div id="google-cloud-regions">
+  ## مناطق Google Cloud
+</div>
+
+* asia-southeast1 (سنغافورة)
+* asia-northeast1 (طوكيو)
+* europe-west2 (لندن)
+* europe-west4 (هولندا)
+* us-central1 (آيوا)
+* us-east1 (كارولاينا الجنوبية)
+
+**منطقة خاصة:**
+
+* australia-southeast1(سيدني)
+* europe-west3 (فرانكفورت)
+* europe-west6 (زيورخ)
+* northamerica-northeast1 (مونتريال)
+* us-west1 (أوريغون)
+
+<div id="azure-regions">
+  ## مناطق Azure
+</div>
+
+* West US 3 (أريزونا)
+* East US 2 (فيرجينيا)
+* Germany West Central (فرانكفورت)
+
+**منطقة خاصة:**
+
+* Japan East (طوكيو، سايتاما)
+* UAE North (دبي)
+* Australia East (نيو ساوث ويلز)
+
+<Note>
+  هل تحتاج إلى النشر في منطقة غير مدرجة حاليًا؟ [قدّم طلبًا](https://clickhouse.com/pricing?modal=open).
+</Note>
+
+<div id="private-regions">
+  ## المناطق الخاصة
+</div>
+
+<EnterprisePlanFeatureBadge feature="ميزة المناطق الخاصة" />
+
+نوفر مناطق خاصة لخدماتنا من فئة Enterprise. يُرجى [التواصل معنا](https://clickhouse.com/company/contact) لطلب مناطق خاصة.
+
+اعتبارات أساسية بشأن المناطق الخاصة:
+
+* لن تتوسع الخدمات تلقائيًا؛ ومع ذلك، يتوفر التوسع الرأسي والأفقي يدويًا.
+* لا يمكن تحويل الخدمات إلى حالة الخمول.
+* صفحة الحالة غير متاحة للمناطق الخاصة.
+
+قد تنطبق متطلبات إضافية للامتثال لمعايير HIPAA (بما في ذلك توقيع اتفاقية BAA). يُرجى ملاحظة أن HIPAA متاح حاليًا فقط للخدمات من فئة Enterprise
+
+<div id="hipaa-compliant-regions">
+  ## المناطق المتوافقة مع HIPAA
+</div>
+
+<EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
+
+يجب على العملاء توقيع اتفاقية شريك أعمال (BAA) وطلب التهيئة عبر فريق المبيعات أو الدعم لإعداد الخدمات في المناطق المتوافقة مع HIPAA. تدعم المناطق التالية الامتثال لمتطلبات HIPAA:
+
+* AWS af-south-1 (جنوب أفريقيا) **منطقة خاصة**
+* AWS ca-central-1 (كندا) **منطقة خاصة**
+* AWS eu-central-1 (فرانكفورت)
+* AWS eu-north-1 (ستوكهولم) **منطقة خاصة**
+* AWS eu-west-1 (أيرلندا)
+* AWS eu-west-2 (لندن)
+* AWS sa-east-1 (أمريكا الجنوبية) **منطقة خاصة**
+* AWS us-east-1 (شمال فيرجينيا)
+* AWS us-east-2 (أوهايو)
+* AWS us-west-2 (أوريغون)
+* GCP europe-west4 (هولندا)
+* GCP us-central1 (آيوا)
+* GCP us-east1 (كارولاينا الجنوبية)
+
+<div id="pci-compliant-regions">
+  ## المناطق المتوافقة مع PCI
+</div>
+
+<EnterprisePlanFeatureBadge feature="PCI" support="true" />
+
+يجب على العملاء طلب عملية الإعداد عبر فريق المبيعات أو الدعم لإعداد الخدمات في المناطق المتوافقة مع PCI. وتدعم المناطق التالية التوافق مع PCI:
+
+* AWS af-south-1 (جنوب أفريقيا) **منطقة خاصة**
+* AWS ca-central-1 (كندا) **منطقة خاصة**
+* AWS eu-central-1 (فرانكفورت)
+* AWS eu-north-1 (ستوكهولم) **منطقة خاصة**
+* AWS eu-west-1 (أيرلندا)
+* AWS eu-west-2 (لندن)
+* AWS mx-central-1 (المكسيك) **منطقة خاصة**
+* AWS sa-east-1 (أمريكا الجنوبية) **منطقة خاصة**
+* AWS us-east-1 (فيرجينيا الشمالية)
+* AWS us-east-2 (أوهايو)
+* AWS us-west-2 (أوريغون)
+* GCP europe-west4 (هولندا)
+* GCP us-central1 (آيوا)
+* GCP us-east1 (كارولاينا الجنوبية)

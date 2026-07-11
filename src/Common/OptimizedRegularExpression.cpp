@@ -743,10 +743,12 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
 }
 
 
-unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_size, MatchVec & matches, unsigned limit) const
+unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_size, size_t start_pos, MatchVec & matches, unsigned limit) const
 {
     const UInt8 * haystack = reinterpret_cast<const UInt8 *>(subject);
     const UInt8 * haystack_end = haystack + subject_size;
+    /// Search starts here, but the characters before it remain available as context for zero-width assertions.
+    const UInt8 * search_begin = haystack + start_pos;
 
     matches.clear();
 
@@ -759,15 +761,15 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
     {
         if (required_substring.empty())
         {
-            matches.emplace_back(Match{0, 0});
+            matches.emplace_back(Match{start_pos, 0});
             return 1;
         }
 
         const UInt8 * pos = nullptr;
         if (is_case_insensitive)
-            pos = case_insensitive_substring_searcher->search(haystack, subject_size);
+            pos = case_insensitive_substring_searcher->search(search_begin, haystack_end - search_begin);
         else
-            pos = case_sensitive_substring_searcher->search(haystack, subject_size);
+            pos = case_sensitive_substring_searcher->search(search_begin, haystack_end - search_begin);
 
         if (haystack_end == pos)
             return 0;
@@ -783,9 +785,9 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
     {
         const UInt8 * pos = nullptr;
         if (is_case_insensitive)
-            pos = case_insensitive_substring_searcher->search(haystack, subject_size);
+            pos = case_insensitive_substring_searcher->search(search_begin, haystack_end - search_begin);
         else
-            pos = case_sensitive_substring_searcher->search(haystack, subject_size);
+            pos = case_sensitive_substring_searcher->search(search_begin, haystack_end - search_begin);
 
         if (haystack_end == pos)
             return 0;
@@ -793,7 +795,7 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
 
     DB::PODArrayWithStackMemory<std::string_view, 128> pieces(limit);
 
-    if (!re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, pieces.data(), static_cast<int>(pieces.size())))
+    if (!re2->Match({subject, subject_size}, start_pos, subject_size, re2::RE2::UNANCHORED, pieces.data(), static_cast<int>(pieces.size())))
     {
         return 0;
     }
