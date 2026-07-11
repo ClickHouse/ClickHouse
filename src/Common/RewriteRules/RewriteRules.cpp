@@ -16,6 +16,11 @@
 #include <Parsers/ASTAlterRewriteRuleQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/ASTShowColumnsQuery.h>
+#include <Parsers/ASTShowIndexesQuery.h>
+#include <Parsers/ASTBackupQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 
 namespace DB
 {
@@ -241,6 +246,39 @@ namespace
         return {};
     }
 
+    /// Returns the name of the first `{name:Type}` placeholder (`ASTQueryParameter`) reachable
+    /// from `ast` only through an AST member kept OUTSIDE `IAST::children` (see
+    /// `forEachRewriteRuleNonChildAST`) — for example the `{n:Int}` in `SHOW TABLES LIMIT {n:Int}`,
+    /// which lives in `ASTShowTablesQuery::limit_length`. The matcher and the result substitution
+    /// (`RewriteRulesASTTraversal.cpp`) follow only `children`, so such a placeholder can be
+    /// neither bound nor substituted: the rule would be stored but silently never work. Reject it
+    /// at DDL time, like the alias / nested-template / inline-data cases above.
+    /// `inside_non_child` becomes true once the walk has descended through a non-`children` member.
+    std::optional<String> findQueryParameterInNonChildMember(const ASTPtr & ast, bool inside_non_child)
+    {
+        if (!ast)
+            return {};
+
+        if (inside_non_child)
+            if (const auto * query_parameter = ast->as<ASTQueryParameter>())
+                return query_parameter->name;
+
+        std::optional<String> found;
+        forEachRewriteRuleNonChildAST(*ast, [&](const ASTPtr & member)
+        {
+            if (!found)
+                found = findQueryParameterInNonChildMember(member, true);
+        });
+        if (found)
+            return found;
+
+        for (const auto & child : ast->children)
+            if (auto nested = findQueryParameterInNonChildMember(child, inside_non_child))
+                return nested;
+
+        return {};
+    }
+
     /// Validates a rule's source/result templates at DDL time so that invalid rule
     /// metadata is rejected on `CREATE RULE` / `ALTER RULE` instead of turning into
     /// runtime exceptions for every matching query later on.
@@ -284,6 +322,20 @@ namespace
                     "Rewrite rule `{}` uses query parameter `{}` as an alias; query parameters in "
                     "aliases are not supported in rewrite rule templates",
                     query.rule_name, *alias);
+
+        /// A placeholder inside an AST member kept outside `children` — the `LIMIT` / `WHERE` of a
+        /// `SHOW`, a `BACKUP` setting, a `CREATE ROW POLICY` filter, etc. — is neither bound nor
+        /// substituted by the matcher (which walks only `children`), even though the matcher's tree
+        /// hash now folds those members in. The rule would be stored but silently never work, so
+        /// reject it up front.
+        for (const auto & template_query : {query.source_query, query.resulting_query})
+            if (auto non_child = findQueryParameterInNonChildMember(template_query, false))
+                throw Exception(
+                    ErrorCodes::REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE,
+                    "Rewrite rule `{}` uses query parameter `{}` inside an AST member that the "
+                    "matcher does not traverse (for example a SHOW LIMIT / WHERE, a BACKUP setting, "
+                    "or a ROW POLICY filter); such placeholders are not supported",
+                    query.rule_name, *non_child);
 
         std::unordered_set<String> source_parameters;
         std::vector<String> source_duplicates;
@@ -352,6 +404,44 @@ namespace
                 "Rewrite rule `{}` uses query parameter `{}` with type `{}` in its result template "
                 "but type `{}` in its source template; a placeholder must use the same type in both",
                 query.rule_name, mismatch->name, mismatch->result_type, mismatch->source_type);
+    }
+}
+
+void forEachRewriteRuleNonChildAST(const IAST & node, const std::function<void(const ASTPtr &)> & visit)
+{
+    auto visit_if = [&](const ASTPtr & member)
+    {
+        if (member)
+            visit(member);
+    };
+
+    if (const auto * show_tables = node.as<ASTShowTablesQuery>())
+    {
+        visit_if(show_tables->where_expression);
+        visit_if(show_tables->limit_length);
+    }
+    else if (const auto * show_columns = node.as<ASTShowColumnsQuery>())
+    {
+        visit_if(show_columns->where_expression);
+        visit_if(show_columns->limit_length);
+    }
+    else if (const auto * show_indexes = node.as<ASTShowIndexesQuery>())
+    {
+        visit_if(show_indexes->where_expression);
+    }
+    else if (const auto * backup = node.as<ASTBackupQuery>())
+    {
+        visit_if(backup->settings);
+        visit_if(backup->cluster_host_ids);
+        for (const auto & element : backup->elements)
+            if (element.partitions)
+                for (const auto & partition : *element.partitions)
+                    visit_if(partition);
+    }
+    else if (const auto * row_policy = node.as<ASTCreateRowPolicyQuery>())
+    {
+        for (const auto & filter_pair : row_policy->filters)
+            visit_if(filter_pair.second);
     }
 }
 

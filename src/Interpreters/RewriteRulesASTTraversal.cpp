@@ -56,6 +56,43 @@ ASTPtr unwrapQueryParameterCast(const ASTPtr & node)
     return node;
 }
 
+/// Counts AST elements and depth over `IAST::children` AND the semantic AST members kept outside
+/// `children` that the matcher's tree hash folds in (see `forEachRewriteRuleNonChildAST`), throwing
+/// `TOO_BIG_AST` / `TOO_DEEP_AST` past the limits. `IAST::checkSize` / `IAST::checkDepth` follow only
+/// `children`, so on their own they would let a `SHOW ... WHERE <huge>` (or a `BACKUP` with huge
+/// settings, a `ROW POLICY` with a huge filter, ...) slip past the limit and still force the matcher
+/// to walk an unbounded tree. A limit of `0` means "no limit", matching the generic `checkASTSizeLimits`.
+void countRewriteRuleAST(const IAST & node, size_t & elements, size_t depth, UInt64 max_elements, UInt64 max_depth)
+{
+    ++elements;
+    if (max_elements && elements > max_elements)
+        throw Exception(ErrorCodes::TOO_BIG_AST, "AST is too big. Maximum: {}", max_elements);
+    if (max_depth && depth > max_depth)
+        throw Exception(ErrorCodes::TOO_DEEP_AST, "AST is too deep. Maximum: {}", max_depth);
+
+    for (const auto & child : node.children)
+        if (child)
+            countRewriteRuleAST(*child, elements, depth + 1, max_elements, max_depth);
+
+    forEachRewriteRuleNonChildAST(node, [&](const ASTPtr & member)
+    {
+        countRewriteRuleAST(*member, elements, depth + 1, max_elements, max_depth);
+    });
+}
+
+/// Enforces `max_ast_depth` / `max_ast_elements` on `ast`, counting both `children` and the
+/// non-`children` semantic AST members the matcher walks. Used for the submitted query before
+/// matching and for each intermediate rewrite result.
+void checkRewriteRuleASTLimits(const IAST & ast, const Settings & settings)
+{
+    const UInt64 max_ast_depth = settings[Setting::max_ast_depth];
+    const UInt64 max_ast_elements = settings[Setting::max_ast_elements];
+    if (!max_ast_depth && !max_ast_elements)
+        return;
+    size_t elements = 0;
+    countRewriteRuleAST(ast, elements, 1, max_ast_elements, max_ast_depth);
+}
+
 }
 
 bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied_rules)
@@ -103,15 +140,16 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
     /// `max_ast_depth` / `max_ast_elements` bypass the AST resource guard for the query they sent
     /// (and forcing the matcher to walk an unbounded tree). The rewrite result stays bounded by
     /// the post-rewrite check, and the rule templates themselves are bounded at `CREATE` / `ALTER`
-    /// time (`checkRewriteRuleTemplateLimits`).
-    if (const UInt64 max_ast_depth = settings[Setting::max_ast_depth])
-        ast->checkDepth(max_ast_depth);
-    if (const UInt64 max_ast_elements = settings[Setting::max_ast_elements])
-        ast->checkSize(max_ast_elements);
+    /// time (`checkRewriteRuleTemplateLimits`). The count also covers the semantic AST members kept
+    /// outside `children` (a `SHOW ... WHERE` / `LIMIT`, a `BACKUP` setting, a `ROW POLICY` filter):
+    /// the matcher hashes those, so `IAST::checkSize` / `checkDepth` alone — which follow only
+    /// `children` — would let an oversized non-`children` subtree slip past.
+    checkRewriteRuleASTLimits(*ast, settings);
 
-    /// `checkDepth` / `checkSize` above follow only `IAST::children`, but if the submitted query is
-    /// itself a `CREATE RULE` / `ALTER RULE` its rule templates (`source_query` / `resulting_query`)
-    /// live outside `children`. Those templates are first fully walked by the matcher's tree hash
+    /// `checkRewriteRuleASTLimits` above covers `children` and the non-`children` members of the
+    /// query node itself, but if the submitted query is itself a `CREATE RULE` / `ALTER RULE` its
+    /// rule templates (`source_query` / `resulting_query`) live outside `children` and outside
+    /// `forEachRewriteRuleNonChildAST`. Those templates are first fully walked by the matcher's tree hash
     /// below (through the rule-DDL node's `updateTreeHashImpl`), before the generic
     /// `checkRewriteRuleTemplateLimits` gate runs later from `checkASTSizeLimits` in `executeQuery`.
     /// Bound the submitted templates here too, so an oversized submitted rule template cannot force
@@ -286,11 +324,9 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
             /// very deep AST — forcing the next rule's matcher to walk an unbounded tree — and a
             /// later rule could then shrink it again, bypassing the effective `max_ast_elements` /
             /// `max_ast_depth` for the work in between. (A `REJECT` rule threw above, so this runs
-            /// only for a successful `REWRITE`.)
-            if (const UInt64 max_ast_depth = settings[Setting::max_ast_depth])
-                ast->checkDepth(max_ast_depth);
-            if (const UInt64 max_ast_elements = settings[Setting::max_ast_elements])
-                ast->checkSize(max_ast_elements);
+            /// only for a successful `REWRITE`.) Like the pre-match guard this counts the
+            /// non-`children` members the matcher walks, not only `children`.
+            checkRewriteRuleASTLimits(*ast, settings);
         }
     }
 
@@ -342,6 +378,14 @@ void checkRewriteRuleTemplateLimits(const IAST & ast, const Settings & settings)
             if (*nested_result)
                 check_template(**nested_result, elements, depth + 1);
         }
+        /// A template such as `SHOW TABLES WHERE <expr>` keeps its distinguishing subtree outside
+        /// `children`; the matcher hashes it, so count it here too — otherwise a rule template with
+        /// a huge `WHERE` / `LIMIT` / `BACKUP` setting / `ROW POLICY` filter would be accepted under
+        /// a low limit and force the matcher to walk an unbounded tree.
+        forEachRewriteRuleNonChildAST(node, [&](const ASTPtr & member)
+        {
+            check_template(*member, elements, depth + 1);
+        });
         for (const auto & child : node.children)
             if (child)
                 check_template(*child, elements, depth + 1);
