@@ -399,40 +399,41 @@ def slugify(name):
     return re.sub(r"[^a-z0-9_]+", "", name.lower())
 
 
-def render_markdown(metrics):
-    """Render a sorted list of `### Name {#anchor}` / description entries."""
-    # The description is part of the sort key to keep the output deterministic
-    # when one metric name carries different descriptions (per-platform
-    # registrations); those also produce a "different descriptions" warning.
-    sort_key = lambda item: (item[0].lower(), item[0], item[1])
-    metrics = sorted(set((n, d) for n, d, _ in metrics), key=sort_key)
+def render_markdown(descriptions):
+    """Render a sorted list of `### Name {#anchor}` / description entries.
+
+    ``descriptions`` maps each metric name to its distinct descriptions in
+    source order. A metric registered per-platform with different descriptions
+    (e.g. the `MemoryThreadStacks*` family on Linux vs. macOS) is emitted as a
+    single section with the variants as consecutive paragraphs, so every
+    metric has exactly one heading and one anchor.
+    """
     lines = []
-    for name, desc in metrics:
+    for name in sorted(descriptions, key=lambda n: (n.lower(), n)):
         lines.append(f"### {name} {{#{slugify(name)}}}")
         lines.append("")
-        lines.append(desc.strip())
+        lines.append("\n\n".join(d.strip() for d in descriptions[name]))
         lines.append("")
     return "\n".join(lines)
 
 
 def render(repo_root):
     """Extract metrics from the C++ sources and render the markdown block."""
-    metrics = []
-    seen = {}
+    descriptions = {}
     for relpath in SOURCE_FILES:
         with open(os.path.join(repo_root, relpath), encoding="utf-8") as f:
             text = f.read()
         extracted = extract_metrics_from_source(text, parse_macros(text), relpath)
         for name, desc, _ in extracted:
-            existing = seen.get(name)
-            if existing is not None and existing != desc:
+            existing = descriptions.setdefault(name, [])
+            if existing and desc not in existing:
                 print(
                     f"warning: metric '{name}' has different descriptions in code",
                     file=sys.stderr,
                 )
-            seen[name] = desc
-        metrics.extend(extracted)
-    return render_markdown(metrics)
+            if desc not in existing:
+                existing.append(desc)
+    return render_markdown(descriptions)
 
 
 def build_generator(repo_root):
