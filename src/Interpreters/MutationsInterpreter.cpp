@@ -1072,11 +1072,16 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
 
-            /// MergeTree merge semantics depend on the sign column (CollapsingMergeTree) and the
-            /// version column (ReplacingMergeTree). `validateUpdateColumns` treats these as immutable
-            /// key columns via `getKeyColumns`, so UPDATE of such a column is refused. MATERIALIZE
-            /// COLUMN rewrites the stored values just the same, so it must be refused too — even when
-            /// the column is not part of ORDER BY / PARTITION BY.
+            /// MergeTree merge semantics depend on the sign column (CollapsingMergeTree), the
+            /// version column (ReplacingMergeTree) and the is_deleted column
+            /// (`ReplacingMergeTree(ver, is_deleted)`). `validateUpdateColumns` treats the sign and
+            /// version columns as immutable key columns via `getKeyColumns`, so UPDATE of such a
+            /// column is refused. MATERIALIZE COLUMN rewrites the stored values just the same, so it
+            /// must be refused too — even when the column is not part of ORDER BY / PARTITION BY.
+            /// The is_deleted column is refused here as well, although UPDATE allows it: an explicit
+            /// UPDATE of is_deleted deliberately changes the delete marker, while MATERIALIZE COLUMN
+            /// would recompute it from the default expression as a side effect and could silently
+            /// flip the replacing semantics of existing rows.
             Names merge_key_columns;
             if (const auto * merge_tree_data = source.getMergeTreeData())
             {
@@ -1084,14 +1089,16 @@ void MutationsInterpreter::prepare(bool dry_run)
                     merge_key_columns.push_back(merge_tree_data->merging_params.sign_column);
                 if (!merge_tree_data->merging_params.version_column.empty())
                     merge_key_columns.push_back(merge_tree_data->merging_params.version_column);
+                if (!merge_tree_data->merging_params.is_deleted_column.empty())
+                    merge_key_columns.push_back(merge_tree_data->merging_params.is_deleted_column);
             }
 
             if (column_required_by(command.column_name, merge_key_columns))
             {
                 throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
-                    "Refused to materialize column {} because it is used as the sign or version column "
-                    "of the table engine, which the merge logic depends on. Recomputing it could change "
-                    "the collapsing or replacing semantics of existing data",
+                    "Refused to materialize column {} because it is used as the sign, version or "
+                    "is_deleted column of the table engine, which the merge logic depends on. "
+                    "Recomputing it could change the collapsing or replacing semantics of existing data",
                     backQuote(command.column_name));
             }
 
@@ -1163,8 +1170,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                         "Refused to materialize column {} because the MATERIALIZED column {} is computed from it "
-                        "and is used as the sign or version column of the table engine, which the merge logic "
-                        "depends on. Recomputing it could change the collapsing or replacing semantics of existing data",
+                        "and is used as the sign, version or is_deleted column of the table engine, which the "
+                        "merge logic depends on. Recomputing it could change the collapsing or replacing "
+                        "semantics of existing data",
                         backQuote(command.column_name), backQuote(dependent_name));
                 }
 

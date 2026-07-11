@@ -420,3 +420,20 @@ ALTER TABLE t_mat_ttl_proj_agg_sibling MODIFY COLUMN c DateTime MATERIALIZED toD
 ALTER TABLE t_mat_ttl_proj_agg_sibling MATERIALIZE COLUMN c SETTINGS mutations_sync = 2;
 SELECT a, sum(y) FROM t_mat_ttl_proj_agg_sibling GROUP BY a ORDER BY a SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 DROP TABLE t_mat_ttl_proj_agg_sibling;
+
+-- Case 35: The ReplacingMergeTree is_deleted column is a merge-semantic key column just like the sign
+-- and version columns (Cases 17/18): merge / FINAL winner selection and cleanup depend on it, so
+-- recomputing it could flip the delete markers of existing rows. Refused.
+DROP TABLE IF EXISTS t_mat_is_deleted;
+CREATE TABLE t_mat_is_deleted (a Int, ver UInt32, d UInt8 MATERIALIZED 0)
+    ENGINE = ReplacingMergeTree(ver, d) ORDER BY a;
+ALTER TABLE t_mat_is_deleted MATERIALIZE COLUMN d; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_is_deleted;
+
+-- Case 36: A stored MATERIALIZED column computed from the materialized column is itself the engine
+-- is_deleted column — the indirect counterpart of Case 35, mirroring Case 19 for the sign column.
+DROP TABLE IF EXISTS t_mat_dep_is_deleted;
+CREATE TABLE t_mat_dep_is_deleted (a Int, ver UInt32, c2 UInt8 MATERIALIZED 0, d UInt8 MATERIALIZED c2)
+    ENGINE = ReplacingMergeTree(ver, d) ORDER BY a;
+ALTER TABLE t_mat_dep_is_deleted MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_dep_is_deleted;
