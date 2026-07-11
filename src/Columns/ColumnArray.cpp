@@ -49,16 +49,17 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     if (!offsets_concrete)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "offsets_column must be a ColumnUInt64");
 
-    /// Validate whenever there are offsets, including the empty-nested-data case: gating on
-    /// !data->empty() would let a malformed column with empty nested data (e.g. offsets = [1]
-    /// with data->size() == 0, or offsets = [1, 0]) bypass both checks below, after which
-    /// sizeAt(0) / compareAt walk past the empty nested column.
-    if (!offsets_concrete->empty() && data)
+    /// Only validate when the nested column already holds its data. A widespread construction idiom
+    /// (arrayRandomSample, many array functions) creates the ColumnArray with an empty nested column
+    /// and an offsets column that is pre-sized but not yet filled (ColumnUInt64::create(rows)), then
+    /// populates both afterwards through getData()/getOffsets(). At that point the offsets still hold
+    /// uninitialized values, so neither the last-offset check nor the monotonicity check can be applied.
+    /// Gating on !data->empty() skips exactly that transient state and validates the fully built column.
+    if (!offsets_concrete->empty() && data && !data->empty())
     {
         Offset last_offset = offsets_concrete->getData().back();
 
-        /// This will also prevent possible overflow in offset. With empty nested data this still
-        /// requires last_offset == 0 (a positive last offset over empty data is rejected here).
+        /// This will also prevent possible overflow in offset.
         if (data->size() != last_offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}",
