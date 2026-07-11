@@ -76,6 +76,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/createBlockSelector.h>
@@ -1151,6 +1152,47 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
 }
 
 
+namespace
+{
+
+/// Re-qualify column references that point at the source `Distributed` table so they keep resolving
+/// after its `FROM` clause has been replaced with the (aliased) table function on the shards.
+/// This mirrors `RestoreQualifiedNamesVisitor` in `ClusterProxy::rewriteSelectQuery`, but that visitor
+/// is gated on identifier membership, which is only populated after the query has been normalized;
+/// the distributed `INSERT ... SELECT` fast path operates on a freshly parsed `SELECT`, so we rewrite
+/// the qualified names directly instead. A `db.dist.x` (or `dist.x`, or `d.x` for `... AS d`) reference
+/// is rewritten to `<qualifier>.x`, where `<qualifier>` is the alias given to the shard-side table
+/// function - otherwise the extra qualifier would dangle against `table_function() AS <qualifier>`.
+void restoreQualifiedColumnNamesForShard(ASTPtr & ast, const DatabaseAndTableWithAlias & source, const DatabaseAndTableWithAlias & shard_alias)
+{
+    if (ast->as<ASTSelectWithUnionQuery>())
+        return; /// do not descend into subqueries (matches `RestoreQualifiedNamesMatcher::needChildVisit`)
+
+    if (auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (IdentifierSemantic::getColumnName(*identifier))
+        {
+            switch (IdentifierSemantic::canReferColumnToTable(*identifier, source))
+            {
+                case IdentifierSemantic::ColumnMatch::AliasedTableName:
+                case IdentifierSemantic::ColumnMatch::TableName:
+                case IdentifierSemantic::ColumnMatch::DBAndTable:
+                    IdentifierSemantic::setColumnLongName(*identifier, shard_alias);
+                    break;
+                default:
+                    break;
+            }
+        }
+        return;
+    }
+
+    for (auto & child : ast->children)
+        restoreQualifiedColumnNamesForShard(child, source, shard_alias);
+}
+
+}
+
+
 std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
@@ -1170,17 +1212,28 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
         /// (the same way the named-table branch below swaps in the remote table), keeping the
         /// projection, filter and the other clauses intact - replacing the whole `SELECT` with a bare
         /// `SELECT * FROM table_function()` would silently drop them. The table function is aliased
-        /// with the qualifier the query used for the source table, so that references qualified by it
-        /// keep resolving on the shards (mirrors `ClusterProxy::rewriteSelectQuery`).
+        /// with the qualifier the query used for the source table, and qualified references
+        /// (`dist.x`, `d.x` for `... FROM dist AS d`, `db.dist.x`) are restored onto that alias, so
+        /// they keep resolving on the shards (mirrors `ClusterProxy::rewriteSelectQuery`).
         ASTPtr table_function = src_distributed.remote_table_function_ptr->clone();
+        std::optional<DatabaseAndTableWithAlias> original;
+        String qualifier;
         if (const auto * table_expression = getTableExpression(*select, 0))
         {
-            const DatabaseAndTableWithAlias original(*table_expression);
-            const String & qualifier = original.alias.empty() ? original.table : original.alias;
+            original.emplace(*table_expression);
+            qualifier = original->alias.empty() ? original->table : original->alias;
             if (!qualifier.empty())
                 table_function->setAlias(qualifier);
         }
         new_select_query->addTableFunction(table_function);
+
+        if (!qualifier.empty())
+        {
+            DatabaseAndTableWithAlias shard_alias;
+            shard_alias.alias = qualifier;
+            ASTPtr new_select_query_ast = new_select_query;
+            restoreQualifiedColumnNamesForShard(new_select_query_ast, *original, shard_alias);
+        }
     }
     else
     {

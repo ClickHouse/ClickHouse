@@ -127,6 +127,23 @@ DROP TABLE dist_over_tf;
 DROP TABLE dist_over_tf_dst;
 DROP TABLE dist_over_tf_local;
 
+-- The projection/filter preservation must also work for a database-qualified source reference
+-- (`db.dist_over_tf.number`): the shard-side rewrite restores the qualified name onto the table-function
+-- alias, the same way the legacy read path does, otherwise `db.dist_over_tf.number` would dangle against
+-- `numbers(10) AS dist_over_tf` on the shard and fail to resolve.
+CREATE TABLE dist_over_tf_local (x UInt64) ENGINE = Memory;
+CREATE TABLE dist_over_tf_dst ENGINE = Distributed(test_shard_localhost, currentDatabase(), dist_over_tf_local);
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, numbers(10));
+INSERT INTO dist_over_tf_dst
+SELECT {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.number + 1
+FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf
+WHERE number < 5
+SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1;
+SELECT count(), sum(x) FROM dist_over_tf_dst;
+DROP TABLE dist_over_tf;
+DROP TABLE dist_over_tf_dst;
+DROP TABLE dist_over_tf_local;
+
 -- `distributed_product_mode = 'local'` rewrites a nested Distributed subquery to its concrete remote table.
 -- A table-function-backed Distributed table has no such table, so the rewrite is rejected with a clear
 -- `NOT_IMPLEMENTED` instead of failing deep inside the rewrite on an empty table id. Covered for both the
