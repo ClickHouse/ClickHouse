@@ -46,6 +46,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <base/chrono_io.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
@@ -1600,6 +1601,24 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                         intermediate_name = fmt::format(".rename-{}-{}", name, sipHash64(fmt::format("{}-{}", name, salt)));
                     /// Need just update table name
                     replicated_tables_to_rename.push_back({name, intermediate_name, it->second});
+                }
+
+                /// The table is kept as is (same UUID), so its structure is not rewritten here and is
+                /// expected to converge via table-level replication. But if this replica was detached
+                /// across an ALTER and the ALTER_METADATA log entry was already cleaned up from the log
+                /// by the time it re-attaches, the entry is never applied and SYSTEM SYNC REPLICA (which
+                /// only drains the queue) cannot re-read the structure, so the table stays on the old
+                /// structure indefinitely. Force a metadata resync from ZooKeeper if we are behind.
+                if (auto * rmt = dynamic_cast<StorageReplicatedMergeTree *>(existing_tables_it->table().get()))
+                {
+                    try
+                    {
+                        rmt->syncTableStructureFromZooKeeperIfNeeded();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format("Failed to resync structure of table {} during recovery", name));
+                    }
                 }
                 continue;
             }

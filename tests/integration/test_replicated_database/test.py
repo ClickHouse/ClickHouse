@@ -90,37 +90,6 @@ def assert_create_query(nodes, table_name, expected):
         assert_eq_with_retry(node, query, expected, get_result=replace_uuid)
 
 
-def sync_and_assert_eq_with_retry(
-    node, database, table, query, expected, retry_count=60, sleep_time=1
-):
-    # A replica that recovered from lost metadata converges its table structure
-    # asynchronously. If the recovered replica's DDLWorker sees the ADD COLUMN
-    # DDL entry as "already executed by another replica of the same shard" it
-    # skips the local ALTER, and SYSTEM SYNC REPLICA does not re-read the table
-    # structure from ZooKeeper (it only syncs the replication queue), so the
-    # local table can stay on the old structure indefinitely. SYSTEM RESTART
-    # REPLICA re-runs the attach thread, which re-reads /metadata from ZooKeeper
-    # (checkTableStructure) and applies the up-to-date structure. Retry the
-    # restart + sync + read until the structure converges.
-    #
-    # While the structure is still the old one, the sync/query pair can also
-    # raise (e.g. the read references a not-yet-applied column -> UNKNOWN_IDENTIFIER),
-    # not just return the wrong rows. Catch exceptions inside the loop and keep
-    # retrying, like assert_eq_with_retry, so a transient error does not exit early.
-    for _ in range(retry_count):
-        try:
-            node.query(f"SYSTEM RESTART REPLICA {database}.{table}")
-            node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
-            node.query(f"SYSTEM SYNC REPLICA {database}.{table}")
-            if TSV(node.query(query)) == TSV(expected):
-                return
-        except Exception as ex:
-            logging.exception(f"sync_and_assert_eq_with_retry exception {ex}")
-        time.sleep(sleep_time)
-    # Final attempt raises AssertionError with a helpful diff.
-    assert_eq_with_retry(node, query, expected, retry_count=3)
-
-
 def zk_rmr_with_retries(zk, path):
     for i in range(1, 10):
         try:
@@ -1441,32 +1410,22 @@ def test_replicated_table_structure_alter(started_cluster):
     competing_node.restart_clickhouse(kill=True)
 
     dummy_node.query("ATTACH DATABASE table_structure")
-    sync_and_assert_eq_with_retry(
-        dummy_node,
-        "table_structure",
-        "rmt",
-        "SELECT * FROM table_structure.rmt",
-        "1\t2\t3",
-    )
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+    dummy_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
+    assert "1\t2\t3\n" == dummy_node.query("SELECT * FROM table_structure.rmt")
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+    competing_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
+    # time.sleep(600)
     assert "mem" in competing_node.query("SHOW TABLES FROM table_structure")
-    sync_and_assert_eq_with_retry(
-        competing_node,
-        "table_structure",
-        "rmt",
-        "SELECT * FROM table_structure.rmt",
-        "1\t2\t3",
-    )
+    assert "1\t2\t3\n" == competing_node.query("SELECT * FROM table_structure.rmt")
 
     main_node.query("ALTER TABLE table_structure.rmt ADD COLUMN k int")
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3, 4)")
-    sync_and_assert_eq_with_retry(
-        dummy_node,
-        "table_structure",
-        "rmt",
-        "SELECT * FROM table_structure.rmt ORDER BY k",
-        "1\t2\t3\t0\n1\t2\t3\t4",
+    dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+    dummy_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
+    assert "1\t2\t3\t0\n1\t2\t3\t4\n" == dummy_node.query(
+        "SELECT * FROM table_structure.rmt ORDER BY k"
     )
 
 
