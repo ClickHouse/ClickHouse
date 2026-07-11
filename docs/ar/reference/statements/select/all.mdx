@@ -1,0 +1,23 @@
+---
+description: 'توثيق لعبارة ALL'
+sidebarTitle: 'ALL'
+slug: /sql-reference/statements/select/all
+title: 'عبارة ALL'
+doc_type: 'reference'
+---
+
+إذا كانت هناك عدة صفوف متطابقة في جدول، فإن `ALL` يعيدها جميعًا. ويُعد `SELECT ALL` مطابقًا لـ `SELECT` من دون `DISTINCT`. وإذا جرى تحديد كلٍّ من `ALL` و`DISTINCT`، فسيُصدر استثناء.
+
+يمكن أيضًا تحديد `ALL` داخل الدوال التجميعية، رغم أنه لا يؤثر عمليًا في نتيجة الاستعلام.
+
+على سبيل المثال:
+
+```sql
+SELECT sum(ALL number) FROM numbers(10);
+```
+
+يعادل:
+
+```sql
+SELECT sum(number) FROM numbers(10);
+```

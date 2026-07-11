@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 
 #include <Processors/ConcatProcessor.h>
+#include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -25,6 +26,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
+#include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
@@ -257,6 +259,10 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             if (limit_max_threads && max_threads)
                 last_pipeline->limitMaxThreads(max_threads);
 
+            for (const auto & processor : last_pipeline->getProcessors())
+                if (!processor->getQueryPlanStep())
+                    processor->setQueryPlanStep(frame.node->step.get());
+
             stack.pop();
         }
         else
@@ -392,7 +398,8 @@ static void explainStep(
     IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
-    size_t max_description_length)
+    size_t max_description_length,
+    const AnalyzeStepsStats * steps_to_stats = nullptr)
 {
 
     settings.out << settings.header_prefix << step.getName();
@@ -508,6 +515,9 @@ static void explainStep(
 
     if (options.distributed)
         step.describeDistributedPlan(settings, options);
+
+    if (steps_to_stats)
+        steps_to_stats->printStepStats(&step, settings.out, prefix, options.processors_profile);
 }
 
 std::string debugExplainStep(IQueryPlanStep & step)
@@ -594,10 +604,33 @@ void QueryPlan::explainPlan(
     const ExplainPlanOptions & options,
     size_t offset,
     size_t max_description_length,
+    const PrettyNamesPerPlan * precomputed_pretty_names,
     const std::string & parent_tree_prefix,
-    bool is_last_child_plan) const
+    bool is_last_child_plan,
+    AnalyzeStepsStats * steps_to_stats) const
 {
     checkInitialized();
+
+    PrettyNames empty_pretty_names;
+
+    /// Pretty rendering uses per-plan scoped name maps (see PrettyNamesPerPlan). Callers that must build
+    /// names before the plan is consumed (EXPLAIN ANALYZE) pass a prebuilt registry; otherwise build it
+    /// here for this plan's whole subtree, so self-contained renders such as distributed child plans
+    /// (ReadFromRemote::describeDistributedPlan) don't fall back to empty names.
+    PrettyNamesPerPlan local_pretty_names;
+    if (options.pretty && !precomputed_pretty_names)
+    {
+        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
+        precomputed_pretty_names = &local_pretty_names;
+    }
+
+    /// Pick the map scoped to this exact plan; child and distributed plans look up their own entry.
+    const PrettyNames * plan_pretty_names = nullptr;
+    if (precomputed_pretty_names)
+    {
+        if (auto it = precomputed_pretty_names->names.find(this); it != precomputed_pretty_names->names.end())
+            plan_pretty_names = &it->second;
+    }
 
     IQueryPlanStep::FormatSettings settings{
         .out = buffer,
@@ -606,23 +639,18 @@ void QueryPlan::explainPlan(
         .write_header = options.header,
         .compact = options.compact,
         .pretty = options.pretty,
-        .pretty_names = {},
-        .runtime_filter_names = {}
+        .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
+        .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
     };
 
     auto skip_expressions = [&](Node * node) -> Node * {
+        if (steps_to_stats)
+            return node;
+
         while (options.actions && settings.compact && node->step->getName() == "Expression" && !node->children.empty())
             node = node->children[0];
         return node;
     };
-
-    if (options.pretty)
-    {
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> subquery_set_names;
-        QueryPlanFormat::buildPrettyNamesMap(*this, settings.pretty_names, settings.runtime_filter_names, subquery_set_names);
-        for (const auto & [hash, name] : subquery_set_names)
-            settings.pretty_names[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
-    }
 
     std::deque<ExplainPlan::Frame> stack;
 
@@ -650,7 +678,7 @@ void QueryPlan::explainPlan(
             else
                 buildIndentOffset(stack, settings, offset);
 
-            explainStep(*frame.node->step, settings, options, max_description_length);
+            explainStep(*frame.node->step, settings, options, max_description_length, steps_to_stats);
             frame.is_description_printed = true;
         }
 
@@ -689,7 +717,7 @@ void QueryPlan::explainPlan(
             {
                 bool is_last_plan = (plan_idx + 1 == child_plans.size());
                 child_plan->explainPlan(buffer, options, offset + stack.size(),
-                                        max_description_length, base_prefix, is_last_plan);
+                                        max_description_length, precomputed_pretty_names, base_prefix, is_last_plan, steps_to_stats);
                 ++plan_idx;
             }
 

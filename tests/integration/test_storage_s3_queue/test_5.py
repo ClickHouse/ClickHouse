@@ -24,9 +24,15 @@ AVAILABLE_MODES = ["unordered", "ordered"]
 def s3_queue_setup_teardown(started_cluster):
     instance = started_cluster.instances["instance"]
     instance_2 = started_cluster.instances["instance2"]
+    instance_3 = started_cluster.instances["instance_without_keeper_fault_injection"]
 
     instance.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
     instance_2.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
+    # instance_without_keeper_fault_injection was not reset between tests, so S3Queue
+    # tables leaked from prior tests kept streaming and could consume a process-global
+    # ONCE failpoint (e.g. object_storage_queue_fail_commit_after_success) before the
+    # test that armed it committed. Reset it too so each test starts with no streamers.
+    instance_3.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
 
     minio = started_cluster.minio_client
     objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))

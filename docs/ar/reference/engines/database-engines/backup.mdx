@@ -1,0 +1,108 @@
+---
+description: 'يتيح إرفاق جدول/قاعدة بيانات فورًا من النسخ الاحتياطية في وضع
+  القراءة فقط.'
+sidebarTitle: 'النسخ الاحتياطي'
+slug: /engines/database-engines/backup
+title: 'النسخ الاحتياطي'
+doc_type: 'reference'
+---
+
+يتيح محرك قاعدة البيانات النسخ الاحتياطي إرفاق جدول/قاعدة بيانات فورًا من [النسخ الاحتياطية](/ar/concepts/features/backup-restore/overview) في وضع القراءة فقط.
+
+يعمل محرك قاعدة البيانات النسخ الاحتياطي مع كلٍّ من النسخ الاحتياطية التزايدية وغير التزايدية.
+
+<div id="creating-a-database">
+  ## إنشاء قاعدة بيانات
+</div>
+
+```sql
+CREATE DATABASE backup_database
+ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
+```
+
+يمكن أن تكون وجهة النسخ الاحتياطي أي [وجهة نسخ احتياطي](/ar/concepts/features/backup-restore/local-disk#configure-backup-destinations-for-disk) صالحة، مثل `Disk` أو `S3` أو `File`. وتُمرَّر كدالة، على سبيل المثال `Disk('disk_name', 'backup_name')`.
+
+**معلمات المحرّك**
+
+* `database_name_inside_backup` — اسم قاعدة البيانات داخل النسخة الاحتياطية.
+* `backup_destination` — وجهة النسخ الاحتياطي.
+
+<div id="usage-example">
+  ## مثال على الاستخدام
+</div>
+
+لنأخذ مثالًا على وجهة نسخ احتياطي من نوع `Disk`. لنبدأ أولًا بإعداد قرص النسخ الاحتياطي في `storage.xml`:
+
+```xml
+<storage_configuration>
+    <disks>
+        <backups>
+            <type>local</type>
+            <path>/home/ubuntu/ClickHouseWorkDir/backups/</path>
+        </backups>
+    </disks>
+</storage_configuration>
+<backups>
+    <allowed_disk>backups</allowed_disk>
+    <allowed_path>/home/ubuntu/ClickHouseWorkDir/backups/</allowed_path>
+</backups>
+```
+
+مثال على الاستخدام. لننشئ قاعدة بيانات اختبارية، وبعض الجداول، ونُدرِج بعض البيانات، ثم ننشئ نسخة احتياطية:
+
+```sql
+CREATE DATABASE test_database;
+
+CREATE TABLE test_database.test_table_1 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_1 VALUES (0, 'test_database.test_table_1');
+
+CREATE TABLE test_database.test_table_2 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_2 VALUES (0, 'test_database.test_table_2');
+
+CREATE TABLE test_database.test_table_3 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_3 VALUES (0, 'test_database.test_table_3');
+
+BACKUP DATABASE test_database TO Disk('backups', 'test_database_backup');
+```
+
+والآن بعد أن أصبحت لدينا النسخة الاحتياطية `test_database_backup`، فلننشئ قاعدة البيانات النسخ الاحتياطي:
+
+```sql
+CREATE DATABASE test_database_backup ENGINE = Backup('test_database', Disk('backups', 'test_database_backup'));
+```
+
+يمكننا الآن الاستعلام عن أي جدول في قاعدة البيانات:
+
+```sql
+SELECT id, value FROM test_database_backup.test_table_1;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_1 │
+└────┴────────────────────────────┘
+
+SELECT id, value FROM test_database_backup.test_table_2;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_2 │
+└────┴────────────────────────────┘
+
+SELECT id, value FROM test_database_backup.test_table_3;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_3 │
+└────┴────────────────────────────┘
+```
+
+يمكن أيضًا التعامل مع قاعدة البيانات النسخ الاحتياطي كما لو كانت أي قاعدة بيانات عادية. على سبيل المثال، يمكنك الاستعلام عن الجداول فيها:
+
+```sql
+SELECT database, name FROM system.tables WHERE database = 'test_database_backup';
+```
+
+```text
+┌─database─────────────┬─name─────────┐
+│ test_database_backup │ test_table_1 │
+│ test_database_backup │ test_table_2 │
+│ test_database_backup │ test_table_3 │
+└──────────────────────┴──────────────┘
+```

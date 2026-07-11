@@ -105,11 +105,12 @@ std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strat
 }
 
 RefreshTask::RefreshTask(
-    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
+    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool start_paused_, bool is_restore_from_backup)
     : view(view_)
     , refresh_schedule(strategy)
     , initial_dependencies(std::move(initial_dependencies_))
     , refresh_append(strategy.append)
+    , start_paused(start_paused_)
 {
     createLogger(view->getStorageID());
 
@@ -226,11 +227,12 @@ OwnedRefreshTask RefreshTask::create(
     bool attach,
     bool coordinated,
     bool empty,
+    bool start_paused,
     bool is_restore_from_backup)
 {
     std::vector<StorageID> deps = parseRefreshDependencies(strategy, view->getStorageID().database_name);
 
-    auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, is_restore_from_backup);
+    auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, start_paused, is_restore_from_backup);
 
     task->scheduling_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshSched",
         [self = task.get()] { self->doScheduling(/*is_shutdown=*/ false); });
@@ -253,7 +255,7 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 
 void RefreshTask::startup()
 {
-    if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+    if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
@@ -1096,6 +1098,10 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
+            /// Carry the refresh query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas account
+            /// the refresh write (`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
+            /// pattern's bucket instead of the shared hash-0 bucket.
+            refresh_context->setNormalizedQueryHash(normalized_query_hash);
             refresh_context->setProgressCallback([this](const Progress & prog)
             {
                 execution.progress.incrementPiecewiseAtomically(prog);
@@ -1117,7 +1123,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// cover the surrounding CREATE, EXCHANGE, and DROP queries.
             query_log_elem = logQueryStart(
                 currentTime(), refresh_context, query_for_logging, normalized_query_hash, refresh_query, pipeline,
-                &interpreter, /*internal*/ internal, view_storage_id.database_name,
+                &interpreter, /*internal*/ internal, /*log_as_internal*/ internal, view_storage_id.database_name,
                 view_storage_id.table_name, /*async_insert*/ false);
 
             if (!pipeline.completed())
@@ -1133,10 +1139,12 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     if (execution.interrupt_execution.load())
                         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
                     execution.executor = &executor;
+                    execution.executing_query_status = process_list_entry ? process_list_entry->getQueryStatus() : nullptr;
                 }
                 SCOPE_EXIT({
                     std::unique_lock exec_lock(execution.executor_mutex);
                     execution.executor = nullptr;
+                    execution.executing_query_status = nullptr;
                 });
 
                 executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
@@ -1153,7 +1161,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 /// `executor` must be destroyed before `pipeline`!
             }
 
-            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal);
+            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal, /*log_as_internal=*/internal);
             query_log_elem = std::nullopt;
             query_span = nullptr;
         }
@@ -1180,13 +1188,13 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
 
         if (query_log_elem.has_value())
         {
-            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ internal, /*log_error*/ !cancelled);
+            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ internal, /*log_as_internal*/ internal, /*log_error*/ !cancelled);
         }
         else
         {
             /// Failed when creating new table or when swapping tables.
             logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context,
-                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal);
+                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal, /*log_as_internal*/ internal);
         }
 
         if (cancelled)
@@ -1522,14 +1530,26 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
 void RefreshTask::interruptExecution()
 {
     chassert(!mutex.try_lock());
-    std::unique_lock lock(execution.executor_mutex);
-    if (execution.interrupt_execution.exchange(true))
-        return;
-    if (execution.executor)
+    std::shared_ptr<QueryStatus> query_status;
     {
-        execution.executor->cancel();
-        LOG_DEBUG(getLogger(), "Cancelling refresh in {}", set_handle.getID().getFullNameNotQuoted());
+        std::unique_lock lock(execution.executor_mutex);
+        if (execution.interrupt_execution.exchange(true))
+            return;
+        query_status = execution.executing_query_status;
+        if (execution.executor)
+        {
+            execution.executor->cancel();
+            LOG_DEBUG(getLogger(), "Cancelling refresh in {}", set_handle.getID().getFullNameNotQuoted());
+        }
     }
+
+    /// Also mark the refresh query killed, not just cancel the pipeline: a refresh blocked in I/O
+    /// (e.g. a filesystem-cache download wait) doesn't observe pipeline cancellation and would keep
+    /// running, so shutdown()'s deactivate() — and any DROP / SYSTEM STOP VIEW driving it — would
+    /// block until the I/O returned on its own. Done outside executor_mutex because cancelQuery()
+    /// cancels registered executors, which take their own locks.
+    if (query_status)
+        query_status->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
 
 std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const StorageID & storage_id, const ContextPtr & context)

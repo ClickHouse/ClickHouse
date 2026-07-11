@@ -1,0 +1,85 @@
+---
+description: 'ClickHouse의 Nullable 데이터 타입 수정자에 대한 문서'
+sidebarTitle: 'Nullable(T)'
+slug: /sql-reference/data-types/nullable
+title: 'Nullable(T)'
+doc_type: 'reference'
+---
+
+`T`에서 허용하는 일반 값과 함께 &quot;누락된 값&quot;을 나타내는 특수 마커([NULL](/ko/reference/syntax))를 저장할 수 있습니다. 예를 들어 `Nullable(Int8)` 타입의 컬럼은 `Int8` 타입 값을 저장할 수 있으며, 값이 없는 행에는 `NULL`이 저장됩니다.
+
+`T`는 다음 복합 데이터 타입 중 어느 것도 될 수 없습니다.
+
+* [배열](/ko/reference/data-types/array) — 지원되지 않음
+* [맵](/ko/reference/data-types/map) — 지원되지 않음
+* [Tuple](/ko/reference/data-types/tuple) — 베타 지원 제공*
+
+하지만 복합 데이터 타입은 `Nullable` 타입 값을 **포함할 수 있습니다**. 예를 들어 `Array(Nullable(Int8))` 또는 `Tuple(Nullable(String), Nullable(Int64))`와 같습니다.
+
+<Info>
+  **베타: Nullable Tuples**
+
+  * `enable_nullable_tuple_type = 1`이 활성화되면 [Nullable(Tuple(...))](/ko/reference/data-types/tuple#nullable-tuple)을 지원합니다.
+</Info>
+
+`Nullable` 타입 필드는 테이블 인덱스에 포함할 수 없습니다.
+
+ClickHouse 서버 구성에서 별도로 지정하지 않는 한, `NULL`은 모든 `Nullable` 타입의 기본값입니다.
+
+<div id="storage-features">
+  ## 저장소 기능
+</div>
+
+테이블 컬럼에 `Nullable` 타입 값을 저장할 때 ClickHouse는 값이 저장된 일반 파일 외에 `NULL` 마스크가 포함된 별도의 파일도 사용합니다. 마스크 파일의 각 항목을 통해 ClickHouse는 테이블의 각 행에서 `NULL`과 해당 데이터 타입의 기본값을 구분할 수 있습니다. 이 추가 파일 때문에 `Nullable` 컬럼은 유사한 일반 컬럼보다 더 많은 저장 공간을 사용합니다.
+
+<Note>
+  `Nullable`을 사용하면 거의 항상 성능에 부정적인 영향을 미치므로, 데이터베이스를 설계할 때 이 점을 염두에 두십시오.
+</Note>
+
+<div id="finding-null">
+  ## NULL 찾기
+</div>
+
+전체 컬럼을 읽지 않고도 `null` 하위 컬럼을 사용해 컬럼에서 `NULL` 값을 찾을 수 있습니다. 해당 값이 `NULL`이면 `1`을 반환하고, 그렇지 않으면 `0`을 반환합니다.
+
+**예시**
+
+```sql title="Query"
+CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
+
+SELECT n.null FROM nullable;
+```
+
+```text title="Response"
+┌─n.null─┐
+│      0 │
+│      1 │
+│      0 │
+│      1 │
+└────────┘
+```
+
+<div id="usage-example">
+  ## 사용 예시
+</div>
+
+```sql
+CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
+```
+
+```sql
+INSERT INTO t_null VALUES (1, NULL), (2, 3)
+```
+
+```sql
+SELECT x + y FROM t_null
+```
+
+```text
+┌─plus(x, y)─┐
+│       ᴺᵁᴸᴸ │
+│          5 │
+└────────────┘
+```

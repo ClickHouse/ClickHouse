@@ -1,0 +1,44 @@
+---
+sidebarTitle: 'Omni'
+slug: /integrations/omni
+keywords: ['clickhouse', 'Omni', 'connect', 'integrate', 'ui']
+description: 'Omni é uma plataforma empresarial de BI, aplicativos de dados e embedded analytics que ajuda você a explorar e compartilhar insights em tempo real.'
+title: 'Omni'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import PartnerBadge from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+O Omni pode se conectar ao ClickHouse Cloud ou a uma implantação local por meio da fonte de dados oficial do ClickHouse.
+
+<div id="1-gather-your-connection-details">
+  ## 1. Reúna seus dados de conexão
+</div>
+
+<ConnectionDetails />
+
+<div id="2-create-a-clickhouse-data-source">
+  ## 2. Criar uma fonte de dados do ClickHouse
+</div>
+
+Navegue até Admin -&gt; Connections e clique no botão &quot;Add Connection&quot; no canto superior direito.
+
+<Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Interface de administração do Omni mostrando o botão Add Connection na seção Connections" border />
+
+<br />
+
+Selecione `ClickHouse`. Insira suas credenciais no formulário.
+
+<Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="Interface de configuração de conexão do Omni para ClickHouse mostrando os campos de credenciais do formulário" border />
+
+<br />
+
+Agora você já pode consultar e visualizar dados do ClickHouse no Omni.
