@@ -854,6 +854,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         auto make_map_function = [&](VectorWithMemoryTracking<String> tokens)
         {
+            /// A needle that produces no tokens (e.g. an empty needle) cannot be served by the index:
+            /// empty values are never indexed, and an All-mode search over zero tokens matches everything.
+            /// Bail out so the original predicate is evaluated by a full scan, mirroring the equals guard.
+            if (tokens.empty())
+                return false;
+
             out.function = RPNElement::FUNCTION_EQUALS;
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
@@ -1290,6 +1296,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "has")
     {
         auto tokens = stringToTokens(value_field);
+
+        /// A needle that produces no tokens (e.g. an empty needle) cannot be served by the index:
+        /// empty values are never indexed, and an All-mode search over zero tokens matches everything.
+        /// Bail out so the original predicate is evaluated by a full scan, mirroring the equals guard.
+        if (tokens.empty())
+            return false;
+
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
