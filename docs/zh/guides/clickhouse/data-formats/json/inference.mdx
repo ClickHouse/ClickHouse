@@ -1,0 +1,438 @@
+---
+title: 'JSON schema 推断'
+slug: /integrations/data-formats/json/inference
+description: '如何使用 JSON schema 推断'
+keywords: ['json', 'schema', '推断', 'schema inference']
+doc_type: 'guide'
+---
+
+ClickHouse 可以自动确定 JSON 数据的结构。这可用于直接查询 JSON 数据，例如通过磁盘上的 `clickhouse-local` 或 S3 bucket；也可在将数据加载到 ClickHouse 之前自动创建 schema。
+
+<div id="when-to-use-type-inference">
+  ## 何时使用类型推断
+</div>
+
+* **结构一致** - 用于推断类型的数据应包含你关注的所有键。类型推断基于对数据的采样，最多读取[最大行数](/zh/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference)或[最大字节数](/zh/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference)。样本之后如果出现包含额外列的数据，将被忽略，且无法查询。
+* **类型一致** - 特定键的数据类型需要相互兼容，即必须能够将一种类型自动强制转换为另一种类型。
+
+如果你的 JSON 更加动态，会不断加入新键，且同一路径可能出现多种类型，请参阅[“处理半结构化和动态数据”](/zh/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data)。
+
+<div id="detecting-types">
+  ## 检测类型
+</div>
+
+以下内容假设 JSON 的结构始终一致，并且每个路径都只有一种类型。
+
+我们之前的示例使用了 [Python PyPI dataset](https://clickpy.clickhouse.com/) 的简化版本，格式为 `NDJSON`。本节将探讨一个更复杂、包含嵌套结构的数据集——包含 250 万篇学术论文的 [arXiv dataset](https://www.kaggle.com/datasets/Cornell-University/arxiv?resource=download)。该数据集以 `NDJSON` 格式提供，其中每一行都表示一篇已发表的学术论文。下面展示了一个示例行：
+
+```json
+{
+  "id": "2101.11408",
+  "submitter": "Daniel Lemire",
+  "authors": "Daniel Lemire",
+  "title": "Number Parsing at a Gigabyte per Second",
+  "comments": "Software at https://github.com/fastfloat/fast_float and\n https://github.com/lemire/simple_fastfloat_benchmark/",
+  "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+  "doi": "10.1002/spe.2984",
+  "report-no": null,
+  "categories": "cs.DS cs.MS",
+  "license": "http://creativecommons.org/licenses/by/4.0/",
+  "abstract": "With disks and networks providing gigabytes per second ....\n",
+  "versions": [
+    {
+      "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+      "version": "v1"
+    },
+    {
+      "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+      "version": "v2"
+    }
+  ],
+  "update_date": "2022-11-07",
+  "authors_parsed": [
+    [
+      "Lemire",
+      "Daniel",
+      ""
+    ]
+  ]
+}
+```
+
+这些数据所需的 schema 比前面的示例要复杂得多。下面我们将概述定义该 schema 的过程，并介绍 `Tuple` 和 `Array` 等复杂类型。
+
+该数据集存储在公共 S3 bucket `s3://datasets-documentation/arxiv/arxiv.json.gz` 中。
+
+可以看到，上述数据集包含嵌套的 JSON 对象。虽然您应当起草并对 schema 进行版本管理，但 schema 推断 支持从数据中推断类型。这样就可以自动生成 schema DDL，无需手动构建，从而加快开发过程。
+
+<Info>
+  **自动格式检测**
+
+  除了检测 schema 之外，JSON schema 推断 还会根据文件扩展名和内容自动推断数据的格式。因此，上述文件会被自动识别为 NDJSON。
+</Info>
+
+使用 [s3 函数](/zh/reference/functions/table-functions/s3) 配合 `DESCRIBE` 命令，可以显示将被推断出的类型。
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────┬─type────────────────────────────────────────────────────────────────────┐
+│ id             │ Nullable(String)                                                        │
+│ submitter      │ Nullable(String)                                                        │
+│ authors        │ Nullable(String)                                                        │
+│ title          │ Nullable(String)                                                        │
+│ comments       │ Nullable(String)                                                        │
+│ journal-ref    │ Nullable(String)                                                        │
+│ doi            │ Nullable(String)                                                        │
+│ report-no      │ Nullable(String)                                                        │
+│ categories     │ Nullable(String)                                                        │
+│ license        │ Nullable(String)                                                        │
+│ abstract       │ Nullable(String)                                                        │
+│ versions       │ Array(Tuple(created Nullable(String),version Nullable(String)))         │
+│ update_date    │ Nullable(Date)                                                          │
+│ authors_parsed │ Array(Array(Nullable(String)))                                          │
+└────────────────┴─────────────────────────────────────────────────────────────────────────┘
+```
+
+<Info>
+  **避免使用 NULL 值**
+
+  你可以看到，很多列都被识别为 Nullable。除非绝对必要，否则我们[不建议使用 Nullable](/zh/reference/data-types/nullable#storage-features) 类型。你可以使用 [schema&#95;inference&#95;make&#95;columns&#95;nullable](/zh/reference/settings/formats#schema_inference_make_columns_nullable) 来控制何时应用 Nullable。
+</Info>
+
+可以看到，大多数列都被自动识别为 `String`，而 `update_date` 列被正确识别为 `Date`。`versions` 列被创建为 `Array(Tuple(created String, version String))`，用于存储对象列表；`authors_parsed` 则被定义为 `Array(Array(String))`，用于表示嵌套数组。
+
+<Info>
+  **控制类型检测**
+
+  日期和日期时间的自动检测分别可通过设置 [`input_format_try_infer_dates`](/zh/reference/settings/formats#input_format_try_infer_dates) 和 [`input_format_try_infer_datetimes`](/zh/reference/settings/formats#input_format_try_infer_datetimes) 进行控制 (两者默认均启用) 。将对象推断为 Tuple 的行为由设置 [`input_format_json_try_infer_named_tuples_from_objects`](/zh/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects) 控制。其他控制 JSON schema 推断 的设置 (例如数值的自动检测) 可在[此处](/zh/concepts/features/interfaces/schema-inference#text-formats)查看。
+</Info>
+
+<div id="querying-json">
+  ## 查询 JSON
+</div>
+
+以下内容假设 JSON 的结构始终一致，并且每个路径都只有一种类型。
+
+我们可以依靠 schema inference 直接对 JSON 数据进行查询。下面我们利用日期和数组会被自动识别这一点，找出每年最活跃的作者。
+
+```sql
+SELECT
+ toYear(update_date) AS year,
+ authors,
+    count() AS c
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+GROUP BY
+    year,
+ authors
+ORDER BY
+    year ASC,
+ c DESC
+LIMIT 1 BY year
+```
+
+```response
+┌─year─┬─authors────────────────────────────────────┬───c─┐
+│ 2007 │ The BABAR Collaboration, B. Aubert, et al  │  98 │
+│ 2008 │ The OPAL collaboration, G. Abbiendi, et al │  59 │
+│ 2009 │ Ashoke Sen                                 │  77 │
+│ 2010 │ The BABAR Collaboration, B. Aubert, et al  │ 117 │
+│ 2011 │ Amelia Carolina Sparavigna                 │  21 │
+│ 2012 │ ZEUS Collaboration                         │ 140 │
+│ 2013 │ CMS Collaboration                          │ 125 │
+│ 2014 │ CMS Collaboration                          │  87 │
+│ 2015 │ ATLAS Collaboration                        │ 118 │
+│ 2016 │ ATLAS Collaboration                        │ 126 │
+│ 2017 │ CMS Collaboration                          │ 122 │
+│ 2018 │ CMS Collaboration                          │ 138 │
+│ 2019 │ CMS Collaboration                          │ 113 │
+│ 2020 │ CMS Collaboration                          │  94 │
+│ 2021 │ CMS Collaboration                          │  69 │
+│ 2022 │ CMS Collaboration                          │  62 │
+│ 2023 │ ATLAS Collaboration                        │ 128 │
+│ 2024 │ ATLAS Collaboration                        │ 120 │
+└──────┴────────────────────────────────────────────┴─────┘
+
+共 18 行。耗时：20.172 秒。已处理 252 万行，1.39 GB（124.72 千行/秒，68.76 MB/秒）。
+```
+
+schema 推断使我们无需预先指定 schema 即可查询 JSON 文件，从而加快临时性数据分析任务。
+
+<div id="creating-tables">
+  ## 创建表
+</div>
+
+我们可以借助 schema inference 来为表生成 schema。下面的 `CREATE AS EMPTY` 命令会推断出该表的 DDL 并创建该表。此操作不会加载任何数据：
+
+```sql
+CREATE TABLE arxiv
+ENGINE = MergeTree
+ORDER BY update_date EMPTY
+AS SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+SETTINGS schema_inference_make_columns_nullable = 0
+```
+
+要确认表的 schema，我们使用 `SHOW CREATE TABLE` 命令：
+
+```sql
+SHOW CREATE TABLE arxiv
+
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `journal-ref` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+上述内容是这份数据的正确 schema。schema inference 基于对数据进行 sampling，并逐行读取数据。系统会根据 format 提取列值，并使用递归 parser 和启发式方法来确定每个值的类型。schema inference 期间从数据中读取的最大行数和字节数由设置 [`input_format_max_rows_to_read_for_schema_inference`](/zh/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (默认为 25000) 和 [`input_format_max_bytes_to_read_for_schema_inference`](/zh/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (默认为 32MB) 控制。如果检测结果不正确，您可以按[此处](/zh/reference/settings/formats#schema_inference_make_columns_nullable)所述提供提示。
+
+<div id="creating-tables-from-snippets">
+  ### 根据片段创建表
+</div>
+
+上述示例使用 S3 上的文件来创建表 schema。你也可以根据单行片段创建 schema。如下所示，可使用 [format](/zh/reference/functions/table-functions/format) 函数实现这一点：
+
+```sql
+CREATE TABLE arxiv
+ENGINE = MergeTree
+ORDER BY update_date EMPTY
+AS SELECT *
+FROM format(JSONEachRow, '{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"Withdisks and networks providing gigabytes per second ","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]]}') SETTINGS schema_inference_make_columns_nullable = 0
+
+SHOW CREATE TABLE arxiv
+
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+<div id="loading-json-data">
+  ## 加载 JSON 数据
+</div>
+
+以下内容假设 JSON 的结构始终一致，并且每个路径都只有一种类型。
+
+前面的命令已创建好用于加载数据的表。现在，你可以使用以下 `INSERT INTO SELECT` 将数据插入该表：
+
+```sql
+INSERT INTO arxiv SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+```
+
+```response
+0 rows in set. Elapsed: 38.498 sec. Processed 2.52 million rows, 1.39 GB (65.35 thousand rows/s., 36.03 MB/s.)
+Peak memory usage: 870.67 MiB.
+```
+
+有关从其他来源 (例如文件) 加载数据的示例，请参见[此处](/zh/reference/statements/insert-into)。
+
+加载后，我们就可以查询数据，也可以选择使用 `PrettyJSONEachRow` 格式，以原始结构显示各行：
+
+```sql
+SELECT *
+FROM arxiv
+LIMIT 1
+FORMAT PrettyJSONEachRow
+
+{
+  "id": "0704.0004",
+  "submitter": "David Callan",
+  "authors": "David Callan",
+  "title": "A determinant of Stirling cycle numbers counts unlabeled acyclic",
+  "comments": "11 pages",
+  "journal-ref": "",
+  "doi": "",
+  "report-no": "",
+  "categories": "math.CO",
+  "license": "",
+  "abstract": "  We show that a determinant of Stirling cycle numbers counts unlabeled acyclic\nsingle-source automata.",
+  "versions": [
+    {
+      "created": "Sat, 31 Mar 2007 03:16:14 GMT",
+      "version": "v1"
+    }
+  ],
+  "update_date": "2007-05-23",
+  "authors_parsed": [
+    [
+      "Callan",
+      "David"
+    ]
+  ]
+}
+```
+
+```response
+1 row in set. Elapsed: 0.009 sec.
+```
+
+<div id="handling-errors">
+  ## 处理错误
+</div>
+
+有时，你可能会遇到有问题的数据。例如，某些列的类型不正确，或者 JSON 对象的格式不正确。对此，你可以使用设置 [`input_format_allow_errors_num`](/zh/reference/settings/formats#input_format_allow_errors_num) 和 [`input_format_allow_errors_ratio`](/zh/reference/settings/formats#input_format_allow_errors_ratio)，以便在数据触发插入错误时允许忽略一定数量的行。此外，还可以提供[提示](/zh/reference/settings/formats#schema_inference_hints)来辅助推断。
+
+<div id="working-with-semi-structured-data">
+  ## 处理半结构化和动态数据
+</div>
+
+我们前面的示例使用的是 JSON，其结构是静态的，键名和类型也都是已知的。但实际情况往往并非如此——键可能会新增，类型也可能发生变化。这在可观测性数据等场景中很常见。
+
+ClickHouse 通过专用的 [`JSON`](/zh/reference/data-types/newjson) 类型来处理这种情况。
+
+如果你知道自己的 JSON 非常动态，包含大量唯一键，并且同一个键可能对应多种类型，我们建议不要使用 `JSONEachRow` 的 schema inference 来尝试为每个键推断出一列——即使数据采用的是以换行分隔的 JSON 格式也是如此。
+
+请看下面这个示例，它来自前述 [Python PyPI dataset](https://clickpy.clickhouse.com/) 数据集的扩展版本。这里我们添加了一个任意的 `tags` 列，其中包含随机的键值对。
+
+```json
+{
+  "date": "2022-09-22",
+  "country_code": "IN",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "bandersnatch",
+  "python_minor": "",
+  "system": "",
+  "version": "0.2.8",
+  "tags": {
+    "5gTux": "f3to*PMvaTYZsz!*rtzX1",
+    "nD8CV": "value"
+  }
+}
+```
+
+此数据的一份样本已以换行分隔的 JSON 格式公开提供。如果我们尝试对该文件进行 schema 推断，你会发现性能较差，而且响应内容极其冗长：
+
+```sql
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+
+-- 结果已省略，篇幅所限
+```
+
+```response
+9 rows in set. Elapsed: 127.066 sec.
+```
+
+这里的主要问题在于，推断时使用了 `JSONEachRow` 格式。它会尝试**为 JSON 中的每个键推断对应的列类型**——本质上是在不使用 [`JSON`](/zh/reference/data-types/newjson) 类型的情况下，试图对数据套用静态 schema。
+
+当存在成千上万个唯一列时，这种推断方式会很慢。作为替代，你可以使用 `JSONAsObject` 格式。
+
+`JSONAsObject` 会将整个输入视为单个 JSON 对象，并将其存储到一个类型为 [`JSON`](/zh/reference/data-types/newjson) 的列中，因此更适合高度动态或嵌套的 JSON 载荷。
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─┐
+│ json │ JSON │
+└──────┴──────┘
+
+1 行，耗时 0.005 秒。
+```
+
+当列存在多种无法协调的类型时，这种格式也必不可少。例如，假设有一个 `sample.json` 文件，其内容为以下以换行分隔的 JSON：
+
+```json
+{"a":1}
+{"a":"22"}
+```
+
+在这种情况下，ClickHouse 可以对类型冲突进行强制转换，并将列 `a` 处理为 `Nullable(String)`。
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─────────────┐
+│ a    │ Nullable(String) │
+└──────┴──────────────────┘
+
+1 行，耗时 0.081 秒。
+```
+
+<Info>
+  **类型强制转换**
+
+  这种类型强制转换可通过多个设置项来控制。上面的示例取决于设置 [`input_format_json_read_numbers_as_strings`](/zh/reference/settings/formats#input_format_json_read_numbers_as_strings)。
+</Info>
+
+但是，某些类型彼此不兼容。请看下面的示例：
+
+```json
+{"a":1}
+{"a":{"b":2}}
+```
+
+在这种情况下，这里无法进行任何形式的类型转换，因此 `DESCRIBE` 命令会失败：
+
+```sql
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+```
+
+```response
+Elapsed: 0.755 sec.
+```
+
+```sql
+Received exception from server (version 24.12.1):
+Code: 636. DB::Exception: Received from sql-clickhouse.clickhouse.com:9440. DB::Exception: The table structure cannot be extracted from a JSON format file. Error:
+Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a' in row 1 differs from type defined by previous rows: Int64. You can specify the type for this column using setting schema_inference_hints.
+```
+
+在这种情况下，`JSONAsObject` 会将每一行视为单个 [`JSON`](/zh/reference/data-types/newjson) 类型 (即支持同一列包含多种类型) 。这一点至关重要：
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+SETTINGS enable_json_type = 1, describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─┐
+│ json │ JSON │
+└──────┴──────┘
+
+1 row in set. Elapsed: 0.010 sec.
+```
+
+<div id="further-reading">
+  ## 延伸阅读
+</div>
+
+如需进一步了解数据类型推断，请参阅[此](/zh/concepts/features/interfaces/schema-inference)文档页面。

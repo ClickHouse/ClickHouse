@@ -1,0 +1,163 @@
+---
+description: 'arrayJoin 函数文档'
+sidebarTitle: 'arrayJoin'
+slug: /sql-reference/functions/array-join
+title: 'arrayJoin 函数'
+doc_type: 'reference'
+---
+
+这是一个非常特殊的函数。
+
+普通函数不会改变一组行，只会改变每一行中的值 (map) 。
+聚合函数会将一组行压缩 (fold 或 reduce) 。
+`arrayJoin` 函数则会将每一行展开为一组行 (unfold) 。
+
+该函数接受一个数组作为参数，并根据数组中的元素个数，将源行扩展成多行。
+各列中的所有值都会被直接复制，只有应用此函数的那一列例外；该列的值会被替换为对应的数组元素值。
+
+<Note>
+  如果数组为空，`arrayJoin` 不会生成任何行。
+  若要返回仅包含数组类型默认值的一行，可以用 [emptyArrayToSingle](/zh/reference/functions/regular-functions/array-functions#emptyArrayToSingle) 对其进行包装，例如：`arrayJoin(emptyArrayToSingle(...))`。
+</Note>
+
+例如：
+
+```sql title="Query"
+SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
+```
+
+```text title="Response"
+┌─dst─┬─\'Hello\'─┬─src─────┐
+│   1 │ Hello     │ [1,2,3] │
+│   2 │ Hello     │ [1,2,3] │
+│   3 │ Hello     │ [1,2,3] │
+└─────┴───────────┴─────────┘
+```
+
+`arrayJoin` 函数会影响查询的所有部分，包括 `WHERE` 子句。请注意，下面这个查询的结果是 `2`，尽管子查询只返回了 1 行。
+
+```sql title="Query"
+SELECT sum(1) AS impressions
+FROM
+(
+    SELECT ['Istanbul', 'Berlin', 'Babruysk'] AS cities
+)
+WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
+```
+
+```text title="Response"
+┌─impressions─┐
+│           2 │
+└─────────────┘
+```
+
+一个查询中可以使用多个 `arrayJoin` 函数。在这种情况下，转换会执行多次，行会成倍增加。
+例如：
+
+```sql title="Query"
+SELECT
+    sum(1) AS impressions,
+    arrayJoin(cities) AS city,
+    arrayJoin(browsers) AS browser
+FROM
+(
+    SELECT
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
+        ['Firefox', 'Chrome', 'Chrome'] AS browsers
+)
+GROUP BY
+    2,
+    3
+```
+
+```text title="Response"
+┌─impressions─┬─city─────┬─browser─┐
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
+│           2 │ Berlin   │ Chrome  │
+│           1 │ Berlin   │ Firefox │
+│           2 │ Babruysk │ Chrome  │
+│           1 │ Babruysk │ Firefox │
+└─────────────┴──────────┴─────────┘
+```
+
+<div id="important-note">
+  ### 最佳实践
+</div>
+
+对同一表达式多次使用 `arrayJoin`，由于公共子表达式消除，可能无法得到预期结果。
+在这种情况下，可以考虑对重复的数组表达式做一些不会影响 JOIN result 的额外处理。例如，`arrayJoin(arraySort(arr))`、`arrayJoin(arrayConcat(arr, []))`
+
+示例：
+
+```sql title="Query"
+SELECT
+    arrayJoin(dice) AS first_throw,
+    /* arrayJoin(dice) as second_throw */ -- 语法上正确，但会消除结果集
+    arrayJoin(arrayConcat(dice, [])) AS second_throw -- 故意修改表达式以强制重新求值
+FROM (
+    SELECT [1, 2, 3, 4, 5, 6] AS dice
+);
+```
+
+请注意 SELECT 查询中的 [`ARRAY JOIN`](/zh/reference/statements/select/array-join) 语法，它提供了更多可能性。
+`ARRAY JOIN` 允许你一次同时转换多个元素数量相同的数组。
+
+示例：
+
+```sql title="Query"
+SELECT
+    sum(1) AS impressions,
+    city,
+    browser
+FROM
+(
+    SELECT
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
+        ['Firefox', 'Chrome', 'Chrome'] AS browsers
+)
+ARRAY JOIN
+    cities AS city,
+    browsers AS browser
+GROUP BY
+    2,
+    3
+```
+
+```text title="Response"
+┌─impressions─┬─city─────┬─browser─┐
+│           1 │ Istanbul │ Firefox │
+│           1 │ Berlin   │ Chrome  │
+│           1 │ Babruysk │ Chrome  │
+└─────────────┴──────────┴─────────┘
+```
+
+或者也可以使用 [`Tuple`](/zh/reference/data-types/tuple)
+
+示例：
+
+```sql title="Query"
+SELECT
+    sum(1) AS impressions,
+    (arrayJoin(arrayZip(cities, browsers)) AS t).1 AS city,
+    t.2 AS browser
+FROM
+(
+    SELECT
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
+        ['Firefox', 'Chrome', 'Chrome'] AS browsers
+)
+GROUP BY
+    2,
+    3
+```
+
+```text title="Row"
+┌─impressions─┬─city─────┬─browser─┐
+│           1 │ Istanbul │ Firefox │
+│           1 │ Berlin   │ Chrome  │
+│           1 │ Babruysk │ Chrome  │
+└─────────────┴──────────┴─────────┘
+```
+
+ClickHouse 中的 `arrayJoin` 这一名称源于它在概念上与 JOIN 操作相似，但它是应用于单行内部的数组。传统的 JOIN 会组合来自不同表的行，而 `arrayJoin` 则会将一行中数组里的每个元素“连接”出来，生成多行——每个数组元素对应一行——同时复制其他列的值。ClickHouse 还提供了 [`ARRAY JOIN`](/zh/reference/statements/select/array-join) 子句语法，通过使用熟悉的 SQL JOIN 术语，使这种与传统 JOIN 操作的关系更加直观。这个过程也称为对数组进行“展开”，但在函数名和子句中都使用了“join”一词，因为它类似于将表与数组元素进行连接，从而以类似 JOIN 操作的方式有效扩展数据集。

@@ -44,6 +44,7 @@
 #include <Storages/IStorage.h>
 
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 
@@ -81,6 +82,20 @@ void CorrelatedSubtrees::assertEmpty(std::string_view reason) const
 
 namespace
 {
+
+/// The joins built during decorrelation are internal implementation details, not user joins, so
+/// the user's join size limits must not apply to them. In particular, under join_overflow_mode =
+/// 'break' a size limit lets the build side stop early and drop rows, which both yields a wrong
+/// subquery result and lets the probe side start before the build side has fully consumed its
+/// input (the source of the ChunkBuffer / runtime-filter "before all inputs are finished" logical
+/// errors). Run such joins unbounded with THROW.
+void makeInternalDecorrelationJoinUnbounded(JoinStepLogical & join_step)
+{
+    auto & join_settings = join_step.getJoinSettings();
+    join_settings.max_rows_in_join = 0;
+    join_settings.max_bytes_in_join = 0;
+    join_settings.join_overflow_mode = OverflowMode::THROW;
+}
 
 using CorrelatedPlanStepMap = std::unordered_map<QueryPlan::Node *, bool>;
 
@@ -198,6 +213,25 @@ QueryPlan decorrelateQueryPlan(
         QueryPlan lhs_plan = context.correlated_query_plan.extractSubplan(node);
         QueryPlan rhs_plan;
 
+        /// The inner subplan can have zero output columns when it only contributes cardinality (e.g. an
+        /// EXISTS body reduced to a bare filter). Such a relation loses its row count on the streamed side
+        /// of a join (Block::rows() == 0 with no columns), so the join would drop all rows. Add a
+        /// materialized placeholder column to carry the row count across the join; it is stripped again
+        /// right after the join (see below) so it stays internal to this branch.
+        std::optional<String> row_marker_name;
+        if (lhs_plan.getCurrentHeader()->columns() == 0)
+        {
+            ActionsDAG marker_dag(lhs_plan.getCurrentHeader()->getNamesAndTypesList());
+            auto marker_type = std::make_shared<DataTypeUInt8>();
+            auto marker_column = marker_type->createColumnConst(0, 0u);
+            row_marker_name = "__correlated_subquery_row_marker_" + context.correlated_subquery.action_node_name;
+            marker_dag.getOutputs() = { &marker_dag.materializeNode(marker_dag.addColumn(std::move(marker_column), marker_type, *row_marker_name)) };
+
+            auto marker_step = std::make_unique<ExpressionStep>(lhs_plan.getCurrentHeader(), std::move(marker_dag));
+            marker_step->setStepDescription("Row marker for zero-column correlated subquery body");
+            lhs_plan.addStep(std::move(marker_step));
+        }
+
         auto default_join_kind = settings[Setting::correlated_subqueries_default_join_kind];
         context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
 
@@ -236,6 +270,7 @@ QueryPlan decorrelateQueryPlan(
             JoinSettings(settings),
             SortingStep::Settings(settings));
         decorrelated_join->setStepDescription("JOIN to evaluate correlated expression");
+        makeInternalDecorrelationJoinUnbounded(*decorrelated_join);
 
         /// Add CROSS JOIN to combine data streams from left and right plans.
         QueryPlan result_plan;
@@ -245,6 +280,25 @@ QueryPlan decorrelateQueryPlan(
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
         result_plan.unitePlans(std::move(decorrelated_join), {std::move(plans)});
+
+        /// Drop the row marker now that it has carried the row count across the join. It must not
+        /// leave this branch: the ExpressionStep/FilterStep decorrelation handlers restore unused
+        /// inputs, which would otherwise propagate the marker up to a UnionStep and make correlated
+        /// UNION arms have mismatched widths. After the join the domain columns carry the row count,
+        /// so removing the marker leaves at least one column and is safe.
+        if (row_marker_name)
+        {
+            ActionsDAG drop_marker_dag(result_plan.getCurrentHeader()->getNamesAndTypesList());
+            ActionsDAG::NodeRawConstPtrs kept_outputs;
+            for (const auto * input : drop_marker_dag.getInputs())
+                if (input->result_name != *row_marker_name)
+                    kept_outputs.push_back(input);
+            drop_marker_dag.getOutputs() = std::move(kept_outputs);
+
+            auto drop_marker_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(drop_marker_dag));
+            drop_marker_step->setStepDescription("Drop row marker for zero-column correlated subquery body");
+            result_plan.addStep(std::move(drop_marker_step));
+        }
 
         return result_plan;
     }
@@ -521,6 +575,7 @@ QueryPlan buildLogicalJoin(
         JoinSettings(settings),
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
+    makeInternalDecorrelationJoinUnbounded(*result_join);
 
     /// Depending on correlated_subqueries_use_in_memory_buffer setting,
     /// the RHS input stream can be buffered in memory.

@@ -59,6 +59,16 @@ static void removeLowCardinalityFromResult(DataTypePtr & result_type, ColumnPtr 
     }
 }
 
+/// Expand a function result back to pre-filter size. The nested function may return an input column
+/// unchanged (e.g. concat of one String arg), so `column` can alias the input variant subcolumn;
+/// mutate() clones it when shared, unlike assumeMutable() which would expand it in place.
+static ColumnPtr expandColumnByFilter(ColumnPtr column, const PaddedPODArray<UInt8> & filter)
+{
+    auto mutable_column = IColumn::mutate(std::move(column));
+    mutable_column->expand(filter, false);
+    return mutable_column;
+}
+
 ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t, bool dry_run) const
 {
@@ -312,7 +322,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         if (!isVariant(result_type))
         {
             /// Expand filtered result. If it's already Nullable, it will be filled with NULLs.
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             /// If result wasn't Nullable, create null-mask from filter and make it Nullable.
             if (!nested_result_type->isNullable() && nested_result_type->canBeInsideNullable())
             {
@@ -354,7 +364,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         /// The nested Variant may have a subset of types compared to the result Variant
         if (isVariant(nested_result_type))
         {
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             /// Cast to result type (handles case where nested Variant is a subset)
             try
             {
@@ -399,7 +409,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
 
         /// Expand to match the original column size (filling filtered-out rows with NULLs)
-        result->assumeMutable()->expand(filter, false);
+        result = expandColumnByFilter(std::move(result), filter);
         return result;
     }
 

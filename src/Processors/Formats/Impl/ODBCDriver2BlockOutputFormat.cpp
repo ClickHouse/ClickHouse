@@ -105,6 +105,15 @@ void registerOutputFormatODBCDriver2(FormatFactory & factory)
         });
     factory.markOutputFormatNotTTYFriendly("ODBCDriver2");
     factory.setContentType("ODBCDriver2", "application/octet-stream");
+
+    factory.setDocumentation("ODBCDriver2", Documentation{
+        .description = R"DOCS_MD(
+## Description {#description}
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 }

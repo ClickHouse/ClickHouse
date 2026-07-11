@@ -1,3 +1,4 @@
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -21,6 +22,26 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+}
+
+
+namespace
+{
+
+/// Whether the SELECT of an INSERT ... SELECT reads inline data through the `input` table function.
+/// Only in that case does an INSERT with a SELECT carry inline data following the FORMAT clause.
+bool selectReadsInlineDataViaInputFunction(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "input")
+        return true;
+    for (const auto & child : ast->children)
+        if (selectReadsInlineDataViaInputFunction(child))
+            return true;
+    return false;
+}
+
 }
 
 
@@ -255,8 +276,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
     }
 
-    /// In case of defined format, data follows it.
-    if (format && !infile)
+    /// In case of defined format, data follows it -- but only for inline-data INSERTs.
+    /// An INSERT ... SELECT has no inline data (the rows come from the SELECT), unless the SELECT
+    /// reads them through the `input` table function. Without `input`, anything after the FORMAT
+    /// (including a `;` query terminator) is not insert data, so we must not look for it nor raise
+    /// the "excessive ';'" error. This matters e.g. for `EXPLAIN ... INSERT ... SELECT ... FORMAT
+    /// <name>;`, where the trailing FORMAT is the EXPLAIN output format, not an insert data format.
+    if (format && !infile && (!select || selectReadsInlineDataViaInputFunction(select)))
     {
         Pos last_token = pos;
         --last_token;

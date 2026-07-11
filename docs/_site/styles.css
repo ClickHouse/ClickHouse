@@ -1,0 +1,3005 @@
+/* Reserve the scrollbar gutter at all times so nothing shifts when a modal
+   locks body scroll and the scrollbar disappears. react-remove-scroll
+   compensates with margin-right on body, but that double-compensates when
+   the gutter is already reserved — zero it out. */
+/* Hero cards on the home page */
+.ch-hero-card {
+    transition: border-color 0.12s ease !important;
+}
+.dark .ch-hero-card {
+    background-color: #191919 !important;
+    border-color: #2B2B2B !important;
+}
+/* Light mode: darken stroke only, no background change */
+html:not(.dark) .ch-hero-card:hover {
+    border-color: #9ca3af !important;
+}
+.dark .ch-hero-card:hover {
+    background-color: #272727 !important;
+    border-color: #535353 !important;
+}
+/* Use case section dividers */
+.ch-usecase-divider {
+    border: none !important;
+    border-top: 1px solid #e5e7eb !important;
+}
+.dark .ch-usecase-divider {
+    border-top-color: #2B2B2B !important;
+}
+/* Use case card arrows */
+html:not(.dark) .ch-usecase-arrow {
+    color: #2563eb;
+}
+.dark .ch-usecase-arrow {
+    color: #FCFF74;
+}
+/* Homepage content hidden until React has mounted and child effects have settled.
+   Double-RAF in PageWrapper ensures FullWidthDivider's own RAF fires first. */
+.ch-page-hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+.ch-page-visible {
+    opacity: 1;
+    transition: opacity 0.1s ease-out;
+}
+/* Overlay image drop shadow (hero cards with overlayImg) */
+.ch-overlay-shadow {
+    box-shadow: 0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18);
+}
+/* MCP icon — mask-size/repeat extracted from inline style; URL stays inline */
+.ch-mcp-icon {
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+}
+/* Nav logo injected by tab-nav.js */
+#ch-homepage-logo {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    text-decoration: none;
+}
+#ch-hp-logo-light,
+#ch-hp-logo-dark {
+    height: 2rem;
+}
+
+html {
+    scrollbar-gutter: stable;
+}
+
+/* Override Mintlify prose link color rules for CTA buttons.
+   Light: html:not(.dark) .prose a:not(.card):not(.card *) — specificity (0,4,2)
+   Dark:  .dark .prose a:not(.card):not(.card *)           — specificity (0,4,1)
+   We beat both by appending .ch-btn-* to the exact same selector → +1 class. */
+
+/* Primary — light: white text on black bg; dark: black text on yellow bg */
+html:not(.dark) .prose a.ch-btn-primary:not(.card):not(.card *),
+html .ch-btn-primary { color: #ffffff !important; }
+
+html.dark .prose a.ch-btn-primary:not(.card):not(.card *),
+html.dark .ch-btn-primary { color: #1c1c1c !important; }
+
+/* Secondary — light: black text; dark: white text */
+html:not(.dark) .prose a.ch-btn-secondary:not(.card):not(.card *),
+html .ch-btn-secondary { color: #1c1c1c !important; }
+
+html.dark .prose a.ch-btn-secondary:not(.card):not(.card *),
+html.dark .ch-btn-secondary { color: #ffffff !important; }
+
+/* Hover: no underline */
+html:not(.dark) .prose a.ch-btn-primary:not(.card):not(.card *):hover,
+html:not(.dark) .prose a.ch-btn-secondary:not(.card):not(.card *):hover,
+html .ch-btn-primary:hover,
+html .ch-btn-secondary:hover { text-decoration: none !important; }
+
+html.dark .prose a.ch-btn-primary:not(.card):not(.card *):hover,
+html.dark .prose a.ch-btn-secondary:not(.card):not(.card *):hover,
+html.dark .ch-btn-primary:hover,
+html.dark .ch-btn-secondary:hover { text-decoration: none !important; }
+
+/* Hover: preserve text color (beat prose a:hover color !important rules) */
+html:not(.dark) .prose a.ch-btn-primary:not(.card):not(.card *):hover,
+html .ch-btn-primary:hover { color: #ffffff !important; }
+
+html:not(.dark) .prose a.ch-btn-secondary:not(.card):not(.card *):hover,
+html .ch-btn-secondary:hover { color: #1c1c1c !important; }
+
+html.dark .prose a.ch-btn-primary:not(.card):not(.card *):hover,
+html.dark .ch-btn-primary:hover { color: #1c1c1c !important; }
+
+html.dark .prose a.ch-btn-secondary:not(.card):not(.card *):hover,
+html.dark .ch-btn-secondary:hover { color: #ffffff !important; }
+
+body[data-scroll-locked] {
+    margin-right: 0 !important;
+}
+
+/* The secondary navbar (`#navbar-transition-maple`) and the fixed sidebar
+   (`#sidebar`) both reserve 40px above themselves for the announcement
+   banner (Tailwind `lg:mt-10` / `top-10`). The banner is `position: fixed`
+   and renders on top, so the reservation is purely visual. On initial load,
+   before the banner hydrates, that fixed offset shows as an empty 40px gap
+   above each element which visibly "closes" once the banner paints. Pin
+   the offsets to `--banner-height` so they track the banner's actual
+   presence — no banner, no gap. */
+#navbar-transition-maple {
+    margin-top: 0 !important;
+    top: var(--banner-height, 0px) !important;
+}
+#sidebar {
+    top: var(--banner-height, 0px) !important;
+}
+
+/* Visually distinguish the expand/collapse chevron from the group label in the
+   sidebar. Each collapsible group is a single <button> whose children are: an
+   optional icon div (.shrink-0, first), the label div (no .shrink-0, holds the
+   text), and the chevron div (.shrink-0, :last-child). Behavior is unchanged —
+   the whole row still toggles — these are visual affordances only.
+
+   Chevron: floated to the right edge with a hover box so it reads as the
+   expand/collapse control. Applies to every collapsible group. */
+#sidebar button[aria-expanded] > div:last-child {
+    margin-left: auto;
+    padding: 2px 3px;
+    border-radius: 6px;
+    transition: background-color 0.12s ease;
+}
+#sidebar button[aria-expanded] > div:last-child:hover {
+    background-color: rgba(15, 23, 42, 0.08);
+}
+.dark #sidebar button[aria-expanded] > div:last-child:hover,
+:is(.dark) #sidebar button[aria-expanded] > div:last-child:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Label: only groups that have a root (landing) page are navigable. Mintlify
+   gives those <li>s an id equal to the root path (e.g. id="/get-started");
+   pure container groups have NO id attribute, so we match on id^="/" (must
+   start with a slash) rather than :not([id=""]) — the latter also matches the
+   id-less container groups. Highlight the label on hover for the navigable
+   groups so it reads as a link; container-group labels get no cue (only the
+   chevron). Padding is offset by an equal negative margin so the highlight adds
+   no layout shift. */
+#sidebar li[id^="/"] > button[aria-expanded] > div:not(.shrink-0) {
+    padding: 1px 6px;
+    margin: -1px -6px;
+    border-radius: 6px;
+    transition: background-color 0.12s ease;
+}
+#sidebar li[id^="/"] > button[aria-expanded] > div:not(.shrink-0):hover {
+    background-color: rgba(15, 23, 42, 0.08);
+}
+.dark #sidebar li[id^="/"] > button[aria-expanded] > div:not(.shrink-0):hover,
+:is(.dark) #sidebar li[id^="/"] > button[aria-expanded] > div:not(.shrink-0):hover {
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+/* `navbar-cta.js` injects the GitHub stars + Get-started button into
+   `#navbar-transition-maple` after Mintlify hydrates. The navbar is
+   `justify-content: flex-end`, so the inserted children push the existing
+   nav tabs left by ~205px, producing a visible flash. Reserve that space
+   via padding-right while the CTA is missing — when the CTA appears, the
+   padding shrinks back and the CTA fills the freed slot, leaving the tabs
+   in the same x position throughout. */
+#navbar-transition-maple:not(:has(#ch-navbar-cta)) {
+    padding-right: calc(48px + 206px) !important;
+}
+
+/* Hide the navbar on the initial page load (every page) until its injected
+   contents — logo (homepage) + CTA + theme toggle (all pages) — have settled,
+   then fade in, to mask the layout shift those injections cause.
+
+   The `html:not(.ch-navbar-revealed)` guard limits the hide to the FIRST load:
+   tab-nav.js adds `.ch-navbar-revealed` to <html> the first time the navbar is
+   revealed, and since <html> survives SPA navigations the hide never re-applies
+   — so there's no fade on every in-app page change (only on real page loads).
+   A safety timeout in tab-nav.js adds `.ch-navbar-revealed` once the navbar
+   exists, so it can never stay stuck hidden if an injection never completes. */
+html:not(.ch-navbar-revealed) #navbar-transition-maple:not(.ch-navbar-ready) {
+    opacity: 0;
+}
+#navbar-transition-maple.ch-navbar-ready {
+    opacity: 1;
+    transition: opacity 0.15s ease-out;
+}
+
+/* ============================================
+   Global Border Radius
+   ============================================ */
+
+/* Apply smaller border radius globally */
+.card,
+.code-block,
+.accordion,
+.callout {
+    border-radius: 4px;
+}
+
+/* The code-block container carries Mintlify's own `rounded-2xl` utility,
+   which outranks the non-!important rule above — so its border rendered at
+   16px while the inner code surface (forced to 4px further down) did not.
+   Force the container to match. */
+.code-block {
+    border-radius: 4px !important;
+}
+
+/* Mintlify's built-in `rounded-t-2xl` (12px) on the accordion summary doesn't
+   match the 4px override above on the surrounding `details.accordion`, so on
+   hover the summary's wider corner curve produces a visible gap inside the
+   parent's tighter clip. Match the summary's top corners to 4px. */
+details.accordion > summary,
+.accordion-group > details > summary {
+    border-top-left-radius: 4px !important;
+    border-top-right-radius: 4px !important;
+}
+
+/* ============================================
+   Accordion Dark Mode Background
+   ============================================ */
+
+/* Accordion group and individual accordions: use grey instead of codeblock black.
+   Page background is #1d1d1d, code blocks are #282828, so #242424 sits between them. */
+.dark .accordion-group,
+:is(.dark) .accordion-group,
+.dark details.accordion,
+:is(.dark) details.accordion {
+    background-color: #242424 !important;
+}
+
+/* Override the built-in dark:bg-codeblock on accordion elements */
+.dark .accordion-group > details,
+:is(.dark) .accordion-group > details,
+.dark details.accordion.bg-background-light,
+:is(.dark) details.accordion.bg-background-light {
+    background-color: #242424 !important;
+}
+
+/* Accordion borders in dark mode - outer border and dividers between items */
+.dark .accordion-group,
+:is(.dark) .accordion-group {
+    border-color: #3c3c3c !important;
+}
+
+.dark .accordion-group > details + details,
+:is(.dark) .accordion-group > details + details {
+    border-top-color: #3c3c3c !important;
+}
+
+.dark details.accordion,
+:is(.dark) details.accordion {
+    border-color: #3c3c3c !important;
+}
+
+/* Accordion summary hover and open (selected) state */
+.dark details.accordion > summary:hover,
+:is(.dark) details.accordion > summary:hover,
+.dark .accordion-group > details > summary:hover,
+:is(.dark) .accordion-group > details > summary:hover,
+.dark details.accordion[open] > summary,
+:is(.dark) details.accordion[open] > summary,
+.dark .accordion-group > details[open] > summary,
+:is(.dark) .accordion-group > details[open] > summary {
+    background-color: #2a2a2a !important;
+}
+
+/* ============================================
+   Pagination Links - Light Mode
+   ============================================ */
+
+html:not(.dark) .pagination-next,
+html:not(.dark) .pagination-prev {
+    background-color: #f7f7f7 !important;
+}
+
+html:not(.dark) .pagination-next:hover,
+html:not(.dark) .pagination-prev:hover {
+    background-color: #efefef !important;
+}
+
+/* ============================================
+   Pagination Links - Dark Mode
+   ============================================ */
+
+.dark .pagination-next,
+.dark .pagination-prev,
+:is(.dark) .pagination-next,
+:is(.dark) .pagination-prev {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+    background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.dark .pagination-next:hover,
+.dark .pagination-prev:hover,
+:is(.dark) .pagination-next:hover,
+:is(.dark) .pagination-prev:hover {
+    border-color: rgba(255, 255, 255, 0.3) !important;
+    background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark .pagination-title,
+:is(.dark) .pagination-title {
+    color: #E6E7E9 !important;
+}
+
+/* Previous/Next pagination (#pagination): restyle the maple pill bar into
+   two bordered cards matching the home-page hero cards (.ch-hero-card above;
+   colors duplicated because the hero card's base colors live in Tailwind
+   utilities in index.mdx). CSS-only on top of Mintlify's own markup, so the
+   Previous card shows just the chevron + label — maple's markup doesn't
+   include the previous page's title. */
+#pagination {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    background: none !important;
+    padding: 0 !important;
+}
+
+@media (min-width: 1024px) {
+    #pagination {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    /* Next-only pages keep their card in the right column */
+    #pagination > a:first-child:has(svg.lucide-chevron-right) {
+        grid-column: 2;
+    }
+}
+
+/* Card chrome */
+#pagination > a {
+    background-color: #f9f9f9;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    padding: 1rem !important;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.dark #pagination > a,
+:is(.dark) #pagination > a {
+    background-color: #191919;
+    border-color: #2B2B2B;
+}
+
+#pagination > a:hover {
+    background-color: #f0f0f0;
+    border-color: #d1d5db;
+}
+
+.dark #pagination > a:hover,
+:is(.dark) #pagination > a:hover {
+    background-color: #272727;
+    border-color: #535353;
+}
+
+/* Previous card: keep chevron + label together on the left (maple's
+   justify-between would otherwise spread them across the card) */
+#pagination > a:has(svg.lucide-chevron-left) {
+    justify-content: flex-start !important;
+}
+
+/* Next card: drop the pill-era inner background, fixed height, divider and
+   description, and stack the title over the label row, right-aligned. */
+#pagination > a:has(svg.lucide-chevron-right) > div {
+    height: auto !important;
+    background: none !important;
+    box-shadow: none !important;
+    flex-direction: column !important;
+    align-items: flex-end !important;
+}
+
+#pagination > a:has(svg.lucide-chevron-right) > div > div {
+    padding: 0 !important;
+}
+
+#pagination > a:has(svg.lucide-chevron-right) > div > div:last-child {
+    margin-top: 0.25rem;
+}
+
+#pagination .font-semibold {
+    font-size: 1rem;
+    color: #111827 !important;
+}
+
+.dark #pagination .font-semibold,
+:is(.dark) #pagination .font-semibold {
+    color: #fff !important;
+}
+
+/* Description and vertical divider have no place in the card layout */
+#pagination .truncate,
+#pagination .w-px {
+    display: none !important;
+}
+
+/* "Previous" / "Next" labels and their chevrons */
+#pagination .font-medium.tracking-tight {
+    color: #6b7280 !important;
+}
+
+.dark #pagination .font-medium.tracking-tight,
+:is(.dark) #pagination .font-medium.tracking-tight {
+    color: #a1a1aa !important;
+}
+
+#pagination svg.lucide-chevron-left,
+#pagination svg.lucide-chevron-right {
+    width: 0.875rem;
+    height: 0.875rem;
+    color: #6b7280 !important;
+}
+
+.dark #pagination svg.lucide-chevron-left,
+.dark #pagination svg.lucide-chevron-right,
+:is(.dark) #pagination svg.lucide-chevron-left,
+:is(.dark) #pagination svg.lucide-chevron-right {
+    color: #a1a1aa !important;
+}
+
+/* "Copy page" split-button group: make the resting state clearly visible
+   (matches what the previous hover looked like) and the hover state darker. */
+#page-context-menu-button,
+#page-context-menu-button + button {
+    background-color: rgba(0, 0, 0, 0.025) !important;
+}
+#page-context-menu-button:hover,
+#page-context-menu-button + button:hover {
+    background-color: rgba(0, 0, 0, 0.06) !important;
+}
+.dark #page-context-menu-button,
+.dark #page-context-menu-button + button,
+:is(.dark) #page-context-menu-button,
+:is(.dark) #page-context-menu-button + button {
+    background-color: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.07) !important;
+    color: rgb(206, 206, 206) !important;
+}
+.dark #page-context-menu-button:hover,
+.dark #page-context-menu-button + button:hover,
+:is(.dark) #page-context-menu-button:hover,
+:is(.dark) #page-context-menu-button + button:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+/* "Was this page helpful?" feedback toolbar buttons (Yes / No / Suggest edits /
+   Raise issue). Same chrome as the pagination cards / home-page hero cards
+   (.ch-hero-card colors). Doesn't render in `mint dev` — verify on a hosted
+   deployment. */
+.feedback-toolbar button,
+.feedback-toolbar a {
+    background-color: #f9f9f9 !important;
+    border-color: #e5e7eb !important;
+    border-radius: 0.5rem !important;
+    color: #6b7280 !important;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.feedback-toolbar button:hover,
+.feedback-toolbar a:hover {
+    background-color: #f0f0f0 !important;
+    border-color: #d1d5db !important;
+}
+.dark .feedback-toolbar button,
+.dark .feedback-toolbar a,
+:is(.dark) .feedback-toolbar button,
+:is(.dark) .feedback-toolbar a {
+    background-color: #191919 !important;
+    border-color: #2B2B2B !important;
+    color: #a1a1aa !important;
+}
+.dark .feedback-toolbar button:hover,
+.dark .feedback-toolbar a:hover,
+:is(.dark) .feedback-toolbar button:hover,
+:is(.dark) .feedback-toolbar a:hover {
+    background-color: #272727 !important;
+    border-color: #535353 !important;
+}
+
+/* Override code block background border radius */
+.code-block-background,
+[data-component-part="code-block-root"],
+.code-block-background.rounded-2xl,
+[data-component-part="code-block-root"].rounded-2xl {
+    border-radius: 4px !important;
+}
+
+/* Code block background color in dark mode */
+.dark .code-block-background,
+.dark [data-component-part="code-block-root"],
+:is(.dark) .code-block-background,
+:is(.dark) [data-component-part="code-block-root"] {
+    background-color: #282828 !important;
+    --shiki-dark-bg: #282828 !important;
+}
+
+/* Override Shiki pre background in dark mode */
+.dark pre.shiki,
+:is(.dark) pre.shiki {
+    background-color: #282828 !important;
+    --shiki-dark-bg: #282828 !important;
+}
+
+/* Highlighted lines in code blocks - dark mode */
+.dark [data-component-part=code-block-root]:not(.has-line-numbers) .line-highlight,
+:is(.dark) [data-component-part=code-block-root]:not(.has-line-numbers) .line-highlight {
+    background: #424242 !important;
+}
+
+.dark [data-component-part=code-block-root]:not(.has-line-numbers) .line-highlight::before,
+:is(.dark) [data-component-part=code-block-root]:not(.has-line-numbers) .line-highlight::before {
+    background-color: #424242 !important;
+    border-left-color: #FAFF69 !important;
+}
+
+.dark [data-component-part=code-block-root]:not(.has-line-numbers) .line-highlight::after,
+:is(.dark) [data-component-part=code-block-root]:not(.has-line-numbers) .line-highlight::after {
+    background-color: #424242 !important;
+}
+
+/* Override fade overlay color to match code block background in dark mode */
+.dark [data-fade-overlay="true"],
+:is(.dark) [data-fade-overlay="true"] {
+    --fade-color-dark: #282828 !important;
+}
+
+/* Copy code button checkmark icon (success state) - yellow in dark mode */
+.dark [data-testid="copy-code-button"] svg[viewBox="0 0 16 11"],
+:is(.dark) [data-testid="copy-code-button"] svg[viewBox="0 0 16 11"] {
+    fill: #FAFF69 !important;
+}
+
+/* Fix code block horizontal overflow: allow content wider than viewport
+   The w-0 min-w-full max-w-full combo constrains container to parent width,
+   clipping monospace response blocks. Remove max-w constraint so overflow-x-auto works. */
+[data-component-part="code-block-root"] {
+    max-width: none !important;
+}
+
+/* Fix code block text alignment: JetBrains Mono renders box-drawing characters
+   (─, ┌, ┐, │, etc.) at ~13.6px vs ASCII at ~8.6px because it falls back to a
+   system font for box-drawing. Monaco renders both at equal width. Target the
+   pre.shiki and code elements directly since Mintlify overrides .font-mono. */
+[data-component-part="code-block-root"] pre.shiki,
+[data-component-part="code-block-root"] code,
+[data-component-part="code-block-root"] .line,
+[data-component-part="code-block-root"] .line span {
+    font-family: "Monaco", "Menlo", "Consolas", "Ubuntu Mono", monospace !important;
+    font-variant-ligatures: none !important;
+    font-feature-settings: "kern" 0 !important;
+}
+
+/* Tighten line-height for code blocks to match monospace table output
+   while ensuring box-drawing characters render fully */
+[data-component-part="code-block-root"] .font-mono {
+    line-height: 1.5 !important;
+}
+
+
+.nav-logo {
+    height: 2rem;
+}
+
+/* Dark mode sidebar background */
+.dark #almond-background-color,
+:is(.dark) #almond-background-color {
+    background-color: #151515 !important;
+}
+
+/* ============================================
+   Sticky sidebar header (search + Ask AI)
+   ============================================
+
+   `#sidebar-content` is the sidebar's scroll container (Mintlify gives it
+   `overflow-y-auto`). Its three direct children are, in order:
+     [0] the logo + dark-mode-toggle row  (div.flex.justify-between.items-center)
+     [1] the search + Ask AI row          (div.flex.flex-col.gap-4.mt-6)
+     [2] the page navigation              (#navigation-items)
+   Because all three live inside the one scrolling box, the logo and search
+   rows scroll away with the nav. To pin them, move the scroll boundary off
+   `#sidebar-content` and onto `#navigation-items` only: lay `#sidebar-content`
+   out as a flex column that clips instead of scrolls, and let the nav list
+   flex-grow into the remaining height and scroll on its own. The two header
+   rows then stay put at the top while the nav scrolls beneath them.
+   `#sidebar` is `hidden lg:flex`, so this only affects the desktop sidebar. */
+#sidebar-content {
+    display: flex !important;
+    flex-direction: column;
+    overflow-y: hidden !important;
+    min-height: 0;
+}
+#sidebar-content > #navigation-items {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    /* Gap below the pinned search + Ask AI row. Use margin, not padding: the
+       scroll container's scrollbar track spans its whole padding box, so
+       padding-top would leave the scrollbar flush against — visually touching —
+       the search/Ask AI buttons. A margin pushes the scroll box itself (and
+       therefore the top of its scrollbar) down below that row, so the scrollbar
+       no longer exceeds the first nav item. */
+    margin-top: 0.5rem;
+}
+
+/* Hide the chat assistant textarea and its floating-input wrapper */
+.chat-assistant-input,
+.chat-assistant-floating-input {
+    display: none !important;
+}
+
+#assistant-entry {
+    display: none !important;
+}
+
+/* Right-align top nav items and constrain width to content area */
+#navbar-transition-maple {
+    width: calc(100vw - 19rem) !important;
+    justify-content: flex-end !important;
+    z-index: 30 !important;
+}
+
+/* Align quickstarts grid to the left instead of centered */
+.max-w-7xl.mx-auto:has(.mint-sticky) {
+    margin-left: 0 !important;
+}
+
+/* Product selector trigger button text size */
+.nav-dropdown-products-selector-trigger .truncate,
+.nav-dropdown-products-selector-trigger span.truncate {
+    font-size: 1rem !important;
+}
+
+/* Use case grid */
+.use-case-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-top: 2rem;
+}
+
+@media (max-width: 1024px) {
+    .use-case-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+    .use-case-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Bottom navigation */
+.gemini-nav {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.gemini-nav-btn {
+    padding: 0.75rem 1.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 1rem;
+    font-weight: 500;
+    color: inherit;
+}
+
+html:not(.dark) .gemini-nav-btn {
+    background: rgba(0, 0, 0, 0.02);
+    border-color: rgba(0, 0, 0, 0.1);
+}
+
+.gemini-nav-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+}
+
+html:not(.dark) .gemini-nav-btn:hover {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+.gemini-nav-btn.active {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+html:not(.dark) .gemini-nav-btn.active {
+    background: rgba(0, 0, 0, 0.06);
+    border-color: rgba(0, 0, 0, 0.2);
+}
+
+/* Reduce padding on hero and sidekick sections on home page */
+.hero {
+    padding-top: 5rem !important;
+    padding-bottom: 1rem !important;
+    padding-left: 8rem !important;
+    padding-right: 8rem !important;
+    align-items: center !important;
+    min-height: auto !important;
+    height: auto !important;
+    margin-bottom: 0 !important;
+    gap: 0 !important;
+}
+
+.hero h1 {
+    font-size: 2.5rem !important;
+    margin-bottom: 0.5rem !important;
+    color: #ffffff !important;
+}
+
+/* Tilted Background Effect - matches ClickHouse.com styling */
+.hero h1 .tilted {
+    position: relative !important;
+    display: inline-block !important;
+    isolation: isolate !important;
+    margin: 0.25em 0.25em !important;
+    white-space: nowrap !important;
+    vertical-align: middle !important;
+}
+
+.hero h1 .tilted::before {
+    content: '' !important;
+    position: absolute !important;
+    inset: 0 !important;
+    z-index: -1 !important;
+    transform: skewY(-3deg) !important;
+    background-color: #FCFF74 !important;
+}
+
+.hero h1 .tilted-content {
+    position: relative !important;
+    display: inline-block !important;
+    padding: 0.5rem !important;
+    color: #000000 !important;
+}
+
+/* Generic Tilted Background Effect - for use anywhere */
+.tilted {
+    position: relative;
+    white-space: nowrap;
+}
+
+.tilted::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: skewY(-3deg);
+}
+
+.tilted-sm::before {
+    transform: skewY(-1deg);
+}
+
+.tilted-content {
+    position: relative;
+    padding: 0.3rem 0.35rem;
+}
+
+.tilted-yellow {
+    color: #1f1f1c;
+}
+
+.tilted-yellow::before {
+    background-color: #FCFF74;
+}
+
+.tilted-black {
+    color: #FCFF74;
+}
+
+.tilted-black::before {
+    background-color: #1a1a1a;
+}
+
+@media (min-width: 768px) {
+    .non-tilted-md::before {
+        transform: skewY(0deg);
+    }
+}
+
+/* Light mode - black text and black tilted background */
+html:not(.dark) .hero h1 {
+    color: #000000 !important;
+}
+
+html:not(.dark) .hero h1 .tilted::before {
+    background-color: #000000 !important;
+}
+
+html:not(.dark) .hero h1 .tilted-content {
+    color: #ffffff !important;
+}
+
+/* Light mode override for tilted-yellow */
+html:not(.dark) .tilted-yellow::before {
+    background-color: #000000 !important;
+}
+
+html:not(.dark) .tilted-yellow .tilted-content {
+    color: #ffffff !important;
+}
+
+.hero p {
+    margin-bottom: 1rem !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+.hero-text {
+    justify-content: center !important;
+    flex: 0 0 33.333% !important;
+    max-width: 33.333% !important;
+    text-align: center !important;
+}
+
+.hero-aside {
+    justify-content: center !important;
+    align-items: center !important;
+    min-height: auto !important;
+    height: auto !important;
+    padding: 0 !important;
+    flex: 0 0 66.667% !important;
+    max-width: 66.667% !important;
+}
+
+.sidekick.divider {
+    padding-top: 0 !important;
+    padding-bottom: 1rem !important;
+    padding-left: 5rem !important;
+    padding-right: 5rem !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    border-top: none !important;
+}
+
+/* Add spacing between docs tour cards and next section */
+.docs-tour-cards {
+    margin-bottom: 2rem;
+}
+
+/* Product grid cards background */
+.product-item {
+    background-color: #faf9fb !important;
+}
+
+.dark .product-item {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Make product grid in hero section compact and square */
+.hero-aside .product-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    width: 100%;
+}
+
+.hero-aside .product-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    height: 100px;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.hero-aside .product-item img {
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+    max-width: 48px !important;
+    margin-bottom: 0.5rem;
+}
+
+/* Invert icons in light mode since we are using dark mode assets */
+html:not(.dark) .hero-aside .product-item img {
+    filter: invert(1) hue-rotate(180deg);
+}
+
+.hero-aside .product-item h3 {
+    font-size: 0.875rem;
+    margin: 0;
+    line-height: 1.2;
+}
+
+/* Dark mode - white text for product item titles */
+.dark .hero-aside .product-item h3,
+:is(.dark) .hero-aside .product-item h3,
+.dark .hero-aside .product-item h3 {
+    color: #ffffff !important;
+}
+
+@media (max-width: 1024px) {
+    .hero-aside .product-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+    .hero-aside .product-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Global color fixes for product selector - ensure text visibility in all modes */
+/* Light mode - force dark text */
+html:not(.dark) .nav-dropdown-products-selector-item-title,
+html:not(.dark) .nav-dropdown-products-selector-item-title {
+    color: #1a1a1a !important;
+}
+
+html:not(.dark) .nav-dropdown-products-selector-item-description,
+html:not(.dark) .nav-dropdown-products-selector-item p:last-child,
+html:not(.dark) .nav-dropdown-products-selector-item-description,
+html:not(.dark) .nav-dropdown-products-selector-item p:last-child,
+html:not(.dark) .nav-dropdown-products-selector-item .flex.flex-col p:last-child,
+html:not(.dark) .nav-dropdown-products-selector-item .flex.flex-col p:last-child {
+    color: #666666 !important;
+}
+
+/* Dark mode color overrides */
+:is(.dark) .nav-dropdown-products-selector-item-title,
+:is(.dark) .nav-dropdown-products-selector-item-title,
+.dark a .nav-dropdown-products-selector-item-title,
+.dark a .nav-dropdown-products-selector-item-title,
+:is(.dark) a .nav-dropdown-products-selector-item-title,
+.dark a .nav-dropdown-products-selector-item p:first-child,
+.dark a .nav-dropdown-products-selector-item p:first-child,
+:is(.dark) a .nav-dropdown-products-selector-item p:first-child {
+    color: #ffffff !important;
+}
+
+:is(.dark) .nav-dropdown-products-selector-item-description,
+:is(.dark) .nav-dropdown-products-selector-item p:last-child,
+:is(.dark) .nav-dropdown-products-selector-item-description,
+:is(.dark) .nav-dropdown-products-selector-item p:last-child,
+:is(.dark) .nav-dropdown-products-selector-item .flex.flex-col p:last-child,
+:is(.dark) .nav-dropdown-products-selector-item .flex.flex-col p:last-child {
+    color: #a3a3a3 !important;
+}
+
+
+/* ============================================
+   Navigation Link Text Shadow
+   ============================================ */
+
+/* Light mode - remove green, use neutral colors */
+html:not(.dark) a.bg-primary\/10.text-primary {
+    text-shadow: -0.2px 0 0 #E6E7E9, 0.2px 0 0 #E6E7E9 !important;
+    color: #1f1f1c !important;
+    background-color: rgba(31, 31, 28, 0.08) !important;
+}
+
+/* Dark mode - remove green, use neutral colors */
+html.dark a.dark\:bg-primary-light\/10.dark\:text-primary-light {
+    text-shadow: -0.2px 0 0 #414141, 0.2px 0 0 #414141 !important;
+    color: #E6E7E9 !important;
+    background-color: rgba(230, 231, 233, 0.1) !important;
+}
+
+/* ============================================
+   Eyebrow Element Color Override
+   ============================================ */
+
+/* Light mode - neutral gray instead of green */
+html:not(.dark) .eyebrow {
+    color: #6B7280 !important;
+}
+
+/* Dark mode - neutral gray instead of green */
+html.dark .eyebrow {
+    color: #9CA3AF !important;
+}
+
+/* ============================================
+   Text Primary Color Override
+   ============================================ */
+
+/* Light mode - neutral dark gray instead of green */
+html:not(.dark) .text-primary {
+    color: #1f1f1c !important;
+}
+
+/* Dark mode - neutral light gray instead of green */
+html.dark .text-primary,
+html.dark .dark\:text-primary-light {
+    color: #E6E7E9 !important;
+}
+
+/* Dark mode hover variants: the CSS var --primary-light resolves to a near-black
+   in our theme, so the unpatched `dark:hover:text-primary-light` /
+   `dark:hover:bg-primary-light/10` hover styles (used in dropdown items and
+   anywhere else) make text invisible on hover. Override both with the
+   ClickHouse yellow so hovered items stand out. */
+html.dark .dark\:hover\:text-primary-light:hover {
+    color: #FDFF75 !important;
+}
+html.dark .dark\:hover\:bg-primary-light\/10:hover {
+    background-color: rgba(253, 255, 117, 0.1) !important;
+}
+
+/* Card CTAs use a group-hover dark variant. Keep that CTA readable when the
+   card body is hovered instead of allowing the dark theme token to resolve
+   to a near-black color. */
+html.dark .card:hover [data-component-part="card-cta"] button,
+:is(.dark) .card:hover [data-component-part="card-cta"] button {
+    color: #FDFF75 !important;
+}
+
+/* ============================================
+   Card Icon Color Override
+   ============================================ */
+
+/* Dark mode - ClickHouse yellow */
+html.dark [data-component-part="card-icon"] {
+    color: #FDFF75 !important;
+}
+
+/* ============================================
+   Background Primary Light Override
+   ============================================ */
+
+/* Light mode - subtle gray background like sidebar menu items.
+   Match only the exact `bg-primary/10` token: a substring matcher like
+   [class*="bg-primary/10"] also matches `hover:bg-primary/10`,
+   `focus:bg-primary/10`, etc — applying the background unconditionally
+   to every dropdown-menu item, not just the hovered/active one. */
+html:not(.dark) .bg-primary\/10 {
+    background-color: rgba(31, 31, 28, 0.08) !important;
+}
+
+/* Dark mode - ClickHouse yellow background */
+html.dark .dark\:bg-primary-light,
+.dark\:bg-primary-light:is(.dark *) {
+    --tw-bg-opacity: 1 !important;
+    background-color: #FDFF75 !important;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+/* ============================================
+   Card styling (Light & Dark Mode)
+   ============================================ */
+
+/* Card background - match pagination cards */
+.card {
+    background-color: #f7f7f7 !important;
+}
+
+.dark .card,
+:is(.dark) .card {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+    background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Light mode: darken border on hover, no background change */
+html:not(.dark) .card:hover {
+    background-color: #f7f7f7 !important;
+    border-color: #9ca3af !important;
+    transition: border-color 0.12s ease !important;
+}
+
+/* Override card hover border color in dark mode */
+.dark .card:hover,
+:is(.dark) .card:hover {
+    border-color: #fdff75 !important;
+    background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Navbar link styling */
+.navbar-link {
+    background-color: transparent !important;
+    border: none !important;
+}
+
+/* Search bar styling */
+#search-bar-entry {
+    border-radius: 4px !important;
+}
+
+/* Hide the dropdown chevron on sidebar nav groups whose docs.json entry
+   has no children (`pages: []` + `root`).
+
+   Mintlify removes the child <ul> entirely both when a group is configured
+   with no pages AND when a populated group is collapsed by the user — so
+   purely-structural CSS can't tell those two cases apart. List the empty
+   groups by their stable id (the root path Mintlify writes onto the <li>)
+   instead. Add new entries here when a `pages: []` + `root` group is
+   added to docs.json. */
+li[data-title][id="/integrations/language-clients"] > button svg.transition-transform,
+li[data-title][id="/integrations/language-clients/js"] > button svg.transition-transform,
+li[data-title][id="/integrations/language-clients/csharp/overview"] > button svg.transition-transform,
+li[data-title][id="/integrations/language-clients/rust"] > button svg.transition-transform,
+li[data-title][id="/integrations/language-clients/cpp"] > button svg.transition-transform,
+li[data-title][id="/integrations/language-clients/c"] > button svg.transition-transform{
+    display: none !important;
+}
+
+/* Light mode: the Ask AI button ships with a blue ring (rgba(147,197,253,0.5),
+   ≈ Tailwind blue-300/50) that clashes with the search bar's grey ring. Match
+   the search bar's ring color so the two controls look like a set. */
+html:not(.dark) #ch-ask-ai-btn {
+    --tw-ring-color: rgba(159, 159, 159, 0.3) !important;
+    --tw-ring-shadow: 0 0 0 1px rgba(159, 159, 159, 0.3) !important;
+}
+html:not(.dark) #ch-ask-ai-btn:hover {
+    --tw-ring-color: rgba(75, 85, 99, 0.3) !important;
+    --tw-ring-shadow: 0 0 0 1px rgba(75, 85, 99, 0.3) !important;
+}
+
+/* Suppress the default browser focus outline on the search and Ask AI
+   buttons, but keep the resting ring/border in place so the controls don't
+   visually disappear when focused. */
+#search-bar-entry:focus,
+#search-bar-entry:focus-visible,
+#ch-ask-ai-btn:focus,
+#ch-ask-ai-btn:focus-visible {
+    outline: none !important;
+}
+
+/* Dark-mode contrast bump for the navbar controls (search, Ask AI, theme
+   toggle). Mintlify's defaults sit at ~brightness 1.1 of the page bg, which
+   on our #1D1D1D background reads as nearly invisible. Lift the surface,
+   strengthen the ring, and brighten the foreground so the controls are
+   clearly findable. */
+.dark #search-bar-entry,
+:is(.dark) #search-bar-entry,
+.dark #ch-ask-ai-btn,
+:is(.dark) #ch-ask-ai-btn {
+    background-color: rgba(255, 255, 255, 0.06) !important;
+    /* Replace Tailwind's box-shadow ring with a real border so it renders
+       like the Copy page button. Also clear the brightness filter so the
+       border doesn't get washed out against the brightened bg. */
+    --tw-ring-shadow: 0 0 0 0 transparent !important;
+    box-shadow: none !important;
+    border: 1px solid rgba(255, 255, 255, 0.07) !important;
+    filter: none !important;
+    color: rgb(206, 206, 206) !important;
+}
+
+.dark #search-bar-entry:hover,
+:is(.dark) #search-bar-entry:hover,
+.dark #ch-ask-ai-btn:hover,
+:is(.dark) #ch-ask-ai-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    filter: none !important;
+}
+
+/* Search placeholder text and shortcut hint */
+.dark #search-bar-entry,
+.dark #search-bar-entry *,
+:is(.dark) #search-bar-entry,
+:is(.dark) #search-bar-entry * {
+    color: rgb(206, 206, 206) !important;
+}
+
+/* Ask AI icon */
+.dark #ch-ask-ai-btn svg,
+:is(.dark) #ch-ask-ai-btn svg {
+    color: #fdff75 !important;
+}
+
+/* Theme toggle (Toggle dark mode pill) */
+.dark button[aria-label="Toggle dark mode"],
+:is(.dark) button[aria-label="Toggle dark mode"] {
+    background-color: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.07) !important;
+    color: rgb(206, 206, 206) !important;
+}
+
+.dark button[aria-label="Toggle dark mode"]:hover,
+:is(.dark) button[aria-label="Toggle dark mode"]:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.dark button[aria-label="Toggle dark mode"] svg,
+:is(.dark) button[aria-label="Toggle dark mode"] svg {
+    color: rgb(206, 206, 206) !important;
+    stroke: rgb(206, 206, 206) !important;
+}
+
+/* Page context menu styling */
+#page-context-menu .rounded-l-xl {
+    border-top-left-radius: 4px !important;
+    border-bottom-left-radius: 4px !important;
+}
+
+#page-context-menu .rounded-r-xl {
+    border-top-right-radius: 4px !important;
+    border-bottom-right-radius: 4px !important;
+}
+
+/* Sidebar navigation links and buttons styling */
+a.rounded-xl,
+button.rounded-xl {
+    border-radius: 4px !important;
+}
+
+/* Override topbar CTA button styling */
+
+#topbar-cta-button {
+    border-radius: 4px !important;
+}
+
+/* Dark mode - #fdff75 background and black text */
+.dark #topbar-cta-button .bg-primary-dark {
+    background-color: #fdff75 !important;
+    border-radius: 4px !important;
+}
+
+.dark #topbar-cta-button span,
+.dark #topbar-cta-button svg {
+    color: black !important;
+}
+
+/* Light mode - #323232 background and white text */
+#topbar-cta-button .bg-primary-dark {
+    background-color: #323232 !important;
+    border-radius: 4px !important;
+}
+
+#topbar-cta-button span,
+#topbar-cta-button svg {
+    color: white !important;
+}
+
+
+/* ============================================
+   Page Title Alignment
+   ============================================ */
+
+/* Page title full-width, context menu on a separate row below */
+#page-title {
+    text-align: left !important;
+}
+
+:has(> #page-title) {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    width: 100% !important;
+}
+
+:has(> #page-title)>#page-title {
+    width: 100% !important;
+}
+
+:has(> #page-title)>#page-context-menu {
+    margin-left: 0 !important;
+    margin-top: 8px !important;
+    flex-shrink: 0 !important;
+}
+
+/* ============================================
+   ClickPipes Page Styling
+   ============================================ */
+
+/* Dark mode image swap for ClickPipes icons */
+:is(.dark) .product-item img[src*="clickpipes-light.svg"] {
+    content: url("https://ch-docs-product-selector.s3.eu-central-1.amazonaws.com/clickpipes-dark.svg") !important;
+}
+
+/* Kafka nav-group icon is a solid black SVG (fill:#000); invert it to white in
+   dark mode so it doesn't disappear against the dark sidebar. Single asset, no
+   light/dark swap. */
+.dark #sidebar img[src$="/images/integrations/logos/kafka.svg"] {
+    filter: invert(1);
+}
+
+/* ============================================
+   Menu icon color — cross-browser + site-theme
+   ============================================ */
+
+/* The grey line/fill icons in the navbar dropdowns and cards
+   (images/icons/icon-*.svg) set their own colour with an
+   `@media (prefers-color-scheme: dark)` block INSIDE the SVG (light rgb(80,80,80)
+   -> dark rgb(200,200,200)). Rendered as <img>, that has two bugs: it follows
+   the OS appearance rather than the site's theme toggle, and WebKit honours the
+   query for <img>-loaded SVGs while Blink ignores it — so the same icon paints a
+   different grey in Safari vs Chrome. Force a deterministic grey keyed to the
+   SITE theme instead: brightness(0) collapses whatever colour the SVG picked to
+   black, then invert() sets an exact grey — identical in every browser. The five
+   colourful brand icons (clickhouse, cloud-oss, language-picker, mcp, server) are
+   not part of this grey family and are excluded. */
+img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+    filter: brightness(0) invert(0.31); /* rgb(79,79,79) — matches the SVGs' light value */
+}
+.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]),
+:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+    filter: brightness(0) invert(0.78); /* rgb(199,199,199) — matches the SVGs' dark value */
+}
+
+/* ClickPipes categories grid - 4 columns on desktop, 2 on mobile */
+.clickpipes-categories {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    width: 100%;
+}
+
+@media (max-width: 1024px) {
+    .clickpipes-categories {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+    .clickpipes-categories {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* ============================================
+   ClickPipes Home Page Specific Styling
+   ============================================ */
+
+/* Narrower hero-aside on clickpipes_home page */
+[data-page="clickpipes_home"] .hero-aside,
+body.clickpipes_home .hero-aside {
+    flex: 0 0 50% !important;
+    max-width: 50% !important;
+}
+
+/* Adjust hero-text width to balance the layout */
+[data-page="clickpipes_home"] .hero-text,
+body.clickpipes_home .hero-text {
+    flex: 0 0 50% !important;
+    max-width: 50% !important;
+}
+
+/* Dark mode - white body text for document content */
+.dark .prose,
+.dark .prose,
+:is(.dark) .prose,
+.dark .prose p,
+.dark .prose p,
+:is(.dark) .prose p,
+.dark .prose li,
+.dark .prose li,
+:is(.dark) .prose li,
+.dark .prose td,
+.dark .prose td,
+:is(.dark) .prose td,
+.dark .prose th,
+.dark .prose th,
+:is(.dark) .prose th {
+    color: #ffffff !important;
+}
+
+/* Prose links: colored without underline by default, underline appears on hover.
+   Light: #135be6 blue. Dark: ClickHouse yellow #FAFF69. */
+html:not(.dark) .prose a:not(.card):not(.card *) {
+    color: #135be6 !important;
+    border-bottom: none !important;
+    text-decoration: none !important;
+    font-weight: normal !important;
+}
+html:not(.dark) .prose a:not(.card):not(.card *):hover {
+    color: #135be6 !important;
+    text-decoration: underline !important;
+}
+
+.dark .prose a:not(.card):not(.card *),
+:is(.dark) .prose a:not(.card):not(.card *) {
+    color: #FAFF69 !important;
+    border-bottom: none !important;
+    text-decoration: none !important;
+    font-weight: normal !important;
+}
+.dark .prose a:not(.card):not(.card *):hover,
+:is(.dark) .prose a:not(.card):not(.card *):hover {
+    color: #FAFF69 !important;
+    text-decoration: underline !important;
+    opacity: 1;
+}
+
+/* Override yellow links for product selector items */
+.dark .product-selector-radio-group a,
+.dark [role="radiogroup"] a,
+.dark .nav-dropdown-products-selector-content a,
+.dark .product-selector-radio-group a,
+.dark [role="radiogroup"] a,
+.dark .nav-dropdown-products-selector-content a,
+:is(.dark) .product-selector-radio-group a,
+:is(.dark) [role="radiogroup"] a,
+:is(.dark) .nav-dropdown-products-selector-content a {
+    color: inherit !important;
+}
+
+/* Prevent dropdown menu icons from turning yellow on hover */
+.dark .product-selector-radio-group a svg,
+.dark [role="radiogroup"] a svg,
+.dark .nav-dropdown-products-selector-content a svg,
+.dark .nav-dropdown-products-selector-item svg,
+.dark .product-selector-radio-group a svg,
+.dark [role="radiogroup"] a svg,
+.dark .nav-dropdown-products-selector-content a svg,
+.dark .nav-dropdown-products-selector-item svg,
+:is(.dark) .product-selector-radio-group a svg,
+:is(.dark) [role="radiogroup"] a svg,
+:is(.dark) .nav-dropdown-products-selector-content a svg,
+:is(.dark) .nav-dropdown-products-selector-item svg,
+.dark .product-selector-radio-group a:hover svg,
+.dark [role="radiogroup"] a:hover svg,
+.dark .nav-dropdown-products-selector-content a:hover svg,
+.dark .nav-dropdown-products-selector-item:hover svg,
+.dark .product-selector-radio-group a:hover svg,
+.dark [role="radiogroup"] a:hover svg,
+.dark .nav-dropdown-products-selector-content a:hover svg,
+.dark .nav-dropdown-products-selector-item:hover svg,
+:is(.dark) .product-selector-radio-group a:hover svg,
+:is(.dark) [role="radiogroup"] a:hover svg,
+:is(.dark) .nav-dropdown-products-selector-content a:hover svg,
+:is(.dark) .nav-dropdown-products-selector-item:hover svg {
+    color: currentColor !important;
+}
+
+/* Also prevent the ::before pseudo-elements (product icons) from turning yellow */
+.dark .nav-dropdown-products-selector-item::before,
+.dark .nav-dropdown-products-selector-item::before,
+:is(.dark) .nav-dropdown-products-selector-item::before,
+.dark .nav-dropdown-products-selector-item:hover::before,
+.dark .nav-dropdown-products-selector-item:hover::before,
+:is(.dark) .nav-dropdown-products-selector-item:hover::before {
+    color: inherit !important;
+}
+
+
+/* Beta Badge */
+.betaBadge {
+    background-color: #E5FFFB;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    color: #004237;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.betaIcon {
+    margin-right: 8px;
+}
+
+.betaIcon svg path {
+    fill: #004237;
+}
+
+.betaBadge a {
+    color: black;
+}
+
+.dark .betaBadge {
+    background-color: #1A332D;
+    color: #66FFE5;
+}
+
+.dark .betaBadge a {
+    color: #66FFE5;
+}
+
+.dark .betaIcon svg path {
+    fill: #66FFE5;
+}
+
+/* ClickHouse Supported Badge */
+.ClickHouseSupportedBadge {
+    background-color: #faff69;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    color: #161517;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.ClickHouseSupportedIcon {
+    margin-right: 8px;
+}
+
+.ClickHouseSupportedIcon svg path {
+    fill: #282828;
+}
+
+.ClickHouseSupportedBadge a {
+    color: black;
+}
+
+.dark .ClickHouseSupportedBadge {
+    background-color: #faff69;
+    color: #161517;
+}
+
+.dark .ClickHouseSupportedBadge a {
+    color: #161517;
+}
+
+.dark .ClickHouseSupportedIcon svg path {
+    fill: #161517;
+}
+
+/* Cloud Not Supported Badge */
+.cloudNotSupportedBadge {
+    background-color: #F6E5FF;
+    color: #660099;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.cloudNotSupportedIcon {
+    margin-right: 8px;
+}
+
+.cloudNotSupportedIcon svg path {
+    stroke: #660099;
+}
+
+.dark .cloudNotSupportedBadge {
+    background-color: #33004D;
+    color: #EECCFF;
+}
+
+.dark .cloudNotSupportedIcon svg path {
+    stroke: #EECCFF;
+}
+
+/* Cloud Only Badge */
+.cloudBadge {
+    background-color: #DAE6FC;
+    color: #061D48;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.dark .cloudBadge {
+    background-color: #061D48;
+    color: #DAE6FC;
+}
+
+.cloudIcon {
+    margin-right: 8px;
+}
+
+.cloudIcon svg path {
+    stroke: #061D48;
+}
+
+.dark .cloudIcon svg path {
+    stroke: #DAE6FC;
+}
+
+/* Community Maintained Badge */
+.CommunityMaintainedBadge {
+    background-color: #69afff;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    color: #ffffff;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.CommunityMaintainedIcon {
+    margin-right: 8px;
+}
+
+.CommunityMaintainedIcon svg path {
+    fill: #ffffff;
+    stroke: none;
+}
+
+.CommunityMaintainedBadge a {
+    color: #69afff;
+}
+
+.CommunityMaintainedBadge svg path {
+    color: #69afff;
+}
+
+.dark .CommunityMaintainedBadge {
+    background-color: #69afff;
+    color: #ffffff;
+}
+
+.dark .CommunityMaintainedBadge a {
+    color: #ffffff;
+}
+
+.dark .CommunityMaintainedIcon svg path {
+    fill: #ffffff;
+    stroke: none;
+}
+
+/* Deprecated Badge */
+.deprecatedBadge {
+    background-color: #DFDFDF;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.deprecatedIcon {
+    margin-right: 8px;
+}
+
+.deprecatedBadge a {
+    color: black;
+}
+
+.dark .deprecatedBadge {
+    background-color: #414141;
+    color: #000000;
+}
+
+.dark .deprecatedBadge a {
+    color: #000000;
+}
+
+.deprecatedIcon svg path {
+    stroke: #53575F;
+}
+
+.dark .deprecatedIcon svg path {
+    stroke: #E6E7E9;
+}
+
+/* Enterprise Plan Feature Badge */
+.enterprisePlanFeatureContainer {
+    background-color: #F6F7FA;
+    border-radius: 4px;
+    border: 1px solid #E6E7E9;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    font-size: 0.875rem;
+}
+
+.enterprisePlanFeatureContainer p {
+    margin: 0;
+    padding: 0;
+}
+
+.enterprisePlanFeatureBadge {
+    background-color: #008A0B;
+    border-style: solid;
+    border: 1px;
+    border-color: #437EEF;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    color: #FFFFFF;
+    display: inline-flex;
+    padding: 2px 12px;
+    margin-bottom: 8px;
+    font-size: 0.875rem;
+}
+
+.dark .enterprisePlanFeatureContainer {
+    background-color: #F6F7FA;
+    border: 1px solid #414141;
+}
+
+.dark .enterprisePlanFeatureBadge {
+    background-color: #99FFA1;
+    color: #1F1F1C;
+}
+
+/* Experimental Badge */
+.experimentalBadge {
+    background-color: #FFEDD8;
+    border-radius: 16px;
+    color: black;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.experimentalIcon {
+    margin-right: 8px;
+}
+
+.experimentalBadge a {
+    color: black;
+}
+
+.dark .experimentalBadge {
+    background-color: #E9D5FF;
+    color: #000000;
+}
+
+.dark .experimentalBadge a {
+    color: #000000;
+}
+
+.experimentalIcon svg path {
+    stroke: #4F2B00;
+}
+
+.dark .experimentalIcon svg path {
+    stroke: #000000;
+}
+
+/* Partner Badge */
+.PartnerBadge {
+    background-color: #990073;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    color: #ffffff;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.PartnerBadgeIcon {
+    margin-right: 8px;
+}
+
+.PartnerBadgeIcon svg path {
+    fill: #fbc9ef;
+    stroke: #990073;
+}
+
+.PartnerBadge a {
+    color: #990073;
+}
+
+.PartnerBadge svg path {
+    color: #990073;
+}
+
+.dark .PartnerBadge {
+    background-color: #990073;
+    color: #fbeff8;
+}
+
+.dark .PartnerBadge a {
+    color: #fbeff8;
+}
+
+.dark .PartnerBadgeIcon svg path {
+    fill: #990073;
+    stroke: #fbeff8;
+}
+
+/* Private Preview Badge */
+.privatePreviewBadge {
+    background-color: #F4FF66;
+    color: #4A4D00;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+    margin-right: 5px;
+    font-size: 0.875rem;
+}
+
+.dark .privatePreviewBadge {
+    background-color: #3C4601;
+    color: #FEFFC2;
+}
+
+.privatePreviewIcon {
+    margin-right: 8px;
+}
+
+.privatePreviewIcon svg path {
+    stroke: #4A4D00;
+}
+
+.dark .privatePreviewIcon svg path {
+    stroke: #FEFFC2;
+}
+
+/* Scale Plan Feature Badge */
+.scalePlanFeatureContainer {
+    background-color: #F6F7FA;
+    border-radius: 4px;
+    border: 1px solid #E6E7E9;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    font-size: 0.875rem;
+}
+
+.scalePlanFeatureContainer p {
+    margin: 0;
+    padding: 0;
+}
+
+.scalePlanFeatureBadge {
+    background-color: #1D64EC;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    color: #FFFFFF;
+    display: inline-flex;
+    padding: 2px 12px;
+    margin-bottom: 8px;
+    font-size: 0.875rem;
+}
+
+.dark .scalePlanFeatureContainer {
+    background-color: #1F1F1C;
+    border: 1px solid #414141;
+}
+
+.dark .scalePlanFeatureBadge {
+    background-color: #1D64EC;
+    color: #FFFFFF;
+}
+
+/* ============================================
+   Fix Table of Contents Overlap
+   ============================================ */
+
+/* Reset negative margin on Table of Contents to prevent overlap with description */
+#table-of-contents {
+    margin-top: 0 !important;
+}
+
+/* Fix layout overlap in flex-row-reverse pages (like secure-rds) */
+@media (min-width: 1280px) {
+    .flex.flex-row-reverse>.relative.grow {
+        max-width: calc(100% - 20rem) !important;
+    }
+}
+
+/* ============================================
+   Hide System Table Description
+   ============================================ */
+
+/* Hide the system table description element */
+div.mt-2.text-lg.prose.prose-gray:has(p:first-child:only-child) {
+    display: none !important;
+}
+
+/* More specific targeting if the above hides too much */
+div.mt-2.text-lg.prose.prose-gray.dark\:prose-invert {
+    display: none !important;
+}
+
+/* ============================================
+   Hide Language Flag Icons in Localization Selector
+   ============================================ */
+
+/* Flag icons in localization menu items - visible */
+
+/* Flag icon in the localization trigger button - visible */
+
+/* Remove left padding since flags are hidden */
+[id^="localization-select-item-"] {
+    padding-left: 1rem !important;
+}
+
+/* ============================================
+   Localization Select Positioning
+   ============================================ */
+
+/* Show localization select in its default sidebar position */
+
+/* ============================================
+   Navigation Group Headers
+   ============================================ */
+
+/* Product docs header */
+.nav-products::before {
+    content: "Product docs";
+    display: block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.75rem 1rem 0.5rem;
+    margin-bottom: 0.25rem;
+    color: currentColor;
+    opacity: 0.7;
+}
+
+/* Integrations header */
+.nav-integrations::before {
+    content: "Integrations";
+    display: block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.75rem 1rem 0.5rem;
+    margin-bottom: 0.25rem;
+    color: currentColor;
+    opacity: 0.7;
+}
+
+/* Resources header */
+.nav-resources::before {
+    content: "Resources";
+    display: block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.75rem 1rem 0.5rem;
+    margin-bottom: 0.25rem;
+    color: currentColor;
+    opacity: 0.7;
+}
+
+/* ============================================
+   Compact Navigation Items in Grouped Columns
+   ============================================ */
+
+/* Make navigation items more compact in the grouped columns */
+.nav-user-intents a,
+.nav-products a,
+.nav-integrations a,
+.nav-resources a {
+    display: block !important;
+}
+
+.nav-user-intents .nav-dropdown-products-selector-item,
+.nav-products .nav-dropdown-products-selector-item,
+.nav-integrations .nav-dropdown-products-selector-item,
+.nav-resources .nav-dropdown-products-selector-item {
+    padding: 0.375rem 0.75rem !important;
+    min-height: auto !important;
+    height: auto !important;
+}
+
+/* Hide descriptions in grouped navigation to save space */
+.nav-user-intents .nav-dropdown-products-selector-item-description,
+.nav-products .nav-dropdown-products-selector-item-description,
+.nav-integrations .nav-dropdown-products-selector-item-description,
+.nav-resources .nav-dropdown-products-selector-item-description,
+.nav-user-intents .nav-dropdown-products-selector-item p:last-child,
+.nav-products .nav-dropdown-products-selector-item p:last-child,
+.nav-integrations .nav-dropdown-products-selector-item p:last-child,
+.nav-resources .nav-dropdown-products-selector-item p:last-child {
+    display: none !important;
+}
+
+/* Adjust title font size for compact display */
+.nav-user-intents .nav-dropdown-products-selector-item-title,
+.nav-products .nav-dropdown-products-selector-item-title,
+.nav-integrations .nav-dropdown-products-selector-item-title,
+.nav-resources .nav-dropdown-products-selector-item-title {
+    font-size: 0.875rem !important;
+}
+
+/* ============================================
+   Sidebar Title Beta Tag Display
+   ============================================ */
+
+/* Make sidebar title display as inline-flex so Beta tag appears to the right */
+h5#sidebar-title {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.375rem !important;
+}
+
+/* Beta pill styling - blue colors (light and dark mode) */
+.nav-tag-pill-text {
+    background-color: #1e3a8a !important;
+    color: #93c5fd !important;
+}
+
+/* Ensure same blue colors in dark mode */
+.dark .nav-tag-pill-text,
+:is(.dark) .nav-tag-pill-text {
+    background-color: #1e3a8a !important;
+    color: #93c5fd !important;
+}
+
+/* ============================================
+   Content Area Width & Padding
+   ============================================ */
+
+/* Widen the content area beyond default max-w-xl (576px) */
+#content-area {
+    max-width: 48rem !important;
+    /* 768px */
+}
+
+/* Custom explorers should use the full available width while the sidebar is
+   hidden at intermediate tablet sizes; otherwise the 768px prose cap leaves a
+   large unused area on the right. */
+@media (min-width: 768px) and (max-width: 1023px) {
+    html[data-page-mode="custom"] #content-area {
+        max-width: none !important;
+    }
+}
+
+/* Reduce outer container padding */
+#content-container {
+    border-radius: 15px;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+}
+
+@media (min-width: 1024px) {
+    #content-container {
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+    }
+}
+
+/* ============================================
+   Homepage: no sidebar
+   ============================================ */
+
+/* Hide the sidebar on the homepage.
+   data-current-path is set by Mintlify via a blocking <head> script, so this
+   fires before any browser paint — preventing the sidebar flash on load. */
+html[data-current-path="/"] #sidebar,
+html[data-current-path="/ar"] #sidebar,
+html[data-current-path="/es"] #sidebar,
+html[data-current-path="/fr"] #sidebar,
+html[data-current-path="/ja"] #sidebar,
+html[data-current-path="/ko"] #sidebar,
+html[data-current-path="/pt-BR"] #sidebar,
+html[data-current-path="/ru"] #sidebar,
+html[data-current-path="/zh"] #sidebar,
+html.ch-homepage #sidebar {
+    display: none !important;
+}
+
+/* Navbar: full width when sidebar is hidden */
+html[data-current-path="/"] #navbar-transition-maple,
+html[data-current-path="/ar"] #navbar-transition-maple,
+html[data-current-path="/es"] #navbar-transition-maple,
+html[data-current-path="/fr"] #navbar-transition-maple,
+html[data-current-path="/ja"] #navbar-transition-maple,
+html[data-current-path="/ko"] #navbar-transition-maple,
+html[data-current-path="/pt-BR"] #navbar-transition-maple,
+html[data-current-path="/ru"] #navbar-transition-maple,
+html[data-current-path="/zh"] #navbar-transition-maple,
+html.ch-homepage #navbar-transition-maple {
+    width: 100vw !important;
+    left: 0 !important;
+    margin-left: 0 !important;
+    /* Match the navbar's own right padding (3rem) so the logo sits as far
+       from the left edge as the right-side controls do from the right. */
+    padding-left: 3rem !important;
+    justify-content: flex-start !important;
+}
+
+/* Stretch content to use the full viewport on homepage */
+/* #content-area caps the prose column at 768px below the xl breakpoint and
+   leaves it left-aligned (xl:min-w-full lifts the cap only at >=1280px). The
+   homepage has no prose column — its cards span the full padded width — so
+   without this the content sits left with a growing gap on the right between
+   ~800px and 1280px. */
+html.ch-homepage #content-area {
+    max-width: none !important;
+}
+@media (min-width: 1024px) {
+    html.ch-homepage #content-container {
+        margin-left: 0 !important;
+        padding-left: max(2rem, calc((100vw - 1000px) / 2)) !important;
+        padding-right: max(2rem, calc((100vw - 1000px) / 2)) !important;
+    }
+    html.ch-homepage #ch-custom-footer {
+        padding-left: max(2rem, calc((100vw - 1000px) / 2)) !important;
+        padding-right: max(2rem, calc((100vw - 1000px) / 2)) !important;
+    }
+}
+
+/* ============================================
+   Card corner logos
+   ============================================ */
+
+/* White SVG logos (ch, integration) need inversion in light mode
+   so they're visible on the white badge background */
+html:not(.dark) .ch-logo-invert {
+    filter: invert(1);
+}
+
+/* Landing page (mode: "custom"): match content-page side gutters
+   so the homepage's left gap from the sidebar equals the right gap from the viewport. */
+@media (min-width: 1024px) {
+    html[data-page-mode="custom"] .mint-max-w-6xl.mint-mx-auto {
+        max-width: 1104px !important;
+    }
+
+    /* Footer: left edge aligns with prose/card left edge on every page (both share
+       the same formula: 19rem + 32px + auto-margin). The right edge differs:
+       on landing it matches the card right edge; on doc pages it spans to the
+       content-container's right edge so it covers the TOC column too. */
+    #ch-custom-footer {
+        padding-left: max(calc(19rem + 2rem), calc((100vw - 19rem - 1104px) / 2 + 19rem)) !important;
+    }
+    /* :not(.ch-homepage): the homepage hides the sidebar and centers its
+       content, so it gets symmetric padding from the html.ch-homepage rule
+       above — don't let this sidebar-offset rule override its right edge. */
+    html[data-page-mode="custom"]:not(.ch-homepage) #ch-custom-footer {
+        padding-right: max(2rem, calc((100vw - 19rem - 1104px) / 2)) !important;
+    }
+}
+
+/* On wide viewports, doc pages spread their content out: content-area centers
+   via mx-auto while content-side-layout (TOC / API request+response panels) sticks
+   to the right edge, leaving a big gap between them. Cap #content-container at
+   the exact width of content (768) + gap (32) + side-layout (448) + 32px x 2
+   padding = 1312px, and center it. The footer mirrors the same horizontal range
+   so its left and right edges line up with the content block. */
+@media (min-width: 1616px) {
+    html:not([data-page-mode="custom"]) #content-container {
+        max-width: 1312px !important;
+        margin-left: max(19rem, calc((100vw - 1312px) / 2)) !important;
+        margin-right: auto !important;
+    }
+
+    html:not([data-page-mode="custom"]) #ch-custom-footer {
+        padding-left: max(calc(19rem + 2rem), calc((100vw - 1312px) / 2 + 2rem)) !important;
+        padding-right: min(calc(100vw - 19rem - 1312px + 2rem), calc((100vw - 1312px) / 2 + 2rem)) !important;
+    }
+}
+
+/* Reduce inner flex gap and left padding */
+#content-container>.flex.flex-row-reverse {
+    gap: 2rem !important;
+    padding-left: 1rem !important;
+}
+
+.dark #content-container {
+    border-top: 1px solid !important;
+    border-image: linear-gradient(to right, transparent, rgba(250, 255, 105, 0.5) 50%, transparent) 1 0 0 0 !important;
+}
+
+@media (max-width: 640px) {
+    .dark #content-container {
+        margin-top: 15px !important;
+    }
+}
+
+/* ============================================
+   Mark Element Styling
+   ============================================ */
+
+/* Dark mode - yellow text without background */
+.dark mark,
+:is(.dark) mark,
+html.dark mark,
+.dark mark b,
+:is(.dark) mark b,
+html.dark mark b {
+    background-color: transparent !important;
+    color: #FAFF69 !important;
+}
+
+/* Light mode - yellow text without background */
+html:not(.dark) mark,
+html:not(.dark) mark b {
+    background-color: transparent !important;
+    color: #d4a005 !important;
+}
+
+/* ============================================
+   Navigation Dropdown Item Icon Hover
+   ============================================ */
+
+/* Light mode - remove gray-800 text color from nav tabs (let it inherit naturally) */
+html:not(.dark) .nav-tabs button[class*="text-gray-800"]>div,
+html:not(.dark) button.nav-tabs-item[class*="text-gray-800"]>div {
+    color: inherit;
+}
+
+/* Remove focus outline on nav tabs */
+.nav-tabs-item:focus,
+.nav-tabs button:focus,
+button.nav-tabs-item:focus {
+    outline: none !important;
+    outline-color: transparent !important;
+}
+
+/* ============================================
+   Use Case Images - Light Grey Background in Light Mode
+   ============================================ */
+
+/* Target use case images specifically by their filenames */
+html:not(.dark) img[src*="rt-analytics"],
+html:not(.dark) img[src*="observability"],
+html:not(.dark) img[src*="data-warehousing"],
+html:not(.dark) img[src*="machine-learning"] {
+    background-color: #d1d5db !important;
+}
+
+/* ============================================
+   Callout Styling
+   ============================================ */
+
+/* Remove callout borders */
+[data-callout-type] {
+    border: none !important;
+}
+
+/* Center align callout icon vertically */
+[data-component-part="callout-icon"] {
+    display: flex !important;
+    align-items: center !important;
+    align-self: center !important;
+}
+
+/* Light Mode Callouts */
+
+/* Note (Neutral) */
+html:not(.dark) [data-callout-type="note"] {
+    background-color: rgb(41.176% 43.137% 47.451% / 0.1);
+}
+
+html:not(.dark) [data-callout-type="note"] [data-component-part="callout-content"] {
+    color: #53575f !important;
+}
+
+html:not(.dark) [data-callout-type="note"] [data-component-part="callout-icon"] {
+    background-color: transparent;
+}
+
+html:not(.dark) [data-callout-type="note"] [data-component-part="callout-icon"] svg {
+    color: lch(36.838 5.2307 266.96 / 0.75);
+}
+
+/* Info - Blue */
+html:not(.dark) [data-callout-type="info"] {
+    background-color: rgb(26.275% 49.412% 93.725% / 0.1);
+}
+
+html:not(.dark) [data-callout-type="info"] [data-component-part="callout-content"] {
+    color: rgb(83, 87, 95) !important;
+}
+
+html:not(.dark) [data-callout-type="info"] [data-component-part="callout-icon"] {
+    background-color: transparent;
+}
+
+html:not(.dark) [data-callout-type="info"] [data-component-part="callout-icon"] svg {
+    color: lch(53.426 64.605 278.98 / 0.75);
+}
+
+/* Tip/Success/Check - Green */
+html:not(.dark) [data-callout-type="tip"],
+html:not(.dark) [data-callout-type="success"],
+html:not(.dark) [data-callout-type="check"] {
+    background-color: rgb(20% 100% 26.667% / 0.1);
+}
+
+html:not(.dark) [data-callout-type="tip"] [data-component-part="callout-content"],
+html:not(.dark) [data-callout-type="success"] [data-component-part="callout-content"],
+html:not(.dark) [data-callout-type="check"] [data-component-part="callout-content"] {
+    color: #008a0b !important;
+}
+
+html:not(.dark) [data-callout-type="tip"] [data-component-part="callout-icon"],
+html:not(.dark) [data-callout-type="success"] [data-component-part="callout-icon"],
+html:not(.dark) [data-callout-type="check"] [data-component-part="callout-icon"] {
+    background-color: transparent;
+}
+
+html:not(.dark) [data-callout-type="tip"] [data-component-part="callout-icon"] svg,
+html:not(.dark) [data-callout-type="success"] [data-component-part="callout-icon"] svg,
+html:not(.dark) [data-callout-type="check"] [data-component-part="callout-icon"] svg {
+    color: lch(49.786 70.246 135.31 / 0.75);
+}
+
+/* Warning - Orange */
+html:not(.dark) [data-callout-type="warning"] {
+    background-color: rgb(100% 46.667% 16.078% / 0.1);
+}
+
+html:not(.dark) [data-callout-type="warning"] [data-component-part="callout-content"] {
+    color: #a33c00 !important;
+}
+
+html:not(.dark) [data-callout-type="warning"] [data-component-part="callout-icon"] {
+    background-color: transparent;
+}
+
+html:not(.dark) [data-callout-type="warning"] [data-component-part="callout-icon"] svg {
+    color: lch(40.227 66.602 51.059 / 0.75);
+}
+
+/* Danger/Error - Red */
+html:not(.dark) [data-callout-type="danger"],
+html:not(.dark) [data-callout-type="error"] {
+    background-color: rgb(100% 13.725% 13.725% / 0.1);
+}
+
+html:not(.dark) [data-callout-type="danger"] [data-component-part="callout-content"],
+html:not(.dark) [data-callout-type="error"] [data-component-part="callout-content"] {
+    color: #c10000 !important;
+}
+
+html:not(.dark) [data-callout-type="danger"] [data-component-part="callout-icon"],
+html:not(.dark) [data-callout-type="error"] [data-component-part="callout-icon"] {
+    background-color: transparent;
+}
+
+html:not(.dark) [data-callout-type="danger"] [data-component-part="callout-icon"] svg,
+html:not(.dark) [data-callout-type="error"] [data-component-part="callout-icon"] svg {
+    color: lch(41.001 86.638 40.858 / 0.75);
+}
+
+/* The Ask-AI sticky-bottom overlay's parent is only 26px tall with
+   `overflow-hidden`, so the inner pill's 1px border collapses into a thin
+   horizontal line that visually appears as a stray border below the
+   Previous/Next pagination pill. Suppress the border on the floating input
+   so the artifact disappears; the focus-within border still works. */
+.chat-assistant-floating-input > div > div {
+    border-color: transparent !important;
+}
+
+/* Inline code inside callouts (light mode) - tint to match callout color */
+html:not(.dark) [data-callout-type] [data-component-part="callout-content"] code:not(pre code) {
+    background-color: rgba(255, 255, 255, 0.6) !important;
+    color: inherit !important;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* Dark Mode Callouts */
+
+/* Note (Neutral) */
+.dark [data-callout-type="note"],
+:is(.dark) [data-callout-type="note"] {
+    background-color: rgb(62.745% 62.745% 62.745% / 0.2);
+}
+
+.dark [data-callout-type="note"] [data-component-part="callout-content"],
+:is(.dark) [data-callout-type="note"] [data-component-part="callout-content"] {
+    color: #c0c0c0 !important;
+}
+
+.dark [data-callout-type="note"] [data-component-part="callout-icon"],
+:is(.dark) [data-callout-type="note"] [data-component-part="callout-icon"] {
+    background-color: transparent;
+}
+
+.dark [data-callout-type="note"] [data-component-part="callout-icon"] svg,
+:is(.dark) [data-callout-type="note"] [data-component-part="callout-icon"] svg {
+    color: lch(77.704 0 none / 0.75);
+}
+
+/* Info - Blue */
+.dark [data-callout-type="info"],
+:is(.dark) [data-callout-type="info"] {
+    background-color: rgb(26.275% 49.412% 93.725% / 0.2);
+}
+
+.dark [data-callout-type="info"] [data-component-part="callout-content"],
+:is(.dark) [data-callout-type="info"] [data-component-part="callout-content"] {
+    color: #d0dffb !important;
+}
+
+.dark [data-callout-type="info"] [data-component-part="callout-icon"],
+:is(.dark) [data-callout-type="info"] [data-component-part="callout-icon"] {
+    background-color: transparent;
+}
+
+.dark [data-callout-type="info"] [data-component-part="callout-icon"] svg,
+:is(.dark) [data-callout-type="info"] [data-component-part="callout-icon"] svg {
+    color: lch(88.343 15.514 266.4 / 0.75);
+}
+
+/* Tip/Success/Check - Green */
+.dark [data-callout-type="tip"],
+.dark [data-callout-type="success"],
+.dark [data-callout-type="check"],
+:is(.dark) [data-callout-type="tip"],
+:is(.dark) [data-callout-type="success"],
+:is(.dark) [data-callout-type="check"] {
+    background-color: rgb(20% 100% 26.667% / 0.2);
+}
+
+.dark [data-callout-type="tip"] [data-component-part="callout-content"],
+.dark [data-callout-type="success"] [data-component-part="callout-content"],
+.dark [data-callout-type="check"] [data-component-part="callout-content"],
+:is(.dark) [data-callout-type="tip"] [data-component-part="callout-content"],
+:is(.dark) [data-callout-type="success"] [data-component-part="callout-content"],
+:is(.dark) [data-callout-type="check"] [data-component-part="callout-content"] {
+    color: #ccffd0 !important;
+}
+
+.dark [data-callout-type="tip"] [data-component-part="callout-icon"],
+.dark [data-callout-type="success"] [data-component-part="callout-icon"],
+.dark [data-callout-type="check"] [data-component-part="callout-icon"],
+:is(.dark) [data-callout-type="tip"] [data-component-part="callout-icon"],
+:is(.dark) [data-callout-type="success"] [data-component-part="callout-icon"],
+:is(.dark) [data-callout-type="check"] [data-component-part="callout-icon"] {
+    background-color: transparent;
+}
+
+.dark [data-callout-type="tip"] [data-component-part="callout-icon"] svg,
+.dark [data-callout-type="success"] [data-component-part="callout-icon"] svg,
+.dark [data-callout-type="check"] [data-component-part="callout-icon"] svg,
+:is(.dark) [data-callout-type="tip"] [data-component-part="callout-icon"] svg,
+:is(.dark) [data-callout-type="success"] [data-component-part="callout-icon"] svg,
+:is(.dark) [data-callout-type="check"] [data-component-part="callout-icon"] svg {
+    color: lch(95.558 28.893 143.93 / 0.75);
+}
+
+/* Warning - Orange */
+.dark [data-callout-type="warning"],
+:is(.dark) [data-callout-type="warning"] {
+    background-color: rgb(100% 46.667% 16.078% / 0.2);
+}
+
+.dark [data-callout-type="warning"] [data-component-part="callout-content"],
+:is(.dark) [data-callout-type="warning"] [data-component-part="callout-content"] {
+    color: #ffb88f !important;
+}
+
+.dark [data-callout-type="warning"] [data-component-part="callout-icon"],
+:is(.dark) [data-callout-type="warning"] [data-component-part="callout-icon"] {
+    background-color: transparent;
+}
+
+.dark [data-callout-type="warning"] [data-component-part="callout-icon"] svg,
+:is(.dark) [data-callout-type="warning"] [data-component-part="callout-icon"] svg {
+    color: lch(80.892 39.042 53.918 / 0.75);
+}
+
+/* Danger/Error - Red */
+.dark [data-callout-type="danger"],
+.dark [data-callout-type="error"],
+:is(.dark) [data-callout-type="danger"],
+:is(.dark) [data-callout-type="error"] {
+    background-color: rgb(100% 13.725% 13.725% / 0.2);
+}
+
+.dark [data-callout-type="danger"] [data-component-part="callout-content"],
+.dark [data-callout-type="error"] [data-component-part="callout-content"],
+:is(.dark) [data-callout-type="danger"] [data-component-part="callout-content"],
+:is(.dark) [data-callout-type="error"] [data-component-part="callout-content"] {
+    color: #ffbaba !important;
+}
+
+.dark [data-callout-type="danger"] [data-component-part="callout-icon"],
+.dark [data-callout-type="error"] [data-component-part="callout-icon"],
+:is(.dark) [data-callout-type="danger"] [data-component-part="callout-icon"],
+:is(.dark) [data-callout-type="error"] [data-component-part="callout-icon"] {
+    background-color: transparent;
+}
+
+.dark [data-callout-type="danger"] [data-component-part="callout-icon"] svg,
+.dark [data-callout-type="error"] [data-component-part="callout-icon"] svg,
+:is(.dark) [data-callout-type="danger"] [data-component-part="callout-icon"] svg,
+:is(.dark) [data-callout-type="error"] [data-component-part="callout-icon"] svg {
+    color: lch(82.069 27.695 22.026 / 0.75);
+}
+
+/* Keep icons dark on hover in light mode */
+html:not(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
+html:not(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right) {
+    background-color: #1a1a1a !important;
+}
+
+/* Make icons yellow on hover in dark mode */
+.dark .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
+.dark a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
+:is(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
+:is(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right) {
+    background-color: #FAFF69 !important;
+}
+
+/* Nudge nav dropdown popper down to clear the navbar */
+div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) {
+    top: 10px !important;
+}
+
+/* Match clickhouse.com/clickhouse navbar dropdown panel radius (8px instead
+   of Mintlify's default 16px). Targets the panel that wraps `.nav-dropdown-item`. */
+div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div {
+    border-radius: 8px !important;
+}
+
+/* External link arrow on nav dropdown items: black in light, white in dark */
+.nav-dropdown-item .lucide-arrow-up-right {
+    color: #000 !important;
+    stroke: #000 !important;
+    stroke-width: 3 !important;
+}
+.dark .nav-dropdown-item .lucide-arrow-up-right {
+    color: #FAFF69 !important;
+    stroke: #FAFF69 !important;
+}
+
+/* Hide language-picker flag icons. Some country flags (e.g. Russia) are
+   politically sensitive given current geopolitics — language choice is not
+   meant to imply national affiliation. We hide the wrapper div (not just
+   the img) so the 16x16 placeholder doesn't leave a gap. */
+div:has(> img[src*="cloudfront.net/flags/"]) {
+    display: none !important;
+}
+
+/* Pseudo-section headers in the Products dropdown.
+   Mintlify has no built-in section divider, so we add placeholder menu items
+   with the `section-header.svg` icon and style them as non-clickable labels. */
+/* Match the section labels in clickhouse.com/clickhouse navbar dropdowns:
+   text-sm (14px) bold, sentence case, no letter-spacing tweaks, p-2 padding. */
+.nav-dropdown-item:has(img[src$="section-header.svg"]) {
+    pointer-events: none;
+    cursor: default;
+    padding: 8px !important;
+    font-size: 14px !important;
+    line-height: 1.4 !important;
+    font-weight: 700 !important;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+    color: #111827 !important;
+    background: transparent !important;
+}
+.dark .nav-dropdown-item:has(img[src$="section-header.svg"]),
+:is(.dark) .nav-dropdown-item:has(img[src$="section-header.svg"]) {
+    color: #ffffff !important;
+    background: transparent !important;
+}
+/* Hide the placeholder icon and its hover background */
+.nav-dropdown-item:has(img[src$="section-header.svg"]) img,
+.nav-dropdown-item:has(img[src$="section-header.svg"]) svg {
+    display: none !important;
+}
+.nav-dropdown-item:has(img[src$="section-header.svg"]):hover {
+    background: transparent !important;
+}
+
+/* Two-column layout for the Solutions dropdown. Browsers don't allow
+   `:has()` inside `:has()`, so we gate on "menu contains a section-header
+   img" — only Solutions has those, so the targeting is unique. Items before
+   the second header land in column 1; the second header and everything
+   after it land in column 2. Mirrors `clickhouse.com/clickhouse`. */
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 8px;
+    align-content: start;
+    grid-auto-flow: dense;
+    min-width: 440px;
+    /* Vertical separator between columns. The gradient + 50% positioning
+       paints a single 1px line down the middle of the gap. */
+    background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.08));
+    background-size: 1px calc(100% - 24px);
+    background-position: 50% 12px;
+    background-repeat: no-repeat;
+}
+.dark [role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]),
+:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) {
+    background-image: linear-gradient(to bottom, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.1));
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) > .nav-dropdown-item {
+    grid-column: 2;
+}
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) > .nav-dropdown-item:has(~ .nav-dropdown-item img[src$="section-header.svg"]) {
+    grid-column: 1;
+}
+/* Pin the second header (the one with no following header sibling) to row 1
+   so column 2 starts at the top of the panel instead of below column 1. */
+[role="menu"]:has(.nav-dropdown-item img[src$="section-header.svg"]) > .nav-dropdown-item:has(img[src$="section-header.svg"]):not(:has(~ .nav-dropdown-item img[src$="section-header.svg"])) {
+    grid-row: 1;
+}
+
+/* Horizontal separator in the Integrations top-nav dropdown, between the
+   "Ecosystem" entry and the section entries (ClickPipes / Language clients /
+   Connectors) below it. Mintlify has no built-in divider, so we add a bottom
+   border to the first item. The menu is identified uniquely by the connectors
+   icon it contains (only the Integrations dropdown has it). */
+[role="menu"]:has(.nav-dropdown-item img[src$="icon-connectors.svg"]) > .nav-dropdown-item:first-child {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+}
+.dark [role="menu"]:has(.nav-dropdown-item img[src$="icon-connectors.svg"]) > .nav-dropdown-item:first-child,
+:is(.dark) [role="menu"]:has(.nav-dropdown-item img[src$="icon-connectors.svg"]) > .nav-dropdown-item:first-child {
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================
+   Update Component (Changelog) Layout Fix
+   ============================================ */
+
+/* Force two-column layout at lg breakpoint since lg:flex-row is not applied */
+@media (min-width: 1024px) {
+    .update-container {
+        flex-direction: row !important;
+    }
+}
+
+/* ============================================
+   Banner Styling
+   ============================================ */
+
+/* Mintlify paints the banner text via `[&_*]:text-white/95!`, an `!important`
+   utility that lives in Tailwind's `@layer utilities`. For `!important`
+   declarations the cascade reverses layer order and treats un-layered styles
+   as the lowest-priority (implicit final) layer, so an un-layered override —
+   however specific — always loses to that utility and the text stays white.
+   Declaring these rules inside `@layer components` (ordered before `utilities`)
+   makes our `!important` win, so the banner text takes the colors below. */
+@layer components {
+    /* Light mode: black background, white text, yellow link */
+    html:not(.dark) #banner {
+        background-color: #1a1a1a !important;
+        color: #ffffff !important;
+    }
+
+    html:not(.dark) #banner *,
+    html:not(.dark) #banner p {
+        color: #ffffff !important;
+    }
+
+    html:not(.dark) #banner a {
+        color: #FAFF69 !important;
+        font-weight: 700 !important;
+    }
+
+    /* Dark mode: yellow background, black text, black link */
+    html.dark #banner,
+    :is(.dark) #banner {
+        background-color: #FAFF69 !important;
+        color: #1a1a1a !important;
+    }
+
+    html.dark #banner *,
+    :is(.dark) #banner * {
+        color: #1a1a1a !important;
+    }
+
+    html.dark #banner a,
+    :is(.dark) #banner a {
+        color: #1a1a1a !important;
+        font-weight: 700 !important;
+    }
+}
+
+/* ============================================
+   Goal Card Link Hover
+   ============================================ */
+
+/* Light mode: links and arrows inside cards are blue */
+html:not(.dark) .goal-card-link {
+    color: #2563eb !important;
+}
+
+/* Light mode: links inside standard Mintlify cards are blue */
+html:not(.dark) .card a {
+    color: #2563eb !important;
+}
+
+.goal-card-link:hover span {
+    text-decoration: underline;
+}
+
+/* External goal-card links: the arrow rotates to point up-right on hover,
+   hinting that the link leaves the docs site */
+.goal-card-link .ch-external-arrow {
+    transition: transform 0.15s ease;
+}
+
+.goal-card-link:hover .ch-external-arrow {
+    transform: rotate(-45deg);
+}
+
+/* ============================================
+   Sidebar Section Spacing
+   ============================================ */
+
+/* 24px between sidebar groups */
+#navigation-items>div.mt-6 {
+    margin-top: 24px !important;
+}
+
+/* ============================================
+   Single-Item Sidebar Sections (Maple theme)
+   ============================================ */
+
+/* In Maple theme, sections with only flat pages (no sub-groups) render as
+   regular sidebar items instead of proper section headers. Fix their
+   alignment and color to match the sidebar-group-header style. */
+
+/* Remove the left-margin indent and border so the icon aligns with section headers */
+#navigation-items > ul.sidebar-group > li:only-child > button,
+#navigation-items > ul.sidebar-group > li:only-child > a {
+    margin-left: 0 !important;
+    border-left-color: transparent !important;
+    color: #171717 !important;
+}
+
+/* Darken the mask-icon to match sidebar-group-header icons (bg-current) */
+#navigation-items > ul.sidebar-group > li:only-child > button > svg.h-4,
+#navigation-items > ul.sidebar-group > li:only-child > a > div:first-child > svg {
+    background-color: currentColor !important;
+}
+
+/* Dark mode overrides */
+.dark #navigation-items > ul.sidebar-group > li:only-child > button,
+.dark #navigation-items > ul.sidebar-group > li:only-child > a,
+:is(.dark) #navigation-items > ul.sidebar-group > li:only-child > button,
+:is(.dark) #navigation-items > ul.sidebar-group > li:only-child > a {
+    color: #e5e5e5 !important;
+}
+
+/* Preserve active-page styling (border + text color) when Home is selected */
+#navigation-items > ul.sidebar-group > li:only-child > a[class*="text-primary"] {
+    border-left-color: currentColor !important;
+}
+
+/* ============================================
+   Sidebar Chevron Alignment
+   ============================================ */
+
+/* Push expandable-group chevrons to the right edge so they all align */
+#sidebar .sidebar-group button > svg.transition-transform {
+    margin-left: auto !important;
+}
+
+/* 8px text-to-text between menu items (accounting for 6px py-1.5 padding on each item) */
+#navigation-items ul.sidebar-group.space-y-px> :not([hidden])~ :not([hidden]) {
+    margin-top: -4px !important;
+}
+/* ============================================
+   Callout: Click UI-style inline icon
+   ============================================
+   Matches the Click UI Alert component — tinted background, inline icon
+   colored with the state accent, no left bar. */
+
+[data-callout-type] {
+    padding: 0.75rem !important;
+    border-radius: 0.25rem !important;
+    overflow: hidden !important;
+    border: none !important;
+}
+
+/* Icon: inline in the flex row, not an absolute bar */
+[data-callout-type] [data-component-part="callout-icon"] {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    width: 1.25rem !important;
+    min-width: 1.25rem !important;
+    height: 1.25rem !important;
+    margin: 0 !important;
+    align-self: center !important;
+    background-color: transparent !important;
+}
+
+[data-callout-type] [data-component-part="callout-icon"] svg {
+    width: 1.25rem !important;
+    height: 1.25rem !important;
+    /* color is set per-state in the light/dark blocks above */
+}
+
+[data-callout-type] [data-component-part="callout-content"] {
+    padding-left: 0 !important;
+}
+
+/* ============================================
+   Callout links: inherit accent color, underline
+   ============================================ */
+
+html:not(.dark) .prose [data-callout-type] [data-component-part="callout-content"] a,
+html.dark .prose [data-callout-type] [data-component-part="callout-content"] a {
+    color: inherit !important;
+    text-decoration: underline !important;
+    text-decoration-thickness: 2px !important;
+    text-underline-offset: 2px !important;
+}
+
+html:not(.dark) .prose [data-callout-type] [data-component-part="callout-content"] a:hover {
+    filter: brightness(0.6) !important;
+    text-decoration-thickness: 2px !important;
+    text-underline-offset: 2px !important;
+}
+
+html.dark .prose [data-callout-type] [data-component-part="callout-content"] a:hover {
+    filter: brightness(1.4) !important;
+    text-decoration-thickness: 2px !important;
+    text-underline-offset: 2px !important;
+}
+
+/* ============================================
+   Code-snippet "Report incorrect code" popover
+   ============================================ */
+
+/* The earlier global `a.rounded-xl, button.rounded-xl { border-radius: 4px }`
+   is intended for sidebar nav but also flattens the Cancel/Submit buttons
+   inside the code-feedback popover, leaving 4px corners inside a 16px card.
+   Restore Tailwind's `rounded-xl` (12px) here. */
+.code-snippet-feedback-popover-content button.rounded-xl,
+.code-snippet-feedback-form button.rounded-xl {
+    border-radius: 12px !important;
+}
+
+/* Submit button: the markup wraps a `<span class="text-white">` inside a
+   `<button class="bg-primary dark:bg-primary-dark">`. In dark mode the
+   background resolves to the brand yellow (#fdff75) and the white label
+   is unreadable. Force the label dark on the yellow pill. */
+.dark .code-snippet-feedback-form-submit-button,
+.dark .code-snippet-feedback-form-submit-button span,
+:is(.dark) .code-snippet-feedback-form-submit-button,
+:is(.dark) .code-snippet-feedback-form-submit-button span {
+    color: #1c1c1c !important;
+}
+
+/* Match the popover background to the code-block background (#282828) so
+   the widget reads as a continuation of the code block it's reporting on,
+   instead of as a near-black card floating in space. Also give it a real
+   drop shadow — `shadow-md` (rgba(0,0,0,0.1)) is invisible against the
+   #1d1d1d page background in dark mode. Border moves to #3c3c3c to match
+   the accordion border treatment used elsewhere on #1d1d1d surfaces. */
+.dark .code-snippet-feedback-popover-content,
+:is(.dark) .code-snippet-feedback-popover-content {
+    background-color: #282828 !important;
+    border-color: #3c3c3c !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6),
+                0 6px 12px -6px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* With the popover now at #282828, the textarea and Cancel button (both
+   shipped at `dark:bg-background-dark` = #1d1d1d) drop to the page
+   background color, reading as recessed surfaces against the lighter
+   popover. Lift their borders to #3c3c3c so they remain visible. */
+.dark .code-snippet-feedback-popover-content textarea,
+.dark .code-snippet-feedback-popover-content button:not(.code-snippet-feedback-form-submit-button),
+:is(.dark) .code-snippet-feedback-popover-content textarea,
+:is(.dark) .code-snippet-feedback-popover-content button:not(.code-snippet-feedback-form-submit-button) {
+    background-color: #1d1d1d !important;
+    border-color: #3c3c3c !important;
+}
+
+/* The textarea ships with `focus:outline-0` + `dark:focus:border-gray-700`
+   (#374151). With the baseline border now at #3c3c3c, that focus color
+   is *darker* than the resting border, so focusing produces no visible
+   change. Use the brand yellow (same as the Submit button next to it)
+   for the focus border, plus a faint matching ring. */
+.dark .code-snippet-feedback-popover-content textarea:focus,
+.dark .code-snippet-feedback-popover-content textarea:focus-visible,
+:is(.dark) .code-snippet-feedback-popover-content textarea:focus,
+:is(.dark) .code-snippet-feedback-popover-content textarea:focus-visible {
+    border-color: #fdff75 !important;
+    box-shadow: 0 0 0 2px rgba(253, 255, 117, 0.25) !important;
+}
+
+/* Language picker: prepend a translate icon (images/icons/icon-language-picker.svg)
+   to the navbar locale dropdown trigger. The trigger is `flex items-center
+   gap-2`, so a ::before pseudo-element slots in left of the label with
+   correct spacing for free. The icon is applied as an alpha mask over a
+   currentColor fill so it tracks the button's light/dark text color. */
+button#localization-select-trigger::before {
+    content: "";
+    width: 1.1em;
+    height: 1.1em;
+    flex-shrink: 0;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2Ij48cmVjdCB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiIgZmlsbD0ibm9uZSIvPjxwb2x5bGluZSBwb2ludHM9IjI0MCAyMTYgMTg0IDEwNCAxMjggMjE2IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjE2Ii8+PGxpbmUgeDE9IjE0NCIgeTE9IjE4NCIgeDI9IjIyNCIgeTI9IjE4NCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIxNiIvPjxsaW5lIHgxPSI5NiIgeTE9IjMyIiB4Mj0iOTYiIHkyPSI1NiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIxNiIvPjxsaW5lIHgxPSIzMiIgeTE9IjU2IiB4Mj0iMTYwIiB5Mj0iNTYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMTYiLz48cGF0aCBkPSJNMTI4LDU2YTk2LDk2LDAsMCwxLTk2LDk2IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjE2Ii8+PHBhdGggZD0iTTY5LjQ3LDg4QTk2LDk2LDAsMCwwLDE2MCwxNTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMTYiLz48L3N2Zz4=") no-repeat center / contain;
+    mask: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2Ij48cmVjdCB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiIgZmlsbD0ibm9uZSIvPjxwb2x5bGluZSBwb2ludHM9IjI0MCAyMTYgMTg0IDEwNCAxMjggMjE2IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjE2Ii8+PGxpbmUgeDE9IjE0NCIgeTE9IjE4NCIgeDI9IjIyNCIgeTI9IjE4NCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIxNiIvPjxsaW5lIHgxPSI5NiIgeTE9IjMyIiB4Mj0iOTYiIHkyPSI1NiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIxNiIvPjxsaW5lIHgxPSIzMiIgeTE9IjU2IiB4Mj0iMTYwIiB5Mj0iNTYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMTYiLz48cGF0aCBkPSJNMTI4LDU2YTk2LDk2LDAsMCwxLTk2LDk2IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjE2Ii8+PHBhdGggZD0iTTY5LjQ3LDg4QTk2LDk2LDAsMCwwLDE2MCwxNTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMTYiLz48L3N2Zz4=") no-repeat center / contain;
+}
+
+/* ============================================
+   Hide ClickHouse Private from navigation
+   (desktop dropdown + mobile nav only)
+   ============================================ */
+
+/* Desktop Solutions dropdown item — $= (ends-with) works regardless of /docs basePath */
+a.nav-dropdown-item[href$="/products/clickhouse-private"],
+a[role="menuitem"][href$="/products/clickhouse-private"] {
+    display: none !important;
+}
+
+/* Mobile nav item */
+a.mobile-nav-tabs-item[href$="/products/clickhouse-private"],
+a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
+    display: none !important;
+}
+
+/* ============================================
+   Sidebar maturity badges before the entry text
+   ============================================ */
+
+/* API reference sidebar entries carry maturity pills — `tag` frontmatter
+   (Beta / Private preview, rendered as .nav-tag-pill) and `deprecated`
+   frontmatter (a plain pill div). Both are div wrappers that follow the
+   title <span> inside the entry's flex-wrap container; the title is the
+   only non-div child there, so ordering div children first moves every
+   pill in front of the text without touching the METHOD pill (which
+   lives outside this container, as a direct child of the <a>). */
+#sidebar a .flex-wrap > div {
+    order: -1;
+}
+
+/* Cross out the sidebar entry text of deprecated endpoints (matching the
+   Swagger convention). The deprecated pill rendered from `deprecated: true`
+   frontmatter carries no semantic class or data attribute — the only stable
+   hook is Mintlify's hard-coded pill background utility (light `bg-[#FDEAD8]`,
+   always present in the class list even in dark mode). The title is the
+   .break-words span; the METHOD pill spans carry no .break-words. */
+#sidebar a:has(div[class*="bg-[#FDEAD8]"]) span.break-words {
+    text-decoration: line-through;
+}
+
+/* ============================================
+   Endpoint maturity pill next to the page title
+   ============================================ */
+
+/* Generated Cloud API reference pages carry their maturity badge as body
+   content (`[data-endpoint-badge]`, written by
+   `ci/jobs/scripts/docs/generate_cloud_api_reference.py`). Mintlify shows
+   the `deprecated` pill next to the page title but has nothing equivalent
+   for `tag` badges, so a pseudo-element paints the pill in that slot from
+   pure CSS — present at first paint, no hydration shift (a custom-JS clone
+   was tried and popped in visibly). The in-body badge is hidden here; it
+   stays in the MDX for contexts without this stylesheet (markdown exports). */
+#content-area:has(.mdx-content [data-endpoint-badge]) #page-title::after {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 0.75rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
+    color: #2563EB;
+    background-color: rgba(37, 99, 235, 0.1);
+}
+.dark #content-area:has(.mdx-content [data-endpoint-badge]) #page-title::after,
+:is(.dark) #content-area:has(.mdx-content [data-endpoint-badge]) #page-title::after {
+    color: #60A5FA;
+    background-color: rgba(96, 165, 250, 0.14);
+}
+#content-area:has(.mdx-content [data-endpoint-badge="Beta"]) #page-title::after {
+    content: "Beta";
+}
+#content-area:has(.mdx-content [data-endpoint-badge="Private preview"]) #page-title::after {
+    content: "Private preview";
+    color: #9333EA;
+    background-color: rgba(147, 51, 234, 0.1);
+}
+.dark #content-area:has(.mdx-content [data-endpoint-badge="Private preview"]) #page-title::after,
+:is(.dark) #content-area:has(.mdx-content [data-endpoint-badge="Private preview"]) #page-title::after {
+    color: #C084FC;
+    background-color: rgba(192, 132, 252, 0.14);
+}
+.mdx-content [data-endpoint-badge] {
+    display: none;
+}

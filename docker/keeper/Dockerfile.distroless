@@ -3,8 +3,8 @@
 # The entrypoint is the compiled `clickhouse docker-init --keeper` subcommand.
 #
 # Build targets:
-#   production  — gcr.io/distroless/cc-debian13:nonroot  (default)
-#   debug       — gcr.io/distroless/cc-debian13:debug-nonroot  (includes busybox shell)
+#   production  — gcr.io/distroless/base-nossl-debian13:nonroot  (default)
+#   debug       — gcr.io/distroless/base-nossl-debian13:debug-nonroot  (includes busybox shell)
 #
 # Usage:
 #   docker build -f Dockerfile.distroless --target production -t clickhouse/clickhouse-keeper:distroless .
@@ -31,7 +31,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="26.5.2.39"
+ARG VERSION="26.6.1.1193"
 ARG PACKAGES="clickhouse-common-static clickhouse-keeper"
 
 ARG deb_location_url=""
@@ -39,12 +39,28 @@ ARG DIRECT_DOWNLOAD_URLS=""
 ARG single_binary_location_url=""
 ARG TARGETARCH
 
+# Number of `wget` retries and delay between them, for resilience against
+# transient HTTP errors (e.g. `clickhouse-builds.s3.amazonaws.com` returning
+# `500 Internal Server Error` / `503 Service Unavailable` during builds).
+ARG WGET_RETRIES=5
+ARG WGET_RETRY_DELAY=1
+
 # Install from direct URLs (deb packages provided by CI).
-RUN if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
+RUN wget_with_retry() { \
+        local attempt=1; \
+        while [ "$attempt" -le "${WGET_RETRIES}" ]; do \
+            if wget --progress=bar:force:noscroll "$@"; then return 0; fi; \
+            echo "Attempt $attempt/${WGET_RETRIES} failed, retrying in ${WGET_RETRY_DELAY}s..."; \
+            sleep "${WGET_RETRY_DELAY}"; \
+            attempt=$((attempt + 1)); \
+        done; \
+        echo "ERROR: Failed to download after ${WGET_RETRIES} attempts"; return 1; \
+    } \
+    && if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
         rm -rf /tmp/clickhouse_debs \
         && mkdir -p /tmp/clickhouse_debs \
         && for url in $DIRECT_DOWNLOAD_URLS; do \
-            wget --progress=bar:force:noscroll "$url" -P /tmp/clickhouse_debs || exit 1 \
+            wget_with_retry "$url" -P /tmp/clickhouse_debs || exit 1 \
         ; done \
         && dpkg -i /tmp/clickhouse_debs/*.deb \
         && rm -rf /tmp/* ; \
@@ -143,10 +159,11 @@ RUN mkdir -p \
     } > /output/etc/group
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Stage 2: Production distroless image.
+# Stage 2: Debug image — same as production but includes the busybox shell
+#           at /busybox/sh for interactive troubleshooting.
 # ──────────────────────────────────────────────────────────────────────────────
-# Pinned 2026-06-03. Refresh: docker pull gcr.io/distroless/cc-debian13:nonroot && docker inspect --format='{{index .RepoDigests 0}}' gcr.io/distroless/cc-debian13:nonroot
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e1fd250ce83d94603e9887ec991156a6c26905a6b0001039b7a43699018c0733 AS production
+# Pinned 2026-06-18. Refresh: docker pull gcr.io/distroless/base-nossl-debian13:debug-nonroot && docker inspect --format='{{index .RepoDigests 0}}' gcr.io/distroless/base-nossl-debian13:debug-nonroot
+FROM gcr.io/distroless/base-nossl-debian13:debug-nonroot@sha256:a5fef528b61dbe0bde471e431bab2b373808e32c529b115fb52438f6dda113e5 AS debug
 
 COPY --from=ch-builder /output/ /
 
@@ -165,11 +182,10 @@ WORKDIR /var/lib/clickhouse
 ENTRYPOINT ["/usr/bin/clickhouse", "docker-init", "--keeper"]
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Stage 3: Debug image — same as production but includes the busybox shell
-#           at /busybox/sh for interactive troubleshooting.
+# Stage 3: Production distroless image.
 # ──────────────────────────────────────────────────────────────────────────────
-# Pinned 2026-06-03. Refresh: docker pull gcr.io/distroless/cc-debian13:debug-nonroot && docker inspect --format='{{index .RepoDigests 0}}' gcr.io/distroless/cc-debian13:debug-nonroot
-FROM gcr.io/distroless/cc-debian13:debug-nonroot@sha256:960efa6047ba627691460e9d88a9283b45bf3edbfc5b3532d9c60f0f09a6f9c0 AS debug
+# Pinned 2026-06-18. Refresh: docker pull gcr.io/distroless/base-nossl-debian13:nonroot && docker inspect --format='{{index .RepoDigests 0}}' gcr.io/distroless/base-nossl-debian13:nonroot
+FROM gcr.io/distroless/base-nossl-debian13:nonroot@sha256:20f009ee6f6976a13763db818c6525f6f3882b73a32b5bff3a672d9de5beb5ca AS production
 
 COPY --from=ch-builder /output/ /
 

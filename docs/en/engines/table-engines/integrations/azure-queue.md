@@ -93,17 +93,19 @@ The AzureQueue engine has a special setting for SELECT queries: `commit_on_selec
 
 `SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
-1.  Use the engine to create a table for consuming from specified path in S3 and consider it a data stream.
+1.  Use the engine to create a table for consuming from the specified path in Azure Blob Storage and consider it a data stream.
 2.  Create a table with the desired structure.
 3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
 
 When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background.
 
+The engine arguments have the form `AzureQueue(connection_string, container_name, blobpath, format[, compression])`.
+
 Example:
 
 ```sql
 CREATE TABLE azure_queue_engine_table (key UInt64, data String)
-  ENGINE=AzureQueue('<endpoint>', 'CSV', 'gzip')
+  ENGINE=AzureQueue('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', '*', 'CSV')
   SETTINGS
       mode = 'unordered';
 

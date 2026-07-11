@@ -261,13 +261,38 @@ def download_shard(shard, tmpdir):
 # SQL queries
 # ---------------------------------------------------------------------------
 
+# Number of (enriched) columns in all-query-metrics.tsv once it carries the
+# per-query changed_threshold/unstable_threshold columns. The two arch/shard
+# columns are prepended by download_shard, the report itself contributes the
+# rest, ending with changed_threshold (c12) and unstable_threshold (c13).
+COLUMNS_WITH_THRESHOLDS = 13
+
+
+def count_tsv_columns(path):
+    """Return the number of tab-separated columns in the first non-empty line."""
+    with open(path, "r") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if line:
+                return line.count("\t") + 1
+    return 0
+
+
 def _sql_escape(s):
     """Escape a string for use in SQL single-quoted literals."""
     return s.replace("\\", "\\\\").replace("'", "\\'")
 
 
-def _build_base_cte(args, data_path):
-    """Build the common CTE that reads, filters, and classifies data."""
+def _build_base_cte(args, data_path, has_thresholds):
+    """Build the common CTE that reads, filters, and classifies data.
+
+    When ``has_thresholds`` is true the report carries the per-query
+    changed_threshold/unstable_threshold columns (c12/c13) exported by
+    ci/jobs/scripts/perf/compare.sh, and we classify with them so this helper
+    matches the CI gate exactly. Older reports do not have those columns, so we
+    fall back to the floor constants (0.15/0.25); see count_tsv_columns and the
+    warning emitted in main().
+    """
     where_parts = [f"metric_name = '{_sql_escape(args.metric)}'"]
     if args.arch != "all":
         where_parts.append(f"arch = '{args.arch}'")
@@ -280,6 +305,15 @@ def _build_base_cte(args, data_path):
 
     where_clause = " AND ".join(where_parts)
 
+    if has_thresholds:
+        threshold_cols = """
+            toFloat64(c12) AS changed_threshold,
+            toFloat64(c13) AS unstable_threshold,"""
+    else:
+        threshold_cols = """
+            0.15 AS changed_threshold,
+            0.25 AS unstable_threshold,"""
+
     return f"""
     data AS (
         SELECT
@@ -290,25 +324,33 @@ def _build_base_cte(args, data_path):
             toFloat64(c5) AS `right`,
             toFloat64(c6) AS diff,
             toFloat64(c7) AS times_change,
-            toFloat64(c8) AS stat_threshold,
+            toFloat64(c8) AS stat_threshold,{threshold_cols}
             c9 AS test,
             toUInt32(c10) AS query_index,
             c11 AS query_display_name
         FROM file('{data_path}', 'TSV')
     ),
     filtered AS (
+        -- Classify each query exactly as ci/jobs/scripts/perf/compare.sh does:
+        --   changed_fail  = abs(diff) > changed_threshold  AND abs(diff) >= stat_threshold
+        --   unstable_fail = NOT changed_fail               AND stat_threshold > unstable_threshold
+        -- changed_threshold/unstable_threshold are the per-query thresholds
+        -- (the 0.15/0.25 floors raised by historical and per-test thresholds).
+        -- Using the exported per-query thresholds instead of only the floor
+        -- constants keeps this helper in agreement with the CI gate even when
+        -- the effective threshold for a query is above the floor.
         SELECT *,
-            (abs(diff) >= stat_threshold AND abs(diff) > 0.1) AS is_changed,
-            (NOT (abs(diff) >= stat_threshold AND abs(diff) > 0.1) AND stat_threshold > 0.2) AS is_unstable,
+            (abs(diff) >= stat_threshold AND abs(diff) > changed_threshold) AS is_changed,
+            (NOT (abs(diff) >= stat_threshold AND abs(diff) > changed_threshold) AND stat_threshold > unstable_threshold) AS is_unstable,
             if(diff > 0, 'slower', if(diff < 0, 'faster', 'same')) AS direction
         FROM data
         WHERE {where_clause}
     )"""
 
 
-def build_summary_sql(args, shard_meta, data_path):
+def build_summary_sql(args, shard_meta, data_path, has_thresholds):
     """Build SQL for per-shard summary."""
-    base_cte = _build_base_cte(args, data_path)
+    base_cte = _build_base_cte(args, data_path, has_thresholds)
     shard_values = ", ".join(
         f"('{_sql_escape(s['name'])}', '{s['arch']}', {s['shard_num']})"
         for s in shard_meta
@@ -345,9 +387,9 @@ def build_summary_sql(args, shard_meta, data_path):
     """
 
 
-def build_detail_sql(args, data_path, fmt="JSONEachRow"):
+def build_detail_sql(args, data_path, has_thresholds, fmt="JSONEachRow"):
     """Build SQL for per-query detail rows."""
-    base_cte = _build_base_cte(args, data_path)
+    base_cte = _build_base_cte(args, data_path, has_thresholds)
 
     sort_map = {
         "diff": "abs(diff) DESC",
@@ -460,9 +502,9 @@ def output_json(summary_rows, detail_rows, pr_number, sha, metric):
     print(json.dumps(output, indent=2))
 
 
-def output_tsv(args, data_path):
+def output_tsv(args, data_path, has_thresholds):
     """Run the detail query with TabSeparatedWithNames format and print."""
-    sql = build_detail_sql(args, data_path, fmt="TabSeparatedWithNames")
+    sql = build_detail_sql(args, data_path, has_thresholds, fmt="TabSeparatedWithNames")
     print(run_ch(sql), end="")
 
 
@@ -697,20 +739,34 @@ def main():
         ]
         multi_shard = len(downloaded) > 1
 
+        # Detect whether the report carries the per-query threshold columns.
+        # Reports generated before those columns were added to
+        # all-query-metrics.tsv lack them, so we classify with the floor
+        # constants instead and make that visible rather than silently
+        # reporting queries that CI would treat as noise.
+        has_thresholds = count_tsv_columns(merged_path) >= COLUMNS_WITH_THRESHOLDS
+        if not has_thresholds:
+            print(
+                "  Warning: this report predates the per-query threshold columns "
+                "in all-query-metrics.tsv; classifying with the 0.15/0.25 floor "
+                "constants, which may flag queries that CI treats as noise.",
+                file=sys.stderr,
+            )
+
         # Run summary query
-        summary_sql = build_summary_sql(args, shard_meta, merged_path)
+        summary_sql = build_summary_sql(args, shard_meta, merged_path, has_thresholds)
         summary_rows = parse_jsonl(run_ch(summary_sql))
 
         if args.tsv:
-            output_tsv(args, merged_path)
+            output_tsv(args, merged_path, has_thresholds)
         elif args.json:
-            detail_sql = build_detail_sql(args, merged_path)
+            detail_sql = build_detail_sql(args, merged_path, has_thresholds)
             detail_rows = parse_jsonl(run_ch(detail_sql))
             output_json(summary_rows, detail_rows, pr_number, sha, args.metric)
         elif args.summary:
             output_human(summary_rows, [], pr_number, args.metric, multi_shard)
         else:
-            detail_sql = build_detail_sql(args, merged_path)
+            detail_sql = build_detail_sql(args, merged_path, has_thresholds)
             detail_rows = parse_jsonl(run_ch(detail_sql))
             output_human(summary_rows, detail_rows, pr_number, args.metric, multi_shard)
 

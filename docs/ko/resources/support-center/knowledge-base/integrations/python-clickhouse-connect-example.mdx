@@ -1,0 +1,129 @@
+---
+date: 2023-05-08
+title: "ClickHouse Cloud 서비스 연결을 위한 Python 클라이언트 실행 예시"
+description: "clickhouse-connect 드라이버를 사용하는 단계별 예시를 통해 Python으로 ClickHouse Cloud 서비스에 연결하는 방법을 알아봅니다."
+tags: ['언어 클라이언트']
+keywords: ['Python', 'ClickHouse Cloud']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+이 문서는 ClickHouse Cloud 서비스에서 Python 사용을 시작하는 방법을 단계별 예시로 설명합니다.
+
+<Note>
+  Python 버전과 라이브러리 의존성은 계속 변화하므로 이 예시를 시도할 때는 드라이버와 Python 환경 모두 최신 지원 버전을 사용하십시오.
+
+  이 문서를 작성하는 시점에는 [clickhouse-connect](https://github.com/ClickHouse/clickhouse-connect) 드라이버 버전 `0.5.23`과 Python `3.11.2`를 각각 사용하고 있습니다.
+</Note>
+
+<div id="steps">
+  ## 단계
+</div>
+
+1. Python 버전을 확인하세요:
+
+```
+$  python -V
+Python 3.11.2
+```
+
+2. `ch-python`이라는 폴더에 프로젝트를 구성합니다:
+
+```
+$ mkdir ch-python
+$ cd ch-python
+```
+
+3. 다음 내용으로 `requirements.txt` 파일을 생성하세요:
+
+```
+clickhouse-connect==0.5.23
+```
+
+4. `main.py`라는 이름의 Python 소스 파일을 만드세요:
+
+```py
+import clickhouse_connect
+import sys
+import json
+
+CLICKHOUSE_CLOUD_HOSTNAME = 'HOSTNAME.clickhouse.cloud'
+CLICKHOUSE_CLOUD_USER = 'default'
+CLICKHOUSE_CLOUD_PASSWORD = 'YOUR_SECRET_PASSWORD'
+
+client = clickhouse_connect.get_client(
+    host=CLICKHOUSE_CLOUD_HOSTNAME, port=8443, username=CLICKHOUSE_CLOUD_USER, password=CLICKHOUSE_CLOUD_PASSWORD)
+
+print("connected to " + CLICKHOUSE_CLOUD_HOSTNAME + "\n")
+client.command(
+    'CREATE TABLE IF NOT EXISTS new_table (key UInt32, value String, metric Float64) ENGINE MergeTree ORDER BY key')
+
+print("table new_table created or exists already!\n")
+
+row1 = [1000, 'String Value 1000', 5.233]
+row2 = [2000, 'String Value 2000', -107.04]
+data = [row1, row2]
+client.insert('new_table', data, column_names=['key', 'value', 'metric'])
+
+print("written 2 rows to table new_table\n")
+
+QUERY = "SELECT max(key), avg(metric) FROM new_table"
+
+result = client.query(QUERY)
+
+sys.stdout.write("query: ["+QUERY + "] returns:\n\n")
+print(result.result_rows)
+```
+
+5. 가상 환경을 만드세요:
+
+```
+chpython$ python -m venv venv
+```
+
+6. 가상 환경을 활성화합니다:
+
+```
+chpython$ source venv/bin/activate
+```
+
+불러오기가 완료되면 터미널 프롬프트 앞에 (venv)가 표시됩니다. 종속성을 설치하세요:
+
+```
+(venv) ➜  chpython$ pip install -r requirements.txt
+Collecting certifi
+  Using cached certifi-2023.5.7-py3-none-any.whl (156 kB)
+Collecting urllib3>=1.26
+  Using cached urllib3-2.0.2-py3-none-any.whl (123 kB)
+Collecting pytz
+  Using cached pytz-2023.3-py2.py3-none-any.whl (502 kB)
+Collecting zstandard
+  Using cached zstandard-0.21.0-cp311-cp311-macosx_11_0_arm64.whl (364 kB)
+Collecting lz4
+  Using cached lz4-4.3.2-cp311-cp311-macosx_11_0_arm64.whl (212 kB)
+Installing collected packages: pytz, zstandard, urllib3, lz4, certifi, clickhouse-connect
+Successfully installed certifi-2023.5.7 clickhouse-connect-0.5.23 lz4-4.3.2 pytz-2023.3 urllib3-2.0.2 zstandard-0.21.0
+```
+
+7. 코드를 실행하세요!
+
+```
+(venv) chpython$ venv/bin/python main.py
+
+connected to HOSTNAME.clickhouse.cloud
+
+table new_table created or exists already!
+
+written 2 rows to table new_table
+
+query: [SELECT max(key), avg(metric) FROM new_table] returns:
+
+[(2000, -50.9035)]
+```
+
+<Tip>
+  이전 버전의 Python(예: `3.9.6`)을 사용하는 경우 `urllib3` 라이브러리와 관련된 `ImportError`가 발생할 수 있습니다.
+  이 경우 Python 환경을 더 최신 버전으로 업그레이드하거나 requirements.txt 파일에서 `urllib3` 버전을 `1.26.15`로 고정하십시오.
+</Tip>

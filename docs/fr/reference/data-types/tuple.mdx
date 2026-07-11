@@ -1,0 +1,226 @@
+---
+description: 'Documentation du type de données Tuple dans ClickHouse'
+sidebarTitle: 'Tuple(T1, T2, ...)'
+slug: /sql-reference/data-types/tuple
+title: 'Tuple(T1, T2, ...)'
+doc_type: 'reference'
+---
+
+Un tuple d&#39;éléments, chacun ayant son propre [type](/fr/reference/data-types/index). Un tuple doit contenir au moins un élément.
+
+Les tuples sont utilisés pour le regroupement temporaire de colonnes. Les colonnes peuvent être regroupées lorsqu&#39;une expression IN est utilisée dans une requête, ainsi que pour spécifier certains paramètres formels des fonctions lambda. Pour plus d&#39;informations, consultez les sections [opérateurs IN](/fr/reference/statements/in) et [fonctions d&#39;ordre supérieur](/fr/reference/functions/regular-functions/overview#higher-order-functions).
+
+Les tuples peuvent être le résultat d&#39;une requête. Dans ce cas, pour les formats texte autres que JSON, les valeurs sont séparées par des virgules dans `()`. Dans les formats JSON, les tuples sont renvoyés sous forme de tableaux (dans `[]`).
+
+<div id="creating-tuples">
+  ## Créer des tuples
+</div>
+
+Vous pouvez utiliser une fonction pour créer un tuple :
+
+```sql
+tuple(T1, T2, ...)
+```
+
+Exemple de création d’un tuple :
+
+```sql
+SELECT tuple(1, 'a') AS x, toTypeName(x)
+```
+
+```text
+┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
+│ (1,'a') │ Tuple(UInt8, String)      │
+└─────────┴───────────────────────────┘
+```
+
+Un Tuple peut contenir un seul élément
+
+Exemple :
+
+```sql
+SELECT tuple('a') AS x;
+```
+
+```text
+┌─x─────┐
+│ ('a') │
+└───────┘
+```
+
+La syntaxe `(tuple_element1, tuple_element2)` peut être utilisée pour créer un tuple comportant plusieurs éléments sans appeler la fonction `tuple()`.
+
+Exemple :
+
+```sql
+SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple;
+```
+
+```text
+┌─x───────┬─y──────────────────────────────────────┬─not_a_tuple─┐
+│ (1,'a') │ ('2022-09-21',2006973416,'someString') │ a           │
+└─────────┴────────────────────────────────────────┴─────────────┘
+```
+
+<div id="data-type-detection">
+  ## Détection du type de données
+</div>
+
+Lors de la création de tuples à la volée, ClickHouse déduit le type des arguments du tuple en choisissant les types les plus petits capables de contenir la valeur fournie. Si la valeur est [NULL](/fr/reference/settings/formats#input_format_null_as_default), le type déduit est [Nullable](/fr/reference/data-types/nullable).
+
+Exemple de détection automatique du type de données :
+
+```sql
+SELECT tuple(1, NULL) AS x, toTypeName(x)
+```
+
+```text
+┌─x─────────┬─toTypeName(tuple(1, NULL))──────┐
+│ (1, NULL) │ Tuple(UInt8, Nullable(Nothing)) │
+└───────────┴─────────────────────────────────┘
+```
+
+<div id="referring-to-tuple-elements">
+  ## Référence aux éléments d’un Tuple
+</div>
+
+On peut faire référence aux éléments d’un Tuple par leur nom ou leur indice :
+
+```sql title="Query"
+CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
+INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
+
+SELECT a.s FROM named_tuples; -- by name
+SELECT a.2 FROM named_tuples; -- by index
+```
+
+```text title="Response"
+┌─a.s─┐
+│ y   │
+│ x   │
+└─────┘
+
+┌─tupleElement(a, 2)─┐
+│                 10 │
+│                -10 │
+└────────────────────┘
+```
+
+<div id="comparison-operations-with-tuple">
+  ## Opérations de comparaison avec Tuple
+</div>
+
+Deux tuples sont comparés en examinant successivement leurs éléments de gauche à droite. Si le premier élément du premier tuple est supérieur (inférieur) à l’élément correspondant du second tuple, alors le premier tuple est supérieur (inférieur) au second ; sinon (si les deux éléments sont égaux), on compare l’élément suivant.
+
+Exemple :
+
+```sql
+SELECT (1, 'z') > (1, 'a') c1, (2022, 01, 02) > (2023, 04, 02) c2, (1,2,3) = (3,2,1) c3;
+```
+
+```text
+┌─c1─┬─c2─┬─c3─┐
+│  1 │  0 │  0 │
+└────┴────┴────┘
+```
+
+Exemples concrets :
+
+```sql
+CREATE TABLE test
+(
+    `year` Int16,
+    `month` Int8,
+    `day` Int8
+)
+ENGINE = Memory AS
+SELECT *
+FROM values((2022, 12, 31), (2000, 1, 1));
+
+SELECT * FROM test;
+
+┌─year─┬─month─┬─day─┐
+│ 2022 │    12 │  31 │
+│ 2000 │     1 │   1 │
+└──────┴───────┴─────┘
+
+SELECT *
+FROM test
+WHERE (year, month, day) > (2010, 1, 1);
+
+┌─year─┬─month─┬─day─┐
+│ 2022 │    12 │  31 │
+└──────┴───────┴─────┘
+CREATE TABLE test
+(
+    `key` Int64,
+    `duration` UInt32,
+    `value` Float64
+)
+ENGINE = Memory AS
+SELECT *
+FROM values((1, 42, 66.5), (1, 42, 70), (2, 1, 10), (2, 2, 0));
+
+SELECT * FROM test;
+
+┌─key─┬─duration─┬─value─┐
+│   1 │       42 │  66.5 │
+│   1 │       42 │    70 │
+│   2 │        1 │    10 │
+│   2 │        2 │     0 │
+└─────┴──────────┴───────┘
+
+-- Let's find a value for each key with the biggest duration, if durations are equal, select the biggest value
+
+SELECT
+    key,
+    max(duration),
+    argMax(value, (duration, value))
+FROM test
+GROUP BY key
+ORDER BY key ASC;
+
+┌─key─┬─max(duration)─┬─argMax(value, tuple(duration, value))─┐
+│   1 │            42 │                                    70 │
+│   2 │             2 │                                     0 │
+└─────┴───────────────┴───────────────────────────────────────┘
+```
+
+<div id="nullable-tuple">
+  ## Nullable(Tuple(T1, T2, ...))
+</div>
+
+<Info>
+  **Fonctionnalité bêta**
+
+  Nécessite `SET enable_nullable_tuple_type = 1`
+  Il s&#39;agit d&#39;une fonctionnalité bêta.
+</Info>
+
+Permet au tuple dans son ensemble d’être `NULL`, contrairement à `Tuple(Nullable(T1), Nullable(T2), ...)`, où seuls les éléments individuels peuvent être `NULL`.
+
+| Type                                       | Le tuple peut être NULL | Les éléments peuvent être NULL |
+| ------------------------------------------ | ----------------------- | ------------------------------ |
+| `Nullable(Tuple(String, Int64))`           | ✅                       | ❌                              |
+| `Tuple(Nullable(String), Nullable(Int64))` | ❌                       | ✅                              |
+
+Exemple :
+
+```sql
+SET enable_nullable_tuple_type = 1;
+
+CREATE TABLE test (
+    id UInt32,
+    data Nullable(Tuple(String, Int64))
+) ENGINE = Memory;
+
+INSERT INTO test VALUES (1, ('hello', 42)), (2, NULL);
+
+SELECT * FROM test WHERE data IS NULL;
+```
+
+```txt
+ ┌─id─┬─data─┐
+ │  2 │ ᴺᵁᴸᴸ │
+ └────┴──────┘
+```
