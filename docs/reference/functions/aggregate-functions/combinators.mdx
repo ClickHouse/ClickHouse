@@ -118,6 +118,12 @@ Merges the intermediate aggregation states in the same way as the -Merge combina
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
 
+## -Tuple {#-tuple}
+
+Applied as a suffix to an aggregate function name (e.g. `sumTuple`), it makes the function take one `Tuple` argument per argument of the underlying function (all tuples of the same size) and aggregate each element position independently, producing a tuple of per-element results. Elements are paired by position: `corrTuple((a1, a2), (b1, b2)) = (corr(a1, b1), corr(a2, b2))`.
+
+For example, `sumTuple` for the tuples `(1, 2.5)` and `(3, 4.5)` returns the result `(4, 7)` after adding together the corresponding tuple elements.
+
 ## -Distinct {#-distinct}
 
 Every unique combination of arguments will be aggregated only once. Repeating values are ignored.

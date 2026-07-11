@@ -689,6 +689,14 @@ Number of active threads in the threadpool for drop distributed cache query.
 
 Number of queued or active jobs in the threadpool for drop distributed cache.
 
+### EncryptionHeaderCacheBytes {#encryptionheadercachebytes}
+
+Total size of the encryption header cache in bytes
+
+### EncryptionHeaderCacheEntries {#encryptionheadercacheentries}
+
+Total number of entries in the encryption header cache
+
 ### EphemeralNode {#ephemeralnode}
 
 Number of ephemeral nodes hold in ZooKeeper.
@@ -1517,6 +1525,18 @@ Number of queued or active jobs in the PipelineExecutor thread pool.
 
 Number of running tasks which are paused and waiting due to 'priority' setting.
 
+### QueryRunnerThreads {#queryrunnerthreads}
+
+Number of threads in the QueryRunner thread pool.
+
+### QueryRunnerThreadsActive {#queryrunnerthreadsactive}
+
+Number of threads in the QueryRunner thread pool running a task.
+
+### QueryRunnerThreadsScheduled {#queryrunnerthreadsscheduled}
+
+Number of queued or active jobs in the QueryRunner thread pool.
+
 ### QueryThread {#querythread}
 
 Number of query processing threads
@@ -1552,6 +1572,10 @@ Number of live ReaderExecutor instances.
 ### ReaderExecutorChainedBufferBytes {#readerexecutorchainedbufferbytes}
 
 Bytes currently held in live ReaderExecutor chain buffers (OwnedChainedBuffer) -- live in-flight read memory, not a cumulative total.
+
+### ReaderExecutorLongConnections {#readerexecutorlongconnections}
+
+Number of long source connections currently held open by ReaderExecutor for sequential read optimization.
 
 ### ReadonlyDisks {#readonlydisks}
 

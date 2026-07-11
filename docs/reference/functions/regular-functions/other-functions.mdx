@@ -548,6 +548,8 @@ communicate using a HTTP interface. By default, port `9012` is used. A different
 
 See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
 
+The model file must be located inside the [`user_files`](/reference/settings/server-settings/settings#user_files_path) directory, like for the [`file`](/reference/functions/regular-functions/files#file) function.
+
 <Note>
 This function is non-deterministic: it can return different results for the same arguments.
 </Note>
@@ -560,7 +562,7 @@ catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])
 
 **Arguments**
 
-- `path_to_model` — Path to catboost model. [`const String`](/reference/data-types/string)
+- `path_to_model` — Path to the catboost model, located inside the `user_files` directory. [`const String`](/reference/data-types/string)
 - `feature` — One or more model features/arguments. [`Float*`](/reference/data-types/float)
 
 **Returned value**
@@ -572,7 +574,7 @@ Returns the model evaluation result. [`Float64`](/reference/data-types/float)
 **catboostEvaluate**
 
 ```sql title=Query
-SELECT catboostEvaluate('/root/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
+SELECT catboostEvaluate('/var/lib/clickhouse/user_files/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
 ```
 
 ```response title=Response
