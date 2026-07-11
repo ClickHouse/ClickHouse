@@ -42,11 +42,37 @@ public:
         if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
             return;
 
-        /// Collect group by keys.
         auto * query_node = node->as<QueryNode>();
         if (!query_node)
+        {
+            /// A filter-section root (WHERE/PREWHERE/HAVING/QUALIFY of the current query) and its
+            /// whole subtree is a predicate position: an eliminated aggregate is left as the bare key
+            /// there so the predicate pushes down to storage and uses skip indexes. Everywhere else
+            /// (projection, ORDER BY, ...) is an output position where the observable type must be
+            /// preserved. Track how deep we are inside a filter subtree of the current query.
+            if (active_filter_roots.contains(node.get()))
+                ++filter_depth;
             return;
+        }
 
+        /// A nested query establishes its own output/filter contexts: its projection is an output
+        /// position even when the whole subquery sits inside the outer query's WHERE. Save and reset
+        /// the filter state so a correlated scalar subquery's projected aggregate is cast back to its
+        /// analyzed type (keeping QueryNode::getResultType() equal to the built header).
+        filter_depth_save_stack.push_back(filter_depth);
+        filter_roots_save_stack.push_back(std::move(active_filter_roots));
+        filter_depth = 0;
+        active_filter_roots.clear();
+        if (query_node->hasPrewhere())
+            active_filter_roots.insert(query_node->getPrewhere().get());
+        if (query_node->hasWhere())
+            active_filter_roots.insert(query_node->getWhere().get());
+        if (query_node->hasHaving())
+            active_filter_roots.insert(query_node->getHaving().get());
+        if (query_node->hasQualify())
+            active_filter_roots.insert(query_node->getQualify().get());
+
+        /// Collect group by keys.
         if (!query_node->hasGroupBy())
         {
             group_by_keys_stack.push_back({});
@@ -97,35 +123,65 @@ public:
         if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
             return;
 
+        /// Capture the node identity before any rewrite so a filter-section root that is itself a
+        /// function (e.g. WHERE equals(...)) still has its filter_depth decremented below.
+        const IQueryTreeNode * node_before_rewrite = node.get();
+
         if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
         {
             auto * function_node = node->as<FunctionNode>();
             if (aggregationCanBeEliminated(node, group_by_keys_stack.back()))
             {
-                node = function_node->getArguments().getNodes()[0];
+                /// The aggregate result type always strips LowCardinality from the argument
+                /// (min(LowCardinality(String)) -> String), so replacing the aggregate with the raw
+                /// key would change the node's type from the analyzed type to the key's type.
+                auto original_type = function_node->getResultType();
+                auto & key_node = function_node->getArguments().getNodes()[0];
+
+                if (filter_depth > 0 || original_type->equals(*key_node->getResultType()))
+                {
+                    /// In a filter (WHERE/PREWHERE/HAVING/QUALIFY) subtree, leave the bare key so the
+                    /// predicate operates directly on the key column and pushes down to storage /
+                    /// skip indexes. A type change here is not user-observable. Same bare replacement
+                    /// when the types already match (the plain, non-LowCardinality case) - no cast.
+                    /// The type flip is absorbed by re-resolving the parent ordinary functions below.
+                    node = key_node;
+                }
+                else
+                {
+                    /// In an output position (projection, ORDER BY, correlated-subquery projection,
+                    /// ...) cast the key back to the aggregate's analyzed type so the observable
+                    /// result type is unchanged (e.g. toTypeName(min(s)) stays String, result schemas
+                    /// and type-sensitive expressions are preserved, and a correlated scalar
+                    /// subquery's QueryNode::getResultType() still matches the built header). Parent
+                    /// functions still see the original type, so no re-resolution is needed for them.
+                    node = createCastFunction(key_node, std::move(original_type), getContext());
+                }
             }
-            else if (function_node->isOrdinaryFunction())
+            else if (filter_depth > 0 && function_node->isOrdinaryFunction())
             {
-                /// A child aggregate may have been replaced by its argument, which for a
-                /// LowCardinality group by key has a different type than the eliminated aggregate
-                /// (min(LowCardinality(String)) is String, but the key is LowCardinality(String)).
-                /// Re-resolve this ordinary function against its current argument types so the type
-                /// stays consistent and predicates like `key = 'x'` keep operating directly on the
-                /// key column, letting them push down to storage and use skip indexes.
+                /// A child aggregate in this filter subtree may have been replaced by its bare key,
+                /// whose type differs from the eliminated aggregate (min(LowCardinality(String)) is
+                /// String, but the key is LowCardinality(String)). Re-resolve this ordinary function
+                /// against its current argument types so it natively consumes the key type and the
+                /// predicate keeps pushing down to storage / skip indexes. Cascades upward as parents
+                /// are visited. Only needed in filter subtrees; in output positions the key is cast
+                /// back to the analyzed type, so parents there never see a changed argument type.
                 reresolveIfArgumentTypesChanged(*function_node);
             }
         }
         else if (node->getNodeType() == QueryTreeNodeType::QUERY)
         {
-            /// Projection nodes are rewritten before we leave the query node (post-order visit), so
-            /// a projection column that was an eliminated/re-resolved aggregate may now have a
-            /// different type. Refresh QueryNode::projection_columns so QueryNode::getResultType()
-            /// reports the true post-rewrite type; otherwise a correlated scalar subquery over a
-            /// LowCardinality key would report the stale analyzed type and
-            /// PlannerCorrelatedSubqueries::addStepForResultRenaming would throw on the header mismatch.
-            refreshProjectionColumnTypes(*node->as<QueryNode>());
             group_by_keys_stack.pop_back();
+            /// Restore the enclosing query's filter context (see enterImpl).
+            filter_depth = filter_depth_save_stack.back();
+            filter_depth_save_stack.pop_back();
+            active_filter_roots = std::move(filter_roots_save_stack.back());
+            filter_roots_save_stack.pop_back();
         }
+
+        if (active_filter_roots.contains(node_before_rewrite))
+            --filter_depth;
     }
 
     static bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child)
@@ -142,9 +198,11 @@ private:
         bool parents_are_only_deterministic = false;
     };
 
-    /// Whether a function argument node has a well-defined result type that can be compared. Only a
-    /// correlated QUERY/UNION exposes one (see getResultType() on QueryNode/UnionNode); a plain
-    /// (non-correlated) subquery, list, etc. does not.
+    /// Whether a function argument node exposes a well-defined result type that can be compared.
+    /// FUNCTION/COLUMN/CONSTANT always do and are the kinds this pass substitutes (an eliminated
+    /// aggregate is replaced by its argument). A QUERY/UNION argument exposes one only when it is a
+    /// correlated scalar subquery; a non-correlated subquery (e.g. an IN subquery) throws from
+    /// getResultType(). ListNode and other kinds have no result type.
     static bool argumentExposesResultType(const IQueryTreeNode & argument_node)
     {
         switch (argument_node.getNodeType())
@@ -164,8 +222,8 @@ private:
 
     /// Re-resolve an ordinary function if any argument's current result type no longer matches the
     /// type the function was resolved with (a child aggregate was replaced by its differently-typed
-    /// argument, possibly inside a correlated scalar subquery). Cascades upward as parents are
-    /// visited in leaveImpl.
+    /// bare key). Cascades upward as parents are visited in leaveImpl. Used only inside filter
+    /// subtrees, where the bare key is deliberately left in place to keep predicate pushdown.
     void reresolveIfArgumentTypesChanged(FunctionNode & function_node)
     {
         const auto & resolved_argument_types = function_node.getArgumentTypes();
@@ -176,13 +234,6 @@ private:
         bool argument_types_changed = false;
         for (size_t i = 0; i < argument_nodes.size(); ++i)
         {
-            /// Skip arguments that do not expose a result type. FUNCTION/COLUMN/CONSTANT always do
-            /// and may have been substituted by this pass (an eliminated aggregate is replaced by
-            /// its argument). A QUERY/UNION argument exposes a result type only when it is a
-            /// correlated scalar subquery, whose type can also flip if its projection was an
-            /// eliminated aggregate over a LowCardinality key; a non-correlated subquery (e.g. an
-            /// IN subquery) throws from getResultType() and is never rewritten, so skip it. ListNode
-            /// and other kinds have no result type either.
             if (!argumentExposesResultType(*argument_nodes[i]))
                 continue;
 
@@ -195,40 +246,6 @@ private:
 
         if (argument_types_changed)
             resolveOrdinaryFunctionNodeByName(function_node, function_node.getFunctionName(), getContext());
-    }
-
-    /// Re-derive projection column types from the (already rewritten) projection nodes so the query
-    /// node's result-type metadata stays consistent with what the planner will build. Names are kept;
-    /// only types are refreshed. No-op for a query node whose projection types did not change.
-    static void refreshProjectionColumnTypes(QueryNode & query_node)
-    {
-        if (!query_node.isResolved())
-            return;
-
-        const auto & projection_nodes = query_node.getProjection().getNodes();
-        const auto & projection_columns = query_node.getProjectionColumns();
-        if (projection_nodes.size() != projection_columns.size())
-            return;
-
-        NamesAndTypes refreshed_columns = projection_columns;
-        bool changed = false;
-        for (size_t i = 0; i < projection_nodes.size(); ++i)
-        {
-            /// Skip projection nodes without a well-defined result type (e.g. a not-yet-evaluated
-            /// non-correlated scalar subquery) so getResultType() below never throws.
-            if (!argumentExposesResultType(*projection_nodes[i]))
-                continue;
-
-            auto projection_type = projection_nodes[i]->getResultType();
-            if (projection_type && !projection_type->equals(*refreshed_columns[i].type))
-            {
-                refreshed_columns[i].type = std::move(projection_type);
-                changed = true;
-            }
-        }
-
-        if (changed)
-            query_node.resolveProjectionColumns(std::move(refreshed_columns));
     }
 
     bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
@@ -304,6 +321,16 @@ private:
     }
 
     GroupByKeysStack group_by_keys_stack;
+
+    /// Roots of the current query's filter sections (WHERE/PREWHERE/HAVING/QUALIFY). filter_depth > 0
+    /// means we are inside one of them, i.e. in a predicate position where an eliminated aggregate is
+    /// left as the bare key so the filter pushes down to storage. Both are per-query: they are saved
+    /// on the stacks below and reset when entering a nested (sub)query, so a correlated subquery's
+    /// projection is treated as an output position even inside the outer query's WHERE.
+    std::unordered_set<const IQueryTreeNode *> active_filter_roots;
+    size_t filter_depth = 0;
+    std::vector<std::unordered_set<const IQueryTreeNode *>> filter_roots_save_stack;
+    std::vector<size_t> filter_depth_save_stack;
 };
 
 }

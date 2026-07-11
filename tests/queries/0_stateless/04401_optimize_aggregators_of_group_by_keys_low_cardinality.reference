@@ -11,6 +11,18 @@ Granules: 8/128
 Granules: 8/128
 -- aggregate is gone from the query tree (no min/max/any/anyLast function remains)
 0
+-- observable result type is preserved: min/max/any/anyLast of a LowCardinality key still
+-- report the aggregate result type (String), not the key type LowCardinality(String)
+String
+String
+String
+String
+-- and it is preserved when the same aggregate is also used in a HAVING predicate (mixed)
+String
+-- the result column schema of a subquery is unchanged (String), so type-sensitive sinks work
+String
+-- pruning is still preserved for that mixed projection+HAVING query: 8/128
+Granules: 8/128
 -- LowCardinality wrapper matrix: result must be identical with the optimization on and off
 0
 1

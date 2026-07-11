@@ -48,6 +48,20 @@ SELECT countIf(explain ILIKE '%function_name: min%' OR explain ILIKE '%function_
     OR explain ILIKE '%function_name: any%' OR explain ILIKE '%function_name: anyLast%')
 FROM (EXPLAIN QUERY TREE SELECT min(s) FROM t_lc_group_key GROUP BY s);
 
+SELECT '-- observable result type is preserved: min/max/any/anyLast of a LowCardinality key still';
+SELECT '-- report the aggregate result type (String), not the key type LowCardinality(String)';
+SELECT DISTINCT toTypeName(min(s)) FROM t_lc_group_key GROUP BY s;
+SELECT DISTINCT toTypeName(max(s)) FROM t_lc_group_key GROUP BY s;
+SELECT DISTINCT toTypeName(any(s)) FROM t_lc_group_key GROUP BY s;
+SELECT DISTINCT toTypeName(anyLast(s)) FROM t_lc_group_key GROUP BY s;
+SELECT '-- and it is preserved when the same aggregate is also used in a HAVING predicate (mixed)';
+SELECT DISTINCT toTypeName(min(s)) FROM t_lc_group_key GROUP BY s HAVING min(s) = 'rare token';
+SELECT '-- the result column schema of a subquery is unchanged (String), so type-sensitive sinks work';
+SELECT DISTINCT toTypeName(m) FROM (SELECT min(s) AS m FROM t_lc_group_key GROUP BY s);
+SELECT '-- pruning is still preserved for that mixed projection+HAVING query: 8/128';
+SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT min(s) AS m, count() FROM t_lc_group_key GROUP BY s HAVING min(s) = 'rare token')
+WHERE explain ILIKE '%Granules: %/128%' AND explain ILIKE '%/128%' AND explain NOT ILIKE '%128/128%';
+
 DROP TABLE t_lc_group_key;
 
 SELECT '-- LowCardinality wrapper matrix: result must be identical with the optimization on and off';
@@ -71,10 +85,10 @@ SELECT s, count() FROM (SELECT toLowCardinality(toString(number % 5)) AS s, numb
 WHERE id IN (SELECT number FROM numbers(10)) GROUP BY s HAVING min(s) = '1' ORDER BY s;
 
 -- Correlated scalar subquery whose projection is an eliminated aggregate over a LowCardinality
--- key: the rewrite flips the subquery result type String -> LowCardinality(String), so both the
--- query node's projection_columns metadata and any parent operator on the subquery must be
--- refreshed. Otherwise the outer `= 'm'` still expects the old type and the query tree validator
--- (or PlannerCorrelatedSubqueries) throws. Result must be identical with the optimization on/off.
+-- key. The subquery projection is an output position, so the key is cast back to the aggregate's
+-- analyzed type; the subquery result type stays String and the outer `= 'm'` predicate is
+-- unchanged (otherwise PlannerCorrelatedSubqueries / the query tree validator would throw on the
+-- header mismatch). Result must be identical with the optimization on/off.
 SET allow_experimental_correlated_subqueries = 1, allow_suspicious_low_cardinality_types = 1;
 DROP TABLE IF EXISTS t_lc_correlated;
 CREATE TABLE t_lc_correlated (id UInt64, s LowCardinality(String), sn LowCardinality(Nullable(String)), u LowCardinality(UInt8))
