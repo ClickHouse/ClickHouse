@@ -1,5 +1,3 @@
-setting: push-down enabled by default
-1
 plan: filter — pushdown applied
 1
 plan: filter — no pushdown when disabled

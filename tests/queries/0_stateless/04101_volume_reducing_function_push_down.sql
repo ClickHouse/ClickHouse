@@ -5,9 +5,6 @@ SET enable_analyzer = 1;
 SET query_plan_enable_optimizations = 1;
 SET query_plan_max_step_description_length = 10000;
 
-SELECT 'setting: push-down enabled by default';
-SELECT getSetting('query_plan_push_down_volume_reducing_functions');
-
 DROP TABLE IF EXISTS volume_reducing_function_push_down;
 
 CREATE TABLE volume_reducing_function_push_down
