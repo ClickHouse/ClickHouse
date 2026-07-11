@@ -201,3 +201,24 @@ ALTER TABLE add_nested_rename_child ADD COLUMN IF NOT EXISTS n Nested(a UInt32, 
 SHOW CREATE TABLE add_nested_rename_child;
 
 DROP TABLE IF EXISTS add_nested_rename_child;
+
+DROP TABLE IF EXISTS add_nested_cond_rename;
+
+-- The mutation-planning replay (getMutationCommands -> tryConvertToMutationCommand) must not diverge from
+-- the committed metadata when a later command is ignored by prepare(). With share_nested_offsets = 0 and
+-- only `n.a`, `ADD COLUMN IF NOT EXISTS n Nested(a, b), RENAME COLUMN IF EXISTS n.b TO m` adds the missing
+-- `n.b`; the RENAME is ignored because the prepare-time snapshot had no `n.b`. An ignored command reports
+-- isRequireMutationStage() == false, so no RENAME_COLUMN mutation is queued and the final schema keeps `n.b`.
+CREATE TABLE add_nested_cond_rename
+(
+    `n.a` Array(UInt32)
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+SETTINGS share_nested_offsets = 0;
+
+ALTER TABLE add_nested_cond_rename ADD COLUMN IF NOT EXISTS n Nested(a UInt32, b String), RENAME COLUMN IF EXISTS `n.b` TO `m`;
+
+SHOW CREATE TABLE add_nested_cond_rename;
+
+DROP TABLE IF EXISTS add_nested_cond_rename;

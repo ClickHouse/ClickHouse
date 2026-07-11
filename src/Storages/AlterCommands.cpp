@@ -1378,7 +1378,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     const auto & settings = context->getSettingsRef();
     result.max_parser_depth = settings[Setting::max_parser_depth];
     result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
-    apply(metadata, context);
+    apply(metadata, context, share_nested_offsets);
     return result;
 }
 
