@@ -133,3 +133,11 @@ SELECT 'empty_neg_dot_scalar', toString(x) FROM format(CSV, 'x DateTime64(3)', '
 -- between the scalar and container numeric readers.
 SELECT 'dot_lhs_scalar_eq_container', (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3, ''UTC''))', '"[5.]"') SETTINGS date_time_input_format = 'basic') = (SELECT x FROM format(CSV, 'x DateTime64(3, ''UTC'')', '5.') SETTINGS date_time_input_format = 'basic');
 SELECT 'dot_rhs_scalar_eq_container', (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3, ''UTC''))', '"[.5]"') SETTINGS date_time_input_format = 'basic') = (SELECT x FROM format(CSV, 'x DateTime64(3, ''UTC'')', '.5') SETTINGS date_time_input_format = 'basic');
+
+-- A token whose whole part is not a bare number but consumes date/time bytes before a trailing '.'
+-- (e.g. `5981 10:01.000`) must NOT be coerced into a fractional unix timestamp. The non-throwing
+-- (try) reader used by schema inference recovers on a '.' only for the leading-dot shorthand, so
+-- such tokens infer as String instead of overflowing DateTime64 at high scale (regression 03720).
+SELECT 'infer_datelike_dot_is_string', toTypeName(d) FROM format(JSONEachRow, '{"d" : "5981 10:01.000"}') SETTINGS date_time_input_format = 'basic';
+SELECT 'infer_datelike_dot_value', d FROM format(JSONEachRow, '{"d" : "5981 10:01.000"}') SETTINGS date_time_input_format = 'basic';
+SELECT 'try_datelike_dot_is_null', toDateTime64OrNull('5981 10:01.000', 9, 'UTC') SETTINGS date_time_input_format = 'basic';

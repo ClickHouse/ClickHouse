@@ -1241,6 +1241,17 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 
     if (!is_empty)
     {
+        /// Recover from a whole-reader failure only for the leading-dot shorthand (`.5`, `-.5`),
+        /// where the reader consumed nothing but the optional sign and stopped at the '.'. If it
+        /// consumed date/time bytes first (e.g. `5981 10:01` before a trailing `.000`), the token
+        /// is not a fractional unix timestamp: reject it as master does, instead of feeding a bogus
+        /// whole part into the fractional branch (which overflows at large scale during inference).
+        auto recover_on_leading_dot = [&]
+        {
+            return !buf.eof() && *buf.position() == '.'
+                && buf.count() == count_before_whole + (is_negative_timestamp ? 1 : 0);
+        };
+
         if constexpr (throw_exception)
         {
             try
@@ -1256,7 +1267,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         else
         {
             if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow)
-                && (buf.eof() || *buf.position() != '.'))
+                && !recover_on_leading_dot())
                 return ReturnType(false);
         }
     }
@@ -1369,7 +1380,13 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
     {
         auto ok = readTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
         parse_success = ok;
-        if (!ok && (buf.eof() || *buf.position() != '.'))
+        /// Recover from a whole-reader failure only for the leading-dot shorthand (`.5`, `-.5`),
+        /// where the reader consumed nothing but the optional sign and stopped at the '.'. If it
+        /// consumed time bytes first before a trailing '.', the token is not a fractional value:
+        /// reject it (mirrors readDateTimeTextImpl, avoids feeding a bogus whole into the fraction).
+        bool recover_on_leading_dot = !buf.eof() && *buf.position() == '.'
+            && buf.count() == count_before_whole + (is_negative_timestamp ? 1 : 0);
+        if (!ok && !recover_on_leading_dot)
             return ReturnType(false);
     }
 
