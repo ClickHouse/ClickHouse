@@ -10,6 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -25,6 +26,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
@@ -50,6 +52,8 @@
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 
 #include <boost/algorithm/string.hpp>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -214,6 +218,41 @@ static DataTypePtr parseORCType(
     checkStackSize();
 
     const int subtype_count = static_cast<int>(orc_type->getSubtypeCount());
+
+    /// ORC union maps to the ClickHouse Variant type. It is handled before the switch below so the
+    /// switch stays non-exhaustive (its default handles unsupported types). Variant sorts and
+    /// de-duplicates its nested types, but ORC keeps a separate physical stream per branch, so two
+    /// branches with identical types cannot be represented as a Variant; reject them explicitly
+    /// instead of silently squashing them.
+    if (orc_type->getKind() == orc::TypeKind::UNION)
+    {
+        DataTypes nested_types;
+        std::unordered_set<String> seen_type_names;
+        nested_types.reserve(subtype_count);
+        for (int i = 0; i < subtype_count; ++i)
+        {
+            auto parsed_type = parseORCType(
+                orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
+            if (skipped)
+                return {};
+
+            if (!seen_type_names.insert(parsed_type->getName()).second)
+            {
+                if (skip_columns_with_unsupported_types)
+                {
+                    skipped = true;
+                    return {};
+                }
+                throw Exception(
+                    ErrorCodes::UNKNOWN_TYPE,
+                    "ORC union type '{}' has branches with identical types, which is not supported",
+                    orc_type->toString());
+            }
+            nested_types.push_back(parsed_type);
+        }
+        return std::make_shared<DataTypeVariant>(nested_types);
+    }
+
     switch (orc_type->getKind())
     {
         case orc::TypeKind::BOOLEAN:
@@ -1792,7 +1831,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     bool skipped = false;
 
     if (!inside_nullable && (orc_column->hasNulls || (type_hint && isNullableOrLowCardinalityNullable(type_hint))) && !orc_column->isEncoded
-        && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP))
+        && (orc_type->getKind() != orc::LIST && orc_type->getKind() != orc::MAP && orc_type->getKind() != orc::UNION))
     {
         DataTypePtr nested_type_hint;
         if (type_hint)
@@ -1804,6 +1843,104 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
         return {nullable_column, nullable_type, column_name};
+    }
+
+    /// ORC union maps to the ClickHouse Variant type. Handled before the switch below so the switch
+    /// stays non-exhaustive (its default handles unsupported types).
+    if (orc_type->getKind() == orc::UNION)
+    {
+        const auto * orc_union_column = dynamic_cast<const orc::UnionVectorBatch *>(orc_column);
+        if (!orc_union_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC column for union type must be a UnionVectorBatch");
+
+        const size_t num_children = orc_type->getSubtypeCount();
+        const size_t num_rows = orc_union_column->numElements;
+
+        /// Read each ORC union branch into its own column. ORC keeps a separate physical batch per
+        /// branch. A branch's own null bitmap (a NULL value inside a branch) is dropped because
+        /// Variant branches are non-nullable: a NULL row is represented by the NULL discriminator
+        /// instead. The explicit type hint (if any) is not propagated to branches, because Variant
+        /// reorders its types and matching would be ambiguous.
+        DataTypes branch_types;
+        Columns branch_columns;
+        branch_types.reserve(num_children);
+        branch_columns.reserve(num_children);
+        for (size_t i = 0; i < num_children; ++i)
+        {
+            auto branch = readColumnFromORCColumn(
+                orc_union_column->children[i], orc_type->getSubtype(i), column_name, /*inside_nullable=*/false, nullptr);
+
+            ColumnPtr branch_column = branch.column;
+            if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(branch_column.get()))
+                branch_column = nullable_column->getNestedColumnPtr();
+
+            branch_types.push_back(removeNullable(branch.type));
+            branch_columns.push_back(std::move(branch_column));
+        }
+
+        /// ORC keeps one physical stream per branch, so branches with identical types cannot be
+        /// represented as a Variant (which de-duplicates types); reject them explicitly.
+        std::unordered_set<String> seen_type_names;
+        for (const auto & branch_type : branch_types)
+            if (!seen_type_names.insert(branch_type->getName()).second)
+                throw Exception(
+                    ErrorCodes::UNKNOWN_TYPE,
+                    "ORC union type '{}' has branches with identical types, which is not supported, while reading column {}",
+                    orc_type->toString(), column_name);
+
+        auto variant_type = std::make_shared<DataTypeVariant>(branch_types);
+        const auto & global_variants = assert_cast<const DataTypeVariant &>(*variant_type).getVariants();
+
+        /// Variant stores its branches sorted by type name. Place each ORC branch column at its
+        /// global (sorted) position and remap ORC tags to global discriminators, so the identity
+        /// local-to-global mapping can be used.
+        std::unordered_map<String, ColumnVariant::Discriminator> type_name_to_global;
+        for (size_t g = 0; g < global_variants.size(); ++g)
+            type_name_to_global[global_variants[g]->getName()] = static_cast<ColumnVariant::Discriminator>(g);
+
+        Columns variant_columns(global_variants.size());
+        std::vector<ColumnVariant::Discriminator> tag_to_global(num_children);
+        for (size_t i = 0; i < num_children; ++i)
+        {
+            auto global = type_name_to_global.at(branch_types[i]->getName());
+            tag_to_global[i] = global;
+            variant_columns[global] = branch_columns[i];
+        }
+
+        auto local_discriminators = ColumnVariant::ColumnDiscriminators::create();
+        auto & discriminators_data = local_discriminators->getData();
+        discriminators_data.resize_exact(num_rows);
+
+        auto offsets = ColumnVariant::ColumnOffsets::create();
+        auto & offsets_data = offsets->getData();
+        offsets_data.resize_exact(num_rows);
+
+        const unsigned char * tags = orc_union_column->tags.data();
+        const uint64_t * orc_offsets = orc_union_column->offsets.data();
+        const char * not_null = orc_union_column->hasNulls ? orc_union_column->notNull.data() : nullptr;
+
+        for (size_t row = 0; row < num_rows; ++row)
+        {
+            if (not_null && !not_null[row])
+            {
+                discriminators_data[row] = ColumnVariant::NULL_DISCRIMINATOR;
+                offsets_data[row] = 0;
+                continue;
+            }
+
+            const size_t tag = tags[row];
+            if (tag >= num_children)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Invalid ORC union tag {} for union with {} branches while reading column {}",
+                    tag, num_children, column_name);
+
+            discriminators_data[row] = tag_to_global[tag];
+            offsets_data[row] = orc_offsets[row];
+        }
+
+        auto variant_column = ColumnVariant::create(std::move(local_discriminators), std::move(offsets), variant_columns);
+        return {std::move(variant_column), variant_type, column_name};
     }
 
     switch (orc_type->getKind())
