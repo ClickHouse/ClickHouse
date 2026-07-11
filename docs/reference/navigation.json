@@ -1121,7 +1121,6 @@
         "reference/system-tables/stemmers",
         "reference/system-tables/storage_policies",
         "reference/system-tables/symbols",
-        "reference/system-tables/system_warnings",
         "reference/system-tables/table_engines",
         "reference/system-tables/table_functions",
         "reference/system-tables/tables",

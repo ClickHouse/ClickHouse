@@ -11193,7 +11193,7 @@
   },
   {
     "source": "/jp/operations/system-tables/system_warnings",
-    "destination": "/ja/reference/system-tables/system_warnings"
+    "destination": "/ja/reference/system-tables/warnings"
   },
   {
     "source": "/jp/operations/system-tables/table_engines",
@@ -21781,7 +21781,7 @@
   },
   {
     "source": "/ko/operations/system-tables/system_warnings",
-    "destination": "/ko/reference/system-tables/system_warnings"
+    "destination": "/ko/reference/system-tables/warnings"
   },
   {
     "source": "/ko/operations/system-tables/table_engines",
@@ -26909,7 +26909,7 @@
   },
   {
     "source": "/operations/system-tables/system_warnings",
-    "destination": "/reference/system-tables/system_warnings"
+    "destination": "/reference/system-tables/warnings"
   },
   {
     "source": "/operations/system-tables/table_engines",
@@ -33897,7 +33897,7 @@
   },
   {
     "source": "/ru/operations/system-tables/system_warnings",
-    "destination": "/ru/reference/system-tables/system_warnings"
+    "destination": "/ru/reference/system-tables/warnings"
   },
   {
     "source": "/ru/operations/system-tables/table_engines",
@@ -47461,7 +47461,7 @@
   },
   {
     "source": "/zh/operations/system-tables/system_warnings",
-    "destination": "/zh/reference/system-tables/system_warnings"
+    "destination": "/zh/reference/system-tables/warnings"
   },
   {
     "source": "/zh/operations/system-tables/table_engines",

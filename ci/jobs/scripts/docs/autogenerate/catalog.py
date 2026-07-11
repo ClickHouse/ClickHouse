@@ -232,6 +232,7 @@ def render_listing(docs_dir, page_ids):
     frontmatter of the listed pages (same data the legacy
     autogenerate-table-of-contents script used), in the given order."""
     lines = ["| Page | Description |", "|-----|-----|"]
+    titles = {}
     for page_id in page_ids:
         path = os.path.join(docs_dir, page_id + ".mdx")
         if not os.path.isfile(path):
@@ -239,6 +240,18 @@ def render_listing(docs_dir, page_ids):
         with open(path, encoding="utf-8") as f:
             fm = parse_frontmatter(f.read())
         title = fm.get("title") or os.path.basename(page_id)
+        # Two pages with one title means a stale alias page snuck into the
+        # navigation group (e.g. a leftover `system_warnings` page next to
+        # the canonical `warnings` page, both titled `system.warnings`). The
+        # listing contract is one row per entity, so fail instead of
+        # rendering a duplicate row.
+        if title in titles:
+            raise RuntimeError(
+                f"duplicate title {title!r} in listing: {titles[title]} and"
+                f" {page_id} -- remove the stale page from the navigation"
+                " group"
+            )
+        titles[title] = page_id
         description = " ".join(str(fm.get("description", "")).split())
         # Escape characters that would break the markdown table.
         title = title.replace("|", "\\|")
