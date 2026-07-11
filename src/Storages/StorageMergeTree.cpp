@@ -61,6 +61,7 @@
 #include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -446,6 +447,8 @@ void StorageMergeTree::alter(
     ContextPtr local_context,
     AlterLockHolder & table_lock_holder)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::alter");
+
     /// Allow MODIFY_SETTING/RESET_SETTING through even when the table is readonly,
     /// so that the `table_readonly` flag can be toggled back.
     bool only_setting_changes = std::all_of(commands.begin(), commands.end(), [](const auto & c)
@@ -921,6 +924,8 @@ void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startMutation");
+
     /// File I/O (`writeFile` + `sync` + `moveFile`) happens in `prepareMutationEntry`
     /// outside the mutex; only the in-memory registration is locked. Holding the
     /// mutex across the file I/O would block merge selection for its full duration.
@@ -1039,6 +1044,8 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id
 
 void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::setMutationCSN");
+
     LOG_INFO(log, "Writing CSN {} for mutation {}", csn, mutation_id);
     UInt64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
 
@@ -1374,6 +1381,8 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
 CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::killMutation");
+
     assertNotReadonly();
 
     LOG_TRACE(log, "Killing mutation {}", mutation_id);
@@ -1440,6 +1449,8 @@ void StorageMergeTree::loadDeduplicationLog()
 
 void StorageMergeTree::loadMutations()
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::loadMutations");
+
     /// Called only from the constructor, before this storage is published to any
     /// database, so no other thread holds a reference and the lock is unnecessary.
     /// Avoiding it also breaks a TSan lock-order edge between `DatabaseAtomic::mutex`
@@ -2123,6 +2134,8 @@ UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique
 
 size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::clearOldMutations");
+
     size_t finished_mutations_to_keep = (*getSettings())[MergeTreeSetting::finished_mutations_to_keep];
     if (!truncate && !finished_mutations_to_keep)
         return 0;
@@ -3345,6 +3358,7 @@ IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
 
 std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::checkDataNext");
     auto * data_validation_tasks = assert_cast<DataValidationTasks *>(check_task_list.get());
     auto local_context = data_validation_tasks->context;
     if (auto part = data_validation_tasks->next())
