@@ -1,0 +1,116 @@
+---
+sidebarTitle: 'Estuary'
+slug: /integrations/estuary
+description: 'Estuary インテグレーションを使用して、さまざまなソースのデータを ClickHouse にストリーミング'
+title: 'Estuary を ClickHouse に接続'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://estuary.dev'
+keywords: ['estuary', 'データインジェスト', 'etl', 'パイプライン', 'データインテグレーション', 'ClickPipes']
+---
+
+import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Estuary](https://estuary.dev/) は、リアルタイムデータとバッチデータを、導入しやすい ETL パイプラインで柔軟に組み合わせられる、タイムリーなデータプラットフォームです。エンタープライズ向けのセキュリティとデプロイオプションを備え、Estuary は SaaS、データベース、ストリーミングソースから、ClickHouse を含むさまざまな宛先への信頼性の高いデータフローを実現します。
+
+Estuary は Kafka ClickPipe を介して ClickHouse に接続します。このインテグレーションでは、独自の Kafka エコシステムを運用する必要はありません。
+
+<div id="setup-guide">
+  ## セットアップガイド
+</div>
+
+**前提条件**
+
+* [Estuary アカウント](https://dashboard.estuary.dev/register)
+* Estuary で目的のソースからデータを取り込む 1 つ以上の [**capture**](https://docs.estuary.dev/concepts/captures/)
+* ClickPipe の権限を持つ ClickHouse Cloud アカウント
+
+<Steps>
+  <Step>
+    ### Estuary のマテリアライゼーションを作成する
+
+    Estuary のソースコレクションから ClickHouse にデータを移動するには、まず **マテリアライゼーション** を作成する必要があります。
+
+    1. Estuary のダッシュボードで、[Destinations](https://dashboard.estuary.dev/materializations) ページに移動します。
+
+    2. **+ New Materialization** をクリックします。
+
+    3. **ClickHouse** コネクタを選択します。
+
+    4. Materialization、Endpoint、Source Collections の各セクションで詳細を入力します。
+
+       * **Materialization Details:** マテリアライゼーションに一意の名前を指定し、データプレーン (クラウドプロバイダーとリージョン) を選択します
+
+       * **Endpoint Config:** 安全な **Auth Token** を指定します
+
+       * **Source Collections:** 既存の **capture** を関連付けるか、ClickHouse に公開するデータコレクションを選択します
+
+    5. **Next** と **Save and Publish** をクリックします。
+
+    6. マテリアライゼーションの詳細ページで、ClickHouse マテリアライゼーションの完全名を控えておきます。これは `your-tenant/your-unique-name/dekaf-clickhouse` のような形式になります。
+
+    Estuary は、選択したコレクションのストリーミングを Kafka メッセージとして開始します。ClickHouse は、Estuary の broker 情報と指定した auth token を使用して、Kafka ClickPipe 経由でこのデータにアクセスできます。
+  </Step>
+
+  <Step>
+    ### Kafka 接続の詳細を入力する
+
+    ClickHouse で新しい Kafka ClickPipe を設定し、接続情報を入力します。
+
+    1. ClickHouse Cloud のダッシュボードで、**Data sources** を選択します。
+
+    2. 新しい **ClickPipe** を作成します。
+
+    3. データソースとして **Apache Kafka** を選択します。
+
+    4. Estuary の broker および registry 情報を使用して、Kafka 接続の詳細を入力します。
+
+       * ClickPipe の名前を指定します
+       * broker には `dekaf.estuary-data.com:9092` を使用します
+       * authentication はデフォルトの `SASL/PLAIN` オプションのままにします
+       * user には、Estuary のマテリアライゼーションの完全名 (例: `your-tenant/your-unique-name/dekaf-clickhouse`) を入力します
+       * password には、マテリアライゼーションに指定した auth token を入力します
+
+    5. schema registry オプションを有効にします
+
+       * schema URL には `https://dekaf.estuary-data.com` を使用します
+       * schema key は broker user と同じ値 (マテリアライゼーション名) になります
+       * secret は broker password と同じ値 (auth token) になります
+  </Step>
+
+  <Step>
+    ### 受信データを設定する
+
+    1. Kafka の **topics** の 1 つ (Estuary のデータコレクションの 1 つ) を選択します。
+
+    2. **offset** を選択します。
+
+    3. ClickHouse が topic メッセージを検出します。続いて **Parse information** セクションに進み、テーブル情報を設定できます。
+
+    4. 新しいテーブルを作成するか、一致する既存のテーブルにデータをロードするかを選択します。
+
+    5. ソースのフィールドをテーブルのカラムにマッピングし、カラム名、型、NULL を許可するかどうかを確認します。
+
+    6. 最後の **Details and settings** セクションでは、専用の database user に付与する権限を選択できます。
+
+    設定内容に問題がなければ、ClickPipe を作成します。
+
+    ClickHouse は新しいデータソースをプロビジョニングし、Estuary からのメッセージの取り込みを開始します。必要に応じて ClickPipes を作成し、必要なすべてのデータコレクションをストリーミングしてください。
+  </Step>
+</Steps>
+
+<div id="additional-resources">
+  ## 追加リソース
+</div>
+
+Estuary とのインテグレーションの設定について詳しくは、Estuary のドキュメントを参照してください。
+
+* Estuary の [ClickHouse マテリアライゼーション ドキュメント](https://docs.estuary.dev/reference/Connectors/materialization-connectors/Dekaf/clickhouse/) を参照してください。
+
+* Estuary は **Dekaf** を使ってデータを Kafka メッセージとして公開します。Dekaf の詳細は、[こちら](https://docs.estuary.dev/guides/dekaf_reading_collections_from_kafka/)を参照してください。
+
+* Estuary を使って ClickHouse にストリーミングできるソースの一覧を確認するには、[Estuary の capture コネクタ](https://docs.estuary.dev/reference/Connectors/capture-connectors/) を参照してください。

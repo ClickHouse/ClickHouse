@@ -1,0 +1,45 @@
+---
+title: Cómo resolver el error "Too many parts" en ClickHouse
+description: Aprende a abordar el error "Too many parts" en ClickHouse optimizando el ritmo de inserción, configurando la configuración de MergeTree y gestionando eficazmente las particiones.
+date: 2023-03-20
+tags: ['Errores y excepciones']
+keywords: ['Too many parts']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dbexception-too-many-parts-252-merges-are-processing-significantly-slower-than-inserts">
+  ## DB::Exception: Too many parts (Error: 252). Las fusiones se están procesando mucho más lentamente que las inserciones
+</div>
+
+Has alcanzado el límite de la configuración `parts_to_throw_insert` en una tabla MergeTree.
+
+Puedes monitorizar el número de partes activas de una tabla concreta con:
+
+```sql
+select count(*) from system.parts where table = '<table_name>' and active == 1
+```
+
+El requisito principal al insertar en ClickHouse es que nunca debes enviar demasiadas sentencias `INSERT` por segundo. Idealmente: una inserción por segundo o cada pocos segundos.
+
+Así, puedes insertar 100K filas por segundo, pero solo con una única sentencia `INSERT` grande. Cuando envías cientos o miles de sentencias de inserción por segundo a una tabla *MergeTree, siempre acabarás teniendo errores, y eso no se puede solucionar ajustando algunos parámetros.
+
+Si no puedes combinar muchas inserciones en una sola sentencia `INSERT` grande desde fuera, entonces debes crear una tabla Buffer antes de la tabla *MergeTree.
+
+1. Cada inserción crea una carpeta en `/var/lib/clickhouse/.../table_name/`. Dentro de esa carpeta hay 2 archivos por cada columna: uno con los datos (comprimidos) y otro con el índice. Los datos se ordenan físicamente por clave primaria dentro de esos archivos. Esas carpetas se llaman &#39;**partes**&#39;.
+
+2. ClickHouse fusiona esas partes pequeñas en partes más grandes en segundo plano. Elige qué partes fusionar según ciertas reglas. Después de fusionar dos (o más) partes, se crea una parte más grande y las partes antiguas quedan en cola para su eliminación. Los parámetros que indicas permiten ajustar con precisión las reglas de fusión de partes. El objetivo del proceso de fusión es dejar una parte grande por cada partición (o unas pocas partes grandes por partición que no merezca la pena fusionar porque son demasiado grandes). Consulta también este [comentario](https://github.com/yandex/ClickHouse/issues/1661#issuecomment-352739726).
+
+3. Si creas nuevas partes demasiado rápido (por ejemplo, haciendo muchas inserciones pequeñas) y ClickHouse no es capaz de fusionarlas con la velocidad adecuada (es decir, las nuevas partes llegan más rápido de lo que ClickHouse puede fusionarlas), entonces obtendrás la excepción &#39;Merges are processing significantly slower than inserts&#39;. Puedes intentar aumentar el límite, pero puedes acabar en una situación en la que tengas problemas en el sistema de archivos causados por un número excesivo de archivos o directorios (como el límite de inodes).
+
+4. Si insertas en muchas particiones a la vez, el problema se multiplica por el número de particiones afectadas por la inserción.
+
+5. Puedes intentar ajustar el comportamiento de ClickHouse con alguno de los parámetros indicados, o con max&#95;insert&#95;block&#95;size / max&#95;block&#95;size / insert&#95;format&#95;max&#95;block&#95;size / max&#95;client&#95;network&#95;bandwidth. Pero la mejor solución es simplemente insertar los datos al ritmo esperado. El ritmo esperado es: **una inserción cada 1-2 s, y que cada inserción contenga entre 10K y 500K filas de datos**.
+
+6. Así que la forma correcta de resolver &quot;Merges are processing significantly slower than inserts&quot; es ajustar el número de inserciones por segundo y el número de filas en cada inserción. Usa inserciones por lotes para combinar inserciones pequeñas en una mayor si los datos llegan fila por fila. Reduce el ritmo de las inserciones enormes si tienes demasiados datos para insertar de una sola vez. No cambies los internals de ClickHouse, a menos que realmente entiendas bien lo que significa.
+
+7. Si tus datos llegan a más de 500K filas por segundo, lo más probable es que necesites más servidores en el cluster para manejar ese tráfico, no ajustar parámetros.
+
+8. La velocidad de las fusiones en segundo plano normalmente depende de la velocidad del almacenamiento, de la configuración de compresión utilizada, de la opción de MergeTree (el algoritmo de fusión: fusión simple/agregación/suma/collapsing, etc.) y de la clave de ordenación utilizada.

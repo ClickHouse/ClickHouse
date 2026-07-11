@@ -1,0 +1,59 @@
+---
+sidebarTitle: 'Fabi.ai'
+slug: /integrations/fabi.ai
+keywords: ['ClickHouse', 'Fabi.ai', 'ربط', 'تكامل', 'دفتر ملاحظات', 'واجهة المستخدم', 'التحليلات']
+description: 'Fabi.ai منصة متكاملة وتعاونية لتحليل البيانات. يمكنك الاستفادة من SQL وPython والذكاء الاصطناعي والأدوات غير البرمجية لإنشاء لوحات المعلومات وتدفقات عمل البيانات أسرع من أي وقت مضى'
+title: 'ربط ClickHouse بـ Fabi.ai'
+doc_type: 'guide'
+integration:
+   - support_level: 'community'
+   - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+<CommunityMaintainedBadge />
+
+<a href="https://www.fabi.ai/" target="_blank">Fabi.ai</a> هي منصة شاملة لتحليل البيانات بشكل تعاوني. يمكنك الاستفادة من SQL وPython والذكاء الاصطناعي وأدوات بدون برمجة لبناء لوحة معلومات وسير عمل البيانات أسرع من أي وقت مضى. ومع قابلية التوسع التي يوفّرها ClickHouse وقوته، يمكنك إنشاء أول لوحة معلومات عالية الأداء على مجموعة بيانات ضخمة ومشاركتها في غضون دقائق.
+
+<Image size="md" img="/images/integrations/data-visualization/fabi_01.webp" alt="منصة Fabi.ai لاستكشاف البيانات وسير العمل" border />
+
+<div id="gather-your-connection-details">
+  ## اجمع تفاصيل الاتصال
+</div>
+
+<ConnectionDetails />
+
+<div id="connect-to-clickhouse">
+  ## أنشئ حسابك على Fabi.ai واربط ClickHouse
+</div>
+
+سجّل الدخول إلى حسابك على Fabi.ai أو أنشئ حسابًا جديدًا: https://app.fabi.ai/
+
+1. سيُطلب منك ربط قاعدة البيانات عند إنشاء حسابك لأول مرة. وإذا كان لديك حساب بالفعل، فانقر على لوحة مصدر البيانات على يسار أي Smartbook، ثم اختر إضافة مصدر بيانات.
+
+   <Image size="lg" img="/images/integrations/data-visualization/fabi_02.webp" alt="إضافة مصدر بيانات" border />
+
+2. سيُطلب منك بعد ذلك إدخال تفاصيل الاتصال.
+
+   <Image size="md" img="/images/integrations/data-visualization/fabi_03.webp" alt="نموذج بيانات اعتماد ClickHouse" border />
+
+3. تهانينا! لقد ربطت ClickHouse الآن بـ Fabi.ai.
+
+<div id="querying-clickhouse">
+  ## الاستعلام في ClickHouse.
+</div>
+
+بعد توصيل Fabi.ai بـ ClickHouse، انتقل إلى أي [Smartbook](https://docs.fabi.ai/analysis_and_reporting/smartbooks) وأنشئ خلية SQL. إذا كان لديك مصدر بيانات واحد فقط متصل بمثيل Fabi.ai، فسيُحدَّد ClickHouse تلقائيًا لخلية SQL، وإلا يمكنك اختيار المصدر الذي تريد الاستعلام منه من القائمة المنسدلة للمصدر.
+
+<Image size="lg" img="/images/integrations/data-visualization/fabi_04.webp" alt="الاستعلام في ClickHouse" border />
+
+<div id="additional-resources">
+  ## موارد إضافية
+</div>
+
+وثائق [Fabi.ai](https://www.fabi.ai): https://docs.fabi.ai/introduction
+
+فيديوهات الدروس التعليمية للبدء باستخدام [Fabi.ai](https://www.fabi.ai): https://www.youtube.com/playlist?list=PLjxPRVnyBCQXxxByw2CLC0q7c-Aw6t2nl
