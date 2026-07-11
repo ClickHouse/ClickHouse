@@ -1,0 +1,215 @@
+---
+sidebarTitle: 'Splunk'
+slug: /integrations/splunk
+keywords: ['Splunk', '통합', '데이터 시각화']
+description: 'Splunk 대시보드를 ClickHouse에 연결'
+title: 'Splunk를 ClickHouse에 연결하기'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<Tip>
+  ClickHouse audit logs를 Splunk에 저장하려는 경우 [&quot;Storing ClickHouse Cloud Audit logs into Splunk&quot;](/ko/integrations/connectors/data-integrations/integrations/splunk) 가이드를 참조하세요.
+</Tip>
+
+Splunk는 보안 및 관측성에 널리 사용되는 기술입니다. 또한 강력한 검색 및 대시보드 엔진이기도 합니다. 다양한 사용 사례를 지원하는 수백 개의 Splunk 앱이 제공됩니다.
+
+특히 ClickHouse의 경우, ClickHouse의 테이블을 직접 쿼리할 수 있도록 고성능 ClickHouse JDBC 드라이버와 손쉽게 통합되는 [Splunk DB Connect App](https://splunkbase.splunk.com/app/2686)을 활용합니다.
+
+이 통합은 NetFlow, Avro 또는 Protobuf 바이너리 데이터, DNS, VPC flow logs, 기타 OTel logs와 같은 대규모 데이터 소스에 ClickHouse를 사용하고, 해당 데이터를 Splunk에서 팀과 공유하여 검색하거나 대시보드를 생성하려는 경우에 가장 적합합니다. 이 방식을 사용하면 데이터가 Splunk 인덱스 계층으로 수집되지 않으며, [Metabase](https://www.metabase.com/) 또는 [Superset](https://superset.apache.org/)과 같은 다른 시각화 통합과 비슷하게 ClickHouse에서 직접 쿼리합니다.
+
+<div id="goal">
+  ## 목표​
+</div>
+
+이 가이드에서는 ClickHouse JDBC 드라이버를 사용해 ClickHouse를 Splunk에 연결합니다. 로컬 버전의 Splunk Enterprise를 설치하지만, 데이터는 인덱싱하지 않습니다. 대신 DB Connect 쿼리 엔진을 통해 검색 기능만 사용합니다.
+
+이 가이드를 따르면 다음과 같이 ClickHouse에 연결된 대시보드를 만들 수 있습니다.
+
+<Image img="/images/integrations/splunk/splunk-1.webp" size="lg" border alt="NYC 택시 데이터 시각화를 보여주는 Splunk 대시보드" />
+
+<Note>
+  이 가이드에서는 [New York City Taxi 데이터셋](/ko/get-started/sample-datasets/nyc-taxi)을 사용합니다. 사용할 수 있는 다른 데이터셋도 [문서](http://localhost:3000/docs/getting-started/example-datasets)에서 많이 확인할 수 있습니다.
+</Note>
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+시작하기 전에 다음이 필요합니다:
+
+* search head 기능을 사용하기 위한 Splunk Enterprise
+* OS 또는 컨테이너에 [Java Runtime Environment (JRE)](https://docs.splunk.com/Documentation/DBX/3.16.0/DeployDBX/Prerequisites) 요구 사항이 설치되어 있어야 합니다
+* [Splunk DB Connect](https://splunkbase.splunk.com/app/2686)
+* Splunk Enterprise OS 인스턴스에 대한 관리자 또는 SSH 액세스 권한
+* ClickHouse 연결 정보(ClickHouse Cloud를 사용하는 경우 [여기](/ko/integrations/connectors/data-visualization/metabase-and-clickhouse#1-gather-your-connection-details) 참조)
+
+<div id="install-and-configure-db-connect-on-splunk-enterprise">
+  ## Splunk Enterprise에 DB Connect 설치 및 구성
+</div>
+
+먼저 Splunk Enterprise 인스턴스에 Java Runtime Environment를 설치해야 합니다. Docker를 사용하는 경우 `microdnf install java-11-openjdk` 명령을 사용할 수 있습니다.
+
+`java_home` 경로를 기록해 두십시오: `java -XshowSettings:properties -version`.
+
+Splunk Enterprise에 DB Connect App이 설치되어 있는지 확인하십시오. Splunk Web UI의 Apps 섹션에서 찾을 수 있습니다:
+
+* Splunk Web에 로그인한 후 Apps &gt; Find More Apps로 이동합니다
+* 검색 상자에서 DB Connect를 검색합니다
+* Splunk DB Connect 옆에 있는 녹색 &quot;Install&quot; 버튼을 클릭합니다
+* &quot;Restart Splunk&quot;를 클릭합니다
+
+DB Connect App 설치에 문제가 있으면 추가 지침은 [이 링크](https://splunkbase.splunk.com/app/2686)를 참조하십시오.
+
+DB Connect App이 설치되어 있는 것을 확인한 후, Configuration -&gt; 설정에서 `java_home` 경로를 DB Connect App에 추가하고 save를 클릭한 다음 reset을 클릭하십시오.
+
+<Image img="/images/integrations/splunk/splunk-2.webp" size="md" border alt="Java Home 구성을 보여주는 Splunk DB Connect 설정 페이지" />
+
+<div id="configure-jdbc-for-clickhouse">
+  ## ClickHouse용 JDBC 구성
+</div>
+
+[ClickHouse JDBC 드라이버 JAR 파일](https://github.com/ClickHouse/clickhouse-java/releases/)을 다운로드하여 다음 경로의 DB Connect Drivers 폴더에 복사합니다:
+
+```bash
+$SPLUNK_HOME/etc/apps/splunk_app_db_connect/drivers
+```
+
+DB Connect App에 필요한 모든 종속성을 사용할 수 있도록 다음 중 하나를 다운로드하십시오:
+
+```text
+- clickhouse-jdbc-<VERSION>-shaded-all.jar (if VERSION < 0.9.0)
+- clickhouse-jdbc-<VERSION>-all-dependencies.jar (if VERSION >= 0.9.0)
+```
+
+그런 다음 `$SPLUNK_HOME/etc/apps/splunk_app_db_connect/local/db_connection_types.conf`의 connection types 구성을 편집하여 ClickHouse JDBC 드라이버 클래스 정보를 추가해야 합니다. 다음 스탠자를 `db_connection_types.conf`에 추가하십시오:
+
+```text
+[ClickHouse]
+displayName = ClickHouse
+serviceClass = com.splunk.dbx2.DefaultDBX2JDBC
+jdbcUrlFormat = jdbc:ch://<host>:<port>/<database>
+jdbcUrlSSLFormat = jdbc:ch://<host>:<port>/<database>?ssl=true
+jdbcDriverClass = com.clickhouse.jdbc.ClickHouseDriver
+ui_default_catalog = $database$
+```
+
+`$SPLUNK_HOME/bin/splunk restart`를 사용해 Splunk를 다시 시작하십시오.
+
+DB Connect App으로 돌아가 Configuration &gt; 설정 &gt; Drivers로 이동하십시오. ClickHouse 옆에 녹색 체크 표시가 나타나야 합니다:
+
+<Image img="/images/integrations/splunk/splunk-3.webp" size="lg" border alt="ClickHouse 드라이버가 성공적으로 설치된 것으로 표시된 Splunk DB Connect 드라이버 페이지" />
+
+<div id="connect-splunk-search-to-clickhouse">
+  ## Splunk 검색을 ClickHouse에 연결하기
+</div>
+
+DB Connect App Configuration -&gt; Databases -&gt; Identities로 이동하여 ClickHouse용 아이덴티티를 생성합니다.
+
+Configuration -&gt; Databases -&gt; Connections에서 ClickHouse에 대한 새 연결을 생성한 다음 &quot;New Connection&quot;을 선택합니다.
+
+<Image img="/images/integrations/splunk/splunk-4.webp" size="sm" border alt="Splunk DB Connect 새 연결 버튼" />
+
+<br />
+
+ClickHouse 호스트 정보를 추가하고 &quot;Enable SSL&quot;이 선택되어 있는지 확인합니다:
+
+<Image img="/images/integrations/splunk/splunk-5.webp" size="md" border alt="ClickHouse용 Splunk 연결 구성 페이지" />
+
+연결을 저장하면 ClickHouse와 Splunk가 성공적으로 연결됩니다!
+
+<Note>
+  오류가 발생하면 Splunk 인스턴스의 IP 주소를 ClickHouse Cloud IP 액세스 목록에 추가했는지 확인하십시오. 자세한 내용은 [문서](/ko/products/cloud/guides/security/connectivity/setting-ip-filters)를 참조하십시오.
+</Note>
+
+<div id="run-a-sql-query">
+  ## SQL 쿼리 실행하기
+</div>
+
+이제 모든 것이 정상적으로 작동하는지 확인하기 위해 SQL 쿼리를 실행합니다.
+
+DB Connect App의 DataLab 섹션에 있는 SQL Explorer에서 연결 정보를 선택합니다. 이 데모에서는 `trips` 테이블을 사용합니다:
+
+<Image img="/images/integrations/splunk/splunk-6.webp" size="md" border alt="ClickHouse 연결 정보를 선택하는 Splunk SQL Explorer" />
+
+테이블의 전체 레코드 수를 반환하는 `trips` 테이블에 대해 SQL 쿼리를 실행합니다:
+
+<Image img="/images/integrations/splunk/splunk-7.webp" size="md" border alt="trips 테이블의 레코드 수를 보여주는 Splunk SQL 쿼리 실행 화면" />
+
+쿼리가 성공하면 결과가 표시됩니다.
+
+<div id="create-a-dashboard">
+  ## 대시보드 만들기
+</div>
+
+SQL과 강력한 Splunk Processing Language(SPL)를 결합해 사용하는 대시보드를 만들어 보겠습니다.
+
+계속하기 전에 먼저 [DPL Safeguards 비활성화](https://docs.splunk.com/Documentation/Splunk/9.2.1/Security/SPLsafeguards?ref=hk#Deactivate_SPL_safeguards)를 수행해야 합니다.
+
+픽업 빈도가 가장 높은 상위 10개 지역을 보여주는 다음 쿼리를 실행하세요:
+
+```sql
+dbxquery query="SELECT pickup_ntaname, count(*) AS count
+FROM default.trips GROUP BY pickup_ntaname
+ORDER BY count DESC LIMIT 10;" connection="chc"
+```
+
+생성된 컬럼 차트를 보려면 시각화 탭을 선택합니다:
+
+<Image img="/images/integrations/splunk/splunk-8.webp" size="lg" border alt="상위 10개 승차 지역을 보여주는 Splunk 컬럼 차트 시각화" />
+
+이제 Save As &gt; Save to a Dashboard를 클릭하여 대시보드를 생성하겠습니다.
+
+승객 수를 기준으로 평균 요금을 보여주는 다른 쿼리를 추가해 보겠습니다.
+
+```sql
+dbxquery query="SELECT passenger_count,avg(total_amount)
+FROM default.trips GROUP BY passenger_count;" connection="chc"
+```
+
+이번에는 막대 차트 시각화를 만들고 이전 대시보드에 저장하겠습니다.
+
+<Image img="/images/integrations/splunk/splunk-9.webp" size="lg" border alt="승객 수별 평균 요금을 보여주는 Splunk 막대 차트" />
+
+마지막으로, 승객 수와 이동 거리 간의 상관관계를 보여주는 쿼리를 하나 더 추가하겠습니다:
+
+```sql
+dbxquery query="SELECT passenger_count, toYear(pickup_datetime) AS year,
+round(trip_distance) AS distance, count(* FROM default.trips)
+GROUP BY passenger_count, year, distance
+ORDER BY year, count(*) DESC; " connection="chc"
+```
+
+최종 대시보드는 다음과 같이 표시됩니다:
+
+<Image img="/images/integrations/splunk/splunk-10.webp" size="lg" border alt="NYC 택시 데이터에 대한 여러 시각화를 보여주는 최종 Splunk 대시보드" />
+
+<div id="time-series-data">
+  ## 시계열 데이터
+</div>
+
+Splunk에는 대시보드에서 시계열 데이터를 시각화하고 표현하는 데 사용할 수 있는 기본 제공 함수가 수백 개 있습니다. 이 예시에서는 SQL + SPL을 결합해 Splunk에서 시계열 데이터에 사용할 수 있는 쿼리를 만듭니다.
+
+```sql
+dbxquery query="SELECT time, orig_h, duration
+FROM "demo"."conn" WHERE time >= now() - interval 1 HOURS" connection="chc"
+| eval time = strptime(time, "%Y-%m-%d %H:%M:%S.%3Q")
+| eval _time=time
+| timechart avg(duration) as duration by orig_h
+| eval duration=round(duration/60)
+| sort - duration:
+```
+
+<div id="learn-more">
+  ## 자세히 알아보기
+</div>
+
+Splunk DB Connect 및 대시보드 구축 방법에 대한 자세한 내용은 [Splunk 문서](https://docs.splunk.com/Documentation)를 참조하십시오.

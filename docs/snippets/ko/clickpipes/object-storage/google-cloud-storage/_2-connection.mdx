@@ -1,0 +1,13 @@
+---
+title: 2 연결
+---
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/cp_step2.webp" alt="연결 정보 입력" size="lg" border />
+
+* **GCS 파일 경로**: GCS ClickPipe는 상호 운용성을 위해 Cloud Storage [XML API](https://docs.cloud.google.com/storage/docs/interoperability)를 사용하므로 `storage.googleapis.com` 엔드포인트가 필요합니다:
+
+  ```bash
+  https://storage.googleapis.com/bucket-name/key-name
+  ```
+
+  POSIX 와일드카드를 사용해 여러 파일이나 프리픽스와 일치시킬 수 있습니다. 지원되는 패턴에 대한 자세한 내용은 [참고 문서](/ko/integrations/clickpipes/object-storage/google-cloud-storage/overview#file-pattern-matching)를 참조하십시오.

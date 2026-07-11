@@ -31,7 +31,8 @@ SETTINGS
     enable_parallel_replicas = 0,
     distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0,
-    enable_join_runtime_filters = 0;
+    enable_join_runtime_filters = 0,
+    query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 
 SELECT '-- Distributed';
 SELECT count() FROM t_shuffle_join_left AS l JOIN t_shuffle_join_right AS r ON l.k = r.k
