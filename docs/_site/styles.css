@@ -2043,6 +2043,15 @@ h5#sidebar-title {
     /* 768px */
 }
 
+/* Custom explorers should use the full available width while the sidebar is
+   hidden at intermediate tablet sizes; otherwise the 768px prose cap leaves a
+   large unused area on the right. */
+@media (min-width: 768px) and (max-width: 1023px) {
+    html[data-page-mode="custom"] #content-area {
+        max-width: none !important;
+    }
+}
+
 /* Reduce outer container padding */
 #content-container {
     border-radius: 15px;

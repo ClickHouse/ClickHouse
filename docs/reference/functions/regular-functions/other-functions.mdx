@@ -548,8 +548,6 @@ communicate using a HTTP interface. By default, port `9012` is used. A different
 
 See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
 
-The model file must be located inside the [`user_files`](/reference/settings/server-settings/settings#user_files_path) directory, like for the [`file`](/reference/functions/regular-functions/files#file) function.
-
 <Note>
 This function is non-deterministic: it can return different results for the same arguments.
 </Note>
@@ -562,7 +560,7 @@ catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])
 
 **Arguments**
 
-- `path_to_model` — Path to the catboost model, located inside the `user_files` directory. [`const String`](/reference/data-types/string)
+- `path_to_model` — Path to catboost model. [`const String`](/reference/data-types/string)
 - `feature` — One or more model features/arguments. [`Float*`](/reference/data-types/float)
 
 **Returned value**
@@ -574,7 +572,7 @@ Returns the model evaluation result. [`Float64`](/reference/data-types/float)
 **catboostEvaluate**
 
 ```sql title=Query
-SELECT catboostEvaluate('/var/lib/clickhouse/user_files/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
+SELECT catboostEvaluate('/root/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
 ```
 
 ```response title=Response
@@ -2406,12 +2404,12 @@ Gets the value of an HTTP header.
 If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
 Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
 
-<Info>
+<Note>
 **Setting `allow_get_client_http_header` is required**
 
 The function requires the setting `allow_get_client_http_header` to be enabled.
 The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
-</Info>
+</Note>
 
 HTTP headers are case sensitive for this function.
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
@@ -3216,7 +3214,9 @@ During index analysis, the argument of this function is assumed to not be wrappe
 This allows you to select data in index ranges by the corresponding condition but without further filtering by this condition.
 The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
 
-<Accordion title="Explanation">
+<details>
+<summary>Explanation</summary>
+
 When you run:
 
 ```sql
@@ -3245,7 +3245,7 @@ It returns all 8,192 rows, including rows where `key = 456`, `key = 789`, etc. (
 - Which granules does my condition select?
 - How many rows are in those granules?
 - Is my index being used effectively?
-</Accordion>
+</details>
 
 Note: It is not possible to optimize a query with the `indexHint` function. The `indexHint` function does not optimize the query, as it does not provide any additional information for the query analysis. Having an expression inside the `indexHint` function is not anyhow better than without the `indexHint` function. The `indexHint` function can be used only for introspection and debugging purposes and it does not improve performance. If you see the usage of `indexHint` by anyone other than ClickHouse contributors, it is likely a mistake and you should remove it.
     
