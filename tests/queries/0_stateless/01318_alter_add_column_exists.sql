@@ -137,3 +137,26 @@ ALTER TABLE add_nested_sno0 ADD COLUMN `n.a` Array(UInt32), ADD COLUMN IF NOT EX
 SHOW CREATE TABLE add_nested_sno0;
 
 DROP TABLE IF EXISTS add_nested_sno0;
+
+DROP TABLE IF EXISTS add_nested_mut;
+
+-- share_nested_offsets must also be threaded through the getMutationCommands / tryConvertToMutationCommand
+-- replay path, not just the explicit commands.apply(). A table that already has only `n.a` under
+-- share_nested_offsets = 0 must accept `ADD COLUMN IF NOT EXISTS n String, RENAME COLUMN n TO n2`: the
+-- add creates a genuinely new distinct top-level `n`, and the subsequent RENAME sees it. If the replay
+-- used the default share_nested_offsets = true, the add would be skipped (hasNested("n") matches `n.a`)
+-- and RENAME COLUMN n would throw from ColumnsDescription::rename against a snapshot with no `n`.
+CREATE TABLE add_nested_mut
+(
+    key UInt64,
+    `n.a` UInt32
+)
+ENGINE = MergeTree()
+ORDER BY key
+SETTINGS share_nested_offsets = 0;
+
+ALTER TABLE add_nested_mut ADD COLUMN IF NOT EXISTS n String, RENAME COLUMN n TO n2;
+
+SHOW CREATE TABLE add_nested_mut;
+
+DROP TABLE IF EXISTS add_nested_mut;

@@ -196,7 +196,9 @@ struct AlterCommand
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
-    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const;
+    /// share_nested_offsets is forwarded to the internal apply() so mutation-planning replay
+    /// treats IF NOT EXISTS nested existence the same way as the real commands.apply().
+    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
 };
 
 class Context;
@@ -240,7 +242,10 @@ public:
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
+    /// share_nested_offsets is threaded to tryConvertToMutationCommand -> AlterCommand::apply so the
+    /// intermediate metadata built while planning mutations matches the real commands.apply() for
+    /// IF NOT EXISTS nested adds (see AlterCommand::apply).
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);
