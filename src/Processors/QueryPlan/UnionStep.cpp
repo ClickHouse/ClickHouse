@@ -166,6 +166,11 @@ QueryPlanStepPtr UnionStep::clone() const
     return std::make_unique<UnionStep>(input_headers, max_threads, allow_narrowing);
 }
 
+QueryPlanStepPtr UnionStep::clone() const
+{
+    return std::make_unique<UnionStep>(*this);
+}
+
 void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerUnionStep(QueryPlanStepRegistry & registry)
 {
