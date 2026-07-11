@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/RemoveRedundantIfNullCoalescePass.h>
 
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
@@ -44,6 +45,18 @@ public:
         /// The result type must match the argument type for a safe in-place replacement.
         if (!node->getResultType()->equals(*first_argument_type))
             return;
+
+        /// ifNull/coalesce are NOT short-circuit (unlike if/multiIf): the fallback arguments are
+        /// evaluated at execution even when the first argument is non-Nullable. Dropping them would
+        /// silently discard their side effects, e.g. `ifNull(non_nullable, throwIf(1))` must still
+        /// throw and `coalesce(x, sleepEachRow(1))` must still run. Only rewrite when every discarded
+        /// fallback argument is a constant (provably side-effect-free), mirroring the guard in
+        /// DictGetTupleElementPass for `tuple('ok', throwIf(1))`.
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            if (!arguments[i]->as<ConstantNode>())
+                return;
+        }
 
         node = first_argument;
     }
