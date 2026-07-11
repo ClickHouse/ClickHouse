@@ -52,3 +52,18 @@ CREATE TABLE dist_over_tf (x String) ENGINE = Distributed(test_shard_localhost, 
 CREATE TABLE dist_over_tf (x UInt8) ENGINE = Distributed(test_shard_localhost, merge(currentDatabase(), '^dist_over_tf$'));
 SELECT * FROM dist_over_tf SETTINGS max_distributed_depth = 3; -- { serverError TOO_LARGE_DISTRIBUTED_DEPTH }
 DROP TABLE dist_over_tf;
+
+-- A `dictGet` in the sharding key registers a loading dependency on the dictionary, so on restart the
+-- Distributed table is loaded after the dictionary it references. In the table-function form the sharding key
+-- is the 3rd argument (vs the 4th in the classic form), so the loading-dependency visitor must look at the
+-- shifted position - otherwise the dependency is silently dropped and the table can fail to load after a reboot.
+DROP DICTIONARY IF EXISTS shard_dict;
+CREATE DICTIONARY shard_dict (key UInt64, val UInt64)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY 'SELECT 0 AS key, 0 AS val'))
+LAYOUT(FLAT())
+LIFETIME(0);
+CREATE TABLE dist_over_tf (number UInt64) ENGINE = Distributed(test_shard_localhost, numbers(10), dictGetUInt64('shard_dict', 'val', number));
+SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'dist_over_tf';
+DROP TABLE dist_over_tf;
+DROP DICTIONARY shard_dict;

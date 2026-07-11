@@ -14,6 +14,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTTLElement.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Poco/String.h>
 
 
@@ -143,9 +144,23 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
         return;
 
     if (storage.engine->name == "Distributed")
+    {
         /// Checks that dict* expression was used as sharding_key and builds dependency between the dictionary and current table.
+        /// The sharding key is the 4th argument in the classic form
         /// Distributed(logs, default, hits[, sharding_key[, policy_name]])
-        extractTableNameFromArgument(*storage.engine, data, 3);
+        /// but the 3rd argument when the target is a table function
+        /// Distributed(logs, table_function()[, sharding_key[, policy_name]]),
+        /// mirroring how `registerStorageDistributed` disambiguates the second argument.
+        size_t sharding_key_arg_idx = 3;
+        const auto & engine = *storage.engine;
+        if (engine.arguments && engine.arguments->children.size() >= 2)
+        {
+            const auto * second_arg = engine.arguments->children[1]->as<ASTFunction>();
+            if (second_arg && TableFunctionFactory::instance().isTableFunctionName(second_arg->name))
+                sharding_key_arg_idx = 2;
+        }
+        extractTableNameFromArgument(engine, data, sharding_key_arg_idx);
+    }
     else if (storage.engine->name == "Dictionary")
         extractTableNameFromArgument(*storage.engine, data, 0);
 #if USE_LIBPQXX
