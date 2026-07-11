@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-flaky-check
+-- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
 -- Tests that the key of the query cache is not only formed by the query AST but also by

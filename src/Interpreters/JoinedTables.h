@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Context_fwd.h>

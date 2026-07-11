@@ -13,7 +13,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
-#include <Core/UUID.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -235,7 +234,7 @@ void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
             "MIN {} attribute is not defined in the dictionary attributes", range->min_attr_name);
 
-    auto range_max_attribute_it = all_attrs.find(range->max_attr_name);
+    auto range_max_attribute_it = all_attrs.find(range->min_attr_name);
     if (range_max_attribute_it == all_attrs.end())
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
             "MAX {} attribute is not defined in the dictionary attributes", range->max_attr_name);
@@ -515,11 +514,6 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
                     "Please update the dictionary definition to remove function usage");
             }
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
-            if (!builder)
-            {
-                throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
-                    "The dictionary definition contains unsupported function {}", func->name);
-            }
             auto function = builder->build({});
             function->prepare({});
 
@@ -618,7 +612,7 @@ void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names
 
 }
 
-static void checkLifetime(const ASTCreateQuery & query)
+void checkLifetime(const ASTCreateQuery & query)
 {
     if (query.dictionary->layout && query.dictionary->layout->layout_type == "direct")
     {

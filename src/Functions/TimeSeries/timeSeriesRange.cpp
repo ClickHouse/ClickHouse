@@ -9,7 +9,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
-#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -18,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -30,7 +28,7 @@ namespace ErrorCodes
 /// Function timeSeriesFromGrid(start_timestamp, end_timestamp, step, [value1, value2, value3, ..., valueN]) converts array of values [value1, value2, value3, ...]
 /// to array of tuples [(start_timestamp, value1), (start_timestamp + step, value2), (start_timestamp + 2 * step, value3), ..., (end_timestamp, valueN)].
 template <bool with_values>
-class FunctionTimeSeriesRange final : public IFunction
+class FunctionTimeSeriesRange : public IFunction
 {
 public:
     static constexpr auto name = with_values ? "timeSeriesFromGrid" : "timeSeriesRange";
@@ -248,20 +246,9 @@ public:
 
         for (size_t i = 0; i != num_rows; ++i)
         {
-            Int64 start_timestamp_raw = 0;
-            if (common::mulOverflow(start_timestamp_column.get64(i), start_timestamp_multiplier, start_timestamp_raw))
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
-            auto start_timestamp = static_cast<TimestampType>(start_timestamp_raw);
-
-            Int64 end_timestamp_raw = 0;
-            if (common::mulOverflow(end_timestamp_column.get64(i), end_timestamp_multiplier, end_timestamp_raw))
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
-            auto end_timestamp = static_cast<TimestampType>(end_timestamp_raw);
-
-            Int64 step_raw = 0;
-            if (common::mulOverflow(step_column.getInt(i), step_multiplier, step_raw))
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow in function {}", name);
-            auto step = static_cast<IntervalType>(step_raw);
+            auto start_timestamp = static_cast<TimestampType>(start_timestamp_column.get64(i) * start_timestamp_multiplier);
+            auto end_timestamp = static_cast<TimestampType>(end_timestamp_column.get64(i) * end_timestamp_multiplier);
+            auto step = static_cast<IntervalType>(step_column.getInt(i) * step_multiplier);
 
             if (end_timestamp < start_timestamp)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "End timestamp is less than start timestamp");
@@ -274,7 +261,7 @@ public:
                 num_steps = (end_timestamp - start_timestamp) / step + 1;
             }
 
-            size_t values_base_offset = 0;
+            size_t values_base_offset;
             if constexpr (with_values)
             {
                 values_base_offset = (*values_offsets)[i - 1];
@@ -285,7 +272,7 @@ public:
 
             for (size_t j = 0; j != num_steps; ++j)
             {
-                size_t offset = 0;
+                size_t offset;
                 if constexpr (with_values)
                 {
                     offset = j + values_base_offset;

@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 
 /// Extracts integer or decimal parameter value and converts it to decimal with the target scale (scale of the timestamp column)
-static Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
+Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
 {
     auto target_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(target_scale);
 
@@ -69,7 +69,7 @@ static Decimal64 normalizeParameter(const std::string & function_name, const std
     }
 }
 
-static UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
     if (parameter_field.getType() == Field::Types::Decimal64)
     {
@@ -113,7 +113,7 @@ static UInt64 extractIntParameter(const std::string & function_name, const std::
     }
 }
 
-static Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
     if (parameter_field.getType() == Field::Types::Decimal64)
     {
@@ -207,12 +207,12 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         {
             Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param) * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(target_scale));
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_predict>>>
-                (argument_types, parameters, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
+                (argument_types, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
         }
         else
         {
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate_or_resets>>>
-                (argument_types, parameters, start_timestamp, end_timestamp, step, window, target_scale);
+                (argument_types, start_timestamp, end_timestamp, step, window, target_scale);
         }
     }
     else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
@@ -226,12 +226,12 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         {
             Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param);
             res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_predict>>>
-                (argument_types, parameters, start_timestamp, end_timestamp, step, window, 0, predict_offset);
+                (argument_types, start_timestamp, end_timestamp, step, window, 0, predict_offset);
         }
         else
         {
             res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate_or_resets>>>
-                (argument_types, parameters, start_timestamp, end_timestamp, step, window, 0);
+                (argument_types, start_timestamp, end_timestamp, step, window, 0);
         }
     }
 
@@ -292,7 +292,6 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
 
 }
 
-void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
 {
     /// timeSeriesRateToGrid documentation

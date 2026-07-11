@@ -1,3 +1,0 @@
-[mv_to_datalake] target INSERT failed as expected
-[mv_to_datalake] client did not receive Logical error
-[mv_to_datalake] server alive after dependent-sink INSERT

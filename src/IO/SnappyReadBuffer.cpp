@@ -51,7 +51,7 @@ SnappyReadBuffer::~SnappyReadBuffer() = default;
 
 off_t SnappyReadBuffer::seek(off_t off, int whence)
 {
-    off_t new_pos = 0;
+    off_t new_pos;
     if (whence == SEEK_SET)
         new_pos = off;
     else if (whence == SEEK_CUR)

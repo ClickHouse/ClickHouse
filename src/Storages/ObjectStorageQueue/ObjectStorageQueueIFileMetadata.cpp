@@ -175,12 +175,12 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
                  path, file_status->state.load(), current_exception);
         try
         {
-            Coordination::Error code = {};
+            Coordination::Error code;
             auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
             zk_retry.retryLoop([&]
             {
                 auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-                if (zk_retry.isRetry() || uncertain_commit)
+                if (zk_retry.isRetry())
                 {
                     /// It is possible that we fail "after operation",
                     /// e.g. we successfully removed the node, but did not get confirmation,
@@ -393,7 +393,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     prepareResetProcessingRequests(requests);
 
     Coordination::Responses responses;
-    Coordination::Error code = {};
+    Coordination::Error code;
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
@@ -584,7 +584,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
-        /// Create Failed node.
+        /// Created Failed node.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
         return;
     }

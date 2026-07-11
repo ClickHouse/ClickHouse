@@ -1,6 +1,5 @@
 [libfuzzer]
 timeout = 20
-rss_limit_mb = 4096
 
 [fuzzer_arguments]
 --max_execution_time=10

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
@@ -21,8 +20,7 @@ struct S3AuthSettingsImpl;
 #define S3AUTH_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, UInt64) \
-    M(CLASS_NAME, String) \
-    M(CLASS_NAME, S3UriStyle)
+    M(CLASS_NAME, String)
 
 S3AUTH_SETTINGS_SUPPORTED_TYPES(S3AuthSettings, DECLARE_SETTING_TRAIT)
 
@@ -62,7 +60,7 @@ struct S3AuthSettings
     HTTPHeaderEntries headers;
     HTTPHeaderEntries access_headers;
 
-    UnorderedSetWithMemoryTracking<std::string> users;
+    std::unordered_set<std::string> users;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
 
     void serialize(WriteBuffer & out, ContextPtr context) const;

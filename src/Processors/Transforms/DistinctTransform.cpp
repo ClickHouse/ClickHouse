@@ -12,28 +12,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void LCOptimizationController::update(size_t num_rows, size_t new_indices_in_chunk)
-{
-    if (state != State::Observing)
-        return;
-
-    ++chunks_observed;
-    rows_observed += num_rows;
-    new_indices_observed += new_indices_in_chunk;
-
-    if (chunks_observed >= OBSERVATION_CHUNK_COUNT)
-    {
-        double new_index_rate = static_cast<double>(new_indices_observed) / static_cast<double>(rows_observed);
-
-        /// Disable when the mask is almost a no-op: nearly every row introduces
-        /// a new dictionary index, so the bitmap bookkeeping is pure overhead.
-        if (new_index_rate >= NEW_INDEX_RATE_THRESHOLD)
-            state = State::Disabled;
-        else
-            state = State::Enabled;
-    }
-}
-
 DistinctTransform::DistinctTransform(
     SharedHeader header_,
     const SizeLimits & set_size_limits_,
@@ -93,7 +71,7 @@ void DistinctTransform::buildFilter(
     }
 }
 
-std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows)
+IColumn::Filter DistinctTransform::buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows)
 {
     const auto & dictionary = column.getDictionary();
     const auto dict_size = dictionary.size();
@@ -117,9 +95,8 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
     /// If we've already seen all dictionary indices for this dictionary,
     /// then no row in this chunk (and also other chunks with the same dictionary) can produce a new distinct value.
     if (state.seen_count == dict_size)
-        return {{}, 0}; /// empty mask == no candidates
+        return {}; /// empty mask == no candidates
 
-    const auto seen_count_before = state.seen_count;
     auto & seen = state.seen_indices;
 
     const auto index_type_size = column.getSizeOfIndexType();
@@ -176,7 +153,7 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for LowCardinality column in DistinctTransform");
     }
 
-    return {std::move(mask), state.seen_count - seen_count_before};
+    return mask; /// if empty, then means no candidates in this chunk
 }
 
 void DistinctTransform::transform(Chunk & chunk)
@@ -209,13 +186,11 @@ void DistinctTransform::transform(Chunk & chunk)
 
     std::optional<IColumn::Filter> lc_mask;
 
-    if (lc_optimization_controller.isEnabled() && key_columns_pos.size() == 1)
+    if (key_columns_pos.size() == 1)
     {
         if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(column_ptrs[0]))
         {
-            auto [mask, new_indices_count] = buildLowCardinalityMask(*lc, num_rows);
-            lc_optimization_controller.update(num_rows, new_indices_count);
-            lc_mask.emplace(std::move(mask));
+            lc_mask.emplace(buildLowCardinalityMask(*lc, num_rows));
 
             /// Empty mask -> no candidate rows in this chunk, emit nothing.
             if (lc_mask->empty())
@@ -241,32 +216,25 @@ void DistinctTransform::transform(Chunk & chunk)
 #undef M
     }
 
-    const auto new_set_size = data.getTotalRowCount();
-    const size_t num_selected = new_set_size - old_set_size;
-
     /// Just go to the next chunk if there isn't any new record in the current one.
-    if (num_selected == 0)
+    size_t new_set_size = data.getTotalRowCount();
+    if (new_set_size == old_set_size)
         return;
 
     if (!set_size_limits.check(new_set_size, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         return;
 
-    if (num_selected == num_rows)
-    {
-        /// Every row is a new distinct value: keep the chunk unchanged, without copying it.
-        chunk.setColumns(std::move(columns), num_rows);
-    }
-    else
-    {
-        for (auto & column : columns)
-            column = column->filter(filter, -1);
+    for (auto & column : columns)
+        column = column->filter(filter, -1);
 
-        chunk.setColumns(std::move(columns), num_selected);
-    }
+    chunk.setColumns(std::move(columns), new_set_size - old_set_size);
 
     /// Stop reading if we already reach the limit
     if (limit_hint && new_set_size >= limit_hint)
+    {
         stopReading();
+        return;
+    }
 }
 
 }

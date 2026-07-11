@@ -24,7 +24,6 @@ namespace Setting
     extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
     extern const SettingsBool optimize_extract_common_expressions;
     extern const SettingsBool optimize_and_compare_chain;
-    extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
 }
 
 namespace ErrorCodes
@@ -33,11 +32,6 @@ namespace ErrorCodes
 }
 
 using namespace std::literals;
-
-/// Defined in IQueryTreeNode.cpp: thread-local count of nodes visited by getTreeHash. Used as the
-/// work budget for tryOptimizeAndCompareChain (forward-declared here to avoid touching the header).
-size_t & getTreeHashWorkCounter();
-
 static constexpr std::array boolean_functions{
     "equals"sv,   "notEquals"sv,   "less"sv,   "greaterOrEquals"sv, "greater"sv,      "lessOrEquals"sv,    "in"sv,     "notIn"sv,
     "globalIn"sv, "globalNotIn"sv, "nullIn"sv, "notNullIn"sv,       "globalNullIn"sv, "globalNullNotIn"sv, "isNull"sv, "isNotNull"sv,
@@ -45,14 +39,31 @@ static constexpr std::array boolean_functions{
     "or"sv};
 
 
-static bool isBooleanFunction(const String & func_name)
+bool isBooleanFunction(const String & func_name)
 {
     return std::any_of(
         boolean_functions.begin(), boolean_functions.end(), [&](const auto boolean_func) { return func_name == boolean_func; });
 }
 
+bool isNodeFunction(const QueryTreeNodePtr & node, const String & func_name)
+{
+    if (const auto * function_node = node->as<FunctionNode>())
+        return function_node->getFunctionName() == func_name;
+    return false;
+}
 
-static QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
+QueryTreeNodePtr getFunctionArgument(const QueryTreeNodePtr & node, size_t idx)
+{
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        const auto & args = function_node->getArguments().getNodes();
+        if (idx < args.size())
+            return args[idx];
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected '{}' to be a function with at least {} arguments", node->formatASTForErrorMessage(), idx + 1);
+}
+
+QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
 {
     for (const auto & node : nodes)
     {
@@ -68,7 +79,7 @@ static QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
 
 /// Checks if the node is combination of isNull and notEquals functions of two the same arguments:
 /// [ (a <> b AND) ] (a IS NULL) AND (b IS NULL)
-static bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs)
+bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs)
 {
     QueryTreeNodePtrWithHashSet all_arguments;
     QueryTreeNodePtrWithHashSet is_null_arguments;
@@ -108,18 +119,18 @@ static bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr 
     return true;
 }
 
-static bool isBooleanConstant(const QueryTreeNodePtr & node, bool expected_value)
+bool isBooleanConstant(const QueryTreeNodePtr & node, bool expected_value)
 {
     const auto * constant_node = node->as<ConstantNode>();
     if (!constant_node || !constant_node->getResultType()->equals(DataTypeUInt8()))
         return false;
 
-    UInt64 constant_value = 0;
+    UInt64 constant_value;
     return (constant_node->getValue().tryGet<UInt64>(constant_value) && constant_value == expected_value);
 }
 
 /// Returns true if expression consists of only conjunctions of functions with the specified name or true constants
-static bool isOnlyConjunctionOfFunctions(
+bool isOnlyConjunctionOfFunctions(
     const QueryTreeNodePtr & node,
     const String & func_name,
     const QueryTreeNodePtrWithHashSet & allowed_arguments)
@@ -149,7 +160,7 @@ static bool isOnlyConjunctionOfFunctions(
 
 /// We can rewrite to a <=> b only if we are joining on a and b,
 /// because the function is not yet implemented for other cases.
-static bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function, const JoinNode & join_node)
+bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function, const JoinNode & join_node)
 {
     const auto & argument_nodes = node_function.getArguments().getNodes();
     if (argument_nodes.size() != 2)
@@ -166,7 +177,7 @@ static bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function,
            (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
 }
 
-static void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeNodes &nodes, QueryTreeNodePtr node)
+void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeNodes &nodes, QueryTreeNodePtr node)
 {
     const auto [_, inserted] = set.emplace(node);
     if (inserted)
@@ -174,7 +185,7 @@ static void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeN
 }
 
 // Returns the flattened AND/OR node if the passed-in node can be flattened. Doesn't modify the passed-in node.
-static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode & node, const ContextPtr & context)
+std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode & node, const ContextPtr & context)
 {
     const auto & function_name = node.getFunctionName();
     if (function_name != "or" && function_name != "and")
@@ -249,7 +260,7 @@ struct CommonExpressionExtractionResult
 // Optimize disjuctions by extracting common expressions in disjuncts.
 // Example: A or B or (B and C)
 // Result: A or B
-static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(const QueryTreeNodes & disjuncts, const ContextPtr & context)
+std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(const QueryTreeNodes & disjuncts, const ContextPtr & context)
 {
     std::vector<QueryTreeNodePtrWithHashSet> disjunct_sets;
     disjunct_sets.reserve(disjuncts.size());
@@ -330,7 +341,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     return CommonExpressionExtractionResult{ .new_node = new_or_node, .common_expressions = {} };
 }
 
-static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(const QueryTreeNodePtr & node, const ContextPtr & context)
+std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * or_node = node->as<FunctionNode>();
     if (!or_node || or_node->getFunctionName() != "or")
@@ -464,7 +475,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     return CommonExpressionExtractionResult{new_or_node, common_exprs};
 }
 
-static void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr & context)
+void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr & context)
 {
     [[maybe_unused]] auto * root_node = node->as<FunctionNode>();
     chassert(root_node && root_node->getFunctionName() == "or");
@@ -478,20 +489,14 @@ static void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const Cont
         if (result.new_node != nullptr)
             new_root_arguments.push_back(std::move(result.new_node));
 
-        if (new_root_arguments.size() == 1 && new_root_arguments.front()->getResultType()->equals(*node->getResultType()))
+        if (new_root_arguments.size() == 1)
         {
             new_root_node = std::move(new_root_arguments.front());
         }
         else
         {
-            /// If only one argument remains but its ResultType does not match the original `or`
-            /// (e.g. a `Float64` column), leaving it bare may trigger a lossy `_CAST(arg, UInt8)`
-            /// below that truncates values like `0.5` to `0` instead of performing `!= 0`. Wrap as
-            /// `and(arg, 1)`: `x AND 1` is the boolean identity (semantics preserved), and the AND
-            /// function performs the `!= 0` on `arg` internally.
-            if (new_root_arguments.size() == 1)
-                new_root_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
-
+            // The OR expression must be replaced by and AND expression that will contain the common expressions
+            // and the new_node, if it is not nullptr.
             auto new_function_node = std::make_shared<FunctionNode>("and");
             new_function_node->markAsOperator();
             new_function_node->getArguments().getNodes() = std::move(new_root_arguments);
@@ -506,7 +511,7 @@ static void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const Cont
     }
 }
 
-static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr & context)
+void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * root_node = node->as<FunctionNode>();
     chassert(root_node && root_node->getFunctionName() == "and");
@@ -540,36 +545,19 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
     if (!extracted_something)
         return;
 
-    QueryTreeNodePtr new_root_node;
-
-    if (new_top_level_arguments.size() == 1 && new_top_level_arguments.front()->getResultType()->equals(*node->getResultType()))
-    {
-        new_root_node = std::move(new_top_level_arguments.front());
-    }
-    else
-    {
-        /// If only one argument remains but its ResultType does not match the original `and`
-        /// (e.g. a `Float64` column), leaving it bare may trigger a lossy `_CAST(arg, UInt8)`
-        /// below that truncates values like `0.5` to `0` instead of performing `!= 0`. Wrap as
-        /// `and(arg, 1)`: `x AND 1` is the boolean identity (semantics preserved), and the AND
-        /// function performs the `!= 0` on `arg` internally.
-        if (new_top_level_arguments.size() == 1)
-            new_top_level_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
-
-        auto and_function_node = std::make_shared<FunctionNode>("and");
-        and_function_node->markAsOperator();
-        and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
-        auto and_function_resolver = FunctionFactory::instance().get("and", context);
-        and_function_node->resolveAsFunction(and_function_resolver);
-        new_root_node = std::move(and_function_node);
-    }
+    auto and_function_node = std::make_shared<FunctionNode>("and");
+    and_function_node->markAsOperator();
+    and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
+    auto and_function_resolver = FunctionFactory::instance().get("and", context);
+    and_function_node->resolveAsFunction(and_function_resolver);
+    QueryTreeNodePtr new_root_node = and_function_node;
 
     if (!new_root_node->getResultType()->equals(*node->getResultType()))
         new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
     node = std::move(new_root_node);
 }
 
-static void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)
+void tryOptimizeCommonExpressions(QueryTreeNodePtr & node, FunctionNode& function_node, const ContextPtr & context)
 {
     chassert(node.get() == &function_node);
     if (function_node.getFunctionName() == "or")
@@ -844,29 +832,7 @@ public:
 
     explicit LogicalExpressionOptimizerVisitor(ContextPtr context)
         : Base(std::move(context))
-        , and_compare_chain_max_hash_work(getSettings()[Setting::optimize_and_compare_chain_max_hash_work])
-        , and_compare_chain_hash_work_start(getTreeHashWorkCounter())
     {}
-
-    /// Work budget for tryOptimizeAndCompareChain, measured directly in nodes hashed by getTreeHash
-    /// (its dominant cost). We snapshot the global counter when the visitor starts and stop the
-    /// optimization once it has hashed more than `and_compare_chain_max_hash_work` nodes for this
-    /// query. On queries with very many / very large AND-comparison chains this caps a cost that
-    /// otherwise dominates analysis while folding nothing (e.g. a 16x16 SQL ray-trace: ~72s -> ~3s),
-    /// while normal queries hash only thousands of nodes and never approach the budget. Stopping
-    /// early is always safe -- it only forgoes an optimization, never changes results.
-    /// The budget is the `optimize_and_compare_chain_max_hash_work` setting (0 disables it).
-    const size_t and_compare_chain_max_hash_work = 0;
-    const size_t and_compare_chain_hash_work_start = 0;
-
-    /// True once this query has hashed more than `and_compare_chain_max_hash_work` nodes (across all
-    /// getTreeHash calls) since this visitor started. Used by tryOptimizeAndCompareChain to back off.
-    /// A budget of 0 means unlimited, so the optimization is never stopped early.
-    bool andCompareChainHashBudgetExceeded() const
-    {
-        return and_compare_chain_max_hash_work != 0
-            && getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;
-    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
@@ -939,7 +905,7 @@ private:
     void tryOptimizeAndEqualsNotEqualsChain(QueryTreeNodePtr & node)
     {
         auto & function_node = node->as<FunctionNode &>();
-        chassert(function_node.getFunctionName() == "and");
+        assert(function_node.getFunctionName() == "and");
 
         if (function_node.getResultType()->isNullable())
             return;
@@ -1064,7 +1030,7 @@ private:
             for (const auto & not_equals : not_equals_functions)
             {
                 const auto * not_equals_function = not_equals->as<FunctionNode>();
-                chassert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
+                assert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
 
                 const auto & not_equals_arguments = not_equals_function->getArguments().getNodes();
                 if (const auto * rhs_literal = not_equals_arguments[1]->as<ConstantNode>())
@@ -1074,7 +1040,7 @@ private:
                 else
                 {
                     const auto * lhs_literal = not_equals_arguments[0]->as<ConstantNode>();
-                    chassert(lhs_literal);
+                    assert(lhs_literal);
                     args.push_back(lhs_literal->getValue());
                 }
             }
@@ -1134,11 +1100,6 @@ private:
         if (function_node.getFunctionName() != "and" || function_node.getResultType()->isNullable())
             return;
 
-        /// Stop once this query has spent its AND-compare-chain hashing budget (measured in nodes
-        /// hashed by getTreeHash since this visitor started).
-        if (andCompareChainHashBudgetExceeded())
-            return;
-
         enum CompareType
         {
             less = 0,
@@ -1163,14 +1124,6 @@ private:
 
         for (const auto & argument : arguments)
         {
-            /// Building these maps inserts every comparison operand into QueryTreeNodePtrWithHash
-            /// containers, and each insert computes a full getTreeHash. A single very large AND chain
-            /// could hash its whole operand set here before any later (DFS) budget check, so honor the
-            /// budget while collecting too -- aborting now only forgoes the optimization (nothing has
-            /// been appended to the AND yet), never changes results.
-            if (andCompareChainHashBudgetExceeded())
-                return;
-
             auto * argument_function = argument->as<FunctionNode>();
             const auto valid_functions = std::unordered_set<std::string>{
                 "less", "greater", "lessOrEquals", "greaterOrEquals", "equals"};
@@ -1251,20 +1204,6 @@ private:
         /// To avoid duplicates of equals when starting from both sides, i.e. large and small constant.
         QueryTreeNodePtrWithHashMap<std::unordered_set<const ConstantNode *>> equal_funcs;
 
-        /// Conjuncts already present in the AND, used to keep this optimization idempotent: a derived
-        /// transitive conjunct is appended only if an equal one is not already there. The identifier
-        /// resolve cache can hand the same node to several use sites, and the pass visitor is not
-        /// deduplicating, so a shared AND would otherwise accumulate the same derived conjunct once per
-        /// visit and desync from a singly-referenced copy (e.g. a GROUP BY key matched by formatted name).
-        QueryTreeNodePtrWithHashSet existing_conjuncts;
-        for (const auto & argument : function_node.getArguments().getNodes())
-        {
-            /// emplace computes getTreeHash for each conjunct; respect the budget here as well.
-            if (andCompareChainHashBudgetExceeded())
-                return;
-            existing_conjuncts.emplace(argument);
-        }
-
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
         std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> findPairs
             = [&](const ComparePairs & pairs, QueryTreeNodePtr current, const ConstantNode * constant, CompareType type)
@@ -1273,8 +1212,6 @@ private:
             {
                 for (const auto & left : it->second)
                 {
-                    if (andCompareChainHashBudgetExceeded())
-                        return;
                     if (visited.contains(left.first))
                         continue;
                     visited.insert(left.first);
@@ -1303,8 +1240,7 @@ private:
                         and_node->getArguments().getNodes().push_back(constant->clone());
                         and_node->resolveAsFunction(
                             FunctionFactory::instance().get(compare_function_name, getContext()));
-                        if (existing_conjuncts.emplace(and_node).second)
-                            function_node.getArguments().getNodes().push_back(and_node);
+                        function_node.getArguments().getNodes().push_back(and_node);
                     }
 
                     findPairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
@@ -1397,7 +1333,7 @@ private:
                 is_any_nullable |= removeLowCardinality(equals->getResultType())->isNullable();
 
                 const auto * equals_function = equals->as<FunctionNode>();
-                chassert(equals_function && equals_function->getFunctionName() == "equals");
+                assert(equals_function && equals_function->getFunctionName() == "equals");
 
                 const auto & equals_arguments = equals_function->getArguments().getNodes();
                 if (const auto * rhs_literal = equals_arguments[1]->as<ConstantNode>())
@@ -1408,7 +1344,7 @@ private:
                 else
                 {
                     const auto * lhs_literal = equals_arguments[0]->as<ConstantNode>();
-                    chassert(lhs_literal);
+                    assert(lhs_literal);
                     args.push_back(lhs_literal->getValue());
                     tuple_element_types.push_back(lhs_literal->getResultType());
                 }
@@ -1478,7 +1414,7 @@ private:
     void tryOptimizeOutRedundantEquals(QueryTreeNodePtr & node)
     {
         auto & function_node = node->as<FunctionNode &>();
-        chassert(function_node.getFunctionName() == "equals");
+        assert(function_node.getFunctionName() == "equals");
 
         const auto function_arguments = function_node.getArguments().getNodes();
         if (function_arguments.size() != 2)
@@ -1487,8 +1423,8 @@ private:
         const auto & lhs = function_arguments[0];
         const auto & rhs = function_arguments[1];
 
-        UInt64 constant_value = 0;
-        bool is_lhs_const = false;
+        UInt64 constant_value;
+        bool is_lhs_const;
         if (const auto * lhs_constant = lhs->as<ConstantNode>())
         {
             if (!lhs_constant->getValue().tryGet<UInt64>(constant_value) || constant_value > 1
