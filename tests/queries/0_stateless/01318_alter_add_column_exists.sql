@@ -79,3 +79,23 @@ ALTER TABLE add_nested_no_share ADD COLUMN IF NOT EXISTS p Nested(a UInt32), ADD
 SHOW CREATE TABLE add_nested_no_share;
 
 DROP TABLE IF EXISTS add_nested_no_share;
+
+DROP TABLE IF EXISTS add_nested_prefix;
+
+-- The apply-time guard must compare exact transformed names, not an `n.*` prefix: a table that
+-- already has only `n.a` must NOT skip a genuinely new, distinct top-level scalar `n`. Otherwise
+-- IF NOT EXISTS would silently drop a valid ADD COLUMN.
+CREATE TABLE add_nested_prefix
+(
+    key UInt64,
+    `n.a` UInt32
+)
+ENGINE = MergeTree()
+ORDER BY key
+SETTINGS share_nested_offsets = 0;
+
+ALTER TABLE add_nested_prefix ADD COLUMN IF NOT EXISTS n String;
+
+SHOW CREATE TABLE add_nested_prefix;
+
+DROP TABLE IF EXISTS add_nested_prefix;

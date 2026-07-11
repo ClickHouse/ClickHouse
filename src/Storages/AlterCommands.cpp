@@ -49,6 +49,7 @@
 #include <Common/randomSeed.h>
 
 #include <ranges>
+#include <vector>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -558,15 +559,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
     if (type == ADD_COLUMN)
     {
-        /// IF NOT EXISTS is resolved in prepare() against the prepare-time snapshot, but apply() runs
-        /// on a fresher one (checkAlterIsPossible re-applies commands), and two IF NOT EXISTS adds of
-        /// the same column in one statement are both left un-ignored by prepare(). Skip here too so
-        /// IF NOT EXISTS never throws ILLEGAL_COLUMN when the column already exists. hasNested() is
-        /// needed because flatten_nested (default on) stores `n Nested(a ...)` as `n.a`, so has("n")
-        /// is false while the add of the flattened `n.a` still collides.
-        if (if_not_exists && (metadata.columns.has(column_name) || metadata.columns.hasNested(column_name)))
-            return;
-
         ColumnDescription column(column_name, data_type);
         if (default_expression)
         {
@@ -581,34 +573,45 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         column.ttl = ttl;
 
+        /// The exact set of columns this ADD would insert. With flatten_nested (default on)
+        /// `n Nested(a ...)` expands to `n.a`, `n.b`, ...; otherwise it is the single column.
+        std::vector<ColumnDescription> columns_to_add;
         if (context->getSettingsRef()[Setting::flatten_nested])
         {
             StorageInMemoryMetadata temporary_metadata;
             temporary_metadata.columns.add(column, /*after_column*/ "", /*first*/ true);
             temporary_metadata.columns.flattenNested();
 
-            const auto transformed_columns = temporary_metadata.columns.getAll();
-
-            auto add_column = [&](const String & name)
-            {
-                const auto & transformed_column = temporary_metadata.columns.get(name);
-                metadata.columns.add(transformed_column, after_column, first);
-            };
-
-            if (!after_column.empty() || first)
-            {
-                for (const auto & col: transformed_columns | std::views::reverse)
-                    add_column(col.name);
-            }
-            else
-            {
-                for (const auto & col: transformed_columns)
-                    add_column(col.name);
-            }
+            for (const auto & col : temporary_metadata.columns.getAll())
+                columns_to_add.push_back(temporary_metadata.columns.get(col.name));
         }
         else
         {
-            metadata.columns.add(column, after_column, first);
+            columns_to_add.push_back(column);
+        }
+
+        /// IF NOT EXISTS is resolved in prepare() against the prepare-time snapshot, but apply() runs
+        /// on a fresher one (checkAlterIsPossible re-applies commands), and two IF NOT EXISTS adds of
+        /// the same column in one statement are both left un-ignored by prepare(). Compare the EXACT
+        /// transformed names that would be inserted (not an `n.*` prefix): skip a name only when it
+        /// truly already exists. This makes IF NOT EXISTS a no-op for real collisions (e.g. the
+        /// flattened `n.a`) without wrongly skipping a genuinely new column, and stays consistent with
+        /// prepare()/validate() regardless of share_nested_offsets.
+        if (if_not_exists)
+            std::erase_if(columns_to_add, [&](const ColumnDescription & c) { return metadata.columns.has(c.name); });
+
+        if (columns_to_add.empty())
+            return;
+
+        if (!after_column.empty() || first)
+        {
+            for (const auto & col : columns_to_add | std::views::reverse)
+                metadata.columns.add(col, after_column, first);
+        }
+        else
+        {
+            for (const auto & col : columns_to_add)
+                metadata.columns.add(col, after_column, first);
         }
 
         metadata.addImplicitIndicesForColumn(column, context);
