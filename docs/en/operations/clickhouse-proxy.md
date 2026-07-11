@@ -1,0 +1,170 @@
+---
+description: 'The clickhouse-proxy application mode — a lightweight protocol-aware proxy that routes end-user ClickHouse connections to backend servers.'
+sidebar_label: 'clickhouse-proxy'
+sidebar_position: 70
+slug: /operations/clickhouse-proxy
+title: 'ClickHouse proxy'
+doc_type: 'reference'
+---
+
+# ClickHouse proxy {#clickhouse-proxy}
+
+`clickhouse proxy` is an application mode of the `clickhouse` binary that accepts connections over
+end-user ClickHouse protocols, chooses a backend server from a configurable routing table, and
+forwards the traffic to it. It is designed to sustain many concurrent connections with low memory
+usage: every connection is handled by a lightweight fiber on a cooperative scheduler (the `silk`
+fiber framework) instead of an operating-system thread.
+
+Start it with:
+
+```bash
+clickhouse proxy --config-file proxy_config.xml
+```
+
+:::note
+The proxy is built on the `silk` fiber framework, which requires Linux with `io_uring` on `x86-64`
+(v2 or newer) or `AArch64`. On other platforms `clickhouse proxy` reports that it is disabled.
+:::
+
+## Supported protocols {#supported-protocols}
+
+The proxy handles the protocols an end user speaks to ClickHouse. It does not handle the Keeper
+protocol or the inter-server replication protocol.
+
+| Protocol      | Listener `protocol` | Routing by user / database                          |
+|---------------|---------------------|-----------------------------------------------------|
+| HTTP(S)       | `http`              | Yes (headers, URL parameters, Basic authentication) |
+| Native TCP    | `native`            | Yes (parsed from the `Hello` packet)                |
+| PostgreSQL    | `postgresql`        | Yes (parsed from the `StartupMessage`)              |
+| MySQL         | `mysql`             | No — routed by peer address or default pool         |
+| TLS by SNI    | `tls`               | By hostname (SNI), without decryption               |
+| Opaque stream | `stream`            | By peer address or default pool                     |
+
+MySQL is server-speaks-first and negotiates TLS in-band, so the proxy cannot read the user name or
+the database before it must answer the greeting; such connections are forwarded transparently and
+routed by peer address or the listener's default pool. Query-type routing (see below) applies to
+the HTTP protocol only.
+
+## TLS {#tls}
+
+A listener can handle TLS in three ways:
+
+- **Terminate and re-encrypt** — set `<secure>1</secure>` on the listener. The proxy holds its own
+  certificate (from the `openSSL.server` section), decrypts the connection, and — if the chosen
+  backend is marked `<secure>1</secure>` — opens an independent TLS connection to it.
+- **Terminate only (unwrap)** — a secure listener with plaintext backends. The proxy decrypts and
+  speaks to the backends without encryption.
+- **Transparent** — the `tls` listener protocol. The proxy reads the SNI from the `ClientHello`,
+  chooses a backend by hostname, and forwards the encrypted bytes without decrypting them.
+
+Certificates can be provisioned automatically with ACME (for example Let's Encrypt) by adding an
+`acme` section, exactly as for `clickhouse-server`. The ACME HTTP-01 challenge is served on the
+HTTP listeners at `/.well-known/acme-challenge/`.
+
+## Configuration {#configuration}
+
+The whole configuration lives under a top-level `proxy` element. See
+`programs/proxy/proxy_config.xml` for a complete, commented example.
+
+### Listeners {#listeners}
+
+Each `listener` binds a port and selects a protocol. The optional `<pool>` names the pool to use
+when no routing rule matches. The optional `<peek>` (`auto`, `none`, `credentials`, `query`)
+controls how deeply the proxy inspects the beginning of a connection; `auto` (the default) inspects
+only as much as the routing rules require.
+
+```xml
+<listener>
+    <protocol>http</protocol>
+    <port>8123</port>
+    <pool>analytics</pool>
+</listener>
+```
+
+### Pools and backends {#pools-and-backends}
+
+A pool is a named group of backends with a load-balancing strategy. Listing several backends in one
+pool provides load balancing; a backend may specify per-protocol ports and a `<weight>`.
+
+```xml
+<pool>
+    <name>analytics</name>
+    <load_balancing>least_connections</load_balancing>
+    <backend>
+        <host>backend-1.example.net</host>
+        <tcp_port>9000</tcp_port>
+        <http_port>8123</http_port>
+        <weight>2</weight>
+    </backend>
+    <backend>
+        <host>backend-2.example.net</host>
+    </backend>
+</pool>
+```
+
+The available load-balancing strategies are `random`, `round_robin`, `least_connections`,
+`lowest_latency` and `least_resources`. Strategies share a common interface and can be extended.
+
+### Routing rules {#routing-rules}
+
+Rules are checked in order; the first whose criteria all match wins. A rule can match on `host`
+(the TLS SNI or the HTTP `Host` header), `user`, `database`, `query_type` (`select`, `insert` or
+`other`; HTTP only), and `protocol`. It routes either to a named `pool` or to a `backend_template`.
+
+Values can be matched exactly (or as a comma-separated list) or by a regular expression. A regular
+expression may contain capture groups whose values are substituted for `$1` … `$9` in a
+`backend_template`, so that, for example, users named `ch-<tenant>` are routed to per-tenant
+backends:
+
+```xml
+<rule>
+    <user_regexp>ch-(\w+)</user_regexp>
+    <backend_template>
+        <host>$1.backends.example.net</host>
+        <tcp_port>9000</tcp_port>
+    </backend_template>
+</rule>
+```
+
+The routing table is abstract: it exposes hooks that run a shell command when the host, user or
+database is unknown, when no backend of a pool is available, or the first time a user name or a
+database name is seen. A hook can, for example, provision a backend and wait for it to become
+available. Each hook is invoked as `<command> KIND PROTOCOL HOST USER DATABASE`.
+
+### Session stickiness {#session-stickiness}
+
+Repeated connections can be pinned to the same backend, chosen by a consistent
+(rendezvous) hash so the choice is stable as backends are added or removed:
+
+```xml
+<stickiness>
+    <by_session_id>1</by_session_id>    <!-- session_id from the HTTP URL -->
+    <by_peer_address>0</by_peer_address>
+</stickiness>
+```
+
+### Health monitoring {#health-monitoring}
+
+The proxy periodically probes every backend with a TCP connection, records latency, and marks a
+backend down after a number of consecutive failures (bringing it back up when it recovers). If a
+backend has monitoring credentials (`<monitor_user>` / `<monitor_password>`), the proxy also polls
+its CPU and memory usage over HTTP, which the `least_resources` strategy uses.
+
+### HTTP extras {#http-extras}
+
+An HTTP listener can answer `/ping`, serve static pages, and expose a JSON status page describing
+all pools, their backends, and per-backend statistics. These endpoints are served by the proxy
+itself and do not require a user name or a backend.
+
+```xml
+<http>
+    <ping_path>/ping</ping_path>
+    <status_path>/proxy_status</status_path>
+    <static>
+        <page>
+            <path>/</path>
+            <content><![CDATA[<html><body>ClickHouse proxy</body></html>]]></content>
+        </page>
+    </static>
+</http>
+```
