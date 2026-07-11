@@ -2,6 +2,11 @@
 -- unquoted fractional unix timestamp form (e.g. 1783585473.954), same as scalar columns.
 -- A bare integer stays a scaled tick count (backward compatible).
 SET session_timezone = 'UTC';
+-- CI randomizes date_time_input_format; the scalar DateTime64 rows below need the
+-- basic reader (readDateTime64Text). A top-level SET is required: a per-query
+-- SETTINGS clause on format() inside a scalar subquery does not reach the parallel
+-- parsing reader, so best_effort would reject the fractional / -0.xxx forms there.
+SET date_time_input_format = 'basic';
 
 -- Reported bug: CSV Array element as unquoted fractional unix timestamp used to fail
 -- with CANNOT_READ_ARRAY_FROM_TEXT.
@@ -34,12 +39,12 @@ SELECT 'csv_neg_one_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3
 -- The scalar readDateTime64Text path shares the same sign restoration, so a scalar
 -- -0.xxx must parse identically to the container element (regression for the earlier
 -- scalar/container divergence). Basic input format exercises readDateTime64Text directly.
-SELECT 'scalar_neg_zero_frac', toString(x) FROM format(CSV, 'x DateTime64(3)', '-0.123') SETTINGS date_time_input_format = 'basic';
+SELECT 'scalar_neg_zero_frac', toString(x) FROM format(CSV, 'x DateTime64(3)', '-0.123');
 SELECT 'scalar_eq_container_neg_zero',
-    (SELECT x FROM format(CSV, 'x DateTime64(3)', '-0.123') SETTINGS date_time_input_format = 'basic')
+    (SELECT x FROM format(CSV, 'x DateTime64(3)', '-0.123'))
   = (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3))', '"[-0.123]"'));
 SELECT 'scalar_eq_container_neg_one',
-    (SELECT x FROM format(CSV, 'x DateTime64(3)', '-1.123') SETTINGS date_time_input_format = 'basic')
+    (SELECT x FROM format(CSV, 'x DateTime64(3)', '-1.123'))
   = (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3))', '"[-1.123]"'));
 
 -- Bare shorthand `-.123` (sign directly followed by the decimal point, implied zero whole part):
@@ -49,7 +54,7 @@ SELECT 'csv_neg_shorthand', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(
 SELECT 'json_neg_shorthand', toString(x[1]) FROM format(JSONEachRow, 'x Array(DateTime64(3))', '{"x":[-.877]}');
 SELECT 'pos_shorthand', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[.123]"');
 SELECT 'scalar_eq_container_neg_shorthand',
-    (SELECT x FROM format(CSV, 'x DateTime64(3)', '-.123') SETTINGS date_time_input_format = 'basic')
+    (SELECT x FROM format(CSV, 'x DateTime64(3)', '-.123'))
   = (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3))', '"[-.123]"'));
 
 -- Leading '+' must be rejected in the container/JSON path, matching scalar DateTime64 basic
@@ -59,7 +64,7 @@ SELECT 'container_plus_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime6
 SELECT 'container_plus_zero_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[+0.123]"'); -- { serverError CANNOT_PARSE_NUMBER }
 SELECT 'container_plus_shorthand', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[+.123]"'); -- { serverError CANNOT_PARSE_NUMBER }
 SELECT 'container_plus_bare_int', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[+1783585473954]"'); -- { serverError CANNOT_PARSE_NUMBER }
-SELECT 'scalar_plus_frac', toString(x) FROM format(CSV, 'x DateTime64(3)', '+1783585473.954') SETTINGS date_time_input_format = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
+SELECT 'scalar_plus_frac', toString(x) FROM format(CSV, 'x DateTime64(3)', '+1783585473.954'); -- { serverError CANNOT_PARSE_DATETIME }
 
 -- Fraction is truncated / padded to the column scale.
 SELECT 'scale0', [1783585473.954]::Array(DateTime64(0));
