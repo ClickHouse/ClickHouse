@@ -78,14 +78,20 @@ private:
 
     size_t query_history_limit = 700;
 
-    /// `log_queries = 0`: this seeding query is itself an initial query by the current user, so
-    /// without disabling logging it would be written to `system.query_log` and then re-read (and
-    /// used to train the model) on the next session — a client helper query masquerading as
-    /// user-entered SQL. Access to `system.query_log` may be denied; `load` handles that quietly.
+    /// This seeding query is itself an initial query by the current user, so it is written to
+    /// `system.query_log` and would then be re-read (and used to train the model) on the next
+    /// session — a client helper query masquerading as user-entered SQL. To avoid that, the query
+    /// excludes itself via the `query NOT LIKE '%...%'` filter below: the filter's pattern literal
+    /// contains the marker string, so this query's own text matches the pattern and is filtered out
+    /// when it is later found in the log. We deliberately do not use `SETTINGS log_queries = 0` for
+    /// this: readonly users cannot modify any setting, and that would make the whole query fail
+    /// (`READONLY`), breaking autocomplete for them. Access to `system.query_log` may still be
+    /// denied; `load` handles that quietly.
     const String history_query = fmt::format(
         "SELECT query FROM (SELECT query, query_start_time FROM system.query_log WHERE is_initial_query = 1 AND "
-        "type = 2 AND user IN (SELECT currentUser()) ORDER BY event_date DESC, event_time DESC LIMIT {}) AS recent_queries "
-        "ORDER BY query_start_time ASC SETTINGS log_queries = 0;",
+        "type = 2 AND user IN (SELECT currentUser()) AND query NOT LIKE '%-- clickhouse-client autocomplete history seed%' "
+        "ORDER BY event_date DESC, event_time DESC LIMIT {}) AS recent_queries "
+        "ORDER BY query_start_time ASC;",
         query_history_limit);
 };
 }

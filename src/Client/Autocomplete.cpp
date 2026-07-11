@@ -14,6 +14,7 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int ACCESS_DENIED;
+    extern const int READONLY;
 }
 
 std::vector<std::string> Autocomplete::predictNextTokens(const String & prefix)
@@ -105,9 +106,11 @@ void Autocomplete::load(ContextPtr context, const ConnectionParameters & connect
                     last_error = e.code();
                     if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
                         continue;
-                    /// A user without `SELECT` on `system.query_log` should not see a startup error:
+                    /// A user without `SELECT` on `system.query_log` (or one whose restrictions
+                    /// prevent the seeding query from running) should not see a startup error:
                     /// autocomplete simply starts with an empty model and learns from this session.
-                    else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED && e.code() != ErrorCodes::ACCESS_DENIED)
+                    else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED && e.code() != ErrorCodes::ACCESS_DENIED
+                        && e.code() != ErrorCodes::READONLY)
                     {
                         WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                         out << "Cannot load data for command line autocomplete: " << getCurrentExceptionMessage(false, true) << "\n";
