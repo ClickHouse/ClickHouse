@@ -36,6 +36,9 @@ FiberSocket FiberSocket::adopt(int fd)
 {
     FiberSocket result;
     result.socket = Poco::Net::StreamSocket(new Silk::FiberStreamSocketImpl(fd));
+    /// Disable Nagle's algorithm: the proxy relays small protocol packets, and without this a
+    /// request/response round-trip stalls for tens of milliseconds on Nagle/delayed-ACK.
+    result.socket.setNoDelay(true);
     return result;
 }
 
@@ -44,6 +47,7 @@ FiberSocket FiberSocket::connect(const Poco::Net::SocketAddress & address, UInt6
     FiberSocket result;
     result.socket = Poco::Net::StreamSocket(new Silk::FiberStreamSocketImpl);
     result.socket.connect(address, ms(timeout_ms));
+    result.socket.setNoDelay(true);
     return result;
 }
 
@@ -58,6 +62,7 @@ FiberSocket FiberSocket::connectTLS(
     if (!sni.empty())
         impl->setPeerHostName(sni);
     result.socket.connect(address, ms(timeout_ms));
+    result.socket.setNoDelay(true);
     return result;
 }
 
@@ -65,6 +70,7 @@ FiberSocket FiberSocket::adoptTLS(int fd, Poco::Net::Context::Ptr context)
 {
     FiberSocket result;
     result.socket = Poco::Net::StreamSocket(new Silk::SecureFiberStreamSocketImpl(fd, context));
+    result.socket.setNoDelay(true);
     return result;
 }
 #endif

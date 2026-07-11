@@ -13,6 +13,8 @@
 
 #include <string>
 
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -364,6 +366,10 @@ void handleSSH(int fd, const FrontendContext & ctx)
         ::close(fd);
         return;
     }
+
+    /// Interactive traffic is latency-sensitive; disable Nagle's algorithm on the client fd.
+    const int one = 1;
+    ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
 
     try
     {
