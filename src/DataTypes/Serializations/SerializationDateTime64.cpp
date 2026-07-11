@@ -133,6 +133,22 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+    /// Reject a leading '+' to stay in parity with scalar DateTime64 parsing, which rejects it
+    /// under every date_time_input_format: basic goes through readDateTimeTextFallback (only
+    /// special-cases '-'), best_effort through parseDateTime64BestEffort (treats a leading '+'
+    /// as a malformed timezone offset). readIntText would silently accept '+', so filter it here
+    /// before either the best_effort bare-tick fallback or the basic whole-part parse. This also
+    /// matches the pre-PR container behavior, which parsed elements through readDateTime64Text.
+    /// Done before the input_format branch so a chunk boundary between '+' and the digits cannot
+    /// sneak the sign past the best_effort early return (the byte is already visible here).
+    if (!istr.eof() && *istr.position() == '+')
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number with a leading '+' sign");
+        else
+            return ReturnType(false);
+    }
+
     if (input_format != FormatSettings::DateTimeInputFormat::Basic)
     {
         /// Under best_effort / best_effort_us fall back to the pre-PR bare-integer tick-count path.
@@ -147,18 +163,6 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
         }
         else
             return ReturnType(tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr));
-    }
-
-    /// Reject a leading '+' to stay in parity with scalar DateTime64 basic parsing, which
-    /// rejects it (readDateTimeTextFallback only special-cases '-'). readIntText would
-    /// silently accept it, so filter it here before reading the whole part. This also
-    /// matches the pre-PR container behavior, which parsed elements through readDateTime64Text.
-    if (!istr.eof() && *istr.position() == '+')
-    {
-        if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number with a leading '+' sign");
-        else
-            return ReturnType(false);
     }
 
     bool is_negative = (!istr.eof() && *istr.position() == '-');

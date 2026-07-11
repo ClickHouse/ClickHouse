@@ -78,6 +78,16 @@ SELECT 'be_unquoted_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3
 SELECT 'beus_unquoted_dotted', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[-0.123]"') SETTINGS date_time_input_format = 'best_effort_us'; -- { serverError CANNOT_READ_ARRAY_FROM_TEXT }
 SELECT 'be_unquoted_bare_int', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[1783585473954]"') SETTINGS date_time_input_format = 'best_effort';
 
+-- A leading '+' must be rejected under EVERY date_time_input_format, not just basic, so the
+-- effective parser does not depend on quoting/nesting. Scalar DateTime64 rejects '+' under both
+-- basic (readDateTimeTextFallback only special-cases '-') and best_effort (parseDateTime64BestEffort
+-- treats it as a malformed timezone offset). The '+' guard runs before the best_effort bare-tick
+-- fallback, so the unquoted container path rejects '+1783585473954' under best_effort/best_effort_us
+-- too, matching scalar (the basic '+' forms are covered above by container_plus_*).
+SELECT 'be_plus_bare_container', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[+1783585473954]"') SETTINGS date_time_input_format = 'best_effort'; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'beus_plus_bare_container', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[+1783585473954]"') SETTINGS date_time_input_format = 'best_effort_us'; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'be_plus_bare_scalar', toString(x) FROM format(CSV, 'x DateTime64(3)', '+1783585473954') SETTINGS date_time_input_format = 'best_effort'; -- { serverError CANNOT_PARSE_DATETIME }
+
 -- Minimum negative bare-integer tick count must be preserved. The sign is consumed up front
 -- (chunk-boundary safety), so the magnitude is read as unsigned and negated in a well-defined
 -- way: `readIntText(whole); whole = -whole` on a signed Int64 would be signed-overflow UB for
