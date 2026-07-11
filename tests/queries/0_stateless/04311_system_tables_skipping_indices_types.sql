@@ -32,3 +32,20 @@ ORDER BY name;
 DROP TABLE t_skip_idx_types;
 DROP TABLE t_no_skip_idx;
 DROP TABLE t_not_mergetree;
+
+-- Session temporary MergeTree table with skip indices must report the types too.
+DROP TEMPORARY TABLE IF EXISTS t_tmp_skip_idx;
+CREATE TEMPORARY TABLE t_tmp_skip_idx
+(
+    a UInt64,
+    b String,
+    INDEX idx_mm a TYPE minmax GRANULARITY 1,
+    INDEX idx_set b TYPE set(100) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY a;
+
+SELECT name, skipping_indices_types
+FROM system.tables
+WHERE is_temporary AND name = 't_tmp_skip_idx';
+
+DROP TEMPORARY TABLE t_tmp_skip_idx;
