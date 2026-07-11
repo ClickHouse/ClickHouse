@@ -186,3 +186,87 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
             data_entries_checked += 1
 
     assert data_entries_checked > 0
+
+
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_optimize_after_nested_rename(started_cluster_iceberg_with_spark, storage_type):
+    """
+    Compaction rejects genuinely lossy schema evolution (DROP COLUMN, incompatible type change),
+    but a nested rename/reorder/add inside a struct/list/map is NOT lossy: the field ids and leaf
+    types are preserved and `getSchemaTransformationDagByIds` can still remap old files. The
+    lossy-evolution guard must compare schemas semantically (by field id, recursing into complex
+    types), not by the textual JSON of the enclosing type (which embeds child names/ordering).
+
+    Spark is used because ClickHouse's own Iceberg writer cannot express a nested-field rename.
+    A positional delete makes compaction necessary; OPTIMIZE must succeed (not be rejected as
+    lossy), all rows must survive with correct values, and time travel to the pre-rename snapshot
+    must still work.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_nested_rename_" + storage_type + "_" + get_uuid_str()
+
+    def upload():
+        default_upload_directory(
+            started_cluster_iceberg_with_spark,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, s struct<a: string, n: int>) USING iceberg
+        TBLPROPERTIES ('format-version' = '2', 'write.update.mode' = 'merge-on-read',
+        'write.delete.mode' = 'merge-on-read', 'write.merge.mode' = 'merge-on-read')
+        """
+    )
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} VALUES (1, named_struct('a', 'x', 'n', 10)), "
+        f"(2, named_struct('a', 'y', 'n', 20)), (3, named_struct('a', 'z', 'n', 30))"
+    )
+    upload()
+
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+    pre_rename_snapshot = get_last_snapshot(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    )
+
+    # Positional delete (merge-on-read) so compaction has work to do.
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 2")
+    upload()
+    # Nested rename: struct field s.a -> s.b (field id and type preserved, only the name changes).
+    spark.sql(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN s.a TO s.b")
+    upload()
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 2
+
+    # OPTIMIZE must SUCCEED: the nested rename is not lossy, so the semantic guard allows it.
+    # (The over-broad textual guard rejected this with NOT_IMPLEMENTED.)
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+
+    # All live rows survive with their original values under the renamed nested field.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 2
+    assert (
+        instance.query(
+            f"SELECT id, s.b, s.n FROM {TABLE_NAME} ORDER BY id"
+        )
+        == "1\tx\t10\n3\tz\t30\n"
+    )
+
+    # Time travel to the pre-rename snapshot still works after compaction. That snapshot's schema
+    # still names the nested field `s.a` (the rename came later), so query by the historical name.
+    assert (
+        instance.query(
+            f"SELECT id, s.a, s.n FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_snapshot_id = {pre_rename_snapshot}"
+        )
+        == "1\tx\t10\n2\ty\t20\n3\tz\t30\n"
+    )

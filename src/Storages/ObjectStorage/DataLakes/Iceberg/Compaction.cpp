@@ -119,7 +119,49 @@ struct Plan
     } partition_encoder;
 };
 
-/// Build a field-id -> stringified type map for one schema's `fields` array.
+/// Record `id`'s type signature into `out`, recursing into struct/list/map children.
+///
+/// The signature is deliberately name- and order-agnostic: a primitive maps to its type
+/// string ("int", "string", ...) and a complex node maps to its kind ("struct"/"list"/"map"),
+/// while every nested field/element/key/value gets its own entry keyed by its own field id.
+/// So a nested rename, reorder, or added field changes nobody's signature — only a genuine
+/// field-id removal or a leaf-type change is observable. `container[type_key]` is either a
+/// primitive type string or a nested type object (Iceberg JSON layout).
+static void walkTypeNode(
+    Int64 id, const Poco::JSON::Object::Ptr & container, const char * type_key, std::unordered_map<Int64, String> & out)
+{
+    if (!container->isObject(type_key))
+    {
+        out[id] = container->getValue<String>(type_key); /// primitive leaf
+        return;
+    }
+
+    auto type_obj = container->getObject(type_key);
+    auto kind = type_obj->getValue<String>(Iceberg::f_type);
+    out[id] = kind;
+
+    if (kind == Iceberg::f_struct)
+    {
+        if (auto fields = type_obj->getArray(Iceberg::f_fields))
+            for (size_t i = 0; i < fields->size(); ++i)
+            {
+                auto field = fields->getObject(static_cast<UInt32>(i));
+                walkTypeNode(field->getValue<Int64>(Iceberg::f_id), field, Iceberg::f_type, out);
+            }
+    }
+    else if (kind == Iceberg::f_list)
+    {
+        walkTypeNode(type_obj->getValue<Int64>(Iceberg::f_element_id), type_obj, Iceberg::f_element, out);
+    }
+    else if (kind == Iceberg::f_map)
+    {
+        walkTypeNode(type_obj->getValue<Int64>(Iceberg::f_key_id), type_obj, Iceberg::f_key, out);
+        walkTypeNode(type_obj->getValue<Int64>(Iceberg::f_value_id), type_obj, Iceberg::f_value, out);
+    }
+}
+
+/// Build a field-id -> semantic type signature map for one schema's `fields` array, walking
+/// recursively into complex types so nested renames/reorders/additions do not change signatures.
 static std::unordered_map<Int64, String> schemaFieldTypes(const Poco::JSON::Array::Ptr & fields)
 {
     std::unordered_map<Int64, String> id_to_type;
@@ -128,7 +170,7 @@ static std::unordered_map<Int64, String> schemaFieldTypes(const Poco::JSON::Arra
     for (size_t i = 0; i < fields->size(); ++i)
     {
         auto field = fields->getObject(static_cast<UInt32>(i));
-        id_to_type[field->getValue<Int64>(Iceberg::f_id)] = stringifyJSON(field->get(Iceberg::f_type));
+        walkTypeNode(field->getValue<Int64>(Iceberg::f_id), field, Iceberg::f_type, id_to_type);
     }
     return id_to_type;
 }
@@ -141,10 +183,17 @@ static std::unordered_map<Int64, String> schemaFieldTypes(const Poco::JSON::Arra
 /// OPTIMIZE would then return NULL/defaults (or fail).
 ///
 /// Renames are safe (the field id and type are preserved, only the name changes) and additive
-/// evolution is safe (old files simply lack the new field, exactly as before compaction). So
-/// reject only LOSSY evolution: a field id present in a still-reachable snapshot's schema that
-/// is missing from the current schema (DROP COLUMN), or whose type differs from the current
-/// schema's field of the same id (any type change — treated as non-reversible for safety).
+/// evolution is safe (old files simply lack the new field, exactly as before compaction). This
+/// holds recursively for complex types too: a nested rename, reorder, or added struct field is
+/// remappable by getSchemaTransformationDagByIds. So the comparison is SEMANTIC, keyed by field
+/// id and walking into struct/list/map children (see schemaFieldTypes/walkTypeNode) — not a
+/// textual compare of the enclosing type JSON, which would embed child names/ordering and wrongly
+/// reject safe nested evolution.
+///
+/// Reject only LOSSY evolution: a field id present in a still-reachable snapshot's schema that is
+/// missing from the current schema (DROP COLUMN), or whose leaf/kind signature differs from the
+/// current schema's field of the same id (any type change — treated as non-reversible for safety,
+/// since even a widening like int->long is not reversible when reading an old snapshot back).
 /// Fail-closed is appropriate for an experimental feature (allow_experimental_iceberg_compaction).
 static void checkCompactionSupportsSchemaEvolution(const Poco::JSON::Object::Ptr & initial_metadata_object)
 {
