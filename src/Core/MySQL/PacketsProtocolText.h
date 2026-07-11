@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 
 #include <Core/MySQL/IMySQLReadPacket.h>
@@ -70,7 +69,7 @@ protected:
     const Columns & columns;
     size_t row_num;
     size_t payload_size = 0;
-    VectorWithMemoryTracking<String> serialized;
+    std::vector<String> serialized;
 
     size_t getPayloadSize() const override;
 

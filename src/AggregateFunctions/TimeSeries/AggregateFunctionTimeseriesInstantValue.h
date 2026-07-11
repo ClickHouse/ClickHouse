@@ -3,8 +3,13 @@
 #include <cstddef>
 #include <cstring>
 
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -95,7 +100,7 @@ public:
 
     void fillResultValue(TimestampType timestamp, ValueType value, TimestampType previous_timestamp, ValueType previous_value, ValueType & result, UInt8 & null) const
     {
-        ValueType time_difference = static_cast<ValueType>(timestamp - previous_timestamp);
+        ValueType time_difference = timestamp - previous_timestamp;
         if (time_difference == 0)
         {
             result = 0;
@@ -110,10 +115,7 @@ public:
         ValueType value_difference = (adjust_to_resets && value < previous_value) ? value : (value - previous_value);
         result = value_difference;
         if constexpr (is_rate)
-        {
-            using TimestampScaleMultiplierType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, TimestampType>;
-            result = result * static_cast<TimestampScaleMultiplierType>(Base::timestamp_scale_multiplier) / time_difference;
-        }
+            result = result * Base::timestamp_scale_multiplier / time_difference;
         null = 0;
     }
 
@@ -145,15 +147,10 @@ public:
         const auto & buckets = Base::data(place)->buckets;
 
         /// Fill the data for missing buckets
+        TimestampType current_timestamp = Base::start_timestamp;
         Bucket last_2_samples; /// Sliding window with last 2 samples
-        for (size_t i = 0; i < Base::bucket_count; ++i)
+        for (size_t i = 0; i < Base::bucket_count; ++i, current_timestamp += Base::step)
         {
-            /// Use `Base::timestampAtIndex` instead of a loop-carried `current_timestamp += Base::step`
-            /// accumulator. The accumulator form performs one final, unused `+=` on the last
-            /// iteration which signed-overflows `TimestampType` on adversarial extremes
-            /// (`start_timestamp` near `INT64_MIN`, `step` near `INT64_MAX`) and trips UBSAN.
-            const TimestampType current_timestamp = Base::timestampAtIndex(i);
-
             values[i] = ValueType{};
             nulls[i] = 1;
 
@@ -162,7 +159,7 @@ public:
                 last_2_samples.merge(bucket_it->second);
 
             /// If the oldest of last 2 samples is within the window, we can calculate the rate or delta
-            if (last_2_samples.filled == 2 && !Base::isSampleOutOfWindow(last_2_samples.timestamps[1], current_timestamp))
+            if (last_2_samples.filled == 2 && last_2_samples.timestamps[1] + Base::window >= current_timestamp)
             {
                 fillResultValue(last_2_samples.timestamps[0], last_2_samples.values[0],
                     last_2_samples.timestamps[1], last_2_samples.values[1],

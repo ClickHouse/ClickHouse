@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -14,7 +14,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Common/Macros.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 
 namespace DB
@@ -230,18 +229,8 @@ BlockIO InterpreterShowTablesQuery::execute()
 
         return res;
     }
-    auto rewritten_query = getRewrittenQuery();
-    String database = getContext()->resolveDatabase(query.getFrom());
-    auto query_context = Context::createCopy(getContext());
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId("");
-    if (DatabaseCatalog::instance().isRemoteDatabase(database))
-    {
-        /// Explicit SHOW TABLES should include tables from the requested remote database.
-        /// system.databases already shows all databases unconditionally, so no override is needed for SHOW DATABASES.
-        query_context->setSetting("show_remote_databases_in_system_tables", true);
-    }
-    return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
+
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 /// (*) Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to
@@ -249,7 +238,6 @@ BlockIO InterpreterShowTablesQuery::execute()
 ///     SQL tests can take advantage of this.
 
 
-void registerInterpreterShowTablesQuery(InterpreterFactory & factory);
 void registerInterpreterShowTablesQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

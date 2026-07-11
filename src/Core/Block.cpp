@@ -2,7 +2,6 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnReplicated.h>
 #include <Core/Block.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -46,21 +45,6 @@ static ReturnType onError(int code [[maybe_unused]],
         return false;
 }
 
-/// Omit Const, Sparse and Replicated and get actual column.
-static const IColumn * getActualColumn(const IColumn * column)
-{
-    const IColumn * actual_column = column;
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-        return getActualColumn(&column_const->getDataColumn());
-
-    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column))
-        return getActualColumn(column_replicated->getNestedColumn().get());
-
-    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column))
-        return getActualColumn(&column_sparse->getValuesColumn());
-
-    return actual_column;
-}
 
 template <typename ReturnType>
 static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, const ColumnWithTypeAndName & expected,
@@ -81,20 +65,20 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
     const IColumn * actual_column = actual.column.get();
     const IColumn * expected_column = expected.column.get();
 
-    /// A Sparse column is structurally equal to the full column of the same type it wraps, and every
-    /// consumer can process sparse, so it must compare equal to a non-sparse column even in the
-    /// strict path. Unwrap Sparse on both sides here; Const and Replicated stay strict unless
-    /// allow_materialize.
-    if (const auto * actual_sparse = typeid_cast<const ColumnSparse *>(actual_column))
-        actual_column = &actual_sparse->getValuesColumn();
-    if (const auto * expected_sparse = typeid_cast<const ColumnSparse *>(expected_column))
-        expected_column = &expected_sparse->getValuesColumn();
-
-    /// If we allow to materialize columns, omit Const and Replicated columns too.
+    /// If we allow to materialize columns, omit Const and Sparse columns.
     if (allow_materialize)
     {
-        actual_column = getActualColumn(actual_column);
-        expected_column = getActualColumn(expected_column);
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
+            actual_column = &column_const->getDataColumn();
+
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(expected_column))
+            expected_column = &column_const->getDataColumn();
+
+        if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(actual_column))
+            actual_column = &column_sparse->getValuesColumn();
+
+        if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(expected_column))
+            expected_column = &column_sparse->getValuesColumn();
     }
 
     const auto * actual_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(actual_column);
@@ -242,7 +226,7 @@ void Block::insertUnique(ColumnWithTypeAndName elem)
     if (elem.name.empty())
         throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Column name in Block cannot be empty");
 
-    if (!index_by_name.contains(elem.name))
+    if (index_by_name.end() == index_by_name.find(elem.name))
         insert(std::move(elem));
 }
 
@@ -567,14 +551,6 @@ MutableColumns Block::mutateColumns()
     return columns;
 }
 
-Columns Block::detachColumns()
-{
-    size_t num_columns = data.size();
-    Columns columns(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        columns[i] = data[i].column ? std::move(data[i].column) : data[i].type->createColumn();
-    return columns;
-}
 
 void Block::setColumns(MutableColumns && columns)
 {
@@ -688,7 +664,7 @@ Block Block::sortColumns() const
     Block sorted_block;
 
     /// std::unordered_map (index_by_name) cannot be used to guarantee the sort order
-    VectorWithMemoryTracking<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
+    std::vector<IndexByName::const_iterator> sorted_index_by_name(index_by_name.size());
     {
         size_t i = 0;
         for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
@@ -770,16 +746,6 @@ Names Block::getNames() const
     return res;
 }
 
-NameSet Block::getNameSet() const
-{
-    NameSet res;
-    res.reserve(columns());
-
-    for (const auto & elem : data)
-        res.insert(elem.name);
-    return res;
-}
-
 
 DataTypes Block::getDataTypes() const
 {
@@ -815,29 +781,6 @@ void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, std::s
     checkBlockStructure<void>(lhs, rhs, context_description, false);
 }
 
-namespace
-{
-
-Block replaceReplicatedColumnsToNested(const Block & block)
-{
-    Block block_without_replicated;
-    for (const auto & column : block.getColumnsWithTypeAndName())
-    {
-        if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.column.get()))
-            block_without_replicated.insert(ColumnWithTypeAndName(column_replicated->getNestedColumn(), column.type, column.name));
-        else
-            block_without_replicated.insert(column);
-    }
-    return block_without_replicated;
-}
-
-}
-
-void assertBlocksHaveEqualStructureAllowReplicated(const Block & lhs, const Block & rhs, std::string_view context_description)
-{
-    checkBlockStructure<void>(replaceReplicatedColumnsToNested(lhs), replaceReplicatedColumnsToNested(rhs), context_description, false);
-}
-
 
 bool isCompatibleHeader(const Block & actual, const Block & desired)
 {
@@ -856,7 +799,7 @@ void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out
     /// The traditional task: the largest common subsequence (LCS).
     /// Assume that order is important. If this becomes wrong once, let's simplify it: for example, make 2 sets.
 
-    VectorWithMemoryTracking<VectorWithMemoryTracking<int>> lcs(lhs.columns() + 1);
+    std::vector<std::vector<int>> lcs(lhs.columns() + 1);
     for (auto & v : lcs)
         v.resize(rhs.columns() + 1);
 
@@ -963,7 +906,7 @@ Serializations Block::getSerializations(const SerializationInfoByName & hints) c
     {
         auto it = hints.find(column.name);
         if (it == hints.end())
-            res.push_back(column.type->getSerialization(hints.getSettings()));
+            res.push_back(column.type->getDefaultSerialization());
         else
             res.push_back(column.type->getSerialization(*it->second));
     }
@@ -971,13 +914,13 @@ Serializations Block::getSerializations(const SerializationInfoByName & hints) c
     return res;
 }
 
-void removeSpecialColumnRepresentations(Block & block)
+void convertToFullIfSparse(Block & block)
 {
     for (auto & column : block)
-        column.column = removeSpecialRepresentations(column.column);
+        column.column = recursiveRemoveSparse(column.column);
 }
 
-Block materializeBlock(const Block & block, bool remove_special_column_representations)
+Block materializeBlock(const Block & block)
 {
     if (block.empty())
         return block;
@@ -987,25 +930,19 @@ Block materializeBlock(const Block & block, bool remove_special_column_represent
     for (size_t i = 0; i < columns; ++i)
     {
         auto & element = res.getByPosition(i);
-        element.column = element.column->convertToFullColumnIfConst();
-        if (remove_special_column_representations)
-            element.column = removeSpecialRepresentations(element.column);
+        element.column = recursiveRemoveSparse(element.column->convertToFullColumnIfConst());
     }
 
     return res;
 }
 
-void materializeBlockInplace(Block & block, bool remove_special_column_representations)
+void materializeBlockInplace(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)
-    {
-        block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
-        if (remove_special_column_representations)
-            block.getByPosition(i).column = removeSpecialRepresentations(block.getByPosition(i).column);
-    }
+        block.getByPosition(i).column = recursiveRemoveSparse(block.getByPosition(i).column->convertToFullColumnIfConst());
 }
 
-Block concatenateBlocks(const Blocks & blocks)
+Block concatenateBlocks(const std::vector<Block> & blocks)
 {
     if (blocks.empty())
         return {};
@@ -1041,7 +978,7 @@ String addDummyColumnWithRowCount(Block & block, size_t num_rows)
     {
         if (column.column)
         {
-            chassert(column.column->size() == num_rows);
+            assert(column.column->size() == num_rows);
             has_columns = true;
             break;
         }

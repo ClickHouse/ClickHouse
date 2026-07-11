@@ -6,12 +6,11 @@ keywords: ['TabSeparatedWithNames']
 output_format: true
 slug: /interfaces/formats/TabSeparatedWithNames
 title: 'TabSeparatedWithNames'
-doc_type: 'reference'
 ---
 
-| Input | Output | Alias          |
-|-------|--------|----------------|
-|     ✔    |     ✔     | `TSVWithNames` |
+| Input | Output | Alias                          |
+|-------|--------|--------------------------------|
+|     ✔    |     ✔     | `TSVWithNames`, `RawWithNames` |
 
 ## Description {#description}
 

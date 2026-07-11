@@ -1,6 +1,5 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/MsgPackRowInputFormat.h>
-#include <Core/UUID.h>
 
 #if USE_MSGPACK
 
@@ -16,7 +15,6 @@
 #include <cstdlib>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
-#include <Core/Defines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -135,13 +133,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
     {
         case TypeIndex::UInt8:
         {
-            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
+            assert_cast<ColumnUInt8 &>(column).insertValue(value);
             break;
         }
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
+            assert_cast<ColumnUInt16 &>(column).insertValue(value);
             break;
         }
         case TypeIndex::DateTime: [[fallthrough]];
@@ -158,13 +156,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
-            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
+            assert_cast<ColumnInt8 &>(column).insertValue(value);
             break;
         }
         case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
-            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
+            assert_cast<ColumnInt16 &>(column).insertValue(value);
             break;
         }
         case TypeIndex::Date32: [[fallthrough]];
@@ -402,26 +400,14 @@ bool MsgPackVisitor::start_array(size_t size) // NOLINT
         if (size > 0)
             info_stack.push(Info{nested_column, nested_type, false, size, nullptr});
     }
-    else if (isTuple(removeNullable(info_stack.top().type)))
+    else if (isTuple(info_stack.top().type))
     {
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(info_stack.top().type));
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*info_stack.top().type);
         const auto & nested_types = tuple_type.getElements();
         if (size != nested_types.size())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack array with size {} into Tuple column with {} elements", size, nested_types.size());
 
-        /// If the type is Nullable, reaching start_array means the value
-        /// is non-null (for nulls, the parser calls visit_nil instead).
-        /// So we can safely unwrap the Nullable to work with the inner
-        /// ColumnTuple directly.
-        IColumn * column_ptr = &info_stack.top().column;
-        if (info_stack.top().type->isNullable())
-        {
-            auto & nullable_column = assert_cast<ColumnNullable &>(*column_ptr);
-            nullable_column.getNullMapColumn().insertValue(0);
-            column_ptr = &nullable_column.getNestedColumn();
-        }
-
-        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*column_ptr);
+        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(info_stack.top().column);
         /// Push nested columns into stack in reverse order.
         for (ssize_t i = static_cast<ssize_t>(nested_types.size()) - 1; i >= 0; --i)
             info_stack.push(Info{column_tuple.getColumn(i), nested_types[i], true, std::nullopt, nullptr});
@@ -446,7 +432,7 @@ bool MsgPackVisitor::end_array_item() // NOLINT
         info_stack.pop();
     else
     {
-        chassert(info_stack.top().array_size.has_value());
+        assert(info_stack.top().array_size.has_value());
         auto & current_array_size = *info_stack.top().array_size;
         --current_array_size;
         if (current_array_size == 0)
@@ -583,25 +569,8 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "You must specify setting input_format_msgpack_number_of_columns "
                         "to extract table schema from MsgPack data");
-
-    /// Guard against absurdly large values that would cause std::length_error
-    /// or trigger sanitizer OOM aborts in vector::reserve() below.
-    /// Uses the same limit as Native format readers (see Core/Defines.h).
-    if (number_of_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "input_format_msgpack_number_of_columns = {} is too large "
-                        "(maximum: {})",
-                        number_of_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
 }
 
-
-/// Reference (don't copy) zero-length STR/BIN payloads: msgpack copies them via
-/// memcpy(dst, null, 0), which is UB under the nonnull attribute. The empty payload
-/// is never dereferenced during schema inference.
-static bool msgpackReferenceEmptyData(msgpack::type::object_type, size_t size, void *)
-{
-    return size == 0;
-}
 
 msgpack::object_handle MsgPackSchemaReader::readObject()
 {
@@ -617,9 +586,7 @@ msgpack::object_handle MsgPackSchemaReader::readObject()
         offset = 0;
         try
         {
-            object_handle = msgpack::unpack(
-                buf.position(), buf.buffer().end() - buf.position(), offset,
-                msgpackReferenceEmptyData, nullptr, msgpack::unpack_limit());
+            object_handle = msgpack::unpack(buf.position(), buf.buffer().end() - buf.position(), offset);
             need_more_data = false;
         }
         catch (msgpack::insufficient_bytes &)
@@ -735,7 +702,6 @@ std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
     return data_types;
 }
 
-void registerInputFormatMsgPack(FormatFactory & factory);
 void registerInputFormatMsgPack(FormatFactory & factory)
 {
     factory.registerInputFormat("MsgPack", [](
@@ -747,62 +713,8 @@ void registerInputFormatMsgPack(FormatFactory & factory)
         return std::make_shared<MsgPackRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
     });
     factory.registerFileExtension("messagepack", "MsgPack");
-
-    factory.setDocumentation("MsgPack", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output | Alias |
-|-------|--------|-------|
-| ✔     | ✔      |       |
-
-## Description {#description}
-
-ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data files.
-
-## Data types matching {#data-types-matching}
-
-| MessagePack data type (`INSERT`)                                   | ClickHouse data type                                                                                    | MessagePack data type (`SELECT`) |
-|--------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|----------------------------------|
-| `uint N`, `positive fixint`                                        | [`UIntN`](/sql-reference/data-types/int-uint.md)                                                  | `uint N`                         |
-| `int N`, `negative fixint`                                         | [`IntN`](/sql-reference/data-types/int-uint.md)                                                   | `int N`                          |
-| `bool`                                                             | [`UInt8`](/sql-reference/data-types/int-uint.md)                                                  | `uint 8`                         |
-| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`String`](/sql-reference/data-types/string.md)                                                   | `bin 8`, `bin 16`, `bin 32`      |
-| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`FixedString`](/sql-reference/data-types/fixedstring.md)                                         | `bin 8`, `bin 16`, `bin 32`      |
-| `float 32`                                                         | [`Float32`](/sql-reference/data-types/float.md)                                                   | `float 32`                       |
-| `float 64`                                                         | [`Float64`](/sql-reference/data-types/float.md)                                                   | `float 64`                       |
-| `uint 16`                                                          | [`Date`](/sql-reference/data-types/date.md)                                                       | `uint 16`                        |
-| `int 32`                                                           | [`Date32`](/sql-reference/data-types/date32.md)                                                   | `int 32`                         |
-| `uint 32`                                                          | [`DateTime`](/sql-reference/data-types/datetime.md)                                               | `uint 32`                        |
-| `uint 64`                                                          | [`DateTime64`](/sql-reference/data-types/datetime.md)                                             | `uint 64`                        |
-| `fixarray`, `array 16`, `array 32`                                 | [`Array`](/sql-reference/data-types/array.md)/[`Tuple`](/sql-reference/data-types/tuple.md) | `fixarray`, `array 16`, `array 32` |
-| `fixmap`, `map 16`, `map 32`                                       | [`Map`](/sql-reference/data-types/map.md)                                                         | `fixmap`, `map 16`, `map 32`     |
-| `uint 32`                                                          | [`IPv4`](/sql-reference/data-types/ipv4.md)                                                       | `uint 32`                        |
-| `bin 8`                                                            | [`String`](/sql-reference/data-types/string.md)                                                   | `bin 8`                          |
-| `int 8`                                                            | [`Enum8`](/sql-reference/data-types/enum.md)                                                      | `int 8`                          |
-| `bin 8`                                                            | [`(U)Int128`/`(U)Int256`](/sql-reference/data-types/int-uint.md)                                    | `bin 8`                          |
-| `int 32`                                                           | [`Decimal32`](/sql-reference/data-types/decimal.md)                                               | `int 32`                         |
-| `int 64`                                                           | [`Decimal64`](/sql-reference/data-types/decimal.md)                                               | `int 64`                         |
-| `bin 8`                                                            | [`Decimal128`/`Decimal256`](/sql-reference/data-types/decimal.md)                                   | `bin 8 `                         |
-
-## Example usage {#example-usage}
-
-Writing to a file ".msgpk":
-
-```bash
-$ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
-$ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
-$ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
-```
-
-## Format settings {#format-settings}
-
-| Setting                                                                                                                                    | Description                                                                                    | Default |
-|--------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|---------|
-| [`input_format_msgpack_number_of_columns`](/operations/settings/settings-formats.md/#input_format_msgpack_number_of_columns)       | the number of columns in inserted MsgPack data. Used for automatic schema inference from data. | `0`     |
-| [`output_format_msgpack_uuid_representation`](/operations/settings/settings-formats.md/#output_format_msgpack_uuid_representation) | the way how to output UUID in MsgPack format.                                                  | `EXT`   |
-)DOCS_MD"});
 }
 
-void registerMsgPackSchemaReader(FormatFactory & factory);
 void registerMsgPackSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("MsgPack", [](ReadBuffer & buf, const FormatSettings & settings)
@@ -825,8 +737,6 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatMsgPack(FormatFactory &);
-void registerMsgPackSchemaReader(FormatFactory &);
 void registerInputFormatMsgPack(FormatFactory &)
 {
 }

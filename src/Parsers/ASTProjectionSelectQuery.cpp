@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 ASTPtr ASTProjectionSelectQuery::clone() const
 {
-    auto res = make_intrusive<ASTProjectionSelectQuery>(*this);
+    auto res = std::make_shared<ASTProjectionSelectQuery>(*this);
     res->children.clear();
     res->positions.clear();
 
@@ -39,7 +39,6 @@ ASTPtr ASTProjectionSelectQuery::clone() const
         */
     CLONE(Expression::WITH);
     CLONE(Expression::SELECT);
-    CLONE(Expression::WHERE);
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::ORDER_BY);
 
@@ -52,6 +51,7 @@ ASTPtr ASTProjectionSelectQuery::clone() const
 void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
+    frame.need_parens = false;
     frame.expression_list_prepend_whitespace = true;
 
     std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
@@ -67,13 +67,6 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
 
     s.one_line ? select()->format(ostr, s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
 
-    if (where())
-    {
-        ostr << s.nl_or_ws << indent_str << "WHERE";
-        ostr << ' ';
-        where()->format(ostr, s, state, frame);
-    }
-
     if (groupBy())
     {
         ostr << s.nl_or_ws << indent_str << "GROUP BY";
@@ -86,11 +79,11 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
         /// between GROUP BY and ORDER BY projection definition.
         ostr << s.nl_or_ws << indent_str << "ORDER BY";
         ASTPtr order_by;
-        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple" && func->arguments && !func->arguments->children.empty())
+        if (auto * func = orderBy()->as<ASTFunction>(); func && func->name == "tuple")
             order_by = func->arguments;
         else
         {
-            order_by = make_intrusive<ASTExpressionList>();
+            order_by = std::make_shared<ASTExpressionList>();
             order_by->children.push_back(orderBy());
         }
         s.one_line ? order_by->format(ostr, s, state, frame) : order_by->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
@@ -130,7 +123,7 @@ ASTPtr & ASTProjectionSelectQuery::getExpression(Expression expr)
 
 ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
 {
-    auto select_query = make_intrusive<ASTSelectQuery>();
+    auto select_query = std::make_shared<ASTSelectQuery>();
     ASTPtr node = select_query;
     if (with())
         select_query->setExpression(ASTSelectQuery::Expression::WITH, with()->clone());
@@ -149,13 +142,6 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
         }
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
     }
-    /// `WHERE` must be inserted before `GROUP BY` to match the canonical child order produced by
-    /// `ParserSelectQuery` (see `ASTSelectQuery::normalizeChildrenOrder`). `ASTSelectQuery` tree hashes
-    /// depend on the `children` order and are used for column identifiers and scalar/cache keys, so a
-    /// non-canonical order here would give a filtered aggregate projection different identifiers than
-    /// the same `SELECT` parsed from text.
-    if (where())
-        select_query->setExpression(ASTSelectQuery::Expression::WHERE, where()->clone());
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
 
@@ -167,7 +153,7 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     /// Ideally, we should aim for a unique and normalized query representation that remains
     /// unchanged after the AST rewrite. For instance, we can add -OrEmpty, realIn as the default
     /// behavior w.r.t -OrNull, nullIn.
-    auto settings_query = make_intrusive<ASTSetQuery>();
+    auto settings_query = std::make_shared<ASTSetQuery>();
     SettingsChanges settings_changes;
     settings_changes.insertSetting("aggregate_functions_null_for_empty", false);
     settings_changes.insertSetting("transform_null_in", false);

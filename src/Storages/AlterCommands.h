@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
@@ -35,7 +36,6 @@ struct AlterCommand
         DROP_INDEX,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
-        MODIFY_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
         ADD_STATISTICS,
@@ -112,10 +112,10 @@ struct AlterCommand
     /// For ADD/DROP INDEX
     String index_name;
 
-    // For ADD/MODIFY CONSTRAINT
+    // For ADD CONSTRAINT
     ASTPtr constraint_decl = nullptr;
 
-    // For ADD/DROP/MODIFY CONSTRAINT
+    // For ADD/DROP CONSTRAINT
     String constraint_name;
 
     /// For ADD PROJECTION
@@ -156,8 +156,6 @@ struct AlterCommand
     /// For MODIFY_REFRESH
     ASTPtr refresh = nullptr;
 
-    ASTPtr add_enum_values = nullptr;
-
     /// Target column name
     String rename_to;
 
@@ -175,7 +173,7 @@ struct AlterCommand
     /// executed. For example, cast from Date to UInt16 type can be executed
     /// without any data modifications. But column drop or modify from UInt16 to
     /// UInt32 require data modification.
-    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
+    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
 
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
@@ -215,7 +213,7 @@ public:
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default)
-    void prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets = true);
+    void prepare(const StorageInMemoryMetadata & metadata);
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.

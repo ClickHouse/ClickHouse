@@ -65,7 +65,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
         return executeDDLQueryOnCluster(updated_query_ptr, getContext(), params);
     }
 
-    chassert(query.names->cluster.empty());
+    assert(query.names->cluster.empty());
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(required_access);
 
@@ -148,7 +148,6 @@ AccessRightsElements InterpreterCreateRowPolicyQuery::getRequiredAccess() const
     return res;
 }
 
-void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

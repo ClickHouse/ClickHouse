@@ -2,7 +2,6 @@
 description: 'Documentation for Ssl X509'
 slug: /operations/external-authenticators/ssl-x509
 title: 'SSL X.509 certificate authentication'
-doc_type: 'reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';

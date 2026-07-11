@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnObject.h>
 #include <Common/SipHash.h>
-#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -27,7 +26,7 @@ std::vector<std::vector<std::pair<String, ColumnPtr>>> flattenAndBucketSharedDat
         size_t offset_end = (*shared_data_offsets)[ssize_t(i)];
         for (size_t j = offset_start; j != offset_end; ++j)
         {
-            std::string path{shared_data_paths->getDataAt(j)};
+            auto path = shared_data_paths->getDataAt(j).toString();
             auto it = flattened_shared_data_paths.find(path);
             /// If we see this path for the first time, add it to the list and create a column for it.
             if (it == flattened_shared_data_paths.end())
@@ -68,7 +67,7 @@ std::vector<std::pair<String, ColumnPtr>> flattenPaths(const ColumnObject & obje
     return all_paths;
 }
 
-void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Columns && flattened_columns, ColumnObject & object_column, size_t num_rows)
+void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, std::vector<ColumnPtr> && flattened_columns, ColumnObject & object_column, size_t num_rows)
 {
     /// Iterate over paths and try to add them to dynamic paths until the limit is reached.
     /// All remaining paths will be inserted into shared data.
@@ -105,9 +104,9 @@ size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets)
     return hash.get64() % num_buckets;
 }
 
-Columns splitSharedDataPathsToBuckets(const IColumn & shared_data_column, size_t start, size_t end, size_t num_buckets)
+std::vector<ColumnPtr> splitSharedDataPathsToBuckets(const IColumn & shared_data_column, size_t start, size_t end, size_t num_buckets)
 {
-    Columns shared_data_buckets(num_buckets);
+    std::vector<ColumnPtr> shared_data_buckets(num_buckets);
     std::vector<ColumnString *> shared_data_paths_buckets(num_buckets);
     std::vector<ColumnString *> shared_data_values_buckets(num_buckets);
     std::vector<ColumnArray::Offsets *> shared_data_offsets_buckets(num_buckets);
@@ -125,7 +124,7 @@ Columns splitSharedDataPathsToBuckets(const IColumn & shared_data_column, size_t
         size_t offset_end = (*shared_data_offsets)[ssize_t(i)];
         for (size_t j = offset_start; j != offset_end; ++j)
         {
-            size_t bucket = getSharedDataPathBucket(shared_data_paths->getDataAt(j), num_buckets);
+            size_t bucket = getSharedDataPathBucket(shared_data_paths->getDataAt(j).toView(), num_buckets);
             shared_data_paths_buckets[bucket]->insertFrom(*shared_data_paths, j);
             shared_data_values_buckets[bucket]->insertFrom(*shared_data_values, j);
         }
@@ -137,7 +136,7 @@ Columns splitSharedDataPathsToBuckets(const IColumn & shared_data_column, size_t
     return shared_data_buckets;
 }
 
-void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn & shared_data_column, const String * paths_prefix)
+void collectSharedDataFromBuckets(const std::vector<ColumnPtr> & shared_data_buckets, IColumn & shared_data_column, const String * paths_prefix)
 {
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
     std::vector<const ColumnString *> shared_data_paths_buckets(shared_data_buckets.size());
@@ -163,7 +162,7 @@ void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn &
             {
                 for (size_t j = offset_start; j != offset_end; ++j)
                 {
-                    auto path = shared_data_paths_buckets[bucket]->getDataAt(j);
+                    auto path = shared_data_paths_buckets[bucket]->getDataAt(j).toView();
                     all_paths.emplace_back(path, bucket, j);
                 }
             }
@@ -173,7 +172,7 @@ void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn &
                 size_t lower_bound_index = ColumnObject::findPathLowerBoundInSharedData(*paths_prefix, *shared_data_paths_buckets[bucket], offset_start, offset_end);
                 for (; lower_bound_index != offset_end; ++lower_bound_index)
                 {
-                    auto path = shared_data_paths_buckets[bucket]->getDataAt(lower_bound_index);
+                    auto path = shared_data_paths_buckets[bucket]->getDataAt(lower_bound_index).toView();
                     if (!path.starts_with(*paths_prefix))
                         break;
                     auto sub_path = path.substr(paths_prefix->size());
@@ -203,7 +202,7 @@ ColumnPtr createPathsIndexesImpl(const std::unordered_map<std::string_view, size
     auto & data = indexes_column->getData();
     data.reserve(end - start);
     for (size_t i = start; i < end; ++i)
-        data.push_back(static_cast<T>(path_to_index.at(paths_column.getDataAt(i))));
+        data.push_back(static_cast<T>(path_to_index.at(paths_column.getDataAt(i).toView())));
     return indexes_column;
 }
 

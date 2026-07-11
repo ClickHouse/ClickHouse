@@ -40,11 +40,10 @@ class ExtractAllImpl
 private:
     Regexps::RegexpPtr re;
     OptimizedRegularExpression::MatchVec matches;
-    size_t capture{};
+    size_t capture;
 
-    Pos begin{};
-    Pos pos{};
-    Pos end{};
+    Pos pos;
+    Pos end;
 public:
     static constexpr auto name = "extractAll";
     static String getName() { return name; }
@@ -82,7 +81,6 @@ public:
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
-        begin = pos_;
         pos = pos_;
         end = end_;
     }
@@ -93,9 +91,7 @@ public:
         if (!pos || pos > end)
             return false;
 
-        /// Match over the whole string starting at `pos`, so that the characters before `pos` are seen as context
-        /// for zero-width assertions such as `\b` and `^`. The returned offsets are relative to `begin`.
-        if (!re->match(begin, end - begin, pos - begin, matches) || !matches[0].length)
+        if (!re->match(pos, end - pos, matches) || !matches[0].length)
             return false;
 
         if (matches[capture].offset == std::string::npos)
@@ -106,11 +102,11 @@ public:
         }
         else
         {
-            token_begin = begin + matches[capture].offset;
+            token_begin = pos + matches[capture].offset;
             token_end = token_begin + matches[capture].length;
         }
 
-        pos = begin + matches[0].offset + matches[0].length;
+        pos += matches[0].offset + matches[0].length;
 
         return true;
     }
@@ -122,43 +118,7 @@ using FunctionExtractAll = FunctionTokens<ExtractAllImpl>;
 
 REGISTER_FUNCTION(ExtractAll)
 {
-    FunctionDocumentation::Description description = R"(
-Like [`extract`](#extract), but returns an array of all matches of a regular expression in a string.
-If 'haystack' doesn't match the 'pattern' regex, an empty array is returned.
-
-If the regular expression has capturing groups (sub-patterns), the function matches the input string against the first capturing group.
-    )";
-    FunctionDocumentation::Syntax syntax = "extractAll(haystack, pattern)";
-    FunctionDocumentation::Arguments arguments = {
-        {"haystack", "String from which to extract fragments.", {"String"}},
-        {"pattern", "Regular expression, optionally containing capturing groups.", {"const String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns array of extracted fragments.", {"Array(String)"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Extract all numbers",
-        "SELECT extractAll('hello 123 world 456', '[0-9]+')",
-        R"(
-┌─extractAll('hello 123 world 456', '[0-9]+')─┐
-│ ['123','456']                               │
-└─────────────────────────────────────────────┘
-        )"
-    },
-    {
-        "Extract using capturing group",
-        "SELECT extractAll('test@example.com, user@domain.org', '([a-zA-Z0-9]+)@')",
-        R"(
-┌─extractAll('test@example.com, user@domain.org', '([a-zA-Z0-9]+)@')─┐
-│ ['test','user']                                                    │
-└────────────────────────────────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionExtractAll>(documentation);
+    factory.registerFunction<FunctionExtractAll>();
 }
 
 }

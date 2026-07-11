@@ -13,7 +13,6 @@ env:
   PYTHONUNBUFFERED: 1
   CHECKOUT_REF: ""
 
-
 jobs:
 
   config_workflow:
@@ -22,22 +21,20 @@ jobs:
     name: "Config Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_nightlystatistics.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
@@ -48,7 +45,12 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci --timestamp
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Config Workflow' --workflow "NightlyStatistics" --ci |& tee ./ci/tmp/job.log
+          fi
 
   collect_statistics:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -56,22 +58,20 @@ jobs:
     name: "Collect Statistics"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
+          cat > ./ci/tmp/workflow_config_nightlystatistics.json << 'EOF'
+          ${{ needs.config_workflow.outputs.data }}
           EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
@@ -82,4 +82,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci --timestamp
+          set -o pipefail
+          if command -v ts &> /dev/null; then
+            python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+          else
+            python3 -m praktika run 'Collect Statistics' --workflow "NightlyStatistics" --ci |& tee ./ci/tmp/job.log
+          fi

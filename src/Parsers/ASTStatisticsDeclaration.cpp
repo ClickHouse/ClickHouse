@@ -11,7 +11,7 @@ namespace DB
 
 ASTPtr ASTStatisticsDeclaration::clone() const
 {
-    auto res = make_intrusive<ASTStatisticsDeclaration>();
+    auto res = std::make_shared<ASTStatisticsDeclaration>();
 
     res->set(res->columns, columns->clone());
     if (types)

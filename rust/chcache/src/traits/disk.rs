@@ -1,5 +1,5 @@
-use crate::config::Config;
 use std::error::Error;
+use crate::config::Config;
 
 pub trait Disk {
     fn from_config(config: &Config) -> Self;

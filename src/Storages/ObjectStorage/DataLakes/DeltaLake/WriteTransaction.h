@@ -22,8 +22,7 @@ public:
     struct CommitFile
     {
         std::string file_name;
-        size_t size_bytes;
-        size_t size_rows;
+        size_t size;
         DB::Map paritition_values;
     };
 

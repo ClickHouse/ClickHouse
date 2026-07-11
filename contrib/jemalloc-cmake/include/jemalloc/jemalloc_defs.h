@@ -24,10 +24,14 @@
  * Define overrides for non-standard allocator-related functions if they are
  * present on the system.
  */
-/* #undef JEMALLOC_OVERRIDE_MEMALIGN */
-/* #undef JEMALLOC_OVERRIDE_VALLOC */
-/* #undef JEMALLOC_OVERRIDE_PVALLOC */
-/* #undef JEMALLOC_OVERRIDE___LIBC_PVALLOC */
+#if !defined(USE_MUSL)
+    #define JEMALLOC_OVERRIDE_MEMALIGN
+    #define JEMALLOC_OVERRIDE_VALLOC
+    #if defined(__linux__)
+        #define JEMALLOC_OVERRIDE_PVALLOC
+        #define JEMALLOC_OVERRIDE___LIBC_PVALLOC
+    #endif
+#endif
 
 /*
  * At least Linux omits the "const" in:
@@ -44,8 +48,6 @@
  * glibc defines.
  */
 #define JEMALLOC_USE_CXX_THROW
-
-#define JEMALLOC_CONFIG_ENV
 
 #ifdef _MSC_VER
 #  ifdef _WIN64

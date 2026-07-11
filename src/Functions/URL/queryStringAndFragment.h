@@ -18,7 +18,7 @@ struct ExtractQueryStringAndFragment
         res_size = 0;
 
         Pos end = data + size;
-        Pos pos = nullptr;
+        Pos pos;
 
         if (end != (pos = find_first_symbols<'?'>(data, end)))
         {

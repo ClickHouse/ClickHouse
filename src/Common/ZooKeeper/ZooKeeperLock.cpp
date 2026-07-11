@@ -1,5 +1,6 @@
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Common/logger_useful.h>
+#include <Common/ErrorCodes.h>
 #include <filesystem>
 
 namespace DB
@@ -45,17 +46,9 @@ ZooKeeperLock::~ZooKeeperLock()
     }
 }
 
-bool ZooKeeperLock::isLocked(bool check_node) const
+bool ZooKeeperLock::isLocked() const
 {
-    if (!was_locked || zookeeper->expired())
-        return false;
-
-    if (!check_node)
-        return true;
-
-    Coordination::Stat stat;
-    const bool is_lock_exists = zookeeper->exists(lock_path, &stat);
-    return is_lock_exists && stat.ephemeralOwner == zookeeper->getClientID();
+    return locked && !zookeeper->expired();
 }
 
 const std::string & ZooKeeperLock::getLockPath() const
@@ -65,13 +58,13 @@ const std::string & ZooKeeperLock::getLockPath() const
 
 void ZooKeeperLock::unlock()
 {
-    if (!was_locked)
+    if (!locked)
     {
-        LOG_TRACE(log, "Lock on path {} for session {} was not locked, exiting", lock_path, zookeeper->getClientID());
+        LOG_TRACE(log, "Lock on path {} for session {} is not locked, exiting", lock_path, zookeeper->getClientID());
         return;
     }
 
-    was_locked = false;
+    locked = false;
 
     if (zookeeper->expired())
     {
@@ -105,14 +98,14 @@ bool ZooKeeperLock::tryLock()
 
     if (code == Coordination::Error::ZOK)
     {
-        was_locked = true;
+        locked = true;
     }
     else if (code != Coordination::Error::ZNODEEXISTS)
     {
         throw Coordination::Exception(code);
     }
 
-    return was_locked;
+    return locked;
 }
 
 std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
