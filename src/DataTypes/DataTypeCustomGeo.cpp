@@ -281,15 +281,22 @@ SELECT * FROM geo_dst;
 
     factory.registerSimpleDataTypeCustom("Geometry", []
     {
-        auto point_type = DataTypeFactory::instance().get(DataTypePointName().getName());
-        auto multipoint_type = DataTypeFactory::instance().get(DataTypeMultiPointName().getName());
-        auto linestring_type = DataTypeFactory::instance().get(DataTypeLineStringName().getName());
-        auto polygon_type = DataTypeFactory::instance().get(DataTypePolygonName().getName());
-        auto multipolygon_type = DataTypeFactory::instance().get(DataTypeMultiPolygonName().getName());
-        auto ring_type = DataTypeFactory::instance().get(DataTypeRingName().getName());
-        auto multi_linestring_type = DataTypeFactory::instance().get(DataTypeMultiLineStringName().getName());
+        const auto & type_factory = DataTypeFactory::instance();
 
-        auto variant_type = std::make_shared<DataTypeVariant>(DataTypes{point_type, multipoint_type, linestring_type, polygon_type, multipolygon_type, ring_type, multi_linestring_type});
+        /// The order defines the global discriminators of the Variant, which are persisted
+        /// in data. For backward compatibility, new geo types are appended at the end.
+        DataTypes geo_types
+        {
+            type_factory.get(DataTypeLineStringName().getName()),      /// 0
+            type_factory.get(DataTypeMultiLineStringName().getName()), /// 1
+            type_factory.get(DataTypeMultiPolygonName().getName()),    /// 2
+            type_factory.get(DataTypePointName().getName()),           /// 3
+            type_factory.get(DataTypePolygonName().getName()),         /// 4
+            type_factory.get(DataTypeRingName().getName()),            /// 5
+            type_factory.get(DataTypeMultiPointName().getName()),      /// 6
+        };
+
+        auto variant_type = std::make_shared<DataTypeVariant>(geo_types, DataTypeVariant::FixedDiscriminatorOrder{});
 
         return std::make_pair(variant_type,
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeGeometryName>()));

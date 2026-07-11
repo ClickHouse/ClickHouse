@@ -26,28 +26,36 @@ SELECT g, variantType(g), toTypeName(g) FROM geo_multipoint_geom ORDER BY id;
 SELECT variantElement(g, 'MultiPoint') AS mp, toTypeName(mp) FROM geo_multipoint_geom WHERE variantType(g) = 'MultiPoint' ORDER BY id;
 DROP TABLE geo_multipoint_geom;
 
--- flipCoordinates works structurally and preserves the type.
-SELECT flipCoordinates([(1, 2), (3, 4)]::MultiPoint) AS flipped, toTypeName(flipped);
+-- WKT reading and writing. Both MULTIPOINT spellings are valid.
+SELECT readWKTMultiPoint('MULTIPOINT (1 1, 2 2, 3 3)') AS mp, toTypeName(mp);
+SELECT readWKTMultiPoint('MULTIPOINT ((1 1), (2 2))');
+SELECT readWKT('MULTIPOINT (1 1, 2 2)') AS g, variantType(g);
+SELECT wkt([(1., 2.), (3., 4.)]::MultiPoint);
 
--- Geo functions are not implemented for MultiPoint yet.
-SELECT wkt([(1., 2.)]::MultiPoint); -- { serverError NOT_IMPLEMENTED }
-SELECT svg([(1., 2.)]::MultiPoint); -- { serverError NOT_IMPLEMENTED }
-SELECT areaCartesian([(1., 2.)]::MultiPoint); -- { serverError NOT_IMPLEMENTED }
-SELECT areaSpherical([(1., 2.)]::MultiPoint); -- { serverError NOT_IMPLEMENTED }
-SELECT perimeterCartesian([(1., 2.)]::MultiPoint); -- { serverError NOT_IMPLEMENTED }
-SELECT areaCartesian([(1., 2.)]::MultiPoint::Geometry); -- { serverError NOT_IMPLEMENTED }
-SELECT polygonsIntersectCartesian([(1., 2.)]::MultiPoint, [(1., 2.)]::MultiPoint); -- { serverError NOT_IMPLEMENTED }
+-- WKB reading and writing.
+SELECT hex(wkb([(1., 1.), (2., 2.)]::MultiPoint));
+SELECT readWKBMultiPoint(wkb([(1., 2.), (3., 4.)]::MultiPoint)) AS mp, toTypeName(mp);
+SELECT ST_MPointFromWKB(wkb([(5., 6.)]::MultiPoint));
+SELECT readWKB(wkb([(1., 2.)]::MultiPoint)) AS g, variantType(g);
 
--- Reading MultiPoint WKT and WKB values is not implemented yet.
-SELECT readWKT('MULTIPOINT (1 1, 2 2)'); -- { serverError NOT_IMPLEMENTED }
-SELECT readWKB(unhex('0104000000010000000101000000000000000000f03f000000000000f03f')); -- { serverError NOT_IMPLEMENTED }
+-- Geo functions. A set of points has zero area and perimeter.
+SELECT areaCartesian([(1., 2.), (3., 4.)]::MultiPoint);
+SELECT perimeterCartesian([(1., 2.), (3., 4.)]::MultiPoint);
+SELECT areaSpherical([(1., 2.)]::MultiPoint);
+SELECT areaCartesian([(1., 2.)]::MultiPoint::Geometry);
+SELECT svg([(0., 0.), (10., 10.)]::MultiPoint);
+SELECT wkt(polygonConvexHullCartesian([(0., 0.), (5., 0.), (0., 5.), (2., 2.)]::MultiPoint));
+SELECT polygonsDistanceCartesian([(0., 0.)]::MultiPoint, [[(4., 3.), (5., 3.), (5., 4.), (4., 3.)]]::Polygon);
+SELECT polygonsEqualsCartesian([(1., 2.)]::MultiPoint, [(1., 2.)]::MultiPoint);
+SELECT flipCoordinates([(1, 2), (3, 4)]::MultiPoint) AS f, toTypeName(f);
 
--- MVT encoding is not implemented for MultiPoint yet.
-SELECT MVTEncodeGeom([(13.4, 52.5)]::MultiPoint::Geometry, 10, 550, 335); -- { serverError NOT_IMPLEMENTED }
-SELECT MVTEncodeGeom([(13.4, 52.5)]::MultiPoint, 10, 550, 335); -- { serverError NOT_IMPLEMENTED }
-SELECT MVTEncode('t')([(13.4, 52.5)]::MultiPoint::Geometry); -- { serverError NOT_IMPLEMENTED }
+-- MVT encoding.
+SELECT MVTEncodeGeom([(13.4, 52.5), (13.5, 52.55)]::MultiPoint, 10, 550, 335) AS g, variantType(g);
+SELECT hex(MVTEncode('layer')(MVTEncodeGeom([(13.4, 52.5), (13.5, 52.55)]::MultiPoint, 10, 550, 335)));
 
--- The GeoJSON output format does not support MultiPoint yet, neither as a concrete
--- geometry column nor as a value inside a Geometry column.
-SELECT formatRow('GeoJSON', [(1., 2.)]::MultiPoint); -- { serverError NOT_IMPLEMENTED }
-SELECT formatRow('GeoJSON', [(1., 2.)]::MultiPoint::Geometry); -- { serverError NOT_IMPLEMENTED }
+-- Functions with polygon semantics reject MultiPoint like LineString and MultiLineString.
+SELECT polygonsIntersectionCartesian([(1., 2.)]::MultiPoint, [(1., 2.)]::MultiPoint); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT polygonsUnionCartesian([(1., 2.)]::MultiPoint, [(1., 2.)]::MultiPoint); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT polygonsSymDifferenceCartesian([(1., 2.)]::MultiPoint, [(1., 2.)]::MultiPoint); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT polygonsWithinCartesian([(1., 2.)]::MultiPoint, [(1., 2.)]::MultiPoint); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT polygonsIntersectCartesian([(1., 2.)]::MultiPoint, [(1., 2.)]::MultiPoint); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

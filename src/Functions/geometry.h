@@ -27,7 +27,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename Point>
@@ -37,6 +36,16 @@ Point getPointFromField(const Field & field)
     auto x = point.at(0).safeGet<Float64>();
     auto y = point.at(1).safeGet<Float64>();
     return {x, y};
+}
+
+template <typename Point>
+MultiPoint<Point> getMultiPointFromField(const Field & field)
+{
+    MultiPoint<Point> multipoint;
+    const auto & array = field.safeGet<Array>();
+    for (const auto & tuple : array)
+        multipoint.push_back(getPointFromField<Point>(tuple));
+    return multipoint;
 }
 
 template <typename Point>
@@ -98,15 +107,16 @@ MultiPolygon<Point> getMultiPolygonFromField(const Field & field)
     return polygon;
 }
 
+/// Must match the global discriminators of the Geometry Variant type.
 enum class GeometryColumnType
 {
     Linestring = 0,
     MultiLinestring = 1,
-    MultiPoint = 2,
-    MultiPolygon = 3,
-    Point = 4,
-    Polygon = 5,
-    Ring = 6,
+    MultiPolygon = 2,
+    Point = 3,
+    Polygon = 4,
+    Ring = 5,
+    MultiPoint = 6,
     Null = 255
 };
 
@@ -290,7 +300,9 @@ private:
             }
             case GeometryColumnType::MultiPoint:
             {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented for the MultiPoint type yet", getName());
+                MultiPoint<Point> multipoint = getMultiPointFromField<Point>(field);
+                res_data.push_back(FunctionToCalculate()(multipoint));
+                break;
             }
             case GeometryColumnType::MultiPolygon:
             {

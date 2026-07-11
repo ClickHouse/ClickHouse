@@ -25,7 +25,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
 }
 
 /// Use AllocatorWithMemoryTracking so that building geometries (in particular parsing untrusted
@@ -105,6 +104,28 @@ struct ColumnToPointsConverter
     }
 };
 
+
+/**
+ * Class which converts Column with type Array(Tuple(Float64, Float64)) to a vector of boost multi_point type.
+*/
+template <typename Point>
+struct ColumnToMultiPointsConverter
+{
+    static VectorWithMemoryTracking<MultiPoint<Point>> convert(ColumnPtr col)
+    {
+        const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
+        size_t prev_offset = 0;
+        VectorWithMemoryTracking<MultiPoint<Point>> answer;
+        answer.reserve(offsets.size());
+        auto tmp = ColumnToPointsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
+        for (size_t offset : offsets)
+        {
+            answer.emplace_back(tmp.begin() + prev_offset, tmp.begin() + offset);
+            prev_offset = offset;
+        }
+        return answer;
+    }
+};
 
 /**
  * Class which converts Column with type Array(Tuple(Float64, Float64)) to a vector of boost linestring type.
@@ -507,10 +528,10 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
     if (factory.get("Point")->equals(*type))
         return f(ConverterType<ColumnToPointsConverter<Point>>());
 
-    /// MultiPoint is resolved to the same Array(Tuple(Point)) as Ring and LineString,
-    /// so it must be rejected by name before the Ring fallback below.
+    /// We should take the name into consideration to avoid ambiguity.
+    /// Because for example both MultiPoint and Ring are resolved to Array(Tuple(Point)).
     if (factory.get("MultiPoint")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "MultiPoint")
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Geometry functions are not implemented for the MultiPoint type yet");
+        return f(ConverterType<ColumnToMultiPointsConverter<Point>>());
 
     /// We should take the name into consideration to avoid ambiguity.
     /// Because for example both Ring and LineString are resolved to Array(Tuple(Point)).

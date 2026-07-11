@@ -25,7 +25,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -47,8 +46,9 @@ struct GeoTypeEntry
     bool ring; /// The innermost array is a polygon ring (>= 4 points and closed).
 };
 
-constexpr std::array<GeoTypeEntry, 6> geo_type_table{{
+constexpr std::array<GeoTypeEntry, 7> geo_type_table{{
     {"Point", "Point", 0, false, 0, false},
+    {"MultiPoint", "MultiPoint", 1, false, 0, false},
     {"LineString", "LineString", 1, false, 2, false},
     {"Ring", "Polygon", 1, true, 4, true},
     {"MultiLineString", "MultiLineString", 2, false, 2, false},
@@ -128,14 +128,6 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
         const auto geo_type = removeNullable(column.type);
         const String type_name = geo_type->getName();
 
-        /// A MultiPoint value cannot be written yet, so reject the column instead of
-        /// silently emitting it as a property.
-        if (type_name == "MultiPoint")
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "The GeoJSON output format does not support the MultiPoint type yet (column '{}')",
-                column.name);
-
         /// `geometryKindFor` returns nullopt for the `Geometry` variant (handled separately below) and
         /// for non-geo columns.
         const auto kind = geometryKindFor(type_name);
@@ -202,7 +194,7 @@ GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader 
     if (!found_geometry)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The GeoJSON output format requires exactly one geometry-typed column (Point, LineString, "
+            "The GeoJSON output format requires exactly one geometry-typed column (Point, MultiPoint, LineString, "
             "MultiLineString, Polygon, MultiPolygon, Ring, or Geometry), but found none");
 
     /// Emit a lone object-typed `properties` column directly as the properties object so that GeoJSON
@@ -287,11 +279,6 @@ void GeoJSONRowOutputFormat::writeGeometry(const IColumn & column, size_t row_nu
             writeCString("null", *ostr);
             return;
         }
-        /// The only Geometry alternative without an emission kind is MultiPoint.
-        if (!variant_kind[discr].geojson_type)
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "The GeoJSON output format does not support writing MultiPoint geometries yet");
         writeGeometryObject(variant_kind[discr], variant.getVariantByGlobalDiscriminator(discr), variant.offsetAt(row_num));
     }
     else

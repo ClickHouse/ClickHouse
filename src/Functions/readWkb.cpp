@@ -104,6 +104,11 @@ struct ReadWKBLineStringNameHolder
     static constexpr const char * name = "readWKBLineString";
 };
 
+struct ReadWKBMultiPointNameHolder
+{
+    static constexpr const char * name = "readWKBMultiPoint";
+};
+
 struct ReadWKBMultiLineStringNameHolder
 {
     static constexpr const char * name = "readWKBMultiLineString";
@@ -127,10 +132,11 @@ public:
     {
         LineString,
         MultiLineString,
-        MultiPoint,
         MultiPolygon,
         Point,
         Polygon,
+        Ring,
+        MultiPoint,
     };
 
     explicit FunctionReadWKBCommon(UInt32 max_wkb_elements_) : max_wkb_elements(max_wkb_elements_) {}
@@ -205,6 +211,11 @@ public:
                 multipolygon_serializer.add(std::get<MultiPolygon<CartesianPoint>>(object));
                 converted_type = static_cast<UInt8>(WKBTypes::MultiPolygon);
             }
+            else if (std::holds_alternative<MultiPoint<CartesianPoint>>(object))
+            {
+                multipoint_serializer.add(std::get<MultiPoint<CartesianPoint>>(object));
+                converted_type = static_cast<UInt8>(WKBTypes::MultiPoint);
+            }
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect WKB format value: {}", str);
 
@@ -214,11 +225,11 @@ public:
         Columns result_columns;
         result_columns.push_back(linestring_serializer.finalize());
         result_columns.push_back(multilinestring_serializer.finalize());
-        result_columns.push_back(multipoint_serializer.finalize());
         result_columns.push_back(multipolygon_serializer.finalize());
         result_columns.push_back(point_serializer.finalize());
         result_columns.push_back(polygon_serializer.finalize());
         result_columns.push_back(ring_serializer.finalize());
+        result_columns.push_back(multipoint_serializer.finalize());
 
         return ColumnVariant::create(std::move(discriminators_column), result_columns);
     }
@@ -291,6 +302,30 @@ SELECT readWKBLineString(unhex('010200000004000000000000000000f03f000000000000f0
     FunctionDocumentation function_documentation_linestring = {description_linestring, syntax_linestring, arguments_linestring, {}, returned_value_linestring, examples_linestring, introduced_in_linestring, category_linestring};
 
     factory.registerFunction<FunctionReadWKB<DataTypeLineStringName, CartesianLineString, LineStringSerializer<CartesianPoint>, ReadWKBLineStringNameHolder>>(function_documentation_linestring);
+
+    FunctionDocumentation::Description description_multipoint = R"(
+Parses a Well-Known Binary (WKB) representation of a MultiPoint geometry and returns it in the internal ClickHouse format.
+    )";
+    FunctionDocumentation::Syntax syntax_multipoint = "readWKBMultiPoint(wkb_string)";
+    FunctionDocumentation::Arguments arguments_multipoint = {{"wkb_string", "The input WKB string representing a MultiPoint geometry.", {"String"}}};
+    FunctionDocumentation::ReturnedValue returned_value_multipoint = {"Returns a ClickHouse internal representation of the multipoint geometry.", {"Geo"}};
+    FunctionDocumentation::Examples examples_multipoint =
+    {
+    {
+        "Usage example",
+        R"(
+SELECT readWKBMultiPoint(unhex('0104000000020000000101000000000000000000f03f000000000000f03f010100000000000000000000400000000000000040'));
+        )",
+        R"(
+[(1,1),(2,2)]
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_multipoint = {26, 7};
+    FunctionDocumentation::Category category_multipoint = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_multipoint = {description_multipoint, syntax_multipoint, arguments_multipoint, {}, returned_value_multipoint, examples_multipoint, introduced_in_multipoint, category_multipoint};
+
+    factory.registerFunction<FunctionReadWKB<DataTypeMultiPointName, CartesianMultiPoint, MultiPointSerializer<CartesianPoint>, ReadWKBMultiPointNameHolder>>(function_documentation_multipoint);
 
     FunctionDocumentation::Description description_multilinestring = R"(
 Parses a Well-Known Binary (WKB) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.
@@ -371,6 +406,7 @@ readWKBMulti~000024c0')): [[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,
 
     factory.registerAlias("ST_PointFromWKB", ReadWKBPointNameHolder::name);
     factory.registerAlias("ST_LineFromWKB", ReadWKBLineStringNameHolder::name);
+    factory.registerAlias("ST_MPointFromWKB", ReadWKBMultiPointNameHolder::name);
     factory.registerAlias("ST_MLineFromWKB", ReadWKBMultiLineStringNameHolder::name);
     factory.registerAlias("ST_PolyFromWKB", ReadWKBPolygonNameHolder::name);
     factory.registerAlias("ST_MPolyFromWKB", ReadWKBMultiPolygonNameHolder::name);

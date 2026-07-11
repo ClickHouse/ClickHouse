@@ -40,7 +40,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
-    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
@@ -48,16 +47,16 @@ namespace ErrorCodes
 namespace
 {
 
-/// Global discriminator order of the `Geometry` Variant: alternatives are sorted alphabetically by type name.
+/// Global discriminators of the `Geometry` Variant. The order is fixed and new geo types are appended.
 namespace GeoDisc
 {
     constexpr UInt8 LineString = 0;
     constexpr UInt8 MultiLineString = 1;
-    constexpr UInt8 MultiPoint = 2;
-    constexpr UInt8 MultiPolygon = 3;
-    constexpr UInt8 Point = 4;
-    constexpr UInt8 Polygon = 5;
-    constexpr UInt8 Ring = 6;
+    constexpr UInt8 MultiPolygon = 2;
+    constexpr UInt8 Point = 3;
+    constexpr UInt8 Polygon = 4;
+    constexpr UInt8 Ring = 5;
+    constexpr UInt8 MultiPoint = 6;
 }
 
 /// Mapbox Vector Tile feature geometry types.
@@ -402,7 +401,22 @@ private:
                 return MVTGeomType::LineString;
             }
             case GeoDisc::MultiPoint:
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Aggregate function {} is not implemented for the MultiPoint type yet", getName());
+            {
+                /// A MULTIPOINT geometry is a single MoveTo command whose count is the number of
+                /// points, with each point encoded relative to the previous one.
+                const TilePoints points = readPointSequence(geometry, getName());
+                if (points.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} received an empty MultiPoint", getName());
+                MVT::writeVarint(out, (MVTCommand::MoveTo & 0x7) | (static_cast<UInt32>(points.size()) << 3));
+                for (const auto & [x, y] : points)
+                {
+                    MVT::writeVarint(out, zigZagDelta(x - cursor_x));
+                    MVT::writeVarint(out, zigZagDelta(y - cursor_y));
+                    cursor_x = x;
+                    cursor_y = y;
+                }
+                return MVTGeomType::Point;
+            }
             case GeoDisc::Ring:
                 emitRing(out, readPointSequence(geometry, getName()), /*exterior=*/true, cursor_x, cursor_y);
                 return MVTGeomType::Polygon;

@@ -1022,11 +1022,11 @@ The discriminant indices for Geometry are:
 | --- | --- |
 | 0 | LineString |
 | 1 | MultiLineString |
-| 2 | MultiPoint |
-| 3 | MultiPolygon |
-| 4 | Point |
-| 5 | Polygon |
-| 6 | Ring |
+| 2 | MultiPolygon |
+| 3 | Point |
+| 4 | Polygon |
+| 5 | Ring |
+| 6 | MultiPoint |
 
 Wire format structure:
 
@@ -1042,7 +1042,7 @@ SELECT ((1.0, 2.0)::Point)::Geometry
 ```
 
 ```text
-0x04,                                           // discriminant = 4 (Point)
+0x03,                                           // discriminant = 3 (Point)
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // Point.X = 1.0 as Float64
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // Point.Y = 2.0 as Float64
 ```
@@ -1050,7 +1050,7 @@ SELECT ((1.0, 2.0)::Point)::Geometry
 Sample encoding of a `Ring` as `Geometry`:
 
 ```text
-0x06,       // discriminant = 6 (Ring)
+0x05,       // discriminant = 5 (Ring)
 0x02,       // LEB128 - array has 2 points
 // Point #1
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x40, // X = 3.0
