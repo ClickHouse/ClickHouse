@@ -43,6 +43,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -598,7 +599,10 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
 
 }
 
-static void writeMetadataFiles(
+/// Returns false if the metadata commit lost the race to a concurrent writer (the target
+/// `vN.metadata.json` already existed): in that case the compacted metadata was NOT published and
+/// the caller must not delete the pre-compaction files.
+static bool writeMetadataFiles(
     Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, bool write_version_hint)
 {
     auto log = getLogger("IcebergCompaction");
@@ -909,8 +913,12 @@ static void writeMetadataFiles(
 
         /// Write the metadata file and keep `version-hint.text` in sync (via the same helper the
         /// INSERT/mutation paths use), so `iceberg_use_version_hint = 1` readers still find the
-        /// compacted metadata after `clearOldFiles` removes the previous version.
-        Iceberg::writeMetadataFileAndVersionHint(
+        /// compacted metadata after `clearOldFiles` removes the previous version. A false return
+        /// means the target metadata version already exists (a concurrent writer won the commit):
+        /// the compacted metadata was NOT published, so the caller must skip `clearOldFiles`
+        /// (otherwise we would delete the pre-compaction data/metadata while the table still points
+        /// at the other writer's snapshot). Every other Iceberg write path aborts/retries on false.
+        return Iceberg::writeMetadataFileAndVersionHint(
             path_resolver,
             generated_metadata_info,
             json_representation,
@@ -973,7 +981,7 @@ void compactIcebergTable(
             context_,
             write_format,
             persistent_table_components.metadata_compression_method);
-        writeMetadataFiles(
+        bool committed = writeMetadataFiles(
             plan,
             persistent_table_components.path_resolver,
             object_storage_,
@@ -981,6 +989,14 @@ void compactIcebergTable(
             sample_block_,
             write_format,
             data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
+        /// Only delete the pre-compaction files if the compacted metadata was actually published.
+        /// If a concurrent writer won the metadata commit, `clearOldFiles` would delete the data and
+        /// metadata the table still references (now pointing at the other writer's snapshot).
+        if (!committed)
+            throw Exception(
+                ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
+                "Iceberg compaction (OPTIMIZE) lost the metadata commit to a concurrent writer; "
+                "the table was modified during compaction. Retry OPTIMIZE.");
         clearOldFiles(object_storage_, old_files);
     }
 }

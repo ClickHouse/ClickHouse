@@ -542,3 +542,151 @@ def test_optimize_clears_partition_statistics(
     assert (
         instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id") == "1\ta\n3\tc\n"
     )
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_rejected_after_decimal_precision_change(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """
+    The lossy-evolution guard must reject a parameterized-primitive type change (here a decimal
+    precision widening) the same way it rejects a plain type change. Iceberg encodes decimal (and
+    fixed) as a string primitive ("decimal(P, S)" / "fixed[N]"), so `walkTypeNode` stores the full
+    parameterized string in the field-id -> type signature; a precision/scale change therefore
+    yields a different signature and must be rejected. Compaction reuses the original snapshot ids
+    for time travel, so letting a decimal change through would rewrite historical files into the
+    new physical type and misread a pre-change snapshot.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_decimal_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value Nullable(String))",
+        2,
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,'a'),(2,'b'),(3,'c');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # Positional delete so compaction has work to do (the guard only fires when need_optimize).
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    # Inject a decimal precision change into a fresh metadata version: the current schema has the
+    # field as decimal(20, 2), while an OLD reachable schema (pinned by the first snapshot) has it
+    # as decimal(10, 2). Reading that pre-change snapshot after a rewrite into decimal(20, 2) would
+    # use the wrong physical type, so OPTIMIZE must be rejected.
+    meta, prev_path = _read_latest_metadata(instance, TABLE_NAME)
+    cur_id = meta["current-schema-id"]
+    schemas_by_id = {s["schema-id"]: s for s in meta["schemas"]}
+    cur_schema = schemas_by_id[cur_id]
+    field_id = None
+    for f in cur_schema["fields"]:
+        if f["name"] == "value":
+            f["type"] = "decimal(20, 2)"
+            field_id = f["id"]
+    assert field_id is not None
+    old_schema = json.loads(json.dumps(cur_schema))
+    old_schema["schema-id"] = max(schemas_by_id) + 1
+    for f in old_schema["fields"]:
+        if f["name"] == "value":
+            f["type"] = "decimal(10, 2)"
+    meta["schemas"].append(old_schema)
+    # Make the first snapshot reachable via the old (decimal(10, 2)) schema id.
+    meta["snapshots"][0]["schema-id"] = old_schema["schema-id"]
+
+    new_version = int(prev_path.split("/v")[-1].split(".")[0]) + 1
+    new_path = f"{_metadata_dir(TABLE_NAME)}/v{new_version}.metadata.json"
+    _write_metadata(instance, meta, new_path)
+    version_hint = f"{_metadata_dir(TABLE_NAME)}/version-hint.text"
+    instance.exec_in_container(
+        ["bash", "-c", f"test -f {version_hint} && echo -n {new_version} > {version_hint} || true"]
+    )
+
+    assert "NOT_IMPLEMENTED" in instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_aborts_on_metadata_commit_conflict(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """
+    `writeMetadataFileAndVersionHint` returns false when the target `vN.metadata.json` already
+    exists (a concurrent writer won the commit). Compaction must propagate that and skip
+    `clearOldFiles`, otherwise it deletes the pre-compaction data/metadata while the table still
+    points at the other writer's snapshot -> data loss. We simulate the race by pre-creating a
+    valid next metadata version (the "winner") while keeping the version hint on the current one,
+    so compaction reads the current metadata but its commit target already exists. OPTIMIZE must
+    fail and the pre-compaction data files must survive.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_commit_conflict_" + storage_type + "_" + get_uuid_str()
+
+    # iceberg_use_version_hint=1 so the version hint (not directory listing) selects the metadata
+    # compaction reads, letting us keep it on vN while a valid vN+1 already exists on disk.
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value Nullable(String))",
+        2,
+        use_version_hint=True,
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,'a'),(2,'b'),(3,'c');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # Positional delete so compaction has work to do.
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    metadata_dir = _metadata_dir(TABLE_NAME)
+    _, latest_path = _read_latest_metadata(instance, TABLE_NAME)
+    n = int(latest_path.split("/v")[-1].split(".")[0])
+    next_path = f"{metadata_dir}/v{n + 1}.metadata.json"
+    data_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/data"
+
+    def data_file_count():
+        return int(
+            instance.exec_in_container(
+                ["bash", "-c", f"ls {data_dir}/*.parquet 2>/dev/null | wc -l"]
+            ).strip()
+        )
+
+    before = data_file_count()
+    # Concurrent winner: a valid vN+1 already committed. Keep the version hint on vN so compaction
+    # plans from vN but its commit target vN+1 already exists.
+    instance.exec_in_container(["bash", "-c", f"cp {latest_path} {next_path}"])
+    instance.exec_in_container(
+        ["bash", "-c", f"echo -n {n} > {metadata_dir}/version-hint.text"]
+    )
+
+    err = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+    assert "CONCURRENT_ACCESS_NOT_SUPPORTED" in err, err
+    # The pre-compaction data files must NOT have been deleted (clearOldFiles must be skipped).
+    assert data_file_count() >= before, (
+        f"pre-compaction data files were deleted after a lost commit: {data_file_count()} < {before}"
+    )
