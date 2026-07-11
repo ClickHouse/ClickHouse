@@ -4037,6 +4037,16 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
     String path_created = zookeeper->create(replica_path + "/queue/queue-", dummy_alter.toString(), zkutil::CreateMode::PersistentSequential);
     LOG_INFO(log, "Created an ALTER_METADATA entry {} to force metadata update after recovery. Entry: {}",
              path_created, dummy_alter.toString());
+
+    /// cloneMetadataIfNeeded() can rely on the subsequent queue.load() in tryStartup() to pull its entry into the
+    /// in-memory queue. This recovery path has no such guarantee: the queue may already be running by the time
+    /// recovery reaches this table, and queue.load() is startup-only while the live updater watches /log, not
+    /// /queue. So mirror the entry into the in-memory queue now (queue.insert() does not touch ZooKeeper). A later
+    /// queue.load() de-duplicates by znode_name, so this is safe if the queue has not been loaded yet.
+    LogEntryPtr in_memory_entry = std::make_shared<LogEntry>();
+    static_cast<ReplicatedMergeTreeLogEntryData &>(*in_memory_entry) = dummy_alter;
+    in_memory_entry->znode_name = fs::path(path_created).filename();
+    queue.insert(zookeeper, in_memory_entry);
     return true;
 }
 
