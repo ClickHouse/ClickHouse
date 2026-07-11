@@ -160,3 +160,23 @@ ALTER TABLE add_nested_mut ADD COLUMN IF NOT EXISTS n String, RENAME COLUMN n TO
 SHOW CREATE TABLE add_nested_mut;
 
 DROP TABLE IF EXISTS add_nested_mut;
+
+DROP TABLE IF EXISTS add_nested_exact_sno0;
+
+-- The exact `column_name` no-op must stay UNCONDITIONAL (not gated on share_nested_offsets), matching
+-- prepare()/validate(): even with share_nested_offsets = 0, an exact pre-existing scalar `n` makes the
+-- whole `ADD COLUMN IF NOT EXISTS n ...` a no-op. `ADD COLUMN n String, ADD COLUMN IF NOT EXISTS n Nested(a, b)`
+-- adds the scalar `n`, then the second command is a whole-command no-op (neither `n.a` nor `n.b` is added).
+CREATE TABLE add_nested_exact_sno0
+(
+    key UInt64
+)
+ENGINE = MergeTree()
+ORDER BY key
+SETTINGS share_nested_offsets = 0;
+
+ALTER TABLE add_nested_exact_sno0 ADD COLUMN n String, ADD COLUMN IF NOT EXISTS n Nested(a UInt32, b String);
+
+SHOW CREATE TABLE add_nested_exact_sno0;
+
+DROP TABLE IF EXISTS add_nested_exact_sno0;

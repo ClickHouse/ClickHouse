@@ -562,11 +562,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         /// IF NOT EXISTS is resolved in prepare() against the prepare-time snapshot, but apply() runs
         /// on a fresher one (checkAlterIsPossible re-applies commands), and two IF NOT EXISTS adds of
         /// the same column in one statement are both left un-ignored by prepare(). Skip here too so
-        /// IF NOT EXISTS never throws when the column already exists, matching prepare()/validate():
-        /// with share_nested_offsets enabled `n` and any `n.*` are the same logical column, so once
-        /// any `n.*` exists the whole nested add is a no-op (`hasNested` mirrors validate()'s check).
-        if (if_not_exists && share_nested_offsets
-            && (metadata.columns.has(column_name) || metadata.columns.hasNested(column_name)))
+        /// IF NOT EXISTS never throws when the column already exists, matching prepare()/validate()'s
+        /// existence predicate: an exact `column_name` match is always a whole-command no-op, while the
+        /// `n`/`n.*` nested equivalence (`hasNested`) is only treated as "exists" when share_nested_offsets
+        /// is enabled.
+        if (if_not_exists
+            && (metadata.columns.has(column_name)
+                || (share_nested_offsets && metadata.columns.hasNested(column_name))))
             return;
 
         ColumnDescription column(column_name, data_type);
@@ -600,10 +602,11 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             columns_to_add.push_back(column);
         }
 
-        /// The share_nested_offsets-enabled whole-command no-op is handled by the early return above.
-        /// Here (share_nested_offsets disabled, so `n` and `n.*` are independent columns) skip only the
-        /// EXACT transformed names that truly already exist, not an `n.*` prefix. This still makes a
-        /// repeated flattened `n.a` add a no-op while never dropping a genuinely new distinct column.
+        /// The exact and (share_nested_offsets-enabled) nested whole-command no-ops are handled by the
+        /// early return above. Reaching here means the top-level `column_name` does not exactly exist and
+        /// the nested equivalence does not apply, so skip only the EXACT transformed names that truly
+        /// already exist, not an `n.*` prefix. This still makes a repeated flattened `n.a` add a no-op
+        /// while never dropping a genuinely new distinct column.
         if (if_not_exists)
             std::erase_if(columns_to_add, [&](const ColumnDescription & c) { return metadata.columns.has(c.name); });
 
