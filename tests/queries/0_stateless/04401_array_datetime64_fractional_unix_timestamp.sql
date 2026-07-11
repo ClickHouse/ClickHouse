@@ -91,6 +91,16 @@ SELECT 'below_int64_min_bare', reinterpretAsInt64(x[1]) FROM format(CSV, 'x Arra
 -- JSON element exercises the same path.
 SELECT 'json_int64_min_bare', reinterpretAsInt64(x[1]) FROM format(JSONEachRow, 'x Array(DateTime64(3))', '{"x":[-9223372036854775808]}');
 
+-- Positive whole part must be overflow-checked exactly like the scalar readDateTime64Text path
+-- (which uses ReadIntTextCheckOverflow::CHECK_OVERFLOW). An out-of-range positive whole seconds
+-- value is rejected consistently on the container throw path, the container try path, and the
+-- scalar path, instead of silently wrapping a signed time_t before the fractional logic runs.
+SELECT 'pos_overflow_whole_container', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[18446744073709551615.1]"') SETTINGS date_time_input_format = 'basic'; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'pos_overflow_whole_container_json', toString(x[1]) FROM format(JSONEachRow, 'x Array(DateTime64(3))', '{"x":[18446744073709551615.1]}') SETTINGS date_time_input_format = 'basic'; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'pos_overflow_whole_scalar', toString(x) FROM format(CSV, 'x DateTime64(3)', '18446744073709551615.1') SETTINGS date_time_input_format = 'basic'; -- { serverError CANNOT_PARSE_NUMBER }
+-- An in-range positive whole.fraction must still agree between scalar and container.
+SELECT 'pos_whole_scalar_eq_container', (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3, ''UTC''))', '"[999999999.999]"') SETTINGS date_time_input_format = 'basic') = (SELECT CAST('999999999.999' AS DateTime64(3, 'UTC')) SETTINGS date_time_input_format = 'basic');
+
 -- Fraction is truncated / padded to the column scale.
 SELECT 'scale0', [1783585473.954]::Array(DateTime64(0));
 SELECT 'scale6_extra', [1783585473.954321987]::Array(DateTime64(6));

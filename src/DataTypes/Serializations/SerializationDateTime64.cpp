@@ -138,13 +138,15 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
         /// Under best_effort / best_effort_us fall back to the pre-PR bare-integer tick-count path.
         /// A trailing '.' is left unread and the outer container reader rejects it, exactly as the
         /// scalar and quoted-nested best_effort paths reject the dotted fractional unix-timestamp form.
+        /// Use CHECK_OVERFLOW so the throw and try paths agree and an out-of-range tick count is
+        /// rejected consistently (bare readIntText defaults to DO_NOT_CHECK_OVERFLOW).
         if constexpr (throw_exception)
         {
-            readIntText(x, istr);
+            readIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr);
             return;
         }
         else
-            return ReturnType(tryReadIntText(x, istr));
+            return ReturnType(tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(x, istr));
     }
 
     /// Reject a leading '+' to stay in parity with scalar DateTime64 basic parsing, which
@@ -213,8 +215,12 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
         }
     }
     else if constexpr (throw_exception)
-        readIntText(whole, istr);
-    else if (!tryReadIntText(whole, istr))
+        /// CHECK_OVERFLOW mirrors the scalar readDateTime64Text whole-part parse (which uses
+        /// ReadIntTextCheckOverflow::CHECK_OVERFLOW) and keeps the throw path in agreement with
+        /// the try path below (tryReadIntText also checks overflow). A bare readIntText would
+        /// default to DO_NOT_CHECK_OVERFLOW and silently wrap an out-of-range whole seconds value.
+        readIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(whole, istr);
+    else if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(whole, istr))
         return ReturnType(false);
 
     if (istr.eof() || *istr.position() != '.')
