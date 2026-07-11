@@ -19,6 +19,7 @@
     "options": [
       "copy",
       "view",
+      "download-pdf",
       {
         "description": "Setup instructions for docs MCP server",
         "href": "https://clickhouse.com/docs#claude-code",
