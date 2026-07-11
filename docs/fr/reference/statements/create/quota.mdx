@@ -1,0 +1,65 @@
+---
+description: 'Documentation de QUOTA'
+sidebarTitle: 'QUOTA'
+slug: /sql-reference/statements/create/quota
+title: 'CREATE QUOTA'
+doc_type: 'reference'
+---
+
+Crée un [quota](/fr/concepts/features/security/access-rights#quotas-management) pouvant être attribué à un utilisateur ou à un rôle.
+
+Syntaxe :
+
+```sql
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | written_bytes | execution_time | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] |
+         NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+Les clés `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address` et `normalized_query_hash` correspondent aux champs de la table [system.quotas](/fr/reference/system-tables/quotas).
+
+Les options `IPV4_PREFIX_BITS` et `IPV6_PREFIX_BITS` ne peuvent être utilisées que lorsque `KEYED BY` vaut `ip_address` ou `forwarded_ip_address`. Elles correspondent au champ de la table [system.quotas](/fr/reference/system-tables/quotas).
+
+Les paramètres `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `written_bytes`, `execution_time`, `failed_sequential_authentications`, `queries_per_normalized_hash` correspondent aux champs de la table [system.quotas&#95;usage](/fr/reference/system-tables/quotas_usage).
+
+La clause `ON CLUSTER` permet de créer des quotas sur un cluster, voir [Distributed DDL](/fr/reference/statements/distributed-ddl).
+
+**Exemples**
+
+Limitez à 123 le nombre maximal de requêtes pour l&#39;utilisateur actuel, avec une contrainte de 15 mois :
+
+```sql
+CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+
+Pour l&#39;utilisateur `default`, limitez le temps d&#39;exécution maximal à une demi-seconde sur une période de 30 minutes, et limitez le nombre maximal de requêtes à 321 ainsi que le nombre maximal d&#39;erreurs à 10 sur 5 quarts d&#39;heure :
+
+```sql
+CREATE QUOTA qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```
+
+Créez un quota dans lequel chaque modèle de requête normalisé distinct se voit attribuer son propre compteur, limité à 100 exécutions par heure :
+
+```sql
+CREATE QUOTA qC KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO default;
+```
+
+Limitez chaque modèle de requête normalisé à 50 exécutions maximum par heure (quel que soit le type de clé de quota) :
+
+```sql
+CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO default;
+```
+
+D&#39;autres exemples utilisant la configuration XML (non prise en charge dans ClickHouse Cloud) sont disponibles dans le [guide des quotas](/fr/concepts/features/configuration/server-config/quotas).
+
+<div id="related-content">
+  ## Articles connexes
+</div>
+
+* Blog : [Créer des applications monopage avec ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

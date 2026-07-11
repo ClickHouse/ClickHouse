@@ -603,6 +603,7 @@ void ReadFromRemote::addLazyPipe(
 
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
+            my_unavailable_shard_tracker = unavailable_shard_tracker,
             query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler, my_log = log,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
@@ -711,6 +712,9 @@ void ReadFromRemote::addLazyPipe(
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
         remote_query_executor->setLogger(my_log);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
+        /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
+        /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`, like the non-lazy path.
+        remote_query_executor->setUnavailableShardTracker(my_unavailable_shard_tracker);
 
         auto pipe = createRemoteSourcePipe(
             remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);

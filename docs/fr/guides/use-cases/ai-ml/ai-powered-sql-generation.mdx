@@ -1,0 +1,202 @@
+---
+slug: /use-cases/AI/ai-powered-sql-generation
+sidebarTitle: 'Génération SQL par l’IA'
+title: 'Génération SQL par l’IA'
+description: 'Ce guide explique comment utiliser l’IA pour générer des requêtes SQL dans ClickHouse Client ou clickhouse-local.'
+keywords: ['IA', 'génération SQL']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+À partir de ClickHouse 25.7, [ClickHouse Client](/fr/concepts/features/interfaces/cli) et [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) incluent une [fonctionnalité basée sur l’IA](/fr/concepts/features/interfaces/cli#ai-sql-generation) qui convertit des descriptions en langage naturel en requêtes SQL. Cette fonctionnalité vous permet de décrire vos besoins en données en texte clair, que le système traduit ensuite en instructions SQL correspondantes.
+
+Cette fonctionnalité est particulièrement utile si vous ne maîtrisez pas la syntaxe SQL complexe ou si vous avez besoin de générer rapidement des requêtes pour l’analyse exploratoire de données. Elle fonctionne avec les tables ClickHouse standard et prend en charge les modèles de requête courants, notamment le filtrage, l’agrégation et les jointures.
+
+Elle s’appuie sur les outils/fonctions intégrés suivants :
+
+* `list_databases` - Répertorie toutes les bases de données disponibles dans l’instance ClickHouse
+* `list_tables_in_database` - Répertorie toutes les tables d’une base de données spécifique
+* `get_schema_for_table` - Obtient l’instruction `CREATE TABLE` (schéma) d’une table spécifique
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+Nous devons ajouter une clé Anthropic ou OpenAI en tant que variable d’environnement :
+
+```bash
+export ANTHROPIC_API_KEY=your_api_key
+export OPENAI_API_KEY=your_api_key
+```
+
+Vous pouvez également [fournir un fichier de configuration](/fr/concepts/features/interfaces/cli#ai-sql-generation-configuration).
+
+<div id="connecting-to-the-clickhouse-sql-playground">
+  ## Se connecter au ClickHouse SQL playground
+</div>
+
+Nous allons explorer cette fonctionnalité à l’aide du [ClickHouse SQL playground](https://sql.clickhouse.com/).
+
+Nous pouvons nous connecter au ClickHouse SQL playground à l’aide de la commande suivante :
+
+```bash
+clickhouse client -mn \
+--host sql-clickhouse.clickhouse.com \
+--secure \
+--user demo --password ''
+```
+
+<Note>
+  Nous partons du principe que ClickHouse est installé ; sinon, consultez le [guide d’installation](/fr/get-started/setup/install)
+</Note>
+
+<div id="asking-clickhouse-questions-in-natural-language">
+  ## Poser des questions à ClickHouse en langage naturel
+</div>
+
+Il est maintenant temps de commencer à poser des questions !
+
+La fonctionnalité de conversion de texte en SQL est en pratique un outil de génération de requêtes en une seule tentative. Comme elle ne conserve pas l’historique des conversations, incluez autant de contexte utile que possible dans votre question. Soyez précis sur :
+
+Les périodes ou les plages de dates
+Le type d’analyse souhaité (moyennes, totaux, classements, etc.)
+Les critères de filtrage
+
+<div id="finding-expensive-housing-markets">
+  ### Identifier les marchés immobiliers les plus chers
+</div>
+
+Commençons par nous poser une question sur les prix de l’immobilier. Le SQL playground contient un jeu de données sur les prix de l’immobilier au Royaume-Uni, que l’IA détectera automatiquement :
+
+```sql
+?? Can you tell me the most expensive place to buy a house in 2021?;
+```
+
+Une fois que nous aurons appuyé sur Entrée, nous verrons le processus de réflexion de l’IA pendant qu’elle tente de répondre à notre question.
+
+```text
+• Starting AI SQL generation with schema discovery...
+─────────────────────────────────────────────────
+🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QpQd35ZD8HM9QSYFZuQ8Wh
+🔧 Calling: list_databases [toolu_01...]
+🧠 thinking✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🔧 Calling: list_databases [toolu_01...]
+✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_016DxK8SMVKGrUPfFwi43AzE
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+🧠 thinking.✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_015giF12wm619beNGC5aTrmw
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+🧠 thinking..✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01HxT1HKbaTT3165Wx5bDtY9
+─────────────────────────────────────────────────
+• ✨ SQL query generated successfully!
+:) SELECT     town,     district,     county,     round(avg(price), 2) as avg_price,     count() as total_sales FROM uk.uk_price_paid WHERE date >= '2021-01-01' AND date <= '2021-12-31' GROUP BY     town,     district,     county HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10
+```
+
+L’IA suit ces étapes :
+
+1. Découverte du schéma - Explore les bases de données et les tables disponibles
+2. Analyse des tables - Examine la structure des tables pertinentes
+3. Génération de requête - Génère une requête SQL à partir de votre question et du schéma découvert
+
+Nous pouvons constater qu’elle a bien trouvé la table `uk_price_paid` et généré une requête à exécuter.
+Si nous exécutons cette requête, nous verrons le résultat suivant :
+
+```text
+┌─town───────────┬─district───────────────┬─county──────────┬──avg_price─┬─total_sales─┐
+│ ILKLEY         │ HARROGATE              │ NORTH YORKSHIRE │    4310200 │          10 │
+│ LONDON         │ CITY OF LONDON         │ GREATER LONDON  │ 4008117.32 │         311 │
+│ LONDON         │ CITY OF WESTMINSTER    │ GREATER LONDON  │ 2847409.81 │        3984 │
+│ LONDON         │ KENSINGTON AND CHELSEA │ GREATER LONDON  │  2331433.1 │        2594 │
+│ EAST MOLESEY   │ RICHMOND UPON THAMES   │ GREATER LONDON  │ 2244845.83 │          12 │
+│ LEATHERHEAD    │ ELMBRIDGE              │ SURREY          │ 2051836.42 │         102 │
+│ VIRGINIA WATER │ RUNNYMEDE              │ SURREY          │ 1914137.53 │         169 │
+│ REIGATE        │ MOLE VALLEY            │ SURREY          │ 1715780.89 │          18 │
+│ BROADWAY       │ TEWKESBURY             │ GLOUCESTERSHIRE │ 1633421.05 │          19 │
+│ OXFORD         │ SOUTH OXFORDSHIRE      │ OXFORDSHIRE     │ 1628319.07 │         405 │
+└────────────────┴────────────────────────┴─────────────────┴────────────┴─────────────┘
+```
+
+Si nous voulons poser des questions complémentaires, nous devons reformuler notre question depuis le début.
+
+<div id="finding-expensive-properties-in-greater-london">
+  ### Trouver des biens immobiliers coûteux dans le Grand Londres
+</div>
+
+Comme cette fonctionnalité ne conserve pas l’historique des conversations, chaque requête doit être autonome. Lorsque vous posez des questions de suivi, vous devez fournir tout le contexte, au lieu de faire référence aux requêtes précédentes.
+Par exemple, après avoir vu les résultats précédents, nous pourrions vouloir nous concentrer plus précisément sur les biens immobiliers du Grand Londres. Au lieu de demander &quot;Qu’en est-il du Grand Londres ?&quot;, nous devons inclure l’ensemble du contexte :
+
+```sql
+?? Can you tell me the most expensive place to buy a house in Greater London across the years?;
+```
+
+Notez que l’IA suit le même processus de découverte, même si elle vient d’examiner ces données :
+
+```text
+• Starting AI SQL generation with schema discovery...
+─────────────────────────────────────────────────
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_012m4ayaSHTYtX98gxrDy1rz
+🔧 Calling: list_databases [toolu_01...]
+✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🔧 Calling: list_databases [toolu_01...]
+🧠 thinking.✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01KU4SZRrJckutXUzfJ4NQtA
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+🧠 thinking..✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01X9CnxoBpbD2xj2UzuRy2is
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+🧠 thinking.✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QTMypS1XuhjgVpDir7N9wD
+─────────────────────────────────────────────────
+• ✨ SQL query generated successfully!
+:) SELECT     district,     toYear(date) AS year,     round(avg(price), 2) AS avg_price,     count() AS total_sales FROM uk.uk_price_paid WHERE county = 'GREATER LONDON' GROUP BY district, year HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10;
+```
+
+Cela génère une requête plus ciblée, qui filtre spécifiquement sur le Grand Londres et ventile les résultats par année.
+Le résultat de la requête est affiché ci-dessous :
+
+```text
+┌─district────────────┬─year─┬───avg_price─┬─total_sales─┐
+│ CITY OF LONDON      │ 2019 │ 14504772.73 │         299 │
+│ CITY OF LONDON      │ 2017 │  6351366.11 │         367 │
+│ CITY OF LONDON      │ 2016 │  5596348.25 │         243 │
+│ CITY OF LONDON      │ 2023 │  5576333.72 │         252 │
+│ CITY OF LONDON      │ 2018 │  4905094.54 │         523 │
+│ CITY OF LONDON      │ 2021 │  4008117.32 │         311 │
+│ CITY OF LONDON      │ 2025 │  3954212.39 │          56 │
+│ CITY OF LONDON      │ 2014 │  3914057.39 │         416 │
+│ CITY OF LONDON      │ 2022 │  3700867.19 │         290 │
+│ CITY OF WESTMINSTER │ 2018 │  3562457.76 │        3346 │
+└─────────────────────┴──────┴─────────────┴─────────────┘
+```
+
+La City de Londres apparaît systématiquement comme le district le plus cher ! Vous remarquerez que l’IA a généré une requête pertinente, même si les résultats sont triés par prix moyen plutôt que par ordre chronologique. Pour une analyse d’une année sur l’autre, nous pourrions affiner votre question en demandant spécifiquement &quot;le district le plus cher chaque année&quot; afin d’obtenir des résultats regroupés autrement.

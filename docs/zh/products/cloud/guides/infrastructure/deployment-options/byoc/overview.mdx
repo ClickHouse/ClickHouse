@@ -1,0 +1,73 @@
+---
+title: '概览'
+slug: /cloud/reference/byoc/overview
+sidebarTitle: '概览'
+keywords: ['BYOC', '云', '自备 Cloud']
+description: '在您自有的云基础设施上部署 ClickHouse'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="overview">
+  ## 概述
+</div>
+
+自备 Cloud (BYOC) 使您能够直接在自己的云账户中部署 ClickHouse 服务并存储数据，而无需依赖默认的 ClickHouse Cloud 基础设施。这种方式尤其适合那些具有严格安全策略或监管合规要求、需要对数据拥有完全控制权和主权的组织。
+
+总体而言，BYOC 将 ClickHouse 控制平面 (运行在 ClickHouse VPC 中并由 ClickHouse Cloud 管理) 与数据平面分离；数据平面则完全运行在您的云账户中，包含您的 ClickHouse 集群、数据和备份。有关所涉组件及其之间流量流向的详细说明，请参阅[架构](/zh/products/bring-your-own-cloud/overview/architecture)页面。
+
+> **如果您希望获得访问权限，请[联系我们](https://clickhouse.com/cloud/bring-your-own-cloud)。** 如需更多信息，请参阅我们的[服务条款](https://clickhouse.com/legal/agreements/terms-of-service)。
+
+<Note>
+  BYOC 专为大规模部署而设计，并要求客户签署长期承诺合同。
+</Note>
+
+**支持的 Cloud 服务提供商：**
+
+* AWS (GA)
+* GCP (GA)
+* Azure (私有预览) 。如果您感兴趣，请在[这里](https://clickhouse.com/cloud/bring-your-own-cloud)加入等候名单。
+
+**支持的 Cloud 区域：**
+我们在[支持的区域](/zh/products/cloud/reference/supported-regions)文档中列出的所有**公共区域**均可用于 BYOC 部署。目前暂不支持私有区域。
+
+<div id="features">
+  ## 功能
+</div>
+
+<div id="supported-features">
+  ### 支持的功能
+</div>
+
+* **SharedMergeTree**：ClickHouse Cloud 和 BYOC 使用相同的二进制文件和配置。因此，BYOC 支持 ClickHouse 核心的全部功能，包括 SharedMergeTree。
+* **Shared Catalog**
+* **用于管理服务状态的 Console 访问权限**：
+  * 支持启动、停止和终止等操作。
+  * 查看服务及其状态。
+* **托管 Backup 和 restore**
+* **手动纵向和横向扩缩容。**
+* **自动休眠/唤醒**
+* **仓库**：Compute-Compute Separation
+* **通过 Tailscale 实现零信任网络。**
+* **监控**：
+  * 支持 Prometheus scraping，可结合 Prometheus、Grafana 和 Datadog 进行集中监控。有关设置说明，请参阅 [BYOC 可观测性](/zh/products/bring-your-own-cloud/reference/observability-aws)。
+* **VPC Peering**
+* **S3 安全访问**
+* **[AWS PrivateLink](https://aws.amazon.com/privatelink/)**
+* **[GCP Private Service Connect](https://docs.cloud.google.com/vpc/docs/private-service-connect)**
+* **Integrations**：完整列表请参见[此页面](/zh/integrations/home)。
+
+<div id="planned-features-currently-unsupported">
+  ### 计划中的功能 (当前尚不支持)
+</div>
+
+以下功能在自备 Cloud (BYOC) 部署中存在限制，或尚未获得完整支持。
+
+* SQL 控制台：BYOC 部署目前不提供标准 SQL 控制台，但该功能已列入我们的路线图。
+* ClickPipes 支持：目前以私有预览形式提供，支持 Kafka、Kinesis 等流式集成。更多集成 (如 CDC、对象存储等) 已列入路线图。
+* 自动扩缩容：已列入路线图，后续发行版中将提供。
+* MySQL 接口
+* AWS KMS，也称 CMEK (客户管理的加密密钥)
+* 高级仪表板：这是一个纯客户端 UI，要求你的浏览器能够直接访问，并可通过其端点直接连接到你的 ClickHouse server。如果你的 VPC 网络策略限制浏览器入站访问 ClickHouse 端点，高级仪表板将无法正常工作。
+* 监控仪表盘：目前，监控仪表盘中仅提供内存分配指标。对更多指标的支持正在开发中，预计将在未来的发行版中提供。

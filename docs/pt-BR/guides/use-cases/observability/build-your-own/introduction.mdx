@@ -1,0 +1,108 @@
+---
+title: Usando ClickHouse para observabilidade
+description: 'Usando o ClickHouse como solução de observabilidade'
+slug: /use-cases/observability/introduction
+keywords: ['observabilidade', 'logs', 'traces', 'métricas', 'OpenTelemetry', 'Grafana', 'OTel']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+Este guia foi elaborado para quem deseja criar sua própria solução de observabilidade baseada em SQL usando o ClickHouse, com foco em logs e traces. Ele aborda todos os aspectos da criação dessa solução, incluindo considerações sobre ingestão, otimização de esquemas para seus padrões de acesso e extração de estrutura de logs não estruturados.
+
+O ClickHouse, por si só, não é uma solução de observabilidade pronta para uso. No entanto, ele pode ser usado como um mecanismo de armazenamento altamente eficiente para dados de observabilidade, capaz de oferecer taxas de compressão incomparáveis e tempos de resposta de consulta extremamente rápidos. Para usar o ClickHouse em uma solução de observabilidade, são necessários tanto uma interface de usuário quanto um framework de coleta de dados. Atualmente, recomendamos o uso do **Grafana** para visualizar sinais de observabilidade e do **OpenTelemetry** para coleta de dados (ambos são integrações oficialmente suportadas).
+
+<Image img="/images/use-cases/observability/observability-1.webp" alt="Simple OTel" size="md" />
+
+<br />
+
+<Info>
+  **Não apenas OpenTelemetry**
+
+  Embora nossa recomendação seja usar o projeto OpenTelemetry (OTel) para coleta de dados, arquiteturas semelhantes também podem ser criadas com outros frameworks e ferramentas, como Vector e Fluentd (veja [um exemplo](https://clickhouse.com/blog/kubernetes-logs-to-clickhouse-fluent-bit) com Fluent Bit). Também existem ferramentas alternativas de visualização, incluindo Superset e Metabase.
+</Info>
+
+<div id="why-use-clickhouse">
+  ## Por que usar o ClickHouse?
+</div>
+
+O recurso mais importante de qualquer armazenamento centralizado de observabilidade é a capacidade de agregar, analisar e pesquisar rapidamente grandes volumes de dados de logs provenientes de fontes diversas. Essa centralização simplifica a solução de problemas, facilitando a identificação das causas raiz de interrupções de serviços.
+
+Como os usuários estão cada vez mais sensíveis a preço e consideram alto e imprevisível o custo dessas soluções prontas para uso em comparação com o valor que entregam, um armazenamento de logs com custo previsível e eficiente, em que o desempenho das consultas seja aceitável, é mais valioso do que nunca.
+
+Devido ao seu desempenho e à sua eficiência de custo, o ClickHouse se tornou o padrão de fato entre os motores de armazenamento para logs e traces em produtos de observabilidade.
+
+Mais especificamente, os pontos a seguir fazem do ClickHouse uma solução ideal para o armazenamento de dados de observabilidade:
+
+* **Compressão** - Os dados de observabilidade normalmente contêm campos cujos valores vêm de um conjunto distinto, por exemplo, códigos HTTP ou nomes de serviços. O armazenamento orientado a colunas do ClickHouse, em que os valores são armazenados de forma ordenada, faz com que esses dados sejam comprimidos com extrema eficiência — especialmente quando combinados com uma variedade de codecs especializados para dados de séries temporais. Ao contrário de outros armazenamentos de dados, que exigem tanto espaço quanto o tamanho original dos dados, normalmente em formato JSON, o ClickHouse comprime logs e traces em média em até 14x. Além de proporcionar uma economia significativa de armazenamento em grandes instalações de observabilidade, essa compressão também ajuda a acelerar as consultas, já que menos dados precisam ser lidos do disco.
+* **Agregações rápidas** - As soluções de observabilidade normalmente envolvem uma forte ênfase na visualização de dados por meio de gráficos, por exemplo, linhas mostrando taxas de erro ou gráficos de barras mostrando fontes de tráfego. Agregações, ou `GROUP BY`, são fundamentais para viabilizar esses gráficos, que também precisam ser rápidos e responsivos quando filtros são aplicados em fluxos de trabalho de diagnóstico de problemas. O formato orientado a colunas do ClickHouse, combinado com um motor de execução vetorizada de consultas, é ideal para agregações rápidas, com indexação esparsa permitindo filtrar dados rapidamente em resposta às ações do usuário.
+* **Varreduras lineares rápidas** - Embora tecnologias alternativas dependam de índices invertidos para consultas rápidas em logs, isso invariavelmente resulta em alto uso de disco e de recursos. Embora o ClickHouse forneça índices invertidos como um tipo adicional e opcional de índice, as varreduras lineares são altamente paralelizadas e usam todos os núcleos disponíveis de uma máquina (a menos que configurado de outra forma). Isso potencialmente permite varrer dezenas de GB/s (comprimidos) em busca de correspondências com [operadores de correspondência de texto altamente otimizados](/pt-BR/reference/functions/regular-functions/string-search-functions).
+* **Familiaridade do SQL** - SQL é a linguagem ubíqua com a qual todos os engenheiros estão familiarizados. Com mais de 50 anos de desenvolvimento, ela se consolidou como a linguagem padrão de fato para análise de dados e continua sendo a [3ª linguagem de programação mais popular](https://clickhouse.com/blog/the-state-of-sql-based-observability#lingua-franca). Observabilidade é apenas mais um problema de dados para o qual SQL é ideal.
+* **Funções analíticas** - O ClickHouse estende o ANSI SQL com funções analíticas projetadas para tornar as consultas SQL mais simples e fáceis de escrever. Elas são essenciais se você estiver realizando análise de causa raiz, em que os dados precisam ser examinados sob diferentes perspectivas.
+* **Índices secundários** -  O ClickHouse oferece suporte a índices secundários, como filtros de Bloom, para acelerar perfis específicos de consulta. Eles podem ser habilitados opcionalmente no nível da coluna, dando ao usuário controle granular e permitindo avaliar o ganho de desempenho em relação ao custo.
+* **Código aberto e padrões abertos** - Como banco de dados de código aberto, o ClickHouse adota padrões abertos, como o OpenTelemetry. A possibilidade de contribuir e participar ativamente dos projetos é atraente, além de evitar os desafios do aprisionamento a fornecedor.
+
+<div id="when-should-you-use-clickhouse-for-observability">
+  ## Quando você deve usar o ClickHouse para observabilidade
+</div>
+
+Usar o ClickHouse para dados de observabilidade exige que os usuários adotem uma abordagem de observabilidade baseada em SQL. Recomendamos [este post do blog](https://clickhouse.com/blog/the-state-of-sql-based-observability) para conhecer a história da observabilidade baseada em SQL, mas, em resumo:
+
+A observabilidade baseada em SQL é para você se:
+
+* Você ou os membros da sua equipe conhecem SQL (ou querem aprendê-lo)
+* Você prefere seguir padrões abertos, como o OpenTelemetry, para evitar lock-in e ganhar extensibilidade.
+* Você está disposto a operar um ecossistema movido pela inovação de código aberto, da coleta ao armazenamento e à visualização.
+* Você prevê algum crescimento para volumes médios ou grandes de dados de observabilidade sob sua gestão (ou até volumes muito grandes)
+* Você quer ter controle sobre o TCO (custo total de propriedade) e evitar que os custos de observabilidade saiam do controle.
+* Você não pode ou não quer ficar preso a períodos curtos de retenção dos seus dados de observabilidade apenas para controlar os custos.
+
+A observabilidade baseada em SQL pode não ser para você se:
+
+* Aprender (ou gerar!) SQL não é algo atraente para você ou para os membros da sua equipe.
+* Você está procurando uma experiência de observabilidade integrada, de ponta a ponta.
+* Seus volumes de dados de observabilidade são pequenos demais para fazer qualquer diferença significativa (por exemplo, &lt;150 GiB) e não há previsão de crescimento.
+* Seu caso de uso é fortemente centrado em métricas e precisa de PromQL. Nesse caso, você ainda pode usar o ClickHouse para logs e rastreamento junto com o Prometheus para métricas, unificando tudo na camada de apresentação com o Grafana.
+* Você prefere esperar o ecossistema amadurecer mais e a observabilidade baseada em SQL se tornar mais pronta para uso.
+
+<div id="logs-and-traces">
+  ## Logs e traces
+</div>
+
+O caso de uso de observabilidade tem três pilares distintos: Logging, Tracing e Métricas. Cada um deles tem tipos de dados e padrões de acesso próprios.
+
+Atualmente, recomendamos o ClickHouse para armazenar dois tipos de dados de observabilidade:
+
+* **Logs** - Logs são registros de eventos com data e hora que ocorrem em um sistema, capturando informações detalhadas sobre vários aspectos das operações de software. Os dados nos logs normalmente são não estruturados ou semiestruturados e podem incluir mensagens de erro, logs de atividade do usuário, alterações no sistema e outros eventos. Os logs são fundamentais para a solução de problemas, a detecção de anomalias e a compreensão dos eventos específicos que levaram a problemas no sistema.
+
+```response
+54.36.149.41 - - [22/Jan/2019:03:56:14 +0330] "GET
+/filter/27|13%20%D9%85%DA%AF%D8%A7%D9%BE%DB%8C%DA%A9%D8%B3%D9%84,27|%DA%A9%D9%85%D8%AA%D8%B1%20%D8%A7%D8%B2%205%20%D9%85%DA%AF%D8%A7%D9%BE%DB%8C%DA%A9%D8%B3%D9%84,p53 HTTP/1.1" 200 30577 "-" "Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)" "-"
+```
+
+* **Traces** - Os traces capturam o percurso das solicitações à medida que elas passam por diferentes serviços em um sistema distribuído, detalhando o caminho e o desempenho dessas solicitações. Os dados em traces são altamente estruturados e consistem em spans e traces que mapeiam cada etapa percorrida por uma solicitação, incluindo informações de tempo. Os traces fornecem insights valiosos sobre o desempenho do sistema, ajudando a identificar gargalos, problemas de latência e a otimizar a eficiência dos microsserviços.
+
+<Info>
+  **Métricas**
+
+  Embora o ClickHouse possa ser usado para armazenar dados de métricas, esse pilar é menos maduro no ClickHouse, com suporte ainda pendente a recursos como o formato de dados do Prometheus e o PromQL.
+</Info>
+
+<div id="distributed-tracing">
+  ### Rastreamento distribuído
+</div>
+
+O rastreamento distribuído é um recurso essencial da observabilidade. Um trace distribuído, ou simplesmente trace, mapeia o caminho percorrido por uma solicitação em um sistema. A solicitação se origina de um usuário final ou aplicativo e se propaga por todo o sistema, normalmente resultando em um fluxo de ações entre microsserviços. Ao registrar essa sequência e permitir correlacionar os eventos subsequentes, ele possibilita que um usuário de observabilidade ou SRE diagnostique problemas no fluxo de um aplicativo, independentemente de quão complexa ou serverless seja a arquitetura.
+
+Cada trace é composto por vários spans, sendo que o span inicial associado à solicitação é conhecido como root span. Esse root span captura toda a solicitação, do início ao fim. Os spans subsequentes, abaixo da raiz, fornecem insights detalhados sobre as várias etapas ou operações que ocorrem durante a solicitação. Sem rastreamento, diagnosticar problemas de desempenho em um sistema distribuído pode ser extremamente difícil. O rastreamento facilita o processo de depuração e a compreensão de sistemas distribuídos ao detalhar a sequência de eventos dentro de uma solicitação à medida que ela percorre o sistema.
+
+A maioria dos fornecedores de observabilidade visualiza essas informações como uma cascata, com o tempo relativo representado por barras horizontais de tamanho proporcional. Por exemplo, no Grafana:
+
+<Image img="/images/use-cases/observability/observability-2.webp" alt="Exemplo de trace" size="lg" border />
+
+Para usuários que precisam se aprofundar nos conceitos de logs e traces, recomendamos fortemente a [documentação do OpenTelemetry](https://opentelemetry.io/docs/concepts/).

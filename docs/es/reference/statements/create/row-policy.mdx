@@ -1,0 +1,103 @@
+---
+description: 'Documentación de ROW POLICY'
+sidebarTitle: 'ROW POLICY'
+slug: /sql-reference/statements/create/row-policy
+title: 'CREATE ROW POLICY'
+doc_type: 'reference'
+---
+
+Crea una [política de fila](/es/concepts/features/security/access-rights#row-policy-management), es decir, un filtro que se utiliza para determinar qué filas puede leer un usuario de una tabla.
+
+<Tip>
+  Las políticas de fila solo tienen sentido para usuarios con acceso de solo lectura. Si un usuario puede modificar una tabla o copiar particiones entre tablas, las restricciones de las políticas de fila dejan de ser efectivas.
+</Tip>
+
+Sintaxis:
+
+```sql
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
+        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+```
+
+<div id="using-clause">
+  ## Cláusula USING
+</div>
+
+Permite especificar una condición para filtrar filas. Un usuario verá una fila si la condición se evalúa como distinta de cero para esa fila.
+
+<div id="to-clause">
+  ## Cláusula TO
+</div>
+
+En la sección `TO` puedes indicar una lista de usuarios y roles a los que se aplicará esta política. Por ejemplo, `CREATE ROW POLICY ... TO accountant, john@localhost`.
+
+La palabra clave `ALL` significa todos los usuarios de ClickHouse, incluido el usuario actual. La palabra clave `ALL EXCEPT` permite excluir algunos usuarios de la lista de todos los usuarios; por ejemplo, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+<div id="as-clause">
+  ## Cláusula AS
+</div>
+
+Se permite que haya más de una política habilitada en la misma tabla para el mismo usuario al mismo tiempo. Por lo tanto, necesitamos una forma de combinar las condiciones de varias políticas.
+
+De forma predeterminada, las políticas se combinan mediante el operador booleano `OR`. Por ejemplo, las siguientes políticas:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
+```
+
+permitir al usuario `peter` ver las filas con `b=1` o `c=2`.
+
+La cláusula `AS` especifica cómo deben combinarse las políticas entre sí. Las políticas pueden ser permisivas o restrictivas. De forma predeterminada, las políticas son permisivas, lo que significa que se combinan mediante el operador booleano `OR`.
+
+Como alternativa, una política puede definirse como restrictiva. Las políticas restrictivas se combinan mediante el operador booleano `AND`.
+
+Esta es la fórmula general:
+
+```text
+row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
+                 (all of the restrictive policies's conditions are non-zero)
+```
+
+Por ejemplo, las siguientes políticas:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+permiten al usuario `peter` ver filas solo si `b=1` Y `c=2`.
+
+Las políticas de base de datos se combinan con las políticas de tabla.
+
+Por ejemplo, las siguientes políticas:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.* USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+permiten que el usuario `peter` vea las filas de table1 solo si se cumplen tanto `b=1` COMO `c=2`, aunque
+cualquier otra tabla de mydb tendría aplicada únicamente la política `b=1` para el usuario.
+
+<div id="on-cluster-clause">
+  ## Cláusula ON CLUSTER
+</div>
+
+Permite crear políticas de fila en un clúster; consulta [DDL distribuido](/es/reference/statements/distributed-ddl).
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+`CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
+
+`CREATE ROW POLICY filter2 ON mydb.mytable USING a<1000 AND b=5 TO ALL EXCEPT mira`
+
+`CREATE ROW POLICY filter3 ON mydb.mytable USING 1 TO admin`
+
+`CREATE ROW POLICY filter4 ON mydb.* USING 1 TO admin`

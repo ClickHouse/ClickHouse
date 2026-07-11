@@ -41,7 +41,8 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
     SCOPE_EXIT({
         /// NOTE: it is quite inaccurate on high loads since the thread could be replaced by another one
         ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
-        ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
+        if (bytes_read > 0)
+            ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
     });
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkReceive);

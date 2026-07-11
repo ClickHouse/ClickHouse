@@ -1,0 +1,220 @@
+---
+slug: /use-cases/AI/MCP/ollama
+sidebarTitle: 'Integrar o Ollama'
+title: 'Configurar o servidor MCP do ClickHouse com o Ollama'
+description: 'Este guia explica como configurar o Ollama com um servidor MCP do ClickHouse.'
+keywords: ['AI', 'Ollama', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+> Este guia explica como usar o servidor MCP do ClickHouse com o Ollama.
+
+<Steps>
+  <Step>
+    ## Instale o Ollama
+
+    Ollama é uma biblioteca para executar Large Language Models (LLMs) na sua própria máquina.
+    Ele tem uma [grande variedade de modelos disponíveis](https://ollama.com/library) e é fácil de usar.
+
+    Você pode baixar o Ollama para Mac, Windows ou Linux na [página de download](https://ollama.com/download).
+
+    Depois de iniciar o Ollama, ele iniciará um servidor local em segundo plano que você pode usar para executar modelos.
+    Como alternativa, você pode iniciar o servidor manualmente executando `ollama serve`.
+
+    Depois de instalado, você pode baixar um modelo para a sua máquina assim:
+
+    ```bash
+    ollama pull qwen3:8b
+    ```
+
+    Isso fará o download do modelo para sua máquina local, caso ele ainda não esteja presente.
+    Depois de baixado, você pode executar o modelo assim:
+
+    ```bash
+    ollama run qwen3:8b
+    ```
+
+    <Note>
+      Somente [modelos com suporte a ferramentas](https://ollama.com/search?c=tools) funcionarão com MCP servers.
+    </Note>
+
+    Podemos listar assim os modelos que baixamos:
+
+    ```bash
+    ollama ls
+    ```
+
+    ```text
+    NAME                       ID              SIZE      MODIFIED
+    qwen3:latest               500a1f067a9f    5.2 GB    3 days ago
+    ```
+
+    Podemos usar o comando a seguir para obter mais informações sobre o modelo que baixamos:
+
+    ```bash
+    ollama show qwen3
+    ```
+
+    ```text
+      Model
+        architecture        qwen3
+        parameters          8.2B
+        context length      40960
+        embedding length    4096
+        quantization        Q4_K_M
+
+      Capabilities
+        completion
+        tools
+
+      Parameters
+        repeat_penalty    1
+        stop              "<|im_start|>"
+        stop              "<|im_end|>"
+        temperature       0.6
+        top_k             20
+        top_p             0.95
+
+      License
+        Apache License
+        Version 2.0, January 2004
+    ```
+
+    Podemos ver por essa saída que o modelo qwen3 padrão tem pouco mais de 8 bilhões de parâmetros.
+  </Step>
+
+  <Step>
+    ## Instale o MCPHost
+
+    No momento da redação deste texto (julho de 2025), não há funcionalidade nativa para usar o Ollama com MCP servers.
+    No entanto, podemos usar o [MCPHost](https://github.com/mark3labs/mcphost) para executar modelos do Ollama com MCP servers.
+
+    O MCPHost é um aplicativo em Go, então você precisará garantir que o [Go esteja instalado](https://go.dev/doc/install) na sua máquina.
+    Em seguida, você pode instalar o MCPHost executando o seguinte comando:
+
+    ```bash
+    go install github.com/mark3labs/mcphost@latest
+    ```
+
+    O binário será instalado em `~/go/bin`, então precisamos garantir que esse diretório esteja no PATH.
+  </Step>
+
+  <Step>
+    ## Configurando o servidor MCP do ClickHouse
+
+    Podemos configurar servidores MCP com o MCPHost em arquivos YAML ou JSON.
+    O MCPHost procurará os arquivos de configuração no seu diretório pessoal na seguinte ordem:
+
+    1. `.mcphost.yml` ou `.mcphost.json`  (preferencial)
+    2. `.mcp.yml` ou `.mcp.json` (para compatibilidade com versões anteriores)
+
+    Ele usa uma sintaxe semelhante à usada no arquivo de configuração padrão do MCP.
+    Aqui está um exemplo de configuração de um servidor MCP do ClickHouse, que vamos salvar no arquivo `~/.mcphost.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-ch": {
+          "type": "local",
+          "command": ["uv",
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ]
+        }
+      }
+    }
+    ```
+
+    A principal diferença em relação ao arquivo de configuração padrão do MCP é que precisamos especificar um `type`.
+    O `type` é usado para indicar o tipo de transporte usado pelo servidor MCP.
+
+    * `local` → transporte stdio
+    * `remote` → transporte streamable
+    * `builtin` → transporte inprocess
+
+    Também precisaremos configurar as seguintes variáveis de ambiente:
+
+    ```bash
+    export CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com
+    export CLICKHOUSE_USER=demo
+    export CLICKHOUSE_PASSWORD=""
+    ```
+
+    <Note>
+      Em teoria, você deveria conseguir definir essas variáveis na chave `environment` do arquivo de configuração do MCP, mas verificamos que isso não funciona.
+    </Note>
+  </Step>
+
+  <Step>
+    ## Executando o MCPHost
+
+    Depois de configurar o ClickHouse MCP server, você pode executar o MCPHost com o comando a seguir:
+
+    ```bash
+    mcphost --model ollama:qwen3
+    ```
+
+    Ou, se quiser usar um arquivo de configuração específico:
+
+    ```bash
+    mcphost --model ollama:qwen3 --config ~/.mcphost.json 
+    ```
+
+    <Warning>
+      Se você não informar `--model`, o MCPHost procurará a variável de ambiente `ANTHROPIC_API_KEY` e usará o modelo `anthropic:claude-sonnet-4-20250514`.
+    </Warning>
+
+    Devemos ver a seguinte saída:
+
+    ```text
+      ┃                                                                                     ┃
+      ┃  Model loaded: ollama (qwen3)                                                       ┃
+      ┃   MCPHost System (09:52)                                                            ┃
+      ┃                                                                                     ┃
+
+      ┃                                                                                     ┃
+      ┃  Model loaded successfully on GPU                                                   ┃
+      ┃   MCPHost System (09:52)                                                            ┃
+      ┃                                                                                     ┃
+
+      ┃                                                                                     ┃
+      ┃  Loaded 3 tools from MCP servers                                                    ┃
+      ┃   MCPHost System (09:52)                                                            ┃
+      ┃                                                                                     ┃
+
+      Digite seu prompt (Digite /help para comandos, Ctrl+C para sair, ESC para cancelar a geração)
+    ```
+
+    Podemos usar o comando `/servers` para listar os servidores MCP:
+
+    ```text
+      ┃                                                                                      ┃
+      ┃  ## Configured MCP servers                                                           ┃
+      ┃                                                                                      ┃
+      ┃  1. mcp-ch                                                                           ┃
+      ┃   MCPHost System (10:00)                                                             ┃
+      ┃
+    ```
+
+    E `/tools` para listar as ferramentas disponíveis:
+
+    ```text
+      ┃  ## Available Tools                                                                  ┃
+      ┃                                                                                      ┃
+      ┃  1. mcp-ch__list_databases                                                           ┃
+      ┃  2. mcp-ch__list_tables                                                              ┃
+      ┃  3. mcp-ch__run_select_query
+    ```
+
+    Podemos então fazer perguntas ao modelo sobre os bancos de dados e as tabelas disponíveis no playground do ClickHouse SQL.
+
+    Pela nossa experiência com modelos menores (o modelo qwen3 padrão tem 8 bilhões de parâmetros), você precisará ser mais específico sobre o que gostaria que ele fizesse.
+    Por exemplo, você precisará pedir explicitamente que ele liste os bancos de dados e as tabelas, em vez de pedir logo de início que consulte uma determinada tabela.
+    Você pode atenuar parcialmente esse problema usando um modelo maior (por exemplo, qwen3:14b), mas ele será executado mais lentamente em hardware de consumo.
+  </Step>
+</Steps>

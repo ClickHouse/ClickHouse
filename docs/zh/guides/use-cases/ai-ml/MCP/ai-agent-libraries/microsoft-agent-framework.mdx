@@ -1,0 +1,152 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/microsoft-agent-framework
+sidebarTitle: '集成 Microsoft Agent framework'
+title: '如何使用 Microsoft Agent framework 和 ClickHouse MCP 服务器构建 AI Agent'
+description: '了解如何使用 Microsoft Agent framework 和 ClickHouse MCP 服务器构建 AI Agent'
+keywords: ['ClickHouse', 'MCP', 'Microsoft']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+在本指南中，你将学习如何构建一个 [Microsoft Agent framework](https://github.com/microsoft/agent-framework) AI agent，并通过 [ClickHouse MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse) 与 [ClickHouse 的 SQL playground](https://sql.clickhouse.com/) 交互。
+
+<Info>
+  **示例笔记本**
+
+  该示例的笔记本可在 [examples repository](https://github.com/ClickHouse/examples/blob/main/ai/mcp/microsoft-agent-framework/microsoft-agent-framework.ipynb) 中找到。
+</Info>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 你的系统中需要已安装 Python。
+* 你的系统中需要已安装 `pip`。
+* 你需要有一个 OpenAI API 密钥
+
+你可以在 Python REPL 中或通过脚本执行以下步骤。
+
+<Steps>
+  <Step>
+    ## 安装相关库
+
+    运行以下命令安装 Microsoft Agent 框架库：
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q agent-framework --pre
+    pip install -q ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## 配置凭据
+
+    接下来，您需要提供 OpenAI API 密钥：
+
+    ```python
+    import os, getpass
+    os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter OpenAI API Key:")
+    ```
+
+    ```response title="Response"
+    Enter OpenAI API Key: ········
+    ```
+
+    接下来，配置连接到 ClickHouse SQL playground 所需的凭据：
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## 初始化 MCP 服务器和 Microsoft Agent Framework 智能体
+
+    现在，将 ClickHouse MCP 服务器配置为指向 ClickHouse SQL playground，
+    并初始化我们的智能体，然后向它提一个问题：
+
+    ```python
+    from agent_framework import ChatAgent, MCPStdioTool
+    from agent_framework.openai import OpenAIResponsesClient
+    ```
+
+    ```python
+    clickhouse_mcp_server = MCPStdioTool(
+        name="clickhouse",
+        command="uv",
+        args=[
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+        ],
+        env=env
+    )
+
+    async with ChatAgent(
+        chat_client=OpenAIResponsesClient(model_id="gpt-5-mini-2025-08-07"),
+        name="HousePricesAgent",
+        instructions="You are a helpful assistant that can help query a ClickHouse database",
+        tools=clickhouse_mcp_server,
+    ) as agent:
+        query = "Tell me about UK property prices over the last five years"
+        print(f"User: {query}")
+        async for chunk in agent.run_stream(query):
+            print(chunk.text, end="", flush=True)
+        print("\n\n")
+    ```
+
+    运行此脚本后的输出如下：
+
+    ```response title="Response"
+    用户：请告诉我过去五年英国的房产价格情况
+    我查看了 uk.uk_price_paid_simple_partitioned 表中过去五年（toStartOfMonth(date)，从 2020 年 10 月至 2025 年 8 月）的英国月度成交价格记录。摘要与要点如下：
+
+    测量内容
+    - 指标：月度中位价、均价及成交量（已付价格记录数）。
+    - 覆盖周期：从 2020-10-01 至 2025-08-01 的各月起始日（即今日起往前五年）。
+
+    主要发现
+    - 中位价从 £255,000（2020-10）上涨至 £294,500（2025-08）——五年内涨幅约为 +15.4%。
+      - 中位价对应的复合年增长率（CAGR）≈ +2.9%/年。
+    - 均价从约 £376,538（2020-10）小幅下降至 £364,653（2025-08）——五年内跌幅约为 −3.2%。
+      - 均价 CAGR ≈ −0.6%/年。
+    - 中位价上涨而均价略降的背离现象，表明成交结构发生了变化（高价值房产成交减少或其他结构性因素），因为均价对异常值敏感，而中位价则不然。
+
+    数据中的显著规律与事件
+    - 2020–2021 年出现强劲上涨（中位价和均价均有体现），与该时期疫情后需求激增、印花税减免等因素驱动的市场热潮相符。
+    - 均价在 2022 年中期前后达到峰值（均价约 £440k），随后在 2022–2023 年整体回落，并于 2023–2024 年趋于稳定。
+    - 部分月份呈现较大波动或异常成交量（例如 2021 年 6 月成交量极高；2025 年 3 月中位价偏高，但 2025 年 4–5 月成交量偏低）。近期月份（2025 年中）在表中的成交量明显偏低——这通常意味着最近几个月的数据尚未完整上报，因此近期月度数据应谨慎对待。
+
+    示例数据点（来自查询）
+    - 2020-10：中位价 £255,000，均价 £376,538，成交量 89,125
+    - 2022-08：均价峰值约 £441,209（中位价约 £295,000）
+    - 2025-03：中位价约 £314,750（为最高中位价之一）
+    - 2025-08：中位价 £294,500，均价 £364,653，成交量 18,815（数量偏低——可能数据不完整）
+
+    注意事项
+    - 以上均为成交价格（Price Paid 数据集）——实际房产"市值"可能有所不同。
+    - 均价对成交结构和异常值敏感。出售房产类型的变化（例如公寓与独栋住宅的比例、地区构成）会对均价和中位价产生不同影响。
+    - 近期月份数据可能不完整；成交量异常偏低的月份应谨慎参考。
+    - 以上为全国汇总数据——各地区差异可能较为显著。
+
+    如需进一步分析，我可以：
+    - 生成中位价和均价随时间变化的图表。
+    - 进行同比对比，或计算不同起止月份的 CAGR。
+    - 按地区/郡/城镇、房产类型（公寓、联排、半独立式、独栋）或价格区间进行细分分析。
+    - 展示过去 5 年房价涨幅最高/最低地区的排名表。
+
+    您希望进行哪项后续分析？
+
+    ```
+  </Step>
+</Steps>
