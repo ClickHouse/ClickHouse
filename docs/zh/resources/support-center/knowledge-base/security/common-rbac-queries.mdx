@@ -1,0 +1,53 @@
+---
+title: 常见 RBAC 查询
+description: "帮助向用户授予特定权限的查询。"
+date: 2023-09-28
+tags: ['安全与身份验证', 'Cloud 管理']
+keywords: ['RBAC', '查询']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## 简介
+</div>
+
+以下是一些常见查询语句，可用于向用户授予特定权限。
+
+<div id="how-do-i-grant-the-same-permissions-as-the-current-user-to-another-user">
+  ## 如何将当前用户拥有的相同权限授予另一位用户？
+</div>
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-based-on-the-grants-of-the-current-user">
+  ## 如何基于当前用户的授权向某个用户授予特定权限？
+</div>
+
+在下面的示例中，`another_user` 将能够对当前用户的所有数据库和表执行 `SELECT` 命令。
+
+```sql
+GRANT CURRENT GRANTS(SELECT ON *.*) TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-for-a-specific-database-based-on-the-grants-of-the-current-user">
+  ## 如何根据当前用户的授权，为某个数据库中的用户授予特定权限？
+</div>
+
+在下面的示例中，`another_user` 将能够对 `my_database` 中的所有表执行 `INSERT` 命令。
+
+```sql
+GRANT INSERT ON my_database.* TO another_user;
+```
+
+<div id="how-do-i-give-access-to-all-grants-for-a-specific-user-based-on-the-default-user">
+  ## 如何基于 default 用户为特定用户授予全部授权？
+</div>
+
+```sql
+GRANT default_role TO another_user;
+```

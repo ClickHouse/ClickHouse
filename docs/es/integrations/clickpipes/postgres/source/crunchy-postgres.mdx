@@ -1,0 +1,90 @@
+---
+sidebarTitle: 'Crunchy Bridge Postgres'
+description: 'Configura Crunchy Bridge Postgres como origen para ClickPipes'
+slug: /integrations/clickpipes/postgres/source/crunchy-postgres
+title: 'Guía de configuración de origen de Crunchy Bridge Postgres'
+keywords: ['crunchy bridge', 'postgres', 'clickpipes', 'replicación lógica', 'ingestión de datos']
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+ClickPipes admite Postgres 12 y versiones posteriores.
+
+<div id="enable-logical-replication">
+  ## Habilitar la replicación lógica
+</div>
+
+Crunchy Bridge viene con la replicación lógica habilitada de forma [predeterminada](https://docs.crunchybridge.com/how-to/logical-replication). Asegúrese de que la siguiente configuración esté correctamente establecida. Si no es así, ajústela según corresponda.
+
+```sql
+SHOW wal_level; -- debe ser logical
+SHOW max_wal_senders; -- debe ser 10
+SHOW max_replication_slots; -- debe ser 10
+```
+
+<div id="creating-clickpipes-user-and-granting-permissions">
+  ## Creación de un usuario de ClickPipes y asignación de permisos
+</div>
+
+Conéctese a su instancia de Crunchy Bridge Postgres con el usuario `postgres` y ejecute los siguientes comandos:
+
+1. Cree un usuario dedicado para ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. Conceda acceso de solo lectura a nivel de esquema al usuario que creó en el paso anterior. El siguiente ejemplo muestra los permisos para el esquema `public`. Repita estos comandos para cada esquema que contenga tablas que quiera replicar:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. Conceda privilegios de replicación al usuario:
+
+   ```sql
+    ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. Cree una [publicación](https://www.postgresql.org/docs/current/logical-replication-publication.html) con las tablas que quiera replicar. Recomendamos encarecidamente incluir en la publicación solo las tablas que necesite para evitar una sobrecarga de rendimiento.
+
+<Warning>
+  Toda tabla incluida en la publicación debe tener una **clave primaria** definida *o* tener su **identidad de réplica** configurada como `FULL`. Consulte las [Preguntas frecuentes de Postgres](/es/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) para obtener orientación sobre cómo definir el alcance.
+</Warning>
+
+* Para crear una publicación para tablas específicas:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * Para crear una publicación para todas las tablas de un esquema específico:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+La publicación `clickpipes` contendrá el conjunto de eventos de cambio generados por las tablas especificadas y más adelante se utilizará para ingestar el flujo de replicación.
+
+<div id="safe-list-clickpipes-ips">
+  ## Incluir las IP de ClickPipes en la lista segura
+</div>
+
+Incluye las [IP de ClickPipes](/es/integrations/clickpipes/home#list-of-static-ips) en la lista segura agregando las reglas de firewall en Crunchy Bridge.
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp" alt="¿Dónde encontrar las reglas de firewall en Crunchy Bridge?" border />
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/add_firewall_rules_crunchy_bridge.webp" alt="Añade las reglas de firewall para ClickPipes" border />
+
+<div id="whats-next">
+  ## ¿Qué sigue?
+</div>
+
+Ahora puede [crear su ClickPipe](/es/integrations/clickpipes/postgres/index) y comenzar a ingestar datos de su instancia de Postgres en ClickHouse Cloud.
+Asegúrese de anotar los datos de conexión que utilizó al configurar su instancia de Postgres, ya que los necesitará durante el proceso de creación de ClickPipe.

@@ -1,0 +1,179 @@
+---
+slug: /best-practices/selecting-an-insert-strategy
+sidebarTitle: 'Selecionar uma estratégia de inserção'
+title: 'Selecionar uma estratégia de inserção'
+description: 'Página que descreve como escolher uma estratégia de inserção no ClickHouse'
+keywords: ['INSERT', 'inserções assíncronas', 'compressão', 'inserções em lote']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import AsyncInserts from '/snippets/pt-BR/_async_inserts.mdx';
+import BulkInserts from '/snippets/pt-BR/_bulk_inserts.mdx';
+
+A ingestão eficiente de dados é a base de implantações do ClickHouse com alto desempenho. Selecionar a estratégia de inserção correta pode afetar drasticamente a taxa de transferência, o custo e a confiabilidade. Esta seção apresenta melhores práticas, trade-offs e opções de configuração para ajudar você a tomar a decisão certa para a sua carga de trabalho.
+
+<Note>
+  O conteúdo a seguir pressupõe que você está enviando dados ao ClickHouse por meio de um cliente. Se você estiver extraindo dados para o ClickHouse, por exemplo, usando funções de tabela nativas, como [s3](/pt-BR/reference/functions/table-functions/s3) e [gcs](/pt-BR/reference/functions/table-functions/gcs), recomendamos o nosso guia [&quot;Como otimizar o desempenho de inserção e leitura no S3&quot;](/pt-BR/integrations/connectors/data-ingestion/AWS/performance).
+</Note>
+
+<div id="synchronous-inserts-by-default">
+  ## Inserções síncronas por padrão
+</div>
+
+Por padrão, as inserções no ClickHouse são síncronas. Cada consulta de inserção cria imediatamente uma parte de armazenamento em disco, incluindo metadados e índices.
+
+<Info>
+  **Use inserções síncronas se puder agrupar os dados em lotes no cliente**
+
+  Caso contrário, veja [Inserções assíncronas](#asynchronous-inserts) abaixo.
+</Info>
+
+A seguir, analisamos brevemente como funcionam as inserções do MergeTree no ClickHouse:
+
+<Image img="/images/bestpractices/insert_process.webp" size="lg" alt="Processos de inserção" background="black" />
+
+<div id="client-side-steps">
+  #### Etapas no lado do cliente
+</div>
+
+Para obter o melhor desempenho, os dados precisam ser ①[ agrupados em lotes](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance), o que torna o tamanho do lote a **primeira decisão**.
+
+O ClickHouse armazena em disco os dados inseridos,[ ordenados](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) pelas colunas da chave primária da tabela. A **segunda decisão** é ② pré-ordenar os dados antes de transmiti-los ao servidor. Se um lote chegar pré-ordenado pelas colunas da chave primária, o ClickHouse pode [pular](https://github.com/ClickHouse/ClickHouse/blob/94ce8e95404e991521a5608cd9d636ff7269743d/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L595) a etapa ⑩ de ordenação, acelerando a ingestão.
+
+Se os dados a serem ingeridos não tiverem um formato predefinido, a **decisão principal** é escolher um formato. O ClickHouse oferece suporte à inserção de dados em [mais de 70 formatos](/pt-BR/reference/formats/index). No entanto, ao usar o cliente de linha de comando do ClickHouse ou clientes para linguagens de programação, essa escolha geralmente é feita automaticamente. Se necessário, essa seleção automática também pode ser substituída explicitamente.
+
+A próxima **decisão importante** é ④ se os dados devem ser compactados antes da transmissão para o servidor ClickHouse. A compactação reduz o volume de dados transferidos e melhora a eficiência da rede, resultando em transferências mais rápidas e menor uso de largura de banda, especialmente para grandes conjuntos de dados.
+
+Os dados são ⑤ transmitidos por uma interface de rede do ClickHouse — seja a interface [nativa](/pt-BR/concepts/features/interfaces/tcp) ou a interface [HTTP](/pt-BR/concepts/features/interfaces/http) (que [comparamos](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient#clickhouse-client-defaults) mais adiante neste post).
+
+<div id="server-side-steps">
+  #### Etapas no servidor
+</div>
+
+Após ⑥ receber os dados, o ClickHouse ⑦ os descomprime, se a compressão tiver sido usada, e então ⑧ os processa a partir do formato originalmente enviado.
+
+Usando os valores desses dados formatados e a instrução [DDL](/pt-BR/reference/statements/create/table) da tabela de destino, o ClickHouse ⑨ monta um [bloco](/pt-BR/resources/develop-contribute/introduction/architecture#block) em memória no formato MergeTree, ⑩ [ordena](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) as linhas pelas colunas da chave primária, caso ainda não estejam pré-ordenadas, ⑪ cria um [índice primário esparso](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes), ⑫ aplica [compressão por coluna](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) e ⑬ grava os dados em disco como uma nova ⑭ [parte de dados](/pt-BR/concepts/core-concepts/parts).
+
+<div id="batch-inserts-if-synchronous">
+  ### Inserções em lote, se síncronas
+</div>
+
+<BulkInserts />
+
+<div id="ensure-idempotent-retries">
+  ### Garanta retentativas idempotentes
+</div>
+
+As inserções síncronas também são **idempotentes**. Ao usar motores MergeTree, o ClickHouse deduplicará inserções por padrão. Isso protege contra casos de falha ambíguos, como:
+
+* A inserção foi bem-sucedida, mas o cliente nunca recebeu uma confirmação devido a uma interrupção na rede.
+* A inserção falhou no lado do servidor e gerou timeout.
+
+Em ambos os casos, é seguro **repetir a inserção** — desde que o conteúdo e a ordem do lote permaneçam idênticos. Por esse motivo, é fundamental que os clientes façam retentativas de forma consistente, sem modificar nem reordenar os dados.
+
+<div id="choose-the-right-insert-target">
+  ### Escolha o destino certo para a inserção
+</div>
+
+Para clusters com shards, você tem duas opções:
+
+* Fazer inserção diretamente em uma tabela **MergeTree** ou **ReplicatedMergeTree**. Essa é a opção mais eficiente quando o cliente consegue fazer balanceamento de carga entre os shards. Com `internal_replication = true`, o ClickHouse gerencia a replicação de forma transparente.
+* Fazer inserção em uma [tabela distribuída](/pt-BR/reference/engines/table-engines/special/distributed). Isso permite que os clientes enviem dados para qualquer nó e deixem o ClickHouse encaminhá-los ao shard correto. É mais simples, mas tem desempenho um pouco inferior devido à etapa adicional de encaminhamento. `internal_replication = true` continua sendo recomendado.
+
+**No ClickHouse Cloud, todos os nós leem e gravam no mesmo shard. As inserções são balanceadas automaticamente entre os nós. Você pode simplesmente enviar as inserções para o endpoint exposto.**
+
+<div id="choose-the-right-format">
+  ### Escolha o formato certo
+</div>
+
+Escolher o formato de entrada certo é crucial para uma ingestão eficiente de dados no ClickHouse. Com mais de 70 formatos compatíveis, selecionar a opção de melhor desempenho pode impactar significativamente a velocidade de inserção, o uso de CPU e memória e a eficiência geral do sistema.
+
+Embora a flexibilidade seja útil para engenharia de dados e importações baseadas em arquivos, **os aplicativos devem priorizar formatos voltados para desempenho**:
+
+* **Formato nativo** (recomendado): O mais eficiente. Colunar, com necessidade mínima de parsing no lado do servidor. Usado por padrão nos clientes Go e Python.
+* **RowBinary**: Formato eficiente baseado em linhas, ideal se a transformação para o modelo colunar for difícil no lado do cliente. Usado pelo cliente Java.
+* **JSONEachRow**: Fácil de usar, mas caro de parsear. Adequado para casos de uso de baixo volume ou integrações rápidas.
+
+<div id="use-compression">
+  ### Use compactação
+</div>
+
+A compactação desempenha um papel fundamental na redução da sobrecarga de rede, na aceleração de inserções e na diminuição dos custos de armazenamento no ClickHouse. Quando usada de forma eficaz, ela melhora o desempenho da ingestão sem exigir mudanças no formato ou no esquema dos dados.
+
+Compactar os dados de inserção reduz o tamanho do payload enviado pela rede, minimizando o consumo de largura de banda e acelerando a transmissão.
+
+Para inserções, a compactação é especialmente eficaz quando usada com o formato Native, que já corresponde ao modelo interno de armazenamento colunar do ClickHouse. Nessa configuração, o servidor pode descompactar e armazenar os dados diretamente, com o mínimo de transformação.
+
+<div id="use-lz4-for-speed-zstd-for-compression-ratio">
+  #### Use LZ4 para velocidade, ZSTD para taxa de compressão
+</div>
+
+O ClickHouse oferece suporte a vários codecs de compressão durante a transmissão de dados. Duas opções comuns são:
+
+* **LZ4**: Rápido e leve. Reduz significativamente o tamanho dos dados com sobrecarga mínima de CPU, sendo ideal para inserções com alto throughput e o padrão na maioria dos clientes ClickHouse.
+* **ZSTD**: Maior taxa de compressão, mas com uso mais intenso de CPU. É útil quando os custos de transferência de rede são altos — como em cenários entre regiões ou entre provedores de Cloud — embora aumente ligeiramente a capacidade de processamento no lado do cliente e o tempo de descompressão no lado do servidor.
+
+Boa prática: use LZ4, a menos que você tenha largura de banda limitada ou incorra em custos de egresso de dados — nesse caso, considere ZSTD.
+
+<Note>
+  Em testes do benchmark [FastFormats](https://clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient), inserções Native comprimidas com LZ4 reduziram o tamanho dos dados em mais de 50%, diminuindo o tempo de ingestão de 150s para 131s em um conjunto de dados de 5,6 GiB. Ao mudar para ZSTD, o mesmo conjunto de dados foi comprimido para 1,69 GiB, mas o tempo de processamento no lado do servidor aumentou ligeiramente.
+</Note>
+
+<div id="compression-reduces-resource-usage">
+  #### A compressão reduz o uso de recursos
+</div>
+
+A compressão não só reduz o tráfego de rede como também melhora a eficiência de CPU e memória no servidor. Com dados comprimidos, o ClickHouse recebe menos bytes e gasta menos tempo analisando entradas grandes. Esse benefício é especialmente importante na ingestão feita por vários clientes simultâneos, como em cenários de observabilidade.
+
+O impacto da compressão sobre CPU e memória é modesto com LZ4 e moderado com ZSTD. Mesmo sob carga, a eficiência no lado do servidor melhora devido ao menor volume de dados.
+
+**Combinar compressão com envio em lotes e um formato de entrada eficiente (como Native) oferece o melhor desempenho de ingestão.**
+
+Ao usar a interface nativa (por exemplo, [clickhouse-client](/pt-BR/concepts/features/interfaces/cli)), a compressão LZ4 vem habilitada por padrão. Se quiser, você pode mudar para ZSTD nas configurações.
+
+Com a [interface HTTP](/pt-BR/concepts/features/interfaces/http), use o cabeçalho Content-Encoding para aplicar compressão (por exemplo, Content-Encoding: lz4). Todo o payload deve ser comprimido antes do envio.
+
+<div id="pre-sort-if-low-cost">
+  ### Pré-ordene se o custo for baixo
+</div>
+
+Pré-ordenar os dados pela chave primária antes da inserção pode melhorar a eficiência da ingestão no ClickHouse, principalmente em lotes grandes.
+
+Quando os dados chegam pré-ordenados, o ClickHouse pode ignorar ou simplificar a etapa interna de ordenação durante a criação das partes, reduzindo o uso de CPU e acelerando o processo de inserção. A pré-ordenação também melhora a eficiência da compressão, já que valores semelhantes ficam agrupados — permitindo que codecs como LZ4 ou ZSTD alcancem uma taxa de compressão melhor. Isso é especialmente vantajoso quando combinado com inserções em lotes grandes e compressão, pois reduz tanto a sobrecarga de processamento quanto a quantidade de dados transferidos.
+
+**Dito isso, a pré-ordenação é uma otimização opcional, não um requisito.** O ClickHouse ordena os dados com alta eficiência usando processamento paralelo e, em muitos casos, ordenar no servidor é mais rápido ou mais conveniente do que pré-ordenar no cliente.
+
+**Recomendamos a pré-ordenação apenas se os dados já estiverem quase ordenados ou se os recursos do cliente (CPU, memória) forem suficientes e estiverem subutilizados.** Em casos de uso sensíveis à latência ou de alto throughput, como observabilidade, em que os dados chegam fora de ordem ou a partir de muitos agentes, geralmente é melhor pular a pré-ordenação e confiar no desempenho nativo do ClickHouse.
+
+<div id="asynchronous-inserts">
+  ## Inserções assíncronas
+</div>
+
+<AsyncInserts />
+
+<div id="choose-an-interface">
+  ## Escolha uma interface: HTTP ou nativa
+</div>
+
+<div id="choose-an-interface-native">
+  ### Nativa
+</div>
+
+O ClickHouse oferece duas interfaces principais para ingestão de dados: a **interface nativa** e a **interface HTTP** — cada uma com seus próprios trade-offs entre desempenho e flexibilidade. A interface nativa, usada pelo [clickhouse-client](/pt-BR/concepts/features/interfaces/cli) e por alguns clientes de linguagem, como Go e C++, foi projetada especificamente para desempenho. Ela sempre transmite dados no formato Native, altamente eficiente, do ClickHouse, oferece suporte à compressão em blocos com LZ4 ou ZSTD e minimiza o processamento no lado do servidor ao transferir para o cliente tarefas como parsing e conversão de formato.
+
+Ela ainda permite calcular, no lado do cliente, os valores de colunas MATERIALIZED e DEFAULT, fazendo com que o servidor possa pular essas etapas por completo. Isso torna a interface nativa ideal para cenários de ingestão com alto throughput em que a eficiência é crítica.
+
+<div id="choose-an-interface-http">
+  ### HTTP
+</div>
+
+Ao contrário de muitos bancos de dados tradicionais, o ClickHouse também oferece uma interface HTTP. **Ela, por sua vez, prioriza compatibilidade e flexibilidade.** Ela permite enviar dados em [qualquer formato compatível](/pt-BR/guides/clickhouse/data-formats/intro) — incluindo JSON, CSV, Parquet e outros — e tem amplo suporte na maioria dos clientes ClickHouse, incluindo Python, Java, JavaScript e Rust.
+
+Isso costuma ser preferível ao protocolo nativo do ClickHouse, pois permite que o tráfego seja redirecionado facilmente por balanceadores de carga. Esperamos pequenas diferenças no desempenho de inserção em relação ao protocolo nativo, que tem um pouco menos de sobrecarga.
+
+No entanto, ela não oferece a integração mais profunda do protocolo nativo e não pode realizar otimizações no lado do cliente, como o cálculo de valores materializados ou a conversão automática para o formato Native. Embora inserções via HTTP ainda possam ser compactadas usando headers HTTP padrão (por exemplo, `Content-Encoding: lz4`), a compressão é aplicada ao payload inteiro, e não a blocos de dados individuais. Essa interface costuma ser preferida em ambientes nos quais simplicidade de protocolo, balanceamento de carga ou ampla compatibilidade de formatos são mais importantes do que desempenho bruto.
+
+Para uma descrição mais detalhada dessas interfaces, consulte [aqui](/pt-BR/concepts/features/interfaces/overview).

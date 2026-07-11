@@ -1,0 +1,711 @@
+---
+title: 'Outras abordagens para JSON'
+slug: /integrations/data-formats/json/other-approaches
+description: 'Outras abordagens para modelar JSON'
+keywords: ['json', 'formats']
+doc_type: 'reference'
+---
+
+**Veja a seguir alternativas para modelar JSON no ClickHouse. Elas estão documentadas por completude e eram aplicáveis antes do desenvolvimento do tipo JSON; por isso, em geral não são recomendadas nem se aplicam à maioria dos casos de uso.**
+
+<Info>
+  **Adote uma abordagem no nível do objeto**
+
+  Técnicas diferentes podem ser aplicadas a objetos diferentes no mesmo esquema. Por exemplo, alguns objetos podem ser melhor representados com o tipo `String`, e outros com o tipo `Map`. Observe que, depois que um tipo `String` é usado, não é mais necessário tomar outras decisões de esquema. Por outro lado, é possível aninhar subobjetos dentro de uma chave `Map` — incluindo uma `String` que representa JSON — como mostramos abaixo:
+</Info>
+
+<div id="using-string">
+  ## Usando o tipo String
+</div>
+
+Se os objetos forem altamente dinâmicos, sem uma estrutura previsível e contiverem objetos aninhados arbitrários, você deve usar o tipo `String`. Os valores podem ser extraídos em tempo de consulta usando funções JSON, como mostramos abaixo.
+
+Lidar com dados usando a abordagem estruturada descrita acima muitas vezes não é viável para usuários com JSON dinâmico, sujeito a mudanças ou cujo esquema não é bem compreendido. Para ter total flexibilidade, você pode simplesmente armazenar o JSON como `String`s e depois usar funções para extrair os campos conforme necessário. Isso representa o extremo oposto de tratar JSON como um objeto estruturado. Essa flexibilidade tem um custo e traz desvantagens significativas — principalmente o aumento da complexidade da sintaxe da consulta, além da piora no desempenho.
+
+Como observado anteriormente, para o [objeto person original](/pt-BR/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json), não podemos garantir a estrutura da coluna `tags`. Inserimos a linha original (incluindo `company.labels`, que ignoramos por enquanto), declarando a coluna `Tags` como `String`:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+```
+
+```response
+Ok.
+1 linha no Set. Elapsed: 0.002 sec.
+```
+
+Podemos selecionar a coluna `tags` e ver que o JSON foi inserido como string:
+
+```sql
+SELECT tags
+FROM people
+```
+
+```response
+┌─tags───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}} │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+1 linha no Set. Elapsed: 0.001 sec.
+```
+
+As funções [`JSONExtract`](/pt-BR/reference/functions/regular-functions/json-functions#jsonextract-functions) podem ser usadas para extrair valores desse JSON. Considere o exemplo simples abaixo:
+
+```sql
+SELECT JSONExtractString(tags, 'holidays') AS holidays FROM people
+```
+
+```response
+┌─holidays──────────────────────────────────────┐
+│ [{"year":2024,"location":"Azores, Portugal"}] │
+└───────────────────────────────────────────────┘
+
+1 linha no Set. Elapsed: 0.002 sec.
+```
+
+Observe que as funções exigem tanto uma referência à coluna `String` `tags` quanto um path no JSON a ser extraído. Paths aninhados exigem o aninhamento das funções, por exemplo, `JSONExtractUInt(JSONExtractString(tags, 'car'), 'year')`, que extrai a coluna `tags.car.year`. A extração de paths aninhados pode ser simplificada por meio das funções [`JSON_QUERY`](/pt-BR/reference/functions/regular-functions/json-functions#JSON_QUERY) e [`JSON_VALUE`](/pt-BR/reference/functions/regular-functions/json-functions#JSON_VALUE).
+
+Considere o caso extremo do dataset `arxiv`, em que o corpo inteiro é tratado como uma `String`.
+
+```sql
+CREATE TABLE arxiv (
+  body String
+)
+ENGINE = MergeTree ORDER BY ()
+```
+
+Para inserir nesse esquema, precisamos usar o formato `JSONAsString`:
+
+```sql
+INSERT INTO arxiv SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', 'JSONAsString')
+```
+
+```response
+0 rows in Set. Elapsed: 25.186 sec. Processed 2.52 million rows, 1.38 GB (99.89 thousand rows/s., 54.79 MB/s.)
+```
+
+Suponha que desejamos contar o número de artigos publicados por ano. Compare a consulta a seguir, usando apenas String, com a versão [estruturada](/pt-BR/guides/clickhouse/data-formats/json/inference#creating-tables) do esquema:
+
+```sql
+-- usando esquema estruturado
+SELECT
+    toYear(parseDateTimeBestEffort(versions.created[1])) AS published_year,
+    count() AS c
+FROM arxiv_v2
+GROUP BY published_year
+ORDER BY c ASC
+LIMIT 10
+```
+
+```response
+┌─published_year─┬─────c─┐
+│           1986 │     1 │
+│           1988 │     1 │
+│           1989 │     6 │
+│           1990 │    26 │
+│           1991 │   353 │
+│           1992 │  3190 │
+│           1993 │  6729 │
+│           1994 │ 10078 │
+│           1995 │ 13006 │
+│           1996 │ 15872 │
+└────────────────┴───────┘
+
+10 rows in Set. Elapsed: 0.264 sec. Processed 2.31 million rows, 153.57 MB (8.75 million rows/s., 582.58 MB/s.)
+```
+
+```sql
+-- usando String não estruturada
+
+SELECT
+    toYear(parseDateTimeBestEffort(JSON_VALUE(body, '$.versions[0].created'))) AS published_year,
+    count() AS c
+FROM arxiv
+GROUP BY published_year
+ORDER BY published_year ASC
+LIMIT 10
+```
+
+```response
+┌─published_year─┬─────c─┐
+│           1986 │     1 │
+│           1988 │     1 │
+│           1989 │     6 │
+│           1990 │    26 │
+│           1991 │   353 │
+│           1992 │  3190 │
+│           1993 │  6729 │
+│           1994 │ 10078 │
+│           1995 │ 13006 │
+│           1996 │ 15872 │
+└────────────────┴───────┘
+
+10 rows in Set. Elapsed: 1.281 sec. Processed 2.49 million rows, 4.22 GB (1.94 million rows/s., 3.29 GB/s.)
+Peak memory usage: 205.98 MiB.
+```
+
+Observe o uso de uma expressão XPath aqui para filtrar o JSON por `method`, isto é, `JSON_VALUE(body, '$.versions[0].created')`.
+
+As funções de String são significativamente mais lentas (&gt; 10x) do que conversões explícitas de tipo com índices. As consultas acima sempre exigem uma varredura completa da tabela e o processamento de todas as linhas. Embora essas consultas ainda sejam rápidas em um conjunto de dados pequeno como este, o desempenho se degradará em conjuntos de dados maiores.
+
+A flexibilidade dessa abordagem tem um custo claro em desempenho e sintaxe, e ela deve ser usada apenas para objetos altamente dinâmicos no esquema.
+
+<div id="simple-json-functions">
+  ### Funções JSON simples
+</div>
+
+Os exemplos acima usam a família de funções JSON*. Elas utilizam um parser JSON completo baseado em [simdjson](https://github.com/simdjson/simdjson), que faz uma análise rigorosa e distingue o mesmo campo aninhado em níveis diferentes. Essas funções conseguem lidar com JSON sintaticamente correto, mas mal formatado, por exemplo, com espaços duplos entre chaves.
+
+Também há disponível um conjunto de funções mais rápido e mais rigoroso. Essas funções `simpleJSON*` oferecem desempenho potencialmente superior, principalmente por fazerem suposições estritas sobre a estrutura e o formato do JSON. Especificamente:
+
+* Os nomes dos campos devem ser constantes
+* Codificação consistente dos nomes dos campos, por exemplo `simpleJSONHas('{"abc":"def"}', 'abc') = 1`, mas `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
+* Os nomes dos campos devem ser únicos em todas as estruturas aninhadas. Não é feita distinção entre níveis de aninhamento, e a correspondência é indiscriminada. Em caso de vários campos correspondentes, a primeira ocorrência é usada.
+* Nenhum caractere especial fora de literais de string. Isso inclui espaços. O exemplo a seguir é inválido e não será analisado.
+
+  ```json
+  {"@timestamp": 893964617, "clientip": "40.135.0.0", "request": {"method": "GET",
+  "path": "/images/hm_bg.jpg", "version": "HTTP/1.0"}, "status": 200, "size": 24736}
+  ```
+
+Já o exemplo a seguir será analisado corretamente:
+
+````json
+{"@timestamp":893964617,"clientip":"40.135.0.0","request":{"method":"GET",
+    "path":"/images/hm_bg.jpg","version":"HTTP/1.0"},"status":200,"size":24736}
+
+Em algumas circunstâncias, quando o desempenho é crítico e seu JSON atende aos requisitos acima, essas funções podem ser a escolha adequada. Um exemplo da consulta anterior, reescrita para usar as funções `simpleJSON*`, é apresentado abaixo:
+
+```sql
+SELECT
+    toYear(parseDateTimeBestEffort(simpleJSONExtractString(simpleJSONExtractRaw(body, 'versions'), 'created'))) AS published_year,
+    count() AS c
+FROM arxiv
+GROUP BY published_year
+ORDER BY published_year ASC
+LIMIT 10
+````
+
+```response
+┌─published_year─┬─────c─┐
+│           1986 │     1 │
+│           1988 │     1 │
+│           1989 │     6 │
+│           1990 │    26 │
+│           1991 │   353 │
+│           1992 │  3190 │
+│           1993 │  6729 │
+│           1994 │ 10078 │
+│           1995 │ 13006 │
+│           1996 │ 15872 │
+└────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.964 sec. Processed 2.48 million rows, 4.21 GB (2.58 million rows/s., 4.36 GB/s.)
+Peak memory usage: 211.49 MiB.
+```
+
+A consulta acima usa `simpleJSONExtractString` para extrair a chave `created`, aproveitando o fato de que queremos apenas o primeiro valor da data de publicação. Neste caso, as limitações das funções `simpleJSON*` são aceitáveis em troca do ganho de desempenho.
+
+## Usando o tipo Map
+
+Se o objeto for usado para armazenar chaves arbitrárias, em sua maioria de um único tipo, considere usar o tipo `Map`. Idealmente, o número de chaves únicas não deve exceder algumas centenas. O tipo `Map` também pode ser considerado para objetos com subobjetos, desde que estes tenham uniformidade de tipos. Em geral, recomendamos usar o tipo `Map` para labels e tags, por exemplo, labels de pod do Kubernetes em dados de log.
+
+Embora `Map`s ofereçam uma forma simples de representar estruturas aninhadas, eles têm algumas limitações importantes:
+
+* Os campos devem ser todos do mesmo tipo.
+* O acesso a subcolunas exige uma sintaxe especial de map, já que os campos não existem como colunas. O objeto inteiro *é* uma coluna.
+* Ao acessar uma subcoluna, todo o valor do `Map` é carregado, ou seja, todos os elementos irmãos e seus respectivos valores. Em maps maiores, isso pode resultar em uma perda significativa de desempenho.
+
+<Info>
+  **Chaves `String`**
+
+  Ao modelar objetos como `Map`s, usa-se uma chave `String` para armazenar o nome da chave JSON. Portanto, o map sempre será `Map(String, T)`, em que `T` depende dos dados.
+</Info>
+
+#### Valores primitivos
+
+A aplicação mais simples de um `Map` é quando o objeto contém valores do mesmo tipo primitivo. Na maioria dos casos, isso envolve usar o tipo `String` para o valor `T`.
+
+Considere nosso [JSON de pessoa anterior](/pt-BR/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json), em que se determinou que o objeto `company.labels` era dinâmico. É importante destacar que esperamos que apenas pares chave-valor do tipo String sejam adicionados a esse objeto. Assim, podemos declará-lo como `Map(String, String)`:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String, labels Map(String,String)),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+Podemos inserir o objeto JSON completo original:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021"}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+```
+
+```response
+Ok.
+
+1 linha no Set. Elapsed: 0.002 sec.
+```
+
+Para consultar esses campos dentro do objeto de requisição, é necessário usar a sintaxe de `map`, por exemplo:
+
+```sql
+SELECT company.labels FROM people
+```
+
+```response
+┌─company.labels───────────────────────────────┐
+│ {'type':'database systems','founded':'2021'} │
+└──────────────────────────────────────────────┘
+
+1 linha no Set. Elapsed: 0.001 sec.
+```
+
+```sql
+SELECT company.labels['type'] AS type FROM people
+```
+
+```response
+┌─type─────────────┐
+│ database systems │
+└──────────────────┘
+
+1 linha no Set. Elapsed: 0.001 sec.
+```
+
+Um conjunto completo de funções de `Map` está disponível para consultar esse tipo, conforme descrito [aqui](/pt-BR/reference/functions/regular-functions/tuple-map-functions). Se os seus dados não forem de um tipo consistente, há funções para realizar a [coerção de tipos necessária](/pt-BR/reference/functions/regular-functions/type-conversion-functions).
+
+#### Valores de objeto
+
+O tipo `Map` também pode ser considerado para objetos que têm subobjetos, desde que estes últimos mantenham consistência em seus tipos.
+
+Suponha que a chave `tags` do nosso objeto `persons` exija uma estrutura consistente, em que o subobjeto de cada `tag` tenha uma coluna `name` e `time`. Um exemplo simplificado desse tipo de documento JSON pode ser como o seguinte:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "tags": {
+    "hobby": {
+      "name": "Diving",
+      "time": "2024-07-11 14:18:01"
+    },
+    "car": {
+      "name": "Tesla",
+      "time": "2024-07-11 15:18:23"
+    }
+  }
+}
+```
+
+Isso pode ser representado com um `Map(String, Tuple(name String, time DateTime))`, como mostrado abaixo:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `tags` Map(String, Tuple(name String, time DateTime))
+)
+ENGINE = MergeTree
+ORDER BY username
+
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","tags":{"hobby":{"name":"Diving","time":"2024-07-11 14:18:01"},"car":{"name":"Tesla","time":"2024-07-11 15:18:23"}}}
+```
+
+```response
+Ok.
+
+1 linha no Set. Elapsed: 0.002 sec.
+```
+
+```sql
+SELECT tags['hobby'] AS hobby
+FROM people
+FORMAT JSONEachRow
+
+{"hobby":{"name":"Diving","time":"2024-07-11 14:18:01"}}
+```
+
+```response
+1 row in set. Elapsed: 0.001 sec.
+```
+
+O uso de maps neste caso geralmente é incomum e sugere que os dados devem ser remodelados para que nomes de chave dinâmicos não tenham subobjetos. Por exemplo, o trecho acima poderia ser remodelado da seguinte forma, permitindo o uso de `Array(Tuple(key String, name String, time DateTime))`.
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "tags": [
+    {
+      "key": "hobby",
+      "name": "Diving",
+      "time": "2024-07-11 14:18:01"
+    },
+    {
+      "key": "car",
+      "name": "Tesla",
+      "time": "2024-07-11 15:18:23"
+    }
+  ]
+}
+```
+
+## Usando o tipo Nested
+
+O [tipo Nested](/pt-BR/reference/data-types/nested-data-structures/index) pode ser usado para modelar objetos estáticos que raramente sofrem alterações, oferecendo uma alternativa a `Tuple` e `Array(Tuple)`. Em geral, recomendamos evitar o uso desse tipo para JSON, pois seu comportamento costuma ser confuso. O principal benefício de `Nested` é que sub-colunas podem ser usadas em chaves de ordenação.
+
+Abaixo, apresentamos um exemplo de uso do tipo Nested para modelar um objeto estático. Considere a seguinte entrada de log simples em JSON:
+
+```json
+{
+  "timestamp": 897819077,
+  "clientip": "45.212.12.0",
+  "request": {
+    "method": "GET",
+    "path": "/french/images/hm_nav_bar.gif",
+    "version": "HTTP/1.0"
+  },
+  "status": 200,
+  "size": 3305
+}
+```
+
+Podemos declarar a chave `request` como `Nested`. Assim como em `Tuple`, é necessário especificar as subcolunas.
+
+```sql
+-- default
+SET flatten_nested=1
+CREATE table http
+(
+   timestamp Int32,
+   clientip     IPv4,
+   request Nested(method LowCardinality(String), path String, version LowCardinality(String)),
+   status       UInt16,
+   size         UInt32,
+) ENGINE = MergeTree() ORDER BY (status, timestamp);
+```
+
+### flatten_nested
+
+A configuração `flatten_nested` controla o comportamento do tipo Nested.
+
+#### flatten_nested=1
+
+Um valor de `1` (o padrão) não oferece suporte a um nível arbitrário de aninhamento. Com esse valor, é mais fácil entender uma estrutura de dados aninhada como várias colunas [Array](/pt-BR/reference/data-types/array) de mesmo comprimento. Na prática, os campos `method`, `path` e `version` são colunas `Array(Type)` separadas, com uma restrição crítica: **o comprimento dos campos `method`, `path` e `version` deve ser o mesmo.** Se usarmos `SHOW CREATE TABLE`, isso fica ilustrado:
+
+```sql
+SHOW CREATE TABLE http
+
+CREATE TABLE http
+(
+    `timestamp` Int32,
+    `clientip` IPv4,
+    `request.method` Array(LowCardinality(String)),
+    `request.path` Array(String),
+    `request.version` Array(LowCardinality(String)),
+    `status` UInt16,
+    `size` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (status, timestamp)
+```
+
+A seguir, inserimos nesta tabela:
+
+```sql
+SET input_format_import_nested_json = 1;
+INSERT INTO http
+FORMAT JSONEachRow
+{"timestamp":897819077,"clientip":"45.212.12.0","request":[{"method":"GET","path":"/french/images/hm_nav_bar.gif","version":"HTTP/1.0"}],"status":200,"size":3305}
+```
+
+Alguns pontos importantes a considerar aqui:
+
+* Precisamos usar a configuração `input_format_import_nested_json` para inserir o JSON como uma estrutura aninhada. Sem isso, é necessário achatar o JSON, ou seja:
+
+  ```sql
+  INSERT INTO http FORMAT JSONEachRow
+  {"timestamp":897819077,"clientip":"45.212.12.0","request":{"method":["GET"],"path":["/french/images/hm_nav_bar.gif"],"version":["HTTP/1.0"]},"status":200,"size":3305}
+  ```
+* Os campos aninhados `method`, `path` e `version` precisam ser enviados como arrays JSON, ou seja:
+
+  ```json
+  {
+    "@timestamp": 897819077,
+    "clientip": "45.212.12.0",
+    "request": {
+      "method": [
+        "GET"
+      ],
+      "path": [
+        "/french/images/hm_nav_bar.gif"
+      ],
+      "version": [
+        "HTTP/1.0"
+      ]
+    },
+    "status": 200,
+    "size": 3305
+  }
+  ```
+
+As colunas podem ser consultadas usando notação por ponto:
+
+```sql
+SELECT clientip, status, size, `request.method` FROM http WHERE has(request.method, 'GET');
+```
+
+```response
+┌─clientip────┬─status─┬─size─┬─request.method─┐
+│ 45.212.12.0 │    200 │ 3305 │ ['GET']        │
+└─────────────┴────────┴──────┴────────────────┘
+1 linha no Set. Elapsed: 0.002 sec.
+```
+
+Observe que o uso de `Array` para as subcolunas significa que toda a variedade de [funções de array](/pt-BR/reference/functions/regular-functions/array-functions) pode ser aproveitada, incluindo a cláusula [`ARRAY JOIN`](/pt-BR/reference/statements/select/array-join) — útil se suas colunas tiverem vários valores.
+
+#### flatten_nested=0
+
+Isso permite um nível arbitrário de aninhamento e significa que as colunas aninhadas permanecem como um único array de `Tuple`s — na prática, tornando-se equivalentes a `Array(Tuple)`.
+
+**Esta é a abordagem preferida e, muitas vezes, a mais simples de usar JSON com `Nested`. Como mostramos abaixo, ela exige apenas que todos os objetos estejam em uma lista.**
+
+Abaixo, recriamos nossa tabela e inserimos novamente uma linha:
+
+```sql
+CREATE TABLE http
+(
+    `timestamp` Int32,
+    `clientip` IPv4,
+    `request` Nested(method LowCardinality(String), path String, version LowCardinality(String)),
+    `status` UInt16,
+    `size` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (status, timestamp)
+
+SHOW CREATE TABLE http
+
+-- note que o tipo Nested é preservado.
+CREATE TABLE default.http
+(
+    `timestamp` Int32,
+    `clientip` IPv4,
+    `request` Nested(method LowCardinality(String), path String, version LowCardinality(String)),
+    `status` UInt16,
+    `size` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (status, timestamp)
+
+INSERT INTO http
+FORMAT JSONEachRow
+{"timestamp":897819077,"clientip":"45.212.12.0","request":[{"method":"GET","path":"/french/images/hm_nav_bar.gif","version":"HTTP/1.0"}],"status":200,"size":3305}
+```
+
+Alguns pontos importantes a observar aqui:
+
+* `input_format_import_nested_json` não é necessário para fazer insert.
+* O tipo `Nested` é preservado em `SHOW CREATE TABLE`. Na prática, essa coluna é efetivamente um `Array(Tuple(Nested(method LowCardinality(String), path String, version LowCardinality(String))))`
+* Como resultado, é necessário fazer insert de `request` como um array, ou seja:
+
+  ```json
+  {
+    "timestamp": 897819077,
+    "clientip": "45.212.12.0",
+    "request": [
+      {
+        "method": "GET",
+        "path": "/french/images/hm_nav_bar.gif",
+        "version": "HTTP/1.0"
+      }
+    ],
+    "status": 200,
+    "size": 3305
+  }
+  ```
+
+As colunas podem novamente ser consultadas usando notação por ponto:
+
+```sql
+SELECT clientip, status, size, `request.method` FROM http WHERE has(request.method, 'GET');
+```
+
+```response
+┌─clientip────┬─status─┬─size─┬─request.method─┐
+│ 45.212.12.0 │    200 │ 3305 │ ['GET']        │
+└─────────────┴────────┴──────┴────────────────┘
+1 linha no Set. Elapsed: 0.002 sec.
+```
+
+### Exemplo
+
+Uma versão mais completa dos dados acima está disponível em um bucket público no S3, em: `s3://datasets-documentation/http/`.
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONEachRow')
+LIMIT 1
+FORMAT PrettyJSONEachRow
+
+{
+    "@timestamp": "893964617",
+    "clientip": "40.135.0.0",
+    "request": {
+        "method": "GET",
+        "path": "\/images\/hm_bg.jpg",
+        "version": "HTTP\/1.0"
+    },
+    "status": "200",
+    "size": "24736"
+}
+```
+
+```response
+1 linha no Set. Elapsed: 0.312 sec.
+```
+
+Dadas as restrições e o formato de entrada do JSON, inserimos este conjunto de dados de exemplo com a seguinte consulta. Aqui, definimos `flatten_nested=0`.
+
+A instrução a seguir insere 10 milhões de linhas, portanto pode levar alguns minutos para ser executada. Aplique um `LIMIT`, se necessário:
+
+```sql
+INSERT INTO http
+SELECT `@timestamp` AS `timestamp`, clientip, [request], status,
+size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz',
+'JSONEachRow');
+```
+
+Consultar esses dados exige acessar os campos da requisição como arrays. Abaixo, resumimos os erros e os métodos HTTP em um período fixo.
+
+```sql
+SELECT status, request.method[1] AS method, count() AS c
+FROM http
+WHERE status >= 400
+  AND toDateTime(timestamp) BETWEEN '1998-01-01 00:00:00' AND '1998-06-01 00:00:00'
+GROUP BY method, status
+ORDER BY c DESC LIMIT 5;
+```
+
+```response
+┌─status─┬─method─┬─────c─┐
+│    404 │ GET    │ 11267 │
+│    404 │ HEAD   │   276 │
+│    500 │ GET    │   160 │
+│    500 │ POST   │   115 │
+│    400 │ GET    │    81 │
+└────────┴────────┴───────┘
+
+5 rows in set. Elapsed: 0.007 sec.
+```
+
+### Usando arrays pareados
+
+Arrays pareados oferecem um equilíbrio entre a flexibilidade de representar JSON como Strings e o desempenho de uma abordagem mais estruturada. O esquema é flexível no sentido de que novos campos podem ser adicionados à raiz. Isso, no entanto, exige uma sintaxe de consulta significativamente mais complexa e não é compatível com estruturas aninhadas.
+
+Como exemplo, considere a tabela a seguir:
+
+```sql
+CREATE TABLE http_with_arrays (
+   keys Array(String),
+   values Array(String)
+)
+ENGINE = MergeTree  ORDER BY tuple();
+```
+
+Para inserir dados nesta tabela, precisamos estruturar o JSON como uma lista de chaves e valores. A consulta a seguir ilustra o uso de `JSONExtractKeysAndValues` para isso:
+
+```sql
+SELECT
+    arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
+    arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+keys:   ['@timestamp','clientip','request','status','size']
+values: ['893964617','40.135.0.0','{"method":"GET","path":"/images/hm_bg.jpg","version":"HTTP/1.0"}','200','24736']
+
+1 linha no Set. Elapsed: 0.416 sec.
+```
+
+Observe como a coluna request continua sendo uma estrutura aninhada representada como uma string. Podemos inserir novas chaves na raiz livremente. Também podemos ter diferenças arbitrárias no próprio JSON. Para inserir na nossa tabela local, execute o seguinte:
+
+```sql
+INSERT INTO http_with_arrays
+SELECT
+    arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
+    arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+```
+
+```response
+0 rows in Set. Elapsed: 12.121 sec. Processed 10.00 million rows, 107.30 MB (825.01 thousand rows/s., 8.85 MB/s.)
+```
+
+Para consultar essa estrutura, é preciso usar a função [`indexOf`](/pt-BR/reference/functions/regular-functions/array-functions#indexOf) para identificar o índice da chave necessária (que deve ser consistente com a ordem dos valores). Isso pode ser usado para acessar a coluna de array `values`, ou seja, `values[indexOf(keys, 'status')]`. Ainda precisamos de um método de parsing de JSON para a coluna `request` — neste caso, `simpleJSONExtractString`.
+
+```sql
+SELECT toUInt16(values[indexOf(keys, 'status')])                           AS status,
+       simpleJSONExtractString(values[indexOf(keys, 'request')], 'method') AS method,
+       count()                                                             AS c
+FROM http_with_arrays
+WHERE status >= 400
+  AND toDateTime(values[indexOf(keys, '@timestamp')]) BETWEEN '1998-01-01 00:00:00' AND '1998-06-01 00:00:00'
+GROUP BY method, status ORDER BY c DESC LIMIT 5;
+```
+
+```response
+┌─status─┬─method─┬─────c─┐
+│    404 │ GET    │ 11267 │
+│    404 │ HEAD   │   276 │
+│    500 │ GET    │   160 │
+│    500 │ POST   │   115 │
+│    400 │ GET    │    81 │
+└────────┴────────┴───────┘
+
+5 rows in Set. Elapsed: 0.383 sec. Processed 8.22 million rows, 1.97 GB (21.45 million rows/s., 5.15 GB/s.)
+Peak memory usage: 51.35 MiB.
+```
