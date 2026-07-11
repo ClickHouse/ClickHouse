@@ -4,7 +4,7 @@
      The proxy accepts connections over end-user ClickHouse protocols and forwards them to backend
      servers chosen by a routing table. Start it with:
 
-         clickhouse proxy --config-file proxy_config.xml
+         clickhouse proxy -C proxy_config.xml
 -->
 <clickhouse>
     <logger>

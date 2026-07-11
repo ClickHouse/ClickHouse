@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ProxyConfig.h"
+#include <ProxyConfig.h>
 
 #include <atomic>
 #include <memory>

@@ -4,8 +4,8 @@
 
 #if USE_SILK
 
-#include "Backend.h"
-#include "SocketIO.h"
+#include <Backend.h>
+#include <SocketIO.h>
 
 namespace DB::Proxy
 {

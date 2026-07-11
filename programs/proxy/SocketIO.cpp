@@ -1,4 +1,4 @@
-#include "SocketIO.h"
+#include <SocketIO.h>
 
 #if USE_SILK
 
@@ -90,7 +90,7 @@ void FiberSocket::sendAll(const char * buffer, size_t length)
     size_t sent = 0;
     while (sent < length)
     {
-        int n;
+        int n = 0;
         try
         {
             n = socket.sendBytes(buffer + sent, static_cast<int>(length - sent));

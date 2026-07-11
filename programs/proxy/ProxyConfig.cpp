@@ -1,4 +1,4 @@
-#include "ProxyConfig.h"
+#include <ProxyConfig.h>
 
 #include <Common/Exception.h>
 

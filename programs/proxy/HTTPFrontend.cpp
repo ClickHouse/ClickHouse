@@ -1,10 +1,10 @@
-#include "Frontend.h"
+#include <Frontend.h>
 
 #if USE_SILK
 
-#include "Relay.h"
+#include <Relay.h>
 
-#include "StatusPage.h"
+#include <StatusPage.h>
 
 #include <Common/Base64.h>
 #include <Common/Exception.h>
@@ -43,6 +43,7 @@ void sendResponse(FiberSocket & client, int code, const String & reason, const S
     }
     catch (...)  // NOLINT(bugprone-empty-catch)
     {
+        /// The client may have disconnected before reading the response; that is Ok.
     }
 }
 
@@ -160,12 +161,13 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
             }
             catch (...)  // NOLINT(bugprone-empty-catch)
             {
+                /// A malformed Authorization header is Ok to ignore: the request is routed without a user.
             }
         }
     }
 
     /// Endpoints the proxy serves itself, without a user or a backend.
-    const String path = uri.getPath();
+    const String & path = uri.getPath();
     if (!ctx.config.http.ping_path.empty() && path == ctx.config.http.ping_path)
     {
         sendResponse(client, 200, "OK", "text/plain; charset=UTF-8", "Ok.\n");

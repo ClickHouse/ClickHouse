@@ -10,8 +10,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # endpoint, and end-to-end query forwarding.
 
 PROXY_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()")
-CONFIG="${CLICKHOUSE_TMP}/05020_proxy_config.xml"
-LOG="${CLICKHOUSE_TMP}/05020_proxy.log"
+CONFIG="${CLICKHOUSE_TMP}/04512_proxy_config.xml"
+LOG="${CLICKHOUSE_TMP}/04512_proxy.log"
 
 cat > "$CONFIG" <<EOF
 <clickhouse>

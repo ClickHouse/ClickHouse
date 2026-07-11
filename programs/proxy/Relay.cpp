@@ -1,4 +1,4 @@
-#include "Relay.h"
+#include <Relay.h>
 
 #if USE_SILK
 
@@ -57,7 +57,7 @@ int copyLoop(Direction * d) noexcept
     }
     catch (...)  // NOLINT(bugprone-empty-catch)
     {
-        /// A read or write error simply ends the relay for this connection.
+        /// A read or write error simply ends the relay for this connection, so it is Ok to swallow it.
     }
 
     if (d->finished->fetch_add(1, std::memory_order_acq_rel) == 0)

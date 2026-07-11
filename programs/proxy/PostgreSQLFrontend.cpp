@@ -1,8 +1,8 @@
-#include "Frontend.h"
+#include <Frontend.h>
 
 #if USE_SILK
 
-#include "Relay.h"
+#include <Relay.h>
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>

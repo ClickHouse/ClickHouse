@@ -4,8 +4,8 @@
 
 #if USE_SILK
 
-#include "Backend.h"
-#include "ProxyConfig.h"
+#include <Backend.h>
+#include <ProxyConfig.h>
 
 #include <Common/Logger.h>
 

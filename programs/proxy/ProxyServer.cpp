@@ -1,10 +1,10 @@
-#include "ProxyServer.h"
+#include <ProxyServer.h>
 
 #if USE_SILK
 
-#include "Relay.h"
-#include "SocketIO.h"
-#include "TLSSupport.h"
+#include <Relay.h>
+#include <SocketIO.h>
+#include <TLSSupport.h>
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -143,7 +143,7 @@ int acceptLoop(AcceptParams * params) noexcept
 /// Owns a running accept loop: the parameters copied into its fiber and the future it completes on.
 struct ProxyServer::AcceptState
 {
-    AcceptParams params;
+    AcceptParams params {};
     silk::FiberFuture future;
 };
 
@@ -284,6 +284,7 @@ void ProxyServer::stop()
         }
         catch (...)  // NOLINT(bugprone-empty-catch)
         {
+            /// The socket may already be closed; that is Ok, we are shutting down anyway.
         }
     }
 
