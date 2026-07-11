@@ -81,6 +81,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
             {"use_constant_folding_in_index_analysis", false, false, "New setting to fold partition-level constants into the filter predicate per part during MergeTree index analysis, improving pruning for filters whose branches depend on partition values."},
             {"join_runtime_filter_size_from_hash_table_stats", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."},
+            {"output_format_csv_quote_date_time_types", true, true, "New setting to allow writing date and time values without surrounding double quotes in CSV output"},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
@@ -100,7 +101,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
             {"wait_for_part_commit_in_dependent_materialized_views", false, false, "New setting"},
             {"output_format_float_precision", 0, 0, "A new setting to control decimal digits in float output"},
-            {"output_format_csv_quote_date_time_types", true, true, "New setting to allow writing date and time values without surrounding double quotes in CSV output"},
             {"file_like_engine_default_partition_strategy", "wildcard", "hive", "Change the default partition strategy for file-like table engines (S3, AzureBlobStorage, etc.) from `wildcard` to `hive` when no `partition_strategy` is provided."},
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
             {"optimize_limit_by_function_keys", false, true, "New setting that eliminates LIMIT BY keys that are functions of other LIMIT BY keys."},
