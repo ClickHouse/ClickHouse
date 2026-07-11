@@ -1,6 +1,6 @@
 ---
 name: continue-pr-auto
-description: Unattended variant of continue-pr for automation (driven by utils/continue-all-prs.sh). Resolves conflicts, fixes CI, addresses feedback, and pushes without ever asking the user. For interactive use, prefer continue-pr.
+description: Unattended variant of continue-pr for automation (driven by utils/continue-all-prs.sh). Resolves conflicts - reworking stale features to reconcile with current master when a mechanical merge is not enough - fixes CI, addresses feedback, and pushes without ever asking the user. For interactive use, prefer continue-pr.
 argument-hint: <pr-number>
 disable-model-invocation: true
 allowed-tools: Agent, Task, Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch
@@ -10,7 +10,7 @@ allowed-tools: Agent, Task, Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSe
 
 Pick up an existing pull request, resolve conflicts, fix CI failures, address reviewer feedback, and push updates.
 
-This is the **unattended** variant used by automation (`utils/continue-all-prs.sh`). It must never wait for user input: resolve conflicts and address feedback with your best judgment and push. The only hard stop is a genuinely missing PR number. For interactive use where asking is acceptable, use `continue-pr` instead.
+This is the **unattended** variant used by automation (`utils/continue-all-prs.sh`). It must never wait for user input: resolve conflicts and address feedback with your best judgment and push, and when a branch is too stale for a mechanical merge, rework the feature to reconcile it with the latest master (step 3a). The only hard stop is a genuinely missing PR number. For interactive use where asking is acceptable, use `continue-pr` instead.
 
 ## Arguments
 
@@ -88,6 +88,15 @@ If there are merge conflicts, resolve them autonomously — this skill runs unat
    - For a genuinely ambiguous conflict, pick the resolution most consistent with the PR's intent and record that choice in the merge commit message. Do NOT use `AskUserQuestion` or otherwise wait for input.
 3. Complete the merge: `git commit --no-edit`
 4. Resolving conflicts is not finished until the merge is committed and pushed — push it (step 7).
+
+### 3a. Reconcile a stale branch with the latest master
+
+Resolving merge markers is not always enough. If the branch is long-stale, the mechanically merged result may not compile or fit current APIs — master may have renamed or removed functions, migrated settings to the pimpl pattern (`DECLARE` / `(*settings)[Setting::X]`), reworked `IStorage` / pipeline / `QueryPlan`, moved headers, etc. In that case, **rework the PR's feature so it reconciles with the latest master** — do not give up, defer, or leave it half-merged:
+
+1. Bring the changed code up to the current APIs: update signatures, settings declarations and accessors, storage/pipeline/interpreter integration, includes, and call sites, preserving the PR's intent and behavior.
+2. Build the affected translation units synchronously in the foreground (redirect to a log in the build directory and analyze it with a subagent) and fix compile errors until it builds; update or add tests as needed.
+3. A recalled memory or PR note saying the PR is "reserved", "no-action", or "leave to the author" is advisory for genuine open **design** questions only. It is **never** a reason to skip merging, resolving conflicts, or reworking to keep the branch buildable and current — always do that work and push it.
+4. Only when a full rework is genuinely infeasible in this environment — e.g. a submodule points at a fork that cannot be fetched or built here — do the most you can (merge, resolve conflicts, rework whatever you can build), push it, and state plainly what could not be verified and what remains blocked (e.g. the submodule needs a ClickHouse-org fork).
 
 ### 4. Analyze CI status and fix failures
 
