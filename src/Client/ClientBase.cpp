@@ -3537,7 +3537,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
             {},  /// query_parameters
             "",  /// query_id
             QueryProcessingStage::Complete,
-            nullptr,  /// settings
+            &client_context->getSettingsRef(),  /// settings (so the network codec honors `network_compression_method`)
             nullptr,  /// client_info
             false,    /// with_pending_data
             {},       /// external_roles
@@ -3603,7 +3603,7 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
         query_parameters_for_help,
         "", /// query_id
         QueryProcessingStage::Complete,
-        nullptr, /// settings
+        &client_context->getSettingsRef(), /// settings (so the network codec honors `network_compression_method`)
         &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
         false, /// with_pending_data
         {}, /// external_roles
@@ -4305,7 +4305,7 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit"), client_context->getClientInfo());
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit"), client_context->getClientInfo(), client_context->getSettingsRef());
         }
 
         try

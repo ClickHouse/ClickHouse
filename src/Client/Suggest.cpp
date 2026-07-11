@@ -168,7 +168,8 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
                 fetch(*connection,
                     connection_parameters.timeouts,
                     suggestion_query,
-                    my_context->getClientInfo());
+                    my_context->getClientInfo(),
+                    my_context->getSettingsRef());
             }
             catch (const Exception & e)
             {
@@ -208,12 +209,13 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 void Suggest::load(IServerConnection & connection,
                    const ConnectionTimeouts & timeouts,
                    Int32 suggestion_limit,
-                   const ClientInfo & client_info)
+                   const ClientInfo & client_info,
+                   const Settings & settings)
 {
     try
     {
         auto suggestion_query = getLoadSuggestionQuery(connection, suggestion_limit, true, timeouts);
-        fetch(connection, timeouts, suggestion_query, client_info);
+        fetch(connection, timeouts, suggestion_query, client_info, settings);
     }
     catch (...)
     {
@@ -222,10 +224,12 @@ void Suggest::load(IServerConnection & connection,
     }
 }
 
-void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info)
+void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info, const Settings & settings)
 {
+    /// Pass the client `settings` (rather than `nullptr`) so this helper query honors `network_compression_method`
+    /// like a regular client query, instead of unconditionally using the built-in default network codec.
     connection.sendQuery(
-        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, nullptr, &client_info, false, {} /* external_roles*/, {});
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, &settings, &client_info, false, {} /* external_roles*/, {});
 
     while (true)
     {
