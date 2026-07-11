@@ -227,6 +227,13 @@ SELECT 'kolmogorovSmirnovTest', kolmogorovSmirnovTest(x, g)     = kolmogorovSmir
 -- the explicit Nullable(Float64) cast. Its base name was missing from the allowlist, so this is a regression for it
 -- (the gap also leaked into simpleLinearRegressionIf / State / Merge through suffix stripping).
 SELECT 'simpleLinearRegression', simpleLinearRegression(x, y)    = simpleLinearRegression(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))      FROM t_variant_stat;
+-- exponentialMovingAverage, boundingRatio and largestTriangleThreeBuckets also read their numeric inputs via
+-- getFloat64 and return Float64 results, so they are float-promoting too: over a numeric mix with no lossless
+-- supertype they must aggregate over Float64, matching the explicit Nullable(Float64) cast. Their base names were
+-- missing from the allowlist, so these are regressions for them.
+SELECT 'exponentialMovingAverage', exponentialMovingAverage(1)(x, y) = exponentialMovingAverage(1)(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64))) FROM t_variant_stat;
+SELECT 'boundingRatio',           boundingRatio(x, y)              = boundingRatio(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))            FROM t_variant_stat;
+SELECT 'largestTriangleThreeBuckets', largestTriangleThreeBuckets(4)(x, y) = largestTriangleThreeBuckets(4)(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64))) FROM t_variant_stat;
 
 -- Combinators compose with the fallback (the adapter is the outermost wrapper): -If filters rows, and a stored
 -- -State round-trips through -Merge, both aggregating over the same Float64 supertype.

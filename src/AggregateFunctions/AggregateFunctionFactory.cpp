@@ -257,6 +257,10 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
             /// Linear regression: reads both numeric arguments via `getFloat64` and returns the Float64 slope and
             /// intercept, so a Float64 cast of the inputs is exactly what it computes internally.
             "simplelinearregression",
+            /// Aggregates over (value, time) pairs: all of them read their numeric inputs via `getFloat64` and
+            /// return Float64 results (the smoothed average, the ratio, the downsampled point coordinates), so a
+            /// Float64 cast of the inputs is exactly what they compute internally.
+            "exponentialmovingaverage", "boundingratio", "largesttrianglethreebuckets",
         };
 
         while (true)
