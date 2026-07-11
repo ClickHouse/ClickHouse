@@ -279,6 +279,14 @@ ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, T
     return res_group;
 }
 
+ThreadGroupPtr ThreadGroup::createForExplainAnalyze(ThreadGroupPtr parent)
+{
+    /// `new` (not `make_shared`): the borrowing constructor is private.
+    auto res_group = ThreadGroupPtr(new ThreadGroup(parent));
+    res_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
+    return res_group;
+}
+
 void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_hash)
 {
     auto hash = normalized_hash ? normalized_hash : normalizedQueryHash(query_, false);
