@@ -38,14 +38,14 @@ Introduced in: v21.1.0
 
 Returns number of matches of a regular expression in a string.
 
-<Note>
+<Info>
 **Version dependent behavior**
 
 The behavior of this function depends on the ClickHouse version:
 
 - in versions < v25.6, the function stops counting at the first empty match even if a pattern accepts.
 - in versions >= 25.6, the function continues execution when an empty match occurs. The legacy behavior can be restored using setting `count_matches_stop_at_empty_match = true`;
-</Note>
+</Info>
 
     
 
@@ -1443,14 +1443,14 @@ Introduced in: v18.16.0
 
 Like [`position`](#position) but with arguments `haystack` and `locate` switched.
 
-<Note>
+<Info>
 **Version dependent behavior**
 
 The behavior of this function depends on the ClickHouse version:
 - in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.
 - in versions >= 24.3, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`.
 The previous behavior can be restored using setting `function_locate_has_mysql_compatible_argument_order = false`.
-</Note>
+</Info>
     
 
 **Syntax**
