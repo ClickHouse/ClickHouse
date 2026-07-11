@@ -69,7 +69,7 @@
               {
                 "href": "#",
                 "icon": "/images/icons/section-header.svg",
-                "item": "ClickHouse"
+                "item": "ClickHouse Cloud"
               },
               { "$ref": "./products/cloud/navigation.json" },
               { "$ref": "./products/managed-postgres/navigation.json" },
