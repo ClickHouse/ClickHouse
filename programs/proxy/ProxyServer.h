@@ -4,10 +4,10 @@
 
 #if USE_SILK
 
-#include "Frontend.h"
-#include "HealthMonitor.h"
-#include "ProxyConfig.h"
-#include "Router.h"
+#include <Frontend.h>
+#include <HealthMonitor.h>
+#include <ProxyConfig.h>
+#include <Router.h>
 
 #include <Common/Logger.h>
 

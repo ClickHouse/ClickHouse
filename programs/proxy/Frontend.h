@@ -4,9 +4,9 @@
 
 #if USE_SILK
 
-#include "ProxyConfig.h"
-#include "Router.h"
-#include "SocketIO.h"
+#include <ProxyConfig.h>
+#include <Router.h>
+#include <SocketIO.h>
 
 #include <Common/Logger.h>
 

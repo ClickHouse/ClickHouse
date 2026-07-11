@@ -1,9 +1,9 @@
-#include "HealthMonitor.h"
+#include <HealthMonitor.h>
 
 #if USE_SILK
 
-#include "Router.h"
-#include "SocketIO.h"
+#include <Router.h>
+#include <SocketIO.h>
 
 #include <Common/Base64.h>
 #include <Common/Exception.h>
@@ -43,6 +43,8 @@ int runCheck(CheckTask * task) noexcept
     }
     catch (...)  // NOLINT(bugprone-empty-catch)
     {
+        /// checkBackend records failures itself; it is Ok to drop anything else, as an exception
+        /// must not escape a fiber entry point.
     }
     return 0;
 }
@@ -226,7 +228,7 @@ void HealthMonitor::start()
     if (silk::FiberScheduler::run(supervisor, SelfParam{this}, supervisor_future.get()) != 0)
     {
         LOG_ERROR(log, "Cannot start the health monitoring fiber");
-        supervisor_future.reset();
+        supervisor_future = nullptr;
     }
 }
 

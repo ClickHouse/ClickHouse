@@ -1,4 +1,4 @@
-#include "Frontend.h"
+#include <Frontend.h>
 
 #if USE_SILK
 
@@ -107,6 +107,7 @@ int onAuthPubkey(ssh_session, const char * user, ssh_key key, char /*signature_s
     }
     catch (...)
     {
+        /// It is Ok to swallow the error: a failure to route means the key is not authorized.
         return SSH_AUTH_DENIED;
     }
 

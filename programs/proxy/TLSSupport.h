@@ -4,7 +4,7 @@
 
 #if USE_SILK
 
-#include "SocketIO.h"
+#include <SocketIO.h>
 
 #include <base/types.h>
 

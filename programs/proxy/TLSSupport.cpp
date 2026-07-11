@@ -1,4 +1,4 @@
-#include "TLSSupport.h"
+#include <TLSSupport.h>
 
 #if USE_SILK
 
@@ -110,8 +110,8 @@ namespace
 /// A bounds-checked cursor over a byte buffer, used to parse the ClientHello without over-reading.
 struct Cursor
 {
-    const char * data;
-    size_t size;
+    const char * data = nullptr;
+    size_t size = 0;
     size_t pos = 0;
 
     bool has(size_t n) const { return pos + n <= size; }

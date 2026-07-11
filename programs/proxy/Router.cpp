@@ -2,7 +2,7 @@
 
 #if USE_SILK
 
-#include "Router.h"
+#include <Router.h>
 
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>

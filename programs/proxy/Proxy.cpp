@@ -1,4 +1,4 @@
-#include "Proxy.h"
+#include <Proxy.h>
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -8,7 +8,7 @@
 #include <iostream>
 
 #if USE_SILK
-#include "ProxyServer.h"
+#include <ProxyServer.h>
 #endif
 
 

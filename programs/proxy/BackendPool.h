@@ -1,6 +1,6 @@
 #pragma once
 
-#include "LoadBalancing.h"
+#include <LoadBalancing.h>
 
 namespace DB::Proxy
 {
