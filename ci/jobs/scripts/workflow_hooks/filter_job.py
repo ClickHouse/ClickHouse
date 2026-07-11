@@ -1,7 +1,7 @@
 import re
 
 from ci.defs.defs import JobNames
-from ci.defs.job_configs import JobConfigs
+from ci.defs.job_configs import JobConfigs, build_digest_config
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
     has_new_integration_tests,
@@ -75,6 +75,22 @@ def _has_keeper_stress_changes(changed_files):
             or p.startswith("tests/stress/keeper")
             or p.startswith("programs/keeper-bench")
             or p == "ci/jobs/keeper_stress_job.py"
+        ):
+            return True
+    return False
+
+
+def _has_build_digest_changes(changed_files):
+    """True if any changed file may affect the compiled ClickHouse binary,
+    per `build_digest_config.include_paths`/`exclude_paths` - the same paths
+    that gate the build job's cache digest in `ci/defs/job_configs.py`.
+    """
+    include = [p.removeprefix("./") for p in build_digest_config.include_paths]
+    exclude = [p.removeprefix("./") for p in build_digest_config.exclude_paths]
+    for f in changed_files:
+        p = f.removeprefix(".").removeprefix("/")
+        if any(p.startswith(inc) for inc in include) and not any(
+            p.startswith(exc) for exc in exclude
         ):
             return True
     return False
@@ -378,16 +394,26 @@ def should_skip_job(job_name):
                 if _is_coverage_it:
                     return True, "Skipped: only unit tests changed, integration coverage not needed"
 
+    # Run the LLVM Coverage merge/report job only when the build itself may have
+    # changed. Coverage numbers only move when the compiled binary changes; a
+    # PR that only touches tests/docs/CI scripts would produce a merge report
+    # identical to master, so skip it. PR-only, for the same reason as the
+    # coverage sub-job skipping above: master coverage runs must always
+    # publish a complete baseline.
+    if (
+        job_name == JobNames.LLVM_COVERAGE
+        and _info_cache.pr_number > 0
+        and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
+    ):
+        return True, "No build-affecting changes"
+
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
-    # Individual coverage test jobs run normally, but the LLVM merge/report job is skipped
-    # so that partial shard data does not corrupt the master coverage number.
+    # Individual coverage test jobs run normally; the LLVM merge/report job is
+    # already skipped above whenever the build is unaffected.
     if changed_files and all(
         f.startswith("ci/") and f.endswith(".py") for f in changed_files
     ):
-        if job_name == JobNames.LLVM_COVERAGE:
-            return True, "Skipped: only CI scripts changed; skipping coverage merge to preserve master coverage number"
-
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
             if match and match.group(1) != "1" or "sequential" in job_name:

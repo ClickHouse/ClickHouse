@@ -40,6 +40,17 @@
                     <min>1</min>
                     <max>500000</max>
                 </max_expanded_ast_elements>
+
+                <!--
+                    A fuzzed huge max_threads (e.g. 65535) makes one query request more
+                    pipeline threads than the global pool (max_thread_pool_size=10000),
+                    saturating it (CANNOT_SCHEDULE_TASK), which starves the server-liveness
+                    probe and delays query cancellation. Cap it. Lives here so every
+                    ast_fuzzer_runs user (dedicated AST fuzzer and stress test) gets it.
+                -->
+                <max_threads>
+                    <max>128</max>
+                </max_threads>
             </constraints>
 
             <!-- Server-side backstop: keeps max_parser_backtracks `changed` so a server-side
