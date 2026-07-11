@@ -52,16 +52,22 @@ static const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
     return node;
 }
 
-static bool hasVolumeReducingFunctionRoot(const ActionsDAG & actions)
+static std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingRoots(
+    const ActionsDAG & actions,
+    bool keep_volume_reducing_functions)
 {
+    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    if (!keep_volume_reducing_functions)
+        return split_nodes;
+
     for (const auto * output : actions.getOutputs())
     {
         const auto * node = unwrapAlias(output);
-        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->isVolumeReducing())
-            return true;
+        if (isSupportedVolumeReducingFunctionRoot(*node))
+            split_nodes.insert(output);
     }
 
-    return false;
+    return split_nodes;
 }
 
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
@@ -102,16 +108,17 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
                 return 0;
     }
 
-    auto [needed_for_sorting, unneeded_for_sorting, _] = expression.splitActionsBySortingDescription(sort_columns);
+    /// Keep only volume-reducing roots which this optimization can actually
+    /// handle below the sort. The rest of the DAG is still lifted, preserving
+    /// the previous behavior for unsupported overloads and mixed expressions.
+    auto volume_reducing_roots = collectVolumeReducingRoots(
+        expression,
+        settings.push_down_volume_reducing_functions);
+    auto [needed_for_sorting, unneeded_for_sorting, _]
+        = expression.splitActionsBySortingDescription(sort_columns, std::move(volume_reducing_roots));
 
     // No calculations can be postponed.
     if (unneeded_for_sorting.trivial())
-        return 0;
-
-    /// Only when `tryPushDownVolumeReducingFunction` is enabled do we keep volume-reducing
-    /// functions below the sort; otherwise lifting them is the default behavior and must be
-    /// preserved, so that an opt-in feature does not regress the default plan.
-    if (settings.push_down_volume_reducing_functions && hasVolumeReducingFunctionRoot(unneeded_for_sorting))
         return 0;
 
     /// `arrayJoin` can change the number of rows produced by an expression.

@@ -430,9 +430,11 @@ public:
     /// Outputs of initial actions must contain column_name.
     SplitResult splitActionsForFilter(const std::string & column_name) const;
 
-    /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns.
-    /// The second contains the rest.
-    SplitResult splitActionsBySortingDescription(const NameSet & sort_columns) const;
+    /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns
+    /// and additional_split_nodes. The second contains the rest.
+    SplitResult splitActionsBySortingDescription(
+        const NameSet & sort_columns,
+        std::unordered_set<const Node *> additional_split_nodes = {}) const;
 
     /** Returns true if filter DAG is always false for inputs with default values.
       *

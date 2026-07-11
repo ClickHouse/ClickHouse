@@ -2814,9 +2814,11 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::getParents(const Node * target) const
     return parents;
 }
 
-ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameSet & sort_columns) const
+ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(
+    const NameSet & sort_columns,
+    std::unordered_set<const Node *> additional_split_nodes) const
 {
-    std::unordered_set<const Node *> split_nodes;
+    std::unordered_set<const Node *> split_nodes = std::move(additional_split_nodes);
     for (const auto & sort_column : sort_columns)
         if (const auto * node = tryFindInOutputs(sort_column))
         {

@@ -1,3 +1,5 @@
+setting: push-down enabled by default
+1
 plan: filter — pushdown applied
 1
 plan: filter — no pushdown when disabled
@@ -14,6 +16,10 @@ header: wide column pruned from sort/limit when enabled
 1
 plan: default lift-up not regressed when push-down disabled
 1
+plan: mixed roots keep only volume-reducing functions below sort
+1
+plan: unsupported UUID/IP roots still lift up
+1
 eq: filter
 eq: sort+limit
 eq: group by
@@ -24,5 +30,6 @@ eq: join
 0	1
 5	2
 12	3
+eq: unsupported UUID/IP roots
 eq: distinct subquery
 eq: alias collides with sort key

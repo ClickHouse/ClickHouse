@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Joins.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
@@ -105,6 +106,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
 /// Move volume-reducing functions down if possible.
 size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+
+/// Whether a root can be kept below a row-reducing step or pushed through one.
+bool isSupportedVolumeReducingFunctionRoot(const ActionsDAG::Node & node);
 
 /// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
 size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);

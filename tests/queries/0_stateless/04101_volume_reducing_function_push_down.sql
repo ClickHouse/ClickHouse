@@ -5,6 +5,9 @@ SET enable_analyzer = 1;
 SET query_plan_enable_optimizations = 1;
 SET query_plan_max_step_description_length = 10000;
 
+SELECT 'setting: push-down enabled by default';
+SELECT getSetting('query_plan_push_down_volume_reducing_functions');
+
 DROP TABLE IF EXISTS volume_reducing_function_push_down;
 
 CREATE TABLE volume_reducing_function_push_down
@@ -12,14 +15,17 @@ CREATE TABLE volume_reducing_function_push_down
     id UInt64,
     s String,
     fs FixedString(4),
-    arr Array(UInt8)
+    arr Array(UInt8),
+    u UUID,
+    ipv4 IPv4,
+    ipv6 IPv6
 )
 ENGINE = Memory;
 
 INSERT INTO volume_reducing_function_push_down VALUES
-    (1, '', 'abcd', []),
-    (2, 'hello', 'xy\0\0', [1, 2, 3]),
-    (3, 'привет', '\0\0\0\0', [4]);
+    (1, '', 'abcd', [], '00000000-0000-0000-0000-000000000001', '127.0.0.1', '::1'),
+    (2, 'hello', 'xy\0\0', [1, 2, 3], '00000000-0000-0000-0000-000000000002', '127.0.0.2', '::2'),
+    (3, 'привет', '\0\0\0\0', [4], '00000000-0000-0000-0000-000000000003', '127.0.0.3', '::3');
 
 -- ----------------------------------------------------------------------------
 -- Plan-shape assertions: prove the optimization actually rewrites the plan
@@ -131,6 +137,22 @@ FROM (EXPLAIN description = 1
              query_plan_execute_functions_after_sorting = 1,
              query_plan_merge_expressions = 1);
 
+SELECT 'plan: mixed roots keep only volume-reducing functions below sort';
+SELECT countIf(explain LIKE '%[lifted up part]%') > 0
+FROM (EXPLAIN description = 1
+    SELECT notEmpty(fs), upper(toString(fs)) FROM volume_reducing_function_push_down ORDER BY id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1,
+             query_plan_execute_functions_after_sorting = 1,
+             query_plan_merge_expressions = 1);
+
+SELECT 'plan: unsupported UUID/IP roots still lift up';
+SELECT countIf(explain LIKE '%[lifted up part]%') > 0
+FROM (EXPLAIN description = 1
+    SELECT empty(u), empty(ipv4), empty(ipv6) FROM volume_reducing_function_push_down ORDER BY id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1,
+             query_plan_execute_functions_after_sorting = 1,
+             query_plan_merge_expressions = 1);
+
 -- ----------------------------------------------------------------------------
 -- Equivalence regressions: ON vs OFF must produce identical result sets in
 -- every shape we accept for pushdown.
@@ -166,6 +188,39 @@ FROM (
     SELECT id, length(s)
     FROM volume_reducing_function_push_down
     WHERE notEmpty(s)
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1
+);
+
+SELECT 'eq: unsupported UUID/IP roots';
+SELECT *
+FROM (
+    SELECT id, empty(u), empty(ipv4), empty(ipv6)
+    FROM volume_reducing_function_push_down
+    ORDER BY id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1
+)
+EXCEPT ALL
+SELECT *
+FROM (
+    SELECT id, empty(u), empty(ipv4), empty(ipv6)
+    FROM volume_reducing_function_push_down
+    ORDER BY id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 0
+);
+
+SELECT *
+FROM (
+    SELECT id, empty(u), empty(ipv4), empty(ipv6)
+    FROM volume_reducing_function_push_down
+    ORDER BY id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 0
+)
+EXCEPT ALL
+SELECT *
+FROM (
+    SELECT id, empty(u), empty(ipv4), empty(ipv6)
+    FROM volume_reducing_function_push_down
+    ORDER BY id
     SETTINGS query_plan_push_down_volume_reducing_functions = 1
 );
 

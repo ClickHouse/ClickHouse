@@ -49,77 +49,6 @@ bool isSupportedArgumentType(const String & function_name, const DataTypePtr & t
     return false;
 }
 
-/// True iff the function's argument sub-DAG only references INPUTs / COLUMNs / ALIASes.
-/// A nested FUNCTION or ARRAY_JOIN under the candidate would mean we either
-/// duplicate work (computing it twice) or smuggle disallowed semantics below
-/// the child step.
-bool hasOnlyInputAndConstantChildren(const ActionsDAG::Node & root)
-{
-    std::stack<const ActionsDAG::Node *> nodes;
-    for (const auto * child : root.children)
-        nodes.push(child);
-
-    while (!nodes.empty())
-    {
-        const auto * node = nodes.top();
-        nodes.pop();
-
-        if (node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-            return false;
-
-        for (const auto * child : node->children)
-            nodes.push(child);
-    }
-
-    return true;
-}
-
-/// Reject functions whose subtree references a PLACEHOLDER — those refer to
-/// columns supplied externally (e.g. correlated subquery), not present in
-/// any header we can see.
-bool subtreeHasNoPlaceholder(const ActionsDAG::Node & root)
-{
-    std::stack<const ActionsDAG::Node *> nodes;
-    nodes.push(&root);
-
-    while (!nodes.empty())
-    {
-        const auto * node = nodes.top();
-        nodes.pop();
-
-        if (node->type == ActionsDAG::ActionType::PLACEHOLDER)
-            return false;
-
-        for (const auto * child : node->children)
-            nodes.push(child);
-    }
-
-    return true;
-}
-
-bool isVolumeReducingCandidate(const ActionsDAG::Node & node)
-{
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || !node.function_base->isVolumeReducing())
-        return false;
-
-    if (!node.function_base->isDeterministic() || !node.function_base->isDeterministicInScopeOfQuery())
-        return false;
-
-    if (node.children.size() != 1)
-        return false;
-
-    if (!isSupportedArgumentType(node.function_base->getName(), node.children.front()->result_type))
-        return false;
-
-    if (!hasOnlyInputAndConstantChildren(node))
-        return false;
-
-    if (!subtreeHasNoPlaceholder(node))
-        return false;
-
-    return true;
-}
-
 bool isSupportedChild(const QueryPlanStepPtr & child)
 {
     if (typeid_cast<const ExpressionStep *>(child.get()))
@@ -330,6 +259,20 @@ bool rewriteParentToConsumePushed(
 
 }
 
+bool isSupportedVolumeReducingFunctionRoot(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || !node.function_base->isVolumeReducing())
+        return false;
+
+    if (!node.function_base->isDeterministic() || !node.function_base->isDeterministicInScopeOfQuery())
+        return false;
+
+    if (node.children.size() != 1 || node.children.front()->type != ActionsDAG::ActionType::INPUT)
+        return false;
+
+    return isSupportedArgumentType(node.function_base->getName(), node.children.front()->result_type);
+}
+
 /// Pushes volume-reducing functions (`length`, `empty`, ...) from an
 /// ExpressionStep down before its child step, so the child step processes a
 /// fixed-size scalar passthrough instead of the original String / Array /
@@ -375,7 +318,7 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
     /// Collect candidate FUNCTION nodes; bail if none.
     std::unordered_set<const ActionsDAG::Node *> candidates;
     for (const auto & node : parent_actions.getNodes())
-        if (isVolumeReducingCandidate(node))
+        if (isSupportedVolumeReducingFunctionRoot(node))
             candidates.insert(&node);
     if (candidates.empty())
         return 0;
