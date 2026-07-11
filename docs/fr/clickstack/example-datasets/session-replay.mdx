@@ -1,0 +1,198 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/session-replay-demo
+title: 'Démo de rejeu de session'
+description: "Application de démonstration interactive montrant comment instrumenter une application web pour utiliser le rejeu de session de ClickStack"
+doc_type: 'guide'
+keywords: ['clickstack', 'rejeu de session', 'Browser SDK', 'démo', 'observability', 'instrumentation']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<Info>
+  **En bref**
+
+  Ce guide explique comment instrumenter une application web pour le rejeu de session à l’aide du ClickStack Browser SDK. Contrairement à d’autres jeux de données d’exemple qui chargent des données pré-générées, cette démo propose une application interactive dans laquelle vous générez des données de session au fil de vos propres interactions.
+
+  Temps requis : 10-15 minutes
+</Info>
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+L’[application de démonstration de rejeu de session](https://github.com/ClickHouse/clickstack-session-replay-demo) est un explorateur de documentation développé en JavaScript pur. Elle montre à quel point l’instrumentation minimale du rejeu de session peut être simple : une balise `<script>` et un appel d’initialisation suffisent pour capturer automatiquement toutes les interactions utilisateur.
+
+Le dépôt comprend deux branches :
+
+* **`main`** — entièrement instrumentée et prête à l’emploi
+* **`pre-instrumented`** — une version propre, sans instrumentation, avec des commentaires dans le code indiquant où l’ajouter
+
+Ce guide utilise d’abord la branche `main` pour montrer le rejeu de session en action, puis présente le code d’instrumentation afin que vous puissiez appliquer le même modèle à votre propre application.
+
+Pour en savoir plus sur le rejeu de session et sur son intégration dans ClickStack, consultez la page de fonctionnalité [Session Replay](/fr/clickstack/features/session-replay).
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Docker et Docker Compose installés
+* Ports 3000, 4317, 4318 et 8080 disponibles
+
+<div id="running-the-demo">
+  ## Lancer la démo
+</div>
+
+<Steps>
+  <Step>
+    ### Cloner le dépôt
+
+    ```shell
+    git clone https://github.com/ClickHouse/clickstack-session-replay-demo
+    cd clickstack-session-replay-demo
+    ```
+  </Step>
+
+  <Step>
+    ### Démarrer ClickStack
+
+    ```shell
+    docker-compose up -d clickstack
+    ```
+  </Step>
+
+  <Step>
+    ### Obtenir votre clé API
+
+    1. Ouvrez HyperDX à l’adresse [http://localhost:8080](http://localhost:8080)
+    2. Créez un compte ou connectez-vous si nécessaire
+    3. Accédez à **Team Settings → API Keys**
+    4. Copiez votre **clé API d’ingestion**
+
+    <Image img="/images/clickstack/api-key.webp" alt="clé API ClickStack" />
+
+    5. Définissez-la comme variable d’environnement :
+
+    ```shell
+    export CLICKSTACK_API_KEY='your-api-key-here'
+    ```
+  </Step>
+
+  <Step>
+    ### Démarrer l’application de démonstration
+
+    ```shell
+    docker-compose --profile demo up demo-app
+    ```
+
+    <Note>
+      Veillez à exécuter cette commande dans le même terminal que celui où vous avez exporté la variable `CLICKSTACK_API_KEY`.
+    </Note>
+
+    Ouvrez [http://localhost:3000](http://localhost:3000) dans votre navigateur et interagissez avec l’application : recherchez des sujets, filtrez par catégorie, consultez des exemples de code et ajoutez des éléments aux favoris.
+
+    <Image img="/images/clickstack/session-replay/demo-app.webp" alt="Application de démonstration de rejeu de session" />
+
+    Toutes les interactions sont automatiquement capturées par le ClickStack Browser SDK.
+  </Step>
+
+  <Step>
+    ### Voir le rejeu de votre session
+
+    Retournez dans HyperDX à l’adresse [http://localhost:8080](http://localhost:8080) et accédez à **Client Sessions** depuis la barre latérale gauche.
+
+    <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Recherche de rejeu de session" />
+
+    Vous devriez voir votre session apparaître dans la liste avec sa durée et son nombre d’événements. Cliquez sur le bouton ▶️ pour la rejouer.
+
+    <Image img="/images/clickstack/session-replay/session-replay.webp" alt="Rejeu de session" />
+
+    Basculez entre les modes **Highlighted** et **All Events** pour ajuster le niveau de détail sur la chronologie.
+  </Step>
+</Steps>
+
+<div id="instrumentation">
+  ## L’instrumentation
+</div>
+
+L’application de démonstration montre qu’il faut très peu de code pour activer le rejeu de session. Deux ajouts à l’application suffisent :
+
+**1. Inclure le SDK (`app/public/index.html`) :**
+
+```html
+<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+```
+
+**2. Initialisez ClickStack (`app/public/js/app.js`) :**
+
+```javascript
+window.HyperDX.init({
+  url: 'http://localhost:4318',
+  apiKey: window.CLICKSTACK_API_KEY,
+  service: 'clickhouse-session-replay-demo',
+  consoleCapture: true,
+  advancedNetworkCapture: true,
+});
+```
+
+Tout le reste relève du code applicatif standard. Le SDK capture automatiquement toutes les interactions utilisateur, les logs de la console, les requêtes réseau et les erreurs — aucune instrumentation supplémentaire n’est nécessaire.
+
+<div id="try-it-yourself">
+  ### Essayez vous-même
+</div>
+
+Pour instrumenter l’application à partir de zéro, basculez sur la branche `pre-instrumented` :
+
+```shell
+git checkout pre-instrumented
+```
+
+Cette branche contient la même application, sans instrumentation ClickStack. Les commentaires dans le code de `app/public/index.html` et `app/public/js/app.js` indiquent précisément où ajouter les deux extraits de code ci-dessus. Une fois ces extraits ajoutés, redémarrez l’application de démonstration et vos interactions commenceront à apparaître dans ClickStack.
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+<div id="sessions-not-appearing">
+  ### Les sessions n’apparaissent pas dans HyperDX
+</div>
+
+1. Vérifiez si des erreurs apparaissent dans la console du navigateur
+2. Vérifiez que ClickStack est en cours d’exécution : `docker-compose ps`
+3. Vérifiez que la clé API est définie : `echo $CLICKSTACK_API_KEY`
+4. Ajustez la plage horaire dans la vue Client Sessions (essayez **Last 15 minutes**)
+5. Forcez le rechargement du navigateur : `Cmd+Shift+R` (Mac) ou `Ctrl+Shift+R` (Windows/Linux)
+
+<div id="401-errors">
+  ### Erreurs 401 Unauthorized
+</div>
+
+La clé API n’est pas définie correctement. Assurez-vous de :
+
+1. L’avoir exportée dans votre terminal : `export CLICKSTACK_API_KEY='your-key'`
+2. D’avoir démarré l’application de démonstration dans le **même terminal** que celui où vous l’avez exportée
+3. D’avoir récupéré la clé dans l’HyperDX UI (et non une chaîne générée aléatoirement)
+
+<div id="cleanup">
+  ## Nettoyage
+</div>
+
+Arrêtez les services :
+
+```bash
+docker-compose down
+```
+
+Supprimez toutes les données :
+
+```bash
+docker-compose down -v
+```
+
+<div id="learn-more">
+  ## En savoir plus
+</div>
+
+* [Session Replay](/fr/clickstack/features/session-replay) — aperçu de la fonctionnalité, options du SDK et contrôles de confidentialité
+* [Référence du Browser SDK](/fr/clickstack/ingesting-data/sdks/browser) — toutes les options du SDK et la configuration avancée
+* [Premiers pas avec ClickStack](/fr/clickstack/getting-started/index) — déployez ClickStack et ingérez vos premières données
+* [Tous les jeux de données d’exemple](/fr/clickstack/example-datasets/index) — autres jeux de données d’exemple et guides

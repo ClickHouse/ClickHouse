@@ -10,6 +10,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
@@ -60,6 +61,7 @@
 #include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -81,11 +83,16 @@ namespace FailPoints
     extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
+    extern const char mt_alter_throw_in_start_mutation[];
+    extern const char mt_alter_throw_after_mutation_registered[];
+    extern const char mt_throw_after_mutation_commit[];
+    extern const char mt_alter_throw_in_durable_rollback[];
 }
 
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_replace_partition_from_empty_source;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -139,6 +146,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int PART_IS_LOCKED;
     extern const int PART_IS_TEMPORARILY_LOCKED;
+    extern const int FAULT_INJECTED;
 }
 
 namespace ActionLocks
@@ -205,7 +213,7 @@ StorageMergeTree::StorageMergeTree(
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
-    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
+    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isTableReadonly())
         throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Data directory for table already containing data parts - probably "
                         "it was unclean DROP table or manual intervention. "
@@ -222,8 +230,8 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
-    /// Do not schedule any background jobs if current storage has static data files.
-    if (isStaticStorage())
+    /// Do not schedule any background jobs if the table is read-only.
+    if (isTableReadonly())
         return;
 
     clearEmptyParts();
@@ -439,6 +447,8 @@ void StorageMergeTree::alter(
     ContextPtr local_context,
     AlterLockHolder & table_lock_holder)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::alter");
+
     /// Allow MODIFY_SETTING/RESET_SETTING through even when the table is readonly,
     /// so that the `table_readonly` flag can be toggled back.
     bool only_setting_changes = std::all_of(commands.begin(), commands.end(), [](const auto & c)
@@ -493,6 +503,17 @@ void StorageMergeTree::alter(
     }
     else
     {
+        /// Validate the new CREATE query before taking the lock below. Validation
+        /// runs through `QueryAnalyzer`, which acquires `storage_snapshot_cache_mutex`.
+        /// Query resolution paths acquire `currently_processing_in_background_mutex`
+        /// while holding that cache mutex (via `getMutationsSnapshot`), so doing the
+        /// validation under the lock below would invert the order and deadlock.
+        /// Mirrors the pattern in `StorageReplicatedMergeTree::alter`.
+        {
+            auto create_ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, local_context);
+            applyMetadataChangesToCreateQuery(create_ast, new_metadata, local_context);
+        }
+
         if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
         {
             int64_t prev_mutation = 0;
@@ -514,31 +535,211 @@ void StorageMergeTree::alter(
         }
 
         {
-            changeSettings(new_metadata.settings_changes, table_lock_holder);
-            checkTTLExpressions(new_metadata, old_metadata);
-
-            /// Reinitialize primary key because primary key column types might have changed.
-            setProperties(new_metadata, old_metadata, false, local_context);
-
+            /// Settings, the rename `mutation_*.txt`, and the durable metadata commit are
+            /// done in one try so that any pre-commit throw restores the old settings.
+            /// `prepareMutationEntry` writes the file but leaves `is_registered == false`,
+            /// so `~MergeTreeMutationEntry` removes it on unwinding. Writing it before the
+            /// durable commit keeps durable metadata and the mutation file in lockstep. See #80648.
+            std::optional<PreparedMutationEntry> prepared;
             try
             {
-                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+                changeSettings(new_metadata.settings_changes, table_lock_holder);
+                checkTTLExpressions(new_metadata, old_metadata);
+
+                /// Validate setting-dependent metadata against the just-applied settings
+                /// before the durable commit; otherwise `setProperties` below can reject it
+                /// after the commit, leaving durable metadata ahead of the in-memory state.
+                /// The CREATE-AST pre-validation above does not cover these checks. See #80648.
+                checkMetadataProperties(new_metadata, old_metadata, local_context);
+
+                if (!maybe_mutation_commands.empty())
+                    prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
+
+                /// Not under `currently_processing_in_background_mutex`: `alterTable` takes
+                /// `DatabaseAtomic::mutex`, which would invert lock order with the
+                /// scheduler/`RENAME`/`DROP` paths. Validation already ran above. See #80648.
+                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/false);
             }
             catch (...)
             {
-                LOG_ERROR(log, "Failed to alter table in database, reverting changes");
+                LOG_ERROR(log, "Failed to commit metadata changes, reverting settings");
                 changeSettings(old_metadata.settings_changes, table_lock_holder);
-                setProperties(old_metadata, new_metadata, false, local_context);
+                /// `prepared` destructor removes the orphan `mutation_*.txt` (is_registered == false).
                 throw;
             }
 
-            {
-                auto parts_lock = lockParts();
-                resetSerializationHints(parts_lock);
-            }
+            /// Durable metadata is committed. Bind the file to the commit so any subsequent
+            /// throw preserves `mutation_*.txt`; the rollback below keeps it alive until the
+            /// durable metadata rollback succeeds, then removes it.
+            if (prepared)
+                prepared->entry.is_registered = true;
 
-            if (!maybe_mutation_commands.empty())
-                mutation_version = startMutation(maybe_mutation_commands, local_context);
+            /// Lock declared outside the try so it stays held through the catch handler;
+            /// a `lock_guard` would be destroyed during unwinding and leak a race window
+            /// where another thread observes `new_metadata` without the pending mutation.
+            std::unique_lock background_lock(currently_processing_in_background_mutex);
+            bool mutation_registered = false;
+            try
+            {
+                fiu_do_on(FailPoints::mt_alter_throw_in_start_mutation,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in startMutation");
+                });
+
+                /// Register first under the same lock as `setProperties`: merge selection
+                /// reads metadata and `current_mutations_by_version` together, so it cannot
+                /// observe `new_metadata` without the matching rename mutation.
+                if (prepared)
+                {
+                    mutation_version = prepared->version;
+                    addPreparedMutationEntry(std::move(*prepared));
+                    mutation_registered = true;
+                }
+
+                fiu_do_on(FailPoints::mt_alter_throw_after_mutation_registered,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after mutation registered");
+                });
+
+                setProperties(new_metadata, old_metadata, false, local_context);
+
+                {
+                    auto parts_lock = lockParts();
+                    resetSerializationHints(parts_lock);
+                }
+            }
+            catch (...)
+            {
+                LOG_ERROR(log, "In-memory metadata commit failed, rolling back");
+
+                auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+
+                if (database->hasReplicationThread())
+                {
+                    /// Durable commit is in ZooKeeper and cannot be rolled back, so converge to
+                    /// the successful-alter state: register the mutation if not yet registered
+                    /// (its file is already durable) and publish `new_metadata`. Reverting to
+                    /// `old_metadata` while the rename mutation stays registered would let a merge
+                    /// run the rename against the old schema and reopen the #80648 data loss.
+                    try
+                    {
+                        if (!mutation_registered && prepared)
+                        {
+                            mutation_version = prepared->version;
+                            addPreparedMutationEntry(std::move(*prepared));
+                            mutation_registered = true;
+                        }
+                        setProperties(new_metadata, old_metadata, false, local_context);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to bring in-memory metadata in sync with durable metadata; server may be inconsistent until restart");
+                    }
+                    background_lock.unlock();
+                    /// Settings stay at `new_metadata` to match the durable commit; do not revert.
+                }
+                else
+                {
+                    /// Revert in-memory metadata to `old_metadata` and take the rename
+                    /// mutation out of the in-memory map under the lock, so merge selection
+                    /// cannot observe `new_metadata` without a matching mutation while the
+                    /// durable rollback runs. The committed `mutation_*.txt` is kept alive in
+                    /// `held_entry` (its `is_registered` flag stops the destructor from
+                    /// removing it) and is only removed once `alterTable(old_metadata)`
+                    /// durably succeeds. See #80648.
+                    try
+                    {
+                        setProperties(old_metadata, new_metadata, false, local_context);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to revert in-memory metadata; server may be inconsistent until restart");
+                    }
+
+                    std::optional<MergeTreeMutationEntry> held_entry;
+                    Int64 held_version = -1;
+                    if (mutation_registered)
+                    {
+                        auto it = current_mutations_by_version.find(mutation_version);
+                        if (it != current_mutations_by_version.end())
+                        {
+                            decrementMutationsCounters(mutation_counters, *it->second.commands);
+                            held_version = it->first;
+                            held_entry.emplace(std::move(it->second));
+                            current_mutations_by_version.erase(it);
+                        }
+                    }
+                    else if (prepared)
+                    {
+                        held_version = prepared->version;
+                        held_entry.emplace(std::move(prepared->entry));
+                    }
+
+                    background_lock.unlock();
+
+                    bool durable_rolled_back = false;
+                    try
+                    {
+                        fiu_do_on(FailPoints::mt_alter_throw_in_durable_rollback,
+                        {
+                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in durable rollback");
+                        });
+                        database->alterTable(local_context, table_id, old_metadata, /*validate_new_create_query=*/false);
+                        durable_rolled_back = true;
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to roll back on-disk metadata; keeping new metadata and rename mutation in sync instead");
+                    }
+
+                    if (durable_rolled_back)
+                    {
+                        /// Durable metadata is `old_metadata` again; the rename mutation is no
+                        /// longer needed. Remove the file now that nothing depends on it.
+                        if (held_entry)
+                        {
+                            try
+                            {
+                                LOG_INFO(log, "Removing rename mutation file {} after rolling durable metadata back", held_entry->file_name);
+                                held_entry->removeFile();
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(log, "Failed to remove rolled-back rename mutation file");
+                            }
+                        }
+                        changeSettings(old_metadata.settings_changes, table_lock_holder);
+                    }
+                    else
+                    {
+                        /// Durable metadata is still `new_metadata` and could not be rolled
+                        /// back. Converge to the successful-alter state instead of leaving
+                        /// in-memory and durable metadata mismatched: re-register the on-disk
+                        /// rename mutation (if any) and republish `new_metadata` so a merge
+                        /// applies the rename consistently. Settings stay new to match durable.
+                        std::lock_guard relock(currently_processing_in_background_mutex);
+                        try
+                        {
+                            if (held_entry)
+                            {
+                                auto [it, inserted] = current_mutations_by_version.try_emplace(held_version, std::move(*held_entry));
+                                if (inserted)
+                                {
+                                    it->second.is_registered = true;
+                                    incrementMutationsCounters(mutation_counters, *it->second.commands);
+                                    background_operations_assignee.trigger();
+                                }
+                            }
+                            setProperties(new_metadata, old_metadata, false, local_context);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log, "Failed to bring in-memory metadata in sync with durable metadata; server may be inconsistent until restart");
+                        }
+                    }
+                }
+                throw;
+            }
         }
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
@@ -667,10 +868,11 @@ MergeMutateSelectedEntry::~MergeMutateSelectedEntry()
     }
 }
 
-Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
+StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
+    const MutationCommands & commands, ContextPtr query_context)
 {
     /// Choose any disk, because when we load mutations we search them at each disk
-    /// where storage can be placed. See loadMutations().
+    /// where storage can be placed. See `loadMutations`.
     auto disk = getStoragePolicy()->getAnyDisk();
     TransactionID current_tid = Tx::NonTransactionalTID;
     String additional_info;
@@ -686,25 +888,55 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
 
     Int64 version = block_holder->block.number;
     entry.commit(version);
+
+    /// From here until `addPreparedMutationEntry` registers the entry in
+    /// `current_mutations_by_version`, a throw would leave `mutation_*.txt`
+    /// on disk without an in-memory counterpart. The destructor of
+    /// `MergeTreeMutationEntry` removes the orphaned file because
+    /// `is_registered` is still false. See #80648.
+    fiu_do_on(FailPoints::mt_throw_after_mutation_commit,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after mutation commit");
+    });
+
     String mutation_id = entry.file_name;
     if (txn)
         txn->addMutation(shared_from_this(), mutation_id);
 
-    {
-        std::lock_guard lock(currently_processing_in_background_mutex);
-
-        auto [it, inserted] = current_mutations_by_version.try_emplace(version, std::move(entry));
-        if (!inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
-
-        incrementMutationsCounters(mutation_counters, *it->second.commands);
-    }
-
-    LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
-    background_operations_assignee.trigger();
-    return version;
+    return {std::move(entry), version, std::move(mutation_id), std::move(additional_info), std::move(block_holder)};
 }
 
+void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
+{
+    auto [it, inserted] = current_mutations_by_version.try_emplace(prepared.version, std::move(prepared.entry));
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", prepared.version);
+
+    /// Transfer ownership of `mutation_*.txt` to the registered entry so its
+    /// destructor will not remove the file. See #80648.
+    it->second.is_registered = true;
+
+    incrementMutationsCounters(mutation_counters, *it->second.commands);
+
+    LOG_INFO(log, "Added mutation: {}{}", prepared.mutation_id, prepared.additional_info);
+    background_operations_assignee.trigger();
+}
+
+Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startMutation");
+
+    /// File I/O (`writeFile` + `sync` + `moveFile`) happens in `prepareMutationEntry`
+    /// outside the mutex; only the in-memory registration is locked. Holding the
+    /// mutex across the file I/O would block merge selection for its full duration.
+    auto prepared = prepareMutationEntry(commands, query_context);
+    Int64 version = prepared.version;
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        addPreparedMutationEntry(std::move(prepared));
+    }
+    return version;
+}
 
 void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message, const String & error_code_name)
 {
@@ -812,6 +1044,8 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id
 
 void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::setMutationCSN");
+
     LOG_INFO(log, "Writing CSN {} for mutation {}", csn, mutation_id);
     UInt64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
 
@@ -1147,6 +1381,8 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
 CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::killMutation");
+
     assertNotReadonly();
 
     LOG_TRACE(log, "Killing mutation {}", mutation_id);
@@ -1213,7 +1449,14 @@ void StorageMergeTree::loadDeduplicationLog()
 
 void StorageMergeTree::loadMutations()
 {
-    std::lock_guard lock(currently_processing_in_background_mutex);
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::loadMutations");
+
+    /// Called only from the constructor, before this storage is published to any
+    /// database, so no other thread holds a reference and the lock is unnecessary.
+    /// Avoiding it also breaks a TSan lock-order edge between `DatabaseAtomic::mutex`
+    /// (held during lazy table construction via `tryCreateSymlink`) and
+    /// `currently_processing_in_background_mutex`. See STID 3367-4813.
+    chassert(current_mutations_by_version.empty());
 
     for (const auto & disk : getDisks())
     {
@@ -1271,6 +1514,19 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     const MergeTreeTransactionPtr & txn,
     bool optimize_skip_merged_partitions)
 {
+    /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
+    /// a DELETE's target part between part-resolution and marker publish (the
+    /// per-partition UK mutex guards DELETE but not merges), silently dropping the
+    /// delete. Until merge-side bitmap forwarding + late-kill lands, gate every
+    /// merge here — the single chokepoint for both background selection and the
+    /// OPTIMIZE -> merge() path. Marker + data parts simply accumulate for now.
+    /// TODO(unique-key): remove when merge-side bitmap forwarding + late-kill (PR-14) lands.
+    if (metadata_snapshot->hasUniqueKey())
+        return std::unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create("Merges are disabled for UNIQUE KEY tables"),
+        });
+
     auto merge_predicate = std::make_shared<MergeTreeMergePredicate>(*this, lock);
     auto parts_collector = std::make_shared<MergeTreePartsCollector>(*this, txn, merge_predicate);
 
@@ -1449,13 +1705,21 @@ bool StorageMergeTree::merge(
     bool optimize_skip_merged_partitions)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    StorageMetadataPtr metadata_snapshot;  // assigned under the lock below; used later when constructing the merge task
 
     auto merge_select_result = [&]()
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
         if (merger_mutator.merges_blocker.isCancelledForPartition(partition_id))
             throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+
+        /// Read in-memory metadata under the mutex. Pairs with `StorageMergeTree::alter`,
+        /// which publishes new metadata and registers the rename mutation atomically under
+        /// the same mutex, so this `OPTIMIZE`-driven merge selection cannot observe new
+        /// metadata without also seeing the pending rename mutation. See #80648.
+        /// Bind the handle to a named lvalue first: converting an rvalue StorageMetadataHandle to StorageMetadataPtr is deleted.
+        auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
+        metadata_snapshot = metadata_snapshot_handle;
 
         return selectPartsToMerge(
             metadata_snapshot,
@@ -1740,13 +2004,14 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (shutdown_called)
         return false;
 
-    chassert(!isStaticStorage());
+    if (isTableReadonly())
+        return false;
 
     FailPointInjection::pauseFailPoint(FailPoints::mt_merge_selecting_task_pause_when_scheduled);
 
     cleanup_thread.wakeupEarlierIfNeeded();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    StorageMetadataPtr metadata_snapshot;  // assigned under the lock below; used later when constructing the merge task
     MergeMutateSelectedEntryPtr merge_entry;
     MergeMutateSelectedEntryPtr mutate_entry;
 
@@ -1764,6 +2029,12 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     bool has_mutations = false;
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
+
+        /// Pairs with `StorageMergeTree::alter`, which updates in-memory metadata and
+        /// inserts rename mutations atomically under this mutex. See #80648.
+        /// Bind the handle to a named lvalue first: converting an rvalue StorageMetadataHandle to StorageMetadataPtr is deleted.
+        auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
+        metadata_snapshot = metadata_snapshot_handle;
 
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
@@ -1863,6 +2134,8 @@ UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique
 
 size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::clearOldMutations");
+
     size_t finished_mutations_to_keep = (*getSettings())[MergeTreeSetting::finished_mutations_to_keep];
     if (!truncate && !finished_mutations_to_keep)
         return 0;
@@ -1965,8 +2238,18 @@ bool StorageMergeTree::optimize(
 {
     assertNotReadonly();
 
-    const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+
+    /// Merges are disabled for UNIQUE KEY tables (see selectPartsToMerge). Reject
+    /// explicit OPTIMIZE up front with an actionable message rather than letting it
+    /// fall through to a no-op merge.
+    /// TODO(unique-key): remove when merge-side bitmap forwarding + late-kill (PR-14) lands.
+    if (metadata_snapshot->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "OPTIMIZE is not supported for UNIQUE KEY tables: merges are currently disabled "
+                        "to preserve DELETE correctness. Parts will not be compacted.");
+
+    const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
     if (deduplicate && metadata_snapshot->hasProjections()
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2365,6 +2648,17 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
 
+        /// Only the base part is detached; the pending patch is left behind, so re-attaching would
+        /// silently revert the update. Reject instead (same guard as the Replicated engine).
+        if (detach && supportsLightweightUpdate())
+        {
+            if (auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active}))
+            {
+                auto patch_parts = getPatchPartsVectorForPartition(part->info.getPartitionId());
+                assertNoPatchesForParts({part}, patch_parts, "DETACH PART " + part_name);
+            }
+        }
+
         Stopwatch watch;
         ProfileEventsScope profile_events_scope;
 
@@ -2427,6 +2721,39 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
+
+        /// Only base parts are detached; pending patches are left behind, so re-attaching would
+        /// silently revert the update. Reject instead (same guard as the Replicated engine).
+        if (detach && supportsLightweightUpdate())
+        {
+            auto data_parts_lock = lockParts();
+            DataPartsVector parts_to_detach;
+            String guard_partition_id;
+            if (partition_ast && partition_ast->all)
+            {
+                parts_to_detach = getVisibleDataPartsVectorUnlocked(query_context, data_parts_lock);
+            }
+            else
+            {
+                guard_partition_id = getPartitionIDFromQuery(partition, query_context, &data_parts_lock);
+                parts_to_detach = getVisibleDataPartsVectorInPartition(query_context, guard_partition_id, data_parts_lock);
+            }
+
+            NameSet partition_ids;
+            for (const auto & part : parts_to_detach)
+                partition_ids.insert(part->info.getPartitionId());
+
+            for (const auto & partition_id : partition_ids)
+            {
+                DataPartsVector partition_parts;
+                for (const auto & part : parts_to_detach)
+                    if (part->info.getPartitionId() == partition_id)
+                        partition_parts.push_back(part);
+
+                auto patch_parts = getPatchPartsVectorForPartition(partition_id, data_parts_lock);
+                assertNoPatchesForParts(partition_parts, patch_parts, "DETACH PARTITION " + partition_id);
+            }
+        }
 
         Stopwatch watch;
         ProfileEventsScope profile_events_scope;
@@ -2619,11 +2946,75 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
     DataPartsVector src_parts;
+    DataPartsVector src_patch_parts;
 
-    if (is_all)
-        src_parts = src_data.getVisibleDataPartsVector(local_context);
-    else
-        src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    /// Read the base parts to clone and the patch parts under a single source-side parts lock, so a
+    /// concurrent APPLY PATCHES on the source cannot drop a patch between selecting the base parts
+    /// and checking for patches. Only base parts are cloned below; pending patches are not carried,
+    /// so reject when the source has unapplied patches (same as StorageReplicatedMergeTree).
+    {
+        auto src_parts_lock = src_data.lockParts();
+        if (is_all)
+        {
+            src_parts = src_data.getVisibleDataPartsVectorUnlocked(local_context, src_parts_lock);
+            NameSet src_partition_ids;
+            for (const auto & src_part : src_parts)
+                src_partition_ids.insert(src_part->info.getPartitionId());
+            for (const auto & src_partition_id : src_partition_ids)
+            {
+                auto partition_patches = src_data.getPatchPartsVectorForPartition(src_partition_id, src_parts_lock);
+                src_patch_parts.insert(src_patch_parts.end(), partition_patches.begin(), partition_patches.end());
+            }
+        }
+        else
+        {
+            src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id, src_parts_lock);
+            src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, src_parts_lock);
+        }
+    }
+
+    /// Reject when the source partition has unapplied patches (assertNoPatchesForParts is a no-op
+    /// when there are none, so this is free for tables without lightweight updates). The check is
+    /// per partition because patches and parts are matched by partition id.
+    {
+        NameSet src_partition_ids;
+        for (const auto & src_part : src_parts)
+            src_partition_ids.insert(src_part->info.getPartitionId());
+
+        for (const auto & src_partition_id : src_partition_ids)
+        {
+            DataPartsVector partition_parts;
+            for (const auto & src_part : src_parts)
+                if (src_part->info.getPartitionId() == src_partition_id)
+                    partition_parts.push_back(src_part);
+
+            DataPartsVector partition_patches;
+            for (const auto & patch_part : src_patch_parts)
+                if (isPatchForPartition(patch_part->info, src_partition_id))
+                    partition_patches.push_back(patch_part);
+
+            src_data.assertNoPatchesForParts(partition_parts, partition_patches,
+                fmt::format("{} PARTITION {} FROM", replace ? "REPLACE" : "ATTACH", src_partition_id));
+        }
+    }
+
+    /// REPLACE PARTITION FROM a source that has no parts in the requested partition would
+    /// silently drop the destination partition's data without writing anything in its place
+    /// (see #23727). Reject by default; users who actually want this behavior (e.g. to clear
+    /// the destination partition using an empty source) must opt in via the
+    /// `allow_replace_partition_from_empty_source` setting, or use `DROP PARTITION` instead.
+    /// The check is skipped for `is_all` because `REPLACE PARTITION ALL` is already rejected
+    /// above with `SUPPORT_IS_DISABLED`.
+    if (replace && !is_all && src_parts.empty()
+        && !local_context->getSettingsRef()[Setting::allow_replace_partition_from_empty_source])
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Source table {} has no parts in partition {}: refusing `REPLACE PARTITION` because it would "
+            "silently drop the destination partition's data. "
+            "Set `allow_replace_partition_from_empty_source = 1` to restore the previous behavior, "
+            "or use `ALTER TABLE ... DROP PARTITION` if you intend to drop the destination data.",
+            source_table->getStorageID().getNameForLogs(), partition_id);
+    }
 
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
@@ -2747,6 +3138,15 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     if (dest_uk_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "MOVE PARTITION TO a destination table with UNIQUE KEY is not supported");
+
+    /// A read-only destination table (the `table_readonly` MergeTree setting, used e.g. for rotated
+    /// system log tables) must not have parts moved into it. The source-side gate in
+    /// `MergeTreeData::alterPartition` only rejects `MOVE PARTITION ... TO TABLE` when the *source*
+    /// is read-only, because the command is dispatched through the source table; when the source is
+    /// writable and only the destination is read-only that gate does not fire, so the destination
+    /// has to be checked here, before any parts are cloned into it.
+    dest_table_storage->assertNotReadonly();
+
     bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(dest_table_storage->getStoragePolicy());
 
     if (!are_policies_partition_op_compatible)
@@ -2784,7 +3184,21 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
-    DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+    DataPartsVector src_parts;
+    DataPartsVector src_patch_parts;
+
+    /// Read the parts to move and the patch parts under a single source-side lock, so a concurrent
+    /// APPLY PATCHES on the source cannot drop a patch between the two reads. Patch parts are not
+    /// moved with the base parts; reject when the source partition has unapplied patches (same guard
+    /// as the Replicated engine, see replacePartitionFrom).
+    {
+        auto src_parts_lock = src_data.readLockParts();
+        src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id, src_parts_lock);
+        src_patch_parts = src_data.getPatchPartsVectorForPartition(partition_id, src_parts_lock);
+    }
+
+    src_data.assertNoPatchesForParts(src_parts, src_patch_parts, "MOVE PARTITION " + partition_id);
+
     if (src_parts.size() > settings[Setting::max_parts_to_move])
     {
         /// Moving a large number of parts at once can take a long time or get stuck in a retry loop in case of an S3 error, for example.
@@ -2846,34 +3260,31 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         auto [new_empty_covering_src_parts, _] = createEmptyDataParts(*this, future_parts, txn);
 
         Transaction dest_transaction(*dest_table_storage, txn.get());
-        std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
+        Transaction src_transaction(*this, txn.get());
+
         {
             auto dest_data_parts_lock = dest_table_storage->lockParts();
+            auto src_data_parts_lock = lockParts();
+
+            std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
             for (auto & part : dst_parts)
             {
                 block_holders.push_back(dest_table_storage->fillNewPartName(part, dest_data_parts_lock));
                 dest_table_storage->renameTempPartAndReplaceUnlocked(part, dest_transaction, dest_data_parts_lock, /*rename_in_transaction=*/true);
             }
-        }
-
-        Transaction src_transaction(*this, txn.get());
-        {
-            auto src_data_parts_lock = lockParts();
 
             for (auto & part : new_empty_covering_src_parts)
             {
                 renameTempPartAndReplaceUnlocked(part, src_data_parts_lock, src_transaction, /*rename_in_transaction=*/true);
             }
+
+            dest_transaction.renameParts();
+            dest_transaction.commit(dest_data_parts_lock);
+
+            src_transaction.renameParts();
+            src_transaction.commit(src_data_parts_lock);
         }
-
-        dest_transaction.renameParts();
-        dest_transaction.commit();
-
-        src_transaction.renameParts();
-        src_transaction.commit();
-
-        clearOldPartsFromFilesystem();
 
         /// Note: same elapsed time and profile events for all parts is used
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -2883,6 +3294,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
+
+    clearOldPartsFromFilesystem();
 }
 
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
@@ -2912,6 +3325,14 @@ void StorageMergeTree::onActionLockRemove(StorageActionBlockType action_type)
 IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
     const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
 {
+    /// TODO(unique-key): sidecar-aware check. The per-part delete-bitmap
+    /// sidecars are not enumerated as part artifacts, so checkDataPart treats
+    /// them as UNEXPECTED_FILE_IN_DATA_PART. Reject for now.
+    if (auto uk_metadata = getInMemoryMetadataPtr(local_context, false); uk_metadata && uk_metadata->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "CHECK TABLE is not supported for UNIQUE KEY tables yet: delete-bitmap "
+            "sidecars are not yet recognized as part artifacts.");
+
     DataPartsVector data_parts;
     if (const auto * partition_opt = std::get_if<ASTPtr>(&check_task_filter))
     {
@@ -2937,6 +3358,7 @@ IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
 
 std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::checkDataNext");
     auto * data_validation_tasks = assert_cast<DataValidationTasks *>(check_task_list.get());
     auto local_context = data_validation_tasks->context;
     if (auto part = data_validation_tasks->next())
@@ -2990,6 +3412,14 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
 {
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
     auto local_context = backup_entries_collector.getContext();
+
+    /// TODO(unique-key): sidecar-aware backup. The per-part delete-bitmap
+    /// sidecars are not enumerated as part artifacts, so BACKUP would silently
+    /// omit them and restore would resurrect deleted rows. Reject for now.
+    if (auto uk_metadata = getInMemoryMetadataPtr(local_context, false); uk_metadata && uk_metadata->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "BACKUP is not supported for UNIQUE KEY tables yet: delete-bitmap sidecars "
+            "are not preserved across backup/restore.");
 
     DataPartsVector data_parts;
     if (partitions)
@@ -3151,11 +3581,14 @@ PreparedSetsCachePtr StorageMergeTree::getPreparedSetsCache(Int64 mutation_id)
     return cache;
 }
 
+bool StorageMergeTree::isTableReadonly() const
+{
+    return isStaticStorage() || (*getSettings())[MergeTreeSetting::table_readonly];
+}
+
 void StorageMergeTree::assertNotReadonly() const
 {
-    if (isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
-    if ((*getSettings())[MergeTreeSetting::table_readonly])
+    if (isTableReadonly())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode");
 }
 
