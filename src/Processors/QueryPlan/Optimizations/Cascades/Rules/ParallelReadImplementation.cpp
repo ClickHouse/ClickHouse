@@ -82,10 +82,9 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
     return result;
 }
 
-/// Replicated read on shared storage: every node reads the full table directly from
-/// object storage (S3).  No `setDistributedRead` - each node reads all data.
-/// Satisfies `{node_count=N, is_replicated=true}` without a `BroadcastExchange`,
-/// eliminating network transfer for dimension tables in broadcast joins.
+/// Replicated read: every node reads the full table, pinned to the coordinator's single-bucket mark
+/// set so all nodes read the identical snapshot. Satisfies `{node_count=N, is_replicated=true}` without
+/// a `BroadcastExchange`, eliminating network transfer for dimension tables in broadcast joins.
 class ReplicatedReadImplementation : public IOptimizationRule
 {
 public:
@@ -113,13 +112,22 @@ std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExp
     LOG_TEST(getLogger("ReplicatedRead"), "Creating replicated read for '{}' at {} nodes",
         read_step->getStepDescription(), node_count);
 
-    /// Clone the read step without calling setDistributedRead - each node reads the full table.
     auto replicated_read_step_ptr = read_step->clone();
     auto * replicated_read_step = typeid_cast<ReadFromMergeTree *>(replicated_read_step_ptr.get());
     if (!replicated_read_step)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "ReplicatedReadImplementation: clone() of ReadFromMergeTree returned unexpected step type for expression '{}'",
             expression->getDescription());
+
+    /// Pin the coordinator's full mark set as a single bucket so every node reads the same snapshot.
+    /// A read that cannot be pinned (an unsupported feature, or FINAL, which the single-bucket path
+    /// refuses) gets no replicated implementation and the requirement falls back to a BroadcastExchange.
+    if (replicated_read_step->setupDistributedReadBuckets(/*target_buckets=*/1, ReadFromMergeTree::max_distributed_read_buckets) != 1)
+    {
+        LOG_TEST(getLogger("ReplicatedRead"), "No replicated read for '{}': its marks cannot be pinned into one bucket",
+            read_step->getStepDescription());
+        return {};
+    }
 
     replicated_read_step->setStepDescription(fmt::format("ReplicatedRead {}", read_step->getStepDescription()), 200);
 

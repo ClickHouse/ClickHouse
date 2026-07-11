@@ -439,6 +439,11 @@ public:
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
+    /// The task-parameter key under which this read's bucket marks travel. Unique per read so several
+    /// bucketed reads can share one worker fragment (e.g. a broadcast join's partitioned probe side and
+    /// its replicated build side) without their `read_bucket` values colliding in the shared parameter map.
+    const String & getDistributedReadParamName() const { return distributed_read_param_name; }
+    void setDistributedReadParamName(String param_name) { distributed_read_param_name = std::move(param_name); }
     bool getEnableVerticalFinal() const { return enable_vertical_final; }
 
     /// Whether a FINAL read must merge parts within each partition independently instead of globally
@@ -628,6 +633,8 @@ private:
     /// Number of tasks when this leaf read is distributed; each worker reads the lanes described by its
     /// `read_bucket` parameter.
     size_t distributed_read_bucket_count = 0;
+    /// Per-read task-parameter key for this read's bucket marks (see getDistributedReadParamName).
+    String distributed_read_param_name;
     /// Initiator side: every virtual bucket across all tasks; `serializeDistributedReadBuckets` groups
     /// `distributed_read_lanes_per_task` of them into each task's `read_bucket` parameter. Empty on a worker.
     std::vector<DistributedReadBucket> distributed_read_buckets;

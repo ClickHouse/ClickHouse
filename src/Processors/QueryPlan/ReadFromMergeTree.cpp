@@ -3480,6 +3480,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// with several lanes per task would serialize misaligned lanes and lose rows.
     cloned_step->distributed_read_buckets = distributed_read_buckets;
     cloned_step->distributed_read_lanes_per_task = distributed_read_lanes_per_task;
+    cloned_step->distributed_read_param_name = distributed_read_param_name;
     /// Filters deferred until after FINAL merging: losing them would apply the filter
     /// before deduplication and return rows a newer version should have replaced.
     cloned_step->deferred_row_level_filter = deferred_row_level_filter;
@@ -3774,9 +3775,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// to local parts by name; a missing part is a retryable error (the replica diverged by merge or lag).
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
-        /// Read this task's lanes from the `read_bucket` parameter, in the layout
+        /// Read this task's lanes from this read's own bucket parameter, in the layout
         /// `serializeDistributedReadBuckets` wrote.
-        String blob = settings.parameter_lookup->getParameter("read_bucket").safeGet<String>();
+        String blob = settings.parameter_lookup->getParameter(distributed_read_param_name).safeGet<String>();
         ReadBufferFromString buf(blob);
         const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
         DB::FormatSettings format_settings;
@@ -5000,6 +5001,14 @@ void ReadFromMergeTree::setDistributedRead(size_t bucket_count)
     distributed_read_bucket_count = bucket_count;
 }
 
+/// A process-wide counter gives each bucketed read a distinct task-parameter key. Assigned on the
+/// coordinator and serialized, so the worker reads under the same key.
+static String nextDistributedReadParamName()
+{
+    static std::atomic<UInt64> counter{0};
+    return "read_bucket_" + toString(counter.fetch_add(1, std::memory_order_relaxed));
+}
+
 size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets)
 {
     /// A bucketed read is pinned to the coordinator's marks and cannot reproduce these features on the
@@ -5033,6 +5042,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
 
         distributed_read_lanes_per_task = 1;
         setDistributedRead(buckets.size());
+        distributed_read_param_name = nextDistributedReadParamName();
         distributed_read_buckets = std::move(buckets);
         return distributed_read_buckets.size();
     }
@@ -5170,6 +5180,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     distributed_read_lanes_per_task = grouping_lanes;
     distributed_read_buckets = std::move(buckets);
     setDistributedRead(tasks);
+    distributed_read_param_name = nextDistributedReadParamName();
     return tasks;
 }
 
@@ -5338,9 +5349,11 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
             "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
             "version >= 2; all nodes must run the same version");
 
-    /// Every distributed bucket's marks travel in its own `read_bucket` task parameter (set during
-    /// fan-out), so the shared step carries only the bucket count.
+    /// Every distributed bucket's marks travel in its own per-read task parameter (set during fan-out),
+    /// so the shared step carries only the bucket count and this read's parameter key.
     writeVarUInt(distributed_read_bucket_count, ctx.out);
+    if (distributed_read_bucket_count > 0)
+        writeStringBinary(distributed_read_param_name, ctx.out);
 }
 
 std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization & ctx)
@@ -5407,7 +5420,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
-    /// The per-bucket marks travel in the `read_bucket` task parameter, so the step carries only the count.
+    /// The per-bucket marks travel in a per-read task parameter, so the step carries only the count and
+    /// this read's parameter key.
     size_t distributed_read_bucket_count = 0;
     readVarUInt(distributed_read_bucket_count, ctx.in);
     /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
@@ -5416,6 +5430,9 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
             "version >= 2; all nodes must run the same version");
+    String distributed_read_param_name;
+    if (distributed_read_bucket_count > 0)
+        readStringBinary(distributed_read_param_name, ctx.in);
 
     auto step = executor.readFromParts(
         snapshot_data.parts,
@@ -5433,6 +5450,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         if (!read_from_merge_tree_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
         read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
+        read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
     }
 
     /// Need to keep shared pointer to MergeTree table till the end of plan execution

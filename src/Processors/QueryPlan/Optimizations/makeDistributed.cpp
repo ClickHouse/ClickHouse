@@ -1206,8 +1206,11 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             {
                 /// No children, this means that this is a leaf step.
 
-                auto populate_shards = [&](std::vector<String> shards_for_read, std::vector<String> read_buckets = {})
+                auto populate_shards = [&](std::vector<String> shards_for_read, std::vector<String> read_buckets = {}, const String & read_bucket_param_name = {})
                 {
+                    if (!read_buckets.empty() && read_buckets.size() != shards_for_read.size())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Distributed read has {} bucket blobs but {} shards", read_buckets.size(), shards_for_read.size());
                     for (size_t bucket = 0; bucket < shards_for_read.size(); ++bucket)
                     {
                         String shard_id = toString(bucket);
@@ -1216,9 +1219,9 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                         task.parameters.parameters["bucket_description"] = Field(shards_for_read[bucket]);
                         task.parameters.parameters["total_buckets"] = Field(shards_for_read.size());
                         /// A MergeTree distributed read ships this bucket's authoritative marks (and, for a
-                        /// FINAL merge layer, its borders + index) here, so the worker reads exactly its slice.
+                        /// FINAL merge layer, its borders + index) under this read's own parameter key.
                         if (!read_buckets.empty())
-                            task.parameters.parameters["read_bucket"] = Field(read_buckets[bucket]);
+                            task.parameters.parameters[read_bucket_param_name] = Field(read_buckets[bucket]);
                         frame.list_of_shards[shard_id] = std::move(task);
                     }
                 };
@@ -1233,6 +1236,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     /// Ship each bucket's authoritative marks (and FINAL borders + index) the same way the
                     /// replica path does, so the worker reads exactly its slice and does FINAL per-lane.
                     std::vector<String> read_buckets = read_merge_tree->serializeDistributedReadBuckets();
+                    String read_bucket_param_name = read_merge_tree->getDistributedReadParamName();
 
                     auto worker_step = ReadFromMergeTreeAtWorker::createFrom(*read_merge_tree);
                     auto shards_for_read = worker_step->getShardsForDistributedRead();
@@ -1240,7 +1244,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(worker_step));
 
-                    populate_shards(std::move(shards_for_read), std::move(read_buckets));
+                    populate_shards(std::move(shards_for_read), std::move(read_buckets), read_bucket_param_name);
                 }
                 else
 #endif
@@ -1250,13 +1254,17 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     /// Ship each MergeTree bucket its authoritative marks as a task parameter (object-storage
                     /// reads carry no per-bucket marks and keep using only `bucket_id` / `total_buckets`).
                     std::vector<String> read_buckets;
+                    String read_bucket_param_name;
                     if (auto * read_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get()))
+                    {
                         read_buckets = read_merge_tree_step->serializeDistributedReadBuckets();
+                        read_bucket_param_name = read_merge_tree_step->getDistributedReadParamName();
+                    }
 
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(frame.node->step));
 
-                    populate_shards(std::move(shards_for_read), std::move(read_buckets));
+                    populate_shards(std::move(shards_for_read), std::move(read_buckets), read_bucket_param_name);
                 }
             }
 

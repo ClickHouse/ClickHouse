@@ -6,6 +6,11 @@
 -- node (a `Replicated` join over two `ReplicatedRead`s, no exchange) instead of being joined
 -- on one node and broadcast.  A non-deterministic join condition disables the recomputation
 -- (per-node results could diverge), falling back to the broadcast of a single-node join.
+--
+-- The result queries also guard the pinned-read parameter naming: the fact-side `ParallelRead`
+-- and the two dimension `ReplicatedRead`s share one worker fragment, and each pins its marks in
+-- its own task parameter.  A shared parameter key would make the fragment builder throw on the
+-- conflicting values, so a passing distributed run proves the keys stay distinct.
 
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
