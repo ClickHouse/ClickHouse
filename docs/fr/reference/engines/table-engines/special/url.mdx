@@ -1,0 +1,138 @@
+---
+description: 'Interroge des données depuis/vers un serveur HTTP/HTTPS distant. Ce moteur est similaire
+  au moteur File.'
+sidebarTitle: 'URL'
+slug: /engines/table-engines/special/url
+title: 'Moteur de table URL'
+doc_type: 'reference'
+---
+
+Interroge des données depuis/vers un serveur HTTP/HTTPS distant. Ce moteur est similaire au moteur [File](/fr/reference/engines/table-engines/special/file).
+
+Syntaxe : `URL(URL [,Format] [,CompressionMethod])`
+
+* Le paramètre `URL` doit respecter la structure d’un Uniform Resource Locator. L’URL spécifiée doit pointer vers un serveur utilisant HTTP ou HTTPS. Aucun en-tête supplémentaire n’est nécessaire pour obtenir une réponse du serveur.
+
+* Le `Format` doit être un format que ClickHouse peut utiliser dans les requêtes `SELECT` et, si nécessaire, dans les `INSERTs`. Pour obtenir la liste complète des formats pris en charge, voir [Formats](/fr/reference/formats/index#formats-overview).
+
+  Si cet argument n’est pas spécifié, ClickHouse détecte automatiquement le format à partir du suffixe du paramètre `URL`. Si le suffixe du paramètre `URL` ne correspond à aucun format pris en charge, la création de la table échoue. Par exemple, pour l’expression de moteur `URL('http://localhost/test.json')`, le format `JSON` est appliqué.
+
+* `CompressionMethod` indique si le body HTTP doit être compressé. Si la compression est activée, les paquets HTTP envoyés par le moteur URL contiennent l’en-tête &#39;Content-Encoding&#39; pour indiquer la méthode de compression utilisée.
+
+Pour activer la compression, assurez-vous d’abord que l’endpoint HTTP distant indiqué par le paramètre `URL` prend en charge l’algorithme de compression correspondant.
+
+Le `CompressionMethod` pris en charge doit être l’un des suivants :
+
+* gzip or gz
+* deflate
+* brotli or br
+* lzma or xz
+* zstd or zst
+* lz4
+* bz2
+* snappy
+* none
+* auto
+
+Si `CompressionMethod` n’est pas spécifié, la valeur par défaut est `auto`. Cela signifie que ClickHouse détecte automatiquement la méthode de compression à partir du suffixe du paramètre `URL`. Si le suffixe correspond à l’une des méthodes de compression listées ci-dessus, la compression correspondante est appliquée ; sinon, aucune compression n’est activée.
+
+Par exemple, pour l’expression de moteur `URL('http://localhost/test.gzip')`, la méthode de compression `gzip` est appliquée, mais pour `URL('http://localhost/test.fr')`, aucune compression n’est activée, car le suffixe `fr` ne correspond à aucune des méthodes de compression ci-dessus.
+
+<div id="using-the-engine-in-the-clickhouse-server">
+  ## Utilisation
+</div>
+
+Les requêtes `INSERT` et `SELECT` sont transformées en requêtes `POST` et `GET`,
+respectivement. Pour le traitement des requêtes `POST`, le serveur distant doit prendre en charge
+l’[encodage de transfert par blocs](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
+
+Vous pouvez limiter le nombre maximal de redirections HTTP GET à suivre à l’aide du paramètre [max&#95;http&#95;get&#95;redirects](/fr/reference/settings/session-settings#max_http_get_redirects).
+
+<div id="example">
+  ## Exemple
+</div>
+
+**1.** Créez une table `url_engine_table` sur le serveur :
+
+```sql
+CREATE TABLE url_engine_table (word String, value UInt64)
+ENGINE=URL('http://127.0.0.1:12345/', CSV)
+```
+
+**2.** Créez un serveur HTTP simple à l’aide des outils standard de Python 3 et
+démarrez-le :
+
+```python3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```bash
+$ python3 server.py
+```
+
+**3.** Demandez les données :
+
+```sql
+SELECT * FROM url_engine_table
+```
+
+```text
+┌─word──┬─value─┐
+│ Hello │     1 │
+│ World │     2 │
+└───────┴───────┘
+```
+
+<div id="details-of-implementation">
+  ## Détails de l’implémentation
+</div>
+
+* Les lectures et les écritures peuvent être effectuées en parallèle
+* Non pris en charge :
+  * les opérations `ALTER` et `SELECT...SAMPLE`
+  * les index
+  * la réplication
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_path` — Chemin de l&#39;`URL`. Type: `LowCardinality(String)`.
+* `_file` — Nom de la ressource de l&#39;`URL`. Type: `LowCardinality(String)`.
+* `_size` — Taille de la ressource en octets. Type: `Nullable(UInt64)`. Si la taille est inconnue, la valeur est `NULL`.
+* `_time` — Date et heure de la dernière modification du fichier. Type: `Nullable(DateTime)`. Si cette information est inconnue, la valeur est `NULL`.
+* `_headers` - En-têtes de réponse HTTP. Type: `Map(LowCardinality(String), LowCardinality(String))`.
+
+<div id="resolving-relative-urls">
+  ## Résolution des URL relatives
+</div>
+
+Le paramètre [url&#95;base](/fr/reference/settings/session-settings#url_base) permet d&#39;utiliser une URL relative avec le moteur `URL`. Lorsque `url_base` est défini, l&#39;URL transmise au moteur est résolue par rapport à cette base, conformément à la [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). Pour une description complète des règles de résolution, consultez la [documentation de la fonction de table url](/fr/reference/functions/table-functions/url#resolving-relative-urls).
+
+**Exemple**
+
+```sql
+SET url_base = 'http://127.0.0.1:12345/';
+CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.csv', CSV);
+SELECT * FROM url_engine_table;
+```
+
+<div id="storage-settings">
+  ## Paramètres de stockage
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/fr/reference/settings/session-settings#engine_url_skip_empty_files) - permet d&#39;ignorer les fichiers vides lors de la lecture. Désactivé par défaut.
+* [enable&#95;url&#95;encoding](/fr/reference/settings/session-settings#enable_url_encoding) - permet d&#39;activer ou de désactiver le décodage/l&#39;encodage du chemin dans l&#39;URI. Activé par défaut.
+* [url&#95;base](/fr/reference/settings/session-settings#url_base) - URL de base pour résoudre les URL relatives transmises au moteur.

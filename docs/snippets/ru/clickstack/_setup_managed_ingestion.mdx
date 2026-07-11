@@ -1,0 +1,137 @@
+---
+title: Настройка управляемой ингестии
+---
+
+<img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
+
+Выберите &quot;Начать ингестию&quot;, и вам будет предложено выбрать источник ингестии. Управляемый ClickStack поддерживает OpenTelemetry и [Vector](https://vector.dev/) в качестве основных источников ингестии. Однако пользователи также могут отправлять данные напрямую в ClickHouse в собственной схеме, используя любые из [интеграций, поддерживаемых ClickHouse Cloud](/ru/integrations/home).
+
+<img src="/images/clickstack/getting-started/select_source.webp" alt="" />
+
+<Info>
+  **Рекомендуем OpenTelemetry**
+
+  Настоятельно рекомендуется использовать OpenTelemetry в качестве формата для ингестии.
+  Он обеспечивает максимально простой и оптимизированный процесс благодаря готовым схемам, специально разработанным для эффективной работы с ClickStack.
+</Info>
+
+<Tabs>
+  <Tab title="OpenTelemetry">
+    Чтобы отправлять данные OpenTelemetry в Управляемый ClickStack, рекомендуется использовать OpenTelemetry Collector. Коллектор выступает в роли шлюза: он получает данные OpenTelemetry от ваших приложений (и других коллекторов) и пересылает их в ClickHouse Cloud.
+
+    Если у вас коллектор еще не запущен, выполните приведенные ниже шаги. Если у вас уже есть существующие коллекторы, ниже также приведен пример конфигурации.
+
+    ### Запуск коллектора
+
+    Ниже рассматривается рекомендуемый вариант — использование **дистрибутива ClickStack для OpenTelemetry Collector**, который включает дополнительную обработку и специально оптимизирован для ClickHouse Cloud. Если вы хотите использовать собственный OpenTelemetry Collector, см. [&quot;Настройка существующих коллекторов.&quot;](#configure-existing-collectors)
+
+    Чтобы быстро начать, скопируйте и выполните показанную команду Docker.
+
+    <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
+
+    Эта команда должна уже содержать ваши учетные данные для подключения.
+
+    <Info>
+      **Развертывание в production**
+
+      Хотя в этой команде для подключения к Управляемому ClickStack используется пользователь `default`, при [переходе в production](/ru/clickstack/managing/production#create-a-database-ingestion-user-managed) и изменении конфигурации следует создать отдельного пользователя.
+    </Info>
+
+    Выполнение этой единственной команды запускает коллектор ClickStack с конечными точками OTLP, доступными на портах 4317 (gRPC) и 4318 (HTTP). Если у вас уже настроены инструментация OpenTelemetry и агенты, вы можете сразу начать отправлять телеметрические данные в эти конечные точки.
+
+    ### Настройка существующих коллекторов
+
+    Вы также можете настроить собственные OpenTelemetry Collectors или использовать собственный дистрибутив коллектора.
+
+    <Info>
+      **Требуется ClickHouse exporter**
+
+      Если вы используете собственный дистрибутив, например [contrib image](https://github.com/open-telemetry/opentelemetry-collector-contrib), убедитесь, что он включает [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+    </Info>
+
+    Для этого вам предоставляется пример конфигурации OpenTelemetry Collector, в которой используется ClickHouse exporter с подходящими настройками и открыты приёмники OTLP. Эта конфигурация соответствует интерфейсам и поведению, ожидаемым дистрибутивом ClickStack.
+
+    <ExampleOTelConfig />
+
+    <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
+
+    Дополнительные сведения о настройке коллекторов OpenTelemetry см. в разделе [&quot;Ингестия с OpenTelemetry.&quot;](/ru/clickstack/ingesting-data/opentelemetry)
+
+    ### Запуск ингестии (необязательно)
+
+    Если у вас есть существующие приложения или инфраструктура, которые нужно инструментировать с помощью OpenTelemetry, перейдите к соответствующим руководствам по ссылкам в интерфейсе.
+
+    Чтобы инструментировать приложения для сбора трассировок и журналов, используйте [поддерживаемые SDK для языков](/ru/clickstack/ingesting-data/sdks/index), которые отправляют данные в ваш OpenTelemetry Collector, выступающий в роли шлюза для ингестии в Управляемый ClickStack.
+
+    Журналы можно [собирать с помощью коллекторов OpenTelemetry](/ru/clickstack/integration-examples/host-logs), работающих в режиме агента и пересылающих данные в тот же коллектор. Для мониторинга Kubernetes следуйте [отдельному руководству](/ru/clickstack/integration-examples/kubernetes). Для других интеграций см. наши [краткие руководства](/ru/clickstack/integration-examples/index).
+
+    ### Демонстрационные данные
+
+    Если у вас пока нет собственных данных, попробуйте один из наших примеров наборов данных.
+
+    * [Пример набора данных](/ru/clickstack/example-datasets/sample-data) - Загрузите пример набора данных из нашей публичной демоверсии. Диагностируйте простую проблему.
+    * [Локальные файлы и метрики](/ru/clickstack/example-datasets/local-data) - Загрузите локальные файлы и отслеживайте систему в OSX или Linux с помощью локального OTel collector.
+
+    <br />
+  </Tab>
+
+  <Tab title="Vector">
+    [Vector](https://vector.dev) — это высокопроизводительный, не зависящий от поставщика конвейер данных для обсервабилити, особенно популярный для приёма журналов благодаря гибкости и низкому потреблению ресурсов.
+
+    При использовании Vector с ClickStack пользователи сами определяют схемы. Эти схемы могут соответствовать соглашениям OpenTelemetry, но также могут быть полностью произвольными и описывать пользовательские структуры событий.
+
+    <Info>
+      **Требуется timestamp**
+
+      Единственное строгое требование для Управляемого ClickStack — данные должны содержать **столбец timestamp** (или эквивалентное поле времени), который можно указать при настройке источника данных в интерфейсе ClickStack.
+    </Info>
+
+    Ниже предполагается, что у вас уже запущен экземпляр Vector, предварительно настроенный с конвейерами приёма и отправляющий данные.
+
+    ### Создайте базу данных и таблицу
+
+    Для Vector необходимо, чтобы таблица и схема были определены до начала ингестии данных.
+
+    Сначала создайте базу данных. Это можно сделать через [консоль ClickHouse Cloud](/ru/products/cloud/features/sql-console-features/sql-console).
+
+    Например, создайте базу данных для журналов:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS logs
+    ```
+
+    Затем создайте таблицу, схема которой соответствует структуре данных журналов. В примере ниже используется классический формат журнала доступа Nginx:
+
+    ```sql
+    CREATE TABLE logs.nginx_logs
+    (
+        `time_local` DateTime,
+        `remote_addr` IPv4,
+        `remote_user` LowCardinality(String),
+        `request` String,
+        `status` UInt16,
+        `body_bytes_sent` UInt64,
+        `http_referer` String,
+        `http_user_agent` String,
+        `http_x_forwarded_for` LowCardinality(String),
+        `request_time` Float32,
+        `upstream_response_time` Float32,
+        `http_host` String
+    )
+    ENGINE = MergeTree
+    ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+    ```
+
+    Ваша таблица должна соответствовать выходной схеме, которую формирует Vector. При необходимости скорректируйте схему под свои данные, следуя рекомендациям из [лучших практик работы со схемой](/ru/concepts/best-practices/select-data-type).
+
+    Мы настоятельно рекомендуем разобраться, как в ClickHouse работают [первичные ключи](/ru/concepts/core-concepts/primary-indexes), и выбрать ключ сортировки с учётом характера доступа к данным. См. [рекомендации для ClickStack](/ru/clickstack/managing/performance-tuning#choosing-a-primary-key) по выбору первичного ключа.
+
+    Когда таблица будет создана, скопируйте показанный фрагмент конфигурации. При необходимости настройте вход так, чтобы он использовал существующие конвейеры, а также укажите целевую таблицу и базу данных. Учётные данные должны быть уже подставлены.
+
+    <img src="/images/clickstack/getting-started/vector_config.webp" alt="" />
+
+    Больше примеров ингестии данных с Vector см. в разделе [&quot;Ингестия с Vector&quot;](/ru/clickstack/ingesting-data/vector) или в [документации по sink ClickHouse в Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) для расширенных настроек.
+
+    <br />
+  </Tab>
+</Tabs>

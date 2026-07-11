@@ -1,0 +1,141 @@
+---
+sidebarTitle: 'Avec clickhouse-local'
+keywords: ['clickhouse', 'migrer', 'migration', 'migrer vers', 'données', 'etl', 'elt', 'clickhouse-local', 'clickhouse-client']
+slug: /cloud/migration/clickhouse-local
+title: 'Migrer vers ClickHouse avec clickhouse-local'
+description: 'Guide expliquant comment migrer vers ClickHouse avec clickhouse-local'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import AddARemoteSystem from '/snippets/fr/_add_remote_ip_access_list_detail.mdx';
+
+<Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="Migration de ClickHouse autogéré" />
+
+Vous pouvez utiliser ClickHouse, ou plus précisément [`clickhouse-local`](/fr/concepts/features/tools-and-utilities/clickhouse-local),
+comme outil ETL pour migrer des données de votre système de base de données actuel vers ClickHouse Cloud, à condition que ce système dispose soit d’un [integration engine](/fr/reference/engines/table-engines/index#integration-engines) ou d’une [fonction de table](/fr/reference/functions/table-functions/index) fournis par ClickHouse,
+soit d’un JDBC driver ou d’un ODBC driver fourni par l’éditeur.
+
+Nous appelons parfois cette méthode de migration une méthode &quot;pivot&quot;, car elle utilise un point de passage intermédiaire pour déplacer les données de la base de données source vers la base de données de destination. Par exemple, cette méthode peut être nécessaire si, pour des raisons de sécurité, seules les connexions sortantes sont autorisées depuis un réseau privé ou interne. Dans ce cas, vous devez extraire les données de la base de données source avec clickhouse-local, puis les envoyer vers une base de données ClickHouse de destination, clickhouse-local servant alors de point de pivot.
+
+ClickHouse fournit des integration engines et des fonctions de table (qui créent des integration engines à la volée) pour [MySQL](/fr/reference/engines/table-engines/integrations/mysql), [PostgreSQL](/fr/reference/engines/table-engines/integrations/postgresql), [MongoDB](/fr/reference/engines/table-engines/integrations/mongodb) et [SQLite](/fr/reference/engines/table-engines/integrations/sqlite).
+Pour tous les autres systèmes de base de données courants, un JDBC driver ou un ODBC driver est disponible auprès de l’éditeur du système.
+
+<div id="what-is-clickhouse-local">
+  ## Qu’est-ce que clickhouse-local ?
+</div>
+
+<Image img="/images/integrations/migration/ch-local-02.webp" size="lg" alt="Migration de ClickHouse autogéré" />
+
+En règle générale, ClickHouse s’exécute sous forme de cluster, où plusieurs instances du moteur de base de données ClickHouse fonctionnent de manière distribuée sur différents serveurs.
+
+Sur un serveur unique, le moteur de base de données ClickHouse s’exécute dans le cadre du programme `clickhouse-server`. L’accès à la base de données (chemins, utilisateurs, sécurité, ...) est configuré à l’aide d’un fichier de configuration du serveur.
+
+L’outil `clickhouse-local` vous permet d’utiliser le moteur de base de données ClickHouse de manière isolée, sous la forme d’un utilitaire en ligne de commande, pour un traitement SQL ultrarapide des données sur un grand nombre d’entrées et de sorties, sans avoir à configurer ni à démarrer un serveur ClickHouse.
+
+<div id="installing-clickhouse-local">
+  ## Installation de clickhouse-local
+</div>
+
+Vous avez besoin d&#39;une machine hôte pour `clickhouse-local` disposant d&#39;un accès réseau à la fois à votre système de base de données source actuel et à votre service cible ClickHouse Cloud.
+
+Sur cette machine hôte, téléchargez la version appropriée de `clickhouse-local` en fonction du système d&#39;exploitation de votre ordinateur :
+
+<Tabs>
+  <Tab title="Linux">
+    1. La manière la plus simple de télécharger `clickhouse-local` localement consiste à exécuter la commande suivante :
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    1. Exécutez `clickhouse-local` (cela affichera simplement sa version) :
+
+    ```bash
+    ./clickhouse-local
+    ```
+  </Tab>
+
+  <Tab title="macOS">
+    1. La manière la plus simple de télécharger `clickhouse-local` localement consiste à exécuter la commande suivante :
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    1. Exécutez `clickhouse-local` (cela affichera simplement sa version) :
+
+    ```bash
+    ./clickhouse local
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+  **Important**
+
+  Les exemples de ce guide utilisent les commandes Linux pour exécuter `clickhouse-local` (`./clickhouse-local`).
+  Pour exécuter `clickhouse-local` sur Mac, utilisez `./clickhouse local`.
+</Info>
+
+<Tip>
+  **Ajoutez le système distant à l&#39;IP Access List de votre service ClickHouse Cloud**
+
+  Pour que la fonction `remoteSecure` puisse se connecter à votre service ClickHouse Cloud, l&#39;adresse IP du système distant doit être autorisée dans l&#39;IP Access List. Développez **Manage your IP Access List** sous cette astuce pour plus d&#39;informations.
+</Tip>
+
+<AddARemoteSystem />
+
+<div id="example-1-migrating-from-mysql-to-clickhouse-cloud-with-an-integration-engine">
+  ## Exemple : migration de MySQL vers ClickHouse Cloud avec un moteur de table d’intégration
+</div>
+
+Nous utiliserons le [moteur de table d’intégration](/fr/reference/engines/table-engines/integrations/mysql) (créé à la volée par la [fonction de table mysql](/fr/reference/functions/table-functions/mysql)) pour lire les données de la base de données MySQL source, et nous utiliserons la [fonction de table remoteSecure](/fr/reference/functions/table-functions/remote)
+pour écrire les données dans une table de destination sur votre service ClickHouse Cloud.
+
+<Image img="/images/integrations/migration/ch-local-03.webp" size="lg" alt="Migration de ClickHouse autogéré" />
+
+<div id="on-the-destination-clickhouse-cloud-service">
+  ### Dans le service ClickHouse Cloud de destination :
+</div>
+
+<div id="create-the-destination-database">
+  #### Créez la base de données de destination :
+</div>
+
+```sql
+  CREATE DATABASE db
+```
+
+<div id="create-a-destination-table-that-has-a-schema-equivalent-to-the-mysql-table">
+  #### Créez une table de destination avec un schéma équivalent à celui de la table MySQL :
+</div>
+
+```sql
+  CREATE TABLE db.table ...
+```
+
+<Note>
+  Le schéma de la table de destination ClickHouse Cloud et celui de la table source MySQL doivent correspondre (les noms et l’ordre des colonnes doivent être identiques, et les types de données des colonnes doivent être compatibles).
+</Note>
+
+<div id="on-the-clickhouse-local-host-machine">
+  ### Sur la machine hôte de clickhouse-local :
+</div>
+
+<div id="run-clickhouse-local-with-the-migration-query">
+  #### Lancez clickhouse-local avec la requête de migration :
+</div>
+
+```sql
+  ./clickhouse-local --query "
+INSERT INTO FUNCTION
+remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table', 'default', 'PASS')
+SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password');"
+```
+
+<Note>
+  Aucune donnée n’est stockée localement sur la machine hôte `clickhouse-local`. Les données sont plutôt lues depuis la table source MySQL,
+  puis immédiatement écrites dans la table de destination du service ClickHouse Cloud.
+</Note>

@@ -1,0 +1,80 @@
+---
+date: 2023-10-26
+title: ClickHouse로 벡터 검색을 할 수 있을까요?
+description: 임베딩 저장과 코사인 유사도 같은 거리 함수를 활용한 검색을 포함해, ClickHouse로 벡터 검색을 수행하는 방법을 알아봅니다.
+tags: ['사용 사례', '개념']
+keywords: ['벡터 검색']
+---
+
+{frontMatter.description}
+
+{/* 생략 */}
+
+<div id="clickhouse-for-vector-search">
+  ## 벡터 검색을 위한 ClickHouse!
+</div>
+
+그렇습니다. ClickHouse로 벡터 검색을 수행할 수 있습니다.
+
+보다 전문화된 벡터 데이터베이스 대신 벡터 검색에 ClickHouse를 사용할 때의 주요 이점은 다음과 같습니다.
+
+* 검색을 수행하기 전에 ClickHouse의 필터링과 전문 검색 기능을 활용해 데이터셋을 더 정교하게 추릴 수 있습니다.
+* 데이터셋에 대해 분석을 수행할 수 있습니다.
+* 기존 데이터에 대해 `JOIN`을 수행할 수 있습니다.
+* 데이터베이스를 또 하나 더 관리하면서 인프라를 복잡하게 만들 필요가 없습니다.
+
+다음은 ClickHouse로 벡터 검색을 사용하는 방법을 간단히 설명하는 튜토리얼입니다.
+
+<div id="1-create-embeddings">
+  ## 1. 임베딩 생성
+</div>
+
+데이터(문서, 이미지 또는 구조화된 데이터)는 &#95;임베딩&#95;으로 변환해야 합니다. [OpenAI Embeddings API](https://platform.openai.com/docs/api-reference/embeddings) 또는 오픈 소스 Python 라이브러리인 [SentenceTransformers](https://www.sbert.net/)를 사용해 임베딩을 생성하는 것을 권장합니다.
+
+임베딩은 데이터를 표현하는 대규모 부동소수점 수 배열이라고 생각하면 됩니다. 임베딩에 대해 자세히 알아보려면 [OpenAI의 이 가이드](https://platform.openai.com/docs/guides/embeddings/what-are-embeddings)를 참조하십시오.
+
+<div id="2-store-the-embeddings">
+  ## 2. 임베딩 저장하기
+</div>
+
+임베딩을 생성한 후에는 이를 ClickHouse에 저장해야 합니다. 각 임베딩은 별도의 행에 저장하며, 필터링, 집계 또는 분석에 사용할 메타데이터를 포함할 수 있습니다. 다음은 캡션이 있는 이미지를 저장할 수 있는 테이블 예시입니다:
+
+```sql
+CREATE TABLE images
+(
+	`_file` LowCardinality(String),
+	`caption` String,
+	`image_embedding` Array(Float32)
+)
+ENGINE = MergeTree;
+```
+
+<div id="3-search-for-related-embeddings">
+  ## 3. 관련 임베딩 검색
+</div>
+
+데이터셋에서 개 사진을 찾고 싶다고 가정해 보겠습니다. `cosineDistance`와 같은 거리 함수를 사용해 개 이미지의 임베딩으로 관련 이미지를 검색할 수 있습니다:
+
+```sql
+SELECT
+    _file,
+	caption,
+	cosineDistance(
+        -- "입력" 강아지 사진의 임베딩
+        [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
+        image_embedding
+    ) AS score
+FROM images
+ORDER BY score ASC
+LIMIT 10
+```
+
+이 쿼리는 제공된 개 이미지와 가장 관련성이 높을 가능성이 있는 상위 10개 이미지의 `_file` 이름과 캡션을 반환합니다.
+
+<div id="further-reading">
+  ## 추가 참고 자료
+</div>
+
+ClickHouse를 사용한 벡터 검색에 관한 더 자세한 튜토리얼은 다음을 참조하십시오.
+
+* [정확 벡터 검색과 근사 벡터 검색](/ko/reference/engines/table-engines/mergetree-family/annindexes)

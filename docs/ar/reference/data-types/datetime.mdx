@@ -1,0 +1,207 @@
+---
+description: 'توثيق نوع البيانات DateTime في ClickHouse، الذي يخزّن
+  الطوابع الزمنية بدقة الثواني'
+sidebarTitle: 'DateTime'
+slug: /sql-reference/data-types/datetime
+title: 'DateTime'
+doc_type: 'reference'
+---
+
+يتيح تخزين نقطة زمنية يمكن التعبير عنها كتاريخ تقويمي ووقت من اليوم.
+
+الصياغة:
+
+```sql
+DateTime([timezone])
+```
+
+نطاق القيم المدعوم: [1970-01-01 00:00:00, 2106-02-07 06:28:15].
+
+الدقة: ثانية واحدة.
+
+<div id="speed">
+  ## السرعة
+</div>
+
+يكون نوع البيانات `Date` أسرع من `DateTime` في *معظم* الحالات.
+
+يتطلب النوع `Date` مساحة تخزين قدرها 2 بايت، بينما يتطلب `DateTime` 4 بايتات. ومع ذلك، أثناء الضغط، يصبح الفرق في الحجم بين `Date` و`DateTime` أكثر وضوحًا. ويرجع هذا التضخيم إلى أن الدقائق والثواني في `DateTime` أقل قابليةً للضغط. كما أن تصفية `Date` وتجميعه بدلًا من `DateTime` أسرع أيضًا.
+
+<div id="usage-remarks">
+  ## ملاحظات الاستخدام
+</div>
+
+تُحفَظ النقطة الزمنية على شكل [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time)، بغضّ النظر عن المنطقة الزمنية أو التوقيت الصيفي. وتؤثر المنطقة الزمنية في كيفية عرض قيم النوع `DateTime` بتنسيق نصي، وفي كيفية تحليل القيم المحددة كسلاسل نصية (&#39;2020-01-01 05:00:01&#39;).
+
+يُخزَّن `Unix timestamp` غير المرتبط بمنطقة زمنية في الجداول، وتُستخدم المنطقة الزمنية لتحويله إلى تنسيق نصي أو العكس أثناء استيراد البيانات أو تصديرها، أو لإجراء حسابات تقويمية على القيم (على سبيل المثال: الدالتان `toDate` و`toHour`، إلخ). ولا تُخزَّن المنطقة الزمنية في صفوف الجدول (أو في resultset)، بل تُخزَّن في البيانات الوصفية للعمود.
+
+يمكن العثور على قائمة بالمناطق الزمنية المدعومة في [IANA Time Zone Database](https://www.iana.org/time-zones)، كما يمكن الاستعلام عنها باستخدام `SELECT * FROM system.time_zones`. وهذه [القائمة](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) متاحة أيضًا على Wikipedia.
+
+يمكنك تعيين منطقة زمنية صراحةً للأعمدة من النوع `DateTime` عند إنشاء جدول. Example: `DateTime('UTC')`. وإذا لم تُعيَّن منطقة زمنية، يستخدم ClickHouse قيمة المعلمة [timezone](/ar/reference/settings/server-settings/settings#timezone) في إعدادات الخادم أو في إعدادات نظام التشغيل وقت بدء تشغيل ClickHouse server.
+
+يستخدم [clickhouse-client](/ar/concepts/features/interfaces/client) المنطقة الزمنية الخاصة بالخادم افتراضيًا إذا لم تُعيَّن منطقة زمنية صراحةً عند تهيئة نوع البيانات. ولاستخدام المنطقة الزمنية الخاصة بالعميل، شغّل `clickhouse-client` باستخدام المعلمة `--use_client_time_zone`.
+
+يعرض ClickHouse القيم وفقًا لقيمة الإعداد [date&#95;time&#95;output&#95;format](/ar/reference/settings/formats#date_time_output_format). ويكون التنسيق النصي الافتراضي هو `YYYY-MM-DD hh:mm:ss`. بالإضافة إلى ذلك، يمكنك تغيير تنسيق الإخراج باستخدام الدالة [formatDateTime](/ar/reference/functions/regular-functions/date-time-functions#formatDateTime).
+
+عند insert البيانات إلى ClickHouse، يمكنك استخدام تنسيقات مختلفة لسلاسل التاريخ والوقت، وذلك بحسب قيمة الإعداد [date&#95;time&#95;input&#95;format](/ar/reference/settings/formats#date_time_input_format).
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+**1.** إنشاء جدول يحتوي على عمود من النوع `DateTime` وإدخال بيانات إليه:
+
+```sql
+CREATE TABLE dt
+(
+    `timestamp` DateTime('Asia/Istanbul'),
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parse DateTime
+-- - from string,
+-- - from integer interpreted as number of seconds since 1970-01-01.
+INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 2);
+
+SELECT * FROM dt;
+```
+
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        1 │
+│ 2019-01-01 03:00:00 │        2 │
+└─────────────────────┴──────────┘
+```
+
+* عند إدراج قيمة datetime كعدد صحيح، تُعامَل على أنها Unix Timestamp ‏(UTC). تمثّل `1546300800` القيمة `'2019-01-01 00:00:00'` بتوقيت UTC. ولكن بما أن العمود `timestamp` محدَّد له المنطقة الزمنية `Asia/Istanbul` ‏(UTC+3)، فعند إخراجها كسلسلة نصية ستظهر القيمة على شكل `'2019-01-01 03:00:00'`
+* عند إدراج قيمة نصية كـ datetime، تُعامَل على أنها ضمن المنطقة الزمنية للعمود. ستُعامَل `'2019-01-01 00:00:00'` على أنها ضمن المنطقة الزمنية `Asia/Istanbul` وتُحفَظ على أنها `1546290000`.
+
+**2.** التصفية حسب قيم `DateTime`
+
+```sql
+SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istanbul')
+```
+
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        1 │
+└─────────────────────┴──────────┘
+```
+
+يمكن تصفية قيم عمود `DateTime` باستخدام قيمة نصية في شرط `WHERE`. وسيُحوَّل هذا تلقائيًا إلى `DateTime`:
+
+```sql
+SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
+```
+
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        1 │
+└─────────────────────┴──────────┘
+```
+
+**3.** الحصول على المنطقة الزمنية لعمود من النوع `DateTime`:
+
+```sql
+SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
+```
+
+```text
+┌──────────────column─┬─x─────────────────────────┐
+│ 2019-10-16 04:12:04 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
+```
+
+**4.** تحويل التوقيت بين المناطق الزمنية
+
+```sql
+SELECT
+toDateTime(timestamp, 'Europe/London') AS lon_time,
+toDateTime(timestamp, 'Asia/Istanbul') AS istanbul_time
+FROM dt
+```
+
+```text
+┌───────────lon_time──┬───────istanbul_time─┐
+│ 2019-01-01 00:00:00 │ 2019-01-01 03:00:00 │
+│ 2018-12-31 21:00:00 │ 2019-01-01 00:00:00 │
+└─────────────────────┴─────────────────────┘
+```
+
+بما أن تحويل المنطقة الزمنية لا يغيّر سوى البيانات الوصفية، فلا تترتب على هذه العملية أي تكلفة حسابية.
+
+<div id="limitations-on-time-zones-support">
+  ## القيود على دعم المناطق الزمنية
+</div>
+
+قد لا تكون بعض المناطق الزمنية مدعومة بالكامل. وهناك بضع حالات:
+
+إذا لم تكن الإزاحة عن UTC من مضاعفات 15 دقيقة، فقد يكون حساب الساعات والدقائق غير دقيق. على سبيل المثال، كانت المنطقة الزمنية في مونروفيا، ليبيريا ذات إزاحة UTC -0:44:30 قبل 7 Jan 1972. إذا كنت تُجري حسابات على أوقات تاريخية في المنطقة الزمنية لمونروفيا، فقد تُعطي دوال معالجة الوقت نتائج غير صحيحة. ومع ذلك، ستكون النتائج بعد 7 Jan 1972 صحيحة.
+
+إذا حدث الانتقال الزمني (بسبب التوقيت الصيفي أو لأسباب أخرى) عند نقطة زمنية ليست من مضاعفات 15 دقيقة، فقد تحصل أيضًا على نتائج غير صحيحة في ذلك اليوم تحديدًا.
+
+تواريخ تقويمية غير أحادية التدرج. على سبيل المثال، في Happy Valley - Goose Bay، أُعيد الوقت ساعة واحدة إلى الوراء عند 00:01:00 في 7 Nov 2010 (أي بعد دقيقة واحدة من منتصف الليل). لذلك، بعد انتهاء 6th Nov، عاش الناس دقيقة كاملة من 7th Nov، ثم أُعيد الوقت إلى 23:01 من 6th Nov، وبعد 59 دقيقة أخرى بدأ 7th Nov مرةً أخرى. لا يدعم ClickHouse (حتى الآن) هذا النوع من الطرائف. خلال هذه الأيام، قد تكون نتائج دوال معالجة الوقت غير دقيقة قليلًا.
+
+توجد مشكلة مشابهة في محطة Casey Antarctic في عام 2010. فقد أُعيد الوقت ثلاث ساعات إلى الوراء في 5 Mar عند 02:00. إذا كنت تعمل في هذه المحطة في القارة القطبية الجنوبية، فلا تتردد في استخدام ClickHouse. فقط تأكد من ضبط المنطقة الزمنية على UTC أو كن على دراية بإمكانية حدوث بعض حالات عدم الدقة.
+
+إزاحات زمنية تمتد لعدة أيام. غيّرت بعض جزر المحيط الهادئ إزاحة منطقتها الزمنية من UTC+14 إلى UTC-12. هذا مقبول، ولكن قد تظهر بعض حالات عدم الدقة إذا أجريت حسابات باستخدام منطقتها الزمنية لنقاط زمنية تاريخية في أيام التحويل.
+
+<div id="handling-daylight-saving-time-dst">
+  ## التعامل مع التوقيت الصيفي (DST)
+</div>
+
+قد يُظهر نوع `DateTime` في ClickHouse مع المناطق الزمنية سلوكًا غير متوقع أثناء الانتقال بين التوقيت الصيفي (DST) والتوقيت القياسي، وخصوصًا عندما:
+
+* يكون [`date_time_output_format`](/ar/reference/settings/formats#date_time_output_format) مضبوطًا على `simple`.
+* تُعاد الساعات إلى الخلف (&quot;Fall Back&quot;)، مما يؤدي إلى تداخل لمدة ساعة واحدة.
+* تُقدَّم الساعات إلى الأمام (&quot;Spring Forward&quot;)، مما يؤدي إلى فجوة لمدة ساعة واحدة.
+
+بشكل افتراضي، يختار ClickHouse دائمًا أول ظهور للوقت المتداخل، وقد يفسّر الأوقات غير الموجودة أثناء التقديم إلى الأمام.
+
+على سبيل المثال، تأمل الانتقال التالي من التوقيت الصيفي (DST) إلى التوقيت القياسي.
+
+* في 29 أكتوبر 2023، عند 02:00:00، تُعاد الساعات إلى الخلف إلى 01:00:00 (BST → GMT).
+* تظهر الساعة 01:00:00 – 01:59:59 مرتين (مرة بتوقيت BST ومرة بتوقيت GMT)
+* يختار ClickHouse دائمًا الظهور الأول (BST)، مما يؤدي إلى نتائج غير متوقعة عند إضافة فواصل زمنية.
+
+```sql
+SELECT '2023-10-29 01:30:00'::DateTime('Europe/London') AS time, time + toIntervalHour(1) AS one_hour_later
+
+┌────────────────time─┬──────one_hour_later─┐
+│ 2023-10-29 01:30:00 │ 2023-10-29 01:30:00 │
+└─────────────────────┴─────────────────────┘
+```
+
+وبالمثل، أثناء الانتقال من التوقيت القياسي إلى التوقيت الصيفي، قد يبدو كما لو أن ساعةً قد تم تجاوزها.
+
+على سبيل المثال:
+
+* في 26 مارس 2023، عند `00:59:59`، تُقدَّم الساعة مباشرةً إلى 02:00:00 ‏(GMT → BST).
+* الساعة `01:00:00` – `01:59:59` غير موجودة.
+
+```sql
+SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toIntervalHour(1) AS one_hour_later
+
+┌────────────────time─┬──────one_hour_later─┐
+│ 2023-03-26 00:30:00 │ 2023-03-26 02:30:00 │
+└─────────────────────┴─────────────────────┘
+```
+
+في هذه الحالة، يعيد ClickHouse الوقت غير الموجود `2023-03-26 01:30:00` إلى `2023-03-26 00:30:00`.
+
+<div id="see-also">
+  ## راجع أيضًا
+</div>
+
+* [دوال تحويل الأنواع](/ar/reference/functions/regular-functions/type-conversion-functions)
+* [دوال للتعامل مع التواريخ والأوقات](/ar/reference/functions/regular-functions/date-time-functions)
+* [دوال للتعامل مع المصفوفات](/ar/reference/functions/regular-functions/array-functions)
+* [إعداد `date_time_input_format`](/ar/reference/settings/formats#date_time_input_format)
+* [إعداد `date_time_output_format`](/ar/reference/settings/formats#date_time_output_format)
+* [معلمة `timezone` في إعدادات الخادم](/ar/reference/settings/server-settings/settings#timezone)
+* [إعداد `session_timezone`](/ar/reference/settings/session-settings#session_timezone)
+* [عوامل التشغيل للتعامل مع التواريخ والأوقات](/ar/reference/operators/index#operators-for-working-with-dates-and-times)
+* [نوع البيانات `Date`](/ar/reference/data-types/date)
