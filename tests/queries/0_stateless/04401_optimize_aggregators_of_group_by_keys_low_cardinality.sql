@@ -198,3 +198,17 @@ SELECT count() FROM t_lc_having_type GROUP BY u HAVING toTypeName(min(u)) = 'UIn
 SELECT '-- type-insensitive predicate in the same HAVING still pushes down (equality on the key)';
 SELECT s, count() FROM t_lc_having_type GROUP BY s HAVING min(s) = 'x' AND toTypeName(min(s)) = 'String' ORDER BY s;
 DROP TABLE t_lc_having_type;
+
+SELECT '-- UNION subquery argument of a parent function must not be dereferenced by the pass';
+-- A UNION subquery has no getResultType() (unlike a correlated QueryNode) and throws
+-- UNSUPPORTED_METHOD if dereferenced. reresolveIfArgumentTypesChanged must never call it on a UNION
+-- argument. Regression for https://github.com/ClickHouse/ClickHouse/pull/110059: these queries have
+-- a UNION as a function/IN argument and must run (no UNSUPPORTED_METHOD), with results identical to
+-- the optimization off.
+DROP TABLE IF EXISTS t_lc_union;
+CREATE TABLE t_lc_union (id UInt32, s LowCardinality(String)) ENGINE = Memory;
+INSERT INTO t_lc_union VALUES (1, 'x'), (2, 'y');
+SELECT id FROM t_lc_union WHERE s IN (SELECT min(s) FROM t_lc_union GROUP BY s UNION ALL SELECT 'z') ORDER BY id;
+SELECT id FROM t_lc_union WHERE s = (SELECT min(s) FROM t_lc_union GROUP BY s LIMIT 1) ORDER BY id;
+SELECT count() FROM t_lc_union WHERE s IN (SELECT max(s) FROM t_lc_union GROUP BY s UNION ALL SELECT anyLast(s) FROM t_lc_union GROUP BY s);
+DROP TABLE t_lc_union;

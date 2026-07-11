@@ -110,3 +110,8 @@ Array(String)
 1
 -- type-insensitive predicate in the same HAVING still pushes down (equality on the key)
 x	1
+-- UNION subquery argument of a parent function must not be dereferenced by the pass
+1
+2
+2
+2

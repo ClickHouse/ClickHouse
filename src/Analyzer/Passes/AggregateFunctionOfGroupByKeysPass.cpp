@@ -6,7 +6,6 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
@@ -228,9 +227,15 @@ private:
 
     /// Whether a function argument node exposes a well-defined result type that can be compared.
     /// FUNCTION/COLUMN/CONSTANT always do and are the kinds this pass substitutes (an eliminated
-    /// aggregate is replaced by its argument). A QUERY/UNION argument exposes one only when it is a
+    /// aggregate is replaced by its argument). A QUERY argument exposes one only when it is a
     /// correlated scalar subquery; a non-correlated subquery (e.g. an IN subquery) throws from
-    /// getResultType(). ListNode and other kinds have no result type.
+    /// getResultType(). UNION never exposes one here: unlike QueryNode, UnionNode has no
+    /// getResultType() override and always throws UNSUPPORTED_METHOD (even for a correlated scalar
+    /// UNION), so dereferencing it would reintroduce that analyzer failure. This is safe because a
+    /// subquery argument's type is never changed by this pass anyway: a nested query resets the
+    /// filter context (see enterImpl), so any aggregate eliminated inside a subquery projection is
+    /// cast back to its analyzed type and the subquery's result type stays stable. ListNode and
+    /// other kinds have no result type.
     static bool argumentExposesResultType(const IQueryTreeNode & argument_node)
     {
         switch (argument_node.getNodeType())
@@ -241,8 +246,6 @@ private:
                 return true;
             case QueryTreeNodeType::QUERY:
                 return argument_node.as<QueryNode &>().isCorrelated();
-            case QueryTreeNodeType::UNION:
-                return argument_node.as<UnionNode &>().isCorrelated();
             default:
                 return false;
         }
