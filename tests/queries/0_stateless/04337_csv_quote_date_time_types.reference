@@ -24,5 +24,7 @@ negative subsecond DateTime64 Unix timestamp remains quoted
 1
 CustomSeparated CSV escaping uses its field delimiter
 "2024-01-15"-42
+CustomSeparated CSV escaping uses its final row delimiter
+"2024-01-15"-
 Template CSV escaping uses its following delimiter
 "2024-01-15"-42

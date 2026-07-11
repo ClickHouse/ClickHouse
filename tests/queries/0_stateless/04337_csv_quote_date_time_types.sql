@@ -79,6 +79,16 @@ SETTINGS
     format_custom_field_delimiter = '-',
     format_custom_row_after_delimiter = '\n';
 
+SELECT 'CustomSeparated CSV escaping uses its final row delimiter' FORMAT TSVRaw;
+SELECT toDate('2024-01-15') AS d
+FORMAT CustomSeparated
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '|',
+    format_custom_row_after_delimiter = '-',
+    format_custom_result_after_delimiter = '\n';
+
 SELECT 'Template CSV escaping uses its following delimiter' FORMAT TSVRaw;
 SELECT toDate('2024-01-15') AS d, 42 AS n
 FORMAT Template
