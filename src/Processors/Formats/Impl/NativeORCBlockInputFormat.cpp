@@ -1853,10 +1853,13 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const Str
 
 /// Whether a ClickHouse type can serve as the per-branch type hint for an ORC union branch of the
 /// given ORC type. The correspondence is structural (up to Nullable and LowCardinality wrappers),
-/// extended with the special explicit-schema conversions the scalar readers support
-/// (binary -> IPv6/Int128/UInt128/Int256/UInt256/Decimal256, char -> big integers and Decimal256,
-/// int -> IPv4). Variant sorts its nested types, so the positional correspondence between ORC
-/// union branches and Variant alternatives is lost; this predicate is used to reconstruct it.
+/// extended with the explicit-schema conversions the reader supports: the integer targets the
+/// ordinary column path accepts through the final cast (the unsigned and Enum types of the
+/// matching width - they are what the ORC writer maps to these ORC types - and int -> IPv4) and
+/// the special binary readers (binary -> IPv6/Int128/UInt128/Int256/UInt256/Decimal256,
+/// char -> big integers and Decimal256). Variant sorts its nested types, so the positional
+/// correspondence between ORC union branches and Variant alternatives is lost; this predicate is
+/// used to reconstruct it.
 static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const DataTypePtr & target_type)
 {
     checkStackSize();
@@ -1869,13 +1872,13 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
         case orc::TypeKind::BOOLEAN:
             return which.isUInt8();
         case orc::TypeKind::BYTE:
-            return which.isInt8();
+            return which.isInt8() || which.isUInt8() || which.isEnum8();
         case orc::TypeKind::SHORT:
-            return which.isInt16();
+            return which.isInt16() || which.isUInt16() || which.isEnum16();
         case orc::TypeKind::INT:
-            return which.isInt32() || which.isIPv4();
+            return which.isInt32() || which.isUInt32() || which.isIPv4();
         case orc::TypeKind::LONG:
-            return which.isInt64();
+            return which.isInt64() || which.isUInt64();
         case orc::TypeKind::FLOAT:
             return which.isFloat32();
         case orc::TypeKind::DOUBLE:
@@ -2048,7 +2051,23 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             /// back as plain String).
             if (branch_hints[i] && !branch_hints[i]->equals(*branch_non_nullable.type))
             {
-                branch_non_nullable.column = castColumn(branch_non_nullable, branch_hints[i]);
+                /// Cast through Nullable when the branch has nulls: a value-checking cast (e.g.
+                /// Int8 -> Enum8) must not inspect the placeholder values at null-payload
+                /// positions (such rows become the Variant NULL discriminator below).
+                if (branch_null_map_columns[i] && branch_non_nullable.column->canBeInsideNullable()
+                    && branch_hints[i]->canBeInsideNullable())
+                {
+                    ColumnWithTypeAndName nullable_branch{
+                        ColumnNullable::create(branch_non_nullable.column, branch_null_map_columns[i]),
+                        std::make_shared<DataTypeNullable>(branch_non_nullable.type),
+                        branch_non_nullable.name};
+                    auto cast_column = castColumn(nullable_branch, std::make_shared<DataTypeNullable>(branch_hints[i]));
+                    branch_non_nullable.column = assert_cast<const ColumnNullable &>(*cast_column).getNestedColumnPtr();
+                }
+                else
+                {
+                    branch_non_nullable.column = castColumn(branch_non_nullable, branch_hints[i]);
+                }
                 branch_non_nullable.type = branch_hints[i];
             }
 
