@@ -85,11 +85,33 @@ TTLTransform::TTLTransform(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
             old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
 
+    /// Each GROUP BY TTL's TTLAggregationAlgorithm assumes its input is ordered by its own
+    /// group_by_keys. The algorithms run sequentially on the same block, so if an EARLIER GROUP BY
+    /// TTL's SET rewrites a column that is a LATER TTL's group_by key, the later algorithm's input
+    /// is no longer ordered by that key and, with the streaming flush-on-key-change, it would
+    /// fragment/lose groups. Track the SET targets seen so far and tell such a later algorithm its
+    /// input is unsorted so it defers finalization to end of stream.
+    NameSet earlier_group_by_set_targets;
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
+    {
+        bool input_sorted_by_group_by_keys = true;
+        for (const auto & key : group_by_ttl.group_by_keys)
+        {
+            if (earlier_group_by_set_targets.contains(key))
+            {
+                input_sorted_by_group_by_keys = false;
+                break;
+            }
+        }
+
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
                 getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
                 old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
-                getInputPort().getHeader(), storage_));
+                getInputPort().getHeader(), storage_, input_sorted_by_group_by_keys));
+
+        for (const auto & set_part : group_by_ttl.set_parts)
+            earlier_group_by_set_targets.insert(set_part.column_name);
+    }
 
     const auto & storage_columns = metadata_snapshot_->getColumns();
     const auto & column_defaults = storage_columns.getDefaults();
