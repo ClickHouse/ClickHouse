@@ -76,7 +76,24 @@ ASTPtr rewriteSelectQuery(
     if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         if (table_function_ptr)
-            select_query.addTableFunction(table_function_ptr);
+        {
+            /// A table-function target has no concrete remote table, so the qualified-name
+            /// restoration below (which rewrites `distributed_table.column` onto the remote
+            /// `database.table`) does not apply. Instead, alias the shard-side table function with
+            /// the same qualifier the original query used for the Distributed table - its explicit
+            /// alias, or otherwise its name - so that qualified references such as `dist.x` or `d.x`
+            /// (for `... FROM dist AS d`) keep resolving on the shard. Without this the qualifier
+            /// would dangle after the `FROM` clause is replaced.
+            ASTPtr table_function = table_function_ptr->clone();
+            if (table_function->tryGetAlias().empty())
+            {
+                const DatabaseAndTableWithAlias original(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
+                const String & qualifier = original.alias.empty() ? original.table : original.alias;
+                if (!qualifier.empty())
+                    table_function->setAlias(qualifier);
+            }
+            select_query.addTableFunction(table_function);
+        }
         else
             select_query.replaceDatabaseAndTable(remote_database, remote_table);
 
