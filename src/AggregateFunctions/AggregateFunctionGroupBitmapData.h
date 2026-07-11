@@ -590,15 +590,17 @@ public:
 
         if (isSmall())
         {
-            UInt64 count = 0;
-            UInt64 offset_count = 0;
-            auto it = small.begin();
-            for (; it != small.end() && offset_count < offset; ++it)
-                ++offset_count;
+            VectorWithMemoryTracking<T> sorted;
+            sorted.reserve(small.size());
+            for (const auto & x : small)
+                sorted.push_back(x.getValue());
+            ::sort(sorted.begin(), sorted.end());
 
-            for (; it != small.end() && count < limit; ++it, ++count)
-                r1.add(it->getValue());
-            return count;
+            const UInt64 start = std::min(offset, sorted.size());
+            const UInt64 end = std::min(start + limit, sorted.size());
+            for (UInt64 i = start; i < end; ++i)
+                r1.add(sorted[i]);
+            return end - start;
         }
 
         UInt64 count = 0;
