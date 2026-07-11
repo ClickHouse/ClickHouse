@@ -1213,7 +1213,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 /// plan the per-step wall-clock registry is populated from. Timing such a query has no
                 /// semantic meaning (a streaming read never completes), so reject it rather than execute it.
                 if (dynamic_cast<const MergeTreeCommitOrderSequentialSource *>(proc_ptr))
-                    throw Exception(ErrorCodes::ILLEGAL_STREAM,
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "EXPLAIN ANALYZE is not supported for streaming (STREAM) queries");
             }
 
