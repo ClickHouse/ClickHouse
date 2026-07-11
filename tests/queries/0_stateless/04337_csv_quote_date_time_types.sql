@@ -65,3 +65,7 @@ FROM format(
     '"2024-01-15"1"2024-01-16"1"1234567890"1"1234567890.123"1"12:30:00"1"12:30:00.456"142')
 FORMAT CSV
 SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = '1', date_time_output_format = 'unix_timestamp';
+
+SELECT 'negative subsecond DateTime64 Unix timestamp remains quoted' FORMAT TSVRaw;
+SELECT startsWith(formatRow('CSV', toDateTime64(-0.456, 3, 'UTC')), '"')
+SETTINGS output_format_csv_quote_date_time_types = 0, date_time_output_format = 'unix_timestamp';
