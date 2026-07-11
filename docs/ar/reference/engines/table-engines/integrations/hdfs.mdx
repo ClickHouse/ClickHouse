@@ -1,0 +1,277 @@
+---
+description: 'يوفّر هذا المحرك تكاملًا مع النظام البيئي لـ Apache Hadoop، إذ يتيح إدارة البيانات على HDFS عبر ClickHouse. يشبه هذا المحرك محركَي File وURL، لكنه يوفّر ميزات خاصة بـ Hadoop.'
+sidebarTitle: 'HDFS'
+slug: /engines/table-engines/integrations/hdfs
+title: 'محرك الجدول HDFS'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+يوفّر هذا المحرّك تكاملًا مع منظومة [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) من خلال إتاحة إدارة البيانات على [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) عبر ClickHouse. يشبه هذا المحرّك محرّكي [File](/ar/reference/engines/table-engines/special/file) و[URL](/ar/reference/engines/table-engines/special/url)، لكنه يوفّر ميزات خاصة بـ Hadoop.
+
+هذه الميزة غير مدعومة من مهندسي ClickHouse، ومن المعروف أن جودتها متواضعة إلى حدٍّ ما. إذا واجهت أي مشكلات، فأصلحها بنفسك وقدّم طلب pull request.
+
+<div id="usage">
+  ## الاستخدام
+</div>
+
+```sql
+ENGINE = HDFS(URI, format)
+```
+
+**معلمات المحرك**
+
+* `URI` - معرّف URI الكامل للملف في HDFS. قد يحتوي جزء `path` من `URI` على أنماط glob. في هذه الحالة سيكون الجدول للقراءة فقط.
+* `format` - يحدّد أحد تنسيقات الملفات المتاحة. لتنفيذ استعلامات
+  `SELECT`، يجب أن يكون التنسيق مدعومًا للإدخال، ولتنفيذ استعلامات
+  `INSERT` — يجب أن يكون مدعومًا للإخراج. التنسيقات المتاحة مُدرجة في قسم
+  [التنسيقات](/ar/reference/formats/index#formats-overview).
+* [PARTITION BY expr]
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+`PARTITION BY` — اختياري. في معظم الحالات، لن تحتاج إلى مفتاح تقسيم، وحتى إذا احتجت إليه، فلن تحتاج عادةً إلى مفتاح تقسيم أكثر تفصيلاً من التقسيم الشهري. لا يؤدي التقسيم إلى تسريع الاستعلامات (على عكس تعبير ORDER BY). ويجب ألا تستخدم تقسيمًا مفرط التفصيل إطلاقًا. لا تقسّم بياناتك حسب معرّفات العملاء أو أسمائهم (واجعل بدلًا من ذلك معرّف العميل أو اسمه هو العمود الأول في تعبير ORDER BY).
+
+للتقسيم حسب الشهر، استخدم التعبير `toYYYYMM(date_column)`، حيث إن `date_column` عمود يحتوي على تاريخ من النوع [Date](/ar/reference/data-types/date). تكون أسماء الأقسام هنا بالتنسيق `"YYYYMM"`.
+
+**مثال:**
+
+**1.** أعدّ الجدول `hdfs_engine_table`:
+
+```sql
+CREATE TABLE hdfs_engine_table (name String, value UInt32) ENGINE=HDFS('hdfs://hdfs1:9000/other_storage', 'TSV')
+```
+
+**2.** املأ الملف:
+
+```sql
+INSERT INTO hdfs_engine_table VALUES ('one', 1), ('two', 2), ('three', 3)
+```
+
+**3.** نفِّذ استعلامًا على البيانات:
+
+```sql
+SELECT * FROM hdfs_engine_table LIMIT 2
+```
+
+```text
+┌─name─┬─value─┐
+│ one  │     1 │
+│ two  │     2 │
+└──────┴───────┘
+```
+
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
+
+* يمكن تنفيذ عمليتَي القراءة والكتابة بالتوازي.
+* غير مدعوم:
+  * عمليتا `ALTER` و`SELECT...SAMPLE`.
+  * الفهارس.
+  * يمكن استخدام [النسخ المتماثل بدون نسخ](/ar/concepts/features/configuration/server-config/storing-data#zero-copy)، لكنه غير موصى به.
+
+<Info>
+  **النسخ المتماثل بدون نسخ غير جاهز لبيئات الإنتاج**
+
+  يكون النسخ المتماثل بدون نسخ معطّلًا افتراضيًا في ClickHouse الإصدار 22.8 وما بعده. هذه الميزة غير موصى بها للاستخدام في بيئات الإنتاج.
+</Info>
+
+**أنماط glob في المسار**
+
+يمكن أن يحتوي أكثر من مكوّن في المسار على أنماط glob. ولكي تتم معالجة الملف، يجب أن يكون موجودًا وأن يطابق نمط المسار بالكامل. ويُحدَّد سرد الملفات أثناء `SELECT` (وليس عند تنفيذ `CREATE`).
+
+* `*` — يستبدل أي عدد من المحارف باستثناء `/`، بما في ذلك السلسلة الفارغة.
+* `?` — يستبدل أي محرف واحد.
+* `{some_string,another_string,yet_another_one}` — يستبدل أيًّا من السلاسل `'some_string', 'another_string', 'yet_another_one'`.
+* `{N..M}` — يستبدل أي رقم في النطاق من N إلى M، شاملًا الحدّين.
+
+التركيبات التي تحتوي على `{}` مشابهة للدالة الجدولية [remote](/ar/reference/functions/table-functions/remote).
+
+**مثال**
+
+1. لنفترض أن لدينا عدة ملفات بتنسيق TSV مع معرّفات URI التالية على HDFS:
+
+   * &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;1&#39;
+   * &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;2&#39;
+   * &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;3&#39;
+   * &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;1&#39;
+   * &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;2&#39;
+   * &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
+
+2. توجد عدة طرق لإنشاء جدول يتكوّن من الملفات الستة جميعًا:
+
+{/* */}
+
+```sql
+CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')
+```
+
+طريقة أخرى:
+
+```sql
+CREATE TABLE table_with_question_mark (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_?', 'TSV')
+```
+
+يتألف الجدول من جميع الملفات في كلا الدليلين (يجب أن تستوفي جميع الملفات التنسيق والمخطط المحددين في الاستعلام):
+
+```sql
+CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
+```
+
+<Note>
+  إذا كانت قائمة الملفات تتضمن نطاقات رقمية تبدأ بأصفار، فاستخدم الصيغة التي تعتمد على الأقواس المعقوفة لكل رقم على حدة، أو استخدم `?`.
+</Note>
+
+**مثال**
+
+أنشئ جدولًا بملفات تحمل الأسماء `file000` و`file001` و... و`file999`:
+
+```sql
+CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
+```
+
+<div id="configuration">
+  ## الإعداد
+</div>
+
+على غرار GraphiteMergeTree، يدعم محرك HDFS الإعدادات الموسَّعة باستخدام ملف إعداد ClickHouse. هناك مفتاحا إعداد يمكنك استخدامهما: مفتاح عام (`hdfs`) وآخر على مستوى المستخدم (`hdfs_*`). يُطبَّق الإعداد العام أولًا، ثم يُطبَّق الإعداد على مستوى المستخدم (إن وُجد).
+
+```xml
+<!-- Global configuration options for HDFS engine type -->
+<hdfs>
+  <hadoop_kerberos_keytab>/tmp/keytab/clickhouse.keytab</hadoop_kerberos_keytab>
+  <hadoop_kerberos_principal>clickuser@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+  <hadoop_security_authentication>kerberos</hadoop_security_authentication>
+</hdfs>
+
+<!-- Configuration specific for user "root" -->
+<hdfs_root>
+  <hadoop_kerberos_principal>root@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+</hdfs_root>
+```
+
+<div id="configuration-options">
+  ### خيارات الإعداد
+</div>
+
+<div id="supported-by-libhdfs3">
+  #### المعلمات التي يدعمها libhdfs3
+</div>
+
+| **المعلمة**                                                             | **القيمة الافتراضية**             |
+| ----------------------------------------------------------------------- | --------------------------------- |
+| rpc&#95;client&#95;connect&#95;tcpnodelay                               | true                              |
+| dfs&#95;client&#95;read&#95;shortcircuit                                | true                              |
+| output&#95;replace-datanode-on-failure                                  | true                              |
+| input&#95;notretry-another-node                                         | false                             |
+| input&#95;localread&#95;mappedfile                                      | true                              |
+| dfs&#95;client&#95;use&#95;legacy&#95;blockreader&#95;local             | false                             |
+| rpc&#95;client&#95;ping&#95;interval                                    | 10  * 1000                        |
+| rpc&#95;client&#95;connect&#95;timeout                                  | 600 * 1000                        |
+| rpc&#95;client&#95;read&#95;timeout                                     | 3600 * 1000                       |
+| rpc&#95;client&#95;write&#95;timeout                                    | 3600 * 1000                       |
+| rpc&#95;client&#95;socket&#95;linger&#95;timeout                        | -1                                |
+| rpc&#95;client&#95;connect&#95;retry                                    | 10                                |
+| rpc&#95;client&#95;timeout                                              | 3600 * 1000                       |
+| dfs&#95;default&#95;replica                                             | 3                                 |
+| input&#95;connect&#95;timeout                                           | 600 * 1000                        |
+| input&#95;read&#95;timeout                                              | 3600 * 1000                       |
+| input&#95;write&#95;timeout                                             | 3600 * 1000                       |
+| input&#95;localread&#95;default&#95;buffersize                          | 1 * 1024 * 1024                   |
+| dfs&#95;prefetchsize                                                    | 10                                |
+| input&#95;read&#95;getblockinfo&#95;retry                               | 3                                 |
+| input&#95;localread&#95;blockinfo&#95;cachesize                         | 1000                              |
+| input&#95;read&#95;max&#95;retry                                        | 60                                |
+| output&#95;default&#95;chunksize                                        | 512                               |
+| output&#95;default&#95;packetsize                                       | 64 * 1024                         |
+| output&#95;default&#95;write&#95;retry                                  | 10                                |
+| output&#95;connect&#95;timeout                                          | 600 * 1000                        |
+| output&#95;read&#95;timeout                                             | 3600 * 1000                       |
+| output&#95;write&#95;timeout                                            | 3600 * 1000                       |
+| output&#95;close&#95;timeout                                            | 3600 * 1000                       |
+| output&#95;packetpool&#95;size                                          | 1024                              |
+| output&#95;heartbeat&#95;interval                                       | 10 * 1000                         |
+| dfs&#95;client&#95;failover&#95;max&#95;attempts                        | 15                                |
+| dfs&#95;client&#95;read&#95;shortcircuit&#95;streams&#95;cache&#95;size | 256                               |
+| dfs&#95;client&#95;socketcache&#95;expiryMsec                           | 3000                              |
+| dfs&#95;client&#95;socketcache&#95;capacity                             | 16                                |
+| dfs&#95;default&#95;blocksize                                           | 64 * 1024 * 1024                  |
+| dfs&#95;default&#95;uri                                                 | &quot;hdfs://localhost:9000&quot; |
+| hadoop&#95;security&#95;authentication                                  | &quot;simple&quot;                |
+| hadoop&#95;security&#95;kerberos&#95;ticket&#95;cache&#95;path          | &quot;&quot;                      |
+| dfs&#95;client&#95;log&#95;severity                                     | &quot;INFO&quot;                  |
+| dfs&#95;domain&#95;socket&#95;path                                      | &quot;&quot;                      |
+
+قد يوضّح [مرجع إعدادات HDFS](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) بعض هذه المعلمات.
+
+<div id="clickhouse-extras">
+  #### إضافات ClickHouse
+</div>
+
+| **معلمة**                       | **القيمة الافتراضية** |
+| --------------------------------- | --------------------- |
+| hadoop&#95;kerberos&#95;keytab    | &quot;&quot;          |
+| hadoop&#95;kerberos&#95;principal | &quot;&quot;          |
+| libhdfs3&#95;conf                 | &quot;&quot;          |
+
+<div id="limitations">
+  ### القيود
+</div>
+
+* لا يمكن أن يكون `hadoop_security_kerberos_ticket_cache_path` و `libhdfs3_conf` إلا على المستوى العام، وليس على مستوى المستخدم
+
+<div id="kerberos-support">
+  ## دعم Kerberos
+</div>
+
+إذا كانت قيمة المعلَمة `hadoop_security_authentication` هي `kerberos`، فسيجري ClickHouse المصادقة عبر Kerberos.
+يمكن العثور على المعلَمات [هنا](#clickhouse-extras)، وقد يكون `hadoop_security_kerberos_ticket_cache_path` مفيدًا.
+لاحظ أنه بسبب قيود libhdfs3، لا يُدعَم سوى الأسلوب القديم،
+كما أن اتصالات datanode غير مؤمّنة بواسطة SASL (ويُعد `HADOOP_SECURE_DN_USER` مؤشرًا موثوقًا على هذا
+النهج الأمني). استخدم `tests/integration/test_storage_kerberized_hdfs/hdfs_configs/bootstrap.sh` كمرجع.
+
+إذا جرى تحديد `hadoop_kerberos_keytab` أو `hadoop_kerberos_principal` أو `hadoop_security_kerberos_ticket_cache_path`، فستُستخدم مصادقة Kerberos. وفي هذه الحالة، يكون كلٌّ من `hadoop_kerberos_keytab` و`hadoop_kerberos_principal` إلزاميًا.
+
+<div id="namenode-ha">
+  ## دعم الإتاحة العالية لـ HDFS Namenode
+</div>
+
+يدعم libhdfs3 الإتاحة العالية لـ Namenode في HDFS.
+
+* انسخ `hdfs-site.xml` من إحدى عقد HDFS إلى `/etc/clickhouse-server/`.
+* أضف المقطع التالي إلى ملف إعداد ClickHouse:
+
+```xml
+  <hdfs>
+    <libhdfs3_conf>/etc/clickhouse-server/hdfs-site.xml</libhdfs3_conf>
+  </hdfs>
+```
+
+* ثم استخدم قيمة الوسم `dfs.nameservices` في ملف `hdfs-site.xml` كعنوان `namenode` في URI الخاص بـ HDFS. على سبيل المثال، استبدل `hdfs://appadmin@192.168.101.11:8020/abc/` بـ `hdfs://appadmin@my_nameservice/abc/`.
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — مسار الملف. النوع: `LowCardinality(String)`.
+* `_file` — اسم الملف. النوع: `LowCardinality(String)`.
+* `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان الحجم غير معروف، تكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
+
+<div id="storage-settings">
+  ## إعدادات التخزين
+</div>
+
+* [hdfs&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings#hdfs_truncate_on_insert) - يسمح بتفريغ الملف قبل الإدراج فيه. يكون معطّلًا افتراضيًا.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ar/reference/settings/session-settings#hdfs_create_new_file_on_insert) - يسمح بإنشاء ملف جديد عند كل عملية إدراج إذا كان للتنسيق لاحقة. يكون معطّلًا افتراضيًا.
+* [hdfs&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings#hdfs_skip_empty_files) - يسمح بتجاوز الملفات الفارغة أثناء القراءة. يكون معطّلًا افتراضيًا.
+
+**انظر أيضًا**
+
+* [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)

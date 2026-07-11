@@ -1,0 +1,234 @@
+---
+sidebarTitle: 'Загрузка JSON'
+title: 'Работа с JSON'
+slug: /integrations/data-formats/json/loading
+description: 'Загрузка JSON'
+keywords: ['json', 'clickhouse', 'вставка', 'загрузка', 'вставка']
+score: 15
+doc_type: 'guide'
+---
+
+В следующих примерах показано, как загружать структурированные и полуструктурированные данные JSON. Для более сложных случаев, включая вложенные структуры, см. руководство [**Проектирование схемы JSON**](/ru/guides/clickhouse/data-formats/json/schema).
+
+<div id="loading-structured-json">
+  ## Загрузка структурированного JSON
+</div>
+
+В этом разделе предполагается, что данные JSON представлены в формате [`NDJSON`](https://github.com/ndjson/ndjson-spec) (Newline delimited JSON), известном в ClickHouse как [`JSONEachRow`](/ru/reference/formats/JSON/JSONEachRow), и имеют чёткую структуру, то есть имена столбцов и их типы фиксированы. `NDJSON` является предпочтительным форматом для загрузки JSON благодаря компактности и экономному использованию пространства, однако для [ввода и вывода](/ru/reference/formats/JSON/JSON) поддерживаются и другие форматы.
+
+Рассмотрим следующий пример JSON, представляющий строку из [набора данных Python PyPI](https://clickpy.clickhouse.com/):
+
+```json
+{
+  "date": "2022-11-15",
+  "country_code": "ES",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "pip",
+  "python_minor": "3.9",
+  "system": "Linux",
+  "version": "0.3.0"
+}
+```
+
+Чтобы загрузить этот объект JSON в ClickHouse, необходимо определить схему таблицы.
+
+В этом простом случае структура статична, имена столбцов известны, а их типы чётко определены.
+
+Несмотря на то что ClickHouse поддерживает полуструктурированные данные через тип JSON, где имена ключей и их типы могут быть динамическими, в данном случае это не нужно.
+
+<Info>
+  **По возможности отдавайте предпочтение статическим схемам**
+
+  Если ваши столбцы имеют фиксированные имена и типы и появления новых столбцов не ожидается, в продакшене всегда предпочитайте статически определённую схему.
+
+  JSON type предпочтителен для сильно динамичных данных, где имена и типы столбцов могут меняться. Этот тип также полезен на этапе прототипирования и исследования данных.
+</Info>
+
+Простая схема для этого показана ниже, где **ключи JSON соответствуют именам столбцов**:
+
+```sql
+CREATE TABLE pypi (
+  `date` Date,
+  `country_code` String,
+  `project` String,
+  `type` String,
+  `installer` String,
+  `python_minor` String,
+  `system` String,
+  `version` String
+)
+ENGINE = MergeTree
+ORDER BY (project, date)
+```
+
+<Info>
+  **Ключи сортировки**
+
+  Здесь мы выбрали ключ сортировки с помощью предложения `ORDER BY`. Подробнее о ключах сортировки и о том, как их выбирать, см. [здесь](/ru/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key).
+</Info>
+
+ClickHouse может загружать данные JSON в нескольких форматах, автоматически определяя тип по расширению и содержимому файла. Для чтения JSON‑файлов из приведённой выше таблицы можно воспользоваться [функцией S3](/ru/reference/functions/table-functions/s3):
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+LIMIT 1
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type────────┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8 │
+└────────────┴──────────────┴────────────────────┴─────────────┴──────────────┴──────────────┴────────┴─────────┘
+
+1 row in set. Elapsed: 1.232 sec.
+```
+
+Обратите внимание, что указывать формат файла не обязательно. Вместо этого мы используем glob-шаблон для чтения всех файлов `*.json.gz` из бакета. ClickHouse автоматически определяет формат `JSONEachRow` (ndjson) по расширению и содержимому файла. Если ClickHouse не может определить формат автоматически, его можно указать вручную через параметры функций.
+
+```sql
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+```
+
+<Info>
+  **Сжатые файлы**
+
+  Указанные выше файлы также находятся в сжатом виде. ClickHouse автоматически распознаёт это и корректно их обрабатывает.
+</Info>
+
+Для загрузки строк из этих файлов можно использовать [`INSERT INTO SELECT`](/ru/reference/statements/insert-into#inserting-the-results-of-select):
+
+```sql
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 10.445 sec. Processed 19.49 million rows, 35.71 MB (1.87 million rows/s., 3.42 MB/s.)
+```
+
+```sql
+SELECT * FROM pypi LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┘
+
+2 rows in set. Elapsed: 0.005 sec. Processed 8.19 thousand rows, 908.03 KB (1.63 million rows/s., 180.38 MB/s.)
+```
+
+Строки также можно загружать непосредственно в запросе с помощью [предложения `FORMAT`](/ru/reference/statements/select/format), например.
+
+```sql
+INSERT INTO pypi
+FORMAT JSONEachRow
+{"date":"2022-11-15","country_code":"CN","project":"clickhouse-connect","type":"bdist_wheel","installer":"bandersnatch","python_minor":"","system":"","version":"0.2.8"}
+```
+
+В этих примерах используется формат `JSONEachRow`. Также поддерживаются другие распространённые JSON-форматы; примеры их использования приведены [здесь](/ru/guides/clickhouse/data-formats/json/formats).
+
+<div id="loading-semi-structured-json">
+  ## Загрузка полуструктурированного JSON
+</div>
+
+В предыдущем примере мы загружали статический JSON с заранее известными именами ключей и типами. Однако так бывает не всегда: ключи могут добавляться, а их типы — меняться. Это часто встречается, например, в данных обсервабилити.
+
+ClickHouse решает эту задачу с помощью специального типа [`JSON`](/ru/reference/data-types/newjson).
+
+Рассмотрим следующий пример из расширенной версии приведённого выше [набора данных Python PyPI](https://clickpy.clickhouse.com/). Здесь мы добавили произвольный столбец `tags` со случайными парами «ключ — значение».
+
+```json
+{
+  "date": "2022-09-22",
+  "country_code": "IN",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "bandersnatch",
+  "python_minor": "",
+  "system": "",
+  "version": "0.2.8",
+  "tags": {
+    "5gTux": "f3to*PMvaTYZsz!*rtzX1",
+    "nD8CV": "value"
+  }
+}
+
+```
+
+Столбец tags здесь имеет непредсказуемую структуру, поэтому его невозможно описать схемой. Чтобы загрузить эти данные, мы можем использовать нашу предыдущую схему, но добавить дополнительный столбец `tags` типа [`JSON`](/ru/reference/data-types/newjson):
+
+```sql
+SET enable_json_type = 1;
+
+CREATE TABLE pypi_with_tags
+(
+    `date` Date,
+    `country_code` String,
+    `project` String,
+    `type` String,
+    `installer` String,
+    `python_minor` String,
+    `system` String,
+    `version` String,
+    `tags` JSON
+)
+ENGINE = MergeTree
+ORDER BY (project, date);
+```
+
+Мы заполняем таблицу так же, как заполняли исходный набор данных:
+
+```sql
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```sql
+INSERT INTO pypi_with_tags SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 255.679 sec. Processed 1.00 million rows, 29.00 MB (3.91 thousand rows/s., 113.43 KB/s.)
+Peak memory usage: 2.00 GiB.
+```
+
+```sql
+SELECT *
+FROM pypi_with_tags
+LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┬─tags─────────────────────────────────────────────────────┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"nsBM":"5194603446944555691"}                           │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"4zD5MYQz4JkP1QqsJIS":"0","name":"8881321089124243208"} │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┴──────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.149 sec.
+```
+
+Обратите внимание на разницу в производительности при загрузке данных. Для JSON-столбца требуется вывод типов во время вставки, а также дополнительное место для хранения, если есть столбцы с более чем одним типом. Хотя тип JSON можно настроить (см. [Проектирование схемы JSON](/ru/guides/clickhouse/data-formats/json/schema)) так, чтобы его производительность была сопоставима с производительностью при явном объявлении столбцов, по умолчанию он намеренно остаётся гибким. Однако за эту гибкость приходится платить.
+
+<div id="when-to-use-the-json-type">
+  ### Когда использовать тип JSON
+</div>
+
+Используйте тип JSON, если ваши данные:
+
+* Содержат **непредсказуемые ключи**, которые со временем могут меняться.
+* Содержат **значения разных типов** (например, `path` иногда может быть строкой, а иногда — числом).
+* Требуют гибкости схемы, когда строгая типизация нецелесообразна.
+
+Если структура ваших данных известна и стабильна, необходимость в типе JSON возникает редко, даже если сами данные представлены в формате JSON. В частности, если ваши данные имеют:
+
+* **Плоскую структуру с известными ключами**: используйте стандартные типы столбцов, например String.
+* **Предсказуемую вложенность**: используйте для таких структур типы Tuple, Array или Nested.
+* **Предсказуемую структуру с меняющимися типами**: вместо этого рассмотрите типы Dynamic или Variant.
+
+Вы также можете комбинировать подходы, как в приведенном выше примере: использовать статические столбцы для предсказуемых ключей верхнего уровня и один JSON-столбец для динамической части полезной нагрузки.

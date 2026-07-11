@@ -1,0 +1,120 @@
+---
+sidebarTitle: 'BladePipe'
+keywords: ['ClickHouse', 'BladePipe', 'подключить', 'интеграция', 'CDC', 'ETL', 'интеграция данных']
+slug: /integrations/bladepipe
+description: 'Передавайте данные в ClickHouse в потоковом режиме с помощью конвейеров данных BladePipe'
+title: 'Подключите BladePipe к ClickHouse'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<a href="https://www.bladepipe.com/" target="_blank">BladePipe</a> — это инструмент для сквозной интеграции данных в реальном времени с задержкой менее секунды, обеспечивающий бесперебойную передачу данных между платформами.
+
+ClickHouse — один из готовых коннекторов BladePipe, который позволяет автоматически загружать данные из различных источников в ClickHouse. На этой странице показано, как шаг за шагом загружать данные в ClickHouse в реальном времени.
+
+<div id="supported-sources">
+  ## Поддерживаемые источники
+</div>
+
+В настоящее время BladePipe поддерживает интеграцию данных в ClickHouse из следующих источников:
+
+* MySQL/MariaDB/AuroraMySQL
+* Oracle
+* PostgreSQL/AuroraPostgreSQL
+* MongoDB
+* Kafka
+* PolarDB-MySQL
+* OceanBase
+* TiDB
+
+В будущем список поддерживаемых источников будет расширен.
+
+<Steps>
+  <Step>
+    ## Скачивание и запуск BladePipe
+
+    1. Войдите в <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a>.
+
+    2. Следуйте инструкциям в <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">Install Worker (Docker)</a> или <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">Install Worker (Binary)</a>, чтобы скачать и установить воркер BladePipe.
+
+    <Note>
+      Либо вы можете скачать и развернуть <a href="https://doc.bladepipe.com/productOP/onPremise/installation/install_all_in_one_binary" target="_blank">BladePipe Enterprise</a>.
+    </Note>
+  </Step>
+
+  <Step>
+    ## Добавьте ClickHouse в качестве целевого назначения
+
+    <Note>
+      1. BladePipe поддерживает ClickHouse версии `20.12.3.3` и выше.
+      2. Чтобы использовать ClickHouse в качестве целевого назначения, убедитесь, что у пользователя есть разрешения SELECT, INSERT и базовые DDL-разрешения.
+    </Note>
+
+    1. В BladePipe нажмите &quot;Источник данных&quot; &gt; &quot;Добавить источник данных&quot;.
+
+    2. Выберите `ClickHouse`, затем заполните настройки: укажите хост и порт ClickHouse, имя пользователя и пароль, после чего нажмите &quot;Проверить соединение&quot;.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp" size="lg" border alt="Добавьте ClickHouse в качестве целевого назначения" />
+
+    3. Нажмите &quot;Добавить источник данных&quot; внизу страницы — экземпляр ClickHouse будет добавлен.
+  </Step>
+
+  <Step>
+    ## Добавление MySQL в качестве источника
+
+    В этом руководстве мы используем экземпляр MySQL в качестве источника и покажем, как загрузить данные из MySQL в ClickHouse.
+
+    <Note>
+      Чтобы использовать MySQL в качестве источника, убедитесь, что у пользователя есть <a href="https://doc.bladepipe.com/dataMigrationAndSync/datasource_func/MySQL/privs_for_mysql" target="_blank">необходимые разрешения</a>.
+    </Note>
+
+    1. В BladePipe нажмите &quot;DataSource&quot; &gt; &quot;Add DataSource&quot;.
+
+    2. Выберите `MySQL`, заполните настройки, указав хост и порт MySQL, имя пользователя и пароль, затем нажмите &quot;Test Connection&quot;.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp" size="lg" border alt="Добавление MySQL в качестве источника" />
+
+    3. Нажмите внизу &quot;Add DataSource&quot;, и экземпляр MySQL будет добавлен.
+  </Step>
+
+  <Step>
+    ## Создайте конвейер
+
+    1. В BladePipe нажмите &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;.
+
+    2. Выберите добавленные экземпляры MySQL и ClickHouse и нажмите &quot;Test Connection&quot;, чтобы убедиться, что BladePipe подключён к ним. Затем выберите базы данных, которые нужно перенести.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp" size="lg" border alt="Выберите источник и назначение" />
+
+    3. В качестве типа DataJob выберите &quot;Incremental&quot; вместе с опцией &quot;Full Data&quot;.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp" size="lg" border alt="Выберите тип синхронизации" />
+
+    4. Выберите таблицы для репликации.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp" size="lg" border alt="Выберите таблицы" />
+
+    5. Выберите столбцы для репликации.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp" size="lg" border alt="Выберите столбцы" />
+
+    6. Подтвердите создание DataJob — он запустится автоматически.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob запущен" />
+  </Step>
+
+  <Step>
+    ## Проверьте данные
+
+    1. Остановите запись данных в экземпляре MySQL и дождитесь, пока ClickHouse завершит слияние данных.
+
+    <Note>
+      Из-за непредсказуемости времени автоматического слияния в ClickHouse вы можете вручную запустить слияние, выполнив команду `OPTIMIZE TABLE xxx FINAL;`. Обратите внимание, что такое слияние, запущенное вручную, не всегда может завершиться успешно.
+
+      Либо можно выполнить команду `CREATE VIEW xxx_v AS SELECT * FROM xxx FINAL;`, чтобы создать представление, и затем выполнять запросы к нему, чтобы убедиться, что данные полностью слиты.
+    </Note>
+
+    2. Создайте <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">Verification DataJob</a>. После завершения Verification DataJob проверьте результаты, чтобы убедиться, что данные в ClickHouse совпадают с данными в MySQL.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp" size="lg" border alt="Проверка данных" />
+  </Step>
+</Steps>

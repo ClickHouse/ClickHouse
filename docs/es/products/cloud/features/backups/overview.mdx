@@ -1,0 +1,112 @@
+---
+sidebarTitle: 'Copias de seguridad'
+slug: /cloud/features/backups
+title: 'Copias de seguridad'
+keywords: ['copias de seguridad', 'copias de seguridad en la nube', 'restaurar']
+description: 'Ofrece una descripción general de las funciones de copia de seguridad en ClickHouse Cloud'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+Las copias de seguridad de la base de datos actúan como una red de seguridad, ya que garantizan que, si los datos se pierden por cualquier motivo imprevisto, el servicio pueda restaurarse a un estado anterior a partir de la última copia de seguridad completada correctamente.
+Esto minimiza el tiempo de inactividad y evita la pérdida permanente de datos críticos para la empresa.
+
+<div id="backups">
+  ## Copias de seguridad
+</div>
+
+<div id="how-backups-work-in-clickhouse-cloud">
+  ### Cómo funcionan las copias de seguridad en ClickHouse Cloud
+</div>
+
+Las copias de seguridad de ClickHouse Cloud combinan copias de seguridad &quot;completas&quot; e &quot;incrementales&quot; que forman una cadena de copias de seguridad. La cadena comienza con una copia de seguridad completa y, a continuación, se realizan copias de seguridad incrementales durante los siguientes períodos programados para crear una secuencia de copias de seguridad. Cuando una cadena de copias de seguridad alcanza cierta longitud, se inicia una nueva cadena. Toda esta cadena de copias de seguridad puede utilizarse para restaurar datos en un nuevo servicio si es necesario. Cuando todas las copias de seguridad incluidas en una cadena concreta superan el período de retención establecido para el servicio (más información sobre la retención más adelante), la cadena se descarta.
+
+En la captura de pantalla de abajo, los cuadrados con línea continua representan copias de seguridad completas y los cuadrados con línea discontinua representan copias de seguridad incrementales. El rectángulo de línea continua que rodea los cuadrados indica el período de retención y las copias de seguridad visibles para el usuario final, que pueden usarse para restaurar una copia de seguridad. En el escenario de abajo, las copias de seguridad se realizan cada 24 horas y se conservan durante 2 días.
+
+El día 1, se realiza una copia de seguridad completa para iniciar la cadena de copias de seguridad. El día 2, se realiza una copia de seguridad incremental, y tanto la copia de seguridad completa como la incremental están disponibles para restaurar. Para el día 7, tenemos una copia de seguridad completa y seis copias de seguridad incrementales en la cadena, con las dos copias de seguridad incrementales más recientes visibles para el usuario. El día 8, realizamos una nueva copia de seguridad completa y, el día 9, una vez que tenemos dos copias de seguridad en la nueva cadena, la cadena anterior se descarta.
+
+<Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Ejemplo de cadena de copias de seguridad en ClickHouse Cloud" />
+
+<div id="default-backup-policy">
+  ### Política predeterminada de copias de seguridad
+</div>
+
+Las copias de seguridad se contabilizan y facturan por separado del almacenamiento en los niveles Basic, Scale y Enterprise.
+Todos los servicios incluyen por defecto una copia de seguridad diaria y, a partir del nivel Scale, es posible configurar más desde la pestaña Settings de la consola de Cloud.
+Cada copia de seguridad se conservará durante al menos 24 horas.
+
+Consulta [&quot;Revisar y restaurar copias de seguridad&quot;](/es/products/cloud/guides/backups/review-and-restore-backups) para obtener más detalles.
+
+<div id="configurable-backups">
+  ## Copias de seguridad configurables
+</div>
+
+<ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
+
+ClickHouse Cloud le permite configurar la programación de las copias de seguridad para los servicios de los niveles **Scale** y **Enterprise**. Las copias de seguridad pueden configurarse según las siguientes dimensiones, en función de las necesidades de su empresa.
+
+* **Retención**: La cantidad de días durante los que se conservará cada copia de seguridad. La retención puede configurarse desde 1 día hasta 30 días, con varios valores intermedios para elegir.
+* **Frecuencia**: La frecuencia le permite especificar el intervalo entre copias de seguridad consecutivas. Por ejemplo, una frecuencia de &quot;cada 12 horas&quot; significa que las copias de seguridad se realizarán con 12 horas de separación. La frecuencia puede ir de &quot;cada 6 horas&quot; a &quot;cada 48 horas&quot; con los siguientes incrementos en horas: `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
+* **Hora de inicio**: La hora a la que desea programar las copias de seguridad cada día. Especificar una hora de inicio implica que la &quot;Frecuencia&quot; de la copia de seguridad se establecerá de forma predeterminada en una vez cada 24 horas. ClickHouse Cloud iniciará la copia de seguridad dentro de la hora siguiente a la hora de inicio especificada.
+
+<Note>
+  La programación personalizada anulará la política predeterminada de copias de seguridad de ClickHouse Cloud para el servicio indicado.
+
+  En algunos casos poco frecuentes, el programador de copias de seguridad no respetará la **Hora de inicio** especificada para las copias de seguridad. En concreto, esto ocurre si se activó correctamente una copia de seguridad &lt; 24 horas antes de la hora de la copia de seguridad actualmente programada. Esto puede ocurrir debido al mecanismo de reintento que tenemos implementado para las copias de seguridad. En esos casos, el programador omitirá la copia de seguridad del día en curso y volverá a intentarla al día siguiente a la hora programada.
+</Note>
+
+Consulte [&quot;Configurar programaciones de copias de seguridad&quot;](/es/products/cloud/guides/backups/configurable-backups) para ver los pasos necesarios para configurar sus copias de seguridad.
+
+<div id="byob">
+  ## Copias de seguridad con tu propio bucket (BYOB)
+</div>
+
+ClickHouse Cloud permite exportar copias de seguridad al almacenamiento de tu cuenta en tu proveedor de servicios en la nube (CSP) (AWS S3, Google Cloud Storage o Azure Blob Storage).
+Si configuras las copias de seguridad en tu propio bucket, ClickHouse Cloud seguirá realizando copias de seguridad diarias en su propio bucket.
+Esto garantiza que tengamos al menos una copia de los datos desde la que restaurar en caso de que las copias de seguridad de tu bucket se corrompan.
+Para obtener más información sobre cómo funcionan las copias de seguridad de ClickHouse Cloud, consulta la documentación de [backups](/es/products/cloud/guides/backups/review-and-restore-backups).
+
+En esta guía, te mostramos cómo exportar copias de seguridad a tu almacenamiento de objetos en AWS, GCP y Azure, así como cómo restaurar esas copias de seguridad desde tu cuenta en un nuevo servicio de ClickHouse Cloud.
+También compartimos comandos de backup / restore que te permiten exportar copias de seguridad a tu bucket y restaurarlas.
+
+<Info>
+  **Copias de seguridad entre regiones**
+
+  Cualquier uso en el que las copias de seguridad se exporten a una
+  región diferente dentro del mismo proveedor de nube generará cargos por [transferencia de datos](/es/products/cloud/reference/billing/network-data-transfer).
+
+  Actualmente, no admitimos backup / restore para servicios que utilicen [Transparent Data Encryption (TDE)](/es/products/cloud/guides/security/cmek#transparent-data-encryption-tde) ni para servicios regulados.
+</Info>
+
+Consulta [&quot;Exportar copias de seguridad a tu propia cuenta de Cloud&quot;](/es/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) para ver ejemplos de cómo realizar copias de seguridad completas e incrementales en el almacenamiento de objetos de AWS, GCP y Azure, así como de cómo restaurar a partir de ellas.
+
+<div id="backup-options">
+  ### Opciones de copias de seguridad
+</div>
+
+Para exportar copias de seguridad a su propia cuenta en la nube, tiene dos opciones:
+
+<Steps>
+  <Step>
+    ##### A través de la interfaz de usuario de Cloud Console
+
+    Las copias de seguridad externas pueden [configurarse en la UI](/es/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
+    De forma predeterminada, las copias de seguridad se realizarán a diario (como se especifica en la [política de copias de seguridad predeterminada](/es/products/cloud/features/backups/overview#default-backup-policy)).
+    Sin embargo, también admitimos copias de seguridad [configurables](/es/products/cloud/guides/backups/configurable-backups) en su propia cuenta en la nube, lo que permite establecer una programación personalizada.
+    Es importante tener en cuenta que todas las copias de seguridad en su bucket son copias de seguridad completas, sin relación con otras copias de seguridad anteriores o futuras.
+  </Step>
+
+  <Step>
+    ##### Mediante comandos SQL
+
+    Puede usar [comandos SQL](/es/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands) para exportar copias de seguridad a su bucket.
+  </Step>
+</Steps>
+
+<Warning>
+  ClickHouse Cloud no gestionará el ciclo de vida de las copias de seguridad en los buckets del cliente.
+  Los clientes son responsables de garantizar que las copias de seguridad de su bucket se gestionen adecuadamente para cumplir los estándares de cumplimiento normativo, así como de gestionar los costos.
+  Si las copias de seguridad están dañadas, no podrán restaurarse.
+</Warning>

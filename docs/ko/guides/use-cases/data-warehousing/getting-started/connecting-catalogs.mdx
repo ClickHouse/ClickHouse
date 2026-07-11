@@ -1,0 +1,167 @@
+---
+title: '데이터 카탈로그에 연결하기'
+sidebarTitle: '카탈로그에 연결하기'
+slug: /use-cases/data-lake/getting-started/connecting-catalogs
+toc_max_heading_level: 3
+description: 'DataLakeCatalog 데이터베이스 엔진을 사용하여 ClickHouse를 외부 데이터 카탈로그에 연결하고, 카탈로그 테이블을 네이티브 ClickHouse 데이터베이스로 사용할 수 있게 합니다.'
+keywords: ['데이터 레이크', '레이크하우스', '카탈로그', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+[이전 섹션](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly)에서는 스토리지 경로를 직접 지정해 오픈 테이블 포맷을 쿼리했습니다. 실제 운영 환경에서는 대부분의 조직이 **데이터 카탈로그**를 통해 테이블 메타데이터를 관리합니다. 데이터 카탈로그는 테이블 위치, 스키마, 파티션을 추적하는 중앙 레지스트리입니다. ClickHouse를 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진으로 카탈로그에 연결하면 카탈로그 전체가 ClickHouse 데이터베이스로 노출됩니다. 카탈로그의 모든 테이블이 자동으로 표시되며, 개별 테이블 경로를 알거나 테이블별 자격 증명을 관리할 필요 없이 전체 ClickHouse SQL로 쿼리할 수 있습니다.
+
+이 가이드에서는 [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog)에 연결하는 방법을 설명합니다. ClickHouse는 다음 카탈로그도 지원합니다. 전체 설정 방법은 각 참고 가이드를 참조하십시오.
+
+| 카탈로그                 | 참고 가이드                                                                      |
+| -------------------- | --------------------------------------------------------------------------- |
+| AWS Glue             | [AWS Glue catalog](/ko/guides/use-cases/data-warehousing/glue-catalog)         |
+| Iceberg REST Catalog | [REST catalog](/ko/guides/use-cases/data-warehousing/rest-catalog)             |
+| Lakekeeper           | [Lakekeeper catalog](/ko/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| Project Nessie       | [Nessie catalog](/ko/guides/use-cases/data-warehousing/nessie-catalog)         |
+| Microsoft OneLake    | [Fabric OneLake](/ko/guides/use-cases/data-warehousing/onelake-catalog)        |
+
+<div id="connecting-to-unity-catalog">
+  ## Unity Catalog에 연결하기
+</div>
+
+<BetaBadge />
+
+이 예시에서는 Unity Catalog를 사용합니다.
+
+[Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog)은 Databricks lakehouse 데이터에 대한 중앙 집중식 거버넌스를 제공합니다.
+
+Databricks는 lakehouse에 대해 여러 데이터 포맷을 지원합니다. ClickHouse를 사용하면 Unity Catalog 테이블을 Delta와 Iceberg 형식 모두로 쿼리할 수 있습니다.
+
+<Note>
+  Unity Catalog와의 통합은 관리형 테이블과 외부 테이블 모두에서 작동합니다.
+  이 통합은 현재 AWS에서만 지원됩니다.
+</Note>
+
+<div id="configuring-unity-in-databricks">
+  ### Databricks에서 Unity 구성하기
+</div>
+
+ClickHouse가 Unity Catalog와 상호 작용할 수 있도록 하려면, Unity Catalog가 외부 리더의 액세스를 허용하도록 구성되어 있는지 확인해야 합니다. 이는 [「Unity Catalog에 대한 외부 데이터 액세스 활성화」](https://docs.databricks.com/aws/en/external-access/admin) 가이드를 따르면 됩니다.
+
+외부 액세스를 활성화하는 것에 더해, 통합을 구성하는 주체에게 테이블(table)이 포함된 스키마(schema)에 대한 `EXTERNAL USE SCHEMA` [권한](https://docs.databricks.com/aws/en/external-access/admin#external-schema)이 있는지 확인하십시오.
+
+카탈로그 구성이 완료되면 ClickHouse용 자격 증명을 생성해야 합니다. Unity와 상호 작용하는 방식에 따라 두 가지 메서드를 사용할 수 있습니다.
+
+* Iceberg 클라이언트의 경우 [service principal](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m)로 인증하십시오.
+
+* Delta 클라이언트의 경우 개인용 액세스 토큰([PAT](https://docs.databricks.com/aws/en/dev-tools/auth/pat))을 사용하십시오.
+
+<div id="connect-catalog">
+  ### 카탈로그에 연결
+</div>
+
+자격 증명을 사용하면 해당 엔드포인트에 연결하여 Iceberg 또는 Delta 테이블을 쿼리할 수 있습니다.
+
+<Tabs>
+  <Tab title="Delta">
+    Delta 포맷의 데이터에 액세스하려면 [Unity Catalog](/ko/guides/use-cases/data-warehousing/unity-catalog)를 사용해야 합니다.
+
+    ```sql
+    SET allow_experimental_database_unity_catalog = 1;
+
+    CREATE DATABASE unity
+    ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog')
+    SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type = 'unity';
+    ```
+  </Tab>
+
+  <Tab title="Iceberg">
+    ```sql
+    SET allow_database_iceberg = 1;
+
+    CREATE DATABASE unity
+    ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest')
+    SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret>', warehouse = 'workspace',
+    oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql';
+    ```
+  </Tab>
+</Tabs>
+
+<div id="list-tables">
+  ### 테이블 목록 확인
+</div>
+
+카탈로그에 연결되면 테이블 목록을 확인할 수 있습니다.
+
+```sql
+SHOW TABLES FROM unity
+```
+
+```response
+┌─name───────────────────────────────────────────────┐
+│ unity.logs                                         │
+│ unity.single_day_log                               │
+└────────────────────────────────────────────────────┘
+
+31 rows in set.
+```
+
+<div id="exploring-table-schemas">
+  ### 테이블 스키마 살펴보기
+</div>
+
+표준 `SHOW CREATE TABLE` 명령을 사용하면 테이블이 어떻게 생성되었는지 확인할 수 있습니다.
+
+<Info>
+  **백틱이 필요합니다**
+
+  네임스페이스와 테이블 이름은 백틱으로 감싸서 지정해야 합니다. ClickHouse는 네임스페이스를 둘 이상 지원하지 않습니다.
+</Info>
+
+다음은 REST iceberg 카탈로그를 쿼리하는 경우를 가정합니다:
+
+```sql
+SHOW CREATE TABLE unity.`icebench.single_day_log`
+
+CREATE TABLE unity.`icebench.single_day_log`
+(
+    `pull_request_number` Nullable(Int64),
+    `commit_sha` Nullable(String),
+    `check_start_time` Nullable(DateTime64(6, 'UTC')),
+    `check_name` Nullable(String),
+    `instance_type` Nullable(String),
+    `instance_id` Nullable(String),
+    `event_date` Nullable(Date32),
+    `event_time` Nullable(DateTime64(6, 'UTC')),
+    `event_time_microseconds` Nullable(DateTime64(6, 'UTC')),
+    `thread_name` Nullable(String),
+    `thread_id` Nullable(Decimal(20, 0)),
+    `level` Nullable(String),
+    `query_id` Nullable(String),
+    `logger_name` Nullable(String),
+    `message` Nullable(String),
+    `revision` Nullable(Int64),
+    `source_file` Nullable(String),
+    `source_line` Nullable(Decimal(20, 0)),
+    `message_format_string` Nullable(String)
+)
+ENGINE = Iceberg('s3://...')
+```
+
+<div id="querying-a-table">
+  ### 테이블 쿼리
+</div>
+
+모든 ClickHouse 함수가 지원됩니다. 앞서 언급했듯이, 네임스페이스와 테이블 이름은 백틱으로 감싸야 합니다.
+
+```sql
+SELECT count()
+FROM unity.`icebench.single_day_log`
+```
+
+```response
+┌───count()─┐
+│ 282634391 │ -- 2억 8263만
+└───────────┘
+
+1 row in set. Elapsed: 1.265 sec.
+```
+
+전체 설정 방법은 [Unity Catalog 참고 가이드](/ko/guides/use-cases/data-warehousing/unity-catalog)를 참조하십시오.

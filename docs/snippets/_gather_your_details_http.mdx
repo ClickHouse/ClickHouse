@@ -1,0 +1,21 @@
+
+
+
+To connect to ClickHouse with HTTP(S) you need this information:
+
+| Parameter(s)            | Description                                                                                                   |
+|-------------------------|---------------------------------------------------------------------------------------------------------------|
+|`HOST` and `PORT`        | Typically, the port is 8443 when using TLS or 8123 when not using TLS.                                        |
+|`DATABASE NAME`          | Out of the box, there is a database named `default`, use the name of the database that you want to connect to.|
+|`USERNAME` and `PASSWORD`| Out of the box, the username is `default`. Use the username appropriate for your use case.                    |
+
+The details for your ClickHouse Cloud service are available in the ClickHouse Cloud console.
+Select a service and click **Connect**:
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud service connect button" border />
+
+Choose **HTTPS**. Connection details are displayed in an example `curl` command.
+
+<Image img="/images/_snippets/connection-details-https.webp" size="md" alt="ClickHouse Cloud HTTPS connection details" border/>
+
+If you're using self-managed ClickHouse, the connection details are set by your ClickHouse administrator.

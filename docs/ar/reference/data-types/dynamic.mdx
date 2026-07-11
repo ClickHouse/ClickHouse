@@ -1,0 +1,778 @@
+---
+description: 'توثيق لنوع البيانات Dynamic في ClickHouse، الذي يمكنه تخزين
+  قيم من أنواع مختلفة في عمود واحد'
+sidebarTitle: 'Dynamic'
+slug: /sql-reference/data-types/dynamic
+title: 'Dynamic'
+doc_type: 'guide'
+---
+
+يتيح هذا النوع تخزين قيم من أي نوع دون الحاجة إلى معرفة جميع هذه الأنواع مسبقًا.
+
+للتصريح بعمود من النوع `Dynamic`، استخدم الصياغة التالية:
+
+```sql
+<column_name> Dynamic(max_types=N)
+```
+
+حيث إن `N` معلمة اختيارية بين `0` و`254` تشير إلى عدد أنواع البيانات المختلفة التي يمكن تخزينها كأعمدة فرعية منفصلة داخل عمود من النوع `Dynamic` ضمن كتلة بيانات واحدة تُخزَّن بشكل منفصل (على سبيل المثال ضمن جزء بيانات واحد لجدول MergeTree). إذا تم تجاوز هذا الحد، فستُخزَّن جميع القيم ذات الأنواع الجديدة معًا في بنية بيانات مشتركة خاصة بصيغة ثنائية. القيمة الافتراضية لـ `max_types` هي `32`.
+
+<div id="creating-dynamic">
+  ## إنشاء النوع Dynamic
+</div>
+
+استخدام النوع `Dynamic` في تعريف عمود الجدول:
+
+```sql
+CREATE TABLE test (d Dynamic) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT d, dynamicType(d) FROM test;
+```
+
+```text
+┌─d─────────────┬─dynamicType(d)─┐
+│ ᴺᵁᴸᴸ          │ None           │
+│ 42            │ Int64          │
+│ Hello, World! │ String         │
+│ [1,2,3]       │ Array(Int64)   │
+└───────────────┴────────────────┘
+```
+
+استخدام CAST انطلاقًا من عمود عادي:
+
+```sql
+SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);
+```
+
+```text
+┌─d─────────────┬─dynamicType(d)─┐
+│ Hello, World! │ String         │
+└───────────────┴────────────────┘
+```
+
+استخدام CAST مع العمود `Variant`:
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT multiIf((number % 3) = 0, number, (number % 3) = 1, range(number + 1), NULL)::Dynamic AS d, dynamicType(d) FROM numbers(3)
+```
+
+```text
+┌─d─────┬─dynamicType(d)─┐
+│ 0     │ UInt64         │
+│ [0,1] │ Array(UInt64)  │
+│ ᴺᵁᴸᴸ  │ None           │
+└───────┴────────────────┘
+```
+
+<div id="reading-dynamic-nested-types-as-subcolumns">
+  ## قراءة أنواع `Dynamic` المتداخلة كأعمدة فرعية
+</div>
+
+يدعم النوع `Dynamic` قراءة نوع متداخل واحد من عمود `Dynamic` باستخدام اسم النوع كعمود فرعي.
+لذا، إذا كان لديك العمود `d Dynamic`، يمكنك قراءة عمود فرعي لأي نوع صالح `T` باستخدام الصياغة `d.T`.
+وسيكون نوع هذا العمود الفرعي `Nullable(T)` إذا كان يمكن أن يوجد `T` داخل `Nullable`، وإلا فسيكون `T`. وسيكون هذا العمود الفرعي
+بالحجم نفسه للعمود `Dynamic` الأصلي، وسيحتوي على قيم `NULL` (أو قيم فارغة إذا كان `T` لا يمكن أن يوجد داخل `Nullable`)
+في جميع الصفوف التي لا يكون فيها نوع العمود `Dynamic` الأصلي هو `T`.
+
+يمكن أيضًا قراءة الأعمدة الفرعية لـ `Dynamic` باستخدام الدالة `dynamicElement(dynamic_column, type_name)`.
+
+أمثلة:
+
+```sql
+CREATE TABLE test (d Dynamic) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT d, dynamicType(d), d.String, d.Int64, d.`Array(Int64)`, d.Date, d.`Array(String)` FROM test;
+```
+
+```text
+┌─d─────────────┬─dynamicType(d)─┬─d.String──────┬─d.Int64─┬─d.Array(Int64)─┬─d.Date─┬─d.Array(String)─┐
+│ ᴺᵁᴸᴸ          │ None           │ ᴺᵁᴸᴸ          │    ᴺᵁᴸᴸ │ []             │   ᴺᵁᴸᴸ │ []              │
+│ 42            │ Int64          │ ᴺᵁᴸᴸ          │      42 │ []             │   ᴺᵁᴸᴸ │ []              │
+│ Hello, World! │ String         │ Hello, World! │    ᴺᵁᴸᴸ │ []             │   ᴺᵁᴸᴸ │ []              │
+│ [1,2,3]       │ Array(Int64)   │ ᴺᵁᴸᴸ          │    ᴺᵁᴸᴸ │ [1,2,3]        │   ᴺᵁᴸᴸ │ []              │
+└───────────────┴────────────────┴───────────────┴─────────┴────────────────┴────────┴─────────────────┘
+```
+
+```sql
+SELECT toTypeName(d.String), toTypeName(d.Int64), toTypeName(d.`Array(Int64)`), toTypeName(d.Date), toTypeName(d.`Array(String)`)  FROM test LIMIT 1;
+```
+
+```text
+┌─toTypeName(d.String)─┬─toTypeName(d.Int64)─┬─toTypeName(d.Array(Int64))─┬─toTypeName(d.Date)─┬─toTypeName(d.Array(String))─┐
+│ Nullable(String)     │ Nullable(Int64)     │ Array(Int64)               │ Nullable(Date)     │ Array(String)               │
+└──────────────────────┴─────────────────────┴────────────────────────────┴────────────────────┴─────────────────────────────┘
+```
+
+````sql
+SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'), dynamicElement(d, 'Array(Int64)'), dynamicElement(d, 'Date'), dynamicElement(d, 'Array(String)') FROM test;```
+````
+
+```text
+┌─d─────────────┬─dynamicType(d)─┬─dynamicElement(d, 'String')─┬─dynamicElement(d, 'Int64')─┬─dynamicElement(d, 'Array(Int64)')─┬─dynamicElement(d, 'Date')─┬─dynamicElement(d, 'Array(String)')─┐
+│ ᴺᵁᴸᴸ          │ None           │ ᴺᵁᴸᴸ                        │                       ᴺᵁᴸᴸ │ []                                │                      ᴺᵁᴸᴸ │ []                                 │
+│ 42            │ Int64          │ ᴺᵁᴸᴸ                        │                         42 │ []                                │                      ᴺᵁᴸᴸ │ []                                 │
+│ Hello, World! │ String         │ Hello, World!               │                       ᴺᵁᴸᴸ │ []                                │                      ᴺᵁᴸᴸ │ []                                 │
+│ [1,2,3]       │ Array(Int64)   │ ᴺᵁᴸᴸ                        │                       ᴺᵁᴸᴸ │ [1,2,3]                           │                      ᴺᵁᴸᴸ │ []                                 │
+└───────────────┴────────────────┴─────────────────────────────┴────────────────────────────┴───────────────────────────────────┴───────────────────────────┴────────────────────────────────────┘
+```
+
+لمعرفة أي نوع فرعي مُخزَّن في كل صف، يمكن استخدام الدالة `dynamicType(dynamic_column)`. وتُرجع `String` يحتوي على اسم نوع القيمة لكل صف (أو `'None'` إذا كان الصف `NULL`).
+
+مثال:
+
+```sql
+CREATE TABLE test (d Dynamic) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT dynamicType(d) FROM test;
+```
+
+```text
+┌─dynamicType(d)─┐
+│ None           │
+│ Int64          │
+│ String         │
+│ Array(Int64)   │
+└────────────────┘
+```
+
+<div id="conversion-between-dynamic-column-and-other-columns">
+  ## التحويل بين عمود Dynamic والأعمدة الأخرى
+</div>
+
+هناك 4 أنواع من التحويلات الممكنة التي يمكن إجراؤها باستخدام عمود `Dynamic`.
+
+<div id="converting-an-ordinary-column-to-a-dynamic-column">
+  ### تحويل عمود عادي إلى عمود من النوع Dynamic
+</div>
+
+```sql
+SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);
+```
+
+```text
+┌─d─────────────┬─dynamicType(d)─┐
+│ Hello, World! │ String         │
+└───────────────┴────────────────┘
+```
+
+<div id="converting-a-string-column-to-a-dynamic-column-through-parsing">
+  ### تحويل عمود `String` إلى عمود `Dynamic` عبر التحليل
+</div>
+
+لتحليل قيم من النوع `Dynamic` من عمود `String`، يمكنك تفعيل الإعداد `cast_string_to_dynamic_use_inference`:
+
+```sql
+SET cast_string_to_dynamic_use_inference = 1;
+SELECT CAST(materialize(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01')), 'Map(String, Dynamic)') as map_of_dynamic, mapApply((k, v) -> (k, dynamicType(v)), map_of_dynamic) as map_of_dynamic_types;
+```
+
+```text
+┌─map_of_dynamic──────────────────────────────┬─map_of_dynamic_types─────────────────────────┐
+│ {'key1':42,'key2':true,'key3':'2020-01-01'} │ {'key1':'Int64','key2':'Bool','key3':'Date'} │
+└─────────────────────────────────────────────┴──────────────────────────────────────────────┘
+```
+
+<div id="converting-a-dynamic-column-to-an-ordinary-column">
+  ### تحويل عمود `Dynamic` إلى عمود عادي
+</div>
+
+يمكن تحويل عمود `Dynamic` إلى عمود عادي. في هذه الحالة، ستُحوَّل جميع الأنواع المتداخلة إلى النوع الهدف:
+
+```sql
+CREATE TABLE test (d Dynamic) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('42.42'), (true), ('e10');
+SELECT d::Nullable(Float64) FROM test;
+```
+
+```text
+┌─CAST(d, 'Nullable(Float64)')─┐
+│                         ᴺᵁᴸᴸ │
+│                           42 │
+│                        42.42 │
+│                            1 │
+│                            0 │
+└──────────────────────────────┘
+```
+
+<div id="converting-a-variant-column-to-dynamic-column">
+  ### تحويل عمود Variant إلى عمود Dynamic
+</div>
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('String'), ([1, 2, 3]);
+SELECT v::Dynamic AS d, dynamicType(d) FROM test; 
+```
+
+```text
+┌─d───────┬─dynamicType(d)─┐
+│ ᴺᵁᴸᴸ    │ None           │
+│ 42      │ UInt64         │
+│ String  │ String         │
+│ [1,2,3] │ Array(UInt64)  │
+└─────────┴────────────────┘
+```
+
+<div id="converting-a-dynamicmax_typesn-column-to-another-dynamicmax_typesk">
+  ### تحويل عمود Dynamic(max_types=N) إلى عمود Dynamic(max_types=K) آخر
+</div>
+
+إذا كان `K >= N`، فلن تتغير البيانات أثناء التحويل:
+
+```sql
+CREATE TABLE test (d Dynamic(max_types=3)) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), (43), ('42.42'), (true);
+SELECT d::Dynamic(max_types=5) as d2, dynamicType(d2) FROM test;
+```
+
+```text
+┌─d─────┬─dynamicType(d)─┐
+│ ᴺᵁᴸᴸ  │ None           │
+│ 42    │ Int64          │
+│ 43    │ Int64          │
+│ 42.42 │ String         │
+│ true  │ Bool           │
+└───────┴────────────────┘
+```
+
+إذا كان `K < N`، فستُدرج القيم ذات الأنواع الأقل شيوعًا في عمود فرعي خاص واحد، لكن سيظل الوصول إليها ممكنًا:
+
+```text
+CREATE TABLE test (d Dynamic(max_types=4)) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), (43), ('42.42'), (true), ([1, 2, 3]);
+SELECT d, dynamicType(d), d::Dynamic(max_types=2) as d2, dynamicType(d2), isDynamicElementInSharedData(d2) FROM test;
+```
+
+```text
+┌─d───────┬─dynamicType(d)─┬─d2──────┬─dynamicType(d2)─┬─isDynamicElementInSharedData(d2)─┐
+│ ᴺᵁᴸᴸ    │ None           │ ᴺᵁᴸᴸ    │ None            │ false                            │
+│ 42      │ Int64          │ 42      │ Int64           │ false                            │
+│ 43      │ Int64          │ 43      │ Int64           │ false                            │
+│ 42.42   │ String         │ 42.42   │ String          │ false                            │
+│ true    │ Bool           │ true    │ Bool            │ true                             │
+│ [1,2,3] │ Array(Int64)   │ [1,2,3] │ Array(Int64)    │ true                             │
+└─────────┴────────────────┴─────────┴─────────────────┴──────────────────────────────────┘
+```
+
+تعيد الدالة `isDynamicElementInSharedData` القيمة `true` للصفوف المخزّنة في بنية بيانات مشتركة خاصة داخل `Dynamic`، وكما نرى، فإن العمود الناتج لا يحتوي إلا على نوعين غير مخزّنين في بنية البيانات المشتركة.
+
+إذا كانت `K=0`، فستُدرَج جميع الأنواع في عمود فرعي خاص واحد:
+
+```text
+CREATE TABLE test (d Dynamic(max_types=4)) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), (43), ('42.42'), (true), ([1, 2, 3]);
+SELECT d, dynamicType(d), d::Dynamic(max_types=0) as d2, dynamicType(d2), isDynamicElementInSharedData(d2) FROM test;
+```
+
+```text
+┌─d───────┬─dynamicType(d)─┬─d2──────┬─dynamicType(d2)─┬─isDynamicElementInSharedData(d2)─┐
+│ ᴺᵁᴸᴸ    │ None           │ ᴺᵁᴸᴸ    │ None            │ false                            │
+│ 42      │ Int64          │ 42      │ Int64           │ true                             │
+│ 43      │ Int64          │ 43      │ Int64           │ true                             │
+│ 42.42   │ String         │ 42.42   │ String          │ true                             │
+│ true    │ Bool           │ true    │ Bool            │ true                             │
+│ [1,2,3] │ Array(Int64)   │ [1,2,3] │ Array(Int64)    │ true                             │
+└─────────┴────────────────┴─────────┴─────────────────┴──────────────────────────────────┘
+```
+
+<div id="reading-dynamic-type-from-the-data">
+  ## قراءة النوع Dynamic من البيانات
+</div>
+
+تدعم جميع التنسيقات النصية (TSV وCSV وCustomSeparated وValues وJSONEachRow وما إلى ذلك) قراءة النوع `Dynamic`. أثناء تحليل البيانات، يحاول ClickHouse استنتاج نوع كل قيمة واستخدامه عند إدراجها في العمود `Dynamic`.
+
+مثال:
+
+```sql
+SELECT
+    d,
+    dynamicType(d),
+    dynamicElement(d, 'String') AS str,
+    dynamicElement(d, 'Int64') AS num,
+    dynamicElement(d, 'Float64') AS float,
+    dynamicElement(d, 'Date') AS date,
+    dynamicElement(d, 'Array(Int64)') AS arr
+FROM format(JSONEachRow, 'd Dynamic', $$
+{"d" : "Hello, World!"},
+{"d" : 42},
+{"d" : 42.42},
+{"d" : "2020-01-01"},
+{"d" : [1, 2, 3]}
+$$)
+```
+
+```text
+┌─d─────────────┬─dynamicType(d)─┬─str───────────┬──num─┬─float─┬───────date─┬─arr─────┐
+│ Hello, World! │ String         │ Hello, World! │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │       ᴺᵁᴸᴸ │ []      │
+│ 42            │ Int64          │ ᴺᵁᴸᴸ          │   42 │  ᴺᵁᴸᴸ │       ᴺᵁᴸᴸ │ []      │
+│ 42.42         │ Float64        │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │ 42.42 │       ᴺᵁᴸᴸ │ []      │
+│ 2020-01-01    │ Date           │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │ 2020-01-01 │ []      │
+│ [1,2,3]       │ Array(Int64)   │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │       ᴺᵁᴸᴸ │ [1,2,3] │
+└───────────────┴────────────────┴───────────────┴──────┴───────┴────────────┴─────────┘
+```
+
+<div id="using-dynamic-type-in-functions">
+  ## استخدام النوع Dynamic في الدوال
+</div>
+
+تدعم معظم الدوال وسائط من نوع `Dynamic`. في هذه الحالة، تُنفَّذ الدالة بشكل منفصل على كل نوع بيانات داخلي مخزَّن في عمود `Dynamic`.
+عندما يعتمد نوع نتيجة الدالة على أنواع الوسائط، فإن نتيجة تنفيذ تلك الدالة بوسائط `Dynamic` ستكون من النوع `Dynamic`. أما حين لا يعتمد نوع النتيجة على أنواع الوسائط، فستكون النتيجة `Nullable(T)` حيث `T` هو نوع النتيجة المعتاد لهذه الدالة.
+
+أمثلة:
+
+```sql
+CREATE TABLE test (d Dynamic) ENGINE=Memory;
+INSERT INTO test VALUES (NULL), (1::Int8), (2::Int16), (3::Int32), (4::Int64);
+```
+
+```sql
+SELECT d, dynamicType(d) FROM test;
+```
+
+```text
+┌─d────┬─dynamicType(d)─┐
+│ ᴺᵁᴸᴸ │ None           │
+│ 1    │ Int8           │
+│ 2    │ Int16          │
+│ 3    │ Int32          │
+│ 4    │ Int64          │
+└──────┴────────────────┘
+```
+
+```sql
+SELECT d, d + 1 AS res, toTypeName(res), dynamicType(res) FROM test;
+```
+
+```text
+┌─d────┬─res──┬─toTypeName(res)─┬─dynamicType(res)─┐
+│ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ Dynamic         │ None             │
+│ 1    │ 2    │ Dynamic         │ Int16            │
+│ 2    │ 3    │ Dynamic         │ Int32            │
+│ 3    │ 4    │ Dynamic         │ Int64            │
+│ 4    │ 5    │ Dynamic         │ Int64            │
+└──────┴──────┴─────────────────┴──────────────────┘
+```
+
+```sql
+SELECT d, d + d AS res, toTypeName(res), dynamicType(res) FROM test;
+```
+
+```text
+┌─d────┬─res──┬─toTypeName(res)─┬─dynamicType(res)─┐
+│ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ Dynamic         │ None             │
+│ 1    │ 2    │ Dynamic         │ Int16            │
+│ 2    │ 4    │ Dynamic         │ Int32            │
+│ 3    │ 6    │ Dynamic         │ Int64            │
+│ 4    │ 8    │ Dynamic         │ Int64            │
+└──────┴──────┴─────────────────┴──────────────────┘
+```
+
+```sql
+SELECT d, d < 3 AS res, toTypeName(res) FROM test;
+```
+
+```text
+┌─d────┬──res─┬─toTypeName(res)─┐
+│ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ Nullable(UInt8) │
+│ 1    │    1 │ Nullable(UInt8) │
+│ 2    │    1 │ Nullable(UInt8) │
+│ 3    │    0 │ Nullable(UInt8) │
+│ 4    │    0 │ Nullable(UInt8) │
+└──────┴──────┴─────────────────┘
+```
+
+```sql
+SELECT d, exp2(d) AS res, toTypeName(res) FROM test;
+```
+
+```sql
+┌─d────┬──res─┬─toTypeName(res)───┐
+│ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ Nullable(Float64) │
+│ 1    │    2 │ Nullable(Float64) │
+│ 2    │    4 │ Nullable(Float64) │
+│ 3    │    8 │ Nullable(Float64) │
+│ 4    │   16 │ Nullable(Float64) │
+└──────┴──────┴───────────────────┘
+```
+
+```sql
+TRUNCATE TABLE test;
+INSERT INTO test VALUES (NULL), ('str_1'), ('str_2');
+SELECT d, dynamicType(d) FROM test;
+```
+
+```text
+┌─d─────┬─dynamicType(d)─┐
+│ ᴺᵁᴸᴸ  │ None           │
+│ str_1 │ String         │
+│ str_2 │ String         │
+└───────┴────────────────┘
+```
+
+```sql
+SELECT d, upper(d) AS res, toTypeName(res) FROM test;
+```
+
+```text
+┌─d─────┬─res───┬─toTypeName(res)──┐
+│ ᴺᵁᴸᴸ  │ ᴺᵁᴸᴸ  │ Nullable(String) │
+│ str_1 │ STR_1 │ Nullable(String) │
+│ str_2 │ STR_2 │ Nullable(String) │
+└───────┴───────┴──────────────────┘
+```
+
+```sql
+SELECT d, extract(d, '([0-3])') AS res, toTypeName(res) FROM test;
+```
+
+```text
+┌─d─────┬─res──┬─toTypeName(res)──┐
+│ ᴺᵁᴸᴸ  │ ᴺᵁᴸᴸ │ Nullable(String) │
+│ str_1 │ 1    │ Nullable(String) │
+│ str_2 │ 2    │ Nullable(String) │
+└───────┴──────┴──────────────────┘
+```
+
+```sql
+TRUNCATE TABLE test;
+INSERT INTO test VALUES (NULL), ([1, 2]), ([3, 4]);
+SELECT d, dynamicType(d) FROM test;
+```
+
+```text
+┌─d─────┬─dynamicType(d)─┐
+│ ᴺᵁᴸᴸ  │ None           │
+│ [1,2] │ Array(Int64)   │
+│ [3,4] │ Array(Int64)   │
+└───────┴────────────────┘
+```
+
+```sql
+SELECT d, d[1] AS res, toTypeName(res), dynamicType(res) FROM test;
+```
+
+```text
+┌─d─────┬─res──┬─toTypeName(res)─┬─dynamicType(res)─┐
+│ ᴺᵁᴸᴸ  │ ᴺᵁᴸᴸ │ Dynamic         │ None             │
+│ [1,2] │ 1    │ Dynamic         │ Int64            │
+│ [3,4] │ 3    │ Dynamic         │ Int64            │
+└───────┴──────┴─────────────────┴──────────────────┘
+```
+
+إذا تعذّر تنفيذ الدالة على أحد الأنواع داخل العمود `Dynamic`، فسيتم طرح استثناء:
+
+```sql
+INSERT INTO test VALUES (42), (43), ('str_1');
+SELECT d, dynamicType(d) FROM test;
+```
+
+```text
+┌─d─────┬─dynamicType(d)─┐
+│ 42    │ Int64          │
+│ 43    │ Int64          │
+│ str_1 │ String         │
+└───────┴────────────────┘
+┌─d─────┬─dynamicType(d)─┐
+│ ᴺᵁᴸᴸ  │ None           │
+│ [1,2] │ Array(Int64)   │
+│ [3,4] │ Array(Int64)   │
+└───────┴────────────────┘
+```
+
+```sql
+SELECT d, d + 1 AS res, toTypeName(res), dynamicType(d) FROM test;
+```
+
+```text
+Received exception:
+Code: 43. DB::Exception: Illegal types Array(Int64) and UInt8 of arguments of function plus: while executing 'FUNCTION plus(__table1.d : 3, 1_UInt8 :: 1) -> plus(__table1.d, 1_UInt8) Dynamic : 0'. (ILLEGAL_TYPE_OF_ARGUMENT)
+```
+
+يمكننا استبعاد الأنواع غير المطلوبة:
+
+```sql
+SELECT d, d + 1 AS res, toTypeName(res), dynamicType(res) FROM test WHERE dynamicType(d) NOT IN ('String', 'Array(Int64)', 'None')
+```
+
+```text
+┌─d──┬─res─┬─toTypeName(res)─┬─dynamicType(res)─┐
+│ 42 │ 43  │ Dynamic         │ Int64            │
+│ 43 │ 44  │ Dynamic         │ Int64            │
+└────┴─────┴─────────────────┴──────────────────┘
+```
+
+أو استخرج النوع المطلوب على هيئة عمود فرعي:
+
+```sql
+SELECT d, d.Int64 + 1 AS res, toTypeName(res) FROM test;
+```
+
+```text
+┌─d─────┬──res─┬─toTypeName(res)─┐
+│ 42    │   43 │ Nullable(Int64) │
+│ 43    │   44 │ Nullable(Int64) │
+│ str_1 │ ᴺᵁᴸᴸ │ Nullable(Int64) │
+└───────┴──────┴─────────────────┘
+┌─d─────┬──res─┬─toTypeName(res)─┐
+│ ᴺᵁᴸᴸ  │ ᴺᵁᴸᴸ │ Nullable(Int64) │
+│ [1,2] │ ᴺᵁᴸᴸ │ Nullable(Int64) │
+│ [3,4] │ ᴺᵁᴸᴸ │ Nullable(Int64) │
+└───────┴──────┴─────────────────┘
+```
+
+<div id="dynamic-type-mismatch-behavior">
+  ### سلوك عدم توافق النوع
+</div>
+
+يتحكم الإعداد `dynamic_throw_on_type_mismatch` فيما يحدث عند تطبيق دالة على عمود `Dynamic` وكان النوع الفعلي المخزَّن في صفٍّ ما غير متوافق مع الدالة:
+
+* `true` (default) — رفع استثناء (`ILLEGAL_TYPE_OF_ARGUMENT`) عند أول صف غير متوافق.
+* `false` — إرجاع `NULL` للصفوف غير المتوافقة مع الاحتفاظ بالنتيجة للصفوف المتوافقة.
+
+**مثال:**
+
+```sql
+CREATE TABLE test (d Dynamic) ENGINE = Memory;
+INSERT INTO test VALUES ('world'), (123), (456);
+
+-- Default (throw on mismatch): length() does not accept integers, so the query throws.
+SELECT length(d) FROM test;  -- throws ILLEGAL_TYPE_OF_ARGUMENT
+
+-- With throw disabled: incompatible rows return NULL.
+SET dynamic_throw_on_type_mismatch = false;
+SELECT d, length(d) FROM test ORDER BY d::String NULLS LAST;
+```
+
+```text
+┌─d─────┬─length(d)─┐
+│ world │         5 │
+│ 123   │      ᴺᵁᴸᴸ │
+│ 456   │      ᴺᵁᴸᴸ │
+└───────┴───────────┘
+```
+
+<div id="using-dynamic-type-in-order-by-and-group-by">
+  ## استخدام النوع Dynamic في ORDER BY وGROUP BY
+</div>
+
+أثناء `ORDER BY` و`GROUP BY`، تُقارَن قيم النوع `Dynamic` على نحو مماثل لقيم النوع `Variant`:
+تُحدَّد نتيجة المعامل `<` للقيمتين `d1` من النوع الأساسي `T1` و`d2` من النوع الأساسي `T2` من النوع `Dynamic` كما يلي:
+
+* إذا كان `T1 = T2 = T`، فستكون النتيجة `d1.T < d2.T` (ستُقارَن القيم الأساسية).
+* إذا كان `T1 != T2`، فستكون النتيجة `T1 < T2` (ستُقارَن أسماء الأنواع).
+
+بشكل افتراضي، لا يُسمح باستخدام النوع `Dynamic` في مفاتيح `GROUP BY`/`ORDER BY`. إذا أردت استخدامه، فضع في الاعتبار قاعدة المقارنة الخاصة به وفعِّل الإعدادين `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by`.
+
+أمثلة:
+
+```sql
+CREATE TABLE test (d Dynamic) ENGINE=Memory;
+INSERT INTO test VALUES (42), (43), ('abc'), ('abd'), ([1, 2, 3]), ([]), (NULL);
+```
+
+```sql
+SELECT d, dynamicType(d) FROM test;
+```
+
+```text
+┌─d───────┬─dynamicType(d)─┐
+│ 42      │ Int64          │
+│ 43      │ Int64          │
+│ abc     │ String         │
+│ abd     │ String         │
+│ [1,2,3] │ Array(Int64)   │
+│ []      │ Array(Int64)   │
+│ ᴺᵁᴸᴸ    │ None           │
+└─────────┴────────────────┘
+```
+
+```sql
+SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in_order_by=1;
+```
+
+```sql
+┌─d───────┬─dynamicType(d)─┐
+│ []      │ Array(Int64)   │
+│ [1,2,3] │ Array(Int64)   │
+│ 42      │ Int64          │
+│ 43      │ Int64          │
+│ abc     │ String         │
+│ abd     │ String         │
+│ ᴺᵁᴸᴸ    │ None           │
+└─────────┴────────────────┘
+```
+
+**ملاحظة:** تُعدّ القيم من نوع Dynamic ذات الأنواع الرقمية المختلفة قيماً مختلفة، ولا تُقارَن ببعضها، بل تُقارَن أسماء أنواعها بدلاً من ذلك.
+
+مثال:
+
+```sql
+CREATE TABLE test (d Dynamic) ENGINE=Memory;
+INSERT INTO test VALUES (1::UInt32), (1::Int64), (100::UInt32), (100::Int64);
+SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in_order_by=1;
+```
+
+```text
+┌─v───┬─dynamicType(v)─┐
+│ 1   │ Int64          │
+│ 100 │ Int64          │
+│ 1   │ UInt32         │
+│ 100 │ UInt32         │
+└─────┴────────────────┘
+```
+
+```sql
+SELECT d, dynamicType(d) FROM test GROUP BY d SETTINGS allow_suspicious_types_in_group_by=1;
+```
+
+```text
+┌─d───┬─dynamicType(d)─┐
+│ 1   │ Int64          │
+│ 100 │ UInt32         │
+│ 1   │ UInt32         │
+│ 100 │ Int64          │
+└─────┴────────────────┘
+```
+
+**ملاحظة:** لا تُطبَّق قاعدة المقارنة المذكورة أثناء تنفيذ دوال المقارنة مثل `<`/`>`/`=` وغيرها، وذلك بسبب [الطريقة الخاصة](#using-dynamic-type-in-functions) التي تعمل بها الدوال مع النوع `Dynamic`
+
+<div id="reaching-the-limit-in-number-of-different-data-types-stored-inside-dynamic">
+  ## بلوغ الحد الأقصى لعدد أنواع البيانات المختلفة المخزَّنة داخل Dynamic
+</div>
+
+لا يمكن لنوع البيانات `Dynamic` تخزين سوى عدد محدود من أنواع البيانات المختلفة على شكل أعمدة فرعية منفصلة. يكون هذا الحد افتراضيًا 32، لكن يمكنك تغييره في تعريف النوع باستخدام الصيغة `Dynamic(max_types=N)`، حيث تكون N بين 0 و254 (وبسبب تفاصيل التنفيذ، يستحيل وجود أكثر من 254 نوع بيانات مختلفًا يمكن تخزينها كأعمدة فرعية منفصلة داخل Dynamic).
+عند بلوغ هذا الحد، ستُدرج جميع أنواع البيانات الجديدة التي تُضاف إلى العمود `Dynamic` في بنية بيانات مشتركة واحدة تخزّن القيم ذات أنواع البيانات المختلفة بصيغة ثنائية.
+
+لنرَ ما يحدث عند بلوغ هذا الحد في سيناريوهات مختلفة.
+
+<div id="reaching-the-limit-during-data-parsing">
+  ### الوصول إلى الحد أثناء تحليل البيانات
+</div>
+
+أثناء تحليل قيم `Dynamic` من البيانات، وعند الوصول إلى الحد في كتلة البيانات الحالية، ستُدرَج جميع القيم الجديدة في بنية البيانات المشتركة:
+
+```sql
+SELECT d, dynamicType(d), isDynamicElementInSharedData(d) FROM format(JSONEachRow, 'd Dynamic(max_types=3)', '
+{"d" : 42}
+{"d" : [1, 2, 3]}
+{"d" : "Hello, World!"}
+{"d" : "2020-01-01"}
+{"d" : ["str1", "str2", "str3"]}
+{"d" : {"a" : 1, "b" : [1, 2, 3]}}
+')
+```
+
+```text
+┌─d──────────────────────┬─dynamicType(d)─────────────────┬─isDynamicElementInSharedData(d)─┐
+│ 42                     │ Int64                          │ false                           │
+│ [1,2,3]                │ Array(Int64)                   │ false                           │
+│ Hello, World!          │ String                         │ false                           │
+│ 2020-01-01             │ Date                           │ true                            │
+│ ['str1','str2','str3'] │ Array(String)                  │ true                            │
+│ (1,[1,2,3])            │ Tuple(a Int64, b Array(Int64)) │ true                            │
+└────────────────────────┴────────────────────────────────┴─────────────────────────────────┘
+```
+
+كما نرى، بعد إدراج 3 أنواع بيانات مختلفة هي `Int64` و`Array(Int64)` و`String`، أُدرجت جميع الأنواع الجديدة في بنية البيانات المشتركة الخاصة.
+
+<div id="during-merges-of-data-parts-in-mergetree-table-engines">
+  ### أثناء عمليات دمج أجزاء البيانات في محركات الجداول MergeTree
+</div>
+
+أثناء دمج عدة أجزاء بيانات في جدول MergeTree، قد يصل العمود `Dynamic` في جزء البيانات الناتج إلى الحد الأقصى لعدد أنواع البيانات المختلفة التي يمكن تخزينها داخله في أعمدة فرعية منفصلة، ولن يعود قادرًا على تخزين جميع الأنواع باعتبارها أعمدة فرعية قادمة من أجزاء المصدر.
+في هذه الحالة، يحدّد ClickHouse الأنواع التي ستبقى في صورة أعمدة فرعية منفصلة بعد الدمج، والأنواع التي ستُدرج في بنية بيانات مشتركة. وفي معظم الحالات، يحاول ClickHouse الإبقاء على الأنواع الأكثر شيوعًا وتخزين الأنواع الأقل شيوعًا في بنية بيانات مشتركة، لكن ذلك يعتمد على آلية التنفيذ.
+
+لنرَ مثالًا على هذا النوع من الدمج. أولًا، لنُنشئ جدولًا يحتوي على عمود `Dynamic`، ونضبط الحد الأقصى لعدد أنواع البيانات المختلفة على `3`، ثم نُدرج قيَمًا من `5` أنواع مختلفة:
+
+```sql
+CREATE TABLE test (id UInt64, d Dynamic(max_types=3)) ENGINE=MergeTree ORDER BY id;
+SYSTEM STOP MERGES test;
+INSERT INTO test SELECT number, number FROM numbers(5);
+INSERT INTO test SELECT number, range(number) FROM numbers(4);
+INSERT INTO test SELECT number, toDate(number) FROM numbers(3);
+INSERT INTO test SELECT number, map(number, number) FROM numbers(2);
+INSERT INTO test SELECT number, 'str_' || toString(number) FROM numbers(1);
+```
+
+سيؤدي كل insert إلى إنشاء جزء بيانات منفصل يحتوي على عمود `Dynamic` من نوع واحد:
+
+```sql
+SELECT count(), dynamicType(d), isDynamicElementInSharedData(d), _part FROM test GROUP BY _part, dynamicType(d), isDynamicElementInSharedData(d) ORDER BY _part, count();
+```
+
+```text
+┌─count()─┬─dynamicType(d)──────┬─isDynamicElementInSharedData(d)─┬─_part─────┐
+│       5 │ UInt64              │ false                           │ all_1_1_0 │
+│       4 │ Array(UInt64)       │ false                           │ all_2_2_0 │
+│       3 │ Date                │ false                           │ all_3_3_0 │
+│       2 │ Map(UInt64, UInt64) │ false                           │ all_4_4_0 │
+│       1 │ String              │ false                           │ all_5_5_0 │
+└─────────┴─────────────────────┴─────────────────────────────────┴───────────┘
+```
+
+الآن، لندمج جميع الأجزاء في جزء واحد ولنرَ ماذا سيحدث:
+
+```sql
+SYSTEM START MERGES test;
+OPTIMIZE TABLE test FINAL;
+SELECT count(), dynamicType(d), isDynamicElementInSharedData(d), _part FROM test GROUP BY _part, dynamicType(d), isDynamicElementInSharedData(d) ORDER BY _part, count() desc;
+```
+
+```text
+┌─count()─┬─dynamicType(d)──────┬─isDynamicElementInSharedData(d)─┬─_part─────┐
+│       5 │ UInt64              │ false                           │ all_1_5_2 │
+│       4 │ Array(UInt64)       │ false                           │ all_1_5_2 │
+│       3 │ Date                │ false                           │ all_1_5_2 │
+│       2 │ Map(UInt64, UInt64) │ true                            │ all_1_5_2 │
+│       1 │ String              │ true                            │ all_1_5_2 │
+└─────────┴─────────────────────┴─────────────────────────────────┴───────────┘
+```
+
+كما نرى، احتفظ ClickHouse بالنوعين الأكثر تكرارًا `UInt64` و`Array(UInt64)` كأعمدة فرعية، وأدخل جميع الأنواع الأخرى في البيانات المشتركة.
+
+<div id="jsonextract-functions-with-dynamic">
+  ## دوال `JSONExtract` مع Dynamic
+</div>
+
+تدعم جميع دوال `JSONExtract*` النوع `Dynamic`:
+
+```sql
+SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Dynamic') AS dynamic, dynamicType(dynamic) AS dynamic_type;
+```
+
+```text
+┌─dynamic─┬─dynamic_type───────────┐
+│ [1,2,3] │ Array(Nullable(Int64)) │
+└─────────┴────────────────────────┘
+```
+
+```sql
+SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 'Map(String, Dynamic)') AS map_of_dynamics, mapApply((k, v) -> (k, dynamicType(v)), map_of_dynamics) AS map_of_dynamic_types
+```
+
+```text
+┌─map_of_dynamics──────────────────┬─map_of_dynamic_types────────────────────────────────────┐
+│ {'a':42,'b':'Hello','c':[1,2,3]} │ {'a':'Int64','b':'String','c':'Array(Nullable(Int64))'} │
+└──────────────────────────────────┴─────────────────────────────────────────────────────────┘
+```
+
+````sql
+SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Dynamic') AS dynamics, arrayMap(x -> (x.1, dynamicType(x.2)), dynamics) AS dynamic_types```
+````
+
+```text
+┌─dynamics───────────────────────────────┬─dynamic_types─────────────────────────────────────────────────┐
+│ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','Int64'),('b','String'),('c','Array(Nullable(Int64))')] │
+└────────────────────────────────────────┴───────────────────────────────────────────────────────────────┘
+```
+
+<div id="binary-output-format">
+  ### صيغة الإخراج الثنائية
+</div>
+
+في صيغة RowBinary، تُسلسَل قيم النوع `Dynamic` بالصيغة التالية:
+
+```text
+<binary_encoded_data_type><value_in_binary_format_according_to_the_data_type>
+```
