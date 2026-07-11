@@ -4,6 +4,7 @@
 
 #include <Core/DecimalFunctions.h>
 #include <Core/AccurateComparison.h>
+#include <Core/UUID.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -331,7 +332,8 @@ namespace DB
         const String & format_name,
         arrow::ArrayBuilder * array_builder,
         size_t start,
-        size_t end)
+        size_t end,
+        bool is_uuid2 = false)
     {
         const auto * col_uuid = assert_cast<const ColumnVector<UUID> *>(column.get());
 
@@ -352,6 +354,10 @@ namespace DB
             }
 
             UUID res = uuid_data[i];
+            /// UUID2 stores the two 64-bit halves swapped relative to UUID; convert to the logical UUID value
+            /// at the column boundary so that the emitted bytes match UUID for the same textual value.
+            if (is_uuid2)
+                res = UUIDHelpers::swapHalves(res);
             auto * bytes = reinterpret_cast<uint8_t *>(&res);
 
             if constexpr (std::endian::native == std::endian::little)
@@ -1299,6 +1305,9 @@ namespace DB
             case TypeIndex::UUID:
                 fillArrowArrayWithUUIDColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 break;
+            case TypeIndex::UUID2:
+                fillArrowArrayWithUUIDColumnData(column, null_bytemap, format_name, array_builder, start, end, /*is_uuid2=*/true);
+                break;
 #define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
             case TypeIndex::CPP_NUMERIC_TYPE: \
                 fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(column, null_bytemap, format_name, array_builder, start, end); \
@@ -1575,7 +1584,7 @@ namespace DB
             }
         }
 
-        if (isUUID(column_type))
+        if (isUUID(column_type) || isUUID2(column_type))
             return for_builder ? arrow::fixed_size_binary(sizeof(UUID)) : std::make_shared<ArrowUUIDExtensionType>();
 
         if (isDate(column_type) && settings.output_date_as_uint16)
@@ -1644,7 +1653,7 @@ namespace DB
             }
 
             // Inject our UUID metadata if it's a root UUID column
-            if (isUUID(removeNullable(header_column.type)))
+            if (isUUID(removeNullable(header_column.type)) || isUUID2(removeNullable(header_column.type)))
             {
                 auto ext_metadata = arrow::key_value_metadata(
                     {"ARROW:extension:name", "ARROW:extension:metadata", "PARQUET:logical_type"},

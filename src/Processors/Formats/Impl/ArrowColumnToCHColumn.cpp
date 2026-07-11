@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeObject.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
@@ -1081,7 +1082,8 @@ static ColumnWithTypeAndName readColumnWithDecimalData(const std::shared_ptr<arr
 static ColumnWithTypeAndName readColumnWithUUIDFromFixedBinaryData(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     const std::string & column_name,
-    DataTypePtr type_hint)
+    DataTypePtr type_hint,
+    bool is_uuid2 = false)
 {
     auto column = type_hint->createColumn();
     auto & column_data = assert_cast<ColumnVector<UUID> &>(*column).getData();
@@ -1129,6 +1131,11 @@ static ColumnWithTypeAndName readColumnWithUUIDFromFixedBinaryData(
                     // Swap the first 8 bytes with the second 8 bytes.
                     std::swap_ranges(bytes, bytes + 8, bytes + 8);
                 }
+
+                /// At this point `res` is the logical UUID value. The UUID2 type stores the two
+                /// 64-bit halves swapped, so convert at the column boundary for a UUID2 target.
+                if (is_uuid2)
+                    res = UUIDHelpers::swapHalves(res);
 
                 column_data.emplace_back(res);
             }
@@ -1802,6 +1809,8 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                         return readColumnWithBigIntegerFromFixedBinaryData<UInt256>(arrow_column, column_name, type_hint);
                     case TypeIndex::UUID:
                         return readColumnWithUUIDFromFixedBinaryData(arrow_column, column_name, type_hint);
+                    case TypeIndex::UUID2:
+                        return readColumnWithUUIDFromFixedBinaryData(arrow_column, column_name, type_hint, /*is_uuid2=*/true);
                     default:
                         break;
                 }

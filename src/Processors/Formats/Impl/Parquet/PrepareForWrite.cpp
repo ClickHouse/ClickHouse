@@ -458,6 +458,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         }
 
         case TypeIndex::UUID:
+        case TypeIndex::UUID2:
         {
             parq::UUIDType uuid;
             parq::LogicalType t;

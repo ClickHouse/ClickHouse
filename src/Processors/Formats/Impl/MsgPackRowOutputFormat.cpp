@@ -248,14 +248,20 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             return;
         }
         case TypeIndex::UUID:
+        case TypeIndex::UUID2:
         {
             const auto & uuid_column = assert_cast<const ColumnUUID &>(column);
+            /// UUID2 stores the two 64-bit halves swapped relative to UUID; convert to the logical UUID value
+            /// at the column boundary so that the formatting below matches UUID for the same textual value.
+            UUID value = uuid_column.getElement(row_num);
+            if (data_type->getTypeId() == TypeIndex::UUID2)
+                value = UUIDHelpers::swapHalves(value);
             switch (format_settings.msgpack.output_uuid_representation)
             {
                 case FormatSettings::MsgPackUUIDRepresentation::BIN:
                 {
                     WriteBufferFromOwnString buf;
-                    writeBinary(uuid_column.getElement(row_num), buf);
+                    writeBinary(value, buf);
                     std::string_view uuid_bin = buf.stringView();
                     packer.pack_bin(static_cast<unsigned>(uuid_bin.size()));
                     packer.pack_bin_body(uuid_bin.data(), static_cast<unsigned>(uuid_bin.size()));
@@ -264,7 +270,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                 case FormatSettings::MsgPackUUIDRepresentation::STR:
                 {
                     WriteBufferFromOwnString buf;
-                    writeText(uuid_column.getElement(row_num), buf);
+                    writeText(value, buf);
                     std::string_view uuid_text = buf.stringView();
                     packer.pack_str(static_cast<unsigned>(uuid_text.size()));
                     packer.pack_bin_body(uuid_text.data(), static_cast<unsigned>(uuid_text.size()));
@@ -273,7 +279,6 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                 case FormatSettings::MsgPackUUIDRepresentation::EXT:
                 {
                     WriteBufferFromOwnString buf;
-                    UUID value = uuid_column.getElement(row_num);
                     writeBinaryBigEndian(UUIDHelpers::getHighBytes(value), buf);
                     writeBinaryBigEndian(UUIDHelpers::getLowBytes(value), buf);
                     std::string_view uuid_ext = buf.stringView();

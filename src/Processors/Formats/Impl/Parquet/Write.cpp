@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
+#include <Core/UUID.h>
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
@@ -462,10 +463,14 @@ struct ConverterUUID
     using Statistics = StatisticsFixedStringCopy<sizeof(UUID), /*SIGNED=*/ false>;
 
     const ColumnVector<UUID> & column;
+    /// `UUID2` stores the value in the big-endian layout; convert to the logical `UUID` layout first so the
+    /// canonical byte order is emitted (same output as `UUID` for the same textual value).
+    const bool is_uuid2;
     PODArray<parquet::FixedLenByteArray> buf;
     PODArray<UUID> swapped_buf;
 
-    explicit ConverterUUID(const ColumnPtr & c) : column(assert_cast<const ColumnVector<UUID> &>(*c)) {}
+    explicit ConverterUUID(const ColumnPtr & c, bool is_uuid2_ = false)
+        : column(assert_cast<const ColumnVector<UUID> &>(*c)), is_uuid2(is_uuid2_) {}
 
     const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
     {
@@ -475,6 +480,8 @@ struct ConverterUUID
         for (size_t i = 0; i < count; ++i)
         {
             UUID res = column.getData()[offset + i];
+            if (is_uuid2)
+                res = UUIDHelpers::swapHalves(res);
             auto * bytes = reinterpret_cast<uint8_t *>(&res);
 
             if constexpr (std::endian::native == std::endian::little)
@@ -1288,10 +1295,12 @@ void writeColumnChunkBody(
         #undef F
 
         case TypeIndex::UUID:
+            /// `UUID` and `UUID2` share the same column (`ColumnUUID`), so the switch above (which keys on the
+            /// column's data type) cannot distinguish them; the concrete data type in `s.type` does.
             writeColumnImpl<parquet::FLBAType>(s,
                 options,
                 out,
-                ConverterUUID(s.primitive_column));
+                ConverterUUID(s.primitive_column, /*is_uuid2=*/ s.type->getTypeId() == TypeIndex::UUID2));
         break;
 
         #define D(source_type) \

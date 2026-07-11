@@ -5,6 +5,7 @@
 #include <Formats/CapnProtoSerializer.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/CapnProtoSchema.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -22,6 +23,8 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnMap.h>
 #include <base/find_symbols.h>
+
+#include <cstring>
 
 #include <boost/algorithm/string.hpp>
 
@@ -719,6 +722,61 @@ namespace
         }
 
         DataTypePtr data_type;
+    };
+
+    /// Serializes a ColumnUUID holding a UUID2 value as raw 16 bytes, exactly like the raw serializer for UUID,
+    /// but converting to/from the logical UUID layout via UUIDHelpers::swapHalves at the column boundary, so that
+    /// the same textual value produces the same CapnProto bytes for UUID and UUID2.
+    class CapnProtoUUID2Serializer : public ICapnProtoSerializer
+    {
+    public:
+        CapnProtoUUID2Serializer(const DataTypePtr & data_type_, const String & column_name, const capnp::Type & capnp_type) : data_type(data_type_)
+        {
+            if (!capnp_type.isData())
+                throwCannotConvert(data_type, column_name, capnp_type);
+        }
+
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
+        {
+            value = UUIDHelpers::swapHalves(assert_cast<const ColumnVector<UUID> &>(*column).getElement(row_num));
+            parent_struct_builder.getBuilderImpl().getPointerField(slot_offset).setBlob<capnp::Data>(getData());
+        }
+
+        void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_struct_builder, UInt32 array_index, size_t row_num) override
+        {
+            value = UUIDHelpers::swapHalves(assert_cast<const ColumnVector<UUID> &>(*column).getElement(row_num));
+            parent_struct_builder.getBuilderImpl().getPointerElement(array_index).setBlob<capnp::Data>(getData());
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicStruct::Reader & parent_struct_reader, UInt32 slot_offset) override
+        {
+            insertData(column, parent_struct_reader.getReaderImpl().getPointerField(slot_offset).getBlob<capnp::Data>(nullptr, 0));
+        }
+
+        void readRow(IColumn & column, const capnp::DynamicList::Reader & parent_list_reader, UInt32 array_index) override
+        {
+            insertData(column, parent_list_reader.getReaderImpl().getPointerElement(array_index).getBlob<capnp::Data>(nullptr, 0));
+        }
+
+    private:
+        capnp::Data::Reader getData()
+        {
+            return capnp::Data::Reader(reinterpret_cast<const kj::byte *>(&value), sizeof(UUID));
+        }
+
+        void insertData(IColumn & column, capnp::Data::Reader data)
+        {
+            if (data.size() != sizeof(UUID))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of {} value: {}", data_type->getName(), data.size());
+
+            UUID logical;
+            memcpy(&logical, data.begin(), sizeof(UUID));
+            assert_cast<ColumnVector<UUID> &>(column).insertValue(UUIDHelpers::swapHalves(logical));
+        }
+
+        DataTypePtr data_type;
+        /// Holds the swapped value between computing it and setBlob copying it into the message.
+        UUID value{};
     };
 
     template <typename CapnpType>
@@ -1477,6 +1535,8 @@ namespace
                 return std::make_unique<CapnProtoFixedSizeRawDataSerializer<IPv6>>(type, name, capnp_type);
             case TypeIndex::UUID:
                 return std::make_unique<CapnProtoFixedSizeRawDataSerializer<UUID>>(type, name, capnp_type);
+            case TypeIndex::UUID2:
+                return std::make_unique<CapnProtoUUID2Serializer>(type, name, capnp_type);
             case TypeIndex::Enum8:
                 return std::make_unique<CapnProtoEnumSerializer<Int8>>(type, name, capnp_type, settings.enum_comparing_mode);
             case TypeIndex::Enum16:

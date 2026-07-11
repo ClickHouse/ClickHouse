@@ -1,6 +1,7 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Core/CaseAwareBlockNameMap.h>
+#include <Core/UUID.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
@@ -335,7 +336,7 @@ static void readAndInsertIPv6(ReadBuffer & in, IColumn & column, BSONType bson_t
 }
 
 
-static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_type)
+static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_type, bool is_uuid2 = false)
 {
     if (bson_type != BSONType::BINARY)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into UUID column", getBSONTypeName(bson_type));
@@ -357,6 +358,9 @@ static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_t
 
     UUID value;
     readBinaryLittleEndian(value, in);
+    /// UUID2 stores the two 64-bit halves swapped relative to the logical UUID value.
+    if (is_uuid2)
+        value = UUIDHelpers::swapHalves(value);
     assert_cast<ColumnUUID &>(column).insertValue(value);
 }
 
@@ -664,6 +668,11 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
         case TypeIndex::UUID:
         {
             readAndInsertUUID(*in, column, bson_type);
+            return true;
+        }
+        case TypeIndex::UUID2:
+        {
+            readAndInsertUUID(*in, column, bson_type, /*is_uuid2=*/true);
             return true;
         }
         case TypeIndex::Array:

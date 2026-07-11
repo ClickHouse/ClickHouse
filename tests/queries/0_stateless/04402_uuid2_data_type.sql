@@ -46,6 +46,27 @@ DROP TABLE IF EXISTS t_mat1;
 CREATE TABLE t_mat1 (a UUID, d Array(UUID)) ENGINE = MergeTree ORDER BY tuple();
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_mat1' ORDER BY name;
 
+SELECT '-- function parity: hex/UUIDv7ToDateTime/reinterpret/empty match UUID for the same value';
+WITH '0192d2b8-7c3f-7e1a-b2c4-1234567890ab' AS s
+SELECT
+    hex(s::UUID2) = hex(s::UUID),
+    UUIDToNum(s::UUID2) = UUIDToNum(s::UUID),
+    UUIDv7ToDateTime('0192d2b8-7c3f-7e1a-b2c4-1234567890ab'::UUID2) = UUIDv7ToDateTime('0192d2b8-7c3f-7e1a-b2c4-1234567890ab'::UUID),
+    reinterpretAsUInt128('00000000-0000-0000-0000-000000000001'::UUID2),
+    empty('00000000-0000-0000-0000-000000000000'::UUID2),
+    notEmpty(s::UUID2);
+
+SELECT '-- generateRandom produces UUID2';
+SELECT count() FROM (SELECT * FROM generateRandom('x UUID2', 1, 1, 1) LIMIT 5);
+
+SELECT '-- bloom_filter skip index on UUID2';
+DROP TABLE IF EXISTS t_bf;
+CREATE TABLE t_bf (x UUID2, INDEX idx x TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_bf VALUES ('61f0c404-5cb3-11e7-907b-a6006ad3dba0');
+SELECT count() FROM t_bf WHERE x = '61f0c404-5cb3-11e7-907b-a6006ad3dba0';
+SELECT count() FROM t_bf WHERE x = '00000000-0000-0000-0000-000000000000';
+
 DROP TABLE t_uuid2;
 DROP TABLE t_mat;
 DROP TABLE t_mat1;
+DROP TABLE t_bf;
