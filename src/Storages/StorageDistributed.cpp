@@ -1023,7 +1023,10 @@ void StorageDistributed::read(
 
     if (settings[Setting::allow_experimental_analyzer])
     {
-        StorageID remote_storage_id = StorageID{remote_database, remote_table};
+        /// When the table is backed by a table function there is no concrete remote table:
+        /// `buildQueryTreeDistributed` uses `remote_table_function_ptr` and leaves this StorageID unused.
+        /// Avoid constructing it from empty names (which throws), matching the `remote_storage` member.
+        StorageID remote_storage_id = remote_table_function_ptr ? StorageID::createEmpty() : StorageID{remote_database, remote_table};
 
         auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
@@ -1106,6 +1109,14 @@ void StorageDistributed::read(
 
 SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    /// A Distributed table backed by a table function has no concrete remote table to route
+    /// inserts to, so `DistributedSink` cannot build a valid `INSERT INTO ...` query for the shards.
+    /// Reject it explicitly instead of building a broken query (or spooling undeliverable files).
+    if (remote_table_function_ptr)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "INSERT into a Distributed table ({}) that is backed by a table function is not supported",
+            getStorageID().getNameForLogs());
+
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
 
@@ -1417,6 +1428,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
 std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
+    /// See the same guard in `write`: a table-function-backed Distributed table is not a valid INSERT target.
+    if (remote_table_function_ptr)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "INSERT into a Distributed table ({}) that is backed by a table function is not supported",
+            getStorageID().getNameForLogs());
+
     const Settings & settings = local_context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
@@ -2124,35 +2141,74 @@ void registerStorageDistributed(StorageFactory & factory)
           * -- string literal as specific case;
           * - empty string means 'use default database from cluster'.
           *
+          * Instead of a database and a table, a table function may be passed as a single argument,
+          * mirroring the `cluster('cluster_name', table_function())` signature of the `cluster` table function.
+          *
           * Distributed engine also supports SETTINGS clause.
           */
 
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() < 3 || engine_args.size() > 5)
+        if (engine_args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Distributed requires from 3 "
-                            "to 5 parameters - name of configuration section with list "
-                            "of remote servers, name of remote database, name "
-                            "of remote table, sharding key expression (optional), policy to store data in (optional).");
+                            "Storage Distributed requires at least the name of the cluster.");
 
         String cluster_name = getClusterNameAndMakeLiteral(engine_args[0]);
 
         const ContextPtr & context = args.getContext();
         const ContextPtr & local_context = args.getLocalContext();
 
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], local_context);
-        engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], local_context);
-
-        String remote_database = checkAndGetLiteralArgument<String>(engine_args[1], "remote_database");
-        String remote_table = checkAndGetLiteralArgument<String>(engine_args[2], "remote_table");
-
-        const auto & sharding_key_ast = engine_args.size() >= 4 ? engine_args[3] : nullptr;
+        String remote_database;
+        String remote_table;
+        ASTPtr remote_table_function_ptr;
+        ASTPtr sharding_key_ast;
         String storage_policy = "default";
-        if (engine_args.size() >= 5)
+
+        /// A function node whose name is a registered table function is treated as a table function
+        /// (Distributed(cluster, table_function()[, sharding_key[, policy_name]])). Any other expression
+        /// is a database name, so it is evaluated as a constant string (e.g. an identifier or `currentDatabase()`).
+        /// This mirrors how `TableFunctionRemote` disambiguates its second argument.
+        const auto * table_function_ast = engine_args.size() >= 2 ? engine_args[1]->as<ASTFunction>() : nullptr;
+        if (table_function_ast && TableFunctionFactory::instance().isTableFunctionName(table_function_ast->name))
         {
-            engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
-            storage_policy = checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy");
+            if (engine_args.size() > 4)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Storage Distributed over a table function requires from 2 to 4 parameters - "
+                                "name of configuration section with list of remote servers, table function, "
+                                "sharding key expression (optional), policy to store data in (optional).");
+
+            remote_table_function_ptr = engine_args[1];
+
+            if (engine_args.size() >= 3)
+                sharding_key_ast = engine_args[2];
+            if (engine_args.size() >= 4)
+            {
+                engine_args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[3], local_context);
+                storage_policy = checkAndGetLiteralArgument<String>(engine_args[3], "storage_policy");
+            }
+        }
+        else
+        {
+            if (engine_args.size() < 3 || engine_args.size() > 5)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Storage Distributed requires from 3 "
+                                "to 5 parameters - name of configuration section with list "
+                                "of remote servers, name of remote database, name "
+                                "of remote table, sharding key expression (optional), policy to store data in (optional).");
+
+            engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], local_context);
+            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], local_context);
+
+            remote_database = checkAndGetLiteralArgument<String>(engine_args[1], "remote_database");
+            remote_table = checkAndGetLiteralArgument<String>(engine_args[2], "remote_table");
+
+            if (engine_args.size() >= 4)
+                sharding_key_ast = engine_args[3];
+            if (engine_args.size() >= 5)
+            {
+                engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
+                storage_policy = checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy");
+            }
         }
 
         /// TODO: move some arguments from the arguments to the SETTINGS.
@@ -2198,7 +2254,9 @@ void registerStorageDistributed(StorageFactory & factory)
             storage_policy,
             args.relative_data_path,
             distributed_settings,
-            args.mode);
+            args.mode,
+            /* owned_cluster_= */ ClusterPtr{},
+            remote_table_function_ptr);
     },
     {
         .supports_settings = true,
@@ -2236,6 +2294,22 @@ When the `Distributed` table is pointing to a table on the current server you ca
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
+
+### From a table function {#distributed-from-a-table-function}
+
+Instead of a database and a table name, a table function can be used as the remote target, in the same way as the [`cluster`](/sql-reference/table-functions/cluster) table function accepts `cluster('cluster_name', table_function())`. The table function is executed on every shard of the cluster:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] ENGINE = Distributed(cluster, table_function()[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
+```
+
+The columns can be omitted; in that case the structure is inferred from the table function. For example:
+
+```sql
+CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
+```
+
+The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
 
 ### Distributed parameters {#distributed-parameters}
 

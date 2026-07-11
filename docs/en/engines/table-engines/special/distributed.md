@@ -38,6 +38,22 @@ When the `Distributed` table is pointing to a table on the current server you ca
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
+### From a table function {#distributed-from-a-table-function}
+
+Instead of a database and a table name, a table function can be used as the remote target, in the same way as the [`cluster`](/sql-reference/table-functions/cluster) table function accepts `cluster('cluster_name', table_function())`. The table function is executed on every shard of the cluster:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] ENGINE = Distributed(cluster, table_function()[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
+```
+
+The columns can be omitted; in that case the structure is inferred from the table function. For example:
+
+```sql
+CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
+```
+
+The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
+
 ### Distributed parameters {#distributed-parameters}
 
 | Parameter                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
