@@ -550,6 +550,48 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
+/// The exact set of columns an ADD COLUMN command materializes: flatten_nested expansion plus the
+/// IF NOT EXISTS existence filter. Shared by AlterCommand::apply and AlterCommands::validate so both
+/// model the identical schema (an earlier drift here caused apply/validate to disagree on nested adds).
+/// Returns empty when the command is a whole-command no-op (IF NOT EXISTS and the column already exists).
+static std::vector<ColumnDescription> columnsAddedByAlter(
+    const ColumnsDescription & existing_columns,
+    ColumnDescription column,
+    ContextPtr context,
+    bool if_not_exists,
+    bool share_nested_offsets)
+{
+    /// An exact `column_name` match is always a whole-command no-op; the `n`/`n.*` nested equivalence
+    /// (`hasNested`) is only "exists" when share_nested_offsets is enabled, matching prepare()/validate().
+    if (if_not_exists
+        && (existing_columns.has(column.name)
+            || (share_nested_offsets && existing_columns.hasNested(column.name))))
+        return {};
+
+    std::vector<ColumnDescription> columns_to_add;
+    if (context->getSettingsRef()[Setting::flatten_nested])
+    {
+        StorageInMemoryMetadata temporary_metadata;
+        temporary_metadata.columns.add(column, /*after_column*/ "", /*first*/ true);
+        temporary_metadata.columns.flattenNested();
+
+        for (const auto & col : temporary_metadata.columns.getAll())
+            columns_to_add.push_back(temporary_metadata.columns.get(col.name));
+    }
+    else
+    {
+        columns_to_add.push_back(std::move(column));
+    }
+
+    /// Skip only the EXACT transformed names that already exist (not an `n.*` prefix), so a repeated
+    /// flattened `n.a` add is a no-op while a genuinely new distinct column is never dropped.
+    if (if_not_exists)
+        std::erase_if(columns_to_add, [&](const ColumnDescription & c) { return existing_columns.has(c.name); });
+
+    return columns_to_add;
+}
+
+
 void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     /// Helper function for column existence check with IF EXISTS
@@ -559,18 +601,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
 
     if (type == ADD_COLUMN)
     {
-        /// IF NOT EXISTS is resolved in prepare() against the prepare-time snapshot, but apply() runs
-        /// on a fresher one (checkAlterIsPossible re-applies commands), and two IF NOT EXISTS adds of
-        /// the same column in one statement are both left un-ignored by prepare(). Skip here too so
-        /// IF NOT EXISTS never throws when the column already exists, matching prepare()/validate()'s
-        /// existence predicate: an exact `column_name` match is always a whole-command no-op, while the
-        /// `n`/`n.*` nested equivalence (`hasNested`) is only treated as "exists" when share_nested_offsets
-        /// is enabled.
-        if (if_not_exists
-            && (metadata.columns.has(column_name)
-                || (share_nested_offsets && metadata.columns.hasNested(column_name))))
-            return;
-
         ColumnDescription column(column_name, data_type);
         if (default_expression)
         {
@@ -585,31 +615,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
 
         column.ttl = ttl;
 
-        /// The exact set of columns this ADD would insert. With flatten_nested (default on)
-        /// `n Nested(a ...)` expands to `n.a`, `n.b`, ...; otherwise it is the single column.
-        std::vector<ColumnDescription> columns_to_add;
-        if (context->getSettingsRef()[Setting::flatten_nested])
-        {
-            StorageInMemoryMetadata temporary_metadata;
-            temporary_metadata.columns.add(column, /*after_column*/ "", /*first*/ true);
-            temporary_metadata.columns.flattenNested();
-
-            for (const auto & col : temporary_metadata.columns.getAll())
-                columns_to_add.push_back(temporary_metadata.columns.get(col.name));
-        }
-        else
-        {
-            columns_to_add.push_back(column);
-        }
-
-        /// The exact and (share_nested_offsets-enabled) nested whole-command no-ops are handled by the
-        /// early return above. Reaching here means the top-level `column_name` does not exactly exist and
-        /// the nested equivalence does not apply, so skip only the EXACT transformed names that truly
-        /// already exist, not an `n.*` prefix. This still makes a repeated flattened `n.a` add a no-op
-        /// while never dropping a genuinely new distinct column.
-        if (if_not_exists)
-            std::erase_if(columns_to_add, [&](const ColumnDescription & c) { return metadata.columns.has(c.name); });
-
+        /// The exact columns this ADD materializes (flatten_nested expansion + IF NOT EXISTS filter).
+        /// Empty means a whole-command no-op. validate() advances its snapshot with the same set so
+        /// apply() and validate() never disagree on what a (nested) ADD introduces.
+        auto columns_to_add = columnsAddedByAlter(metadata.columns, column, context, if_not_exists, share_nested_offsets);
         if (columns_to_add.empty())
             return;
 
@@ -1720,7 +1729,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     settings[Setting::allow_experimental_codecs]);
             }
 
-            all_columns.add(ColumnDescription(column_name, command.data_type));
+            /// Advance the working snapshot with the exact columns apply() would materialize
+            /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
+            /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
+            for (auto & col : columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type),
+                                                  context, command.if_not_exists, share_nested))
+                all_columns.add(std::move(col));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {

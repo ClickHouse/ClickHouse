@@ -180,3 +180,24 @@ ALTER TABLE add_nested_exact_sno0 ADD COLUMN n String, ADD COLUMN IF NOT EXISTS 
 SHOW CREATE TABLE add_nested_exact_sno0;
 
 DROP TABLE IF EXISTS add_nested_exact_sno0;
+
+DROP TABLE IF EXISTS add_nested_rename_child;
+
+-- validate() must advance its working snapshot with the exact flattened names apply() materializes
+-- (`n.a`, `n.b`), not a synthetic top-level `n`. Otherwise a later command in the same ALTER that
+-- targets a real flattened child (RENAME COLUMN `n.b`) is rejected with "Cannot find column n.b"
+-- even though apply() would have created it. With share_nested_offsets = 0 and only `n.a` present,
+-- `ADD COLUMN IF NOT EXISTS n Nested(a, b)` adds the missing `n.b`, then RENAME `n.b` sees it.
+CREATE TABLE add_nested_rename_child
+(
+    `n.a` Array(UInt32)
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+SETTINGS share_nested_offsets = 0;
+
+ALTER TABLE add_nested_rename_child ADD COLUMN IF NOT EXISTS n Nested(a UInt32, b String), RENAME COLUMN `n.b` TO `m`;
+
+SHOW CREATE TABLE add_nested_rename_child;
+
+DROP TABLE IF EXISTS add_nested_rename_child;
