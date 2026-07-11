@@ -18,8 +18,7 @@ A hands-on walkthrough of querying data lake tables, accelerating them with Merg
 Screenshots in this guide are from the [ClickHouse Cloud](https://console.clickhouse.cloud) SQL console. All queries work on both Cloud and self-managed deployments.
 
 <Steps>
-<Step>
-## Query Iceberg data directly {#query-directly}
+<Step title="Query Iceberg data directly" id="query-directly">
 
 The fastest way to start is with the [`icebergS3()`](/reference/functions/table-functions/iceberg) table function — point it at an Iceberg table in S3 and query immediately, no setup required.
 
@@ -47,8 +46,7 @@ ClickHouse reads the Iceberg metadata directly from S3 and infers the schema aut
 
 **Learn more:** [Querying open table formats directly](/guides/use-cases/data-warehousing/getting-started/querying-directly) covers all four formats, cluster variants for distributed reads, and storage backend options (S3, Azure, HDFS, local).
 </Step>
-<Step>
-## Create a persistent table engine {#table-engine}
+<Step title="Create a persistent table engine" id="table-engine">
 
 For repeated access, create a table using the Iceberg table engine so you don't need to pass the path every time. The data stays in S3 — no data is duplicated:
 
@@ -73,8 +71,7 @@ LIMIT 5
 
 The table engine supports data caching, metadata caching, schema evolution, and time travel. See the [Querying directly](/guides/use-cases/data-warehousing/getting-started/querying-directly) guide for details on table engine features and the [support matrix](/guides/use-cases/data-warehousing/support-matrix) for a full feature comparison.
 </Step>
-<Step>
-## Connect to a catalog {#connect-catalog}
+<Step title="Connect to a catalog" id="connect-catalog">
 
 Most organizations manage Iceberg tables through a data catalog to centralize the table metadata and data discovery. ClickHouse supports connecting to your catalog using the [`DataLakeCatalog`](/reference/engines/database-engines/datalake) database engine, exposing all catalog tables as a ClickHouse database. This is the more scalable path so as new Iceberg tables are created, they are always accessible in ClickHouse without additional work. 
 
@@ -108,8 +105,7 @@ Backticks are required around `<database>.<table>` because ClickHouse doesn't na
 
 **Learn more:** [Connecting to a data catalog](/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) walks through a full Unity Catalog setup with Delta and Iceberg examples.
 </Step>
-<Step>
-## Issue a query {#issue-query}
+<Step title="Issue a query" id="issue-query">
 
 Regardless of which method you used above — table function, table engine, or catalog — the same ClickHouse SQL works across all of them:
 
@@ -132,8 +128,7 @@ GROUP BY url ORDER BY cnt DESC LIMIT 5
 
 The query syntax is identical — only the `FROM` clause changes. All ClickHouse SQL functions, joins, and aggregations work the same way regardless of the data source.
 </Step>
-<Step>
-## Load a subset into ClickHouse {#load-data}
+<Step title="Load a subset into ClickHouse" id="load-data">
 
 Querying Iceberg directly is convenient, but performance is bounded by network throughput and the file layout. For analytical workloads, load data into a native MergeTree table.
 
@@ -194,8 +189,7 @@ The [accelerating analytics](/guides/use-cases/data-warehousing/getting-started/
 
 **Learn more:** [Accelerating analytics with MergeTree](/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) covers schema optimization, full-text indexing, and a complete before/after performance comparison.
 </Step>
-<Step>
-## Write back to Iceberg {#write-back}
+<Step title="Write back to Iceberg" id="write-back">
 
 ClickHouse can also write data back to Iceberg tables, enabling reverse ETL workflows — publishing aggregated results or subsets for consumption by other tools (Spark, Trino, DuckDB, etc.).
 

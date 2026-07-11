@@ -63,7 +63,7 @@
 
     var ctaLink = document.createElement('a');
     ctaLink.className = 'ch-cta-btn';
-    ctaLink.href = 'https://clickhouse.cloud/signUp';
+    ctaLink.href = 'https://clickhouse.cloud/signUp?loc=docs-nav-signUp-cta';
     ctaLink.target = '_blank';
     ctaLink.rel = 'noopener noreferrer';
     ctaLink.textContent = 'Get Started';
