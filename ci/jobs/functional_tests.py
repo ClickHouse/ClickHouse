@@ -779,6 +779,7 @@ def main():
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
                     no_stateful=is_no_stateful,
+                    build_type=build_types[0] if is_bugfix_validation else None,
                 ):
                     print(
                         "SETUP FAILURE: "
@@ -983,6 +984,7 @@ def main():
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
                             no_stateful=is_no_stateful,
+                            build_type=bugfix_bt,
                         ):
                             # Prefer the concrete sub-command + ClickHouse error
                             # captured by prepare_stateful_data() over the generic

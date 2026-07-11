@@ -1029,6 +1029,14 @@ html.dark .dark\:hover\:bg-primary-light\/10:hover {
     background-color: rgba(253, 255, 117, 0.1) !important;
 }
 
+/* Card CTAs use a group-hover dark variant. Keep that CTA readable when the
+   card body is hovered instead of allowing the dark theme token to resolve
+   to a near-black color. */
+html.dark .card:hover [data-component-part="card-cta"] button,
+:is(.dark) .card:hover [data-component-part="card-cta"] button {
+    color: #FDFF75 !important;
+}
+
 /* ============================================
    Card Icon Color Override
    ============================================ */

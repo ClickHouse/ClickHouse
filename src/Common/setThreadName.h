@@ -39,7 +39,6 @@ namespace DB
     M(CONFIG_RELOADER, "ConfigReloader") \
     M(CONCURRENT_JOIN, "ConcurrentJoin") \
     M(CREATE_TABLES, "CreateTables") \
-    M(CUSTOM_RESOURCE_MANAGER, "CustomResMgr") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
     M(DATABASE_REPLICAS, "DBReplicas") \
