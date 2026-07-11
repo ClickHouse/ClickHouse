@@ -123,7 +123,7 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
     res.connect_timeout_ms = config.getUInt64("proxy.connect_timeout_ms", 3000);
     res.handshake_timeout_ms = config.getUInt64("proxy.handshake_timeout_ms", 10000);
     res.send_timeout_ms = config.getUInt64("proxy.send_timeout_ms", 300000);
-    res.relay_buffer_size = config.getUInt64("proxy.relay_buffer_size", 16384);
+    res.relay_buffer_size = config.getUInt64("proxy.relay_buffer_size", 65536);
     res.fiber_stack_size = config.getUInt("proxy.fiber_stack_size", 512 * 1024);
 
     Poco::Util::AbstractConfiguration::Keys keys;
