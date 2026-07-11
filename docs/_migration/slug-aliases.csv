@@ -21,8 +21,8 @@ https://clickhouse.com/docs/knowledgebase/configure_cap_ipc_lock_and_cap_sys_nic
 /faq/operations/delete-old-data,1,/resources/support-center/knowledge-base/tables-schema/delete-old-data,manual,
 /faq/operations/production.md,1,/resources/support-center/knowledge-base/setup-installation/production,manual,
 /faq/operations/production,1,/resources/support-center/knowledge-base/setup-installation/production,manual,
-/sql-reference/formats.md,1,/reference/formats,manual,
-/sql-reference/formats.mdx,1,/reference/formats,manual,
+/sql-reference/formats.md,1,/reference/formats/index,manual,
+/sql-reference/formats.mdx,1,/reference/formats/index,manual,
 /cloud/security/secure-s3,1,/products/cloud/guides/data-sources/accessing-s3-data-securely,manual,
 https://clickhouse.com/docs/guides/sre/configuring-ssl,1,/concepts/features/security/tls/configuring-tls,manual,
 https://clickhouse.com/docs/guides/sre/configuring-ssl/,1,/concepts/features/security/tls/configuring-tls,manual,
@@ -35,10 +35,10 @@ https://clickhouse.com/docs/optimize/avoidoptimizefinal,2,/concepts/best-practic
 /optimize/avoidoptimizefinal,2,/concepts/best-practices/avoid-optimize-final,manual,
 /cloud/manage/api/usageCost-api-reference,2,/api-reference/billing/get-organization-usage-costs,manual,
 /cloud/security/cloud-access-management/overview,2,/products/cloud/guides/security/cloud-access-management/manage-database-users,manual,
-/core/concepts/features/interfaces/formats,5,/reference/formats,manual,
-https://clickhouse.com/docs/sql-reference/formats,5,/reference/formats,manual,
-https://clickhouse.com/docs/sql-reference/formats/,5,/reference/formats,manual,
-/sql-reference/formats,5,/reference/formats,manual,
+/core/concepts/features/interfaces/formats,5,/reference/formats/index,manual,
+https://clickhouse.com/docs/sql-reference/formats,5,/reference/formats/index,manual,
+https://clickhouse.com/docs/sql-reference/formats/,5,/reference/formats/index,manual,
+/sql-reference/formats,5,/reference/formats/index,manual,
 https://clickhouse.com/docs/faq/general/datalake,1,/resources/support-center/knowledge-base/general-faqs/datalake,manual,
 /faq/general/datalake,1,/resources/support-center/knowledge-base/general-faqs/datalake,manual,
 https://clickhouse.com/docs/faq/general/faq-index,1,/resources/support-center/knowledge-base/general-faqs/faq-index,manual,
@@ -195,7 +195,7 @@ https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes,3,,no-match,
 /chdb/datastore/guides/pandas-performance,3,/products/chdb/guides/pandas-performance,basename-unique,
 /core/get-started/quickstarts/create-your-first-materialized-view,2,,no-match,
 /core/get-started/quickstarts/insert-data-using-clickhouse-client,2,,no-match,
-https://clickhouse.com/docs/en/interfaces/formats,2,/reference/formats,manual,/core/concepts/features/interfaces/formats | /core/reference/formats | /core/reference/settings/formats | /core/reference/system-tables/formats
+https://clickhouse.com/docs/en/interfaces/formats,2,/reference/formats/index,manual,/core/concepts/features/interfaces/formats | /core/reference/formats | /core/reference/settings/formats | /core/reference/system-tables/formats
 /operations/settings/settings.md/#materialize_skip_indexes_on_insert,2,/products/cloud/reference/settings,basename-ambiguous,/products/managed-postgres/settings | /core/reference/settings | /core/reference/settings/server-settings/settings | /core/reference/system-tables/settings
 /operations/server-configuration-parameters/settings.md/#background_pool_size,2,/products/cloud/reference/settings,basename-ambiguous,/products/managed-postgres/settings | /core/reference/settings | /core/reference/settings/server-settings/settings | /core/reference/system-tables/settings
 /operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio,2,/products/cloud/reference/settings,basename-ambiguous,/products/managed-postgres/settings | /core/reference/settings | /core/reference/settings/server-settings/settings | /core/reference/system-tables/settings
