@@ -1,0 +1,130 @@
+---
+description: 'مجموعة البيانات والاستعلامات الخاصة بـ Join Order Benchmark (JOB).'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['مجموعة بيانات تجريبية', 'JOB', 'join order benchmark', 'اختبار معياري', 'اختبار الأداء', 'محسّن الاستعلامات', 'ترتيب الربط']
+---
+
+يضع Join Order Benchmark (JOB) محسّن الاستعلامات تحت الضغط عبر 113 استعلامًا تحليليًا على مجموعة بيانات واقعية عالية الارتباط (لقطة من IMDb). ومنذ تقديمه، أصبح اختبار JOB المعيار الفعلي لتقييم أداء محسّنات استعلامات قواعد البيانات العلائقية، بما في ذلك تقدير الكاردينالية وتحسين ترتيب الربط. وعلى عكس الاختبارات المعيارية الاصطناعية التي تفترض بيانات متجانسة ومستقلة، يستخدم JOB بيانات حقيقية تتضمن انحرافًا وارتباطات، مما يجعله اختبارًا صعبًا لترتيب عمليات الربط وتقدير الكاردينالية.
+
+تضم مجموعة البيانات نحو 74 مليون صف موزعة على 21 جدولًا، وتشغل حوالي 1.15 GiB بصيغة مضغوطة في ClickHouse.
+
+تُنظَّم الاستعلامات البالغ عددها 113 ضمن 33 عائلة (`1`–`33`). وتشترك الاستعلامات داخل العائلة الواحدة (`a`, `b`, `c`, ...) في مخطط الربط نفسه، لكنها تختلف في شروط التصفية الخاصة بها.
+
+**المراجع**
+
+* [ما مدى جودة محسّنات الاستعلامات حقًا؟](https://www.vldb.org/pvldb/vol9/p204-leis.pdf) (Leis وآخرون، VLDB 2015)
+* مستودع [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark)
+
+<div id="creating-tables">
+  ## إنشاء الجداول
+</div>
+
+مجموعة بيانات JOB هي لقطة من IMDb تضم 21 جدولًا. تتوفر تعريفات الجداول في [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) في مستودع ClickHouse.
+
+يستخدم كل جدول المحرّك [`MergeTree`](/engines/table-engines/mergetree-family/mergetree)، ويُرتَّب حسب عمود المفتاح الأساسي `id`، بما يعكس مخطط PostgreSQL الأصلي حيث يعرّف كل جدول `id integer NOT NULL PRIMARY KEY`. وتُعيَّن أعمدة PostgreSQL التي تقبل NULL إلى الأنواع `Nullable(...)`.
+
+أنشئ الجداول:
+
+```bash
+curl -O https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/tests/benchmarks/job/init_cloud.sql
+clickhouse client --query "CREATE DATABASE IF NOT EXISTS job"
+clickhouse client --database job --queries-file init_cloud.sql
+```
+
+<div id="loading-the-data">
+  ## تحميل البيانات
+</div>
+
+تأتي البيانات من لقطة IMDb الأصلية المستخدمة في JOB، والموزعة على شكل ملف CSV واحد لكل جدول (`aka_name.csv`, `title.csv`, ...).
+تستخدم ملفات CSV هذه دلالات `COPY` الخاصة بـ PostgreSQL مع `ESCAPE '\'`: إذ يُستخدم backslash لتجاهل تأثير حرف الاقتباس فقط داخل حقل محاط بعلامتَي اقتباس، بينما يكون backslash خارج علامات الاقتباس حرفًا عاديًا.
+ويتوقع ClickHouse ملفات CSV المتوافقة مع RFC 4180 (علامات اقتباس مزدوجة، من دون استخدام backslash كحرف هروب)، لذا يجب إعادة ترميز الملفات أولًا.
+
+ينفّذ [`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) عملية إعادة الترميز هذه.
+فهو يقرأ ملف CSV الأصلي من stdin ويكتب ملف CSV قياسيًا إلى stdout، مع مضاعفة علامات الاقتباس المضمّنة والحفاظ على الحقول الفارغة غير المحاطة بعلامات اقتباس (والتي يعيّنها ClickHouse إلى `NULL` في الأعمدة من النوع `Nullable`).
+
+لبناء الجداول من ملفات CSV الأصلية:
+
+* أنشئ الجداول (انظر أعلاه).
+* نزّل مجموعة بيانات IMDb كملف `imdb.tgz`، باتباع التعليمات الواردة في مستودع Join Order Benchmark.
+* حوّل البيانات واستوردها:
+
+```bash
+set -euo pipefail
+
+for table in aka_name aka_title cast_info char_name comp_cast_type company_name \
+             company_type complete_cast info_type keyword kind_type link_type \
+             movie_companies movie_info movie_info_idx movie_keyword movie_link \
+             name person_info role_type title; do
+    echo "Loading ${table} ..."
+    python3 convert_csv.py < "${table}.csv" > "${table}.clean.csv"
+    clickhouse client --database job --query "INSERT INTO ${table} FORMAT CSV" < "${table}.clean.csv"
+done
+```
+
+بعد تعبئة الجداول بالبيانات، يمكن تصديرها إلى Parquet لتسريع إعادة استيرادها لاحقًا، على سبيل المثال:
+`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+
+الأحجام التفصيلية للجداول:
+
+| Table                  | الحجم (عدد الصفوف) | الحجم (بعد الضغط في ClickHouse) |
+| ---------------------- | ------------------ | ------------------------------- |
+| aka&#95;name           | 901,343            | 31.86 MiB                       |
+| aka&#95;title          | 361,472            | 14.32 MiB                       |
+| cast&#95;info          | 36,244,344         | 296.25 MiB                      |
+| char&#95;name          | 3,140,339          | 107.95 MiB                      |
+| comp&#95;cast&#95;type | 4                  | 132.00 B                        |
+| company&#95;name       | 234,997            | 8.38 MiB                        |
+| company&#95;type       | 4                  | 162.00 B                        |
+| complete&#95;cast      | 135,086            | 748.80 KiB                      |
+| info&#95;type          | 113                | 1.25 KiB                        |
+| keyword                | 134,170            | 1.88 MiB                        |
+| kind&#95;type          | 7                  | 177.00 B                        |
+| link&#95;type          | 18                 | 284.00 B                        |
+| movie&#95;companies    | 2,609,129          | 21.20 MiB                       |
+| movie&#95;info         | 14,835,720         | 300.46 MiB                      |
+| movie&#95;info&#95;idx | 1,380,035          | 8.01 MiB                        |
+| movie&#95;keyword      | 4,523,930          | 21.06 MiB                       |
+| movie&#95;link         | 29,997             | 178.21 KiB                      |
+| name                   | 4,167,491          | 131.16 MiB                      |
+| person&#95;info        | 2,963,664          | 154.12 MiB                      |
+| role&#95;type          | 12                 | 246.00 B                        |
+| title                  | 2,528,312          | 78.04 MiB                       |
+| **الإجمالي**           | **74,190,187**     | **1.15 GiB**                    |
+
+(أُخذت الأحجام المضغوطة في ClickHouse من `system.tables.total_bytes`، وهي تستند إلى تعريفات الجداول الواردة أعلاه.)
+
+<div id="queries">
+  ## الاستعلامات
+</div>
+
+يمكن العثور على استعلامات JOB البالغ عددها 113 [هنا](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) في مستودع ClickHouse.
+أما الإعدادات المستخدمة لتشغيلها، فهي موجودة في [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json).
+راجِع ملف [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) للاطلاع على المشكلات المعروفة والملاحظات المتعلقة ببعض الاستعلامات.
+
+تشير الاستعلامات إلى الجداول بأسمائها، لذا شغّلها على قاعدة البيانات `job` (على سبيل المثال، باستخدام `clickhouse client --database job`).
+
+مثال على استعلام (`1a`):
+
+```sql
+SELECT MIN(mc.note) AS production_note,
+       MIN(t.title) AS movie_title,
+       MIN(t.production_year) AS movie_year
+FROM company_type AS ct,
+     info_type AS it,
+     movie_companies AS mc,
+     movie_info_idx AS mi_idx,
+     title AS t
+WHERE ct.kind = 'production companies'
+  AND it.info = 'top 250 rank'
+  AND mc.note NOT LIKE '%(as Metro-Goldwyn-Mayer Pictures)%'
+  AND (mc.note LIKE '%(co-production)%'
+       OR mc.note LIKE '%(presents)%')
+  AND ct.id = mc.company_type_id
+  AND t.id = mc.movie_id
+  AND t.id = mi_idx.movie_id
+  AND mc.movie_id = mi_idx.movie_id
+  AND it.id = mi_idx.info_type_id;
+```

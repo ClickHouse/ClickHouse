@@ -26,6 +26,9 @@
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
+
+#include <Common/DimensionalMetrics.h>
+#include <Common/HistogramMetrics.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/hex.h>
@@ -89,6 +92,10 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
+    extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
+    extern const FileCacheSettingsUInt64 idle_client_check_interval_sec;
+    extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
+    extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
 }
@@ -1668,7 +1675,7 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
 
     const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -1803,7 +1810,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     auto add_file_segment = [&](size_t offset, size_t size)
     {
@@ -1837,33 +1844,33 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     auto it2 = add_file_segment(10, 10);
 
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPosCount(), 2); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 2); /// queue.end()
 
     FileCacheReserveStat stat;
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
-    auto evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
+    auto evicted = std::make_unique<EvictionCandidates>(IFileCachePriority::OnEvictCallback{});
 
     auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, IFileCachePriority::EvictionCursor::Reserve, 0, false, origin, cache_guard, state_guard);
     eviction_info.reset();
 
     ASSERT_EQ(evicted->size(), 0); /// Nothing is evicted.
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPosCount(), 2); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 2); /// queue.end()
 
     auto it3 = add_file_segment(20, 10);
 
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(), 3); /// queue.end()
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 3); /// queue.end()
 
-    evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
+    evicted = std::make_unique<EvictionCandidates>(IFileCachePriority::OnEvictCallback{});
     stat = {};
     eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, IFileCachePriority::EvictionCursor::Reserve, 0, false, origin, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0); /// queue.begin()
 
     {
         evicted->evict();
@@ -1873,7 +1880,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
         evicted.reset();
     }
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 2);
-    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// still queue.begin(), but it2
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0); /// still queue.begin(), but it2
 
     auto get_file_segment = [&](size_t offset)
     {
@@ -1889,22 +1896,22 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     auto it4 = add_file_segment(30, 10);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(), 0);
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0);
 
-    evicted = std::make_unique<EvictionCandidates>(&FileCache::onSegmentEvicted);
+    evicted = std::make_unique<EvictionCandidates>(IFileCachePriority::OnEvictCallback{});
     stat = {};
     eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, origin, state_guard.lock());
-    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
+    priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, IFileCachePriority::EvictionCursor::Reserve, 0, false, origin, cache_guard, state_guard);
 
     ASSERT_EQ(evicted->size(), 1);
     ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
-    ASSERT_EQ(priority.getEvictionPosCount(), 3); /// 3 and not 2, because 1 entry is invalidated.
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 3); /// 3 and not 2, because 1 entry is invalidated.
 
     fs2.reset();
     fs3.reset();
 
-    priority.resetEvictionPos();
-    ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
+    priority.resetEvictionPos(IFileCachePriority::EvictionCursor::Reserve);
+    ASSERT_EQ(priority.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0); /// queue.begin()
 }
 
 TEST_F(FileCacheTest, MoveEvictionPos)
@@ -1921,7 +1928,7 @@ TEST_F(FileCacheTest, MoveEvictionPos)
 
     auto key = DB::FileCacheKey::fromPath("move_key");
     auto origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -1939,12 +1946,14 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     auto it_middle = add_to_src(10, 10);
     add_to_src(20, 10);
 
-    /// Point src's eviction position at the middle entry — the one we are about to move out.
+    /// Point both eviction cursors at the middle entry — the one we are about to move out.
     {
         auto read_lock = cache_guard.readLock();
-        src.setEvictionPos(it_middle.get(), read_lock);
+        src.setEvictionPos(IFileCachePriority::EvictionCursor::Reserve, it_middle.get(), read_lock);
+        src.setEvictionPos(IFileCachePriority::EvictionCursor::Background, it_middle.get(), read_lock);
     }
-    ASSERT_EQ((*src.getEvictionPos(cache_guard.readLock()))->offset, 10u);
+    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Reserve, cache_guard.readLock()))->offset, 10u);
+    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Background, cache_guard.readLock()))->offset, 10u);
 
     /// Move the middle entry out of `src` into `dst` (as an SLRU upgrade/downgrade would).
     /// `move` is called on the destination queue; `src` is the source.
@@ -1957,7 +1966,22 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     /// The moved node was spliced out of src, so src's eviction position must advance to the
     /// next surviving src entry (offset 20). Before the fix it kept pointing at the moved node,
     /// which now lives in `dst` (offset 10) — a dangling cross-queue eviction position.
-    ASSERT_EQ((*src.getEvictionPos(cache_guard.readLock()))->offset, 20u);
+    /// Both cursors were set at the moved node, so `moveEvictionPosIfEqual` must advance both:
+    /// a regression advancing only one would leave the other dangling.
+    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Reserve, cache_guard.readLock()))->offset, 20u);
+    ASSERT_EQ((*src.getEvictionPos(IFileCachePriority::EvictionCursor::Background, cache_guard.readLock()))->offset, 20u);
+
+    /// The two cursors are independent: resetting one must not disturb the other. Put them at
+    /// different positions, reset only Reserve, and check Background is untouched. A regression
+    /// where `resetEvictionPos(Reserve)` also cleared Background would be caught here.
+    {
+        auto read_lock = cache_guard.readLock();
+        src.setEvictionPos(IFileCachePriority::EvictionCursor::Reserve, src.queue.begin(), read_lock);
+        src.setEvictionPos(IFileCachePriority::EvictionCursor::Background, std::next(src.queue.begin()), read_lock);
+    }
+    src.resetEvictionPos(IFileCachePriority::EvictionCursor::Reserve);
+    ASSERT_EQ(src.getEvictionPosCount(IFileCachePriority::EvictionCursor::Reserve), 0u);
+    ASSERT_EQ(src.getEvictionPosCount(IFileCachePriority::EvictionCursor::Background), 1u);
 }
 
 TEST_F(FileCacheTest, LoadMetadataParallelism)
@@ -2217,6 +2241,9 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
 
         FileSegment::complete(FileSegmentPtr(seg), false, false);
         ASSERT_EQ(seg->state(), State::PARTIALLY_DOWNLOADED);
+        /// The holder is still alive, so the segment is not shrunk yet and keeps its full
+        /// reservation; the reserve-ahead surplus (8 reserved vs 3 downloaded) is reclaimed
+        /// once the holder below is destroyed and the last-holder completion shrinks it.
         ASSERT_EQ(seg->getReservedSize(), 8u);
         ASSERT_EQ(seg->getDownloadedSize(), 3u);
     }
@@ -2229,8 +2256,9 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_EQ(seg->state(), State::DOWNLOADED);
     }
 
-    /// Both priority entries account for reserved size.
-    ASSERT_EQ(cache->getUsedCacheSize(), 16u);
+    /// seg1's surplus was reclaimed when its holder was released (3 reserved) and seg2 is
+    /// fully downloaded (8 reserved).
+    ASSERT_EQ(cache->getUsedCacheSize(), 11u);
     ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
 
     /// Force the failed-eviction restore loop to run.
@@ -2240,7 +2268,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
             DB::FailPointInjection::disableFailPoint("file_cache_dynamic_resize_fail_to_evict");
         });
 
-        /// Trigger resize. The restore path must keep total queue size at 16.
+        /// Trigger resize. The restore path must keep the total queue size at 11.
         DB::FileCacheSettings new_settings = settings;
         new_settings[FileCacheSetting::max_size] = 4;
         DB::FileCacheSettings actual_settings = settings;
@@ -2251,7 +2279,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 16u);
 
         /// Release-visible check for restored reserved-size accounting.
-        ASSERT_EQ(cache->getUsedCacheSize(), 16u);
+        ASSERT_EQ(cache->getUsedCacheSize(), 11u);
         ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
 
         /// All segments must still be reachable from the priority queue.
@@ -2272,6 +2300,338 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_NO_THROW(cache->applySettingsIfPossible(second_new_settings, second_actual));
         ASSERT_LE(cache->getUsedCacheSize(), 4u);
     }
+}
+
+TEST_F(FileCacheTest, EvictionMetricsTryIncreasePriority)
+{
+    /// Regression: when tryIncreasePriority promotes a probationary entry and the
+    /// protected queue is full, some protected entries are downgraded to probationary.
+    /// If probationary is also full at that point (the promoted entry still holds its
+    /// slot with a Moving flag), real probationary entries are evicted to make room.
+    /// Those evictions must fire onSegmentEvicted and advance the metric counter.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(R"(<clickhouse></clickhouse>)");
+    getMutableContext().context->setConfig(new Poco::Util::XMLConfiguration(document));
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("eviction_metrics_promotion_test");
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    auto sum_dim = [](const std::string & name)
+    {
+        double total = 0;
+        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
+        {
+            if (f.getName() != name) return;
+            f.forEachMetric([&](const ::DimensionalMetrics::LabelValues &, const ::DimensionalMetrics::Metric & m) { total += m.get(); });
+        });
+        return total;
+    };
+
+    /// SLRU: probationary = 10 B, protected = 10 B; five 5-byte segments fit exactly.
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 20;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::boundary_alignment] = 5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::expose_prometheus_eviction_metrics] = true;
+
+    auto cache = DB::FileCache("eviction_metrics_promotion", settings);
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("eviction_metrics_promotion_key");
+
+    /// A and B go to probationary, get promoted to protected, then their holders
+    /// are released so they become releasable eviction/downgrade candidates.
+    {
+        auto holderA = cache.getOrSet(key, 0, 5, /*file_size=*/20, {}, 0, user);
+        ASSERT_EQ(holderA->size(), 1u);
+        download(*holderA->begin());
+
+        auto holderB = cache.getOrSet(key, 5, 5, /*file_size=*/20, {}, 0, user);
+        ASSERT_EQ(holderB->size(), 1u);
+        download(*holderB->begin());
+
+        increasePriority(holderA);
+        increasePriority(holderB);
+    }
+    /// Protected: {A=5, B=5} = 10/10 full. Probationary: empty.
+    /// A and B are releasable: no live holders, so they can be downgraded.
+
+    /// C and D fill probationary. D's holder is released so it is evictable.
+    auto holderC = cache.getOrSet(key, 10, 5, /*file_size=*/20, {}, 0, user);
+    ASSERT_EQ(holderC->size(), 1u);
+    download(*holderC->begin());
+
+    {
+        auto holderD = cache.getOrSet(key, 15, 5, /*file_size=*/20, {}, 0, user);
+        ASSERT_EQ(holderD->size(), 1u);
+        download(*holderD->begin());
+    }
+    /// Protected: {A, B} = 10/10. Probationary: {C, D} = 10/10.
+    /// D is releasable: no live holder.
+
+    const auto evictions_before = sum_dim("filesystem_cache_evictions_total");
+
+    /// Promote C: protected full → downgrade A (releasable) → probationary has no
+    /// room (C holds its slot with a Moving flag) → D (releasable) is evicted.
+    increasePriority(holderC);
+
+    EXPECT_GT(sum_dim("filesystem_cache_evictions_total") - evictions_before, 0.0)
+        << "Promotion-induced probationary eviction must be counted in the metric";
+}
+
+TEST_F(FileCacheTest, ExposeEvictionMetrics)
+{
+    /// Verify that `filesystem_cache_*` metric families update iff the
+    /// `expose_prometheus_eviction_metrics` / `_per_user`
+    /// flags are set on the cache.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(R"(<clickhouse></clickhouse>)");
+    getMutableContext().context->setConfig(new Poco::Util::XMLConfiguration(document));
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("eviction_metrics_test");
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    auto sum_dim = [](const std::string & name)
+    {
+        double total = 0;
+        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
+        {
+            if (f.getName() != name) return;
+            f.forEachMetric([&](const ::DimensionalMetrics::LabelValues &, const ::DimensionalMetrics::Metric & m) { total += m.get(); });
+        });
+        return total;
+    };
+    auto sum_hist = [](const std::string & name)
+    {
+        /// Each observation increments exactly one bucket (or the +Inf overflow),
+        /// so summing every bucket counter gives the total observation count.
+        uint64_t total = 0;
+        ::HistogramMetrics::Factory::instance().forEachFamily([&](::HistogramMetrics::MetricFamily & f)
+        {
+            if (f.getName() != name) return;
+            const auto & buckets = f.getBuckets();
+            f.forEachMetric([&](const ::HistogramMetrics::LabelValues &, const ::HistogramMetrics::Metric & m)
+            {
+                for (size_t i = 0; i <= buckets.size(); ++i)
+                    total += m.getCounter(i);
+            });
+        });
+        return total;
+    };
+    auto dim_value_for_labels = [](const std::string & name, ::DimensionalMetrics::Labels expected_labels, ::DimensionalMetrics::LabelValues expected_label_values)
+    {
+        bool found_family = false;
+        bool found_metric = false;
+        double value = 0;
+        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
+        {
+            if (f.getName() != name)
+                return;
+
+            found_family = true;
+            EXPECT_EQ(f.getLabels(), expected_labels);
+            f.forEachMetric([&](const ::DimensionalMetrics::LabelValues & label_values, const ::DimensionalMetrics::Metric & m)
+            {
+                if (label_values == expected_label_values)
+                {
+                    found_metric = true;
+                    value += m.get();
+                }
+            });
+        });
+
+        EXPECT_TRUE(found_family) << "Missing dimensional metric family " << name;
+        EXPECT_TRUE(found_metric) << "Missing dimensional metric row " << name;
+        return value;
+    };
+    auto hist_observations_for_labels = [](const std::string & name, ::HistogramMetrics::Labels expected_labels, ::HistogramMetrics::LabelValues expected_label_values)
+    {
+        bool found_family = false;
+        bool found_metric = false;
+        uint64_t total = 0;
+        ::HistogramMetrics::Factory::instance().forEachFamily([&](::HistogramMetrics::MetricFamily & f)
+        {
+            if (f.getName() != name)
+                return;
+
+            found_family = true;
+            EXPECT_EQ(f.getLabels(), expected_labels);
+            const auto & buckets = f.getBuckets();
+            f.forEachMetric([&](const ::HistogramMetrics::LabelValues & label_values, const ::HistogramMetrics::Metric & m)
+            {
+                if (label_values == expected_label_values)
+                {
+                    found_metric = true;
+                    for (size_t i = 0; i <= buckets.size(); ++i)
+                        total += m.getCounter(i);
+                }
+            });
+        });
+
+        EXPECT_TRUE(found_family) << "Missing histogram metric family " << name;
+        EXPECT_TRUE(found_metric) << "Missing histogram metric row " << name;
+        return total;
+    };
+
+    const FileCacheOriginInfo origin("eviction_metrics_test_user", 0);
+    const auto & user_id = origin.user_id;
+
+    auto run_workload = [&](const std::string & cache_name, bool expose, bool per_user)
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = cache_base_path;
+        settings[FileCacheSetting::max_size] = 40;
+        settings[FileCacheSetting::max_elements] = 6;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+        settings[FileCacheSetting::slru_size_ratio] = 0.5;
+        settings[FileCacheSetting::expose_prometheus_eviction_metrics] = expose;
+        settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user] = per_user;
+
+        auto cache = DB::FileCache(cache_name, settings);
+        cache.initialize();
+        auto key = FileCacheKey::fromPath(cache_name);
+        /// max_size=40, max_elements=6; 8 segments of size 5 forces evictions.
+        for (size_t i = 0; i < 8; ++i)
+        {
+            auto holder = cache.getOrSet(key, i * 10, 5, static_cast<size_t>(-1), {}, 0, origin);
+            ASSERT_EQ(holder->size(), 1u);
+            download(*holder->begin());
+        }
+    };
+
+    const std::string aggregate_cache_name = "cache_with_eviction_metrics";
+    const std::string per_user_cache_name = "cache_with_eviction_metrics_per_user";
+
+    const auto evictions_off_before = sum_dim("filesystem_cache_evictions_total");
+    const auto by_user_off_before = sum_dim("filesystem_cache_evictions_by_user_total");
+    run_workload("eviction_metrics_off", /*expose=*/false, /*per_user=*/false);
+    EXPECT_EQ(sum_dim("filesystem_cache_evictions_total"), evictions_off_before);
+    EXPECT_EQ(sum_dim("filesystem_cache_evictions_by_user_total"), by_user_off_before);
+
+    const auto evictions_before = sum_dim("filesystem_cache_evictions_total");
+    const auto bytes_before = sum_dim("filesystem_cache_evicted_bytes_total");
+    const auto hits_before = sum_hist("filesystem_cache_evicted_segment_hits");
+    const auto size_before = sum_hist("filesystem_cache_evicted_segment_size_bytes");
+    const auto by_user_before = sum_dim("filesystem_cache_evictions_by_user_total");
+    run_workload(aggregate_cache_name, /*expose=*/true, /*per_user=*/false);
+    const auto evictions_delta = sum_dim("filesystem_cache_evictions_total") - evictions_before;
+    EXPECT_GT(evictions_delta, 0.0);
+    EXPECT_GT(sum_dim("filesystem_cache_evicted_bytes_total") - bytes_before, 0.0);
+    EXPECT_EQ(static_cast<uint64_t>(evictions_delta), sum_hist("filesystem_cache_evicted_segment_hits") - hits_before);
+    EXPECT_EQ(static_cast<uint64_t>(evictions_delta), sum_hist("filesystem_cache_evicted_segment_size_bytes") - size_before);
+    EXPECT_EQ(sum_dim("filesystem_cache_evictions_by_user_total"), by_user_before);
+    EXPECT_GT(dim_value_for_labels("filesystem_cache_evictions_total", {"cache_name"}, {aggregate_cache_name}), 0.0);
+    EXPECT_GT(dim_value_for_labels("filesystem_cache_evicted_bytes_total", {"cache_name"}, {aggregate_cache_name}), 0.0);
+    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_hits", {"cache_name"}, {aggregate_cache_name}), 0u);
+    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_size_bytes", {"cache_name"}, {aggregate_cache_name}), 0u);
+
+    const auto by_user_pre = sum_dim("filesystem_cache_evictions_by_user_total");
+    run_workload(per_user_cache_name, /*expose=*/true, /*per_user=*/true);
+    EXPECT_GT(sum_dim("filesystem_cache_evictions_by_user_total") - by_user_pre, 0.0);
+    EXPECT_GT(dim_value_for_labels("filesystem_cache_evictions_by_user_total", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0.0);
+    EXPECT_GT(dim_value_for_labels("filesystem_cache_evicted_bytes_by_user_total", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0.0);
+    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_hits_by_user", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0u);
+    EXPECT_GT(hist_observations_for_labels("filesystem_cache_evicted_segment_size_bytes_by_user", {"cache_name", "user_id"}, {per_user_cache_name, user_id}), 0u);
+}
+
+TEST_F(FileCacheTest, EvictionMetricsRuntimeToggle)
+{
+    /// The eviction-metric settings are advertised as runtime-reloadable
+    /// (SYSTEM RELOAD CONFIG -> applySettingsIfPossible). Exercise the full cycle
+    /// on a live cache: disabled -> no delta, enable -> metric advances,
+    /// disable again -> no further delta. Guards against a regression where
+    /// applySettingsIfPossible stops propagating these flags to the atomics.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(R"(<clickhouse></clickhouse>)");
+    getMutableContext().context->setConfig(new Poco::Util::XMLConfiguration(document));
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("eviction_metrics_runtime_toggle_test");
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    auto sum_dim = [](const std::string & name)
+    {
+        double total = 0;
+        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
+        {
+            if (f.getName() != name) return;
+            f.forEachMetric([&](const ::DimensionalMetrics::LabelValues &, const ::DimensionalMetrics::Metric & m) { total += m.get(); });
+        });
+        return total;
+    };
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 40;
+    settings[FileCacheSetting::max_elements] = 6;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::expose_prometheus_eviction_metrics] = false;
+
+    auto cache = DB::FileCache("eviction_metrics_runtime_toggle", settings);
+    cache.initialize();
+
+    /// max_size=40, max_elements=6; 8 segments of size 5 force evictions.
+    /// A fresh key per round avoids hits/promotions, so each round evicts anew.
+    size_t round = 0;
+    auto force_evictions = [&]
+    {
+        auto key = FileCacheKey::fromPath("toggle_key_" + std::to_string(round++));
+        for (size_t i = 0; i < 8; ++i)
+        {
+            auto holder = cache.getOrSet(key, i * 10, 5, static_cast<size_t>(-1), {}, 0, FileCache::getCommonOrigin());
+            ASSERT_EQ(holder->size(), 1u);
+            download(*holder->begin());
+        }
+    };
+
+    /// Flip the flag through the reload path. `current` tracks applied state,
+    /// as applySettingsIfPossible updates its second (actual) argument in place.
+    DB::FileCacheSettings current = settings;
+    auto reload_expose = [&](bool value)
+    {
+        DB::FileCacheSettings new_settings = current;
+        new_settings[FileCacheSetting::expose_prometheus_eviction_metrics] = value;
+        ASSERT_NO_THROW(cache.applySettingsIfPossible(new_settings, current));
+    };
+
+    /// 1) Disabled: evictions happen, but the metric must not move.
+    const auto before_disabled = sum_dim("filesystem_cache_evictions_total");
+    force_evictions();
+    EXPECT_EQ(sum_dim("filesystem_cache_evictions_total"), before_disabled);
+
+    /// 2) Enable at runtime: the metric must now advance.
+    reload_expose(true);
+    const auto before_enabled = sum_dim("filesystem_cache_evictions_total");
+    force_evictions();
+    EXPECT_GT(sum_dim("filesystem_cache_evictions_total") - before_enabled, 0.0);
+
+    /// 3) Disable again at runtime: the metric must stop advancing.
+    reload_expose(false);
+    const auto before_redisabled = sum_dim("filesystem_cache_evictions_total");
+    force_evictions();
+    EXPECT_EQ(sum_dim("filesystem_cache_evictions_total"), before_redisabled);
 }
 
 namespace
@@ -2309,7 +2669,7 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
 
     const auto key = DB::FileCacheKey::fromPath("slru_modify_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2343,6 +2703,58 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
     ASSERT_EQ(priority.getProtectedSizeLimit(state_guard.lock()), 15);
 }
 
+TEST_F(FileCacheTest, LRUDecrementSizeToZeroDropsElement)
+{
+    /// An entry is counted as one element while its size is > 0 (`incrementSize`
+    /// adds an element on a 0 -> size transition). `decrementSize` used to subtract
+    /// only the size, so emptying an entry left it counted as an element; a later
+    /// `remove` then saw size 0, assumed the element was already accounted, and
+    /// leaked the count. `decrementSize` must drop the element when it empties the
+    /// entry. No production path decrements an entry to exactly 0 today (the shrink
+    /// path keeps at least `downloaded_size > 0`), so this exercises the invariant
+    /// directly.
+    ServerUUID::setRandomForUnitTests();
+
+    LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10, "lru_decrement_to_zero_test");
+
+    const std::string cache_path = caches_dir / "test_lru_decrement_to_zero";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path,
+                                 /* background_download_queue_size_limit */0,
+                                 /* background_download_threads */0,
+                                 /* write_cache_per_user_directory */false);
+
+    const auto key = DB::FileCacheKey::fromPath("lru_decrement_to_zero_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    IFileCachePriority::IteratorPtr it;
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        it = priority.add(key_metadata, /* offset */0, /* size */5, write_lock, &state_lock);
+    }
+
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 5);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 1);
+
+    /// Emptying the entry must drop its element immediately (the invariant).
+    it->decrementSize(5);
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 0);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 0);
+
+    /// Removing the now-empty entry must not double-subtract (would underflow).
+    {
+        auto write_lock = cache_guard.writeLock();
+        it->remove(write_lock);
+    }
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 0);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 0);
+}
+
 TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
 {
     /// Total-space cleanup must reclaim from the System sub-queue too. The bug dispatched
@@ -2362,7 +2774,7 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_total_cleanup_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2407,7 +2819,7 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_resize_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2454,7 +2866,7 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
     EvictionCandidates evicted(IFileCachePriority::OnEvictCallback{});
     priority.collectCandidatesForEviction(
         *eviction_info, stat, evicted, invalidated_entries, /* reservee */ nullptr,
-        /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+        IFileCachePriority::EvictionCursor::FromHead, /* max_candidates_size */ 0,
         /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), cache_guard, state_guard);
 
     /// With the bug, dispatch goes to the empty data sub-queue and no System candidates
@@ -2480,7 +2892,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
 
     const auto key = DB::FileCacheKey::fromPath("slru_downgrade_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2530,7 +2942,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
         auto evicted = std::make_unique<EvictionCandidates>(IFileCachePriority::OnEvictCallback{});
         priority.collectCandidatesForEviction(
             *eviction_info, stat, *evicted, invalidated_entries, reservee,
-            /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+            IFileCachePriority::EvictionCursor::FromHead, /* max_candidates_size */ 0,
             /* is_total_space_cleanup */ false, origin, cache_guard, state_guard);
 
         /// Run only the write phase, then drop the candidates WITHOUT running the state
@@ -2571,7 +2983,7 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_slru_total_cleanup_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2615,7 +3027,7 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
     /// Must not throw on the empty Data SLRU's absent queue ids.
     ASSERT_NO_THROW(priority.collectCandidatesForEviction(
         *eviction_info, stat, evicted, invalidated_entries, /* reservee */ nullptr,
-        /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+        IFileCachePriority::EvictionCursor::FromHead, /* max_candidates_size */ 0,
         /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), cache_guard, state_guard));
 
     ASSERT_GT(evicted.size(), 0u);
@@ -2630,7 +3042,7 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
     CacheMetadata cache_metadata(cache_path, 0, 0, false);
     const auto key = DB::FileCacheKey::fromPath("metrics_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2676,7 +3088,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     CacheMetadata cache_metadata(cache_path, 0, 0, false);
     const auto key = DB::FileCacheKey::fromPath("downgrade_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2690,6 +3102,11 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
             it = priority.addForRestore(key_metadata, offset, size, qtype, write_lock, &state_lock);
         }
         const auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
+        /// The cache directory survives across runs and the file is opened with
+        /// `O_APPEND`, so a leftover file from a previous run would double in size
+        /// and fail the size check in the `FileSegment` constructor.
+        if (fs::exists(path))
+            fs::remove(path);
         fs::create_directories(fs::path(path).parent_path());
         WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
         DB::writeString(std::string(size, '0'), wb);
@@ -2704,12 +3121,12 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
 
     auto & events = CurrentThread::getProfileEvents();
-    const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load();
-    const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments].load();
+    const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments];
+    const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments];
 
     /// Protected is full, so promoting the probationary entry downgrades (moves) the protected one, not evicts it.
     ASSERT_TRUE(priority.tryIncreasePriority(*prob_it, /* is_space_reservation_complete */true, cache_guard, state_guard));
 
-    ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load(), downgraded_before + 1);
-    ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments].load(), evicted_before);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before + 1);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments], evicted_before);
 }

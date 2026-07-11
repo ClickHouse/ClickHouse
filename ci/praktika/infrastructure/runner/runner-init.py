@@ -40,7 +40,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 69
+    version: int = 72
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -102,7 +102,7 @@ class EC2:
         """Detect the current AWS region from instance metadata, falling back to the default."""
         try:
             cls.region_name = EC2.get_instance_metadata("placement/region")
-        except Exception as e:
+        except Exception:
             pass
         return cls.region_name
 
@@ -172,6 +172,8 @@ EC2.autodetect_region()
 
 
 class Runner:
+    PROVISION_MARKER = Path.home() / ".clickhouse-ci-runner-init-version"
+
     def __init__(self, ec2: EC2):
         self.ec2 = ec2
         self._token = None
@@ -302,7 +304,7 @@ class Runner:
     def run(self) -> None:
         """Main runner loop."""
         if config.init_environment == Environment.MACOS:
-            Runner.configure_macos()
+            Runner.configure_darwin()
         else:
             Runner.configure_linux()
 
@@ -312,14 +314,14 @@ class Runner:
 
                 self.config()
                 self.run_job()
-            except Exception as e:
+            except Exception:
                 self.remove_if_not_running()
                 raise
 
             log(f"Completed jobs: {self.completed_jobs}/{config.max_jobs}")
             # macOS runners run continuously without job limits
             if config.init_environment != Environment.MACOS and self.completed_jobs >= config.max_jobs:
-                raise Exception(f"Runner completed max number of jobs")
+                raise Exception("Runner completed max number of jobs")
 
     def run_job(self) -> None:
         """Execute one iteration of the runner loop."""
@@ -360,7 +362,7 @@ class Runner:
 
         try:
             Monitor.check_termination_flag()
-        except Exception as e:
+        except Exception:
             self.ec2.scale_down()
             raise
         Runner.check_post_run()
@@ -494,7 +496,7 @@ timedatectl status | grep 'NTP service: active'
         return ":".join(result)
 
     @staticmethod
-    def configure_macos() -> None:
+    def configure_darwin() -> None:
         # macOS EC2 instances cannot have their user_data updated after launch,
         # so the user_data script is kept minimal and all provisioning lives here.
         # The install is gated on `config.version`: when it differs from the
@@ -503,17 +505,9 @@ timedatectl status | grep 'NTP service: active'
         # `.runner` registration file and forces `Runner.config` to re-run
         # `config.sh` against the freshly extracted actions-runner.
 
-        # TEMPORARY: unconditionally clear the login profiles on every boot
-        # (before the version gate) to flush bloat left by old non-idempotent
-        # PATH appends fleet-wide without waiting for a version bump. Jobs use
-        # the runner `.path`, not these profiles. Remove once the fleet is clean.
-        for _profile in (".bash_profile", ".zprofile"):
-            (Path.home() / _profile).write_text("")
-
-        marker = Path.home() / ".clickhouse-ci-runner-init-version"
         current = str(config.version)
         try:
-            previous = marker.read_text().strip()
+            previous = Runner.PROVISION_MARKER.read_text().strip()
         except FileNotFoundError:
             previous = ""
         if previous == current:
@@ -584,7 +578,7 @@ cp /tmp/amazon-cloudwatch-agent.json /opt/aws/amazon-cloudwatch-agent/etc/amazon
         # User-mode steps (Homebrew, Python venv, GitHub Actions runner) refuse
         # to run as root, so this block runs as the current user (ec2-user).
         run_bash(
-            r"""
+            rf"""
 # Homebrew is bootstrapped by `user_data_macos.txt`; just make it callable in
 # this non-interactive shell (the `brew shellenv` line lives in `.zprofile`,
 # only sourced by a login zsh, but we run under `bash -euxo pipefail`). If brew
@@ -627,7 +621,10 @@ brew install \
     urllib3 \
     unidiff \
     dohq-artifactory \
-    pyjwt
+    pyjwt \
+    numpy==2.3.2 \
+    pandas==2.3.3 \
+    scipy==1.16.1
 
 # GitHub Actions runner: wipe and re-extract so the next iteration of the
 # runner loop registers with a fresh `config.sh`.
@@ -636,18 +633,17 @@ case $(uname -m) in
     arm64)  RUNNER_ARCH=arm64 ;;
 esac
 RUNNER_VERSION=$(curl -fsSL "https://api.github.com/repos/actions/runner/releases/latest" | jq -r '.tag_name | ltrimstr("v")')
-RUNNER_HOME="$HOME/actions-runner"
-rm -rf "$RUNNER_HOME"
-mkdir -p "$RUNNER_HOME"
-cd "$RUNNER_HOME"
-RUNNER_ARCHIVE="actions-runner-osx-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz"
-curl -O -L "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${RUNNER_ARCHIVE}"
-tar xzf "./${RUNNER_ARCHIVE}"
-rm -f "./${RUNNER_ARCHIVE}"
+rm -rf "{config.runner_home}"
+mkdir -p "{config.runner_home}"
+cd "{config.runner_home}"
+RUNNER_ARCHIVE="actions-runner-osx-${{RUNNER_ARCH}}-${{RUNNER_VERSION}}.tar.gz"
+curl -O -L "https://github.com/actions/runner/releases/download/v${{RUNNER_VERSION}}/${{RUNNER_ARCHIVE}}"
+tar xzf "./${{RUNNER_ARCHIVE}}"
+rm -f "./${{RUNNER_ARCHIVE}}"
 """,
             verbose=True,
         )
-        marker.write_text(current)
+        Runner.PROVISION_MARKER.write_text(current)
         log(f"macOS provisioning completed, marker updated to {current}")
 
 
@@ -806,7 +802,7 @@ class Monitor:
         last_job_time = start_time
         runner_state = "starting"
         last_job_start_time = start_time
-        Monitor.log(f"started")
+        Monitor.log("started")
 
         while True:
             time.sleep(20)
@@ -1021,7 +1017,13 @@ if __name__ == "__main__":
         monitor.daemonize()
         runner.run()
 
-    except Exception as e:
-        if config.init_environment != Environment.MACOS:
+    except Exception:
+        if config.init_environment == Environment.MACOS:
+            # Drop the provisioning marker so the next boot re-runs
+            # `configure_darwin` (re-extracts `actions-runner`) instead of
+            # skipping it on the version gate and failing the same way again.
+            Runner.PROVISION_MARKER.unlink(missing_ok=True)
+            log(f"Removed provisioning marker {Runner.PROVISION_MARKER}")
+        else:
             ec2.terminate()
         raise

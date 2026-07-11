@@ -24,7 +24,7 @@ Shows the execution plan of a statement.
 Syntax:
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -39,22 +39,23 @@ EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM nu
 ```
 
 ```sql
+Output: sum(number)
+
 Union
-  Expression (Projection)
-    Expression (Before ORDER BY and SELECT)
-      Aggregating
-        Expression (Before GROUP BY)
-          SettingQuotaAndLimits (Set limits and quota after reading from storage)
-            ReadFromStorage (SystemNumbers)
-  Expression (Projection)
-    MergingSorted (Merge sorted streams for ORDER BY)
-      MergeSorting (Merge sorted blocks for ORDER BY)
-        PartialSorting (Sort each block for ORDER BY)
-          Expression (Before ORDER BY and SELECT)
-            Aggregating
-              Expression (Before GROUP BY)
-                SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                  ReadFromStorage (SystemNumbers)
+├──Aggregating
+│  │  Keys:
+│  │  Aggregates: sum(number)
+│  │  Skip merging: 0
+│  └──ReadFromSystemNumbers
+│        Output: number
+└──Sorting (Sorting for ORDER BY)
+   │  Sort description: sum(number) ASC
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sum(number)
+      │  Skip merging: 0
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 ## EXPLAIN Types {#explain-types}
@@ -64,6 +65,9 @@ Union
 - `QUERY TREE` — Query tree after Query Tree level optimizations.
 - `PLAN` — Query execution plan.
 - `PIPELINE` — Query execution pipeline.
+- `ANALYZE` — Executes the query and annotates the execution plan with measured runtime metrics.
+- `ESTIMATE` — Estimated number of rows, marks and parts to be read from the tables while processing the query.
+- `TABLE OVERRIDE` — Validated result of a table override on a table-function schema.
 
 ### EXPLAIN AST {#explain-ast}
 
@@ -182,39 +186,49 @@ Settings:
 - `description` — Prints step description. Default: 1.
 - `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. Starting from ClickHouse >= v25.9, this statement only shows reasonable output when used with `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
 - `projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-- `actions` — Prints detailed information about step actions. Default: 0.
+- `actions` — Prints detailed information about step actions. Default: 1.
 - `sorting` — Prints the sort description for each plan step that produces sorted output. Default: 0.
 - `keep_logical_steps` — Keeps logical plan steps for joins instead of converting them to physical join implementations. Default: 0.
 - `json` — Prints query plan steps as a row in [JSON](/interfaces/formats/JSON) format. Default: 0. It is recommended to use [TabSeparatedRaw (TSVRaw)](/interfaces/formats/TabSeparatedRaw) format to avoid unnecessary escaping.
 - `input_headers` — Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
-- `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Default: 0.
-- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when actions = 1. Default: 0.
-- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 0.
+- `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Not supported together with `json`. Default: 0.
+- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1.
+- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1.
 
-When `json=1` step names will contain an additional suffix with unique step identifier.
+:::note
+By default, `explain_query_plan_default = 'pretty'`, so `actions`, `compact`, and `pretty` are initialized to `1` and the plan is rendered in the compact, pretty, action-annotated form. Specifying any of these options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides the default.
+
+Prior to ClickHouse 26.7 the defaults for `actions`, `compact`, and `pretty` were `0`. You can still get that output by setting `explain_query_plan_default = 'legacy'` (globally or in per-query `SETTINGS`), or by setting `compatibility` to any version older than `26.7`.
+
+The `json` and `distributed` options do not enable the `pretty` defaults (`actions`, `compact`, and `pretty`), even when `explain_query_plan_default = 'pretty'`. To include action details in their output, set `actions = 1` manually.
+:::
 
 Example:
 
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4  LIMIT 1;
 ```
 
 ```sql
-Union
-  Expression (Projection)
-  Expression (Before ORDER BY and SELECT)
-    Aggregating
-      Expression (Before GROUP BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromStorage (SystemNumbers)
+Output: sum(number)
+
+Limit (preliminary LIMIT)
+│  Limit 1
+│  Offset 0
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──ReadFromSystemNumbers
+         Output: number
 ```
 
 :::note
 Step and query cost estimation is not supported.
 :::
 
-When `json = 1`, the query plan is represented in JSON format. Every node is a dictionary that always has the keys `Node Type` and `Plans`. `Node Type` is a string with a step name. `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings.
+When `json = 1`, the query plan is represented in JSON format. Every node is a dictionary that always has the keys `Node Type`, `Node Id`, and `Plans`. `Node Type` is a string with the step name, and `Node Id` is a unique step identifier (the step name with a numeric suffix, e.g. `Union_10`). `Plans` is an array with child step descriptions. Other optional keys may be added depending on node type and settings.
 
 Example:
 
@@ -459,24 +473,39 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-With `compact = 1`, each `Expression` step is removed. Along with that, if `actions = 1` is set, then `Actions` and `Positions` lines are hidden, leaving only the step descriptions:
+With `compact = 0` and `actions = 1`, the `Expression` steps can be seen along with detailed information about expressions:
 
 ```sql
-EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+EXPLAIN actions = 1, compact = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
 ```
 
 ```text
-Aggregating
-Keys: modulo(__table1.number, 4_UInt8)
-Aggregates:
-    sum(__table1.number)
-      Function: sum(UInt64) → UInt64
-      Arguments: __table1.number
-Skip merging: 0
-  ReadFromSystemNumbers
+Output: sum(number)
+
+Expression ((Project names + Projection))
+│  Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
+│           INPUT :: 1 -> modulo(__table1.number, 4_UInt8) UInt8 : 1
+│           ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
+│  Positions: 2
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  Actions: INPUT : 0 -> number UInt64 : 0
+      │           COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
+      │           ALIAS number :: 0 -> __table1.number UInt64 : 2
+      │           FUNCTION modulo(__table1.number : 2, 4_UInt8 :: 1) -> modulo(__table1.number, 4_UInt8) UInt8 : 0
+      │  Positions: 0 2
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 With `distributed` = 1, the output includes not only the local query plan but also the query plans that will be executed on remote nodes. This is useful for analyzing and debugging distributed queries.
+
+:::note
+`distributed` is rendered only in the legacy (non-`pretty`) form, because the `pretty` output does not integrate the remote shard plans into the plan tree. For this reason, enabling `distributed` automatically disables the `pretty` defaults (`actions`, `compact`, and `pretty`), regardless of `explain_query_plan_default`. You can still set `actions=1` manually. The `distributed` option is also not supported together with `json`.
+:::
 
 Example with distributed table:
 
@@ -550,18 +579,7 @@ when table statistics are available.
 
 The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and detailed action info, making the plan easier to read.
 
-```sql
-EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
-```
-
-```text
-Expression ((Project names + Projection))
-└──Aggregating
-   └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      └──ReadFromSystemNumbers
-```
-
-A more detailed example with joins:
+A detailed example with joins:
 
 ```sql
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
@@ -574,24 +592,28 @@ SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
 ```
 
 ```text
-Output: id, value, t2.id, t2.value
+Output: id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
 │  Result rows: 100
+│  Join conditions: id = id
 │  Output:
 │    Left:  id, value
 │    Right: id, value
-│  Join conditions: id = id
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
 │     Output: id, value
-└──ReadFromMergeTree (default.t2)
-      Read type: Default
-      Parts: 1 | Granules: 1
-      Output: id, value
+│     Runtime filters: RF1(id, id from default.t2)
+└──BuildRuntimeFilter (Build runtime join filter on id)
+   │  Filter id: RF1
+   │  Source table: default.t2
+   └──ReadFromMergeTree (default.t2)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: id, value
 ```
 
 ### EXPLAIN PIPELINE {#explain-pipeline}
@@ -633,6 +655,110 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersRange × 2 0 → 1
 ```
+
+### EXPLAIN ANALYZE {#explain-analyze}
+
+`EXPLAIN ANALYZE` actually runs the query, discards the result rows, and prints the same plan tree as `EXPLAIN PLAN` with each step annotated by what really happened at run time.
+
+Settings:
+
+`EXPLAIN ANALYZE` accepts the same display options as `EXPLAIN PLAN` (documented in the [EXPLAIN PLAN](#explain-plan) section).
+
+- `header` — see [EXPLAIN PLAN](#explain-plan) section.
+- `description` — see [EXPLAIN PLAN](#explain-plan) section.
+- `projections` — see [EXPLAIN PLAN](#explain-plan) section.
+- `sorting` — see [EXPLAIN PLAN](#explain-plan) section.
+- `input_headers` — see [EXPLAIN PLAN](#explain-plan) section.
+- `column_structure` — see [EXPLAIN PLAN](#explain-plan) section.
+- `actions` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
+- `indexes` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
+- `compact` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
+- `pretty` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
+- `processors` — For `EXPLAIN ANALYZE`, prints an additional line per stage with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
+
+:::note
+The current version of `EXPLAIN ANALYZE` doesn't support queries executed in distributed mode.
+:::
+
+Example:
+
+```sql
+EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k;
+```
+
+```text
+Query summary:
+  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
+  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
+  Peak memory: 28.98 KiB
+
+Output: number MOD 10, count()
+
+Expression ((Project names + Projection))
+│  I/O: rows 10 → 10 · 90 B → 90 B
+│    time 21.82 us (0.5%) · parallelism 0.98/1
+└──Aggregating
+   │  Keys: number MOD 10
+   │  Aggregates: count()
+   │  Skip merging: 0
+   │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
+   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
+   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
+      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      └──ReadFromSystemNumbers
+            Output: number
+            I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
+              time 993.94 us (23.3%) · parallelism 7.52/15
+```
+
+Let's examine the output. First let's look at the header.
+
+```txt
+   Query summary:
+     Time:        <total> (planning <planning> · execution <execution>)
+     Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
+     Peak memory: <peak>
+```
+
+- `Time` — total time split into planning (i.e. creation of plan + optimization of plan + pipeline construction) and execution (running the pipeline) phases.
+- `Read` — rows and uncompressed bytes read from tables, with throughput - the same numbers the normal query footer reports as "Processed".
+- `Peak memory` — peak memory the query used.
+
+Now let's look at the new lines that appear in the query plan.
+
+```txt
+I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
+  [Stage (<stage>): ]time <t> (<share>%) · parallelism <avg>/<max>
+```
+
+Rows and bytes are reported once for the whole step (the `I/O` line). Time and parallelism are reported per stage of the step on the following indented line(s).
+
+- `rows <in> → <out>` — rows that entered and left the step; (`<selectivity>`%) shows how much the step filtered (`out/in`) or expanded the data, it is hidden when input rows equals output rows and when input rows equals `0`.
+- `<bytes_in> → <bytes_out>` — uncompressed in-memory bytes flowing through the step (omitted when both are zero).
+- `time <t> (<share>%)` — wall-clock time the stage was active, and its share of query execution time (i.e. without build time). Note shares can add up to more than 100% because stages and steps run concurrently.
+- `parallelism <avg>/<max>` — average number of CPU threads working within this stage at once, out of the maximum it could use. A value near max means the stage was well parallelized; near 1 means it ran mostly serially.
+- `Stage (<stage>)` — the name of the stage. A step with a single stage prints the time line directly, without a `Stage (...)` label. Steps with several stages print one labeled line per stage, e.g. `Aggregating` shows `Stage (partial aggregation)` and `Stage (final aggregation)`, and a hash join shows `Stage (build)` and `Stage (probe)`.
+
+:::note
+ClickHouse parallelizes not only execution of tasks within a plan step, but also the execution of plan steps. The `parallelism` metric reflects only the work of this step. Other steps may run concurrently, so this number does not show how the step's parallelism compares to the whole query.
+:::
+
+:::note
+The maximum number in `parallelism` is computed as a minimum between:
+1. total number of tasks within the plan step;
+2. The maximum number of query processing threads set in `max_threads`.
+:::
+
+With `processors = 1`, an extra line is printed under each stage, showing the distribution of elapsed time across the stage's processors:
+
+```txt
+Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
+```
+
+`<n>` is the number of processors in the stage. A large gap between `median` and `max` points to load skew between parallel processors.
+
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
 Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family.
@@ -656,6 +782,126 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
+
+### EXPLAIN WHATIF {#explain-whatif}
+
+Estimates the benefit a hypothetical skip index would have on a `SELECT` query, *without* materializing the index on disk. Define one or more candidates with [`CREATE HYPOTHETICAL INDEX`](/sql-reference/statements/hypothetical-index#create-hypothetical-index), then run `EXPLAIN WHATIF SELECT ...` to see, for each candidate: applicability, estimated marks read, estimated bytes, and skip ratio.
+
+**Syntax**
+
+```sql
+EXPLAIN WHATIF [empirical = 0] SELECT ...
+```
+
+**Settings**
+
+- `empirical` — `1` (default) runs the index over the baseline-pruned granules in memory to measure the skip ratio (an upper bound). `0` skips that path. Either way, if empirical doesn't produce a result (disabled, or the index can't be evaluated in memory) the estimator falls back to column [statistics](/engines/table-engines/mergetree-family/mergetree#column-statistics), and finally to an applicability-only summary if neither is available.
+
+**Output**
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       db.t
+  parts:       1
+  marks:       100
+  est_bytes:   1.50 MiB             (only when the query reads rows)
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    15.00 KiB           (only when baseline bytes are known)
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical | statistical | applicability_only
+  empirical_status: ok | unsupported | disabled
+  sampled_parts:    50 / 100        (only when source = empirical)
+  sampled_marks:    50 / 100        (only when source = empirical)
+  elapsed_us:       631             (only when source = empirical)
+```
+
+- `source` — how the estimate was produced.
+  - `empirical`: built the index in memory over the baseline-pruned granules and counted the granules the index would skip. This is an upper bound — see the limitations in [`CREATE HYPOTHETICAL INDEX`](/sql-reference/statements/hypothetical-index#limitations).
+  - `statistical`: derived from column statistics. Used when empirical is disabled (`empirical = 0`) or empirical couldn't produce a result, and column statistics are defined on the relevant columns.
+  - `applicability_only`: the index is applicable to the predicate but neither empirical nor statistical estimation produced a result (e.g. `empirical = 0` and no column statistics defined). Reports `skip_ratio: 0.0%` as a conservative bound.
+- `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Shows what fraction of the table survived PK, partition, and existing-index pruning, i.e. the input to the hypothetical index.
+- `est_bytes` — an estimate of the bytes read, derived from the table's average row size, so it is approximate and varies with storage and compression. The baseline line appears only when the query reads rows; the per-candidate line only when the baseline byte estimate is known.
+
+The setting is written inline between `WHATIF` and the `SELECT` — there is no `SETTINGS` keyword (this matches how other `EXPLAIN` variants accept their options).
+
+If no hypothetical indexes are defined for the table, `EXPLAIN WHATIF` reports `status: not_applicable` with a hint to create one.
+
+**Combined row (multiple candidates)**
+
+When two or more candidates are evaluated empirically, `EXPLAIN WHATIF` appends one extra block named `(combined: idx_a, idx_b, ...)` after the per-candidate rows. It reports the joint benefit of having *all* of those indexes at once: a real read keeps a granule only if it survives *every* skip index, so the combined estimate is the intersection of the candidates' surviving granules. Its `skip_ratio` is therefore at least as high as the best single candidate — complementary indexes prune more together, while redundant ones leave it unchanged.
+
+Only candidates with `source: empirical` contribute, because the combined row is built by intersecting their per-granule survival sets. Candidates estimated `statistical` or `applicability_only` have no per-granule data and are excluded; consequently the combined block appears only when at least two candidates produced an empirical estimate, and is omitted otherwise (for example under `empirical = 0`). Its estimation fields read the same as a per-candidate empirical block, except `elapsed_us` is `0` — the combined estimate is derived from the per-candidate scans, not a new scan. The synthetic `(combined: ...)` name is a report label only and cannot be used with `force_data_skipping_indices`.
+
+**Empirical example**
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+```
+
+The hypothetical `minmax` would prune from 100 marks down to 1 — `skip_ratio: 99.0%`. (`est_bytes` is an estimate from the average row size, so the exact figure varies.)
+
+**Statistical example**
+
+Column [statistics](/engines/table-engines/mergetree-family/mergetree#column-statistics) are off by default. To exercise the `statistical` path, define them on the relevant columns first and wait for the materialize mutation to finish:
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+```
+
+Then disable the empirical path so the estimator falls back to column statistics:
+
+```sql
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+The number comes from the column-statistic selectivity of `b < 10` (about 10 rows out of 10000) and is reported as an upper bound on `skip_ratio`. There are no `sampled_parts` / `sampled_marks` — no data was read.
+
+If neither path is available (e.g. `empirical = 0` and no column statistics defined), the estimator reports `source: applicability_only` and a conservative `skip_ratio: 0.0%`.
 
 ### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 

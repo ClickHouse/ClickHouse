@@ -1,0 +1,69 @@
+---
+title: 테이블의 모든 컬럼에서 빈 값/0 값 비율을 계산하는 방법
+description: 희소 컬럼 직렬화를 최적화하기 위해 ClickHouse 테이블의 모든 컬럼에서 빈 값 또는 0 값의 비율을 계산하는 방법을 알아봅니다.
+date: 2023-05-18
+tags: ['성능 및 최적화']
+keywords: ['빈 값/0 값 비율', '계산']
+---
+
+<div id="how-to-calculate-the-ratio-of-emptyzero-values-in-every-column-in-a-table">
+  ## 테이블의 모든 컬럼에서 빈값/0 값의 비율을 계산하는 방법
+</div>
+
+컬럼이 희소(비어 있거나 대부분 0인 값)한 경우, ClickHouse는 이를 희소 포맷으로 인코딩해 계산을 자동으로 최적화할 수 있습니다. 즉, 쿼리 실행 중에는 데이터를 완전히 압축 해제하지 않아도 됩니다. 또한 컬럼이 얼마나 희소한지 알고 있다면 [`ratio_of_defaults_for_sparse_serialization` 설정](/ko/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization)을 사용해 해당 비율을 지정함으로써 직렬화를 최적화할 수 있습니다.
+
+이 쿼리는 유용하지만 실행에 다소 시간이 걸릴 수 있습니다. 테이블의 모든 행을 분석하여 지정한 테이블의 각 컬럼에서 값이 0(또는 기본값)인 비율을 계산합니다:
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM table_name
+FORMAT Vertical
+```
+
+예를 들어, 위에서는 200억 개가 넘는 행과 19개의 컬럼을 가진 `sensors`라는 이름의 [environmental sensors dataset](/ko/get-started/sample-datasets/environmental-sensors) 테이블에서 이 쿼리를 실행했습니다:
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM sensors
+FORMAT Vertical
+```
+
+응답은 다음과 같습니다:
+
+```response
+
+Row 1:
+──────
+round(avg(equals(sensor_id, defaultValueOfArgumentType(sensor_id))), 3):                 0
+round(avg(equals(sensor_type, defaultValueOfArgumentType(sensor_type))), 3):             0.159
+round(avg(equals(location, defaultValueOfArgumentType(location))), 3):                   0
+round(avg(equals(lat, defaultValueOfArgumentType(lat))), 3):                             0.001
+round(avg(equals(lon, defaultValueOfArgumentType(lon))), 3):                             0.001
+round(avg(equals(timestamp, defaultValueOfArgumentType(timestamp))), 3):                 0
+round(avg(equals(P1, defaultValueOfArgumentType(P1))), 3):                               0.474
+round(avg(equals(P2, defaultValueOfArgumentType(P2))), 3):                               0.475
+round(avg(equals(P0, defaultValueOfArgumentType(P0))), 3):                               0.995
+round(avg(equals(durP1, defaultValueOfArgumentType(durP1))), 3):                         0.999
+round(avg(equals(ratioP1, defaultValueOfArgumentType(ratioP1))), 3):                     0.999
+round(avg(equals(durP2, defaultValueOfArgumentType(durP2))), 3):                         1
+round(avg(equals(ratioP2, defaultValueOfArgumentType(ratioP2))), 3):                     1
+round(avg(equals(pressure, defaultValueOfArgumentType(pressure))), 3):                   0.83
+round(avg(equals(altitude, defaultValueOfArgumentType(altitude))), 3):                   1
+round(avg(equals(pressure_sealevel, defaultValueOfArgumentType(pressure_sealevel))), 3): 1
+round(avg(equals(temperature, defaultValueOfArgumentType(temperature))), 3):             0.532
+round(avg(equals(humidity, defaultValueOfArgumentType(humidity))), 3):                   0.544
+
+1 row in set. Elapsed: 992.041 sec. Processed 20.69 billion rows, 1.39 TB (20.86 million rows/s., 1.40 GB/s.)
+```
+
+위 결과에서 다음과 같은 점을 알 수 있습니다.
+
+* `sensor_id` 컬럼은 전혀 희소하지 않습니다. 실제로 모든 행에 0이 아닌 값이 있습니다.
+* `sensor_type`은 약 15.9%에서만 희소합니다.
+* `P0` 컬럼은 매우 희소합니다. 값의 99.9%가 0입니다.
+* `pressure` 컬럼은 83%로 상당히 희소합니다.
+* 그리고 `temperature` 컬럼은 값의 53.2%가 누락되었거나 0입니다.
+
+앞서 말씀드렸듯이, 이 쿼리는 ClickHouse 테이블에서 각 컬럼이 얼마나 희소한지 계산할 때 유용합니다!

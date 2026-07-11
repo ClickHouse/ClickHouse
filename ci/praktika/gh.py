@@ -78,7 +78,7 @@ class GH:
                 raise RuntimeError(
                     f"Failed to extract repository name from remote URL [{repo_url}]"
                 )
-            sha = Shell.get_output(f"git rev-parse HEAD", strict=True)
+            sha = Shell.get_output("git rev-parse HEAD", strict=True)
 
         assert repo_name
         print(repo_name)
@@ -348,6 +348,85 @@ class GH:
                 f"-f side={shlex.quote(side)}"
             )
         return cls.do_command_with_retries(cmd)
+
+    @classmethod
+    def post_pr_review(
+        cls,
+        commit_id,
+        comments,
+        body="",
+        pr=None,
+        repo=None,
+    ):
+        """Post all inline findings as a single ``COMMENT`` PR review (one
+        review event, one notification) instead of many standalone inline
+        comments.
+
+        Only the ``COMMENT`` event is supported; this helper never approves or
+        requests changes, so an empty review is always a no-op rather than a
+        meaningful action.
+
+        ``comments`` is a list of dicts, each describing one inline comment::
+
+            {"path": <file>, "line": <int>, "side": "RIGHT"|"LEFT",
+             "start_line": <int> (optional), "start_side": <str> (optional),
+             "body_file": <path>}
+
+        Each comment body is read from its ``body_file`` and the whole payload
+        is assembled with ``json.dumps``, so multi-line Markdown is escaped
+        correctly. This avoids the ``-f`` vs ``-F`` / literal ``@<file>`` and
+        literal ``\\n`` footguns that standalone ``gh api`` calls have hit.
+
+        GitHub rejects a ``COMMENT`` review with neither a body nor any
+        comments, so when ``comments`` is empty and ``body`` is empty the call
+        is skipped and True is returned.
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        payload_comments = []
+        for c in comments:
+            body_file = c["body_file"]
+            if not os.path.exists(body_file):
+                raise FileNotFoundError(f"Body file [{body_file}] not found")
+            if os.path.getsize(body_file) == 0:
+                raise ValueError(f"Body file [{body_file}] is empty")
+            with open(body_file, "r", encoding="utf-8") as f:
+                comment = {"path": c["path"], "body": f.read()}
+            if c.get("start_line") is not None:
+                comment["start_line"] = int(c["start_line"])
+                comment["start_side"] = c.get("start_side", c.get("side", "RIGHT"))
+            comment["line"] = int(c["line"])
+            comment["side"] = c.get("side", "RIGHT")
+            payload_comments.append(comment)
+
+        if not payload_comments and not body:
+            print("No review body and no inline comments; skipping review post")
+            return True
+
+        payload = {"event": "COMMENT", "comments": payload_comments}
+        if commit_id:
+            payload["commit_id"] = commit_id
+        if body:
+            payload["body"] = body
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as f:
+            json.dump(payload, f)
+            payload_file = f.name
+        try:
+            cmd = (
+                f"gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/reviews" '
+                f"--input {shlex.quote(payload_file)}"
+            )
+            return cls.do_command_with_retries(cmd)
+        finally:
+            os.unlink(payload_file)
 
     @classmethod
     def _gh_graphql_json(cls, query, variables, verbose=False):
@@ -648,7 +727,7 @@ class GH:
                 # Pass --repo so gh does not probe git remotes (Docker mounts can hit
                 # "detected dubious ownership" and fail comment creation).
                 cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
-                print(f"Create new comment")
+                print("Create new comment")
                 res = cls.do_command_with_retries(cmd)
             else:
                 print(
@@ -824,6 +903,43 @@ class GH:
             f"-f description={safe_description} -f context={safe_context}"
         )
         return cls.do_command_with_retries(command)
+
+    @classmethod
+    def get_commit_statuses(
+        cls, sha="", repo=""
+    ) -> Optional[Dict[str, "GH.CommitStatus"]]:
+        """
+        Fetch commit statuses for the given commit SHA and return the latest
+        status for each context. Returns `None` if the status list cannot be
+        retrieved or parsed.
+        """
+        repo = repo or _Environment.get().REPOSITORY
+        sha = sha or _Environment.get().SHA
+
+        output = cls.get_output_with_retries(
+            f"gh api repos/{repo}/commits/{sha}/statuses --paginate"
+        )
+        if not output:
+            print("ERROR: Failed to fetch commit statuses")
+            return None
+        try:
+            statuses_list = json.loads(output)
+        except json.JSONDecodeError as ex:
+            print(f"ERROR: Failed to parse commit statuses: {ex}")
+            return None
+        status_map: Dict[str, GH.CommitStatus] = {}
+
+        for status in statuses_list:
+            context = status["context"]
+            if context not in status_map:
+                status_map[context] = GH.CommitStatus(
+                    state=status["state"],
+                    description=status.get("description", ""),
+                    url=status.get("target_url", ""),
+                    context=context,
+                )
+
+        return status_map
 
     @classmethod
     def merge_pr(cls, pr=None, repo=None, squash=False, keep_branch=False):
@@ -1294,6 +1410,34 @@ if __name__ == "__main__":
         "--repo", default=None, help="Repository in owner/repo format"
     )
 
+    review_parser = subparsers.add_parser(
+        "post-pr-review",
+        help="Post all inline findings as a single batched PR review",
+    )
+    review_parser.add_argument(
+        "--comments-file",
+        required=True,
+        dest="comments_file",
+        help="Path to a JSON file with a list of "
+        '{"path", "line", "side", "start_line"?, "start_side"?, "body_file"} '
+        "objects; each body_file holds that comment's Markdown body",
+    )
+    review_parser.add_argument(
+        "--body-file",
+        default=None,
+        dest="body_file",
+        help="Optional file with the top-level review body",
+    )
+    review_parser.add_argument(
+        "--commit",
+        default=None,
+        help="Commit SHA the review refers to",
+    )
+    review_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    review_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+
     threads_parser = subparsers.add_parser(
         "list-pr-review-threads",
         help="List PR review threads via GraphQL (prints JSON to stdout)",
@@ -1354,6 +1498,24 @@ if __name__ == "__main__":
         if args.repo is not None:
             kwargs["repo"] = args.repo
         ok = GH.post_pr_line_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    elif args.command == "post-pr-review":
+        with open(args.comments_file, "r", encoding="utf-8") as f:
+            comments = json.load(f)
+        body = ""
+        if args.body_file is not None:
+            with open(args.body_file, "r", encoding="utf-8") as f:
+                body = f.read()
+        kwargs = dict(
+            commit_id=args.commit,
+            comments=comments,
+            body=body,
+        )
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        ok = GH.post_pr_review(**kwargs)
         sys.exit(0 if ok else 1)
     elif args.command == "list-pr-review-threads":
         kwargs = {}
