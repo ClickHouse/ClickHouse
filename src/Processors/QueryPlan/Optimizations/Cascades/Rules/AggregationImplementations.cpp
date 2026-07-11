@@ -254,6 +254,12 @@ std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(Gro
     auto partial_step_ptr = cloneStepAs(*agg_step);
     auto * partial_step = partial_step_ptr.get();
     partial_step->setFinal(false);
+    /// The memory-efficient merge below expects every input to deliver two-level buckets in
+    /// ascending order. Force the partial step to emit them that way; otherwise a parallel
+    /// flush unites several bucket sequences into one exchange stream out of order and the
+    /// merge emits some groups twice.
+    if (memo.getEnvironment().distributed_aggregation_memory_efficient)
+        partial_step->setShouldProduceResultsInBucketOrder(true);
     partial_step->setStepDescription(fmt::format("Partial: {}", agg_step->getStepDescription()), 200);
 
     /// Phase 2: merge aggregation - takes intermediate aggregate states from Phase 1, produces
