@@ -2397,6 +2397,10 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 - `TDigest`
 
+    :::warning
+    Statistics of type `tdigest` have high creation costs and potentially slow down data ingest.
+    :::
+
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
 
     Syntax: `tdigest`
@@ -2408,6 +2412,10 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
     Syntax: `uniq`
 
 - `CountMin`
+
+    :::warning
+    Statistics of type `countmin` have high creation costs and potentially slow down data ingest.
+    :::
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
