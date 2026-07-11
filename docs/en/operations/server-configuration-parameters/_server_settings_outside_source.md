@@ -186,7 +186,7 @@ You can configure multiple `<case>` sections.
 **Actions when conditions are met**:
 
 - If a data part matches a condition set, ClickHouse uses the specified compression method.
-- If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
+- If a data part matches multiple condition sets, ClickHouse uses the last matched condition set (the `<case>` sections are checked in order, and each matching one overrides the previous choice).
 
 :::note
 If no conditions are met for a data part, ClickHouse uses the size-aware built-in default: `LZ4` for parts smaller than 100 MB and `ZSTD(3)` for larger parts.
