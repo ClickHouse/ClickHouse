@@ -148,6 +148,7 @@ Cluster::Address::Address(
     streaming_exchange_port = read_optional_port(".streaming_exchange_port");
 
     is_local = isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
+    skip_distributed_ddl = config.getBool(config_prefix + ".skip_distributed_ddl", false);
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.

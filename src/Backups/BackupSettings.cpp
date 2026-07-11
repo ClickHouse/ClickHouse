@@ -307,15 +307,17 @@ Strings BackupSettings::Util::filterHostIDs(const std::vector<Strings> & cluster
     auto collect_replicas = [&](size_t shard_index)
     {
         const auto & shard = cluster_host_ids[shard_index - 1];
+        /// Skip kSkippedHost slots (excluded from ON CLUSTER DDL; kept only for numbering).
         if (only_replica_num)
         {
-            if (only_replica_num <= shard.size())
+            if (only_replica_num <= shard.size() && shard[only_replica_num - 1] != kSkippedHost)
                 collected_host_ids.push_back(shard[only_replica_num - 1]);
         }
         else
         {
             for (size_t replica_index = 1; replica_index <= shard.size(); ++replica_index)
-                collected_host_ids.push_back(shard[replica_index - 1]);
+                if (shard[replica_index - 1] != kSkippedHost)
+                    collected_host_ids.push_back(shard[replica_index - 1]);
         }
     };
 
