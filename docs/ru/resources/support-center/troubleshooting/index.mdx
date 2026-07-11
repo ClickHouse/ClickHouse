@@ -1,0 +1,183 @@
+---
+slug: /troubleshooting
+sidebarTitle: 'Устранение неполадок'
+doc_type: 'guide'
+keywords: [
+  'устранение неполадок ClickHouse',
+  'ошибки ClickHouse',
+  'устранение неполадок базы данных',
+  'проблемы с подключением ClickHouse',
+  'превышен лимит памяти',
+  'проблемы с производительностью ClickHouse',
+  'сообщения об ошибках базы данных',
+  'проблемы с конфигурацией ClickHouse',
+  'ошибка connection refused',
+  'отладка ClickHouse',
+  'проблемы с подключением к базе данных',
+  'руководство по устранению неполадок'
+]
+title: 'Устранение типичных проблем'
+description: 'Найдите решения самых распространенных проблем ClickHouse, включая медленные запросы, ошибки памяти, проблемы с подключением и конфигурацией.'
+---
+
+Возникли проблемы с ClickHouse? Здесь вы найдете решения типичных проблем.
+
+<div id="performance-and-errors">
+  ## Производительность и ошибки
+</div>
+
+Медленные запросы, тайм-ауты или сообщения об ошибках вроде &quot;Memory limit exceeded&quot; или &quot;Connection refused.&quot;
+
+<Accordion title="Показать решения по производительности и ошибкам">
+  ### Производительность запросов
+
+  * [Узнайте, какие запросы потребляют больше всего ресурсов](/ru/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
+  * [Полное руководство по оптимизации запросов](/ru/guides/clickhouse/performance-and-monitoring/query-optimization)
+  * [Оптимизируйте операции JOIN](/ru/concepts/best-practices/minimize-optimize-joins)
+  * [Запустите диагностические запросы, чтобы найти узкие места](/ru/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+
+  <br />
+
+  ### Производительность вставки данных
+
+  * [Ускорьте вставку данных](/ru/concepts/features/operations/insert/bulkinserts)
+  * [Настройте асинхронные вставки](/ru/concepts/features/operations/insert/asyncinserts)
+
+  <br />
+
+  ### Инструменты расширенного анализа
+
+  {/* - [Профилирование с помощью LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
+
+  * [Проверьте, какие процессы выполняются](/ru/resources/support-center/knowledge-base/monitoring-debugging/which-processes-are-currently-running)
+  * [Отслеживайте производительность системы](/ru/reference/system-tables/processes)
+
+  <br />
+
+  ### Сообщения об ошибках
+
+  * **&quot;Memory limit exceeded&quot;** → [Разбор ошибок превышения лимита памяти](/ru/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * **&quot;Connection refused&quot;** → [Устранение проблем с подключением](#connections-and-authentication)
+  * **&quot;Login failures&quot;** → [Настройте пользователей, роли и разрешения](/ru/concepts/features/security/access-rights)
+  * **&quot;SSL certificate errors&quot;** → [Устранение проблем с сертификатами](/ru/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * **&quot;Table/database errors&quot;** → [Руководство по созданию базы данных](/ru/reference/statements/create/database) | [Проблемы с UUID таблиц](/ru/reference/engines/database-engines/atomic)
+  * **&quot;Network timeouts&quot;** → [Устранение неполадок сети](/ru/concepts/features/interfaces/http)
+  * **Other issues** → [Отслеживайте ошибки во всем кластере](/ru/reference/system-tables/errors)
+</Accordion>
+
+<div id="memory-and-resources">
+  ## Память и ресурсы
+</div>
+
+Высокое использование памяти, сбои из-за нехватки памяти или нужна помощь с выбором размера для развертывания ClickHouse.
+
+<Accordion title="Показать решения, связанные с памятью">
+  ### Отладка и мониторинг памяти:
+
+  * [Определите, что использует память](/ru/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * [Проверьте текущее использование памяти](/ru/reference/system-tables/processes)
+  * [Данные профилирования выделения памяти](/ru/concepts/features/performance/allocation-profiling)
+  * [Проанализируйте закономерности использования памяти](/ru/reference/system-tables/query_log)
+
+  <br />
+
+  ### Конфигурация памяти:
+
+  * [Настройте лимиты памяти](/ru/concepts/features/configuration/settings/memory-overcommit)
+  * [Настройки памяти сервера](/ru/reference/settings/server-settings/settings)
+  * [Настройки памяти сеанса](/ru/reference/settings/session-settings)
+
+  <br />
+
+  ### Масштабирование и подбор размера:
+
+  * [Подберите оптимальный размер для вашего сервиса](/ru/guides/oss/best-practices/tips)
+  * [Настройте автомасштабирование](/ru/products/cloud/features/autoscaling/overview)
+</Accordion>
+
+<div id="connections-and-authentication">
+  ## Подключения и аутентификация
+</div>
+
+Не удается подключиться к ClickHouse, возникают ошибки аутентификации, ошибки SSL-сертификатов или проблемы с настройкой клиента.
+
+<Accordion title="Показать решения для подключения">
+  ### Основные проблемы с подключением
+
+  * [Устранение проблем с HTTP-интерфейсом](/ru/concepts/features/interfaces/http)
+  * [Устранение проблем с SSL-сертификатами](/ru/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * [Настройка аутентификации пользователя](/ru/concepts/features/security/access-rights)
+
+  <br />
+
+  ### Клиентские интерфейсы
+
+  * [Нативные клиенты ClickHouse](/ru/concepts/features/interfaces/native-clients-interfaces-index)
+  * [Проблемы с интерфейсом MySQL](/ru/concepts/features/interfaces/mysql)
+  * [Проблемы с интерфейсом PostgreSQL](/ru/concepts/features/interfaces/postgresql)
+  * [Настройка интерфейса gRPC](/ru/concepts/features/interfaces/grpc)
+  * [Настройка интерфейса SSH](/ru/concepts/features/interfaces/ssh)
+
+  <br />
+
+  ### Сеть и данные
+
+  * [Настройки сетевой безопасности](/ru/reference/settings/server-settings/settings)
+  * [Проблемы с разбором форматов данных](/ru/reference/formats/index)
+</Accordion>
+
+<div id="setup-and-configuration">
+  ## Настройка и конфигурация
+</div>
+
+Первоначальная установка, настройка сервера, создание базы данных, проблемы с ингестией данных или настройка репликации.
+
+<Accordion title="Показать решения по настройке и конфигурации">
+  ### Первоначальная настройка
+
+  * [Выполните настройку сервера](/ru/reference/settings/server-settings/settings)
+  * [Настройте безопасность и управление доступом](/ru/concepts/features/security/access-rights)
+  * [Правильно подберите оборудование](/ru/guides/oss/best-practices/tips)
+
+  <br />
+
+  ### Управление базами данных
+
+  * [Создавайте базы данных и управляйте ими](/ru/reference/statements/create/database)
+  * [Выберите подходящий движок таблицы](/ru/reference/engines/table-engines/index)
+
+  {/* - [Безопасно изменяйте схемы](/reference/statements/alter/index) */}
+
+  <br />
+
+  ### Операции с данными
+
+  * [Оптимизируйте массовую вставку данных](/ru/concepts/features/operations/insert/bulkinserts)
+  * [Устраняйте проблемы с форматами данных](/ru/reference/formats/index)
+  * [Настройте конвейеры для стриминга данных](/ru/concepts/features/operations/insert/asyncinserts)
+  * [Повысьте производительность интеграции с S3](/ru/integrations/connectors/data-ingestion/AWS/performance)
+
+  <br />
+
+  ### Расширенная конфигурация
+
+  * [Настройте репликацию данных](/ru/reference/engines/table-engines/mergetree-family/replication)
+  * [Настройте distributed таблицы](/ru/reference/engines/table-engines/special/distributed)
+
+  {/* - [Настройка ClickHouse Keeper](/guides/oss/deployment-and-scaling/keeper/index) */}
+
+  * [Настройте резервное копирование и восстановление](/ru/concepts/features/backup-restore/overview)
+  * [Настройте мониторинг](/ru/reference/system-tables/overview)
+</Accordion>
+
+<div id="still-need-help">
+  ## Всё ещё нужна помощь?
+</div>
+
+Если вы не можете найти решение:
+
+1. **Спросите ИИ** - <button type="button" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Спросить ИИ</button>, чтобы сразу получить ответ.
+2. **Проверьте системные таблицы** - [Обзор](/ru/reference/system-tables/overview)
+3. **Просмотрите журналы сервера** - Поищите сообщения об ошибках в журналах ClickHouse
+4. **Обратитесь к сообществу** - [Присоединяйтесь к нашему сообществу в Slack](https://clickhouse.com/slack), [Обсуждения GitHub](https://github.com/ClickHouse/ClickHouse/discussions)
+5. **Получите профессиональную поддержку** - [Поддержка ClickHouse Cloud](https://clickhouse.com/support)

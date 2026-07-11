@@ -68,6 +68,8 @@ struct PlainLightweightUpdateHolder
 
 struct LightweightUpdateHolderInKeeper
 {
+    void reset();
+
     zkutil::ZooKeeperPtr zookeeper;
     zkutil::EphemeralNodeHolderPtr lock;
     PartitionBlockNumbersHolder partition_block_numbers;

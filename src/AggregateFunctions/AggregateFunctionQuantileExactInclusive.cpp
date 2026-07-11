@@ -46,6 +46,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantileExactInclusive(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileExactInclusive(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
@@ -68,7 +69,7 @@ In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/q
 quantileExactInclusive(level)(expr)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Float*", "Date", "DateTime"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"level", "Level of quantile. Constant floating-point number from 0 to 1 (inclusive). We recommend using a `level` value in the range of `[0.01, 0.99]`.", {"Float*"}}
@@ -102,7 +103,7 @@ SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantileExactInclusive>, {}, documentation });
+    factory.registerFunction(NameQuantileExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantileExactInclusive>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the inclusive method.
@@ -119,7 +120,7 @@ The sorting algorithm's complexity is `O(N·log(N))`, where `N = std::distance(f
 quantilesExactInclusive(level1, level2, ...)(expr)
     )";
     FunctionDocumentation::Arguments arguments_quantiles = {
-        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date` or `DateTime`.", {"(U)Int*", "Float*", "Date", "DateTime"}}
     };
     FunctionDocumentation::Parameters parameters_quantiles = {
         {"level", "Levels of quantiles. Constant floating-point numbers from 0 to 1 (inclusive). We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
@@ -143,7 +144,7 @@ SELECT quantilesExactInclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(number) 
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantilesExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantilesExactInclusive>, properties, documentation_quantiles });
+    factory.registerFunction(NameQuantilesExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantilesExactInclusive>, documentation_quantiles, properties });
 }
 
 }

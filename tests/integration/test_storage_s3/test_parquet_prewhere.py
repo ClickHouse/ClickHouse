@@ -14,7 +14,7 @@ def generate_data_complex(start, end, div):
     a_values = []
     b_values = []
     c_values = []
-    
+
     for i in range(start, end):
         a_values.append(i // div)
 
@@ -42,7 +42,10 @@ def started_cluster():
                 "configs/query_log.xml",
                 "configs/defaultS3.xml",
             ],
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/sync_insert.xml",
+            ],
         )
 
         cluster.start()
@@ -68,7 +71,7 @@ def test_multistage_prewhere(started_cluster, storage_type):
     )
 
     data_dict = generate_data_complex(0, 1000, 100)
-    
+
     schema = pa.schema([
         pa.field("a", pa.int32()),
         pa.field("b", pa.string()),
@@ -76,24 +79,24 @@ def test_multistage_prewhere(started_cluster, storage_type):
     ])
 
     table = pa.Table.from_pydict(data_dict, schema=schema)
-    
+
     with tempfile.TemporaryDirectory() as temp_dir:
         local_parquet_file = os.path.join(temp_dir, f"{TABLE_NAME}.parquet")
-        
+
         pq.write_table(
             table,
             local_parquet_file,
             row_group_size=1000000000,
             use_dictionary=False
         )
-        
+
         s3_uploader = S3Uploader(started_cluster.minio_client, started_cluster.minio_bucket, use_relpath=False)
         s3_uploader.upload_file(local_parquet_file, f"{TABLE_NAME}.parquet")
 
     url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}.parquet"
     instance.query(
         f"""
-        CREATE TABLE {TABLE_NAME} (a Int32, b String, c Int32) 
+        CREATE TABLE {TABLE_NAME} (a Int32, b String, c Int32)
         ENGINE = S3('{url}', format = 'Parquet', access_key_id = 'minio', secret_access_key = '{minio_secret_key}')
         """
     )

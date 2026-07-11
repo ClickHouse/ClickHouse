@@ -22,7 +22,7 @@ template <typename T>
 requires std::is_same_v<T, UInt128> || std::is_same_v<T, Int128> || std::is_same_v<T, UInt256> || std::is_same_v<T, Int256>
 T byteSwap(T x)
 {
-    T dest;
+    T dest{};
     reverseMemcpy(&dest, &x, sizeof(T));
     return dest;
 }
@@ -89,8 +89,8 @@ One use case of this function is reversing IPv4s:
     FunctionDocumentation::Example example5 = {"64-bit", "SELECT byteSwap(123294967295)", "18439412204227788800"};
     FunctionDocumentation::Examples examples = {example1, example2, example3, example4, example5};
     FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionByteSwap>(documentation,FunctionFactory::Case::Insensitive);
 }
 

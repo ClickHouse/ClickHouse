@@ -2,6 +2,7 @@
 #include <memory>
 #include <Client/ConnectionPool.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -127,13 +128,13 @@ BlockIO ClickHouseDictionarySource::loadUpdatedAll()
     return createStreamForQuery(load_update_query);
 }
 
-BlockIO ClickHouseDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO ClickHouseDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     return createStreamForQuery(query_builder->composeLoadIdsQuery(ids));
 }
 
 
-BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO ClickHouseDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     String query = query_builder->composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES);
     return createStreamForQuery(query);
@@ -144,10 +145,8 @@ bool ClickHouseDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        LOG_TRACE(log, "Invalidate query has returned: {}, previous value: {}", response, invalidate_query_response);
-        if (invalidate_query_response == response)
-            return false;
-        invalidate_query_response = response;
+        LOG_TRACE(log, "Invalidate query has returned: {}", response);
+        return invalidate_query_response.updateAndCheckModified(response);
     }
     return true;
 }
@@ -184,10 +183,10 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 
     if (configuration.is_local)
     {
-        if (!CurrentThread::getGroup())
-            io.query_scope = CurrentThread::QueryScope::create(context_copy);
-
         context_copy->setCurrentQueryId({});
+
+        if (!CurrentThread::getGroup())
+            io.query_scope = QueryScope::create(context_copy);
 
         io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
 
@@ -213,9 +212,9 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
     if (configuration.is_local)
     {
-        CurrentThread::QueryScope query_scope;
+        QueryScope query_scope;
         if (!CurrentThread::getGroup())
-            query_scope = CurrentThread::QueryScope::create(context_copy);
+            query_scope = QueryScope::create(context_copy);
 
         BlockIO io = executeQuery(request, context_copy, QueryFlags{ .internal = true }).second;
         std::string result;
@@ -233,6 +232,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     return readInvalidateQuery(pipeline);
 }
 
+void registerDictionarySourceClickHouse(DictionarySourceFactory & factory);
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -335,7 +335,10 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, *configuration, sample_block, context);
     };
 
-    factory.registerSource("clickhouse", create_table_source);
+    factory.registerSource("clickhouse", create_table_source, Documentation{
+        .description = "Reads dictionary data from a table on a local or remote ClickHouse server.",
+        .syntax = "SOURCE(CLICKHOUSE(host 'host' port 9000 user 'default' password '' db 'db' table 'table'))",
+        .related = {"mysql", "postgresql"}});
 }
 
 }

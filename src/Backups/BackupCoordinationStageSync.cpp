@@ -8,11 +8,17 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ProfileEvents.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupConcurrencyCheck.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/join.hpp>
 
+
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredBackupCoordination;
+}
 
 namespace DB
 {
@@ -476,6 +482,7 @@ void BackupCoordinationStageSync::watchingThread()
 {
     LOG_TRACE(log, "Started the watching thread");
 
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationStageSync::watchingThread");
     auto should_stop = [&]
     {
         std::lock_guard lock{mutex};
@@ -554,8 +561,26 @@ void BackupCoordinationStageSync::createAliveNode(Coordination::ZooKeeperWithFau
 void BackupCoordinationStageSync::resetConnectedFlag()
 {
     std::lock_guard lock{mutex};
+    auto monotonic_now = std::chrono::steady_clock::now();
+    auto now = std::chrono::system_clock::now();
     for (auto & [_, host_info] : state.hosts)
+    {
+        /// Update the last connection time only for hosts that were previously connected.
+        /// This ensures the disconnection timer in cancelQueryIfDisconnectedTooLong() starts
+        /// from the moment we first detected the issue (i.e., when we could no longer read ZooKeeper),
+        /// rather than from the time of the last successful readCurrentState() call.
+        /// Without this, when the initiator itself loses its ZooKeeper connection,
+        /// resetConnectedFlag() marks all hosts as disconnected but their last_connection_time
+        /// remains stale (from the previous sync cycle), which can cause
+        /// cancelQueryIfDisconnectedTooLong() to trigger immediately if sync_period_ms
+        /// exceeds failure_after_host_disconnected_for_seconds.
+        if (host_info.connected)
+        {
+            host_info.last_connection_time = now;
+            host_info.last_connection_time_monotonic = monotonic_now;
+        }
         host_info.connected = false;
+    }
 }
 
 
@@ -564,7 +589,10 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
     (*zk_nodes_changed).reset();
 
     /// Get zk nodes and subscribe on their changes.
-    Strings new_zk_nodes = zookeeper->getChildren(zookeeper_path, nullptr, zk_nodes_changed);
+    Strings new_zk_nodes = zookeeper->getChildrenWatch(
+        zookeeper_path,
+        nullptr,
+        Coordination::WatchCallbackPtrOrEventPtr{zk_nodes_changed, ProfileEvents::ZooKeeperWatchTriggeredBackupCoordination});
     std::sort(new_zk_nodes.begin(), new_zk_nodes.end()); /// Sorting is necessary because we compare the list of zk nodes with its previous versions.
 
     State new_state;
@@ -686,7 +714,7 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
 
 int BackupCoordinationStageSync::parseStartNode(const String & start_node_contents, const String & host) const
 {
-    int version;
+    int version = 0;
     if (start_node_contents.empty())
     {
         version = kInitialVersion;
@@ -1010,6 +1038,7 @@ void BackupCoordinationStageSync::finishImpl(bool throw_if_error, WithRetries::K
 
     stopWatchingThread();
 
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationStageSync::finish");
     try
     {
         auto holder = with_retries.createRetriesControlHolder("BackupCoordinationStageSync::finish", retries_kind);

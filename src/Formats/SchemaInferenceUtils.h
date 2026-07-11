@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 
 #include <vector>
@@ -12,7 +13,7 @@ namespace DB
 class Block;
 struct FormatSettings;
 class NamesAndTypesList;
-using NamesAndTypesLists = std::vector<NamesAndTypesList>;
+using NamesAndTypesLists = VectorWithMemoryTracking<NamesAndTypesList>;
 
 /// Struct with some additional information about inferred types for JSON formats.
 struct JSONInferenceInfo
@@ -33,6 +34,12 @@ struct JSONInferenceInfo
     /// we can only merge named tuples from different files together.
     bool allow_merging_named_tuples = false;
 };
+
+/// Check whether a type can be wrapped into Nullable according to schema inference settings.
+/// Currently, only Tuple is setting-dependent:
+/// If `schema_inference_allow_nullable_tuple_type` is disabled, Tuple cannot be wrapped into Nullable.
+/// Otherwise this check is equivalent to type->canBeInsideNullable().
+bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatSettings & settings);
 
 /// Try to determine datatype of the value in buffer/string. If the type cannot be inferred, return nullptr.
 /// In general, it tries to parse a type using the following logic:

@@ -1,5 +1,6 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/OffsetTransform.h>
@@ -41,7 +42,8 @@ void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
 void OffsetStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << String(settings.offset, ' ') << "Offset " << offset << '\n';
+    const auto & prefix = settings.detail_prefix;
+    settings.out << prefix << "Offset " << offset << '\n';
 }
 
 void OffsetStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -54,14 +56,15 @@ void OffsetStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> OffsetStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr OffsetStep::deserialize(Deserialization & ctx)
 {
-    UInt64 offset;
+    UInt64 offset = 0;
     readVarUInt(offset, ctx.in);
 
     return std::make_unique<OffsetStep>(ctx.input_headers.front(), offset);
 }
 
+void registerOffsetStep(QueryPlanStepRegistry & registry);
 void registerOffsetStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Offset", OffsetStep::deserialize);

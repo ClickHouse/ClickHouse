@@ -8,8 +8,12 @@ namespace DB
 
 class SerializationDate final : public SerializationNumber<UInt16>
 {
-public:
+private:
     explicit SerializationDate(const DateLUTImpl & time_zone_ = DateLUT::instance());
+
+public:
+    static UInt128 getHash(const DateLUTImpl & time_zone_);
+    static SerializationPtr create(const DateLUTImpl & time_zone_ = DateLUT::instance());
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;

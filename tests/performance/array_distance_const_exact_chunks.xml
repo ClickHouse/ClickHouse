@@ -1,0 +1,34 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <allow_experimental_bfloat16_type>1</allow_experimental_bfloat16_type>
+    </settings>
+
+    <create_query>
+        CREATE TABLE array_distance_const_exact_chunks
+        (
+            w_f32_16 Array(Float32),
+            w_f64_8 Array(Float64),
+            w_bf16_32 Array(BFloat16)
+        ) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO array_distance_const_exact_chunks
+        SELECT
+            arrayMap(i -> toFloat32(((number * 3 + i) % 251) + 1), range(16)) AS w_f32_16,
+            arrayMap(i -> toFloat64(((number * 5 + i) % 251) + 1), range(8)) AS w_f64_8,
+            arrayMap(i -> toBFloat16(((number * 7 + i) % 251) + 1), range(32)) AS w_bf16_32
+        FROM numbers(1000000)
+    </fill_query>
+
+    <!-- Exact full-chunk sizes for the changed AVX-512 const-left kernels. -->
+    <query>WITH arrayMap(i -> toFloat32(i + 1), range(16)) AS a SELECT sum(L2Distance(a, w_f32_16)) FROM array_distance_const_exact_chunks</query>
+    <query>WITH arrayMap(i -> toFloat32(i + 1), range(16)) AS a SELECT sum(cosineDistance(a, w_f32_16)) FROM array_distance_const_exact_chunks</query>
+    <query>WITH arrayMap(i -> toFloat64(i + 1), range(8)) AS a SELECT sum(L2Distance(a, w_f64_8)) FROM array_distance_const_exact_chunks</query>
+    <query>WITH arrayMap(i -> toFloat64(i + 1), range(8)) AS a SELECT sum(cosineDistance(a, w_f64_8)) FROM array_distance_const_exact_chunks</query>
+    <query>WITH arrayMap(i -> toBFloat16(i + 1), range(32)) AS a SELECT sum(L2Distance(a, w_bf16_32)) FROM array_distance_const_exact_chunks</query>
+    <query>WITH arrayMap(i -> toBFloat16(i + 1), range(32)) AS a SELECT sum(cosineDistance(a, w_bf16_32)) FROM array_distance_const_exact_chunks</query>
+
+    <drop_query>DROP TABLE array_distance_const_exact_chunks</drop_query>
+</test>

@@ -10,13 +10,13 @@
 
 #include <gtest/gtest.h>
 
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <vector>
 using namespace DB;
 
 TEST(ColumnUnique, InsertRange)
 {
-    std::unordered_map<String, size_t> ref_map;
+    UnorderedMapWithMemoryTracking<String, size_t> ref_map;
     auto data_type = std::make_shared<DataTypeString>();
     auto column_unique = ColumnUnique<ColumnString>::create(*data_type);
     auto column_string = ColumnString::create();
@@ -24,7 +24,7 @@ TEST(ColumnUnique, InsertRange)
     size_t num_values = 1000000;
     size_t mod_to = 1000;
 
-    std::vector<size_t> indexes(num_values);
+    VectorWithMemoryTracking<size_t> indexes(num_values);
     for (size_t i = 0; i < num_values; ++i)
     {
         String str = toString(i % mod_to);
@@ -55,7 +55,7 @@ TEST(ColumnUnique, InsertRange)
 
 TEST(ColumnUnique, InsertRangeWithOverflow)
 {
-    std::unordered_map<String, size_t> ref_map;
+    UnorderedMapWithMemoryTracking<String, size_t> ref_map;
     auto data_type = std::make_shared<DataTypeString>();
     auto column_unique = ColumnUnique<ColumnString>::create(*data_type);
     auto column_string = ColumnString::create();
@@ -63,7 +63,7 @@ TEST(ColumnUnique, InsertRangeWithOverflow)
     size_t num_values = 1000000;
     size_t mod_to = 1000;
 
-    std::vector<size_t> indexes(num_values);
+    VectorWithMemoryTracking<size_t> indexes(num_values);
     for (size_t i = 0; i < num_values; ++i)
     {
         String str = toString(i % mod_to);
@@ -156,7 +156,7 @@ TEST(ColumnUnique, DeserializeFromArenaString)
     size_t num_values = 1000000;
     size_t mod_to = 1000;
 
-    std::vector<size_t> indexes(num_values);
+    VectorWithMemoryTracking<size_t> indexes(num_values);
     for (size_t i = 0; i < num_values; ++i)
     {
         String str = toString(i % mod_to);
@@ -175,7 +175,7 @@ TEST(ColumnUnique, DeserializeFromArenaNullableString)
     size_t num_values = 1000000;
     size_t mod_to = 1000;
 
-    std::vector<size_t> indexes(num_values);
+    VectorWithMemoryTracking<size_t> indexes(num_values);
     for (size_t i = 0; i < num_values; ++i)
     {
         String str = toString(i % mod_to);

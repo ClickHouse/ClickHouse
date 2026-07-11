@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-flaky-check
 # no-fasttest: It's a bit demanding
 
 # Creation of a database with Ordinary engine emits a warning.

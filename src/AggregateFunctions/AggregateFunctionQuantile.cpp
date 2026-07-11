@@ -147,6 +147,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
@@ -168,12 +169,12 @@ Note that for an empty numeric sequence, `quantile` will return NaN, but its `qu
 quantile(level)(expr)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters parameters = {
         {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Approximate quantile of the specified level.", {"Float64", "Date", "DateTime"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Approximate quantile of the specified level. Numeric arguments produce `Float64`, while `Decimal`, `Date`, `DateTime` and `DateTime64` arguments keep their input format.", {"Float64", "Decimal*", "Date", "DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
     {
         "Computing quantile",
@@ -194,7 +195,7 @@ SELECT quantile(val) FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantile::name, {createAggregateFunctionQuantile<FuncQuantile>, {}, documentation});
+    factory.registerFunction(NameQuantile::name, {createAggregateFunctionQuantile<FuncQuantile>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple approximate [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously.
@@ -208,12 +209,12 @@ Using `quantiles` is more efficient than calling multiple individual `quantile` 
 quantiles(level1, level2, ...)(expr)
     )";
     FunctionDocumentation::Arguments arguments_quantiles = {
-        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+        {"expr", "Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`.", {"(U)Int*", "Int128", "UInt128", "Int256", "UInt256", "Float*", "Decimal*", "Date", "DateTime", "DateTime64"}}
     };
     FunctionDocumentation::Parameters parameters_quantiles = {
         {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1. We recommend using `level` values in the range of `[0.01, 0.99]`.", {"Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of approximate quantiles of the specified levels in the same order as the levels were specified.", {"Array(Float64)", "Array(Date)", "Array(DateTime)"}};
+    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of approximate quantiles of the specified levels in the same order as the levels were specified. Numeric arguments produce `Float64`, while `Decimal`, `Date`, `DateTime` and `DateTime64` arguments keep their input format.", {"Array(Float64)", "Array(Decimal*)", "Array(Date)", "Array(DateTime)", "Array(DateTime64)"}};
     FunctionDocumentation::Examples examples_quantiles = {
     {
         "Computing multiple quantiles efficiently",
@@ -234,7 +235,7 @@ SELECT quantiles(0.25, 0.5, 0.75, 0.9)(val) FROM t;
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantiles::name, { createAggregateFunctionQuantile<FuncQuantiles>, properties, documentation_quantiles });
+    factory.registerFunction(NameQuantiles::name, { createAggregateFunctionQuantile<FuncQuantiles>, documentation_quantiles, properties });
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("median", NameQuantile::name);

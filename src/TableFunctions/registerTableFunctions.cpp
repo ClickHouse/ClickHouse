@@ -23,6 +23,7 @@ void registerTableFunctions()
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
+    registerTableFunctionFilesystem(factory);
 #if USE_MONGODB
     registerTableFunctionMongoDB(factory);
 #endif
@@ -35,6 +36,7 @@ void registerTableFunctions()
     registerTableFunctionMergeTreeIndex(factory);
     registerTableFunctionMergeTreeAnalyzeIndexes(factory);
     registerTableFunctionMergeTreeProjection(factory);
+    registerTableFunctionMergeTreeTextIndex(factory);
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);

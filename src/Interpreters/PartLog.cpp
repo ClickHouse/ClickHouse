@@ -134,6 +134,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"partition_id", std::make_shared<DataTypeString>(), "ID of the partition that the data part was inserted to. The column takes the `all` value if the partitioning is by `tuple()`."},
         {"partition", std::make_shared<DataTypeString>(), "The partition name."},
         {"part_type", std::make_shared<DataTypeString>(), "The type of the part. Possible values: Wide and Compact."},
+        {"part_storage_type", std::make_shared<DataTypeString>(), "The type of DataPartStorage. Possible values: Packed - all files are stored in a single blob, Full - a blob per file."},
         {"disk_name", std::make_shared<DataTypeString>(), "The disk name data part lies on."},
         {"path_on_disk", std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
 
@@ -156,6 +157,8 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"mutation_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of mutation IDs applied to the source part (merged_from) for the event with type MUTATE_PART_START and MUTATE_PART."},
 
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
+
+        {"projections_duration_ms", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Per-projection merge/rebuild duration in milliseconds."},
     };
 }
 
@@ -189,7 +192,8 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(part_name);
     columns[i++]->insert(partition_id);
     columns[i++]->insert(partition);
-    columns[i++]->insert(part_type.toString());
+    columns[i++]->insert(part_format.part_type.toString());
+    columns[i++]->insert(part_format.storage_type.toString());
     columns[i++]->insert(disk_name);
     columns[i++]->insert(path_on_disk);
 
@@ -231,6 +235,13 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     else
     {
         columns[i++]->insertDefault();
+    }
+
+    {
+        Map map;
+        for (const auto & [name, duration] : projections_duration_ms)
+            map.push_back(Tuple{name, duration});
+        columns[i++]->insert(map);
     }
 }
 
@@ -278,8 +289,8 @@ bool PartLog::addNewPartsImpl(
             elem.part_name = part->name;
             elem.disk_name = part->getDataPartStorage().getDiskName();
             elem.path_on_disk = part->getDataPartStorage().getFullPath();
-            elem.part_type = part->getType();
             elem.deduplication_block_ids = deduplication_block_ids.empty() ? Strings() : std::move(deduplication_block_ids[i]);
+            elem.part_format = part->getFormat();
 
             elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();

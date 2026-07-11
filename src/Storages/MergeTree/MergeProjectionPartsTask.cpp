@@ -1,10 +1,34 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
-
-#include <Common/TransactionID.h>
 #include <Storages/MergeTree/MergeList.h>
+
+#include <Disks/IDiskTransaction.h>
 
 namespace DB
 {
+
+MergeTreeData::MutableDataPartsVector MergeProjectionPartsTask::extractTemporaryParts()
+{
+    MergeTreeData::MutableDataPartsVector tmp_parts_to_remove;
+    for (auto && [level, parts] : std::exchange(level_parts, {}))
+        tmp_parts_to_remove.append_range(std::move(parts));
+
+    return tmp_parts_to_remove;
+}
+
+UInt64 MergeProjectionPartsTask::countPartsInAllLevels() const
+{
+    UInt64 total = 0;
+    for (const auto & [_, parts] : level_parts)
+        total += parts.size();
+    return total;
+}
+
+void MergeProjectionPartsTask::updatePartsRemaining(UInt64 in_flight)
+{
+    if (parent_merge_list_element)
+        parent_merge_list_element->current_projection_parts_remaining.store(
+            countPartsInAllLevels() + in_flight, std::memory_order_relaxed);
+}
 
 bool MergeProjectionPartsTask::executeStep()
 {
@@ -29,6 +53,7 @@ bool MergeProjectionPartsTask::executeStep()
         }
         current_level = next_level;
         ++next_level;
+        updatePartsRemaining();
     }
     else if (selected_parts.size() == 1)
     {
@@ -47,14 +72,14 @@ bool MergeProjectionPartsTask::executeStep()
 
         LOG_DEBUG(log, "Forwarded part {} in level {} to next level", selected_parts[0]->name, current_level);
         next_level_parts.push_back(std::move(selected_parts[0]));
+        updatePartsRemaining();
     }
     else if (selected_parts.size() > 1)
     {
         // Generate a unique part name
         ++block_num;
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
-        MergeTreeData::DataPartsVector const_selected_parts(
-            std::make_move_iterator(selected_parts.begin()), std::make_move_iterator(selected_parts.end()));
+        MergeTreeData::DataPartsVector const_selected_parts(selected_parts.begin(), selected_parts.end());
         projection_future_part->assign(std::move(const_selected_parts), /*patch_parts_=*/ {}, &projection);
         projection_future_part->name = fmt::format("{}_{}", projection.name, ++block_num);
         projection_future_part->part_info = {"all", 0, 0, 0};
@@ -65,11 +90,21 @@ bool MergeProjectionPartsTask::executeStep()
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
         LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
+
+        auto child_merge_list_element = std::make_unique<MergeListElement>((*merge_entry)->table_id, projection_future_part, context);
+
+        if (parent_merge_list_element)
+        {
+            parent_merge_list_element->current_projection_parts_merging.store(selected_parts.size(), std::memory_order_relaxed);
+            updatePartsRemaining(selected_parts.size());
+            child_merge_list_element->parent_progress = &parent_merge_list_element->current_projection_progress;
+        }
+
         auto tmp_part_merge_task = mutator->mergePartsToTemporaryPart(
             projection_future_part,
             projection.metadata,
             merge_entry,
-            std::make_unique<MergeListElement>((*merge_entry)->table_id, projection_future_part, context),
+            std::move(child_merge_list_element),
             *table_lock_holder,
             time_of_merge,
             context,
@@ -85,11 +120,20 @@ bool MergeProjectionPartsTask::executeStep()
             ".tmp_proj");
 
         next_level_parts.push_back(executeHere(tmp_part_merge_task));
+
+        if (parent_merge_list_element)
+        {
+            parent_merge_list_element->current_projection_parts_merging.store(0, std::memory_order_relaxed);
+            parent_merge_list_element->current_projection_progress.store(0, std::memory_order_relaxed);
+        }
+
         /// FIXME (alesapin) we should use some temporary storage for this,
         /// not commit each subprojection part
         next_level_parts.back()->getDataPartStorage().commitTransaction();
         next_level_parts.back()->is_temp = true;
         next_level_parts.back()->temp_projection_block_number = block_num;
+
+        updatePartsRemaining();
     }
 
     /// Need execute again

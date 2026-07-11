@@ -318,7 +318,7 @@
          Note that the amount of data in mapped files does not consume memory directly and is not accounted
          in query or server memory usage - because this memory can be discarded similar to OS page cache.
          The cache is dropped (the files are closed) automatically on removal of old parts in MergeTree,
-         also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
+         also it can be dropped manually by the SYSTEM CLEAR MMAP CACHE query.
       -->
     <mmap_cache_size>1000</mmap_cache_size>
 

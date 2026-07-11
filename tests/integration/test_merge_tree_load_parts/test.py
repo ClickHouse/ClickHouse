@@ -76,7 +76,7 @@ def test_merge_tree_load_parts(started_cluster):
 
     assert node1.query(f"SELECT count() FROM system.parts WHERE table = '{table}' AND active") == "1\n"
 
-    node1.query(f"ALTER TABLE {table} MODIFY SETTING old_parts_lifetime = 1")
+    node1.query(f"ALTER TABLE {table} MODIFY SETTING old_parts_lifetime = 1, cleanup_delay_period=1, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0;")
     node1.query(f"DETACH TABLE {table}")
     node1.query(f"ATTACH TABLE {table}")
 
@@ -186,7 +186,8 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
         node1.query(
             f"""
             SELECT pk, count() FROM {table}
-            GROUP BY pk ORDER BY pk"""
+            GROUP BY pk ORDER BY pk
+            SETTINGS enable_sharding_aggregator = 0 -- TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk)."""
         )
         == "111\t3\n222\t3\n333\t3\n"
     )
@@ -195,7 +196,8 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
             f"""
             SELECT partition, count()
             FROM system.parts WHERE table = '{table}' AND active
-            GROUP BY partition ORDER BY partition"""
+            GROUP BY partition ORDER BY partition
+            SETTINGS enable_sharding_aggregator = 0 -- TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk)."""
         )
         == "111\t1\n222\t1\n333\t1\n"
     )

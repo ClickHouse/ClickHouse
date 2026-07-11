@@ -17,7 +17,7 @@ settings max_threads=10,
 system flush logs query_log;
 
 select peak_threads_usage>=10 from system.query_log where
-    event_date >= yesterday() and
+    event_date >= yesterday() AND event_time >= now() - 600 and
     current_database = currentDatabase() and
     type = 'QueryFinish' and
     startsWith(query, 'insert');

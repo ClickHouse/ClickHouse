@@ -1,0 +1,102 @@
+---
+description: '脱敏策略文档'
+sidebarTitle: '脱敏策略'
+slug: /sql-reference/statements/create/masking-policy
+title: 'CREATE 脱敏策略'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/zh/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+创建脱敏策略，使其能够在特定用户或角色查询表时，动态转换或屏蔽列值。
+
+<Tip>
+  脱敏策略可在不修改已存储数据的情况下，于查询时对敏感数据进行转换，从而提供列级数据安全保护。
+</Tip>
+
+语法：
+
+```sql
+CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]table
+    UPDATE column1 = expression1 [, column2 = expression2 ...]
+    [WHERE condition]
+    TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}
+    [PRIORITY priority_number]
+```
+
+<div id="update-clause">
+  ## UPDATE 子句
+</div>
+
+`UPDATE` 子句用于指定要对哪些列进行脱敏，以及采用何种转换方式。你可以在单个策略中对多个列进行脱敏。
+
+示例：
+
+* 简单脱敏：`UPDATE email = '***masked***'`
+* 部分脱敏：`UPDATE email = concat(substring(email, 1, 3), '***@***.***')`
+* 基于哈希的脱敏：`UPDATE email = concat('masked_', substring(hex(cityHash64(email)), 1, 8))`
+* 多列：`UPDATE email = '***@***.***', phone = '***-***-****'`
+
+<div id="where-clause">
+  ## WHERE 子句
+</div>
+
+可选的 `WHERE` 子句允许根据行中的值按条件进行脱敏处理。只有满足条件的行才会应用脱敏处理。
+
+示例：
+
+```sql
+CREATE MASKING POLICY mask_high_salaries ON employees
+UPDATE salary = 0
+WHERE salary > 100000
+TO analyst;
+```
+
+<div id="to-clause">
+  ## TO 子句
+</div>
+
+在 `TO` 部分中，指定该策略适用于哪些用户和角色。
+
+* `TO user1, user2`：适用于特定用户/角色
+* `TO ALL`：适用于所有用户
+* `TO ALL EXCEPT user1, user2`：适用于除指定用户外的所有用户
+
+<Note>
+  与行策略不同，脱敏策略不会影响未被应用该策略的用户。如果某个用户不适用任何脱敏策略，则会看到原始数据。
+</Note>
+
+<div id="priority-clause">
+  ## PRIORITY 子句
+</div>
+
+当多个脱敏策略对同一用户的同一列生效时，`PRIORITY` 子句用于确定其应用顺序。策略会按照优先级从高到低依次应用。
+
+默认优先级为 0。优先级相同的策略会以未定义的顺序应用。
+
+示例：
+
+```sql
+-- 第二个应用（优先级较低）
+CREATE MASKING POLICY mask1 ON users
+UPDATE email = 'low@priority.com'
+TO analyst
+PRIORITY 1;
+
+-- 第一个应用（优先级较高）
+CREATE MASKING POLICY mask2 ON users
+UPDATE email = 'high@priority.com'
+TO analyst
+PRIORITY 10;
+
+-- analyst 看到的是 'low@priority.com'，因为该策略最后被应用
+```
+
+<Info>
+  **性能注意事项**
+
+  * 脱敏策略对查询性能的影响取决于表达式的复杂度
+  * 对于启用了脱敏策略的表，某些优化可能会被禁用
+</Info>

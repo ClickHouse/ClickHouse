@@ -1,3 +1,4 @@
+#include <limits>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Columns/ColumnDecimal.h>
@@ -43,14 +44,17 @@ enum class Component
 
 }
 
-template <typename Traits>
-class FunctionChangeDate : public IFunction
+class FunctionChangeDate final : public IFunction
 {
 public:
-    static constexpr auto name = Traits::name;
+    FunctionChangeDate(const char * name_, Component component_) : function_name(name_), component(component_) {}
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionChangeDate>(); }
-    String getName() const override { return Traits::name; }
+    static FunctionPtr create(const char * name, Component component)
+    {
+        return std::make_shared<FunctionChangeDate>(name, component);
+    }
+
+    String getName() const override { return function_name; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -64,7 +68,7 @@ public:
 
         const auto & input_type = arguments[0].type;
 
-        if constexpr (Traits::component == Component::Hour || Traits::component == Component::Minute || Traits::component == Component::Second)
+        if (component == Component::Hour || component == Component::Minute || component == Component::Second)
         {
             if (isDate(input_type))
                 return std::make_shared<DataTypeDateTime>();
@@ -80,13 +84,13 @@ public:
         const auto & input_type = arguments[0].type;
         if (isDate(input_type))
         {
-            if constexpr (Traits::component == Component::Hour || Traits::component == Component::Minute || Traits::component == Component::Second)
+            if (component == Component::Hour || component == Component::Minute || component == Component::Second)
                 return execute<DataTypeDate, DataTypeDateTime>(arguments, input_type, result_type, input_rows_count);
             return execute<DataTypeDate, DataTypeDate>(arguments, input_type, result_type, input_rows_count);
         }
         if (isDate32(input_type))
         {
-            if constexpr (Traits::component == Component::Hour || Traits::component == Component::Minute || Traits::component == Component::Second)
+            if (component == Component::Hour || component == Component::Minute || component == Component::Second)
                 return execute<DataTypeDate32, DataTypeDateTime64>(arguments, input_type, result_type, input_rows_count);
             return execute<DataTypeDate32, DataTypeDate32>(arguments, input_type, result_type, input_rows_count);
         }
@@ -104,19 +108,22 @@ public:
         typename ResultDataType::ColumnType::MutablePtr result_col;
         if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
-            auto scale = DataTypeDateTime64::default_scale;
-            if constexpr (std::is_same_v<InputDataType, DateTime64>)
-                scale = static_cast<UInt8>(typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale());
+            /// result_type is the DateTime64 this function returns; its scale is the scale the
+            /// result column must carry (the values below are computed at this scale). The previous
+            /// guard `is_same_v<InputDataType, DateTime64>` was always false (InputDataType is a
+            /// DataType class while DateTime64 is a value-type alias), so the column was built at the
+            /// hardcoded default_scale 3 and a DateTime64(N != 3) result was structurally inconsistent.
+            const auto scale = static_cast<UInt8>(typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale());
             result_col = ResultDataType::ColumnType::create(input_rows_count, scale);
         }
         else
             result_col = ResultDataType::ColumnType::create(input_rows_count);
 
-        auto date_time_col = arguments[0].column->convertToFullIfNeeded();
+        auto date_time_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         const auto & date_time_col_data = typeid_cast<const typename InputDataType::ColumnType &>(*date_time_col).getData();
 
         auto value_col = castColumn(arguments[1], std::make_shared<DataTypeFloat64>());
-        value_col = value_col->convertToFullIfNeeded();
+        value_col = value_col->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         const auto & value_col_data = typeid_cast<const ColumnFloat64 &>(*value_col).getData();
 
         auto & result_col_data = result_col->getData();
@@ -132,9 +139,20 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Int64 time = date_lut.toNumYYYYMMDDhhmmss(date_time_col_data[i] / deg);
+                /// Split into whole seconds and a non-negative fraction, rounding the whole-seconds part
+                /// toward negative infinity. Plain '/' and '%' truncate toward zero, which for pre-epoch
+                /// sub-second values would attribute the last fractional second to the next calendar boundary
+                /// (for example, '1969-12-31 23:59:59.500' would decompose as '1970-01-01 00:00:00' minus
+                /// 500 ms), shifting the untouched calendar fields of the result.
+                Int64 whole_seconds = date_time_col_data[i] / deg;
                 Int64 fraction = date_time_col_data[i] % deg;
+                if (fraction < 0)
+                {
+                    fraction += deg;
+                    --whole_seconds;
+                }
 
+                Int64 time = date_lut.toNumYYYYMMDDhhmmss(whole_seconds);
                 result_col_data[i] = getChangedDate(time, value_col_data[i], result_type, date_lut, scale, fraction);
             }
         }
@@ -170,7 +188,7 @@ public:
             const auto & date_lut = DateLUT::instance();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Int64 time;
+                Int64 time = 0;
                 if (isDate(input_type))
                     time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(static_cast<UInt16>(date_time_col_data[i])))) * 1'000'000;
                 else
@@ -229,15 +247,22 @@ public:
             Int64 deg = 1;
             for (Int64 j = 0; j < scale; ++j)
                 deg *= 10;
-            max_date = DecimalUtils::dateTimeFromComponents(
-                date_lut.makeDateTime(2299, 12, 31, 23, 59, 59),
-                static_cast<Int64>(deg - 1),
-                static_cast<UInt32>(scale));
+            DateTime64 max_date_val;
+            if (DecimalUtils::tryGetDateTimeFromComponents(
+                    date_lut.makeDateTime(2299, 12, 31, 23, 59, 59),
+                    static_cast<Int64>(deg - 1),
+                    static_cast<UInt32>(scale),
+                    max_date_val))
+                max_date = max_date_val;
+            else
+                /// At scale 9 the year-2299 boundary does not fit into Int64; clamp to the
+                /// maximum representable DateTime64 value (2262-04-11 23:47:16.854775807).
+                max_date = std::numeric_limits<Int64>::max();
             min_year = 1900;
             max_year = 2299;
         }
 
-        switch (Traits::component)
+        switch (component)
         {
             case Component::Year:
                 if (new_value < min_year)
@@ -273,26 +298,32 @@ public:
                 break;
         }
 
-        Int64 result;
+        Int64 result = 0;
         if (isDate(result_type) || isDate32(result_type))
             result = date_lut.makeDayNum(year, month, day);
         else if (isDateTime(result_type))
             result = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
         else
+        {
+            const Int64 whole_seconds = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
 #ifndef __clang_analyzer__
             /// ^^ This looks funny. It is the least terrible suppression of a false positive reported by clang-analyzer (a sub-class
             /// of clang-tidy checks) deep down in 'decimalFromComponents'. Usual suppressions of the form NOLINT* don't work here (they
             /// would only affect code in _this_ file), and suppressing the issue in 'decimalFromComponents' may suppress true positives.
-            result = DecimalUtils::dateTimeFromComponents(
-                date_lut.makeDateTime(year, month, day, hours, minutes, seconds),
-                fraction,
-                static_cast<UInt32>(scale));
+            DateTime64 result_val;
+            if (DecimalUtils::tryGetDateTimeFromComponents(whole_seconds, fraction, static_cast<UInt32>(scale), result_val))
+                result = result_val;
+            else
+                /// The requested components do not fit into DateTime64 at this scale (for example, a year close to 2299 at
+                /// scale 9, where seconds * 10^9 overflows Int64). Clamp to the nearest representable boundary; the min/max
+                /// checks below finish the clamp. Overflow direction follows the sign of the whole-seconds value.
+                result = whole_seconds < 0 ? min_date : max_date;
 #else
-        {
             UNUSED(fraction);
+            UNUSED(whole_seconds);
             result = 0;
-        }
 #endif
+        }
 
         if (result < min_date)
             return min_date;
@@ -302,43 +333,9 @@ public:
 
         return result;
     }
-};
 
-
-struct ChangeYearTraits
-{
-    static constexpr auto name = "changeYear";
-    static constexpr auto component = Component::Year;
-};
-
-struct ChangeMonthTraits
-{
-    static constexpr auto name = "changeMonth";
-    static constexpr auto component = Component::Month;
-};
-
-struct ChangeDayTraits
-{
-    static constexpr auto name = "changeDay";
-    static constexpr auto component = Component::Day;
-};
-
-struct ChangeHourTraits
-{
-    static constexpr auto name = "changeHour";
-    static constexpr auto component = Component::Hour;
-};
-
-struct ChangeMinuteTraits
-{
-    static constexpr auto name = "changeMinute";
-    static constexpr auto component = Component::Minute;
-};
-
-struct ChangeSecondTraits
-{
-    static constexpr auto name = "changeSecond";
-    static constexpr auto component = Component::Second;
+    const char * function_name;
+    Component component;
 };
 
 REGISTER_FUNCTION(ChangeDate)
@@ -357,7 +354,7 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
         FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(function_documentation);
+        factory.registerFunction("changeYear", [](ContextPtr){ return FunctionChangeDate::create("changeYear", Component::Year); }, function_documentation);
     }
     {
         FunctionDocumentation::Description description = "Changes the month component of a date or date time.";
@@ -373,7 +370,7 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
         FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>(function_documentation);
+        factory.registerFunction("changeMonth", [](ContextPtr){ return FunctionChangeDate::create("changeMonth", Component::Month); }, function_documentation);
     }
     {
         FunctionDocumentation::Description description = "Changes the day component of a date or date time.";
@@ -389,7 +386,7 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
         FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>(function_documentation);
+        factory.registerFunction("changeDay", [](ContextPtr){ return FunctionChangeDate::create("changeDay", Component::Day); }, function_documentation);
     }
     {
         FunctionDocumentation::Description description = "Changes the hour component of a date or date time.";
@@ -405,7 +402,7 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
         FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>(function_documentation);
+        factory.registerFunction("changeHour", [](ContextPtr){ return FunctionChangeDate::create("changeHour", Component::Hour); }, function_documentation);
     }
     {
         FunctionDocumentation::Description description = "Changes the minute component of a `date or date time`.";
@@ -421,7 +418,7 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
         FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>(function_documentation);
+        factory.registerFunction("changeMinute", [](ContextPtr){ return FunctionChangeDate::create("changeMinute", Component::Minute); }, function_documentation);
     }
     {
         FunctionDocumentation::Description description = "Changes the second component of a date or date time.";
@@ -437,7 +434,7 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
         FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
-        factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>(function_documentation);
+        factory.registerFunction("changeSecond", [](ContextPtr){ return FunctionChangeDate::create("changeSecond", Component::Second); }, function_documentation);
     }
 }
 

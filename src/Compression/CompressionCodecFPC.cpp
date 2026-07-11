@@ -1,6 +1,8 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/registerCompressionCodecs.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
@@ -184,7 +186,7 @@ private:
         }
     }
 
-    std::vector<TUInt> table;
+    VectorWithMemoryTracking<TUInt> table;
     TUInt prev_value;
     size_t hash;
 };
@@ -225,7 +227,7 @@ private:
         }
     }
 
-    std::vector<TUInt> table;
+    VectorWithMemoryTracking<TUInt> table;
     size_t hash;
 };
 

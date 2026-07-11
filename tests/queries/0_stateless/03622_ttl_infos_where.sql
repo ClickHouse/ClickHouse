@@ -44,6 +44,6 @@ ATTACH TABLE users;
 -- Check that expired TTL doesn't affect the vertical merge algorithm
 OPTIMIZE TABLE users FINAL;
 SYSTEM FLUSH LOGS part_log;
-SELECT merge_algorithm FROM system.part_log WHERE database = currentDatabase() AND table = 'users' AND event_type = 'MergeParts' ORDER BY event_time_microseconds DESC LIMIT 1;
+SELECT merge_algorithm FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 'users' AND event_type = 'MergeParts' ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE IF EXISTS users;

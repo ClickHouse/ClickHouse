@@ -15,7 +15,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
 
     cache_path=02241_filesystem_cache_on_write_operations_$disk
     $CLICKHOUSE_CLIENT --echo --query "DROP TABLE IF EXISTS test_02241"
-    $CLICKHOUSE_CLIENT --echo --query "CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS disk=disk(type='cache', path='$cache_path', disk='$disk', max_size=10_000_000_000, cache_on_write_operations=1), min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='basic'"
+    $CLICKHOUSE_CLIENT --echo --query "CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS disk=disk(type='cache', path='$cache_path', disk='$disk', max_size=10_000_000_000, cache_on_write_operations=1), min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='basic', auto_statistics_types = ''"
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM STOP MERGES test_02241"
     cache_name=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.disks WHERE cache_path LIKE '%$cache_path'")
 
@@ -122,7 +122,8 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     FROM
         system.query_log
     WHERE
-        query LIKE '%SELECT number, toString(number) FROM numbers(5000000)%'
+        event_date >= yesterday() AND event_time >= now() - 600
+        AND query LIKE '%SELECT number, toString(number) FROM numbers(5000000)%'
         AND type = 'QueryFinish'
         AND current_database = currentDatabase()
     ORDER BY

@@ -122,10 +122,12 @@ class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : p
 {
 private:
     const std::filesystem::path path;
+    const bool if_exists;
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    StoredObjects & removed_objects;
 
     std::filesystem::path remote_source_path;
     std::filesystem::path remote_tmp_path;
@@ -137,10 +139,12 @@ private:
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
         std::filesystem::path path_,
+        bool if_exists_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_,
+        StoredObjects & removed_objects_);
 
     void execute() override;
     void undo() override;
@@ -190,6 +194,7 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    StoredObjects & removed_objects;
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
@@ -210,7 +215,8 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_,
+        StoredObjects & removed_objects_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
      *  1. Copy remote_path_to (if exists) to tmp_remote_path_from, which is used to restore the target file in case of failure.
@@ -244,6 +250,8 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    StoredObjects & removed_objects;
+
     const LoggerPtr log;
 
     std::filesystem::path tmp_path;
@@ -256,7 +264,8 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_,
+        StoredObjects & removed_objects_);
 
     void execute() override;
     void undo() override;

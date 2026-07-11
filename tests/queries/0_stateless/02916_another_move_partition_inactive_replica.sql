@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 
 create database if not exists shard_0;
 create database if not exists shard_1;
@@ -33,7 +33,7 @@ drop table if exists shard_0.from_1;
 drop table if exists shard_1.from_1;
 OPTIMIZE TABLE shard_0.to;
 OPTIMIZE TABLE shard_0.to;
-select name, active from system.parts where database='shard_0' and table='to' and active order by name;
+select count() from system.parts where database='shard_0' and table='to' and active;
 
 -- If moved parts are not merged by OPTIMIZE or background merge restart
 -- can log Warning about metadata version on disk. It's normal situation

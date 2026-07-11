@@ -35,7 +35,7 @@ WITH
     -- Get the value for with_distinct
     (SELECT read_rows, ProfileEvents
      FROM system.query_log
-     WHERE current_database = currentDatabase()
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
        AND query LIKE '%select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 1%'
        AND type = 'QueryFinish'
        AND is_initial_query
@@ -44,7 +44,7 @@ WITH
     -- Get the value for without_distinct
     (SELECT read_rows, ProfileEvents
      FROM system.query_log
-     WHERE current_database = currentDatabase()
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
        AND query LIKE '%select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 0%'
        AND type = 'QueryFinish'
        AND is_initial_query

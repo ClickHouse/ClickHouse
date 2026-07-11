@@ -49,7 +49,7 @@ The updated values are:
 
 ## Lightweight updates requirements {#lightweight-update-requirements}
 
-Lightweight updates are supported for [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/engines/table-engines/mergetree-family/collapsingmergetree) engines and their [`Replicated`](/engines/table-engines/mergetree-family/replication.md) and [`Shared`](/cloud/reference/shared-merge-tree) versions.
+Lightweight updates are supported for [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/versionedcollapsingmergetree) engines and their [`Replicated`](/engines/table-engines/mergetree-family/replication.md) and [`Shared`](/cloud/reference/shared-merge-tree) versions.
 
 To use lightweight updates, materialization of `_block_number` and `_block_offset` columns must be enabled using table settings [`enable_block_number_column`](/operations/settings/merge-tree-settings#enable_block_number_column) and [`enable_block_offset_column`](/operations/settings/merge-tree-settings#enable_block_offset_column).
 

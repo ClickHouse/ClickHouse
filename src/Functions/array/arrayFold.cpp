@@ -1,11 +1,14 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
@@ -17,20 +20,28 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 /**
  * arrayFold( acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial)
  */
-class FunctionArrayFold : public IFunction
+class FunctionArrayFold final : public IFunction
 {
 public:
     static constexpr auto name = "arrayFold";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayFold>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayFold>(context); }
+
+    explicit FunctionArrayFold(ContextPtr context)
+        : process_list_element(context ? context->getProcessListElement() : nullptr)
+    {
+    }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isHigherOrderFunction() const override { return true; }
 
     /// Avoid the default adaptors since they modify the inputs and that makes knowing the lambda argument types
     /// (getLambdaArgumentTypes) more complex, as it requires knowing what the adaptors will do
@@ -152,6 +163,13 @@ public:
 
         const auto & offsets = first_array_col_concrete->getOffsets(); /// the internal offsets column of the first array argument (other array arguments have the same offsets)
 
+        /// A malformed array whose data column size disagrees with its offsets would desync the
+        /// selector loop below and blow up max_array_size (observed as a multi-GB ~uncancellable hang).
+        if (offsets[num_rows - 1] != static_cast<ColumnArray::Offset>(num_elements_in_array_col))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Malformed array argument of function {}: nested data column has {} elements but offsets describe {}",
+                getName(), num_elements_in_array_col, offsets[num_rows - 1]);
+
         /// Find the first row which contains a non-empty array
         ssize_t first_row_with_non_empty_array = 0;
         if (num_elements_in_array_col)
@@ -170,6 +188,10 @@ public:
         size_t cur_element_in_cur_array = 0;
         for (ssize_t i = 0; i < num_elements_in_array_col; ++i)
         {
+            /// This loop is O(total array elements) and also runs uninterruptibly inside executeImpl().
+            if ((i & 0xFFFFF) == 0)
+                checkQueryTimeLimit();
+
             selector[i] = cur_element_in_cur_array;
             ++cur_element_in_cur_array;
             max_array_size = std::max(cur_element_in_cur_array, max_array_size);
@@ -180,6 +202,13 @@ public:
             }
         }
 
+        /// max_array_size cannot exceed the total number of array elements; if it does, the selector
+        /// computation above is corrupt - bail out before scatter() allocates that many slices.
+        if (max_array_size > static_cast<size_t>(num_elements_in_array_col))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Function {}: computed max_array_size {} exceeds total array elements {}",
+                getName(), max_array_size, num_elements_in_array_col);
+
         /// Based on the selector, scatter elements of the arrays on all rows into vertical slices
         /// Example:
         ///   row0: ['elem1']
@@ -188,7 +217,7 @@ public:
         ///   --> create two slices based on selector [0, 0, 1, 0]
         ///       - slice0: 'elem1', 'elem2', 'elem4''
         ///       - slice1: 'elem3'
-        std::vector<MutableColumns> vertical_slices; /// contains for every array argument, a vertical slice for the 0th array element, a vertical slice for the 1st array element, ...
+        VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> vertical_slices; /// contains for every array argument, a vertical slice for the 0th array element, a vertical slice for the 1st array element, ...
         vertical_slices.resize(num_array_cols);
         if (max_array_size > 0)
             for (size_t i = 0; i < num_array_cols; ++i)
@@ -208,6 +237,13 @@ public:
         size_t unfinished_rows = num_rows; /// number of rows to consider in the current iteration
         for (size_t slice = 0; slice < max_array_size; ++slice)
         {
+            /// The whole fold over a chunk runs inside this single executeImpl() call, so the pipeline-level
+            /// time/cancellation check between chunks cannot interrupt it. Without an in-loop check a fold over
+            /// a very long array (e.g. range(number) with a result-growing lambda) ignores KILL QUERY and
+            /// max_execution_time and keeps running. Each iteration performs a full lambda->reduce(), so the
+            /// per-iteration check is negligible.
+            checkQueryTimeLimit();
+
             IColumn::Selector prev_selector(unfinished_rows); /// 1 for rows which have slice_i-many elements, otherwise 0
             size_t prev_index = 0;
             for (ssize_t row = 0; row < num_rows; ++row)
@@ -230,7 +266,7 @@ public:
             /// Scatter the accumulator into two columns
             /// - one column with accumulator values for rows less than slice-many elements, no further calculation is performed on them
             /// - one column with accumulator values for rows with slice-many or more elements, these are updated in this or following iteration
-            std::vector<IColumn::MutablePtr> finished_unfinished_accumulator_values = accumulator_col->scatter(2, prev_selector);
+            auto finished_unfinished_accumulator_values = accumulator_col->scatter(2, prev_selector);
             IColumn::MutablePtr & finished_accumulator_values = finished_unfinished_accumulator_values[0];
             IColumn::MutablePtr & unfinished_accumulator_values = finished_unfinished_accumulator_values[1];
 
@@ -247,9 +283,9 @@ public:
             auto * lambda = typeid_cast<ColumnFunction *>(lambda_col_filtered_cloned.get());
 
             /// Bind arguments to lambda function (accumulator + array arguments)
-            lambda->appendArguments(std::vector({ColumnWithTypeAndName(std::move(unfinished_accumulator_values), arguments.back().type, arguments.back().name)}));
+            lambda->appendArguments(ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(unfinished_accumulator_values), arguments.back().type, arguments.back().name)});
             for (size_t array_col = 0; array_col < num_array_cols; ++array_col)
-                lambda->appendArguments(std::vector({ColumnWithTypeAndName(std::move(vertical_slices[array_col][slice]), arrays_data_with_type_and_name[array_col].type, arrays_data_with_type_and_name[array_col].name)}));
+                lambda->appendArguments(ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(vertical_slices[array_col][slice]), arrays_data_with_type_and_name[array_col].type, arrays_data_with_type_and_name[array_col].name)});
 
             /// Perform the actual calculation and copy the result into the accumulator
             ColumnWithTypeAndName res_with_type_and_name = lambda->reduce();
@@ -281,6 +317,19 @@ public:
     }
 
 private:
+    QueryStatusPtr process_list_element;
+
+    /// checkTimeLimit() throws for KILL QUERY and the 'throw' overflow mode; for the 'break' overflow
+    /// mode it returns false instead. A fold has no meaningful partial result (a half-folded accumulator
+    /// is a wrong value, not a smaller one), so we throw on the false (break) return to stop the runaway
+    /// fold. In 'break' mode the pipeline absorbs this timeout into a clean cancellation, so the query
+    /// ends without a client-visible error and yields no rows for the cancelled fold.
+    void checkQueryTimeLimit() const
+    {
+        if (process_list_element && !process_list_element->checkTimeLimit())
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
+    }
+
     String getName() const override
     {
         return name;

@@ -1,0 +1,752 @@
+---
+description: 'Documentation sur NumericIndexedVector et ses fonctions'
+sidebarTitle: 'NumericIndexedVector'
+slug: /sql-reference/functions/numeric-indexed-vector-functions
+title: 'Fonctions de NumericIndexedVector'
+doc_type: 'reference'
+---
+
+NumericIndexedVector est une structure de données abstraite qui encapsule un vecteur et implémente des opérations d’agrégation vectorielle ainsi que des opérations point par point. Bit-Sliced Index est sa méthode de stockage. Pour les fondements théoriques et les cas d’utilisation, consultez l’article [Large-Scale Metric Computation in Online Controlled Experiment Platform](https://arxiv.org/pdf/2405.08411).
+
+<div id="bit-sliced-index">
+  ## BSI
+</div>
+
+Dans la méthode de stockage BSI (Bit-Sliced Index), les données sont stockées dans [Bit-Sliced Index](https://dl.acm.org/doi/abs/10.1145/253260.253268), puis compressées à l’aide de [Roaring Bitmap](https://github.com/RoaringBitmap/RoaringBitmap). Les opérations d’agrégation et les opérations point par point s’effectuent directement sur les données compressées, ce qui peut améliorer considérablement l’efficacité du stockage et des requêtes.
+
+Un vecteur contient des index et leurs valeurs correspondantes. Voici quelques caractéristiques et contraintes de cette structure de données en mode de stockage BSI :
+
+* Le type d’index peut être `UInt8`, `UInt16` ou `UInt32`. **Remarque :** compte tenu des performances de l’implémentation 64 bits de Roaring Bitmap, le format BSI ne prend pas en charge `UInt64`/`Int64`.
+* Le type de valeur peut être `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32` ou `Float64`. **Remarque :** le type de valeur ne s’élargit pas automatiquement. Par exemple, si vous utilisez `UInt8` comme type de valeur, toute somme dépassant la capacité de `UInt8` entraînera un dépassement de capacité au lieu d’être promue vers un type supérieur ; de même, les opérations sur des entiers produiront des résultats entiers (par exemple, une division ne sera pas automatiquement convertie en résultat à virgule flottante). Il est donc important de planifier et de définir le type de valeur à l’avance. Dans des scénarios réels, les types à virgule flottante (`Float32`/`Float64`) sont couramment utilisés.
+* Seuls deux vecteurs ayant le même type d’index et le même type de valeur peuvent effectuer des opérations.
+* Le stockage sous-jacent utilise Bit-Sliced Index, les bitmaps servant à stocker les index. Roaring Bitmap est utilisé comme implémentation spécifique des bitmaps. Une bonne pratique consiste à concentrer autant que possible les index dans plusieurs conteneurs Roaring Bitmap afin de maximiser la compression et les performances des requêtes.
+* Le mécanisme Bit-Sliced Index convertit la valeur en binaire. Pour les types à virgule flottante, la conversion utilise une représentation en virgule fixe, ce qui peut entraîner une perte de précision. La précision peut être ajustée en personnalisant le nombre de bits utilisés pour la partie fractionnaire ; la valeur par défaut est de 24 bits, ce qui est suffisant pour la plupart des scénarios. Vous pouvez personnaliser le nombre de bits entiers et de bits fractionnaires lors de la construction de NumericIndexedVector à l’aide de la fonction d’agrégation groupNumericIndexedVector avec `-State`.
+* Il existe trois cas pour les index : valeur non nulle, valeur nulle et inexistante. Dans NumericIndexedVector, seules les valeurs non nulles et nulles sont stockées. De plus, dans les opérations point par point entre deux NumericIndexedVectors, la valeur d’un index inexistant est traitée comme 0. Dans le cas d’une division, le résultat est zéro lorsque le diviseur est zéro.
+
+<div id="create-numeric-indexed-vector-object">
+  ## Créer un objet numericIndexedVector
+</div>
+
+Il existe deux façons de créer cette structure : la première consiste à utiliser la fonction d&#39;agrégation `groupNumericIndexedVector` avec `-State`.
+Vous pouvez ajouter le suffixe `-if` pour prendre en charge une condition supplémentaire.
+La fonction d&#39;agrégation ne traitera que les lignes qui satisfont à la condition.
+La seconde consiste à le construire à partir d&#39;un map à l&#39;aide de `numericIndexedVectorBuild`.
+La fonction `groupNumericIndexedVectorState` permet de personnaliser, via des paramètres, le nombre de bits de la partie entière et de la partie fractionnaire, contrairement à `numericIndexedVectorBuild`.
+
+<div id="group-numeric-indexed-vector">
+  ## groupNumericIndexedVector
+</div>
+
+Construit un NumericIndexedVector à partir de deux colonnes de données et renvoie la somme de toutes les valeurs sous forme de type `Float64`. Si le suffixe `State` est ajouté, la fonction renvoie un objet NumericIndexedVector.
+
+**Syntaxe**
+
+```sql
+groupNumericIndexedVectorState(col1, col2)
+groupNumericIndexedVectorState(type, integer_bit_num, fraction_bit_num)(col1, col2)
+```
+
+**Paramètres**
+
+* `type` : String, facultatif. Spécifie le format de stockage. Actuellement, seul `'BSI'` est pris en charge.
+* `integer_bit_num` : `UInt32`, facultatif. Applicable avec le format de stockage `'BSI'`, ce paramètre indique le nombre de bits utilisés pour la partie entière. Lorsque le type d’index est un type entier, la valeur par défaut correspond au nombre de bits utilisés pour stocker l’index. Par exemple, si le type d’index est UInt16, la valeur par défaut de `integer_bit_num` est 16. Pour les types d’index Float32 et Float64, la valeur par défaut de integer&#95;bit&#95;num est 40, de sorte que la partie entière des données représentables se situe dans l’intervalle `[-2^39, 2^39 - 1]`. L’intervalle autorisé est `[0, 64]`.
+* `fraction_bit_num` : `UInt32`, facultatif. Applicable avec le format de stockage `'BSI'`, ce paramètre indique le nombre de bits utilisés pour la partie fractionnaire. Lorsque le type de valeur est un entier, la valeur par défaut est 0 ; lorsqu’il est de type Float32 ou Float64, la valeur par défaut est 24. L’intervalle valide est `[0, 24]`.
+* Il existe également une contrainte selon laquelle l’intervalle valide de integer&#95;bit&#95;num + fraction&#95;bit&#95;num est `[0, 64]`.
+* `col1` : La colonne d’index. Types pris en charge : `UInt8`/`UInt16`/`UInt32`/`Int8`/`Int16`/`Int32`.
+* `col2` : La colonne de valeur. Types pris en charge : `Int8`/`Int16`/`Int32`/`Int64`/`UInt8`/`UInt16`/`UInt32`/`UInt64`/`Float32`/`Float64`.
+
+**Valeur de retour**
+
+Une valeur `Float64` représentant la somme de toutes les valeurs.
+
+**Exemple**
+
+Données de test :
+
+```text
+UserID  PlayTime
+1       10
+2       20
+3       30
+```
+
+Requête &amp; résultat :
+
+```sql
+SELECT groupNumericIndexedVector(UserID, PlayTime) AS num FROM t;
+┌─num─┐
+│  60 │
+└─────┘
+
+SELECT groupNumericIndexedVectorState(UserID, PlayTime) as res, toTypeName(res), numericIndexedVectorAllValueSum(res) FROM t;
+┌─res─┬─toTypeName(res)─────────────────────────────────────────────┬─numericIndexedVectorAllValueSum(res)──┐
+│     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8)  │ 60                                    │
+└─────┴─────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
+
+SELECT groupNumericIndexedVectorStateIf(UserID, PlayTime, day = '2025-04-22') as res, toTypeName(res), numericIndexedVectorAllValueSum(res) FROM t;
+┌─res─┬─toTypeName(res)────────────────────────────────────────────┬─numericIndexedVectorAllValueSum(res)──┐
+│     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │ 30                                    │
+└─────┴────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
+
+SELECT groupNumericIndexedVectorStateIf('BSI', 32, 0)(UserID, PlayTime, day = '2025-04-22') as res, toTypeName(res), numericIndexedVectorAllValueSum(res) FROM t;
+┌─res─┬─toTypeName(res)──────────────────────────────────────────────────────────┬─numericIndexedVectorAllValueSum(res)──┐
+│     │ AggregateFunction('BSI', 32, 0)(groupNumericIndexedVector, UInt8, UInt8) │ 30                                    │
+└─────┴──────────────────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
+```
+
+<Note>
+  La documentation ci-dessous est générée à partir de la table système `system.functions`.
+</Note>
+
+{/* 
+  les balises ci-dessous sont utilisées pour générer la documentation à partir des tables système et ne doivent pas être supprimées.
+  Pour en savoir plus, consultez https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="numericIndexedVectorAllValueSum">
+  ## numericIndexedVectorAllValueSum
+</div>
+
+Introduit dans : v25.7.0
+
+Renvoie la somme de toutes les valeurs du numericIndexedVector.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorAllValueSum(v)
+```
+
+**Arguments**
+
+* `v` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie la somme. [`Float64`](/fr/reference/data-types/float)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT numericIndexedVectorAllValueSum(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│  60 │
+└─────┘
+```
+
+<div id="numericIndexedVectorBuild">
+  ## numericIndexedVectorBuild
+</div>
+
+Introduit dans : v25.7.0
+
+Crée un NumericIndexedVector à partir d’une map. Les clés de la map représentent les index du vecteur, et les valeurs de la map représentent les valeurs du vecteur.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorBuild(map)
+```
+
+**Arguments**
+
+* `map` — Une correspondance entre l’index et la valeur. [`Map`](/fr/reference/data-types/map)
+
+**Valeur renvoyée**
+
+Renvoie un objet NumericIndexedVector. [`AggregateFunction`](/fr/reference/data-types/aggregatefunction)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res, toTypeName(res);
+```
+
+```response title=Response
+┌─res─┬─toTypeName(res)────────────────────────────────────────────┐
+│     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │
+└─────┴────────────────────────────────────────────────────────────┘
+```
+
+<div id="numericIndexedVectorCardinality">
+  ## numericIndexedVectorCardinality
+</div>
+
+Introduit dans : v25.7.0
+
+Renvoie la cardinalité (nombre d’index uniques) du numericIndexedVector.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorCardinality(v)
+```
+
+**Arguments**
+
+* `v` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie le nombre d’index distincts. [`UInt64`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+SELECT numericIndexedVectorCardinality(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│  3  │
+└─────┘
+```
+
+<div id="numericIndexedVectorGetValue">
+  ## numericIndexedVectorGetValue
+</div>
+
+Introduit dans : v25.7.0
+
+Récupère la valeur correspondant à un index donné dans un numericIndexedVector.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorGetValue(v, i)
+```
+
+**Arguments**
+
+* `v` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `i` — L’index dont la valeur doit être récupérée. [`(U)Int*`](/fr/reference/data-types/int-uint)
+
+**Valeur renvoyée**
+
+Une valeur numérique du même type que les valeurs de NumericIndexedVector. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float)
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+SELECT numericIndexedVectorGetValue(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])), 3) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│  30 │
+└─────┘
+```
+
+<div id="numericIndexedVectorPointwiseAdd">
+  ## numericIndexedVectorPointwiseAdd
+</div>
+
+Introduit dans : v25.7.0
+
+Effectue une addition point par point entre un numericIndexedVector et soit un autre numericIndexedVector, soit une constante numérique.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorPointwiseAdd(v1, v2)
+```
+
+**Arguments**
+
+* `v1` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — Une constante numérique ou un objet [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object). [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie un nouvel objet [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object).
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseAdd(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseAdd(vec1, 2)) AS res2;
+```
+
+```response title=Response
+┌─res1──────────────────┬─res2─────────────┐
+│ {1:10,2:30,3:50,4:30} │ {1:12,2:22,3:32} │
+└───────────────────────┴──────────────────┘
+```
+
+<div id="numericIndexedVectorPointwiseDivide">
+  ## numericIndexedVectorPointwiseDivide
+</div>
+
+Introduit dans : v25.7.0
+
+Effectue une division point par point entre un numericIndexedVector et soit un autre numericIndexedVector, soit une constante numérique.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorPointwiseDivide(v1, v2)
+```
+
+**Arguments**
+
+* `v1` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — Une constante numérique ou un objet [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object). [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie un nouvel objet [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object).
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseDivide(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseDivide(vec1, 2)) AS res2;
+```
+
+```response title=Response
+┌─res1────────┬─res2────────────┐
+│ {2:2,3:1.5} │ {1:5,2:10,3:15} │
+└─────────────┴─────────────────┘
+```
+
+<div id="numericIndexedVectorPointwiseEqual">
+  ## numericIndexedVectorPointwiseEqual
+</div>
+
+Introduit dans : v25.7.0
+
+Effectue une comparaison point par point entre un numericIndexedVector et soit un autre numericIndexedVector, soit une constante numérique.
+Le résultat est un numericIndexedVector contenant les indices pour lesquels les valeurs sont égales, toutes les valeurs correspondantes étant définies sur 1.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorPointwiseEqual(v1, v2)
+```
+
+**Arguments**
+
+* `v1` — [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — Une constante numérique ou un objet [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object). [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie un nouvel objet [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object).
+
+**Exemples**
+
+***
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 20, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──┬─res2──┐
+│ {2:1} │ {2:1} │
+└───────┴───────┘
+```
+
+<div id="numericIndexedVectorPointwiseGreater">
+  ## numericIndexedVectorPointwiseGreater
+</div>
+
+Introduit dans : v25.7.0
+
+Effectue une comparaison point par point entre un numericIndexedVector et soit un autre numericIndexedVector, soit une constante numérique.
+Le résultat est un numericIndexedVector contenant les indices pour lesquels la valeur du premier vecteur est supérieure à celle du second, toutes les valeurs correspondantes étant fixées à 1.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorPointwiseGreater(v1, v2)
+```
+
+**Arguments**
+
+* `v1` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — Une constante numérique ou un objet `numericIndexedVector`. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie un nouvel objet `numericIndexedVector`. [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Exemples**
+
+**Exemple d’utilisation**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseGreater(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseGreater(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──────┬─res2──┐
+│ {1:1,3:1} │ {3:1} │
+└───────────┴───────┘
+```
+
+<div id="numericIndexedVectorPointwiseGreaterEqual">
+  ## numericIndexedVectorPointwiseGreaterEqual
+</div>
+
+Introduit dans : v25.7.0
+
+Effectue une comparaison point par point entre un numericIndexedVector et soit un autre numericIndexedVector, soit une constante numérique.
+Le résultat est un numericIndexedVector contenant les indices pour lesquels la valeur du premier vecteur est supérieure ou égale à celle du second, toutes les valeurs correspondantes étant définies à 1.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorPointwiseGreaterEqual(v1, v2)
+```
+
+**Arguments**
+
+* `v1` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — Une constante numérique ou un objet [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object). [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie un nouvel objet [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object).
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseGreaterEqual(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseGreaterEqual(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──────────┬─res2──────┐
+│ {1:1,2:1,3:1} │ {2:1,3:1} │
+└───────────────┴───────────┘
+```
+
+<div id="numericIndexedVectorPointwiseLess">
+  ## numericIndexedVectorPointwiseLess
+</div>
+
+Introduit dans : v25.7.0
+
+Effectue une comparaison point par point entre un numericIndexedVector et soit un autre numericIndexedVector, soit une constante numérique.
+Le résultat est un numericIndexedVector contenant les indices pour lesquels la valeur du premier vecteur est inférieure à celle du second, toutes les valeurs correspondantes étant définies sur 1.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorPointwiseLess(v1, v2)
+```
+
+**Arguments**
+
+* `v1` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — Une constante numérique ou un objet `numericIndexedVector`. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie un nouvel objet `numericIndexedVector`. [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseLess(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseLess(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──────┬─res2──┐
+│ {3:1,4:1} │ {1:1} │
+└───────────┴───────┘
+```
+
+<div id="numericIndexedVectorPointwiseLessEqual">
+  ## numericIndexedVectorPointwiseLessEqual
+</div>
+
+Introduit dans : v25.7.0
+
+Effectue une comparaison point par point entre un numericIndexedVector et un autre numericIndexedVector ou une constante numérique.
+Le résultat est un numericIndexedVector contenant les indices pour lesquels la valeur du premier vecteur est inférieure ou égale à celle du second, toutes les valeurs correspondantes étant définies à 1.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorPointwiseLessEqual(v1, v2)
+```
+
+**Arguments**
+
+* `v1` — [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — Une constante numérique ou un objet `numericIndexedVector` [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie un nouvel objet `numericIndexedVector`. [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 40, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseLessEqual(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseLessEqual(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──────────┬─res2──────┐
+│ {2:1,3:1,4:1} │ {1:1,2:1} │
+└───────────────┴───────────┘
+```
+
+<div id="numericIndexedVectorPointwiseMultiply">
+  ## numericIndexedVectorPointwiseMultiply
+</div>
+
+Introduit dans : v25.7.0
+
+Effectue une multiplication point par point entre un numericIndexedVector et un autre numericIndexedVector ou une constante numérique.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorPointwiseMultiply(v1, v2)
+```
+
+**Arguments**
+
+* `v1` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — Une constante numérique ou un objet [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object). [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur de retour**
+
+Renvoie un nouvel objet [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object).
+
+**Exemples**
+
+***
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseMultiply(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseMultiply(vec1, 2)) AS res2;
+```
+
+```response title=Response
+┌─res1──────────┬─res2─────────────┐
+│ {2:200,3:600} │ {1:20,2:40,3:60} │
+└───────────────┴──────────────────┘
+```
+
+<div id="numericIndexedVectorPointwiseNotEqual">
+  ## numericIndexedVectorPointwiseNotEqual
+</div>
+
+Introduit dans : v25.7.0
+
+Effectue une comparaison point par point entre un `numericIndexedVector` et un autre `numericIndexedVector` ou une constante numérique.
+Le résultat est un `numericIndexedVector` contenant les indices pour lesquels les valeurs sont différentes, toutes les valeurs correspondantes étant définies sur 1.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorPointwiseNotEqual(v1, v2)
+```
+
+**Arguments**
+
+* `v1` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — Une constante numérique ou un objet `numericIndexedVector`. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie un nouvel objet `numericIndexedVector`. [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+with
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toFloat64(x), [20, 20, 30]))) as vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseNotEqual(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseNotEqual(vec1, 20)) AS res2;
+```
+
+```response title=Response
+┌─res1──────────┬─res2──────┐
+│ {1:1,3:1,4:1} │ {1:1,3:1} │
+└───────────────┴───────────┘
+```
+
+<div id="numericIndexedVectorPointwiseSubtract">
+  ## numericIndexedVectorPointwiseSubtract
+</div>
+
+Introduit dans : v25.7.0
+
+Effectue une soustraction point par point entre un numericIndexedVector et un autre numericIndexedVector ou une constante numérique.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorPointwiseSubtract(v1, v2)
+```
+
+**Arguments**
+
+* `v1` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+* `v2` — Une constante numérique ou un objet `numericIndexedVector`. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie un nouvel objet `numericIndexedVector`. [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+WITH
+    numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec1,
+    numericIndexedVectorBuild(mapFromArrays([2, 3, 4], arrayMap(x -> toInt32(x), [10, 20, 30]))) AS vec2
+SELECT
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseSubtract(vec1, vec2)) AS res1,
+    numericIndexedVectorToMap(numericIndexedVectorPointwiseSubtract(vec1, 2)) AS res2;
+```
+
+```response title=Response
+┌─res1───────────────────┬─res2────────────┐
+│ {1:10,2:10,3:10,4:-30} │ {1:8,2:18,3:28} │
+└────────────────────────┴─────────────────┘
+```
+
+<div id="numericIndexedVectorShortDebugString">
+  ## numericIndexedVectorShortDebugString
+</div>
+
+Introduit dans : v25.7.0
+
+Renvoie des informations internes du numericIndexedVector au format JSON.
+Cette fonction est principalement utilisée à des fins de débogage.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorShortDebugString(v)
+```
+
+**Arguments**
+
+* `v` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie une chaîne JSON contenant des informations de débogage. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+SELECT numericIndexedVectorShortDebugString(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res\G;
+```
+
+```response title=Response
+Row 1:
+──────
+res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer_bit_num":8,"fraction_bit_num":0,"zero_indexes_info":{"cardinality":"0"},"non_zero_indexes_info":{"total_cardinality":"3","all_value_sum":60,"number_of_bitmaps":"8","bitmap_info":{"cardinality":{"0":"0","1":"2","2":"2","3":"2","4":"2","5":"0","6":"0","7":"0"}}}}
+```
+
+<div id="numericIndexedVectorToMap">
+  ## numericIndexedVectorToMap
+</div>
+
+Introduit dans : v25.7.0
+
+Convertit un numericIndexedVector en une map.
+
+**Syntaxe**
+
+```sql
+numericIndexedVectorToMap(v)
+```
+
+**Arguments**
+
+* `v` —  [`numericIndexedVector`](/fr/reference/functions/regular-functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)
+
+**Valeur renvoyée**
+
+Renvoie une [`Map`](/fr/reference/data-types/map) contenant des paires index-valeur.
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+SELECT numericIndexedVectorToMap(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30]))) AS res;
+```
+
+```response title=Response
+┌─res──────────────┐
+│ {1:10,2:20,3:30} │
+└──────────────────┘
+```
+
+{/*AUTOGENERATED_END*/}

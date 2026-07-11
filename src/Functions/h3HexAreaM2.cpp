@@ -26,7 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3HexAreaM2 : public IFunction
+class FunctionH3HexAreaM2 final : public IFunction
 {
 public:
     static constexpr auto name = "h3HexAreaM2";
@@ -88,7 +88,8 @@ public:
                     getName(),
                     MAX_H3_RES);
 
-            Float64 res = getHexagonAreaAvgM2(resolution);
+            double res = 0;
+            getHexagonAreaAvgM2(resolution, &res);
 
             dst_data[row] = res;
         }

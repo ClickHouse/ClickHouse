@@ -1,9 +1,13 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <base/defines.h>
 
 namespace DB
 {
 
+///
+/// BackgroundSchedulePoolTaskHolder
+///
 BackgroundSchedulePoolTaskHolder::BackgroundSchedulePoolTaskHolder() = default;
 BackgroundSchedulePoolTaskHolder::BackgroundSchedulePoolTaskHolder(BackgroundSchedulePoolTaskHolder && other) noexcept = default;
 BackgroundSchedulePoolTaskHolder & BackgroundSchedulePoolTaskHolder::operator=(BackgroundSchedulePoolTaskHolder && other) noexcept = default;

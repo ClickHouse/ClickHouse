@@ -27,10 +27,10 @@ struct MultiplyDecimalsImpl
         Int256 sign_a = a.value < 0 ? -1 : 1;
         Int256 sign_b = b.value < 0 ? -1 : 1;
 
-        std::vector<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
-        std::vector<UInt8> b_digits = DecimalOpHelpers::toDigits(b.value * sign_b);
+        VectorWithMemoryTracking<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
+        VectorWithMemoryTracking<UInt8> b_digits = DecimalOpHelpers::toDigits(b.value * sign_b);
 
-        std::vector<UInt8> multiplied = DecimalOpHelpers::multiply(a_digits, b_digits);
+        VectorWithMemoryTracking<UInt8> multiplied = DecimalOpHelpers::multiply(a_digits, b_digits);
 
         UInt16 product_scale = scale_a + scale_b;
         while (product_scale < result_scale)
@@ -104,8 +104,8 @@ While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 12};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionsDecimalArithmetics<MultiplyDecimalsImpl>>(documentation);
 }

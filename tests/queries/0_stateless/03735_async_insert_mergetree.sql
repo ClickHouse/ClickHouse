@@ -106,7 +106,7 @@ select query, query_kind, exception_code,
     ProfileEvents['SelfDuplicatedAsyncInserts'] as SelfDuplicatedAsyncInserts,
     ProfileEvents['DuplicatedAsyncInserts'] as DuplicatedAsyncInserts
 from system.query_log
-where
+where event_date >= yesterday() AND event_time >= now() - 600 AND
     has(databases, currentDatabase())
     and has(tables, currentDatabase() || '.src_table')
     and type != 'QueryStart'

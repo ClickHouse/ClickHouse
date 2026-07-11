@@ -1,5 +1,3 @@
-#include <exception>
-#include <memory>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -7,12 +5,15 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/Settings.h>
 
+#include <exception>
+#include <memory>
 
 namespace ProfileEvents
 {
@@ -33,7 +34,9 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+    extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
 }
 
 namespace MergeTreeSetting
@@ -72,6 +75,12 @@ MergeTreeSink::MergeTreeSink(
     LOG_DEBUG(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 }
 
+void MergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
+{
+    synchronously_commit_part_for_dependent_views
+        = has_dependent_views && context->getSettingsRef()[Setting::wait_for_part_commit_in_dependent_materialized_views];
+}
+
 void MergeTreeSink::onStart()
 {
     /// It's only allowed to throw "too many parts" before write,
@@ -104,11 +113,15 @@ void MergeTreeSink::consume(Chunk & chunk)
     size_t total_streams = 0;
     bool support_parallel_write = false;
 
-    std::vector<UInt128> all_partwriter_hashes;
-    all_partwriter_hashes.reserve(part_blocks.size());
+    auto process_list_element = context->getProcessListElement();
 
     for (auto & current_block : part_blocks)
     {
+        /// A single INSERT can split into very many parts (e.g. high-cardinality partition key with
+        /// max_partitions_per_insert_block); honor cancellation/timeout between them.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
         ProfileEvents::Counters part_counters;
         auto partition_scope = std::make_unique<ProfileEventsScope>(&part_counters);
 
@@ -150,25 +163,17 @@ void MergeTreeSink::consume(Chunk & chunk)
         if (!temp_part->part)
             continue;
 
-        auto hash = temp_part->part->getPartBlockIDHash();
-        current_deduplication_info->setPartWriterHashForPartition(hash, current_block.block->rows());
-        all_partwriter_hashes.push_back(hash);
-
         LOG_DEBUG(
             storage.log,
             "Wrote block with {} rows and deduplication blocks: {}, deduplication info: {}",
             current_block.block->rows(),
-            fmt::join(current_deduplication_info->getBlockIds(current_block.partition_id, deduplicate), ", "),
+            fmt::join(getDeduplicationBlockIds(current_deduplication_info->getDeduplicationHashes(current_block.partition_id, deduplicate)), ", "),
             current_deduplication_info->debug());
-
-
-        // if the token is already defined, it would not be owerrided again
-        /// TODO: set part writer hashes for multiple partitions in one chunk
 
         if (!support_parallel_write && temp_part->part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
-        size_t max_insert_delayed_streams_for_parallel_write;
+        size_t max_insert_delayed_streams_for_parallel_write = 0;
 
         if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
             max_insert_delayed_streams_for_parallel_write = settings[Setting::max_insert_delayed_streams_for_parallel_write];
@@ -209,11 +214,19 @@ void MergeTreeSink::consume(Chunk & chunk)
 
         total_streams += current_streams;
     }
-    deduplication_info->setPartWriterHashes(all_partwriter_hashes, chunk.getNumRows());
 
     finishDelayedChunk();
+
     delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
+    /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
+    /// part immediately to make its rows visible without waiting for the next consume()
+    /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
+    if (settings[Setting::input_format_max_block_wait_ms] != 0)
+        finishDelayedChunk();
+
+    if (synchronously_commit_part_for_dependent_views)
+        finishDelayedChunk();
 
     ++num_blocks_processed;
 }
@@ -223,8 +236,15 @@ void MergeTreeSink::finishDelayedChunk()
     if (!delayed_chunk)
         return;
 
+    auto process_list_element = context->getProcessListElement();
+
     for (auto & partition : delayed_chunk->partitions)
     {
+        /// Honor cancellation/timeout between parts; finalizing each can be slow on object storage.
+        /// onFinish() skips finishDelayedChunk() when cancelled, so a normal finish never throws here.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
         Stopwatch watch;
         auto profile_events_scope = std::make_unique<ProfileEventsScope>(&partition.part_counters);
 
@@ -234,8 +254,8 @@ void MergeTreeSink::finishDelayedChunk()
             partition.temp_part->finalize();
 
             auto & part = partition.temp_part->part;
-            auto block_ids = partition.deduplication_info->getBlockIds(part->info.getPartitionId(), deduplicate);
-            auto conflicts = commitPart(part, block_ids);
+            auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), deduplicate);
+            auto conflicts = commitPart(part, deduplication_hashes);
 
             if (conflicts.empty())
             {
@@ -248,7 +268,7 @@ void MergeTreeSink::finishDelayedChunk()
                 PartLog::addNewPart(
                     storage.getContext(),
                     PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot),
-                    block_ids);
+                    getDeduplicationBlockIds(deduplication_hashes));
                 StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
                 /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
@@ -299,7 +319,7 @@ void MergeTreeSink::finishDelayedChunk()
                 PartLog::addNewPart(
                     storage.getContext(),
                     PartLog::PartLogEntry(partition.temp_part->part, partition.elapsed_ns, counters_snapshot),
-                    block_ids,
+                    getDeduplicationBlockIds(deduplication_hashes),
                     ExecutionStatus(ErrorCodes::INSERT_WAS_DEDUPLICATED, "The part was deduplicated"));
 
                 break;
@@ -309,6 +329,11 @@ void MergeTreeSink::finishDelayedChunk()
             partition.deduplication_info = std::move(result.deduplication_info);
 
             partition.temp_part = writeNewTempPart(partition.block_with_partition);
+
+            /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition
+            /// could become empty after merge and then no part is created.
+            if (!partition.temp_part->part)
+                break;
 
             ++retry_times;
         }
@@ -322,7 +347,7 @@ MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & b
     return storage.writer.writeTempPart(block, metadata_snapshot, context);
 }
 
-std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<String> & block_ids)
+std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)
 {
     /// It's important to create it outside of lock scope because
     /// otherwise it can lock parts in destructor and deadlock is possible.
@@ -331,10 +356,11 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         auto lock = storage.lockParts();
         auto block_holder = storage.fillNewPartName(part, lock);
 
-        if (!block_ids.empty())
+        if (!deduplication_hashes.empty())
         {
             auto * deduplication_log = storage.getDeduplicationLog();
             chassert(deduplication_log);
+            auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
             auto result = deduplication_log->addPart(block_ids, part->info);
 
             std::vector<std::string> conflict_block_ids;

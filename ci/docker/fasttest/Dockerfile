@@ -1,5 +1,5 @@
 # docker build -t clickhouse/fasttest .
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
@@ -24,9 +24,8 @@ RUN apt-get update \
         git \
         xxd \
         time \
-        awscli \
         --yes --no-install-recommends --verbose-versions \
-    && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
+    && export LLVM_PUBKEY_HASH="5ffc7c9a9299ce774f81cada703e23ebba5bdfb0345b6c3b667b3ead7aa21c75ef62ccd74f7a8f2aa0cbe158d3068bbe" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
@@ -63,6 +62,7 @@ RUN apt-get update \
         python3 \
         python3-pip \
         zstd \
+        unzip \
         moreutils \
         less \
         expect \
@@ -95,8 +95,8 @@ RUN ARCH=$(uname -m) && \
     ./rustup-init -y && \
     rm rustup-init && \
     chmod 777 -R /rust && \
-    rustup toolchain install nightly-2025-07-07 --no-self-update && \
-    rustup default nightly-2025-07-07 && \
+    rustup toolchain install nightly-2026-03-22 --no-self-update && \
+    rustup default nightly-2026-03-22 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \
     rustup target add x86_64-unknown-linux-gnu && \
@@ -137,7 +137,11 @@ RUN arch=${TARGETARCH} \
   && rm "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl" -r
 
 COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN pip3 install --break-system-packages --no-cache-dir -r /requirements.txt
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
+    && unzip -q awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws
 
 # chmod 777 to make the container user independent
 RUN mkdir -p /var/lib/clickhouse \
@@ -146,7 +150,8 @@ RUN mkdir -p /var/lib/clickhouse \
 ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN groupadd --system --gid 1000 clickhouse \
+RUN (userdel -r ubuntu 2>/dev/null || true) && (groupdel ubuntu 2>/dev/null || true) \
+    && groupadd --system --gid 1000 clickhouse \
     && useradd --system --gid 1000 --uid 1000 -m clickhouse \
     && mkdir -p /.cache/sccache && chmod 777 /.cache/sccache
 

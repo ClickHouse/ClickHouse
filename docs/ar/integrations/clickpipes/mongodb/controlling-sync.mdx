@@ -1,0 +1,66 @@
+---
+title: 'التحكم في مزامنة ClickPipe لـ MongoDB'
+description: 'دليل للتحكم في مزامنة ClickPipe لـ MongoDB'
+slug: /integrations/clickpipes/mongodb/sync_control
+sidebarTitle: 'التحكم في المزامنة'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'إدخال البيانات', 'مزامنة آنية']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+توضح هذه الوثيقة كيفية التحكم في مزامنة ClickPipe الخاص بـ MongoDB عندما يكون ClickPipe في **وضع CDC (Running)**.
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+تتكوّن معمارية ClickPipes الخاصة بقواعد البيانات من عمليتين متوازيتين: السحب من قاعدة البيانات المصدر والدفع إلى قاعدة البيانات الهدف. وتتحكم في عملية السحب إعدادات مزامنة تحدد مدى تكرار سحب البيانات ومقدار البيانات التي ينبغي سحبها في كل مرة. والمقصود بعبارة &quot;في كل مرة&quot; هو دفعة واحدة، لأن ClickPipe يسحب البيانات ويدفعها على شكل دفعات.
+
+هناك طريقتان رئيسيتان للتحكم في مزامنة ClickPipe لـ MongoDB. وسيبدأ ClickPipe في الدفع عند تفعيل أحد الإعدادات أدناه.
+
+<div id="interval">
+  ### فاصل المزامنة
+</div>
+
+فاصل المزامنة الخاص بالمسار هو مقدار الوقت (بالثواني) الذي سيقوم ClickPipe خلاله بسحب السجلات من قاعدة البيانات المصدر. ولا يشمل هذا الفاصل الوقت اللازم لإرسال ما لدينا إلى ClickHouse.
+
+القيمة الافتراضية هي **دقيقة واحدة**.
+يمكن ضبط فاصل المزامنة على أي عدد صحيح موجب، ولكن يُوصى بالإبقاء عليه فوق 10 ثوانٍ.
+
+<div id="batch-size">
+  ### حجم دفعة السحب
+</div>
+
+حجم دفعة السحب هو عدد السجلات التي سيسحبها ClickPipe من قاعدة البيانات المصدرية في دفعة واحدة. ويُقصد بالسجلات هنا عمليات insert والتحديث والحذف التي تُجرى على الـcollections التي تشكّل جزءًا من المسار.
+
+القيمة الافتراضية هي **100,000** سجل.
+والحد الأقصى الآمن هو 10 ملايين.
+
+<div id="configuring">
+  ### تهيئة إعدادات المزامنة
+</div>
+
+يمكنك تعيين فاصل المزامنة وحجم دفعة السحب عند إنشاء ClickPipe أو تعديل ClickPipe موجود.
+وعند إنشاء ClickPipe، ستظهر هذه الإعدادات في الخطوة الثانية من معالج الإنشاء، كما هو موضح أدناه:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="إنشاء إعدادات المزامنة" size="md" />
+
+وعند تعديل ClickPipe موجود، يمكنك الانتقال إلى علامة تبويب **الإعدادات** الخاصة بالمسار، ثم إيقاف المسار مؤقتًا والنقر على **تهيئة** هنا:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="زر تعديل المزامنة" size="md" />
+
+سيؤدي ذلك إلى فتح لوحة جانبية تتضمن إعدادات المزامنة، حيث يمكنك تغيير فاصل المزامنة وحجم دفعة السحب:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="تعديل إعدادات المزامنة" size="md" />
+
+<div id="monitoring">
+  ### مراقبة سلوك التحكم بالمزامنة
+</div>
+
+يمكنك معرفة المدة التي تستغرقها كل دفعة في جدول **CDC Syncs** ضمن علامة التبويب **Metrics** في ClickPipe. لاحظ أن المدة هنا تشمل أيضًا وقت الإرسال، وإذا لم ترد أي صفوف، فسينتظر ClickPipe، كما يُحتسب وقت الانتظار ضمن هذه المدة أيضًا.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="جدول CDC Syncs" size="md" />

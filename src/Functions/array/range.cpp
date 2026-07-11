@@ -39,7 +39,7 @@ namespace ErrorCodes
   * range(start, end): [start, end)
   * range(start, end, step): [start, end) with step increments.
   */
-class FunctionRange : public IFunction
+class FunctionRange final : public IFunction
 {
 public:
     static constexpr auto name = "range";
@@ -186,11 +186,20 @@ private:
         IColumn::Offset offset{};
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            for (size_t idx = 0; idx < row_length[row_idx]; ++idx)
+            /// Last iteration is peeled to avoid a trailing `value += step` that would
+            /// overflow for valid runs at the high end of the range (e.g. start = Int64::max - 1,
+            /// step = 2 emits one element and would then signed-overflow). Inner loop stays
+            /// branchless so the compiler can keep vectorising it.
+            T value = start;
+            size_t n = row_length[row_idx];
+            for (size_t idx = 0; idx + 1 < n; ++idx)
             {
-                out_data[offset] = static_cast<T>(start + idx * step);
-                ++offset;
+                out_data[offset + idx] = value;
+                value += step;
             }
+            if (n > 0)
+                out_data[offset + n - 1] = value;
+            offset += n;
             out_offsets[row_idx] = offset;
         }
 

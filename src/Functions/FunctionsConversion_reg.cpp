@@ -1096,7 +1096,20 @@ SELECT toDate(20297)
     /// MySQL compatibility alias. Cannot be registered as alias,
     /// because we don't want it to be normalized to toDate in queries,
     /// otherwise CREATE DICTIONARY query breaks.
-    factory.registerFunction("DATE", &detail::FunctionToDate::create, {}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description_date = R"(
+Converts the argument to the Date data type. This is a MySQL compatibility alias for `toDate`. It behaves the same as `toDate`.
+    )";
+    FunctionDocumentation::Syntax syntax_date = "DATE(expr)";
+    FunctionDocumentation::Arguments arguments_date = {
+        {"expr", "The value to convert.", {"String", "UInt32", "Date", "DateTime"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_date = {"Returns a Date value.", {"Date"}};
+    FunctionDocumentation::Examples examples_date = {{"Basic usage", "SELECT DATE('2023-01-01')", "2023-01-01"}};
+    FunctionDocumentation::Category category_date = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation::IntroducedIn introduced_in_date = {21, 2};
+    FunctionDocumentation documentation_date = {description_date, syntax_date, arguments_date, {}, returned_value_date, examples_date, introduced_in_date, category_date};
+
+    factory.registerFunction("DATE", &detail::FunctionToDate::create, documentation_date, FunctionFactory::Case::Insensitive);
 
     /// toDate32 documentation
     FunctionDocumentation::Description description_toDate32 = R"(
@@ -1146,18 +1159,20 @@ toTypeName(value): Date32
     /// toTime documentation
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/sql-reference/data-types/time).
-Supports conversion from String, FixedString, DateTime, or numeric types representing seconds since midnight.
+Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "(U)Int*", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime", "DateTime64", "(U)Int*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime = {"Returns the converted value.", {"Time"}};
     FunctionDocumentation::Examples examples_toTime = {
     {
-        "String to Time conversion",
+        "DateTime64 to Time conversion",
         R"(
-SELECT toTime('14:30:25')
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
         )",
         R"(
 14:30:25
@@ -1166,6 +1181,8 @@ SELECT toTime('14:30:25')
     {
         "DateTime to Time conversion",
         R"(
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )",
         R"(
@@ -1173,9 +1190,11 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
         )"
     },
     {
-        "Integer to Time conversion",
+        "Integer (seconds since epoch) to Time conversion",
         R"(
-SELECT toTime(52225)
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime(52225, 'UTC'))
         )",
         R"(
 14:30:25
@@ -1190,19 +1209,21 @@ SELECT toTime(52225)
 
     FunctionDocumentation::Description description_toTime64 = R"(
 Converts an input value to type [Time64](/sql-reference/data-types/time64).
-Supports conversion from String, FixedString, DateTime64, or numeric types representing microseconds since midnight.
-Provides microsecond precision for time values.
+Supports conversion from String, FixedString, DateTime64, or numeric types representing seconds since midnight.
+Provides sub-second precision for time values, up to `scale` fractional digits.
     )";
-    FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x)";
+    FunctionDocumentation::Syntax syntax_toTime64 = "toTime64(x, scale)";
     FunctionDocumentation::Arguments arguments_toTime64 = {
-        {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}}
+        {"x", "Input value to convert.", {"String", "FixedString", "DateTime64", "(U)Int*", "Float*"}},
+        {"scale", "Precision (number of fractional digits, `0`–`9`) of the resulting `Time64`.", {"(U)Int*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted input value with microsecond precision.", {"Time64(6)"}};
+    FunctionDocumentation::ReturnedValue returned_value_toTime64 = {"Returns the converted value with the requested `scale`.", {"Time64"}};
     FunctionDocumentation::Examples examples_toTime64 = {
     {
         "String to Time64 conversion",
         R"(
-SELECT toTime64('14:30:25.123456')
+SET enable_time_time64_type = 1;
+SELECT toTime64('14:30:25.123456', 6)
         )",
         R"(
 14:30:25.123456
@@ -1211,16 +1232,18 @@ SELECT toTime64('14:30:25.123456')
     {
         "DateTime64 to Time64 conversion",
         R"(
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SET enable_time_time64_type = 1;
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
         )",
         R"(
 14:30:25.123456
         )"
     },
     {
-        "Integer to Time64 conversion",
+        "Float (seconds since midnight) to Time64 conversion",
         R"(
-SELECT toTime64(52225123456)
+SET enable_time_time64_type = 1;
+SELECT toTime64(52225.123456, 6)
         )",
         R"(
 14:30:25.123456

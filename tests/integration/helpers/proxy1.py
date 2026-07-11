@@ -9,11 +9,13 @@ class Proxy1:
         self._proxy_string = proxy_string
 
     def _run(self):
+        self._source_addr_lock = threading.Lock()
         self._server, addr = self._sock.accept()
         self._sock.close()
         self._client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._client.bind(("", 0))
         self._client.connect(self._address)
+        self._source_addr = self._client.getsockname()
         self._client.send("PROXY ".encode("utf-8"))
         if self._proxy_string == "":
             self._client.send(
@@ -58,6 +60,10 @@ class Proxy1:
 
         self._client.close()
         self._server.close()
+
+    def get_source_addr(self):
+        with self._source_addr_lock:
+            return self._source_addr
 
     def start(self, address):
         self._address = address

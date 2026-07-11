@@ -12,7 +12,8 @@ ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_shared/', '1')
 ORDER BY id
 SETTINGS
     enable_block_number_column = true,
-    enable_block_offset_column = true;
+    enable_block_offset_column = true,
+    remove_unused_patch_parts = false;
 
 INSERT INTO t_shared SELECT number, number, number FROM numbers(20);
 INSERT INTO t_shared SELECT number, number, number FROM numbers(100, 10);
@@ -40,7 +41,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['ReadTasksWithAppliedPatches']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query = 'SELECT * FROM t_shared ORDER BY id;' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query = 'SELECT * FROM t_shared ORDER BY id;' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_shared SYNC;

@@ -2,6 +2,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/escapeForFileName.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -40,7 +42,7 @@ namespace Setting
 namespace
 {
 
-class FunctionSerial : public IFunction
+class FunctionSerial final : public IFunction
 {
 private:
     ContextPtr context;
@@ -50,15 +52,16 @@ private:
 public:
     static constexpr auto name = "generateSerialID";
 
-    explicit FunctionSerial(ContextPtr context_) : context(context_)
+    explicit FunctionSerial(ContextPtr context_)
+        : context(context_)
     {
-        keeper_path = context->getServerSettings()[ServerSetting::series_keeper_path];
-        max_series = context->getSettingsRef()[Setting::max_autoincrement_series];
+        keeper_path = context_->getServerSettings()[ServerSetting::series_keeper_path];
+        max_series = context_->getSettingsRef()[Setting::max_autoincrement_series];
     }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionSerial>(std::move(context));
+        return std::make_shared<FunctionSerial>(std::move(context_));
     }
 
     String getName() const override { return name; }
@@ -141,6 +144,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        auto component_guard = Coordination::setCurrentComponent("FunctionSerial::executeImpl");
         auto col_res = ColumnUInt64::create();
         typename ColumnUInt64::Container & vec_to = col_res->getData();
         vec_to.resize(input_rows_count);
@@ -183,7 +187,7 @@ public:
                 UInt64 num_rows = 0;
                 UInt64 old_value = 0;
             };
-            std::unordered_map<std::string_view, Series, StringViewHash> series;
+            UnorderedMapWithMemoryTracking<std::string_view, Series, StringViewHash> series;
 
             /// Count the number of rows for each name:
             for (size_t i = 0; i < input_rows_count; ++i)

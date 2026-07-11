@@ -1,12 +1,12 @@
 #!/bin/bash
-# Tags: no-parallel-replicas
+# Tags: no-parallel-replicas, no-random-merge-tree-settings
 # no-parallel-replicas: The EXPLAIN output is completely different
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_table;"
 
 wait_for_mutations() {
@@ -41,7 +41,7 @@ do
     ENGINE = MergeTree()
     ORDER BY id
     PARTITION BY intDiv(id, 100)
-    SETTINGS alter_column_secondary_index_mode = 'drop', ${part_type_setting}, index_granularity=8192;
+    SETTINGS alter_column_secondary_index_mode = 'drop', ${part_type_setting}, index_granularity=8192, index_granularity_bytes=0;
 
     INSERT INTO test_table SELECT number, number FROM numbers(10);
 

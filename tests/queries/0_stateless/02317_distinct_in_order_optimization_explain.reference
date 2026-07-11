@@ -51,7 +51,7 @@ algorithm: InOrder
 algorithm: InOrder
 -- enabled, only part of distinct columns form prefix of sorting key
 algorithm: InOrder
-=== disable new analyzer ===
+=== disable analyzer ===
 -- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct
 Sorting: a ASC, b ASC
 Sorting: a ASC, b ASC
@@ -82,7 +82,7 @@ Sorting: a DESC, b DESC
 -- enabled, check that disabling other 'read in order' optimizations do not disable distinct in order optimization
 Sorting: a ASC, b ASC
 Sorting: a ASC, b ASC
-=== enable new analyzer ===
+=== enable analyzer ===
 -- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct
 Sorting: __table1.a ASC, __table1.b ASC
 Sorting: a ASC, b ASC

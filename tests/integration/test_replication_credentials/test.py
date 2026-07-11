@@ -4,13 +4,23 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
+ORIGINAL_CREDENTIALS1 = """
+<clickhouse>
+    <interserver_http_port>9009</interserver_http_port>
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password>222</password>
+    </interserver_http_credentials>
+</clickhouse>
+"""
+
 
 def _fill_nodes(nodes, shard):
     for node in nodes:
         node.query(
             """
-                CREATE DATABASE test;
-                CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
+                CREATE DATABASE IF NOT EXISTS test;
+                CREATE TABLE IF NOT EXISTS test_table(date Date, id UInt32, dummy UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}') PARTITION BY toYYYYMM(date) ORDER BY id;
             """.format(
                 shard=shard, replica=node.name
@@ -45,6 +55,8 @@ def same_credentials_cluster():
 
 
 def test_same_credentials(same_credentials_cluster):
+    node1.query("TRUNCATE TABLE test_table")
+    node2.query("SYSTEM SYNC REPLICA test_table", timeout=10)
     node1.query("insert into test_table values ('2017-06-16', 111, 0)")
     time.sleep(1)
 
@@ -84,6 +96,8 @@ def no_credentials_cluster():
 
 
 def test_no_credentials(no_credentials_cluster):
+    node3.query("TRUNCATE TABLE test_table")
+    node4.query("SYSTEM SYNC REPLICA test_table", timeout=10)
     node3.query("insert into test_table values ('2017-06-18', 111, 0)")
     time.sleep(1)
 
@@ -123,6 +137,13 @@ def different_credentials_cluster():
 
 
 def test_different_credentials(different_credentials_cluster):
+    # Restore original credentials config in case a previous run modified it.
+    node5.replace_config(
+        "/etc/clickhouse-server/config.d/credentials1.xml", ORIGINAL_CREDENTIALS1
+    )
+    node5.query("SYSTEM RELOAD CONFIG")
+    node5.query("TRUNCATE TABLE test_table")
+    node6.query("TRUNCATE TABLE test_table")
     node5.query("insert into test_table values ('2017-06-20', 111, 0)")
     time.sleep(1)
 
@@ -188,6 +209,13 @@ def credentials_and_no_credentials_cluster():
 
 
 def test_credentials_and_no_credentials(credentials_and_no_credentials_cluster):
+    # Restore original credentials config in case a previous run modified it.
+    node7.replace_config(
+        "/etc/clickhouse-server/config.d/credentials1.xml", ORIGINAL_CREDENTIALS1
+    )
+    node7.query("SYSTEM RELOAD CONFIG")
+    node7.query("TRUNCATE TABLE test_table")
+    node8.query("TRUNCATE TABLE test_table")
     node7.query("insert into test_table values ('2017-06-21', 111, 0)")
     time.sleep(1)
 

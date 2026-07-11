@@ -53,16 +53,16 @@ ColumnPtr FunctionReplicate::executeImpl(const ColumnsWithTypeAndName & argument
 
 REGISTER_FUNCTION(Replicate)
 {
-    FunctionDocumentation::Description description_replicate = R"(
+    FunctionDocumentation::Description description = R"(
 Creates an array with a single value.
 )";
-    FunctionDocumentation::Syntax syntax_replicate = "replicate(x, arr)";
-    FunctionDocumentation::Arguments arguments_replicate = {
+    FunctionDocumentation::Syntax syntax = "replicate(x, arr)";
+    FunctionDocumentation::Arguments arguments = {
         {"x", "The value to fill the result array with.", {"Any"}},
         {"arr", "An array.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_replicate = {"Returns an array of the same length as `arr` filled with value `x`.", {"Array(T)"}};
-    FunctionDocumentation::Examples examples_replicate = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same length as `arr` filled with value `x`.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -75,11 +75,11 @@ SELECT replicate(1, ['a', 'b', 'c']);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_replicate = {1, 1};
-    FunctionDocumentation::Category category_replicate = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_replicate = {description_replicate, syntax_replicate, arguments_replicate, {}, returned_value_replicate, examples_replicate, introduced_in_replicate, category_replicate};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionReplicate>(documentation_replicate);
+    factory.registerFunction<FunctionReplicate>(documentation);
 }
 
 }

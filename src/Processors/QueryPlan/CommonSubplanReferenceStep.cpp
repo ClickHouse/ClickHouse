@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 
 #include <QueryPipeline/Pipe.h>

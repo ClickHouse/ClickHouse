@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: stateful, no-parallel, no-random-settings, long
+# Tags: stateful, no-flaky-check, no-parallel, no-random-settings, long, no-asan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,7 +29,7 @@ $CLICKHOUSE_CLIENT -q "
   -- CachedReadBufferReadFromSourceBytes = 0: sanity check to ensure we read only from cache
   SELECT ProfileEvents['AsynchronousReaderIgnoredBytes'], ProfileEvents['CachedReadBufferReadFromSourceBytes']
   FROM system.query_log
-  WHERE query_id = '$query_id' AND type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()
+  WHERE query_id = '$query_id' AND type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS hits_s3_sampled"

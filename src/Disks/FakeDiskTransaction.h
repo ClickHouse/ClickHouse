@@ -25,7 +25,7 @@ public:
         LOG_DEBUG(getLogger("FakeDiskTransaction"), "Creating FakeDiskTransaction for disk {}", disk.getName());
     }
 
-    void commit(const TransactionCommitOptionsVariant &) override {}
+    void commit() override {}
     void undo() noexcept override {}
 
     void createDirectory(const std::string & path) override

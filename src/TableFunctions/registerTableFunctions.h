@@ -21,6 +21,7 @@ void registerTableFunctionURLCluster(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
+void registerTableFunctionFilesystem(TableFunctionFactory & factory);
 #if USE_MONGODB
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 #endif
@@ -36,6 +37,7 @@ void registerTableFunctionArrowFlight(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory);
+void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory);
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);
