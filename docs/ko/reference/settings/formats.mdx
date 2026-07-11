@@ -1,0 +1,3327 @@
+---
+title: '포맷 설정'
+sidebarTitle: '포맷 설정'
+slug: /operations/settings/formats
+toc_max_heading_level: 2
+description: '입력 및 출력 형식을 제어하는 설정입니다.'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import VersionHistory from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
+
+{/* 자동 생성 */}
+
+이 설정은 [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h)에서 자동 생성됩니다.
+
+<div id="allow_special_bool_values_inside_variant">
+  ## allow_special_bool_values_inside_variant
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+&quot;on&quot;, &quot;off&quot;, &quot;enable&quot;, &quot;disable&quot; 등과 같은 특수한 텍스트 Bool 값에서 Variant 유형 내 Bool 값을 파싱할 수 있도록 합니다.
+
+<div id="bool_false_representation">
+  ## bool_false_representation
+</div>
+
+<SettingsInfoBlock type="String" default_value="false" />
+
+TSV/CSV/Vertical/Pretty 형식에서 Bool의 false 값을 나타내는 텍스트입니다.
+
+<div id="bool_true_representation">
+  ## bool_true_representation
+</div>
+
+<SettingsInfoBlock type="String" default_value="true" />
+
+TSV/CSV/Vertical/Pretty 형식에서 true Bool 값을 나타내는 텍스트입니다.
+
+<div id="check_conversion_from_numbers_to_enum">
+  ## check_conversion_from_numbers_to_enum
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+값이 Enum에 없으면 Numbers를 Enum으로 변환하는 동안 예외를 발생시킵니다.
+
+가능한 값:
+
+* 0 — 비활성화됨.
+* 1 — 활성화됨.
+
+**예시**
+
+```text
+CREATE TABLE tab (
+  val Enum('first' = 1, 'second' = 2, 'third' = 3)
+) ENGINE = Memory;
+
+INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -- 오류 반환
+```
+
+<div id="column_names_for_schema_inference">
+  ## column_names_for_schema_inference
+</div>
+
+컬럼 이름이 없는 포맷에서 스키마 추론에 사용할 컬럼 이름 목록입니다. 형식: &#39;column1,column2,column3,...&#39;
+
+<div id="date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands">
+  ## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+DateTime64 값의 후행 0을 동적으로 제거하여 출력 스케일을 [0, 3, 6]에 맞게 조정합니다.
+이는 각각 &#39;seconds&#39;, &#39;milliseconds&#39;, &#39;microseconds&#39;에 해당합니다.
+
+<div id="date_time_input_format">
+  ## date_time_input_format
+</div>
+
+<SettingsInfoBlock type="DateTimeInputFormat" default_value="best_effort" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "best_effort"},{"label": "사용성 향상"}]}]} />
+
+날짜 및 시간의 텍스트 표현을 파싱하는 파서를 선택할 수 있습니다.
+
+이 설정은 [날짜 및 시간 함수](/ko/reference/functions/regular-functions/date-time-functions)에는 적용되지 않습니다.
+
+가능한 값:
+
+* `'best_effort'` — 확장 파싱을 활성화합니다.
+
+  ClickHouse는 기본 `YYYY-MM-DD HH:MM:SS` 포맷과 모든 [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) 날짜 및 시간 포맷을 파싱할 수 있습니다. 예를 들어 `'2018-06-08T01:02:03.000Z'`가 있습니다.
+
+* `'best_effort_us'` — `best_effort`와 유사합니다([parseDateTimeBestEffortUS](/ko/reference/functions/regular-functions/type-conversion-functions#parseDateTimeBestEffortUS)에서 차이점을 확인하십시오)
+
+* `'basic'` — 기본 파서를 사용합니다.
+
+  ClickHouse는 기본 `YYYY-MM-DD HH:MM:SS` 또는 `YYYY-MM-DD` 포맷만 파싱할 수 있습니다. 예를 들어 `2019-08-20 10:18:56` 또는 `2019-08-20`입니다.
+
+관련 항목:
+
+* [DateTime 데이터 타입.](/ko/reference/data-types/datetime)
+* [날짜 및 시간 작업 함수.](/ko/reference/functions/regular-functions/date-time-functions)
+
+<div id="date_time_output_format">
+  ## date_time_output_format
+</div>
+
+<SettingsInfoBlock type="DateTimeOutputFormat" default_value="simple" />
+
+날짜 및 시간의 텍스트 표현에 사용할 출력 포맷을 선택할 수 있습니다.
+
+가능한 값:
+
+* `simple` - 단순 출력 포맷입니다.
+
+  ClickHouse는 날짜와 시간을 `YYYY-MM-DD hh:mm:ss` 포맷으로 출력합니다. 예를 들어 `2019-08-20 10:18:56`입니다. 계산은 데이터 타입의 time zone(있는 경우) 또는 server time zone에 따라 수행됩니다.
+
+* `iso` - ISO 출력 포맷입니다.
+
+  ClickHouse는 날짜와 시간을 [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` 포맷으로 출력합니다. 예를 들어 `2019-08-20T10:18:56Z`입니다. 출력은 UTC로 제공됩니다(`Z`는 UTC를 의미함).
+
+* `unix_timestamp` - Unix timestamp 출력 포맷입니다.
+
+  ClickHouse는 날짜와 시간을 [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) 포맷으로 출력합니다. 예를 들어 `1566285536`입니다.
+
+관련 항목:
+
+* [DateTime 데이터 타입.](/ko/reference/data-types/datetime)
+* [날짜 및 시간을 처리하는 함수.](/ko/reference/functions/regular-functions/date-time-functions)
+
+<div id="date_time_overflow_behavior">
+  ## date_time_overflow_behavior
+</div>
+
+<SettingsInfoBlock type="DateTimeOverflowBehavior" default_value="ignore" />
+
+[Date](/ko/reference/data-types/date), [Date32](/ko/reference/data-types/date32), [DateTime](/ko/reference/data-types/datetime), [DateTime64](/ko/reference/data-types/datetime64) 또는 정수를 Date, Date32, DateTime 또는 DateTime64로 변환할 때 값이 결과 타입으로 표현할 수 없는 경우의 동작을 정의합니다.
+
+가능한 값:
+
+* `ignore` — 오버플로우를 조용히 무시합니다. 결과는 정의되지 않습니다.
+* `throw` — 오버플로우가 발생하면 예외를 발생시킵니다.
+* `saturate` — 결과를 포화시킵니다. 값이 대상 타입으로 표현 가능한 최솟값보다 작으면 결과는 표현 가능한 최솟값으로 설정됩니다. 값이 대상 타입으로 표현 가능한 최댓값보다 크면 결과는 표현 가능한 최댓값으로 설정됩니다.
+
+기본값: `ignore`.
+
+<div id="errors_output_format">
+  ## errors_output_format
+</div>
+
+<SettingsInfoBlock type="String" default_value="CSV" />
+
+오류를 텍스트 출력으로 쓰는 메서드입니다.
+
+<div id="format_avro_schema_registry_connection_timeout">
+  ## format_avro_schema_registry_connection_timeout
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "AvroConfluent 포맷에서 사용하는 Confluent 스키마 레지스트리 HTTP 클라이언트의 연결 타임아웃(초)을 제어하는 새로운 설정입니다."}]}]} />
+
+AvroConfluent 포맷에서 사용하는 Confluent 스키마 레지스트리 HTTP 클라이언트의 연결 타임아웃(초)입니다. 스키마 가져오기와 스키마 등록 모두에 사용됩니다. 값은 0보다 커야 하며 600(10분)보다 작아야 합니다.
+
+<div id="format_avro_schema_registry_max_retries">
+  ## format_avro_schema_registry_max_retries
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "Confluent 스키마 레지스트리와 통신할 때 발생하는 일시적 장애(전송 timeout, 연결 거부, DNS 오류, HTTP 5xx/408/429)에 대한 최대 재시도 횟수를 제어하는 새로운 설정입니다. 재시도를 비활성화하려면 0으로 설정하십시오. 이전 동작(재시도 없음)은 `compatibility = '26.5'`로 유지됩니다."}]}]} />
+
+AvroConfluent 포맷의 경우: Confluent 스키마 레지스트리와 통신할 때 발생하는 일시적 장애(전송 timeout, 연결 거부, DNS 오류, HTTP 5xx/408/429)에 대한 최대 재시도 횟수입니다. 재시도를 비활성화하려면 0으로 설정하십시오. 허용되는 최대값은 20입니다. 스키마 검증 오류(HTTP 409, 잘못된 Avro JSON)는 재시도하지 않습니다.
+
+<div id="format_avro_schema_registry_receive_timeout">
+  ## format_avro_schema_registry_receive_timeout
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "AvroConfluent 포맷에서 사용하는 Confluent 스키마 레지스트리 HTTP 클라이언트의 수신 타임아웃(초)을 제어하는 새로운 설정입니다."}]}]} />
+
+AvroConfluent 포맷에서 사용하는 Confluent 스키마 레지스트리 HTTP 클라이언트의 수신 타임아웃(초)입니다. 스키마 가져오기와 스키마 등록 모두에 사용됩니다. 0보다 크고 600(10분)보다 작아야 합니다.
+
+<div id="format_avro_schema_registry_retry_initial_backoff_ms">
+  ## format_avro_schema_registry_retry_initial_backoff_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "100"},{"label": "실패한 Confluent 스키마 레지스트리 요청을 재시도하기 전에 적용할 초기 백오프(밀리초)를 제어하는 새로운 설정입니다. 백오프는 재시도할 때마다 2배로 증가하며 최대 10초까지 적용됩니다. `format_avro_schema_registry_max_retries = 0`일 때는 효과가 없습니다(`compatibility = '26.5'`로 26.6 이전 동작을 복원할 수 있음)."}]}]} />
+
+AvroConfluent 포맷의 경우: 실패한 Confluent 스키마 레지스트리 요청을 재시도하기 전에 적용되는 초기 백오프 시간(밀리초)입니다. 백오프는 이후 재시도할 때마다 2배로 증가하며 최대 10초까지 적용됩니다. 값은 0보다 커야 하며 60000 이하여야 합니다.
+
+<div id="format_avro_schema_registry_send_timeout">
+  ## format_avro_schema_registry_send_timeout
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "AvroConfluent 포맷에서 사용하는 Confluent 스키마 레지스트리 HTTP 클라이언트의 전송 타임아웃(초)을 제어하는 새로운 설정입니다."}]}]} />
+
+AvroConfluent 포맷의 경우 Confluent 스키마 레지스트리 HTTP 클라이언트의 전송 타임아웃(초)을 지정합니다. 스키마 가져오기와 스키마 등록 모두에 사용됩니다. 값은 0보다 크고 600(10분)보다 작아야 합니다.
+
+<div id="format_avro_schema_registry_url">
+  ## format_avro_schema_registry_url
+</div>
+
+AvroConfluent 포맷: Confluent 스키마 레지스트리 URL입니다.
+
+<div id="format_binary_max_array_size">
+  ## format_binary_max_array_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+RowBinary 포맷에서 배열에 허용되는 최대 크기입니다. 손상된 데이터가 있는 경우 대량의 메모리가 할당되는 것을 방지합니다. 0은 제한이 없음을 의미합니다
+
+<div id="format_binary_max_object_size">
+  ## format_binary_max_object_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "100000"},{"label": "JSON 타입 바이너리 역직렬화 중 객체의 최대 크기를 제한하는 새로운 설정"}]}]} />
+
+JSON 타입 RowBinary 포맷에서 단일 객체에 허용되는 최대 경로 수입니다. 손상된 데이터로 인해 많은 메모리가 할당되는 것을 방지합니다. 0은 제한이 없음을 의미합니다
+
+<div id="format_binary_max_string_size">
+  ## format_binary_max_string_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.12"},{"label": "1073741824"},{"label": "대량의 메모리 할당 방지"}]}]} />
+
+RowBinary 포맷의 String에 허용되는 최대 크기입니다. 손상된 데이터로 인해 대량의 메모리가 할당되는 것을 방지합니다. 0은 제한이 없음을 의미합니다
+
+<div id="format_capn_proto_enum_comparising_mode">
+  ## format_capn_proto_enum_comparising_mode
+</div>
+
+<SettingsInfoBlock type="CapnProtoEnumComparingMode" default_value="by_values" />
+
+ClickHouse Enum과 CapnProto Enum 매핑 방법
+
+<div id="format_capn_proto_max_message_size">
+  ## format_capn_proto_max_message_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1073741824"},{"label": "과도한 메모리 할당 방지"}]}]} />
+
+단일 CapnProto 메시지의 최대 크기(바이트)입니다. 잘못되었거나 손상된 데이터로 인해 과도한 메모리 할당이 발생하지 않도록 보호합니다. 기본값은 1 GiB입니다.
+
+<div id="format_capn_proto_use_autogenerated_schema">
+  ## format_capn_proto_use_autogenerated_schema
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+format&#95;schema가 설정되지 않은 경우 자동 생성된 CapnProto 스키마를 사용합니다
+
+<div id="format_csv_allow_double_quotes">
+  ## format_csv_allow_double_quotes
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+true로 설정하면 큰따옴표로 둘러싼 문자열을 허용합니다.
+
+<div id="format_csv_allow_single_quotes">
+  ## format_csv_allow_single_quotes
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.7"},{"label": "0"},{"label": "대부분의 도구는 CSV에서 작은따옴표를 특별한 의미로 처리하지 않으므로, 기본적으로도 그렇게 하지 않습니다"}]}]} />
+
+true로 설정하면 작은따옴표로 감싼 문자열을 허용합니다.
+
+<div id="format_csv_delimiter">
+  ## format_csv_delimiter
+</div>
+
+<SettingsInfoBlock type="Char" default_value="," />
+
+CSV 데이터에서 구분자로 사용할 문자를 지정합니다. 문자열로 설정할 경우 문자열의 길이는 1이어야 합니다.
+
+<div id="format_csv_null_representation">
+  ## format_csv_null_representation
+</div>
+
+<SettingsInfoBlock type="String" default_value="\N" />
+
+CSV 형식의 사용자 지정 NULL 표현 방식
+
+<div id="format_custom_escaping_rule">
+  ## format_custom_escaping_rule
+</div>
+
+<SettingsInfoBlock type="EscapingRule" default_value="Escaped" />
+
+필드 이스케이프 규칙(CustomSeparated 포맷용)
+
+<div id="format_custom_field_delimiter">
+  ## format_custom_field_delimiter
+</div>
+
+<SettingsInfoBlock type="String" default_value="	" />
+
+필드 간 구분자(CustomSeparated 포맷용)
+
+<div id="format_custom_result_after_delimiter">
+  ## format_custom_result_after_delimiter
+</div>
+
+결과 집합 뒤에 오는 접미사(CustomSeparated 포맷용)
+
+<div id="format_custom_result_before_delimiter">
+  ## format_custom_result_before_delimiter
+</div>
+
+결과 집합 앞 접두사(CustomSeparated 포맷용)
+
+<div id="format_custom_row_after_delimiter">
+  ## format_custom_row_after_delimiter
+</div>
+
+<SettingsInfoBlock
+  type="String"
+  default_value="
+"
+/>
+
+CustomSeparated 포맷에서 마지막 컬럼의 필드 뒤에 오는 구분자입니다.
+
+<div id="format_custom_row_before_delimiter">
+  ## format_custom_row_before_delimiter
+</div>
+
+CustomSeparated 포맷에서 첫 번째 컬럼 필드 앞의 구분자
+
+<div id="format_custom_row_between_delimiter">
+  ## format_custom_row_between_delimiter
+</div>
+
+행 사이 구분자(CustomSeparated 포맷용)
+
+<div id="format_display_secrets_in_show_and_select">
+  ## format_display_secrets_in_show_and_select
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+테이블, 데이터베이스, 테이블 함수 및 딕셔너리에 대해 `SHOW` 및 `SELECT` 쿼리에서 시크릿을 표시할지 여부를 설정합니다.
+
+시크릿을 보려면 사용자에게 다음 조건도 충족되어야 합니다.
+[`display_secrets_in_show_and_select` server setting](/ko/reference/settings/server-settings/settings#display_secrets_in_show_and_select)
+이 활성화되어 있어야 하며,
+[`displaySecretsInShowAndSelect`](/ko/reference/statements/grant#displaysecretsinshowandselect) 권한도 있어야 합니다.
+
+가능한 값:
+
+* 0 — 비활성화됨.
+* 1 — 활성화됨.
+
+<div id="format_json_object_each_row_column_for_object_name">
+  ## format_json_object_each_row_column_for_object_name
+</div>
+
+[JSONObjectEachRow](/ko/reference/formats/JSON/JSONObjectEachRow) 포맷에서 객체 이름을 저장하거나 기록할 때 사용할 컬럼 이름입니다.
+컬럼 유형은 String이어야 합니다. 값이 비어 있으면 객체 이름으로 기본 이름 `row_{i}`가 사용됩니다.
+
+<div id="format_protobuf_use_autogenerated_schema">
+  ## format_protobuf_use_autogenerated_schema
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+format&#95;schema가 설정되지 않으면 자동 생성된 Protobuf를 사용합니다
+
+<div id="format_regexp">
+  ## format_regexp
+</div>
+
+정규식(Regexp 포맷용)
+
+<div id="format_regexp_escaping_rule">
+  ## format_regexp_escaping_rule
+</div>
+
+<SettingsInfoBlock type="EscapingRule" default_value="Raw" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "20.10"},{"label": "Raw"},{"label": "사용자가 기대하는 동작에 더 가깝도록 Regexp 포맷의 기본 이스케이프 규칙으로 Raw를 사용합니다"}]}]} />
+
+필드 이스케이프 규칙(Regexp 포맷용)
+
+<div id="format_regexp_skip_unmatched">
+  ## format_regexp_skip_unmatched
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+정규식과 일치하지 않는 줄을 건너뜁니다(Regexp 포맷의 경우)
+
+<div id="format_schema">
+  ## format_schema
+</div>
+
+이 매개변수는 [Cap&#39;n Proto](https://capnproto.org/) 또는 [Protobuf](https://developers.google.com/protocol-buffers/)처럼 스키마 정의가 필요한 포맷을 사용할 때 유용합니다. 값은 포맷에 따라 달라집니다.
+
+<div id="format_schema_message_name">
+  ## format_schema_message_name
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": ""},{"label": "새로운 설정"}]}]} />
+
+`format_schema`에 정의된 스키마에서 필요한 메시지 이름을 지정합니다.
+레거시 format&#95;schema 포맷(`file_name:message_name`)과의 호환성을 유지하기 위해 다음 규칙이 적용됩니다.
+
+* `format_schema_message_name`을 지정하지 않으면 메시지 이름은 레거시 `format_schema` 값의 `message_name` 부분에서 자동으로 추론됩니다.
+* 레거시 포맷을 사용하는 경우 `format_schema_message_name`을 지정하면 오류가 발생합니다.
+
+<div id="format_schema_source">
+  ## format_schema_source
+</div>
+
+<SettingsInfoBlock type="String" default_value="file" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "file"},{"label": "새로운 설정"}]}]} />
+
+`format_schema`의 소스를 지정합니다.
+가능한 값:
+
+* &#39;file&#39; (기본값): `format_schema`는 `format_schemas` 디렉터리에 있는 스키마 파일 이름입니다.
+* &#39;string&#39;: `format_schema`는 스키마의 리터럴 내용입니다.
+* &#39;query&#39;: `format_schema`는 스키마를 가져오는 쿼리입니다.
+  `format_schema_source`를 &#39;query&#39;로 설정하면 다음 조건이 적용됩니다:
+* 쿼리는 정확히 하나의 값만 반환해야 합니다. 즉, 문자열 컬럼 1개로 이루어진 단일 행이어야 합니다.
+* 쿼리 결과는 스키마 내용으로 처리됩니다.
+* 이 결과는 `format_schemas` 디렉터리에 로컬로 캐시됩니다.
+* `SYSTEM DROP FORMAT SCHEMA CACHE FOR Files` 명령으로 로컬 캐시를 지울 수 있습니다.
+* 한 번 캐시되면 캐시를 명시적으로 지우기 전까지 동일한 쿼리는 스키마를 다시 가져오기 위해 실행되지 않습니다.
+* 로컬 캐시 파일 외에도 Protobuf 메시지는 메모리에도 캐시됩니다. 로컬 캐시 파일을 지운 뒤에도 스키마를 완전히 갱신하려면 `SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]`를 사용해 메모리 캐시를 지워야 합니다.
+* 캐시 파일과 Protobuf 메시지 스키마의 캐시를 한 번에 모두 지우려면 `SYSTEM DROP FORMAT SCHEMA CACHE` 쿼리를 실행하십시오.
+
+<div id="format_template_resultset">
+  ## format_template_resultset
+</div>
+
+결과 집합용 포맷 문자열이 포함된 파일 경로(Template 형식용)
+
+<div id="format_template_resultset_format">
+  ## format_template_resultset_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": ""},{"label": "쿼리에서 Template 결과 집합 포맷 문자열을 설정할 수 있습니다"}]}]} />
+
+결과 집합의 포맷 문자열(Template 형식용)
+
+<div id="format_template_row">
+  ## format_template_row
+</div>
+
+행 포맷 문자열이 포함된 파일의 경로 (Template 형식용)
+
+<div id="format_template_row_format">
+  ## format_template_row_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": ""},{"label": "Template 행 포맷 문자열은 쿼리 내에서 직접 설정할 수 있습니다"}]}]} />
+
+행 포맷 문자열(Template 형식용)
+
+<div id="format_template_rows_between_delimiter">
+  ## format_template_rows_between_delimiter
+</div>
+
+<SettingsInfoBlock
+  type="String"
+  default_value="
+"
+/>
+
+행 사이의 구분자(Template 형식용)
+
+<div id="format_tsv_null_representation">
+  ## format_tsv_null_representation
+</div>
+
+<SettingsInfoBlock type="String" default_value="\N" />
+
+TSV 포맷의 사용자 지정 NULL 표현
+
+<div id="input_format_allow_errors_num">
+  ## input_format_allow_errors_num
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+텍스트 형식(CSV, TSV 등)을 읽을 때 허용할 수 있는 최대 오류 수를 설정합니다.
+
+기본값은 0입니다.
+
+반드시 `input_format_allow_errors_ratio`와 함께 사용하십시오.
+
+행을 읽는 중 오류가 발생하더라도 오류 카운터가 아직 `input_format_allow_errors_num`보다 작으면 ClickHouse는 해당 행을 무시하고 다음 행으로 넘어갑니다.
+
+`input_format_allow_errors_num`와 `input_format_allow_errors_ratio`를 모두 초과하면 ClickHouse는 예외를 발생시킵니다.
+
+<div id="input_format_allow_errors_ratio">
+  ## input_format_allow_errors_ratio
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0" />
+
+텍스트 형식(CSV, TSV 등)을 읽을 때 허용되는 최대 오류 비율을 설정합니다.
+오류 비율은 0과 1 사이의 부동소수점 수로 지정합니다.
+
+기본값은 0입니다.
+
+항상 `input_format_allow_errors_num`과 함께 사용하십시오.
+
+행을 읽는 동안 오류가 발생하더라도 오류 횟수가 `input_format_allow_errors_ratio`보다 여전히 작으면 ClickHouse는 해당 행을 무시하고 다음 행으로 넘어갑니다.
+
+`input_format_allow_errors_num`과 `input_format_allow_errors_ratio`를 모두 초과하면 ClickHouse는 예외를 발생시킵니다.
+
+<div id="input_format_allow_seeks">
+  ## input_format_allow_seeks
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+ORC, Parquet, Arrow 입력 형식을 읽을 때 seek(또는 범위 읽기)를 허용합니다.
+이 옵션이 활성화되어 있고 소스가 이를 지원하면(예: 로컬 파일, S3, 범위 요청을 지원하고 크기를 알 수 있는 HTTP),
+ClickHouse는 필요한 바이트 범위만 읽어 메모리 사용량을 줄일 수 있습니다.
+이 옵션이 비활성화되어 있거나 소스가 seek를 지원하지 않으면(예: 파일 크기를 알 수 없거나 stream에 seek를 사용할 수 없는 경우),
+일부 리더는 전체 파일을 메모리에 로드하는 방식으로 대체될 수 있습니다.
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_arrow_allow_missing_columns">
+  ## input_format_arrow_allow_missing_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.12"},{"label": "1"},{"label": "기본적으로 Arrow 파일에서 누락된 컬럼을 허용합니다"}]}]} />
+
+Arrow 입력 형식을 읽을 때 누락된 컬럼을 허용합니다
+
+<div id="input_format_arrow_case_insensitive_column_matching">
+  ## input_format_arrow_case_insensitive_column_matching
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Arrow 컬럼과 CH 컬럼을 매칭할 때 대소문자를 구분하지 않습니다.
+
+<div id="input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference">
+  ## input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Arrow 포맷의 스키마 추론 시 지원되지 않는 타입의 컬럼을 건너뜁니다
+
+<div id="input_format_avro_allow_missing_fields">
+  ## input_format_avro_allow_missing_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Avro/AvroConfluent 포맷에서 스키마에 필드가 없으면 오류 대신 기본값을 사용합니다
+
+<div id="input_format_avro_null_as_default">
+  ## input_format_avro_null_as_default
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Avro/AvroConfluent 포맷에서 값이 null이고 컬럼이 널 허용이 아닌 경우 기본값을 삽입합니다
+
+<div id="input_format_binary_decode_types_in_binary_format">
+  ## input_format_binary_decode_types_in_binary_format
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "RowBinaryWithNamesAndTypes 입력 형식에서 타입 이름을 바이너리 형식으로 읽을 수 있게 하는 새로운 설정이 추가되었습니다"}]}]} />
+
+RowBinaryWithNamesAndTypes 입력 형식에서 타입 이름 대신 데이터 타입을 바이너리 형식으로 읽습니다
+
+<div id="input_format_binary_max_type_complexity">
+  ## input_format_binary_max_type_complexity
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1000"},{"label": "바이너리 타입 디코딩 시 타입 노드의 최대 개수를 제어하는 새로운 설정을 추가했습니다. 악의적인 입력을 방지합니다."}]}]} />
+
+바이너리 타입을 디코딩할 때의 최대 타입 노드 수입니다(깊이가 아니라 전체 개수). `Map(String, UInt32)`는 노드 3개입니다. 악의적인 입력을 방지합니다. 0 = 무제한.
+
+<div id="input_format_binary_read_json_as_string">
+  ## input_format_binary_read_json_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "RowBinary 입력 형식에서 JSON 타입 값을 JSON 문자열로 읽는 새로운 설정 추가"}]}]} />
+
+RowBinary 입력 형식에서 [JSON](/ko/reference/data-types/newjson) 데이터 타입의 값을 JSON [String](/ko/reference/data-types/string) 값으로 읽습니다.
+
+<div id="input_format_bson_skip_fields_with_unsupported_types_in_schema_inference">
+  ## input_format_bson_skip_fields_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+BSON 포맷에서 스키마 추론을 수행할 때 지원되지 않는 타입의 필드를 건너뜁니다.
+
+<div id="input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference">
+  ## input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+CapnProto 포맷에서 스키마 추론 시 지원되지 않는 타입의 컬럼을 건너뜁니다
+
+<div id="input_format_column_name_matching_mode">
+  ## input_format_column_name_matching_mode
+</div>
+
+<SettingsInfoBlock type="InputFormatColumnMatchingCaseSensitivity" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "auto"},{"label": "정확히 대소문자가 일치해야 하도록 요구하는 대신, 먼저 입력 컬럼 이름을 대소문자를 구분해 매칭하고, 실패하면 대소문자를 구분하지 않고 매칭합니다."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "match_case"},{"label": "새 설정입니다."}]}]} />
+
+다양한 포맷(JSONEachRow, CSVWithNames, JSONColumns, BSONEachRow, RowBinaryWithNames 등을 포함하되 이에 국한되지 않음)으로 데이터를 가져올 때 컬럼 이름의 매칭 모드를 정의합니다.
+지원되는 모드:
+
+* match&#95;case: 대소문자를 구분하여 매칭
+  * ignore&#95;case: 대소문자를 구분하지 않고 매칭
+  * auto: 먼저 대소문자를 구분하여 매칭을 시도하고, 실패하면 대소문자를 구분하지 않고 매칭을 시도합니다.
+
+<div id="input_format_connection_handling">
+  ## input_format_connection_handling
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "연결이 예기치 않게 종료될 때 버퍼에 남아 있는 데이터를 파싱하고 처리할 수 있도록 하는 새로운 설정"}]}]} />
+
+이 옵션을 활성화하면 연결이 예기치 않게 종료되더라도 버퍼에 남아 있는 데이터가 오류로 처리되지 않고 파싱되어 처리됩니다
+
+<Note>
+  이 옵션을 활성화하면 병렬 파싱이 비활성화되며 중복 제거를 사용할 수 없게 됩니다
+</Note>
+
+<div id="input_format_csv_allow_cr_end_of_line">
+  ## input_format_csv_allow_cr_end_of_line
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+이 값을 true로 설정하면 줄 끝에서 뒤에 문자가 이어지지 않는 \r을 허용합니다
+
+<div id="input_format_csv_allow_variable_number_of_columns">
+  ## input_format_csv_allow_variable_number_of_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+CSV 입력에서 추가 컬럼은 무시하고(파일에 예상보다 많은 컬럼이 있는 경우), 누락된 필드는 기본값으로 처리합니다.
+
+<div id="input_format_csv_allow_whitespace_or_tab_as_delimiter">
+  ## input_format_csv_allow_whitespace_or_tab_as_delimiter
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+CSV 문자열의 필드 구분자로 공백과 탭(\t)을 사용할 수 있도록 합니다
+
+<div id="input_format_csv_arrays_as_nested_csv">
+  ## input_format_csv_arrays_as_nested_csv
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+CSV에서 배열을 읽을 때, 해당 요소가 중첩된 CSV로 직렬화된 후 문자열에 담겨 있다고 가정합니다. 예시: &quot;[&quot;&quot;Hello&quot;&quot;, &quot;&quot;world&quot;&quot;, &quot;&quot;42&quot;&quot;&quot;&quot; TV&quot;&quot;]&quot;. 배열을 감싸는 대괄호는 생략할 수 있습니다.
+
+<div id="input_format_csv_deserialize_separate_columns_into_tuple">
+  ## input_format_csv_deserialize_separate_columns_into_tuple
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "CSV 형식에서 튜플을 해석하는 새로운 방식이 추가되었습니다."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "CSV 형식에서 튜플을 해석하는 새로운 방식이 추가되었습니다."}]}]} />
+
+true로 설정하면 CSV 형식으로 작성된 분리된 컬럼들을 Tuple 컬럼으로 역직렬화할 수 있습니다.
+
+<div id="input_format_csv_detect_header">
+  ## input_format_csv_detect_header
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.1"},{"label": "1"},{"label": "기본적으로 CSV 형식의 헤더를 감지합니다"}]}]} />
+
+CSV 형식에서 이름과 타입이 있는 헤더를 자동으로 감지합니다
+
+<div id="input_format_csv_empty_as_default">
+  ## input_format_csv_empty_as_default
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+CSV 입력에서 빈 필드를 기본값으로 처리합니다.
+
+<div id="input_format_csv_enum_as_number">
+  ## input_format_csv_enum_as_number
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+CSV 형식에서 삽입되는 enum 값을 enum 인덱스로 처리합니다
+
+<div id="input_format_csv_skip_first_lines">
+  ## input_format_csv_skip_first_lines
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+CSV 형식 데이터의 시작 부분에서 지정된 줄 수만큼 건너뜁니다
+
+<div id="input_format_csv_skip_trailing_empty_lines">
+  ## input_format_csv_skip_trailing_empty_lines
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+CSV 형식의 마지막 빈 줄을 건너뜁니다
+
+<div id="input_format_csv_trim_whitespaces">
+  ## input_format_csv_trim_whitespaces
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+CSV 문자열의 앞과 뒤에 있는 공백과 탭(\t) 문자를 제거합니다
+
+<div id="input_format_csv_try_infer_numbers_from_strings">
+  ## input_format_csv_try_infer_numbers_from_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+활성화하면 스키마 추론 중에 ClickHouse가 문자열 필드에서 숫자를 추론하려고 시도합니다.
+CSV 데이터에 따옴표로 묶인 UInt64 숫자가 포함된 경우 유용할 수 있습니다.
+
+기본값은 비활성화입니다.
+
+<div id="input_format_csv_try_infer_strings_from_quoted_tuples">
+  ## input_format_csv_try_infer_strings_from_quoted_tuples
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "CSV 형식에서 튜플을 해석하는 새로운 방법이 추가되었습니다."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "CSV 형식에서 튜플을 해석하는 새로운 방법이 추가되었습니다."}]}]} />
+
+입력 데이터에서 따옴표로 묶인 튜플을 String 값으로 해석합니다.
+
+<div id="input_format_csv_use_best_effort_in_schema_inference">
+  ## input_format_csv_use_best_effort_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+CSV 형식에서 스키마를 추론할 때 일부 조정과 휴리스틱을 사용합니다
+
+<div id="input_format_csv_use_default_on_bad_values">
+  ## input_format_csv_use_default_on_bad_values
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+잘못된 값으로 인해 CSV 필드 역직렬화에 실패할 경우 해당 컬럼에 기본값을 설정할 수 있습니다.
+
+<div id="input_format_custom_allow_variable_number_of_columns">
+  ## input_format_custom_allow_variable_number_of_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+CustomSeparated 입력에서 추가 컬럼은 무시하고(파일에 예상한 것보다 많은 컬럼이 있는 경우), 누락된 필드는 기본값으로 처리합니다
+
+<div id="input_format_custom_detect_header">
+  ## input_format_custom_detect_header
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.1"},{"label": "1"},{"label": "기본적으로 CustomSeparated format의 이름 및 타입 헤더를 감지합니다"}]}]} />
+
+CustomSeparated format의 이름 및 타입 헤더를 자동으로 감지합니다
+
+<div id="input_format_custom_skip_trailing_empty_lines">
+  ## input_format_custom_skip_trailing_empty_lines
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+CustomSeparated format의 끝에 있는 빈 줄을 건너뜁니다
+
+<div id="input_format_defaults_for_omitted_fields">
+  ## input_format_defaults_for_omitted_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "19.12"},{"label": "1"},{"label": "일부 입력 형식에서 생략된 필드에 대해 복잡한 기본 표현식을 계산하도록 활성화합니다. 이는 기대되는 동작이기 때문입니다"}]}]} />
+
+`INSERT` 쿼리를 수행할 때 생략된 입력 컬럼 값은 해당 컬럼의 기본값으로 대체됩니다. 이 옵션은 [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow)(및 기타 JSON 포맷), [CSV](/ko/reference/formats/CSV/CSV), [TabSeparated](/ko/reference/formats/TabSeparated/TabSeparated), [TSKV](/ko/reference/formats/TabSeparated/TSKV), [Parquet](/ko/reference/formats/Parquet/Parquet), [Arrow](/ko/reference/formats/Arrow/Arrow), [Avro](/ko/reference/formats/Avro/Avro), [ORC](/ko/reference/formats/ORC), [Native](/ko/reference/formats/Native) 포맷과 `WithNames`/`WithNamesAndTypes` 접미사가 있는 포맷에 적용됩니다.
+
+<Note>
+  이 옵션을 활성화하면 확장된 테이블 메타데이터가 서버에서 클라이언트로 전송됩니다. 이로 인해 서버에서 추가 컴퓨팅 리소스가 사용되며 성능이 저하될 수 있습니다.
+</Note>
+
+가능한 값:
+
+* 0 — 비활성화됨.
+* 1 — 활성화됨.
+
+<div id="input_format_force_null_for_omitted_fields">
+  ## input_format_force_null_for_omitted_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "필요한 경우 생략된 필드에 타입 기본값을 적용하지 않음"}]}]} />
+
+생략된 필드를 강제로 NULL 값으로 초기화합니다
+
+<div id="input_format_geojson_unsupported_geometry_handling">
+  ## input_format_geojson_unsupported_geometry_handling
+</div>
+
+<SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "`Geometry` 타입으로 표현할 수 없는 GeoJSON geometry 타입(`GeometryCollection`, `MultiPoint`)의 처리 방식을 제어하는 새로운 설정"}]}]} />
+
+`GeoJSON` 입력을 읽는 동안 ClickHouse의 `Geometry` 타입(예: `GeometryCollection` 또는 `MultiPoint`)으로 표현할 수 없는 유효한 `GeoJSON` geometry 타입을 `geometry` 컬럼에 저장해야 하는 경우의 동작을 제어합니다.
+
+가능한 값:
+
+* `'throw'` (기본값) — 예외를 발생시킵니다.
+* `'null'` — `geometry` 컬럼에 `NULL` 값을 삽입하고 파싱을 계속합니다.
+
+이는 `geometry` 컬럼이 구체화된 경우에만 적용됩니다. 요청된 출력 컬럼이 아닌 경우 이러한 geometry는 형식이 올바른지만 검증되며, 이 처리 동작이 수행되지는 않습니다.
+
+<div id="input_format_hive_text_allow_variable_number_of_columns">
+  ## input_format_hive_text_allow_variable_number_of_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "Hive Text 입력에서 추가 컬럼은 무시하고(파일에 예상보다 많은 컬럼이 있는 경우), 누락된 필드는 기본값으로 간주합니다."}]}]} />
+
+Hive Text 입력에서 추가 컬럼은 무시하고(파일에 예상보다 많은 컬럼이 있는 경우), 누락된 필드는 기본값으로 간주합니다
+
+<div id="input_format_hive_text_collection_items_delimiter">
+  ## input_format_hive_text_collection_items_delimiter
+</div>
+
+<SettingsInfoBlock type="Char" default_value="" />
+
+Hive Text File에서 컬렉션(배열 또는 맵) 항목 사이를 구분하는 구분자
+
+<div id="input_format_hive_text_fields_delimiter">
+  ## input_format_hive_text_fields_delimiter
+</div>
+
+<SettingsInfoBlock type="Char" default_value="" />
+
+Hive Text File의 필드 구분자
+
+<div id="input_format_hive_text_map_keys_delimiter">
+  ## input_format_hive_text_map_keys_delimiter
+</div>
+
+<SettingsInfoBlock type="Char" default_value="" />
+
+Hive Text File에서 맵 키-값 쌍 사이의 구분자
+
+<div id="input_format_import_nested_json">
+  ## input_format_import_nested_json
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+중첩 객체를 포함한 JSON 데이터의 삽입을 활성화하거나 비활성화합니다.
+
+지원되는 포맷:
+
+* [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow)
+
+가능한 값:
+
+* 0 — 비활성화됨.
+* 1 — 활성화됨.
+
+관련 항목:
+
+* `JSONEachRow` 포맷에서의 [중첩 구조 사용](/ko/guides/clickhouse/data-formats/json/formats#accessing-nested-json-objects)
+
+<div id="input_format_ipv4_default_on_conversion_error">
+  ## input_format_ipv4_default_on_conversion_error
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+IPv4를 역직렬화할 때 변환 오류가 발생하면 예외를 발생시키는 대신 기본값을 사용합니다.
+
+기본적으로 비활성화되어 있습니다.
+
+<div id="input_format_ipv6_default_on_conversion_error">
+  ## input_format_ipv6_default_on_conversion_error
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+IPV6를 역직렬화할 때 변환 오류가 발생하면 예외를 발생시키는 대신 기본값을 사용합니다.
+
+기본적으로 비활성화되어 있습니다.
+
+<div id="input_format_json_compact_allow_variable_number_of_columns">
+  ## input_format_json_compact_allow_variable_number_of_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+JSONCompact/JSONCompactEachRow 입력 형식에서 각 행의 컬럼 수가 가변적인 경우를 허용합니다.
+예상한 것보다 컬럼이 많은 행에서는 추가 컬럼을 무시하고, 누락된 컬럼은 기본값으로 처리합니다.
+
+기본적으로 비활성화되어 있습니다.
+
+<div id="input_format_json_defaults_for_missing_elements_in_named_tuple">
+  ## input_format_json_defaults_for_missing_elements_in_named_tuple
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.1"},{"label": "1"},{"label": "기본적으로 JSON 객체에서 named tuple을 읽을 때 누락된 요소를 허용"}]}]} />
+
+named tuple을 파싱할 때 JSON 객체에서 누락된 요소에 기본값을 삽입합니다.
+이 설정은 `input_format_json_named_tuples_as_objects` 설정이 활성화된 경우에만 적용됩니다.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_json_empty_as_default">
+  ## input_format_json_empty_as_default
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "JSON 입력의 빈 필드를 기본값으로 처리할 수 있도록 하는 새로운 설정이 추가되었습니다."}]}]} />
+
+활성화하면 JSON 입력의 빈 필드를 기본값으로 대체합니다. 복잡한 기본 표현식을 사용하려면 `input_format_defaults_for_omitted_fields`도 활성화해야 합니다.
+
+가능한 값:
+
+* 0 — 비활성화합니다.
+* 1 — 활성화합니다.
+
+<div id="input_format_json_ignore_unknown_keys_in_named_tuple">
+  ## input_format_json_ignore_unknown_keys_in_named_tuple
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.3"},{"label": "1"},{"label": "JSON 객체를 이름이 지정된 Tuple로 parsing하는 기능 개선"}]}]} />
+
+이름이 지정된 Tuple의 JSON 객체에서 알 수 없는 키를 무시합니다.
+
+기본적으로 활성화됩니다.
+
+<div id="input_format_json_ignore_unnecessary_fields">
+  ## input_format_json_ignore_unnecessary_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "불필요한 필드는 무시하며 파싱하지 않습니다. 이를 활성화하면 형식이 잘못되었거나 중복 필드가 있는 JSON 문자열에서 예외가 발생하지 않을 수 있습니다"}]}]} />
+
+불필요한 필드는 무시하며 파싱하지 않습니다. 이를 활성화하면 형식이 잘못되었거나 중복 필드가 있는 JSON 문자열에서 예외가 발생하지 않을 수 있습니다
+
+<div id="input_format_json_infer_array_of_dynamic_from_array_of_different_types">
+  ## input_format_json_infer_array_of_dynamic_from_array_of_different_types
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "값의 데이터 타입이 서로 다른 JSON 배열에 대해 기본적으로 Array(Dynamic) 타입을 추론합니다"}]}]} />
+
+활성화하면 스키마 추론 중에 ClickHouse는 값의 데이터 타입이 서로 다른 JSON 배열에 `Array(Dynamic)` 타입을 사용합니다.
+
+예시:
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
+DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type───────────┐
+│ a    │ Array(Dynamic) │
+└──────┴────────────────┘
+```
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
+DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type─────────────────────────────────────────────────────────────┐
+│ a    │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │
+└──────┴──────────────────────────────────────────────────────────────────┘
+```
+
+기본값으로 활성화됩니다.
+
+<div id="input_format_json_infer_incomplete_types_as_strings">
+  ## input_format_json_infer_incomplete_types_as_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "1"},{"label": "기본적으로 JSON 포맷에서 불완전한 타입을 String으로 추론할 수 있도록 허용합니다"}]}]} />
+
+스키마 추론 중 데이터 샘플에서 `Null`/`{}`/`[]`만 포함하는 JSON 키에 대해 String 타입을 사용할 수 있도록 허용합니다.
+JSON 포맷에서는 어떤 값이든 String으로 읽을 수 있으므로, 타입을 알 수 없는 키에 String 타입을 사용하면 스키마 추론 중 `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps`와 같은 오류를 방지할 수 있습니다.
+
+예시:
+
+```sql
+SET input_format_json_infer_incomplete_types_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 1;
+DESCRIBE format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+```
+
+결과:
+
+```
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+
+┌─obj────────────────────────────┐
+│ ([1,2,3],'hello',NULL,'{}',[]) │
+└────────────────────────────────┘
+```
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_json_map_as_array_of_tuples">
+  ## input_format_json_map_as_array_of_tuples
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+맵 컬럼을 튜플로 이루어진 JSON 배열로 역직렬화합니다.
+
+기본적으로 비활성화되어 있습니다.
+
+<div id="input_format_json_max_depth">
+  ## input_format_json_max_depth
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "1000"},{"label": "이전 버전에서는 제한이 없었지만, 이는 안전하지 않았습니다."}]}]} />
+
+JSON 필드의 최대 깊이입니다. 이는 엄격한 제한이 아니므로 정확하게 적용되지 않을 수 있습니다.
+
+<div id="input_format_json_named_tuples_as_objects">
+  ## input_format_json_named_tuples_as_objects
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+named tuple 컬럼을 JSON 객체로 해석합니다.
+
+기본적으로 활성화됩니다.
+
+<div id="input_format_json_read_arrays_as_strings">
+  ## input_format_json_read_arrays_as_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "1"},{"label": "기본적으로 JSON 포맷에서 배열을 문자열로 읽도록 허용합니다"}]}]} />
+
+JSON 입력 형식에서 JSON 배열을 문자열로 파싱하도록 허용합니다.
+
+예시:
+
+```sql
+SET input_format_json_read_arrays_as_strings = 1;
+SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow, 'arr String', '{"arr" : [1, "Hello", [1,2,3]]}');
+```
+
+결과:
+
+```
+┌─arr───────────────────┬─toTypeName(arr)─┬─arrayElement(JSONExtractArrayRaw(arr), 3)─┐
+│ [1, "Hello", [1,2,3]] │ String          │ [1,2,3]                                   │
+└───────────────────────┴─────────────────┴───────────────────────────────────────────┘
+```
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_json_read_bools_as_numbers">
+  ## input_format_json_read_bools_as_numbers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+JSON 입력 형식에서 bool을 숫자로 파싱하는 것을 허용합니다.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_json_read_bools_as_strings">
+  ## input_format_json_read_bools_as_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "1"},{"label": "기본적으로 JSON 포맷에서 bool을 문자열로 읽도록 허용"}]}]} />
+
+JSON 입력 형식에서 bool을 문자열로 파싱하도록 허용합니다.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_json_read_numbers_as_strings">
+  ## input_format_json_read_numbers_as_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "1"},{"label": "기본적으로 JSON 포맷에서 숫자를 문자열로 읽도록 허용합니다"}]}]} />
+
+JSON 입력 형식에서 숫자를 문자열로 파싱하도록 허용합니다.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_json_read_objects_as_strings">
+  ## input_format_json_read_objects_as_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.1"},{"label": "1"},{"label": "object 유형이 experimental 상태일 때 중첩된 JSON 객체를 문자열로 읽도록 활성화"}]}]} />
+
+JSON 입력 형식에서 JSON 객체를 문자열로 파싱하도록 허용합니다.
+
+예시:
+
+```sql
+SET input_format_json_read_objects_as_strings = 1;
+CREATE TABLE test (id UInt64, obj String, date Date) ENGINE=Memory();
+INSERT INTO test FORMAT JSONEachRow {"id" : 1, "obj" : {"a" : 1, "b" : "Hello"}, "date" : "2020-01-01"};
+SELECT * FROM test;
+```
+
+결과:
+
+```
+┌─id─┬─obj──────────────────────┬───────date─┐
+│  1 │ {"a" : 1, "b" : "Hello"} │ 2020-01-01 │
+└────┴──────────────────────────┴────────────┘
+```
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_json_throw_on_bad_escape_sequence">
+  ## input_format_json_throw_on_bad_escape_sequence
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "잘못된 이스케이프 시퀀스가 포함된 JSON 문자열의 저장을 허용"}]}]} />
+
+JSON 입력 형식에서 JSON 문자열에 잘못된 이스케이프 시퀀스가 포함된 경우 예외를 발생시킵니다. 비활성화하면 잘못된 이스케이프 시퀀스는 데이터에 그대로 유지됩니다.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_json_try_infer_named_tuples_from_objects">
+  ## input_format_json_try_infer_named_tuples_from_objects
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "1"},{"label": "기본적으로 JSON 객체에서 이름이 지정된 Tuple을 추론하도록 시도합니다"}]}]} />
+
+활성화하면 ClickHouse는 스키마 추론(schema inference) 과정에서 JSON 객체로부터 이름이 지정된 Tuple을 추론하려고 시도합니다.
+그 결과 생성되는 이름이 지정된 Tuple에는 샘플 데이터에 있는 관련 JSON 객체의 모든 요소가 포함됩니다.
+
+예시:
+
+```sql
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
+```
+
+결과:
+
+```
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_json_try_infer_numbers_from_strings">
+  ## input_format_json_try_infer_numbers_from_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "0"},{"label": "가능한 파싱 오류를 방지하기 위해 기본적으로 JSON 포맷에서 문자열의 숫자를 추론하지 않습니다"}]}]} />
+
+활성화하면 스키마 추론 중에 ClickHouse는 문자열 필드에서 숫자를 추론하려고 시도합니다.
+JSON 데이터에 따옴표로 묶인 UInt64 숫자가 포함된 경우 유용할 수 있습니다.
+
+기본적으로 비활성화됩니다.
+
+<div id="input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects">
+  ## input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "JSON 객체에서 이름이 지정된 Tuple을 추론할 때 모호한 경로에 String 타입을 사용할 수 있도록 허용"}]}]} />
+
+JSON 객체에서 이름이 지정된 Tuple을 추론할 때 모호한 경로가 있으면 예외 대신 String 타입을 사용합니다
+
+<div id="input_format_json_validate_types_from_metadata">
+  ## input_format_json_validate_types_from_metadata
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+JSON/JSONCompact/JSONColumnsWithMetadata 입력 형식에서 이 설정이 1로 설정되면,
+입력 데이터의 메타데이터에 있는 타입을 테이블의 해당 컬럼 타입과 비교합니다.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_max_block_size_bytes">
+  ## input_format_max_block_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "입력 형식에서 생성되는 블록의 바이트 크기를 제한하는 새로운 설정"}]}]} />
+
+입력 형식에서 데이터를 파싱하는 동안 형성되는 블록의 크기를 바이트 단위로 제한합니다. 블록이 ClickHouse 측에서 형성되는 행 기반 입력 형식에서 사용됩니다.
+0은 바이트 크기에 제한이 없음을 의미합니다.
+
+<div id="input_format_max_block_wait_ms">
+  ## input_format_max_block_wait_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "입력 형식에서 블록을 내보내기 전에 대기하는 최대 시간을 밀리초 단위로 제한하는 새로운 설정"}]}]} />
+
+행 기반 입력 형식에서 파싱 중 블록을 내보내기 전에 대기할 수 있는 최대 시간을 밀리초 단위로 제한합니다. 0은 제한이 없음을 의미합니다.
+
+<Note>
+  이 옵션은 `input_format_connection_handling`이 활성화된 경우에만 작동합니다. 값을 설정하면 병렬 파싱도 비활성화되며 중복 제거를 사용할 수 없게 됩니다.
+</Note>
+
+<Note>
+  스트리밍 삽입의 경우 `min_insert_block_size_rows=0` 및 `min_insert_block_size_bytes=0`도 설정해야 합니다. 그렇지 않으면 파싱된 블록이 해당 임계값에 도달할 때까지 block squashing 단계에서 메모리에 계속 누적되어, 제때 삽입되지 않을 수 있습니다.
+</Note>
+
+**예시: Wikipedia 최근 변경 사항을 ClickHouse로 스트리밍하기**
+
+```bash
+clickhouse-client --query 'CREATE TABLE wikipedia_edits (data JSON)'
+
+curl -sS --globoff -H 'Accept: application/json' --no-buffer \
+  'https://stream.wikimedia.org/v2/stream/recentchange' \
+  | clickhouse-client \
+      --query 'INSERT INTO wikipedia_edits FORMAT JSONAsObject' \
+      --input_format_max_block_wait_ms 1000 \
+      --input_format_connection_handling 1 \
+      --min_insert_block_size_rows 0 \
+      --min_insert_block_size_bytes 0
+```
+
+<div id="input_format_max_bytes_to_read_for_schema_inference">
+  ## input_format_max_bytes_to_read_for_schema_inference
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="33554432" />
+
+자동 스키마 추론을 위해 읽을 수 있는 데이터의 최대 크기(바이트)입니다.
+
+<div id="input_format_max_rows_to_read_for_schema_inference">
+  ## input_format_max_rows_to_read_for_schema_inference
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="25000" />
+
+자동 스키마 추론을 위해 읽을 수 있는 데이터의 최대 행 수입니다.
+
+<div id="input_format_msgpack_number_of_columns">
+  ## input_format_msgpack_number_of_columns
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+삽입되는 MsgPack 데이터의 컬럼 수입니다. 데이터에서 자동으로 스키마를 추론할 때 사용됩니다.
+
+<div id="input_format_mysql_dump_map_column_names">
+  ## input_format_mysql_dump_map_column_names
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+MySQL dump의 테이블 컬럼과 ClickHouse 테이블의 컬럼을 이름 기준으로 매핑합니다
+
+<div id="input_format_mysql_dump_table_name">
+  ## input_format_mysql_dump_table_name
+</div>
+
+데이터를 읽어올 MySQL dump 내 테이블 이름
+
+<div id="input_format_native_allow_types_conversion">
+  ## input_format_native_allow_types_conversion
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.3"},{"label": "1"},{"label": "Native 입력 형식에서 타입 변환 허용"}]}]} />
+
+Native 입력 형식에서 데이터 타입 변환을 허용합니다
+
+<div id="input_format_native_decode_types_in_binary_format">
+  ## input_format_native_decode_types_in_binary_format
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Native 출력 형식에서 타입 이름을 바이너리 형식으로 읽을 수 있도록 새로운 설정이 추가되었습니다"}]}]} />
+
+Native 입력 형식에서 타입 이름 대신 데이터 타입을 바이너리 형식으로 읽습니다
+
+<div id="input_format_null_as_default">
+  ## input_format_null_as_default
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "기본적으로 입력 형식에서 NULL을 기본값으로 삽입하도록 허용"}]}]} />
+
+이 설정은 해당 필드의 데이터 타입이 [널 허용](/ko/reference/data-types/nullable)이 아닌 경우, [NULL](/ko/reference/syntax#literals) 필드를 [기본값](/ko/reference/statements/create/table#default_values)으로 초기화할지 여부를 설정합니다.
+컬럼 타입이 널 허용이 아니고 이 설정이 비활성화되어 있으면 `NULL`을 삽입할 때 예외가 발생합니다. 컬럼 타입이 널 허용이면 이 설정과 관계없이 `NULL` 값이 그대로 삽입됩니다.
+
+이 설정은 대부분의 입력 형식에 적용됩니다.
+
+복잡한 기본 표현식의 경우 `input_format_defaults_for_omitted_fields`도 활성화해야 합니다.
+
+가능한 값:
+
+* 0 — 널 허용이 아닌 컬럼에 `NULL`을 삽입하면 예외가 발생합니다.
+* 1 — `NULL` 필드는 컬럼 기본값으로 초기화됩니다.
+
+<div id="input_format_orc_allow_missing_columns">
+  ## input_format_orc_allow_missing_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.12"},{"label": "1"},{"label": "기본적으로 ORC 파일에서 누락된 컬럼을 허용합니다"}]}]} />
+
+ORC 입력 형식을 읽을 때 누락된 컬럼을 허용합니다
+
+<div id="input_format_orc_case_insensitive_column_matching">
+  ## input_format_orc_case_insensitive_column_matching
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+ORC 컬럼을 CH 컬럼과 매칭할 때 대소문자를 구분하지 않습니다.
+
+<div id="input_format_orc_dictionary_as_low_cardinality">
+  ## input_format_orc_dictionary_as_low_cardinality
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "ORC 파일을 읽을 때 ORC 딕셔너리로 인코딩된 컬럼을 LowCardinality 컬럼으로 처리합니다"}]}]} />
+
+ORC 파일을 읽을 때 ORC 딕셔너리로 인코딩된 컬럼을 LowCardinality 컬럼으로 처리합니다.
+
+<div id="input_format_orc_filter_push_down">
+  ## input_format_orc_filter_push_down
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+ORC 파일을 읽을 때 ORC 메타데이터의 WHERE/PREWHERE 표현식, 최소/최대 통계 또는 블룸 필터를 기준으로 전체 stripe 또는 row group을 건너뜁니다.
+
+<div id="input_format_orc_reader_time_zone_name">
+  ## input_format_orc_reader_time_zone_name
+</div>
+
+<SettingsInfoBlock type="String" default_value="GMT" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "GMT"},{"label": "ORC 행 리더의 time zone 이름입니다. 기본값은 GMT입니다."}]}]} />
+
+ORC 행 리더의 time zone 이름입니다. 기본값은 GMT입니다.
+
+<div id="input_format_orc_row_batch_size">
+  ## input_format_orc_row_batch_size
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="100000" />
+
+ORC stripe를 읽을 때의 배치 크기입니다.
+
+<div id="input_format_orc_skip_columns_with_unsupported_types_in_schema_inference">
+  ## input_format_orc_skip_columns_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+ORC 포맷에서 스키마를 추론할 때 지원되지 않는 타입의 컬럼을 건너뜁니다
+
+<div id="input_format_orc_use_fast_decoder">
+  ## input_format_orc_use_fast_decoder
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+더 빠른 ORC 디코더를 사용합니다.
+
+<div id="input_format_parallel_parsing">
+  ## input_format_parallel_parsing
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+데이터 포맷을 순서를 유지한 상태로 병렬 파싱할지 여부를 설정합니다. [TabSeparated (TSV)](/ko/reference/formats/TabSeparated/TabSeparated), [TSKV](/ko/reference/formats/TabSeparated/TSKV), [CSV](/ko/reference/formats/CSV/CSV), [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow) 포맷에서만 지원됩니다.
+
+가능한 값:
+
+* 1 — 활성화됨.
+* 0 — 비활성화됨.
+
+<div id="input_format_parquet_allow_geoparquet_parser">
+  ## input_format_parquet_allow_geoparquet_parser
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Parquet 파일의 geo 컬럼을 사용할 수 있게 하는 새로운 설정"}]}]} />
+
+geo 컬럼 파서를 사용해 Array(UInt8)을 Point/Linestring/Polygon/MultiLineString/MultiPolygon 타입으로 변환합니다
+
+<div id="input_format_parquet_allow_missing_columns">
+  ## input_format_parquet_allow_missing_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.12"},{"label": "1"},{"label": "기본적으로 Parquet 파일의 누락된 컬럼을 허용합니다"}]}]} />
+
+Parquet 입력 형식을 읽을 때 누락된 컬럼을 허용합니다
+
+<div id="input_format_parquet_bloom_filter_push_down">
+  ## input_format_parquet_bloom_filter_push_down
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE/PREWHERE 표현식과 블룸 필터를 기준으로 전체 row group을 건너뜁니다."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE/PREWHERE 표현식과 블룸 필터를 기준으로 전체 row group을 건너뜁니다."}]}]} />
+
+Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE 표현식과 블룸 필터를 기준으로 전체 row group을 건너뜁니다.
+
+<div id="input_format_parquet_case_insensitive_column_matching">
+  ## input_format_parquet_case_insensitive_column_matching
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Parquet 컬럼을 CH 컬럼과 매칭할 때 대소문자를 구분하지 않습니다.
+
+<div id="input_format_parquet_enable_json_parsing">
+  ## input_format_parquet_enable_json_parsing
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "Parquet 파일을 읽을 때 JSON 컬럼을 ClickHouse JSON 컬럼으로 파싱합니다."}]}]} />
+
+Parquet 파일을 읽을 때 JSON 컬럼을 ClickHouse JSON 컬럼으로 파싱합니다.
+
+<div id="input_format_parquet_enable_row_group_prefetch">
+  ## input_format_parquet_enable_row_group_prefetch
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "Parquet 파싱 중 row group 프리페치를 활성화합니다. 현재는 단일 스레드 파싱에서만 프리페치를 수행할 수 있습니다."}]}]} />
+
+Parquet 파싱 중 row group 프리페치를 활성화합니다. 현재는 단일 스레드 파싱에서만 프리페치를 수행할 수 있습니다.
+
+<div id="input_format_parquet_filter_push_down">
+  ## input_format_parquet_filter_push_down
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Parquet 파일을 읽을 때 WHERE/PREWHERE 표현식과 Parquet 메타데이터의 최소/최대 통계를 기반으로 전체 row group을 건너뜁니다.
+
+<div id="input_format_parquet_local_file_min_bytes_for_seek">
+  ## input_format_parquet_local_file_min_bytes_for_seek
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8192" />
+
+Parquet 입력 형식에서 로컬 읽기(file)가 ignore를 사용해 읽는 대신 seek를 수행하는 데 필요한 최소 바이트 수
+
+<div id="input_format_parquet_local_time_as_utc">
+  ## input_format_parquet_local_time_as_utc
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Parquet의 '시간대가 없는 로컬 시간' 타입에 더 적합한 DateTime64(..., 'UTC') 타입을 사용합니다."}]}]} />
+
+isAdjustedToUTC=false인 Parquet 타임스탬프에 대해 스키마 추론에서 사용할 데이터 타입을 결정합니다. true이면 DateTime64(..., &#39;UTC&#39;)를, false이면 DateTime64(...)를 사용합니다. ClickHouse에는 로컬 wall-clock time을 위한 데이터 타입이 없으므로, 두 동작 모두 완전히 정확하지는 않습니다. 직관과는 다르게 &#39;true&#39;가 오히려 덜 부정확한 선택일 가능성이 높습니다. &#39;UTC&#39; 타임스탬프를 String으로 포맷하면 올바른 로컬 시간 표현이 생성되기 때문입니다.
+
+<div id="input_format_parquet_max_block_size">
+  ## input_format_parquet_max_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="65409" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "65409"},{"label": "Parquet 리더의 블록 크기를 증가시켰습니다."}]}]} />
+
+Parquet 리더의 최대 블록 크기입니다.
+
+<div id="input_format_parquet_memory_high_watermark">
+  ## input_format_parquet_memory_high_watermark
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4294967296" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "4294967296"},{"label": "새로운 설정"}]}]} />
+
+Parquet 리더 v3의 대략적인 메모리 제한값입니다. 병렬로 읽을 수 있는 row groups 또는 컬럼의 수를 제한합니다. 하나의 쿼리에서 여러 파일을 읽는 경우, 이 제한은 해당 파일들 전체의 총 메모리 사용량에 적용됩니다.
+
+<div id="input_format_parquet_memory_low_watermark">
+  ## input_format_parquet_memory_low_watermark
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2097152" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "2097152"},{"label": "새로운 설정"}]}]} />
+
+메모리 사용량이 임계값보다 낮을 때 프리페치를 더 적극적으로 수행합니다. 예를 들어 네트워크를 통해 읽어야 하는 작은 블룸 필터가 많은 경우 유용할 수 있습니다.
+
+<div id="input_format_parquet_page_filter_push_down">
+  ## input_format_parquet_page_filter_push_down
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "새로운 설정 (input_format_parquet_use_native_reader_v3가 비활성화되면 효과 없음)"}]}]} />
+
+컬럼 인덱스의 최소/최대값을 사용해 페이지를 건너뜁니다.
+
+<div id="input_format_parquet_prefer_block_bytes">
+  ## input_format_parquet_prefer_block_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16744704" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "16744704"},{"label": "Parquet 리더가 출력하는 블록의 평균 바이트 수."}]}]} />
+
+Parquet 리더가 출력하는 블록의 평균 바이트 수
+
+<div id="input_format_parquet_preserve_order">
+  ## input_format_parquet_preserve_order
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.5"},{"label": "0"},{"label": "더 나은 병렬 처리를 위해 Parquet 리더가 행 순서를 재정렬하도록 허용합니다."}]}]} />
+
+Parquet 파일을 읽을 때 행이 재정렬되지 않도록 합니다. 일반적으로 행 순서는 보장되지 않고, 쿼리 파이프라인의 다른 부분에서 순서가 깨질 수 있으므로 권장하지 않습니다. 대신 `ORDER BY _row_number`를 사용하십시오.
+
+<div id="input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference">
+  ## input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Parquet 포맷의 스키마 추론 시 지원되지 않는 타입의 컬럼을 건너뜁니다
+
+<div id="input_format_parquet_use_offset_index">
+  ## input_format_parquet_use_offset_index
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "새로운 설정 (input_format_parquet_use_native_reader_v3가 비활성화되어 있으면 효과 없음)"}]}]} />
+
+페이지 필터링을 사용하지 않을 때 Parquet 파일에서 페이지를 읽는 방식을 약간 조정합니다.
+
+<div id="input_format_parquet_verify_checksums">
+  ## input_format_parquet_verify_checksums
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "새 설정입니다."}]}]} />
+
+Parquet 파일을 읽을 때 페이지 체크섬을 검증합니다.
+
+<div id="input_format_protobuf_flatten_google_wrappers">
+  ## input_format_protobuf_flatten_google_wrappers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+일반적인 비중첩 컬럼에 대해 Google wrapper를 활성화합니다. 예를 들어 String 컬럼 &#39;str&#39;에는 google.protobuf.StringValue &#39;str&#39;를 사용합니다. 널 허용 컬럼의 경우 비어 있는 wrapper는 기본값으로 인식되며, wrapper가 없으면 null로 인식됩니다.
+
+<div id="input_format_protobuf_oneof_presence">
+  ## input_format_protobuf_oneof_presence
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+특수 열에 enum 값을 설정해 protobuf oneof에서 어떤 필드가 발견되었는지 나타냅니다
+
+<div id="input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference">
+  ## input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Protobuf 포맷의 스키마 추론 시 지원되지 않는 타입의 필드를 건너뜁니다
+
+<div id="input_format_record_errors_file_path">
+  ## input_format_record_errors_file_path
+</div>
+
+형식(CSV, TSV)을 읽는 동안 발생한 오류를 기록할 파일의 경로입니다.
+
+<div id="input_format_skip_unknown_fields">
+  ## input_format_skip_unknown_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.6"},{"label": "1"},{"label": "일부 입력 형식에서 컬럼 부분 집합 읽기 최적화"}]}]} />
+
+추가 데이터 삽입을 건너뛸지 여부를 활성화하거나 비활성화합니다.
+
+데이터를 쓸 때 입력 데이터에 대상 테이블에 없는 컬럼이 포함되어 있으면 ClickHouse는 예외를 발생시킵니다. 건너뛰기가 활성화되면 ClickHouse는 추가 데이터를 삽입하지 않으며 예외도 발생시키지 않습니다.
+
+지원되는 포맷:
+
+* [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow) (및 기타 JSON 포맷)
+* [BSONEachRow](/ko/reference/formats/BSONEachRow) (및 기타 JSON 포맷)
+* [TSKV](/ko/reference/formats/TabSeparated/TSKV)
+* WithNames/WithNamesAndTypes 접미사가 있는 모든 포맷
+* [MySQLDump](/ko/reference/formats/MySQLDump)
+* [Native](/ko/reference/formats/Native)
+
+가능한 값:
+
+* 0 — 비활성화됨.
+* 1 — 활성화됨.
+
+<div id="input_format_try_infer_dates">
+  ## input_format_try_infer_dates
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+활성화되면 ClickHouse는 형식에 대한 스키마 추론에서 문자열 필드로부터 `Date` 유형을 추론하려고 합니다. 입력 데이터의 한 컬럼에 있는 모든 필드가 날짜로 성공적으로 파싱되면 결과 유형은 `Date`가 됩니다. 하나 이상의 필드가 날짜로 파싱되지 않으면 결과 유형은 `String`이 됩니다.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_try_infer_datetimes">
+  ## input_format_try_infer_datetimes
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+활성화되면 ClickHouse는 형식의 스키마 추론 과정에서 문자열 필드로부터 `DateTime64` 유형을 추론하려고 합니다. 입력 데이터에서 특정 컬럼의 모든 필드가 datetime으로 성공적으로 parse되면 결과 유형은 `DateTime64`가 되고, 필드 중 하나라도 datetime으로 parse되지 않으면 결과 유형은 `String`이 됩니다.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_try_infer_datetimes_only_datetime64">
+  ## input_format_try_infer_datetimes_only_datetime64
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "데이터 포맷에서 DateTime64 대신 DateTime을 추론할 수 있도록 합니다"}]}]} />
+
+input&#95;format&#95;try&#95;infer&#95;datetimes가 활성화되면 DateTime 타입은 추론하지 않고 DateTime64만 추론합니다
+
+<div id="input_format_try_infer_exponent_floats">
+  ## input_format_try_infer_exponent_floats
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "기본적으로 지수 표기법의 부동소수점 수는 추론하지 않음"}]}]} />
+
+형식에서 스키마 추론 시 지수 표기법의 부동소수점 수를 추론하도록 시도합니다(JSON 제외, JSON에서는 지수 표기법 숫자를 항상 추론함)
+
+<div id="input_format_try_infer_integers">
+  ## input_format_try_infer_integers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+활성화하면 ClickHouse는 형식의 스키마 추론 시 부동소수점 대신 정수를 추론합니다. 입력 데이터의 해당 컬럼에 있는 모든 숫자가 정수이면 결과 유형은 `Int64`이며, 숫자 중 하나라도 부동소수점이면 결과 유형은 `Float64`입니다.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="input_format_try_infer_variants">
+  ## input_format_try_infer_variants
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "컬럼/배열 요소에 가능한 타입이 둘 이상일 때 형식에서 Variant 타입 추론을 시도합니다"}]}]} />
+
+활성화하면 ClickHouse는 컬럼/배열 요소에 가능한 타입이 둘 이상일 때 형식의 스키마 추론에서 [`Variant`](/ko/reference/data-types/variant) 타입 추론을 시도합니다.
+
+가능한 값:
+
+* 0 — 비활성화.
+* 1 — 활성화.
+
+<div id="input_format_tsv_allow_variable_number_of_columns">
+  ## input_format_tsv_allow_variable_number_of_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+TSV 입력에서 추가 컬럼은 무시하고(파일에 예상보다 많은 컬럼이 있는 경우), 누락된 필드는 기본값으로 처리합니다
+
+<div id="input_format_tsv_crlf_end_of_line">
+  ## input_format_tsv_crlf_end_of_line
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "TSV 포맷에서 CRLF 줄 끝 읽기를 활성화합니다"}]}]} />
+
+이 값을 true로 설정하면 file 함수가 \n 대신 \r\n 줄 끝을 사용하는 TSV 포맷을 읽습니다.
+
+<div id="input_format_tsv_detect_header">
+  ## input_format_tsv_detect_header
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.1"},{"label": "1"},{"label": "기본적으로 TSV 포맷의 헤더를 감지합니다"}]}]} />
+
+TSV 포맷에서 열 이름과 타입 정보가 포함된 헤더를 자동으로 감지합니다
+
+<div id="input_format_tsv_empty_as_default">
+  ## input_format_tsv_empty_as_default
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+TSV 입력에서 빈 필드를 기본값으로 간주합니다.
+
+<div id="input_format_tsv_enum_as_number">
+  ## input_format_tsv_enum_as_number
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+TSV 포맷에서 삽입되는 enum 값을 enum 인덱스로 처리합니다.
+
+<div id="input_format_tsv_skip_first_lines">
+  ## input_format_tsv_skip_first_lines
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+TSV 포맷 데이터의 시작 부분에서 지정한 수만큼의 줄을 건너뜁니다
+
+<div id="input_format_tsv_skip_trailing_empty_lines">
+  ## input_format_tsv_skip_trailing_empty_lines
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+TSV 포맷에서 끝부분의 빈 줄을 무시합니다
+
+<div id="input_format_tsv_use_best_effort_in_schema_inference">
+  ## input_format_tsv_use_best_effort_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+TSV 포맷에서 스키마를 추론할 때 일부 조정 및 휴리스틱을 사용합니다
+
+<div id="input_format_values_accurate_types_of_literals">
+  ## input_format_values_accurate_types_of_literals
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Values 형식에서 템플릿을 사용해 표현식을 파싱하고 해석할 때, 발생할 수 있는 오버플로우 및 정밀도 문제를 방지하기 위해 리터럴의 실제 타입을 확인합니다.
+
+<div id="input_format_values_deduce_templates_of_expressions">
+  ## input_format_values_deduce_templates_of_expressions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Values 형식의 경우: 필드를 streaming parser로 파싱할 수 없으면 SQL parser를 실행해 SQL 표현식의 템플릿을 추론하고, 그 템플릿을 사용해 모든 행을 파싱한 다음 모든 행에 대해 표현식을 해석합니다.
+
+<div id="input_format_values_interpret_expressions">
+  ## input_format_values_interpret_expressions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Values 형식에서 필드를 streaming parser로 파싱할 수 없으면 SQL parser를 실행해 이를 SQL 표현식으로 해석하려고 시도합니다.
+
+<div id="input_format_with_names_use_header">
+  ## input_format_with_names_use_header
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "20.5"},{"label": "1"},{"label": "WithNames/WithNamesAndTypes 접미사가 있는 포맷에서 이름 헤더 사용을 활성화합니다"}]}]} />
+
+데이터를 삽입할 때 컬럼 순서를 검사할지 설정합니다.
+
+삽입 성능을 높이려면 입력 데이터의 컬럼 순서가 대상 테이블과 동일하다고 확신하는 경우 이 검사를 비활성화하는 것이 좋습니다.
+
+지원되는 포맷:
+
+* [CSVWithNames](/ko/reference/formats/CSV/CSVWithNames)
+* [CSVWithNamesAndTypes](/ko/reference/formats/CSV/CSVWithNamesAndTypes)
+* [TabSeparatedWithNames](/ko/reference/formats/TabSeparated/TabSeparatedWithNames)
+* [TabSeparatedWithNamesAndTypes](/ko/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)
+* [JSONCompactEachRowWithNames](/ko/reference/formats/JSON/JSONCompactEachRowWithNames)
+* [JSONCompactEachRowWithNamesAndTypes](/ko/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)
+* [JSONCompactStringsEachRowWithNames](/ko/reference/formats/JSON/JSONCompactStringsEachRowWithNames)
+* [JSONCompactStringsEachRowWithNamesAndTypes](/ko/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)
+* [RowBinaryWithNames](/ko/reference/formats/RowBinary/RowBinaryWithNames)
+* [RowBinaryWithNamesAndTypes](/ko/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)
+* [CustomSeparatedWithNames](/ko/reference/formats/CustomSeparated/CustomSeparatedWithNames)
+* [CustomSeparatedWithNamesAndTypes](/ko/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)
+
+가능한 값:
+
+* 0 — 비활성화됨.
+* 1 — 활성화됨.
+
+<div id="input_format_with_types_use_header">
+  ## input_format_with_types_use_header
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+포맷 parser가 입력 데이터의 데이터 타입이 대상 테이블의 데이터 타입과 일치하는지 검사할지 여부를 제어합니다.
+
+지원되는 포맷:
+
+* [CSVWithNamesAndTypes](/ko/reference/formats/CSV/CSVWithNamesAndTypes)
+* [TabSeparatedWithNamesAndTypes](/ko/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)
+* [JSONCompactEachRowWithNamesAndTypes](/ko/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)
+* [JSONCompactStringsEachRowWithNamesAndTypes](/ko/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)
+* [RowBinaryWithNamesAndTypes](/ko/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)
+* [CustomSeparatedWithNamesAndTypes](/ko/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)
+
+가능한 값:
+
+* 0 — 비활성화.
+* 1 — 활성화.
+
+<div id="insert_distributed_one_random_shard">
+  ## insert_distributed_one_random_shard
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+분산 키가 없을 때 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블에 데이터를 임의의 세그먼트 하나로 삽입할지 여부를 설정합니다.
+
+기본적으로 세그먼트가 2개 이상인 `Distributed` 테이블에 데이터를 삽입할 때 분산 키가 없으면 ClickHouse 서버는 삽입 요청을 거부합니다. `insert_distributed_one_random_shard = 1`로 설정하면 삽입이 허용되며, 데이터는 모든 세그먼트 중 하나로 무작위 전송됩니다.
+
+가능한 값:
+
+* 0 — 세그먼트가 여러 개이고 분산 키가 지정되지 않으면 삽입이 거부됩니다.
+* 1 — 분산 키가 지정되지 않으면 사용 가능한 모든 세그먼트 중 하나에 무작위로 삽입됩니다.
+
+<div id="interval_output_format">
+  ## interval_output_format
+</div>
+
+<SettingsInfoBlock type="IntervalOutputFormat" default_value="numeric" />
+
+인터벌 타입의 텍스트 표현에 사용할 출력 형식을 선택할 수 있습니다.
+
+가능한 값:
+
+* `kusto` - KQL 스타일 출력 형식입니다.
+
+  ClickHouse는 인터벌을 [KQL 포맷](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-timespan-format-strings#the-constant-c-format-specifier)으로 출력합니다. 예를 들어 `toIntervalDay(2)`는 `2.00:00:00`으로 표시됩니다. 길이가 가변적인 인터벌 타입(예: `IntervalMonth`, `IntervalYear`)의 경우 인터벌당 평균 초 수를 고려합니다.
+
+* `numeric` - 숫자 출력 형식입니다.
+
+  ClickHouse는 인터벌을 기본 숫자 표현으로 출력합니다. 예를 들어 `toIntervalDay(2)`는 `2`로 표시됩니다.
+
+관련 항목:
+
+* [Interval](/ko/reference/data-types/special-data-types/interval)
+
+<div id="into_outfile_create_parent_directories">
+  ## into_outfile_create_parent_directories
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+INTO OUTFILE 사용 시 상위 디렉터리가 아직 없으면 자동으로 생성합니다.
+
+<div id="json_type_escape_dots_in_keys">
+  ## json_type_escape_dots_in_keys
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+활성화하면 파싱 중 JSON 키의 점(.)이 이스케이프됩니다.
+
+<div id="max_dynamic_subcolumns_in_json_type_parsing">
+  ## max_dynamic_subcolumns_in_json_type_parsing
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+JSON 컬럼을 파싱할 때 각 컬럼에서 생성할 수 있는 동적 서브컬럼의 최대 개수입니다.
+데이터 타입에 지정된 동적 매개변수와 관계없이 파싱 중 동적 서브컬럼의 수를 제어할 수 있습니다.
+
+<div id="output_format_always_write_decimal_point_in_float_and_decimal">
+  ## output_format_always_write_decimal_point_in_float_and_decimal
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "값이 정수이더라도 텍스트 형식에서 부동소수점 및 Decimal 숫자에 항상 소수점을 출력하도록 하는 새로운 설정입니다."}]}]} />
+
+값이 정수이더라도 텍스트 형식에서 부동소수점 및 Decimal 숫자에 항상 소수점을 출력합니다. 예를 들어 `1` 대신 `1.`을 출력합니다.
+
+기본적으로 비활성화되어 있습니다.
+
+<div id="output_format_arrow_compression_method">
+  ## output_format_arrow_compression_method
+</div>
+
+<SettingsInfoBlock type="ArrowCompression" default_value="lz4_frame" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.3"},{"label": "lz4_frame"},{"label": "기본적으로 Arrow 출력 형식에 lz4 압축을 사용합니다"}]}]} />
+
+Arrow 출력 형식의 압축 방식입니다. 지원되는 코덱: lz4&#95;frame, zstd, none(비압축)
+
+<div id="output_format_arrow_date_as_uint16">
+  ## output_format_arrow_date_as_uint16
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "기본적으로 Date를 일반 UInt16이 아니라 Arrow DATE32로 기록합니다."}]}]} />
+
+Date 값을 32비트 Arrow DATE32 유형으로 변환해(Date32로 다시 읽음) 기록하는 대신, 일반 16비트 숫자(다시 읽으면 UInt16)로 기록합니다.
+
+<div id="output_format_arrow_fixed_string_as_fixed_byte_array">
+  ## output_format_arrow_fixed_string_as_fixed_byte_array
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.2"},{"label": "1"},{"label": "기본적으로 FixedString에 Binary 대신 Arrow FIXED_SIZE_BINARY 유형 사용"}]}]} />
+
+FixedString 컬럼에는 Binary 대신 Arrow FIXED&#95;SIZE&#95;BINARY 유형을 사용합니다.
+
+<div id="output_format_arrow_low_cardinality_as_dictionary">
+  ## output_format_arrow_low_cardinality_as_dictionary
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+출력 시 LowCardinality 유형을 Arrow 딕셔너리 유형으로 사용하도록 설정합니다
+
+<div id="output_format_arrow_string_as_string">
+  ## output_format_arrow_string_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse는 일반적으로 UTF-8로 처리되는 String 데이터 타입에 임의의 바이너리 데이터를 허용합니다. Parquet/ORC/Arrow의 String은 UTF-8만 지원합니다. 따라서 ClickHouse String 데이터 타입에 대해 Arrow의 어떤 데이터 타입을 사용할지(String 또는 Binary) 선택할 수 있습니다. Binary가 더 정확하고 호환성도 높지만, 대부분의 경우 기본값으로 String을 사용하면 사용자 기대에 더 잘 부합합니다."}]}]} />
+
+String 컬럼에는 Binary 대신 Arrow String 유형 사용
+
+<div id="output_format_arrow_unsupported_types_as_binary">
+  ## output_format_arrow_unsupported_types_as_binary
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "지원되지 않는 CH 타입을 UNKNOWN_TYPE 예외 대신 arrow binary로 변환하는 새로운 설정입니다."}]}]} />
+
+변환 방법이 없는 출력 타입은 원시 binary 데이터로 출력합니다. false이면 이러한 타입에서 UNKNOWN&#95;TYPE 예외가 발생합니다.
+
+<div id="output_format_arrow_use_64_bit_indexes_for_dictionary">
+  ## output_format_arrow_use_64_bit_indexes_for_dictionary
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Arrow 딕셔너리에서 64비트 인덱스 타입을 사용할 수 있도록 합니다"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "0"},{"label": "Arrow 딕셔너리에서 64비트 인덱스 타입을 사용할 수 있도록 합니다"}]}]} />
+
+Arrow 형식의 딕셔너리 인덱스에 항상 64비트 정수를 사용합니다
+
+<div id="output_format_arrow_use_signed_indexes_for_dictionary">
+  ## output_format_arrow_use_signed_indexes_for_dictionary
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "1"},{"label": "권장되는 방식이므로 기본적으로 Arrow 딕셔너리에 부호 있는 인덱스 유형을 사용합니다"}]}]} />
+
+Arrow 형식에서 딕셔너리 인덱스에 부호 있는 정수를 사용합니다
+
+<div id="output_format_avro_codec">
+  ## output_format_avro_codec
+</div>
+
+출력에 사용하는 압축 코덱입니다. 가능한 값은 &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;입니다.
+
+<div id="output_format_avro_confluent_subject">
+  ## output_format_avro_confluent_subject
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "AvroConfluent 출력 시 Confluent 스키마 레지스트리에 스키마를 등록할 subject 이름을 지정하는 새로운 설정입니다."}]}]} />
+
+AvroConfluent 출력 형식의 경우: Confluent 스키마 레지스트리에서 스키마가 등록되는 subject 이름입니다. AvroConfluent 출력 시 필요합니다.
+
+<div id="output_format_avro_rows_in_file">
+  ## output_format_avro_rows_in_file
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+파일당 최대 행 수(스토리지에서 허용하는 경우)
+
+<div id="output_format_avro_string_column_pattern">
+  ## output_format_avro_string_column_pattern
+</div>
+
+Avro 포맷: AVRO 문자열로 선택할 String 컬럼을 지정하는 정규식입니다.
+
+<div id="output_format_avro_sync_interval">
+  ## output_format_avro_sync_interval
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16384" />
+
+바이트 단위의 sync interval입니다.
+
+<div id="output_format_binary_encode_types_in_binary_format">
+  ## output_format_binary_encode_types_in_binary_format
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "RowBinaryWithNamesAndTypes 출력 형식에서 타입 이름을 바이너리 형식으로 기록할 수 있도록 하는 새로운 설정이 추가되었습니다"}]}]} />
+
+RowBinaryWithNamesAndTypes 출력 형식에서 타입 이름 대신 데이터 타입을 바이너리 형식으로 기록합니다
+
+<div id="output_format_binary_write_json_as_string">
+  ## output_format_binary_write_json_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "RowBinary 출력 형식에서 JSON 타입 값을 JSON 문자열로 출력하는 새로운 설정 추가"}]}]} />
+
+[JSON](/ko/reference/data-types/newjson) 데이터 타입의 값을 RowBinary 출력 형식에서 JSON [String](/ko/reference/data-types/string) 값으로 출력합니다.
+
+<div id="output_format_bson_string_as_string">
+  ## output_format_bson_string_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+String 컬럼에는 Binary 대신 BSON String 유형을 사용합니다.
+
+<div id="output_format_compression_level">
+  ## output_format_compression_level
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="3" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "쿼리 출력의 압축 수준을 변경할 수 있도록 허용"}]}]} />
+
+쿼리 출력이 압축될 때의 기본 압축 수준입니다. 이 설정은 `SELECT` 쿼리에 `INTO OUTFILE`이 있거나, 테이블 함수 `file`, `url`, `hdfs`, `s3`, `azureBlobStorage`에 쓸 때 적용됩니다.
+
+가능한 값: `1`부터 `22`까지
+
+<div id="output_format_compression_zstd_window_log">
+  ## output_format_compression_zstd_window_log
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "zstd 압축을 사용할 때 쿼리 출력의 zstd 윈도우 로그를 변경할 수 있습니다"}]}]} />
+
+출력 압축 방식이 `zstd`일 때 사용할 수 있습니다. `0`보다 크면 이 설정은 압축 윈도우 크기(`2`의 거듭제곱)를 명시적으로 설정하고 zstd 압축의 장거리 모드를 활성화합니다. 이렇게 하면 더 높은 압축률을 얻는 데 도움이 될 수 있습니다.
+
+가능한 값: 음이 아닌 숫자입니다. 값이 너무 작거나 너무 크면 `zstdlib`가 예외를 발생시킬 수 있습니다. 일반적인 값은 `20`(윈도우 크기 = `1MB`)부터 `30`(윈도우 크기 = `1GB`)까지입니다.
+
+<div id="output_format_csv_crlf_end_of_line">
+  ## output_format_csv_crlf_end_of_line
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+true로 설정하면 CSV 형식의 줄 끝은 \n 대신 \r\n이 됩니다.
+
+<div id="output_format_csv_serialize_tuple_into_separate_columns">
+  ## output_format_csv_serialize_tuple_into_separate_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "CSV 형식에서 튜플을 해석하는 새로운 방식이 추가되었습니다."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "CSV 형식에서 튜플을 해석하는 새로운 방식이 추가되었습니다."}]}]} />
+
+true로 설정하면 CSV 형식의 튜플이 별도의 컬럼으로 직렬화되며, 이 경우 튜플의 중첩 구조는 사라집니다.
+
+<div id="output_format_decimal_trailing_zeros">
+  ## output_format_decimal_trailing_zeros
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.9"},{"label": "0"},{"label": "더 보기 좋은 출력을 위해 기본적으로 Decimal 타입의 텍스트 표현에서 소수점 이하 끝의 0을 출력하지 않습니다"}]}]} />
+
+Decimal 값을 출력할 때 소수점 이하 끝의 0도 함께 출력합니다. 예: 1.23 대신 1.230000.
+
+기본적으로 비활성화되어 있습니다.
+
+<div id="output_format_float_precision">
+  ## output_format_float_precision
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "부동소수점 출력의 소수 자릿수를 제어하는 새로운 설정"}]}]} />
+
+0이 아니면 부동소수점 출력(`Float32`, `Float64`, `BFloat16`)을 소수점 이하 최대 지정된 자릿수까지만 포맷합니다(소수점 이하 끝의 0은 제거됨).
+0이면(기본값) 가장 짧은 round-trip 표현을 사용합니다.
+
+고정 소수점 표기로 표현하기에 너무 큰 값과, 요청된 precision으로 반올림하면 모든 유효 자릿수가 사라질 정도로 매우 작은 값(가수가 `±0`이 되는 경우)은 대신 과학적 표기법으로 출력됩니다. 이러한 폴백 상황에서는 가수에 요청된 fractional digits 수보다 더 많은 자릿수가 포함될 수 있습니다.
+
+유효 범위: 0~100입니다.
+
+<div id="output_format_image_height">
+  ## output_format_image_height
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1024" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1024"},{"label": "PNG와 같은 이미지 출력 형식의 출력 이미지 높이를 제어하는 새로운 설정입니다."}]}]} />
+
+`PNG`와 같은 이미지 출력 형식에서 출력 이미지의 높이를 픽셀 단위로 지정합니다.
+
+기본값: 1024.
+
+<div id="output_format_image_terminal_mode">
+  ## output_format_image_terminal_mode
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "PNG와 같은 이미지 출력 형식을 원시 이미지 바이트로 쓰는 대신 인라인 이미지 프로토콜을 사용해 터미널에 직접 렌더링할지 제어하는 새로운 설정입니다."}]}]} />
+
+`PNG`와 같은 이미지 출력 형식의 경우, 원시 이미지 바이트를 쓰는 대신 인라인 이미지 프로토콜을 사용하여 이미지를 터미널에 직접 출력합니다.
+
+가능한 값:
+
+* &#96;&#96; (빈 값) — 원시 이미지 바이트를 씁니다(기본값).
+* `iterm` — iTerm2 인라인 이미지 프로토콜을 사용합니다.
+* `kitty` — Kitty 그래픽 프로토콜을 사용합니다.
+* `sixel` — Sixel 프로토콜을 사용합니다.
+* `auto` — 출력 대상이 터미널이면 터미널 기능을 감지하여 `iterm`, `kitty`, `sixel`을 이 순서대로 사용하고, 그렇지 않으면 원시 이미지 바이트를 씁니다.
+
+기본값: &#96;&#96; (빈 값).
+
+<div id="output_format_image_width">
+  ## output_format_image_width
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1024" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1024"},{"label": "PNG와 같은 이미지 출력 형식의 출력 이미지 너비를 제어하는 새로운 설정입니다."}]}]} />
+
+`PNG`와 같은 이미지 출력 형식에서 출력 이미지의 너비를 픽셀 단위로 지정합니다.
+
+기본값: 1024.
+
+<div id="output_format_json_array_of_rows">
+  ## output_format_json_array_of_rows
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+[JSONEachRow](/ko/reference/formats/JSON/JSONEachRow) 포맷에서 모든 행을 JSON 배열로 출력하는 기능을 활성화합니다.
+
+가능한 값:
+
+* 1 — ClickHouse가 모든 행을 배열로 출력하며, 각 행은 `JSONEachRow` 포맷을 따릅니다.
+* 0 — ClickHouse가 각 행을 `JSONEachRow` 포맷으로 개별적으로 출력합니다.
+
+**설정이 활성화된 쿼리 예시**
+
+쿼리:
+
+```sql
+SET output_format_json_array_of_rows = 1;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+결과:
+
+```text
+[
+{"number":"0"},
+{"number":"1"},
+{"number":"2"}
+]
+```
+
+**비활성화된 설정을 사용한 쿼리 예시**
+
+쿼리:
+
+```sql
+SET output_format_json_array_of_rows = 0;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+결과:
+
+```text
+{"number":"0"}
+{"number":"1"}
+{"number":"2"}
+```
+
+<div id="output_format_json_escape_forward_slashes">
+  ## output_format_json_escape_forward_slashes
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+JSON 출력 형식에서 문자열을 출력할 때 슬래시(`/`)를 이스케이프할지 제어합니다. 이 설정은 JavaScript와의 호환성을 위한 것입니다. 항상 이스케이프되는 백슬래시와 혼동하지 마십시오.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="output_format_json_map_as_array_of_tuples">
+  ## output_format_json_map_as_array_of_tuples
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+맵 컬럼을 튜플로 이루어진 JSON 배열로 직렬화합니다.
+
+기본적으로 비활성화되어 있습니다.
+
+<div id="output_format_json_named_tuples_as_objects">
+  ## output_format_json_named_tuples_as_objects
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.6"},{"label": "1"},{"label": "기본적으로 JSON 포맷에서 이름이 지정된 Tuple을 JSON 객체로 직렬화합니다"}]}]} />
+
+이름이 지정된 Tuple 컬럼을 JSON 객체로 직렬화합니다.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="output_format_json_pretty_print">
+  ## output_format_json_pretty_print
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "기본적으로 JSON 출력 형식에서 값을 Pretty 형식으로 출력합니다"}]}]} />
+
+이 설정은 JSON 출력 형식을 사용할 때 `data` 배열에서 튜플(Tuple), 맵(Map), 배열(Array)과 같은 중첩 구조를 어떻게 표시할지 결정합니다.
+
+예를 들어, 다음과 같이 출력하는 대신:
+
+```json
+"data":
+[
+  {
+    "tuple": {"a":1,"b":2,"c":3},
+    "array": [1,2,3],
+    "map": {"a":1,"b":2,"c":3}
+  }
+],
+```
+
+출력은 다음과 같이 포맷됩니다:
+
+```json
+"data":
+[
+    {
+        "tuple": {
+            "a": 1,
+            "b": 2,
+            "c": 3
+        },
+        "array": [
+            1,
+            2,
+            3
+        ],
+        "map": {
+            "a": 1,
+            "b": 2,
+            "c": 3
+        }
+    }
+],
+```
+
+기본적으로 활성화되어 있습니다.
+
+<div id="output_format_json_quote_64bit_floats">
+  ## output_format_json_quote_64bit_floats
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+JSON* 포맷으로 출력할 때 64비트 [부동소수점](/ko/reference/data-types/float) 값을 따옴표로 묶을지 제어합니다.
+
+기본값은 비활성화입니다.
+
+<div id="output_format_json_quote_64bit_integers">
+  ## output_format_json_quote_64bit_integers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "기본적으로 JSON에서 64비트 정수를 따옴표로 감싸지 않음"}]}]} />
+
+[JSON](/ko/reference/formats/JSON/JSON) 포맷으로 출력할 때 64비트 이상 [정수](/ko/reference/data-types/int-uint)(예: `UInt64`, `Int128`)를 따옴표로 감쌀지 제어합니다.
+기본적으로 이러한 정수는 따옴표로 감싸집니다. 이 동작은 대부분의 JavaScript 구현과 호환됩니다.
+
+가능한 값:
+
+* 0 — 정수는 따옴표 없이 출력됩니다.
+* 1 — 정수는 따옴표로 감싸져 출력됩니다.
+
+<div id="output_format_json_quote_decimals">
+  ## output_format_json_quote_decimals
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+JSON 출력 형식에서 Decimal 값을 따옴표로 감쌀지 제어합니다.
+
+기본적으로 비활성화되어 있습니다.
+
+<div id="output_format_json_quote_denormals">
+  ## output_format_json_quote_denormals
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+[JSON](/ko/reference/formats/JSON/JSON) 출력 형식에서 `+nan`, `-nan`, `+inf`, `-inf`를 출력하도록 활성화합니다.
+
+가능한 값:
+
+* 0 — 비활성화됩니다.
+* 1 — 활성화됩니다.
+
+**예시**
+
+다음 `account_orders` 테이블을 예로 들어 보겠습니다:
+
+```text
+┌─id─┬─name───┬─duration─┬─period─┬─area─┐
+│  1 │ Andrew │       20 │      0 │  400 │
+│  2 │ John   │       40 │      0 │    0 │
+│  3 │ Bob    │       15 │      0 │ -100 │
+└────┴────────┴──────────┴────────┴──────┘
+```
+
+`output_format_json_quote_denormals = 0`이면 출력에 `null` 값이 반환됩니다:
+
+```sql
+SELECT area/period FROM account_orders FORMAT JSON;
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.003648093,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+`output_format_json_quote_denormals = 1`로 설정하면, 쿼리는 다음을 반환합니다:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": "inf"
+                },
+                {
+                        "divide(area, period)": "-nan"
+                },
+                {
+                        "divide(area, period)": "-inf"
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000070241,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+<div id="output_format_json_skip_null_value_in_named_tuples">
+  ## output_format_json_skip_null_value_in_named_tuples
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+named tuple 컬럼을 JSON 객체로 직렬화할 때 NULL 값인 키-값 쌍은 제외합니다. 이 설정은 output&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects가 true인 경우에만 유효합니다.
+
+<div id="output_format_json_validate_utf8">
+  ## output_format_json_validate_utf8
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+JSON 출력 형식에서 UTF8 시퀀스의 유효성 검사를 제어합니다. JSON/JSONCompact/JSONColumnsWithMetadata 포맷에는 영향을 미치지 않으며, 이러한 포맷은 항상 UTF8 유효성 검사를 수행합니다.
+
+기본적으로 비활성화되어 있습니다.
+
+<div id="output_format_markdown_escape_special_characters">
+  ## output_format_markdown_escape_special_characters
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+활성화하면 Markdown의 특수 문자를 이스케이프 처리합니다.
+
+[Common Mark](https://spec.commonmark.org/0.30/#example-12)에서는 이스케이프할 수 있는 다음 특수 문자를 정의합니다:
+
+```
+! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
+```
+
+가능한 값:
+
+* 0 — 비활성화
+* 1 — 활성화
+
+<div id="output_format_msgpack_uuid_representation">
+  ## output_format_msgpack_uuid_representation
+</div>
+
+<SettingsInfoBlock type="MsgPackUUIDRepresentation" default_value="ext" />
+
+MsgPack 포맷에서 UUID를 출력하는 방법입니다.
+
+<div id="output_format_native_encode_types_in_binary_format">
+  ## output_format_native_encode_types_in_binary_format
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Native 출력 형식에서 타입 이름을 바이너리 형식으로 쓸 수 있게 하는 새로운 설정이 추가되었습니다"}]}]} />
+
+Native 출력 형식에서 타입 이름 대신 데이터 타입을 바이너리 형식으로 기록합니다
+
+<div id="output_format_native_use_flattened_dynamic_and_json_serialization">
+  ## output_format_native_use_flattened_dynamic_and_json_serialization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "Native 형식에 평탄화된 Dynamic/JSON 직렬화 추가"}]}]} />
+
+[JSON](/ko/reference/data-types/newjson) 및 [Dynamic](/ko/reference/data-types/dynamic) 컬럼 데이터를 평탄화된 포맷(모든 타입/경로를 별도의 서브컬럼으로 분리)으로 씁니다.
+
+<div id="output_format_native_write_json_as_string">
+  ## output_format_native_write_json_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "Native 형식에서 JSON 컬럼을 기본 네이티브 JSON 직렬화 대신 JSON 문자열을 담은 단일 String 컬럼으로 쓸 수 있게 하는 새로운 설정 추가"}]}]} />
+
+[JSON](/ko/reference/data-types/newjson) 컬럼 데이터를 기본 네이티브 JSON 직렬화 대신 JSON 문자열을 담은 [String](/ko/reference/data-types/string) 단일 컬럼으로 씁니다.
+
+<div id="output_format_orc_compression_block_size">
+  ## output_format_orc_compression_block_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="262144" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "262144"},{"label": "새로운 설정"}]}]} />
+
+ORC 출력 형식의 압축 블록 크기(바이트)입니다.
+
+<div id="output_format_orc_compression_method">
+  ## output_format_orc_compression_method
+</div>
+
+<SettingsInfoBlock type="ORCCompression" default_value="zstd" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet/ORC/Arrow는 lz4와 zstd를 포함해 다양한 압축 방식을 지원합니다. ClickHouse는 이러한 모든 압축 방식을 지원합니다. 'duckdb'와 같은 일부 성능이 떨어지는 도구는 더 빠른 `lz4` 압축 방식을 지원하지 않으므로 기본값을 zstd로 설정했습니다."}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4_frame"},{"label": "기본적으로 ORC 출력 형식에서 lz4 압축을 사용합니다"}]}]} />
+
+ORC 출력 형식의 압축 방식입니다. 지원되는 코덱: lz4, snappy, zlib, zstd, none(비압축)
+
+<div id="output_format_orc_dictionary_key_size_threshold">
+  ## output_format_orc_dictionary_key_size_threshold
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "ORC 출력 형식의 문자열 컬럼에서 고유값 수가 NULL이 아닌 전체 행 수의 이 비율보다 크면 딕셔너리 인코딩을 비활성화합니다. 그렇지 않으면 딕셔너리 인코딩이 활성화됩니다"}]}]} />
+
+ORC 출력 형식의 문자열 컬럼에서 고유값 수가 NULL이 아닌 전체 행 수의 이 비율보다 크면 딕셔너리 인코딩을 비활성화합니다. 그렇지 않으면 딕셔너리 인코딩이 활성화됩니다
+
+<div id="output_format_orc_row_index_stride">
+  ## output_format_orc_row_index_stride
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+ORC 출력 형식의 대상 행 인덱스 간격
+
+<div id="output_format_orc_string_as_string">
+  ## output_format_orc_string_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse는 일반적으로 UTF-8로 사용되는 String 데이터 타입에 임의의 바이너리 데이터를 저장할 수 있습니다. Parquet/ORC/Arrow의 String은 UTF-8만 지원합니다. 따라서 ClickHouse String 데이터 타입에 대해 Arrow의 데이터 타입으로 String 또는 Binary 중 어떤 것을 사용할지 선택할 수 있습니다. Binary가 더 정확하고 호환성 측면에서도 더 적절하지만, 대부분의 경우 기본값으로 String을 사용하는 것이 사용자 기대에 더 잘 부합합니다."}]}]} />
+
+String 컬럼에 Binary 대신 ORC String 타입을 사용합니다
+
+<div id="output_format_orc_writer_time_zone_name">
+  ## output_format_orc_writer_time_zone_name
+</div>
+
+<SettingsInfoBlock type="String" default_value="GMT" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "GMT"},{"label": "ORC writer의 시간대 이름입니다. 기본값은 GMT입니다."}]}]} />
+
+ORC writer의 시간대 이름입니다. 기본값은 GMT입니다.
+
+<div id="output_format_parallel_formatting">
+  ## output_format_parallel_formatting
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+데이터를 병렬로 포맷팅할지 여부를 설정합니다. [TSV](/ko/reference/formats/TabSeparated/TabSeparated), [TSKV](/ko/reference/formats/TabSeparated/TSKV), [CSV](/ko/reference/formats/CSV/CSV), [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow) 포맷에서만 지원됩니다.
+
+가능한 값:
+
+* 1 — 활성화됨.
+* 0 — 비활성화됨.
+
+<div id="output_format_parquet_batch_size">
+  ## output_format_parquet_batch_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" />
+
+지정한 행 수마다 페이지 크기를 확인합니다. 평균 값 크기가 몇 KB를 초과하는 컬럼이 있다면 이 값을 줄이는 것을 고려하십시오.
+
+<div id="output_format_parquet_bloom_filter_bits_per_value">
+  ## output_format_parquet_bloom_filter_bits_per_value
+</div>
+
+<SettingsInfoBlock type="Double" default_value="10.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "10.5"},{"label": "새 설정입니다."}]}]} />
+
+Parquet 블룸 필터에서 각 고유 값에 사용할 대략적인 비트 수입니다. 예상 거짓 양성률은 다음과 같습니다.
+
+* 6   비트 - 10%
+* 10.5 비트 -  1%
+* 16.9 비트 -  0.1%
+* 26.4 비트 -  0.01%
+* 41   비트 -  0.001%
+
+<div id="output_format_parquet_bloom_filter_flush_threshold_bytes">
+  ## output_format_parquet_bloom_filter_flush_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "134217728"},{"label": "새 설정입니다."}]}]} />
+
+Parquet 파일에서 블룸 필터를 배치할 위치를 지정합니다. 블룸 필터는 대략 이 크기 단위로 기록됩니다. 구체적으로는 다음과 같습니다.
+
+* 0이면 각 row group의 블룸 필터가 해당 row group 바로 뒤에 즉시 기록됩니다.
+  * 모든 블룸 필터의 총크기보다 크면, 모든 row group의 블룸 필터가 메모리에 누적된 다음 파일 끝부분 근처에 함께 기록됩니다.
+  * 그렇지 않으면 블룸 필터가 메모리에 누적되며, 총크기가 이 값을 초과할 때마다 기록됩니다.
+
+<div id="output_format_parquet_compression_method">
+  ## output_format_parquet_compression_method
+</div>
+
+<SettingsInfoBlock type="ParquetCompression" default_value="zstd" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet/ORC/Arrow는 lz4와 zstd를 포함한 다양한 압축 방식을 지원합니다. ClickHouse는 이러한 모든 압축 방식을 지원합니다. 'duckdb'와 같은 일부 성능이 떨어지는 도구는 더 빠른 `lz4` 압축 방식을 지원하지 않으므로 기본값을 zstd로 설정했습니다."}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4"},{"label": "기본적으로 Parquet 출력 형식에 lz4 압축을 사용합니다"}]}]} />
+
+Parquet 출력 형식의 압축 방식입니다. 지원되는 코덱: snappy, lz4, brotli, zstd, gzip, none (압축되지 않음)
+
+<div id="output_format_parquet_data_page_size">
+  ## output_format_parquet_data_page_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1048576" />
+
+압축 전 목표 페이지 크기(바이트)입니다.
+
+<div id="output_format_parquet_date_as_uint16">
+  ## output_format_parquet_date_as_uint16
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "24.12에서 도입된 경미한 호환성 파괴 변경을 위한 호환성 설정이 추가되었습니다."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Date를 일반 UInt16이 아니라 Date32로 기록합니다(이 둘은 Date에 가장 가까운 두 가지 Parquet 타입입니다)."}]}]} />
+
+Date 값을 32비트 Parquet DATE 타입으로 변환해 기록하는 대신 일반 16비트 숫자로 기록합니다(다시 읽으면 UInt16으로 읽힘).
+
+<div id="output_format_parquet_datetime_as_uint32">
+  ## output_format_parquet_datetime_as_uint32
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "UInt32 대신 DateTime 값을 DateTime64(3)로 씁니다(Parquet에서 DateTime에 가장 가까운 두 가지 타입입니다)."}]}]} />
+
+DateTime 값을 밀리초로 변환해 기록하는 대신(다시 읽으면 DateTime64(3)) 원시 Unix timestamp로 기록합니다(다시 읽으면 UInt32).
+
+<div id="output_format_parquet_enum_as_byte_array">
+  ## output_format_parquet_enum_as_byte_array
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "기본적으로 Parquet에서 Enum을 바이트 배열로 기록하도록 활성화합니다"}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "Parquet 물리 유형 BYTE_ARRAY 및 논리 유형 ENUM을 사용해 Enum을 기록합니다"}]}]} />
+
+Parquet 물리 유형 BYTE&#95;ARRAY 및 논리 유형 ENUM을 사용해 Enum을 기록합니다
+
+<div id="output_format_parquet_fixed_string_as_fixed_byte_array">
+  ## output_format_parquet_fixed_string_as_fixed_byte_array
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.2"},{"label": "1"},{"label": "기본적으로 FixedString에 Parquet FIXED_LENGTH_BYTE_ARRAY 유형을 사용"}]}]} />
+
+FixedString 컬럼에는 Binary 대신 Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY 유형을 사용합니다.
+
+<div id="output_format_parquet_geometadata">
+  ## output_format_parquet_geometadata
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "1"},{"label": "Parquet 메타데이터에 Geo 컬럼 정보를 기록하고, 컬럼을 WKB 포맷으로 인코딩할 수 있게 하는 새로운 설정입니다."}]}]} />
+
+Parquet 메타데이터에 Geo 컬럼 정보를 기록하고, 컬럼을 WKB 포맷으로 인코딩할 수 있게 합니다.
+
+<div id="output_format_parquet_max_dictionary_size">
+  ## output_format_parquet_max_dictionary_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1048576" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1048576"},{"label": "새로운 설정"}]}]} />
+
+딕셔너리 크기가 이 값(바이트)보다 커지면 딕셔너리를 사용하지 않는 인코딩으로 전환됩니다. 딕셔너리 인코딩을 비활성화하려면 0으로 설정하십시오.
+
+<div id="output_format_parquet_parallel_encoding">
+  ## output_format_parquet_parallel_encoding
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+여러 스레드를 사용해 Parquet 인코딩을 수행합니다.
+
+<div id="output_format_parquet_row_group_size">
+  ## output_format_parquet_row_group_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000000" />
+
+목표 row group 크기(행 수)입니다.
+
+<div id="output_format_parquet_row_group_size_bytes">
+  ## output_format_parquet_row_group_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="536870912" />
+
+압축 전 기준의 목표 row group 크기(바이트)입니다.
+
+<div id="output_format_parquet_string_as_string">
+  ## output_format_parquet_string_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse는 일반적으로 UTF-8로 처리되는 String 데이터 타입에 임의의 binary 데이터를 허용합니다. Parquet/ORC/Arrow의 String은 UTF-8만 지원합니다. 따라서 ClickHouse String 데이터 타입에 사용할 Arrow 데이터 타입을 String 또는 Binary 중에서 선택할 수 있습니다. Binary가 더 정확하고 호환성 측면에서도 더 적절하지만, 대부분의 경우 기본값으로 String을 사용하면 사용자 기대에 더 잘 부합합니다."}]}]} />
+
+String 컬럼에 Binary 대신 Parquet String 타입을 사용합니다.
+
+<div id="output_format_parquet_write_bloom_filter">
+  ## output_format_parquet_write_bloom_filter
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Parquet 블룸 필터 쓰기 지원이 추가되었습니다."}]}]} />
+
+Parquet 파일에 블룸 필터를 기록합니다.
+
+<div id="output_format_parquet_write_checksums">
+  ## output_format_parquet_write_checksums
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "새 설정입니다."}]}]} />
+
+Parquet 페이지 헤더에 crc32 체크섬을 기록합니다.
+
+<div id="output_format_parquet_write_page_index">
+  ## output_format_parquet_write_page_index
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1"},{"label": "Parquet 파일에 페이지 인덱스를 쓸 수 있는 기능이 추가되었습니다."}]}]} />
+
+컬럼 인덱스와 오프셋 인덱스(즉, 읽을 때 filter pushdown에 사용할 수 있는 각 데이터 페이지의 통계)를 Parquet 파일에 씁니다.
+
+<div id="output_format_pretty_color">
+  ## output_format_pretty_color
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "auto"},{"label": "출력이 tty가 아닌 경우 ANSI 이스케이프를 비활성화하도록 설정이 변경되어 auto 값도 허용됩니다"}]}]} />
+
+Pretty 형식에서 ANSI 이스케이프 시퀀스를 사용합니다. 0 - 비활성화, 1 - 활성화, &#39;auto&#39; - 출력이 터미널이면 활성화됩니다.
+
+<div id="output_format_pretty_display_footer_column_names">
+  ## output_format_pretty_display_footer_column_names
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "테이블 행이 많을 때 푸터에 컬럼 이름을 표시하는 설정이 추가되었습니다. 임계값은 output_format_pretty_display_footer_column_names_min_rows로 제어됩니다."}]}]} />
+
+테이블 행이 많을 때 푸터에 컬럼 이름을 표시합니다.
+
+가능한 값:
+
+* 0 — 푸터에 컬럼 이름을 표시하지 않습니다.
+* 1 — 행 수가 [output&#95;format&#95;pretty&#95;display&#95;footer&#95;column&#95;names&#95;min&#95;rows](#output_format_pretty_display_footer_column_names_min_rows)에서 설정한 임계값(기본값: 50) 이상이면 푸터에 컬럼 이름을 표시합니다.
+
+**예시**
+
+쿼리:
+
+```sql
+SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
+```
+
+결과:
+
+```response
+      ┌─number─┬─toTypeName(number)─┐
+   1. │      0 │ UInt64             │
+   2. │      1 │ UInt64             │
+   3. │      2 │ UInt64             │
+   ...
+ 999. │    998 │ UInt64             │
+1000. │    999 │ UInt64             │
+      └─number─┴─toTypeName(number)─┘
+```
+
+<div id="output_format_pretty_display_footer_column_names_min_rows">
+  ## output_format_pretty_display_footer_column_names_min_rows
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="50" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "50"},{"label": "output_format_pretty_display_footer_column_names_min_rows 설정의 임계값을 제어하는 설정을 추가했습니다. 기본값은 50입니다."}]}]} />
+
+설정 [output&#95;format&#95;pretty&#95;display&#95;footer&#95;column&#95;names](#output_format_pretty_display_footer_column_names)이 활성화된 경우, 컬럼 이름이 포함된 푸터를 표시할 최소 행 수를 설정합니다.
+
+<div id="output_format_pretty_fallback_to_vertical">
+  ## output_format_pretty_fallback_to_vertical
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "새로운 설정"}]}]} />
+
+활성화하면 테이블의 너비는 넓지만 행 수가 적을 때 Pretty 형식이 Vertical 형식처럼 출력됩니다.
+이 동작을 세부적으로 조정하려면 `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` 및 `output_format_pretty_fallback_to_vertical_min_table_width`를 참조하세요.
+
+<div id="output_format_pretty_fallback_to_vertical_max_rows_per_chunk">
+  ## output_format_pretty_fallback_to_vertical_max_rows_per_chunk
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "100"},{"label": "새로운 설정"}]}]} />
+
+Vertical 형식으로의 폴백(`output_format_pretty_fallback_to_vertical` 참조)은 청크에 포함된 레코드 수가 지정된 값을 초과하지 않을 때만 활성화됩니다.
+
+<div id="output_format_pretty_fallback_to_vertical_min_columns">
+  ## output_format_pretty_fallback_to_vertical_min_columns
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "5"},{"label": "새로운 설정"}]}]} />
+
+Vertical 형식으로의 폴백(`output_format_pretty_fallback_to_vertical` 참조)은 컬럼 수가 지정된 값보다 많을 때만 활성화됩니다.
+
+<div id="output_format_pretty_fallback_to_vertical_min_table_width">
+  ## output_format_pretty_fallback_to_vertical_min_table_width
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="250" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "250"},{"label": "새로운 설정"}]}]} />
+
+Vertical 형식으로의 폴백(`output_format_pretty_fallback_to_vertical` 참조)은 테이블에 있는 컬럼 길이의 합이 지정된 값 이상이거나, 값 중 하나 이상에 줄바꿈 문자가 포함된 경우에만 활성화됩니다.
+
+<div id="output_format_pretty_glue_chunks">
+  ## output_format_pretty_glue_chunks
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "auto"},{"label": "Pretty 형식을 더 보기 좋게 만드는 새로운 설정입니다."}]}]} />
+
+Pretty 형식으로 표시되는 데이터가 여러 청크로 나뉘어 도착한 경우, 지연 후에 도착했더라도 다음 청크의 컬럼 너비가 이전 청크와 같으면 ANSI 이스케이프 시퀀스를 사용해 이전 줄로 돌아가 이전 청크의 푸터를 덮어쓴 뒤 새 청크의 데이터로 이어서 표시합니다. 이렇게 하면 결과가 시각적으로 더 자연스럽게 보입니다.
+
+0 - 비활성화, 1 - 활성화, &#39;auto&#39; - 터미널인 경우 활성화.
+
+<div id="output_format_pretty_grid_charset">
+  ## output_format_pretty_grid_charset
+</div>
+
+<SettingsInfoBlock type="String" default_value="UTF-8" />
+
+격자 테두리를 출력할 때 사용하는 문자 집합입니다. 사용할 수 있는 문자 집합: ASCII, UTF-8(기본값).
+
+interactive mode에서는 이 설정을 명시적으로 지정하지 않은 경우, 터미널이 UTF-8을 지원하지 않으면(`LC_ALL`, `LC_CTYPE`, `LANG` 환경 변수를 기준으로 판단) `clickhouse-client`가 자동으로 `ASCII`로 전환합니다.
+
+<div id="output_format_pretty_highlight_digit_groups">
+  ## output_format_pretty_highlight_digit_groups
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "활성화되어 있고 출력이 터미널인 경우, 천 단위, 백만 단위 등 자릿수 그룹에 해당하는 숫자를 밑줄로 강조 표시합니다."}]}]} />
+
+활성화되어 있고 출력이 터미널인 경우, 천 단위, 백만 단위 등 자릿수 그룹에 해당하는 숫자를 밑줄로 강조 표시합니다.
+
+<div id="output_format_pretty_highlight_trailing_spaces">
+  ## output_format_pretty_highlight_trailing_spaces
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "새 설정입니다."}]}]} />
+
+활성화되어 있고 출력이 터미널인 경우, 후행 공백을 회색과 밑줄로 강조 표시합니다.
+
+<div id="output_format_pretty_max_column_name_width_cut_to">
+  ## output_format_pretty_max_column_name_width_cut_to
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="24" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "24"},{"label": "새로운 설정"}]}]} />
+
+컬럼 이름이 너무 길면 이 길이로 잘립니다.
+컬럼 이름의 길이가 `output_format_pretty_max_column_name_width_cut_to`와 `output_format_pretty_max_column_name_width_min_chars_to_cut`를 더한 값보다 길면 잘립니다.
+
+<div id="output_format_pretty_max_column_name_width_min_chars_to_cut">
+  ## output_format_pretty_max_column_name_width_min_chars_to_cut
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "4"},{"label": "새로운 설정"}]}]} />
+
+컬럼 이름이 너무 길 때 잘라낼 최소 문자 수입니다.
+컬럼 이름의 길이가 `output_format_pretty_max_column_name_width_cut_to`와 `output_format_pretty_max_column_name_width_min_chars_to_cut`의 합보다 길면 잘립니다.
+
+<div id="output_format_pretty_max_column_pad_width">
+  ## output_format_pretty_max_column_pad_width
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="250" />
+
+Pretty 형식에서 컬럼의 모든 값을 채울 때 적용할 수 있는 최대 너비입니다.
+
+<div id="output_format_pretty_max_rows">
+  ## output_format_pretty_max_rows
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1000"},{"label": "사용성 측면에서 더 좋습니다. 스크롤할 양이 줄어듭니다."}]}]} />
+
+Pretty 형식의 행 수 제한입니다.
+
+<div id="output_format_pretty_max_value_width">
+  ## output_format_pretty_max_value_width
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+Pretty 형식에 표시되는 값의 최대 너비입니다. 이보다 크면 잘립니다.
+값이 0이면 자르지 않습니다.
+
+<div id="output_format_pretty_max_value_width_apply_for_single_value">
+  ## output_format_pretty_max_value_width_apply_for_single_value
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Pretty 형식의 단일 값은 잘리지 않습니다."}]}]} />
+
+블록 내 단일 값이 아닌 경우에만 값이 잘립니다(`output_format_pretty_max_value_width` 설정 참조). 단일 값인 경우에는 전체가 그대로 출력되며, 이는 `SHOW CREATE TABLE` 쿼리에 유용합니다.
+
+<div id="output_format_pretty_multiline_fields">
+  ## output_format_pretty_multiline_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "새로운 설정"}]}]} />
+
+활성화하면 Pretty 형식은 여러 줄 필드를 테이블 셀 내부에 렌더링하므로 테이블의 테두리가 유지됩니다.
+비활성화하면 필드가 있는 그대로 렌더링되어 테이블 모양이 흐트러질 수 있습니다(다만 비활성화된 상태로 두면 여러 줄 값을 복사해 붙여넣기는 더 쉬워집니다).
+
+<div id="output_format_pretty_named_tuples_as_json">
+  ## output_format_pretty_named_tuples_as_json
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Pretty 형식에서 이름이 지정된 Tuple을 JSON 객체로 출력할지 제어하는 새로운 설정"}]}]} />
+
+Pretty 형식에서 이름이 지정된 Tuple을 사람이 읽기 쉬운 JSON 객체로 출력할지 제어합니다.
+
+<div id="output_format_pretty_row_numbers">
+  ## output_format_pretty_row_numbers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "사용성이 더 좋습니다."}]}]} />
+
+Pretty 출력 형식에서 각 행 앞에 행 번호를 추가합니다
+
+<div id="output_format_pretty_single_large_number_tip_threshold">
+  ## output_format_pretty_single_large_number_tip_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1000000"},{"label": "블록이 이 값을 초과하는 단일 숫자 1개로만 구성된 경우(0 제외), 테이블 오른쪽에 읽기 쉬운 숫자 표시를 출력합니다"}]}]} />
+
+블록이 이 값을 초과하는 단일 숫자 1개로만 구성된 경우(0 제외), 테이블 오른쪽에 읽기 쉬운 숫자 표시를 출력합니다
+
+<div id="output_format_pretty_squash_consecutive_ms">
+  ## output_format_pretty_squash_consecutive_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="50" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "50"},{"label": "새로운 설정 추가"}]}]} />
+
+다음 블록을 지정된 밀리초 수만큼 기다렸다가, 쓰기 전에 이전 블록과 합칩니다.
+이렇게 하면 너무 작은 블록이 자주 출력되는 것을 방지하면서도 데이터를 스트리밍 방식으로 계속 표시할 수 있습니다.
+
+<div id="output_format_pretty_squash_max_wait_ms">
+  ## output_format_pretty_squash_max_wait_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000"},{"label": "새로운 설정"}]}]} />
+
+이전 출력 후 지정된 밀리초보다 더 많은 시간이 지나면 대기 중인 블록을 Pretty 형식으로 출력합니다.
+
+<div id="output_format_pretty_use_nbsp_for_padding">
+  ## output_format_pretty_use_nbsp_for_padding
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "새 설정입니다. 활성화하면 `Pretty` 출력의 패딩이 `U+00A0`로 렌더링되므로, 일반 공백이 연속된 부분을 압축하는 도구를 거쳐 복사하여 붙여넣어도 유지됩니다."}]}]} />
+
+활성화하면 `Pretty` 출력 형식의 패딩이 ASCII 공백 대신 `U+00A0`로 렌더링됩니다.
+고정폭 글꼴에서는 출력이 시각적으로 동일하게 보이지만, 일반 공백이 연속된 부분을 압축하거나 잘라내는 도구를 거쳐도 패딩이 유지됩니다.
+`output_format_pretty_grid_charset`이 `UTF-8`일 때만 적용됩니다.
+
+<div id="output_format_protobuf_nullables_with_google_wrappers">
+  ## output_format_protobuf_nullables_with_google_wrappers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Google wrapper와 함께 널 허용 컬럼을 직렬화할 때 기본값은 빈 wrapper로 직렬화합니다. 이 옵션을 끄면 기본값과 NULL 값은 직렬화되지 않습니다.
+
+<div id="output_format_schema">
+  ## output_format_schema
+</div>
+
+자동으로 생성된 스키마가 [Cap&#39;n Proto](/ko/reference/formats/CapnProto) 또는 [Protobuf](/ko/reference/formats/Protobuf/Protobuf) 포맷으로 저장되는 파일의 경로입니다.
+
+<div id="output_format_sql_insert_include_column_names">
+  ## output_format_sql_insert_include_column_names
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+INSERT 쿼리에 컬럼 이름을 포함합니다
+
+<div id="output_format_sql_insert_max_batch_size">
+  ## output_format_sql_insert_max_batch_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="65409" />
+
+하나의 INSERT 문에 포함될 수 있는 최대 행 수입니다.
+
+<div id="output_format_sql_insert_quote_names">
+  ## output_format_sql_insert_quote_names
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+컬럼 이름을 &#39;&#96;&#39; 문자로 감싸서 표시합니다
+
+<div id="output_format_sql_insert_table_name">
+  ## output_format_sql_insert_table_name
+</div>
+
+<SettingsInfoBlock type="String" default_value="table" />
+
+출력 INSERT 쿼리의 테이블 이름
+
+<div id="output_format_sql_insert_use_replace">
+  ## output_format_sql_insert_use_replace
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+INSERT 대신 REPLACE 문을 사용합니다
+
+<div id="output_format_trim_fixed_string">
+  ## output_format_trim_fixed_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "텍스트 출력 형식에서 FixedString 값의 뒤쪽 0 바이트를 제거하는 새로운 설정"}]}]} />
+
+텍스트 출력 형식에서 FixedString 값의 뒤쪽 널 바이트를 제거합니다. 예를 들어 `toFixedString('John', 8)`은 `John\0\0\0\0` 대신 `John`으로 출력됩니다.
+
+<div id="output_format_tsv_crlf_end_of_line">
+  ## output_format_tsv_crlf_end_of_line
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+이 값을 true로 설정하면 TSV 포맷의 줄바꿈 문자가 \n 대신 \r\n으로 사용됩니다.
+
+<div id="output_format_values_escape_quote_with_quote">
+  ## output_format_values_escape_quote_with_quote
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "값이 true이면 '를 ''로 이스케이프하고, 그렇지 않으면 \\'를 사용해 감쌉니다"}]}]} />
+
+값이 true이면 &#39;를 &#39;&#39;로 이스케이프하고, 그렇지 않으면 &#92;&#39;를 사용해 감쌉니다
+
+<div id="output_format_write_statistics">
+  ## output_format_write_statistics
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+적절한 출력 형식에서는 읽은 행 수, 바이트 수, 경과 시간에 대한 통계를 기록합니다.
+
+기본적으로 활성화되어 있습니다.
+
+<div id="precise_float_parsing">
+  ## precise_float_parsing
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+더 정확하지만 더 느린 부동소수점 파싱 알고리즘을 우선 사용합니다
+
+<div id="schema_inference_hints">
+  ## schema_inference_hints
+</div>
+
+스키마가 없는 포맷에서 스키마 추론에 사용할 힌트용 컬럼 이름과 타입 목록입니다.
+
+예시:
+
+쿼리:
+
+```sql
+desc format(JSONEachRow, '{"x" : 1, "y" : "String", "z" : "0.0.0.0" }') settings schema_inference_hints='x UInt8, z IPv4';
+```
+
+결과:
+
+```sql
+x   UInt8
+y   Nullable(String)
+z   IPv4
+```
+
+<Note>
+  `schema_inference_hints`의 형식이 올바르지 않거나 오타, 잘못된 데이터 타입 등이 있는 경우... `schema_inference_hints` 전체가 무시됩니다.
+</Note>
+
+<div id="schema_inference_make_columns_nullable">
+  ## schema_inference_make_columns_nullable
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="3" />
+
+스키마 추론에서 추론된 타입을 `Nullable`로 만들지 여부를 제어합니다.
+가능한 값:
+
+* 0 - 추론된 타입은 `Nullable`이 되지 않습니다(이 경우 null 값을 어떻게 처리할지는 input&#95;format&#95;null&#95;as&#95;default로 제어하십시오),
+* 1 - 모든 추론된 타입이 `Nullable`이 됩니다,
+* 2 또는 `auto` - 스키마 추론 중 파싱되는 sample에 컬럼의 `NULL`이 포함되어 있거나, 파일 메타데이터에 컬럼의 null 허용 여부 정보가 있는 경우에만 추론된 타입이 `Nullable`이 됩니다,
+* 3 - 포맷이 파일 메타데이터의 null 허용 여부 정보를 지원하면 그 정보에 맞추고(예: Parquet), 그렇지 않으면 항상 `Nullable`이 됩니다(예: CSV).
+
+<div id="schema_inference_make_json_columns_nullable">
+  ## schema_inference_make_json_columns_nullable
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+스키마 추론 시 추론된 JSON 타입을 `Nullable`로 만들지 여부를 제어합니다.
+이 설정을 schema&#95;inference&#95;make&#95;columns&#95;nullable와 함께 활성화하면, 추론된 JSON 타입이 `Nullable`이 됩니다.
+
+<div id="schema_inference_mode">
+  ## schema_inference_mode
+</div>
+
+<SettingsInfoBlock type="SchemaInferenceMode" default_value="default" />
+
+스키마 추론 모드입니다. &#39;default&#39; - 모든 파일의 스키마가 동일하다고 가정하며, 임의의 파일에서 스키마를 추론할 수 있습니다. &#39;union&#39; - 파일마다 스키마가 다를 수 있으며, 결과 스키마는 모든 파일 스키마의 합집합이어야 합니다.
+
+<div id="show_create_query_identifier_quoting_rule">
+  ## show_create_query_identifier_quoting_rule
+</div>
+
+<SettingsInfoBlock type="IdentifierQuotingRule" default_value="when_necessary" />
+
+SHOW CREATE 쿼리의 식별자 인용 규칙을 설정합니다
+
+<div id="show_create_query_identifier_quoting_style">
+  ## show_create_query_identifier_quoting_style
+</div>
+
+<SettingsInfoBlock type="IdentifierQuotingStyle" default_value="Backticks" />
+
+SHOW CREATE 쿼리에서 식별자에 사용할 인용 부호 스타일을 설정합니다
+
+<div id="type_json_allow_duplicated_key_with_literal_and_nested_object">
+  ## type_json_allow_duplicated_key_with_literal_and_nested_object
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+활성화하면 일부 키가 중복되더라도 그중 하나가 중첩 객체인 `{"a" : 42, "a" : {"b" : 42}}`와 같은 JSON을 파싱할 수 있습니다.
+
+<div id="type_json_skip_duplicated_paths">
+  ## type_json_skip_duplicated_paths
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+활성화하면 JSON 객체를 JSON 타입으로 파싱하는 동안 중복된 경로는 무시되며, 예외가 발생하는 대신 첫 번째 경로만 삽입됩니다
+
+<div id="type_json_skip_invalid_typed_paths">
+  ## type_json_skip_invalid_typed_paths
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+활성화하면, 타입이 지정된 경로가 있는 JSON 타입 컬럼에서 값이 선언된 타입으로 변환될 수 없는 필드는 오류를 발생시키는 대신 건너뜁니다. 건너뛴 필드는 누락된 것으로 처리되며, 타입이 지정된 경로 정의에 따라 기본값 또는 NULL 값을 사용합니다.
+
+이 설정은 특정 경로에 타입이 선언된 JSON 타입 컬럼(예: JSON(a Int64, b String))에만 적용됩니다. 일반적인 타입이 지정된 컬럼에 삽입할 때 사용하는 JSONEachRow 같은 일반 JSON 입력 형식에는 적용되지 않습니다.
+
+가능한 값:
+
+* 0 — 비활성화(타입 불일치 시 오류 발생).
+* 1 — 활성화(타입 불일치 시 필드 건너뜀).
+
+<div id="type_json_use_partial_match_to_skip_paths_by_regexp">
+  ## type_json_use_partial_match_to_skip_paths_by_regexp
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+활성화하면 JSON 객체를 JSON 타입으로 파싱할 때 SKIP REGEXP로 지정한 정규식은 경로를 건너뛰려면 부분 일치해야 합니다. 비활성화하면 전체 일치해야 합니다.
+
+<div id="validate_experimental_and_suspicious_types_inside_nested_types">
+  ## validate_experimental_and_suspicious_types_inside_nested_types
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Array/Map/Tuple와 같은 중첩 타입 내부에서 Experimental 및 의심스러운 타입 사용을 검사합니다

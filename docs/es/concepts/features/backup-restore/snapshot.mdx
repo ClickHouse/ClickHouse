@@ -1,0 +1,244 @@
+---
+description: 'Cómo crear y restaurar instantáneas ligeras de tablas nativas de la nube mediante almacenamiento de objetos en la nube.'
+sidebarTitle: 'Copia de seguridad de instantáneas'
+slug: /operations/backup/snapshot
+title: 'Copia de seguridad y restauración de instantáneas'
+doc_type: 'guide'
+keywords: ['instantánea', 'copia de seguridad', 'restauración', 'SharedMergeTree', 'SharedSet', 'SharedJoin', 'copia de seguridad ligera', 'copia de seguridad en la nube', 'S3', 'Azure Blob Storage', 'snapshot_locks', 'snapshot_parts', 'experimental_lightweight_snapshot']
+---
+
+La copia de seguridad de instantáneas es un modo de copia de seguridad ligero para motores de tabla nativos de la nube. En lugar de copiar los datos, escribe nodos de bloqueo para cada parte en ClickHouse Keeper. Estos bloqueos impiden que el servidor elimine las partes del almacenamiento de objetos referenciadas mientras se conserve la instantánea. A continuación, la copia de seguridad registra las referencias al almacenamiento de objetos en lugar de copiar físicamente los datos, lo que permite crear instantáneas rápidamente independientemente del tamaño de la tabla.
+
+El modo ligero se aplica a las tablas [SharedMergeTree](/es/products/cloud/features/infrastructure/shared-merge-tree), SharedSet y SharedJoin. Para todos los demás tipos de motor, como Log o Memory, la copia de seguridad recurre automáticamente a una copia de seguridad estándar basada en copias.
+
+<div id="create-a-snapshot">
+  ## Crear una instantánea
+</div>
+
+La copia de seguridad mediante instantánea utiliza el comando estándar [`BACKUP`](/es/concepts/features/backup-restore/overview#syntax) con `experimental_lightweight_snapshot = true`. La configuración `id` es obligatoria: asigna un nombre a la instantánea y se usa para hacer referencia a ella en los comandos de desbloqueo y observabilidad:
+
+```sql
+BACKUP { TABLE [db.]table_name | DATABASE db_name | ALL [EXCEPT {TABLES | DATABASES} ...] }
+TO { S3(...) | AzureBlobStorage(...) }
+SETTINGS experimental_lightweight_snapshot = true, id = '<snapshot_id>'
+```
+
+El comando devuelve `id` y `status`, y `id` puede utilizarse para hacer un seguimiento de la operación en [`system.backups`](/es/reference/system-tables/backups).
+
+Haga una copia de seguridad de una sola tabla en S3:
+
+```sql
+BACKUP TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
+```
+
+Haga una copia de seguridad completa de la base de datos:
+
+```sql
+BACKUP DATABASE mydb
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/mydb/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'mydb_snapshot_1'
+```
+
+Haga una copia de seguridad de todas las tablas excepto una:
+
+```sql
+BACKUP ALL
+EXCEPT TABLES mydb.staging_table
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
+```
+
+Los mismos comandos funcionan con Azure Blob Storage:
+
+```sql
+BACKUP TABLE mydb.events
+TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=...', 'my-container', 'snapshots/events/')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
+```
+
+<div id="restore-to-same-service">
+  ## Restaurar en el mismo servicio
+</div>
+
+Como una instantánea almacena referencias a archivos del almacenamiento de objetos en lugar de copias de los datos, restaurarla en un servicio de ClickHouse nuevo o distinto requiere acceso al almacenamiento de objetos original. Por ese motivo, la restauración entre servicios no se admite mediante SQL; solo está disponible a través de la UI. Con SQL, puede restaurar una instantánea en el mismo servicio desde un bucket de copia de seguridad externo con `snapshot_from_current_service = 1`. Esto lee los objetos directamente a través del disco de destino en lugar de pasar por un lector remoto de instantáneas:
+
+```sql
+RESTORE TABLE mydb.events AS mydb.events_restored
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS snapshot_from_current_service = 1
+```
+
+La cláusula `AS` restaura con un nuevo nombre de tabla, dejando intacta la tabla original. Para sobrescribir la tabla original, elimínela primero:
+
+```sql
+DROP TABLE mydb.events;
+
+RESTORE TABLE mydb.events
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS snapshot_from_current_service = 1
+```
+
+<div id="unlock-snapshot">
+  ## Desbloquear una instantánea
+</div>
+
+Cada instantánea mantiene bloqueos en ClickHouse Keeper que impiden que los archivos referenciados del almacenamiento de objetos sean eliminados por el recolector de basura. Una vez completada una restauración — o cuando una instantánea ya no sea necesaria — desbloquéela para liberar esos bloqueos.
+
+Hay dos formas: un desbloqueo a nivel de sistema, que elimina todos los bloqueos de la instantánea de una sola vez, y un desbloqueo por tabla, que elimina el bloqueo de una sola tabla mientras mantiene intacto el resto de la instantánea.
+
+**Desbloqueo a nivel de sistema** — elimina todos los bloqueos de la instantánea:
+
+```sql
+SYSTEM UNLOCK SNAPSHOT '<snapshot_id>'
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+```
+
+**Desbloqueo por tabla** — elimina el bloqueo de una sola tabla:
+
+```sql
+ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+```
+
+La cláusula `FROM` es opcional cuando el destino de la instantánea se almacenó en Keeper al crearse (visible en la columna `info` de `system.snapshot_locks`):
+
+```sql
+SYSTEM UNLOCK SNAPSHOT '<snapshot_id>'
+
+-- o por tabla:
+ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
+```
+
+Tras desbloquear, la fila correspondiente desaparece de `system.snapshot_locks` y las partes a las que ya no hacen referencia otros snapshots dejan de aparecer en `system.snapshot_parts`.
+
+<div id="observability">
+  ## Observabilidad
+</div>
+
+<div id="system-backups">
+  ### system.backups
+</div>
+
+Todas las operaciones de instantánea aparecen en [`system.backups`](/es/reference/system-tables/backups), junto con las operaciones habituales de copia de seguridad y restauración. Consúltela con el `id` que estableció (o el UUID devuelto por el comando):
+
+```sql
+SELECT id, name, status, error, start_time, end_time, num_files, uncompressed_size, compressed_size
+FROM system.backups
+WHERE id = 'events_snapshot_1'
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:                events_snapshot_1
+name:              S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', '[HIDDEN]')
+status:            BACKUP_CREATED
+error:
+start_time:        2024-06-01 10:00:00
+end_time:          2024-06-01 10:00:03
+num_files:         42
+uncompressed_size: 1073741824
+compressed_size:   0
+```
+
+<div id="system-snapshot-locks">
+  ### system.snapshot_locks
+</div>
+
+`system.snapshot_locks` muestra las instantáneas confirmadas que están registradas actualmente en Keeper. Cuando se confirma una instantánea, se crea un nodo de Keeper en `/clickhouse/snapshot/committed/{snapshot_id}`. Antes de eliminar cualquier parte de datos, el servidor comprueba si alguna instantánea confirmada mantiene un bloqueo sobre esa parte. En ese caso, se omite su eliminación. El bloqueo persiste hasta que desbloquee explícitamente la instantánea.
+
+```sql
+SELECT *
+FROM system.snapshot_locks
+```
+
+| Columna     | Tipo       | Descripción                                   |
+| ----------- | ---------- | --------------------------------------------- |
+| `id`        | `String`   | ID de la instantánea                          |
+| `info`      | `String`   | Destino de la instantánea, p. ej. `S3('...')` |
+| `ctime`     | `DateTime` | Cuándo se creó este bloqueo en Keeper         |
+| `lock_path` | `String`   | Ruta de Keeper para este bloqueo              |
+
+Cada fila representa una instantánea confirmada. Si ve bloqueos de instantáneas que ya no tienen un destino de copia de seguridad válido, ejecute `SYSTEM UNLOCK SNAPSHOT` para eliminarlos.
+
+Para comprobar si existe un bloqueo de instantánea específico:
+
+```sql
+SELECT id, info, lock_path
+FROM system.snapshot_locks
+WHERE id = 'events_snapshot_1'
+```
+
+<div id="system-snapshot-parts">
+  ### system.snapshot_parts
+</div>
+
+`system.snapshot_parts` muestra las partes de datos actualmente retenidas por al menos un bloqueo de instantánea. Para cada parte bloqueada, existe un nodo de Keeper en `/clickhouse/snapshot/{table_uuid}/{part_name}` que contiene el tamaño comprimido y sin comprimir de la parte. Esta tabla lee esos nodos para mostrar qué partes están actualmente protegidas frente a su eliminación.
+
+```sql
+SELECT *
+FROM system.snapshot_parts
+ORDER BY data_compressed_bytes DESC
+LIMIT 20
+```
+
+| Columna                   | Tipo     | Descripción                                                           |
+| ------------------------- | -------- | --------------------------------------------------------------------- |
+| `name`                    | `String` | Nombre de la parte de datos                                           |
+| `table_id`                | `String` | UUID de la tabla a la que pertenece esta parte                        |
+| `data_compressed_bytes`   | `UInt64` | Tamaño comprimido de esta parte                                       |
+| `data_uncompressed_bytes` | `UInt64` | Tamaño sin comprimir de esta parte                                    |
+| `snapshots_size`          | `UInt64` | Número de instantáneas que actualmente mantienen bloqueada esta parte |
+
+Las partes con `snapshots_size > 1` tienen varias instantáneas que hacen referencia a ellas y no se eliminarán del almacenamiento de objetos hasta que se desbloqueen todas esas instantáneas.
+
+Para comprobar el almacenamiento total retenido:
+
+```sql
+SELECT
+    formatReadableSize(sum(data_compressed_bytes)) AS total_pinned_compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS total_pinned_uncompressed,
+    count() AS parts_count
+FROM system.snapshot_parts
+```
+
+Para encontrar partes bloqueadas por una instantánea pero que ya se han eliminado o ya no están activas en el servidor —es decir, datos que se conservan en el almacenamiento de objetos únicamente por bloqueos de instantáneas:
+
+```sql
+SELECT
+    count(*),
+    sum(data_uncompressed_bytes)
+FROM system.snapshot_parts
+WHERE (name, table_id) NOT IN (
+    SELECT
+        name,
+        toString(tables.uuid)
+    FROM system.parts
+    INNER JOIN system.tables ON (parts.`table` = tables.name) AND parts.active
+)
+```
+
+```response
+┌─count()─┬─sum(data_uncompressed_bytes)─┐
+│    1000 │                        96037 │
+└─────────┴──────────────────────────────┘
+```
+
+Esto es útil para comprender la sobrecarga de almacenamiento que implica conservar instantáneas después de que los datos originales hayan cambiado o se hayan eliminado.
+
+<div id="server-settings">
+  ## Configuración del servidor
+</div>
+
+Los siguientes parámetros de configuración del servidor controlan el comportamiento de las instantáneas. Se establecen en el archivo de configuración del servidor, no en SQL.
+
+| Configuración                                                                                                                         | Tipo   | Predeterminado | Se puede cambiar sin reiniciar | Descripción                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------ | -------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`max_held_snapshots`](/es/reference/settings/server-settings/settings#max_held_snapshots)                                               | UInt64 | `0`            | No                             | Número máximo de instantáneas ligeras que pueden mantenerse al mismo tiempo. `0` significa ilimitado. Si se alcanza el límite, la creación de una nueva instantánea genera una excepción.                                                              |
+| [`max_snapshot_commit_thread_pool_size`](/es/reference/settings/server-settings/settings#max_snapshot_commit_thread_pool_size)           | UInt64 | `64`           | Sí                             | Número de hilos usados para confirmar en Keeper los nodos de bloqueo de las instantáneas. Auméntelo si la creación de instantáneas es lenta en tablas grandes con muchas partes.                                                                       |
+| [`max_snapshot_commit_thread_pool_free_size`](/es/reference/settings/server-settings/settings#max_snapshot_commit_thread_pool_free_size) | UInt64 | `0`            | Sí                             | Si el número de hilos inactivos en el pool de confirmación de instantáneas supera este valor, ClickHouse libera esos hilos y reduce el pool. Los hilos se vuelven a crear cuando es necesario. `0` significa que los hilos inactivos nunca se liberan. |
+| [`snapshot_cleaner_period`](/es/reference/settings/server-settings/settings#snapshot_cleaner_period)                                     | UInt64 | `120`          | No                             | Frecuencia (en segundos) con la que se ejecuta el limpiador de instantáneas para eliminar partes que ya no están referenciadas por ningún bloqueo de instantánea. Solo en ClickHouse Cloud.                                                            |
+| [`snapshot_cleaner_pool_size`](/es/reference/settings/server-settings/settings#snapshot_cleaner_pool_size)                               | UInt64 | `128`          | No                             | Número de hilos en el pool de hilos del limpiador de instantáneas. Solo en ClickHouse Cloud.                                                                                                                                                           |
