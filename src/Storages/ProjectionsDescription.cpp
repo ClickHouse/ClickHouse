@@ -313,7 +313,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto block = result.sample_block;
     for (const auto & [name, type] : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
         block.insertUnique({nullptr, type, name});
-    NamesAndTypesList metadata_columns;
+    ColumnsDescription metadata_columns;
     for (const auto & column_with_type_name : block)
     {
         if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
@@ -330,11 +330,16 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         }
         else
         {
-            metadata_columns.emplace_back(column_with_type_name.name, column_with_type_name.type);
+            ColumnDescription column_description(column_with_type_name.name, column_with_type_name.type);
+            /// Carry over the parent column's DEFAULT so a column missing from a projection part written
+            /// before the column was added reads the table default, not the column type's default.
+            if (columns.has(column_with_type_name.name) && columns.get(column_with_type_name.name).default_desc.expression)
+                column_description.default_desc = columns.get(column_with_type_name.name).default_desc;
+            metadata_columns.add(std::move(column_description));
         }
     }
 
-    metadata.setColumns(ColumnsDescription(metadata_columns));
+    metadata.setColumns(std::move(metadata_columns));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
     return result;
 }
