@@ -17,6 +17,11 @@ json_neg_shorthand	1969-12-31 23:59:59.123
 pos_shorthand	1970-01-01 00:00:00.123
 scalar_eq_container_neg_shorthand	1
 be_unquoted_bare_int	2026-07-09 08:24:33.954
+be_scalar_bare_s6	2026-07-09 08:24:33.954000
+be_quoted_bare_s6	['2026-07-09 08:24:33.954000']
+be_unquoted_bare_s6	['1970-01-21 15:26:25.473954']
+be_scalar_eq_quoted_bare_s6	1
+be_unquoted_differs_bare_s6	1
 int64_min_bare	-9223372036854775808
 int64_min_plus1_bare	-9223372036854775807
 int64_max_bare	9223372036854775807

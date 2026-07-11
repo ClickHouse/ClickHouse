@@ -78,6 +78,27 @@ SELECT 'be_unquoted_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3
 SELECT 'beus_unquoted_dotted', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[-0.123]"') SETTINGS date_time_input_format = 'best_effort_us'; -- { serverError CANNOT_READ_ARRAY_FROM_TEXT }
 SELECT 'be_unquoted_bare_int', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[1783585473954]"') SETTINGS date_time_input_format = 'best_effort';
 
+-- Non-coinciding scale to prove the bare-integer semantics on each path. At scale 3 a 13-digit
+-- best_effort millisecond timestamp and a scale-3 raw tick count happen to render identically, so
+-- the scale-3 case above cannot tell the two apart. At scale 6 they differ:
+--   * scalar and quoted-nested DateTime64 route a bare integer through parseDateTime64BestEffort,
+--     which reads 1783585473954 as a 13-digit millisecond unix timestamp -> 2026-07-09 08:24:33.954000.
+--   * the unquoted container/JSON element treats a bare integer as a raw scale-6 tick count
+--     -> 1970-01-21 15:26:25.473954.
+-- This unquoted-vs-scalar/quoted difference is INTENTIONAL and pre-existing: before this PR the
+-- unquoted numeric container path read the value with a plain readIntText(x) (raw ticks) under
+-- EVERY date_time_input_format, and preserving "a bare integer is a raw tick count" is a documented
+-- backward-compatibility requirement. Routing the unquoted bare integer through parseDateTime64BestEffort
+-- would silently change released container parsing, so it is deliberately left as raw ticks. This PR
+-- only aligns the dotted fractional/sign/shorthand forms across quoting/nesting (asserted above); it
+-- does not touch bare-integer tick semantics. The assertions below pin all three paths so a future
+-- change to any of them is caught.
+SELECT 'be_scalar_bare_s6', toString(toDateTime64('1783585473954', 6, 'UTC')) SETTINGS cast_string_to_date_time_mode = 'best_effort';
+SELECT 'be_quoted_bare_s6', arrayMap(e -> toString(e), x) FROM format(CSV, 'x Array(DateTime64(6, \'UTC\'))', '"[\'1783585473954\']"') SETTINGS date_time_input_format = 'best_effort';
+SELECT 'be_unquoted_bare_s6', arrayMap(e -> toString(e), x) FROM format(CSV, 'x Array(DateTime64(6, \'UTC\'))', '"[1783585473954]"') SETTINGS date_time_input_format = 'best_effort';
+SELECT 'be_scalar_eq_quoted_bare_s6', (SELECT toDateTime64('1783585473954', 6, 'UTC') SETTINGS cast_string_to_date_time_mode = 'best_effort') = (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(6, \'UTC\'))', '"[\'1783585473954\']"') SETTINGS date_time_input_format = 'best_effort');
+SELECT 'be_unquoted_differs_bare_s6', (SELECT toDateTime64('1783585473954', 6, 'UTC') SETTINGS cast_string_to_date_time_mode = 'best_effort') != (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(6, \'UTC\'))', '"[1783585473954]"') SETTINGS date_time_input_format = 'best_effort');
+
 -- A leading '+' must be rejected under EVERY date_time_input_format, not just basic, so the
 -- effective parser does not depend on quoting/nesting. Scalar DateTime64 rejects '+' under both
 -- basic (readDateTimeTextFallback only special-cases '-') and best_effort (parseDateTime64BestEffort
