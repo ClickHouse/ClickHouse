@@ -1,0 +1,33 @@
+-- type names and alias
+UUID2
+UUID
+UUID
+-- text round-trip is canonical
+61f0c404-5cb3-11e7-907b-a6006ad3dba0	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- UUID2 sorts lexicographically (unlike UUID)
+00000000-0000-0000-0000-000000000009
+00000000-0000-0000-0002-000000000000
+00000002-0000-0000-0000-000000000000
+-- same values as UUID would sort differently
+00000002-0000-0000-0000-000000000000
+00000000-0000-0000-0000-000000000009
+00000000-0000-0000-0002-000000000000
+-- min/max
+00000000-0000-0000-0000-000000000009	00000002-0000-0000-0000-000000000000
+-- conversions round-trip
+1	1	1
+-- FixedString(16) (canonical bytes) parses to UUID2
+61f0c404-5cb3-11e7-907b-a6006ad3dba0
+-- UUID2 -> UInt128 (identity) equals UUID -> UInt128 (half-swap): both give the canonical integer
+1
+-- comparison with string literal
+1
+-- setting materializes bare UUID as UUID2 (version 2), leaves UUID1/UUID2 explicit
+a	UUID2
+b	UUID
+c	UUID2
+d	Array(UUID2)
+e	Nullable(UUID2)
+-- version 1 (default) leaves UUID as UUID
+a	UUID
+d	Array(UUID)

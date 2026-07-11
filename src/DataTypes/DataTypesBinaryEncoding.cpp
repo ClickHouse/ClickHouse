@@ -164,6 +164,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::Decimal256;
         case TypeIndex::UUID:
             return BinaryTypeIndex::UUID;
+        case TypeIndex::UUID2:
+            return BinaryTypeIndex::UUID2;
         case TypeIndex::Array:
             return BinaryTypeIndex::Array;
         case TypeIndex::Tuple:
@@ -595,6 +597,7 @@ static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
         case BinaryTypeIndex::Date32:
         case BinaryTypeIndex::String:
         case BinaryTypeIndex::UUID:
+        case BinaryTypeIndex::UUID2:
         case BinaryTypeIndex::IPv4:
         case BinaryTypeIndex::IPv6:
             return getSimpleDataTypesCache().getType(binary_type_index);

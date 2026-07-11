@@ -60,7 +60,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                 /// It is allowed having LowCardinality(UUID) because often times UUIDs are highly repetitive in tables,
                 /// and their relatively large size provides opportunity for better performance.
 
-                if (!isStringOrFixedString(unwrapped) && !isUUID(unwrapped))
+                if (!isStringOrFixedString(unwrapped) && !isUUID(unwrapped) && !isUUID2(unwrapped))
                     throw Exception(
                         ErrorCodes::SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY,
                         "Creating columns of type {} is prohibited by default due to expected negative impact on performance. "

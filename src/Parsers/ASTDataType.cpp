@@ -1,10 +1,55 @@
 #include <Parsers/ASTDataType.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <IO/Operators.h>
 
 
 namespace DB
 {
+
+namespace
+{
+
+bool isBareUUIDTypeName(const String & name)
+{
+    static constexpr std::string_view uuid = "uuid";
+    if (name.size() != uuid.size())
+        return false;
+    for (size_t i = 0; i < name.size(); ++i)
+        if (!equalsCaseInsensitive(name[i], uuid[i]))
+            return false;
+    return true;
+}
+
+bool substituteBareUUIDInPlace(IAST & ast)
+{
+    bool substituted = false;
+
+    if (auto * data_type = ast.as<ASTDataType>(); data_type && isBareUUIDTypeName(data_type->name))
+    {
+        data_type->name = "UUID2";
+        substituted = true;
+    }
+
+    for (const auto & child : ast.children)
+        if (child)
+            substituted |= substituteBareUUIDInPlace(*child);
+
+    return substituted;
+}
+
+}
+
+ASTPtr applyUUIDTypeVersion(const ASTPtr & type_ast, UInt64 uuid_type_version)
+{
+    if (uuid_type_version != 2 || !type_ast)
+        return type_ast;
+
+    auto cloned = type_ast->clone();
+    if (substituteBareUUIDInPlace(*cloned))
+        return cloned;
+    return type_ast;
+}
 
 String ASTDataType::getID(char delim) const
 {

@@ -60,6 +60,7 @@ namespace Setting
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 uuid_type_version;
 }
 
 namespace ServerSetting
@@ -117,7 +118,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         {
             segments_holder.take<ExecuteCommands>().push_back(command_ast);
         }
-        else if (auto alter_command = AlterCommand::parse(command_ast))
+        else if (auto alter_command = AlterCommand::parse(command_ast, settings[Setting::uuid_type_version]))
         {
             segments_holder.take<AlterCommands>().push_back(std::move(alter_command.value()));
         }

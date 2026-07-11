@@ -31,6 +31,7 @@
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -143,7 +144,7 @@ void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null
 
 }
 
-std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
+std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast, UInt64 uuid_type_version)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
@@ -158,7 +159,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.column_name = ast_col_decl.name;
         if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.getType());
+            command.data_type = data_type_factory.get(applyUUIDTypeVersion(ast_col_decl.getType(), uuid_type_version));
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
         }
         if (ast_col_decl.getDefaultExpression())
@@ -216,7 +217,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.getType())
         {
-            command.data_type = data_type_factory.get(ast_col_decl.getType());
+            command.data_type = data_type_factory.get(applyUUIDTypeVersion(ast_col_decl.getType(), uuid_type_version));
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
         }
 

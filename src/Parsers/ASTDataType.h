@@ -23,6 +23,16 @@ protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
+/** Materialize the `uuid_type_version` setting into a data-type AST.
+  *
+  * When `uuid_type_version == 2`, every occurrence of the bare type name `UUID` (case-insensitive), including nested
+  * ones such as `Array(UUID)` or `Nullable(UUID)`, is replaced by `UUID2`. The explicit names `UUID1` and `UUID2` are
+  * never touched. For any other version value the AST is returned unchanged.
+  *
+  * The input AST is not modified: a clone is returned when a substitution is performed, otherwise the original pointer.
+  */
+ASTPtr applyUUIDTypeVersion(const ASTPtr & type_ast, UInt64 uuid_type_version);
+
 template <typename... Args>
 boost::intrusive_ptr<ASTDataType> makeASTDataType(const String & name, Args &&... args)
 {

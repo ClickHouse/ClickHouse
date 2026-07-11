@@ -166,7 +166,7 @@ struct AlterCommand
     /// Is this MODIFY COLUMN MODIFY SETTING or MODIFY COLUMN column with settings declaration)
     bool append_column_setting = false;
 
-    static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
+    static std::optional<AlterCommand> parse(const ASTAlterCommand * command, UInt64 uuid_type_version = 1);
 
     void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 

@@ -171,6 +171,11 @@ The UUID data type is not supported by arithmetic operations (for example, [abs]
             .syntax = "UUID",
             .related = {},
         });
+
+    /// `UUID1` is an explicit alias for the current `UUID` type (which sorts by the second half of the value).
+    /// The correctly-sorting variant is the separate `UUID2` type. The name `UUID` resolves to one of them
+    /// depending on the `uuid_type_version` setting (see `InterpreterCreateQuery`).
+    factory.registerAlias("UUID1", "UUID", DataTypeFactory::Case::Insensitive);
 }
 
 }

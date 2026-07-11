@@ -34,6 +34,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -133,6 +134,7 @@ namespace Setting
     extern const SettingsBool database_replicated_allow_heavy_create;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool data_type_default_nullable;
+    extern const SettingsUInt64 uuid_type_version;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
     extern const SettingsDefaultTableEngine default_table_engine;
@@ -535,7 +537,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
+    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable, const UInt64 uuid_type_version)
 {
     auto col_type = col_decl.getType();
     if (!col_type)
@@ -543,6 +545,9 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
         return std::make_shared<DataTypeUInt8>();
     }
+
+    /// Materialize the `uuid_type_version` setting: a bare `UUID` becomes `UUID2` when the setting is 2.
+    col_type = applyUUIDTypeVersion(col_type, uuid_type_version);
 
     DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
 
@@ -592,10 +597,17 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     /// the initiator does not normalize the query, and the transforms are wrongly skipped here too.
     const bool already_normalized_on_initiator = context_->isDDLOrOnClusterInternal();
 
-    bool make_columns_nullable = mode < LoadingStrictnessLevel::SECONDARY_CREATE
+    /// These transforms materialize session settings into the concrete stored column types, so they must only run
+    /// on a primary, user-issued CREATE - never when attaching or loading an already-normalized table definition,
+    /// otherwise existing tables would silently change their column types.
+    const bool normalize_on_create = mode < LoadingStrictnessLevel::SECONDARY_CREATE
         && !already_normalized_on_initiator
-        && !is_restore_from_backup
-        && context_->getSettingsRef()[Setting::data_type_default_nullable];
+        && !is_restore_from_backup;
+
+    bool make_columns_nullable = normalize_on_create && context_->getSettingsRef()[Setting::data_type_default_nullable];
+
+    /// `uuid_type_version == 2` materializes a bare `UUID` column type as the correctly-sorting `UUID2` type.
+    const UInt64 uuid_type_version = normalize_on_create ? context_->getSettingsRef()[Setting::uuid_type_version] : 1;
 
     for (const auto & ast : columns_ast.children)
     {
@@ -608,7 +620,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         }
 
 
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
+        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable, uuid_type_version));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);

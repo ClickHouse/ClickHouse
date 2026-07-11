@@ -467,9 +467,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return static_cast<IPv4>(convertNumericType<UInt32>(src, type).safeGet<UInt32>());
         }
     }
-    else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
+    else if ((which_type.isUUID() || which_type.isUUID2()) && src.getType() == Field::Types::UUID)
     {
-        /// Already in needed type.
+        /// Already in needed type. `UUID` and `UUID2` share the `Field` representation; the value is expected to
+        /// already be in the target type's encoding (e.g. parsed by the target type's serialization above).
         return src;
     }
     else if (which_type.isIPv6())

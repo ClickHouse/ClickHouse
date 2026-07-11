@@ -4962,6 +4962,18 @@ Apply TTL for old data, after ALTER MODIFY TTL query
     DECLARE(String, function_implementation, "", R"(
 Choose function implementation for specific target or variant (experimental). If empty enable all of them.
 )", 0) \
+    DECLARE(UInt64, uuid_type_version, 1, R"(
+Controls which concrete data type the type name `UUID` resolves to in `CREATE TABLE` and `ALTER TABLE ... ADD/MODIFY COLUMN`.
+
+The `UUID` type sorts by the second half of the value for historical reasons, which is unexpected. The [UUID2](/sql-reference/data-types/uuid2) type is a variant with correct (lexicographic) sorting.
+
+Possible values:
+
+- 1 — The name `UUID` resolves to the `UUID` type (the historical behavior).
+- 2 — The name `UUID` resolves to the `UUID2` type.
+
+The resolved concrete type is materialized in the table definition, so reading an existing table does not depend on the value of this setting. The explicit type names `UUID1` (an alias of `UUID`) and `UUID2` are not affected by this setting.
+)", 0) \
     DECLARE(Bool, data_type_default_nullable, false, R"(
 Allows data types without explicit modifiers [NULL or NOT NULL](/sql-reference/statements/create/table#null-or-not-null-modifiers) in column definition will be [Nullable](/sql-reference/data-types/nullable).
 
