@@ -1868,12 +1868,15 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         const size_t num_rows = orc_union_column->numElements;
 
         /// Read each ORC union branch into its own column. ORC keeps a separate physical batch per
-        /// branch. A branch's own null bitmap (a NULL value inside a branch) is dropped because
-        /// Variant branches are non-nullable: a NULL row is represented by the NULL discriminator
-        /// instead. The explicit type hint (if any) is not propagated to branches, because Variant
-        /// reorders its types and matching would be ambiguous.
+        /// branch. Variant branches are non-nullable, so a branch read back as Nullable is unwrapped
+        /// to its nested column; its null map is kept, because an ORC union row can be non-null yet
+        /// select a branch whose payload is null - such a row is represented by the Variant NULL
+        /// discriminator too (see the row loop below). The explicit type hint (if any) is not
+        /// propagated to branches, because Variant reorders its types and matching would be ambiguous.
         DataTypes branch_types;
         Columns branch_columns;
+        std::vector<ColumnPtr> branch_null_map_columns(num_children); /// keeps the null maps alive
+        std::vector<const NullMap *> branch_null_maps(num_children, nullptr);
         branch_types.reserve(num_children);
         branch_columns.reserve(num_children);
         for (size_t i = 0; i < num_children; ++i)
@@ -1883,7 +1886,11 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
 
             ColumnPtr branch_column = branch.column;
             if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(branch_column.get()))
+            {
+                branch_null_map_columns[i] = nullable_column->getNullMapColumnPtr();
+                branch_null_maps[i] = &nullable_column->getNullMapData();
                 branch_column = nullable_column->getNestedColumnPtr();
+            }
 
             branch_types.push_back(removeNullable(branch.type));
             branch_columns.push_back(std::move(branch_column));
@@ -1902,20 +1909,21 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         auto variant_type = std::make_shared<DataTypeVariant>(branch_types);
         const auto & global_variants = assert_cast<const DataTypeVariant &>(*variant_type).getVariants();
 
-        /// Variant stores its branches sorted by type name. Place each ORC branch column at its
-        /// global (sorted) position and remap ORC tags to global discriminators, so the identity
-        /// local-to-global mapping can be used.
+        /// Variant stores its branches sorted by type name, so remap ORC tags to global (sorted)
+        /// discriminators. The Variant sub-columns are built compactly (each must contain exactly
+        /// the values referenced by its discriminator, in appended order), so they are cloned empty
+        /// from the ORC branch columns and filled row by row below rather than placed wholesale.
         std::unordered_map<String, ColumnVariant::Discriminator> type_name_to_global;
         for (size_t g = 0; g < global_variants.size(); ++g)
             type_name_to_global[global_variants[g]->getName()] = static_cast<ColumnVariant::Discriminator>(g);
 
-        Columns variant_columns(global_variants.size());
+        MutableColumns variant_columns(global_variants.size());
         std::vector<ColumnVariant::Discriminator> tag_to_global(num_children);
         for (size_t i = 0; i < num_children; ++i)
         {
             auto global = type_name_to_global.at(branch_types[i]->getName());
             tag_to_global[i] = global;
-            variant_columns[global] = branch_columns[i];
+            variant_columns[global] = branch_columns[i]->cloneEmpty();
         }
 
         auto local_discriminators = ColumnVariant::ColumnDiscriminators::create();
@@ -1946,11 +1954,25 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                     "Invalid ORC union tag {} for union with {} branches while reading column {}",
                     tag, num_children, column_name);
 
-            discriminators_data[row] = tag_to_global[tag];
-            offsets_data[row] = orc_offsets[row];
+            const size_t offset = orc_offsets[row];
+            /// A non-null union row can still select a branch whose payload is null (ORC keeps the
+            /// union-level null count at 0 in that case). Variant branches are non-nullable, so
+            /// represent such a row as a Variant NULL rather than the branch's nested default value.
+            if (branch_null_maps[tag] && offset < branch_null_maps[tag]->size() && (*branch_null_maps[tag])[offset])
+            {
+                discriminators_data[row] = ColumnVariant::NULL_DISCRIMINATOR;
+                offsets_data[row] = 0;
+                continue;
+            }
+
+            const auto global = tag_to_global[tag];
+            auto & variant_column = *variant_columns[global];
+            discriminators_data[row] = global;
+            offsets_data[row] = variant_column.size();
+            variant_column.insertFrom(*branch_columns[tag], offset);
         }
 
-        auto variant_column = ColumnVariant::create(std::move(local_discriminators), std::move(offsets), variant_columns);
+        auto variant_column = ColumnVariant::create(std::move(local_discriminators), std::move(offsets), std::move(variant_columns));
         return {std::move(variant_column), variant_type, column_name};
     }
 
