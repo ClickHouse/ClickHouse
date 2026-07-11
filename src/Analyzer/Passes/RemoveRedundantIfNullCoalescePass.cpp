@@ -31,7 +31,7 @@ public:
         if (arguments.empty())
             return;
 
-        auto & first_argument = arguments[0];
+        const auto & first_argument = arguments[0];
         const auto & first_argument_type = first_argument->getResultType();
 
         /// When the first argument cannot be NULL, ifNull/coalesce return it unchanged: the
