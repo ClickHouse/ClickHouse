@@ -1,0 +1,442 @@
+---
+slug: /use-cases/observability/clickstack/integrations/kafka-metrics
+title: 'مراقبة مقاييس Kafka باستخدام ClickStack'
+sidebarTitle: 'مقاييس Kafka'
+description: 'مراقبة مقاييس Kafka باستخدام ClickStack'
+doc_type: 'guide'
+keywords: ['Kafka', 'المقاييس', 'OTEL', 'ClickStack', 'JMX']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **باختصار**
+
+  راقب مقاييس أداء Apache Kafka في ClickStack باستخدام OTel JMX Metric Gatherer. يتضمن مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
+</Info>
+
+<div id="existing-kafka">
+  ## التكامل مع نشر Kafka حالي
+</div>
+
+راقب نشر Kafka الحالي لديك من خلال تشغيل حاوية OpenTelemetry JMX Metric Gatherer لجمع المقاييس وإرسالها إلى ClickStack عبر OTLP.
+
+إذا كنت تريد اختبار هذا التكامل أولًا من دون تعديل إعداداتك الحالية، فانتقل إلى [قسم مجموعة البيانات التجريبية](#demo-dataset).
+
+<div id="prerequisites">
+  ##### المتطلبات الأساسية
+</div>
+
+* مثيل ClickStack قيد التشغيل
+* تثبيت Kafka قائم (الإصدار 2.0 أو أحدث) مع تمكين JMX
+* إمكانية الوصول عبر الشبكة بين ClickStack وKafka (منفذ JMX ‏9999، ومنفذ Kafka ‏9092)
+* ملف JAR الخاص بـ OpenTelemetry JMX Metric Gatherer (تعليمات التنزيل أدناه)
+
+<Steps>
+  <Step>
+    #### الحصول على مفتاح API لـ ClickStack
+
+    يرسل JMX Metric Gatherer البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack، والتي تتطلب المصادقة.
+
+    1. افتح HyperDX على عنوان URL الخاص بـ ClickStack (على سبيل المثال، http://localhost:8080)
+    2. أنشئ حسابًا أو سجّل الدخول إذا لزم الأمر
+    3. انتقل إلى **إعدادات الفريق → مفاتيح API**
+    4. انسخ **مفتاح API للإدخال** الخاص بك
+
+    <Image img="/images/clickstack/api-key.webp" alt="مفتاح API لـ ClickStack" />
+
+    5. عيّنه كمتغير بيئة:
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    ```
+  </Step>
+
+  <Step>
+    #### حمّل OpenTelemetry JMX Metric Gatherer
+
+    حمّل ملف JAR الخاص بـ JMX Metric Gatherer:
+
+    ```bash
+    curl -L -o opentelemetry-jmx-metrics.jar \
+      https://github.com/open-telemetry/opentelemetry-java-contrib/releases/download/v1.32.0/opentelemetry-jmx-metrics.jar
+    ```
+  </Step>
+
+  <Step>
+    #### تحقّق من تفعيل Kafka JMX
+
+    تأكّد من أن JMX مفعّل على وسطاء Kafka لديك. بالنسبة إلى عمليات نشر Docker:
+
+    ```yaml
+    services:
+      kafka:
+        image: confluentinc/cp-kafka:latest
+        environment:
+          JMX_PORT: 9999
+          KAFKA_JMX_HOSTNAME: kafka
+          # ... other Kafka configuration
+        ports:
+          - "9092:9092"
+          - "9999:9999"
+    ```
+
+    بالنسبة لعمليات النشر غير المعتمدة على Docker، اضبط ما يلي في إعدادات بدء تشغيل Kafka:
+
+    ```bash
+    export JMX_PORT=9999
+    ```
+
+    تأكّد من إمكانية الوصول إلى JMX:
+
+    ```bash
+    netstat -an | grep 9999
+    ```
+  </Step>
+
+  <Step>
+    #### نشر JMX Metric Gatherer باستخدام Docker Compose
+
+    يوضح هذا المثال إعدادًا كاملًا يضم Kafka وJMX Metric Gatherer وClickStack. عدّل أسماء الخدمات ونقاط النهاية لتتوافق مع عملية النشر الحالية لديك:
+
+    ```yaml
+    services:
+      clickstack:
+        image: clickhouse/clickstack-all-in-one:latest
+        ports:
+          - "8080:8080"
+          - "4317:4317"
+          - "4318:4318"
+        networks:
+          - monitoring
+
+      kafka:
+        image: confluentinc/cp-kafka:latest
+        hostname: kafka
+        container_name: kafka
+        environment:
+          KAFKA_NODE_ID: 1
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT'
+          KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092'
+          KAFKA_PROCESS_ROLES: 'broker,controller'
+          KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+          KAFKA_LISTENERS: 'PLAINTEXT://kafka:9092,CONTROLLER://kafka:29093'
+          KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+          KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+          JMX_PORT: 9999
+          KAFKA_JMX_HOSTNAME: kafka
+          KAFKA_JMX_OPTS: '-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=kafka -Dcom.sun.management.jmxremote.rmi.port=9999'
+        ports:
+          - "9092:9092"
+          - "9999:9999"
+        networks:
+          - monitoring
+
+      kafka-jmx-exporter:
+        image: eclipse-temurin:11-jre
+        depends_on:
+          - kafka
+          - clickstack
+        environment:
+          - CLICKSTACK_API_KEY=${CLICKSTACK_API_KEY}
+        volumes:
+          - ./opentelemetry-jmx-metrics.jar:/app/opentelemetry-jmx-metrics.jar
+        command: >
+          sh -c "java
+          -Dotel.jmx.service.url=service:jmx:rmi:///jndi/rmi://kafka:9999/jmxrmi
+          -Dotel.jmx.target.system=kafka
+          -Dotel.metrics.exporter=otlp
+          -Dotel.exporter.otlp.protocol=http/protobuf
+          -Dotel.exporter.otlp.endpoint=http://clickstack:4318
+          -Dotel.exporter.otlp.headers=authorization=\${CLICKSTACK_API_KEY}
+          -Dotel.resource.attributes=service.name=kafka,kafka.broker.id=broker-0
+          -Dotel.jmx.interval.milliseconds=10000
+          -jar /app/opentelemetry-jmx-metrics.jar"
+        networks:
+          - monitoring
+
+    networks:
+      monitoring:
+        driver: bridge
+    ```
+
+    **معلمات التكوين الأساسية:**
+
+    * `service:jmx:rmi:///jndi/rmi://kafka:9999/jmxrmi` - عنوان URL للاتصال عبر JMX (استخدم اسم مضيف Kafka الخاص بك)
+    * `otel.jmx.target.system=kafka` - يفعّل المقاييس الخاصة بـ Kafka
+    * `http://clickstack:4318` - نقطة نهاية OTLP عبر HTTP (استخدم اسم مضيف ClickStack الخاص بك)
+    * `authorization=\${CLICKSTACK_API_KEY}` - مفتاح API للمصادقة (مطلوب)
+    * `service.name=kafka,kafka.broker.id=broker-0` - سمات المورد لأغراض التصفية
+    * `10000` - الفاصل الزمني للتجميع بالمللي ثانية (10 ثوانٍ)
+  </Step>
+
+  <Step>
+    #### تحقّق من المقاييس في HyperDX
+
+    سجّل الدخول إلى HyperDX وتأكد من أن المقاييس تصل بشكل صحيح:
+
+    1. انتقل إلى Chart Explorer
+    2. ابحث عن `kafka.message.count` أو `kafka.partition.count`
+    3. يجب أن تظهر المقاييس كل 10 ثوانٍ
+
+    **المقاييس الرئيسية التي يجب التحقق منها:**
+
+    * `kafka.message.count` - إجمالي الرسائل المُعالجة
+    * `kafka.partition.count` - إجمالي الأقسام
+    * `kafka.partition.under_replicated` - يجب أن تكون القيمة 0 في عنقود سليم
+    * `kafka.network.io` - معدل نقل الشبكة
+    * `kafka.request.time.*` - المئينات لزمن استجابة الطلب
+
+    لتوليد نشاط وملء المزيد من المقاييس:
+
+    ```bash
+    # Create a test topic
+    docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
+
+    # Send test messages
+    echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
+    ```
+
+    <Note>
+      عند تشغيل أوامر عميل Kafka ‏(kafka-topics وkafka-console-producer وما إلى ذلك) من داخل حاوية Kafka، فاسبِقها بـ `unset JMX_PORT &&` لتجنّب تعارض منفذ JMX.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## مجموعة البيانات التجريبية
+</div>
+
+للمستخدمين الذين يريدون اختبار تكامل مقاييس Kafka قبل تهيئة أنظمتهم الإنتاجية، نوفر مجموعة بيانات مُولَّدة مسبقًا تتضمن أنماطًا واقعية لمقاييس Kafka.
+
+<Steps>
+  <Step>
+    #### نزّل مجموعة بيانات المقاييس النموذجية
+
+    نزّل ملفات المقاييس المُولَّدة مسبقًا (29 ساعة من مقاييس Kafka بأنماط واقعية):
+
+    ```bash
+    # نزّل مقاييس gauge (أعداد الأقسام، وأحجام الطوابير، وزمن الوصول، وتأخر المستهلك)
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/kafka-metrics-gauge.csv
+
+    # نزّل مقاييس sum (معدلات الرسائل، ومعدلات البايتات، وأعداد الطلبات)
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/kafka-metrics-sum.csv
+    ```
+
+    تتضمن مجموعة البيانات أنماطًا واقعية لعنقود Kafka للتجارة الإلكترونية بوسيط واحد:
+
+    * **06:00-08:00: ذروة الصباح** - ارتفاع حاد في حركة المرور انطلاقًا من خط الأساس الليلي
+    * **10:00-10:15: تخفيضات خاطفة** - قفزة كبيرة إلى 3.5 أضعاف حركة المرور المعتادة
+    * **11:30: حدث نشر** - قفزة بمقدار 12 ضعفًا في تأخر المستهلك مع التقسيمات غير المكررة بما يكفي
+    * **14:00-15:30: ذروة التسوق** - حركة مرور مرتفعة مستمرة عند 2.8 ضعف خط الأساس
+    * **17:00-17:30: ذروة ما بعد العمل** - ذروة ثانوية في حركة المرور
+    * **18:45: إعادة توازن المستهلك** - قفزة بمقدار 6 أضعاف في التأخر أثناء إعادة التوازن
+    * **20:00-22:00: تراجع المساء** - انخفاض حاد إلى مستويات الليل
+  </Step>
+
+  <Step>
+    #### ابدأ ClickStack
+
+    ابدأ مثيل ClickStack:
+
+    ```bash
+    docker run -d --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### حمّل المقاييس إلى ClickStack
+
+    حمّل المقاييس مباشرةً إلى ClickHouse:
+
+    ```bash
+    # حمّل مقاييس gauge (أعداد الأقسام، وأحجام الطوابير، وزمن الوصول، وتأخر المستهلك)
+    cat kafka-metrics-gauge.csv | docker exec -i clickstack-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_gauge FORMAT CSVWithNames"
+
+    # حمّل مقاييس sum (معدلات الرسائل، ومعدلات البايتات، وأعداد الطلبات)
+    cat kafka-metrics-sum.csv | docker exec -i clickstack-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_sum FORMAT CSVWithNames"
+    ```
+  </Step>
+
+  <Step>
+    #### تحقّق من المقاييس في HyperDX
+
+    بعد التحميل، أسرع طريقة لرؤية مقاييسك هي عبر لوحة المعلومات المُعَدّة مسبقًا.
+
+    انتقل إلى قسم [لوحات المعلومات والتصور](#dashboards) لاستيراد لوحة المعلومات وعرض جميع مقاييس Kafka دفعةً واحدة.
+
+    <Info>
+      **عرض المنطقة الزمنية**
+
+      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)**. اضبط النطاق الزمني على **2025-11-04 16:00:00 - 2025-11-07 16:00:00** لضمان ظهور المقاييس التجريبية مهما كان موقعك. وبعد رؤية المقاييس، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## لوحات المعلومات والتصورات
+</div>
+
+لمساعدتك على بدء مراقبة Kafka باستخدام ClickStack، نوفر تصورات أساسية لمقاييس Kafka.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">نزّل</TrackedLink> إعدادات لوحة المعلومات
+  </Step>
+
+  <Step>
+    #### استورد لوحة المعلومات الجاهزة مسبقًا
+
+    1. افتح HyperDX وانتقل إلى قسم Dashboards
+    2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
+
+    3. ارفع ملف `kafka-metrics-dashboard.json` وانقر على **Finish Import**
+
+    <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="مربع حوار إنهاء الاستيراد" />
+  </Step>
+
+  <Step>
+    #### اعرض لوحة المعلومات
+
+    ستُنشأ لوحة المعلومات مع إعداد جميع التصورات مسبقًا:
+
+    <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="لوحة معلومات مقاييس Kafka" />
+
+    <Note>
+      بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا تلقائيًا.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="no-metrics">
+  ### عدم ظهور أي مقاييس في HyperDX
+</div>
+
+**تحقق من ضبط مفتاح API وتمريره إلى الحاوية:**
+
+```bash
+# Check environment variable
+echo $CLICKSTACK_API_KEY
+
+# Verify it's in the container
+docker exec <jmx-exporter-container> env | grep CLICKSTACK_API_KEY
+```
+
+إذا لم يكن موجودًا، فاضبطه ثم أعد التشغيل:
+
+```bash
+export CLICKSTACK_API_KEY=your-api-key-here
+docker compose up -d kafka-jmx-exporter
+```
+
+**تحقّق من وصول المقاييس إلى ClickHouse:**
+
+```bash
+docker exec <clickstack-container> clickhouse-client --query "
+SELECT DISTINCT MetricName 
+FROM otel_metrics_sum 
+WHERE ServiceName = 'kafka' 
+LIMIT 10
+"
+```
+
+إذا لم تظهر أي نتائج، فتحقق من سجلات JMX exporter:
+
+```bash
+docker compose logs kafka-jmx-exporter | grep -i "error\|connection" | tail -10
+```
+
+**أنشئ نشاطًا على Kafka لتعبئة المقاييس:**
+
+```bash
+# Create a test topic
+docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
+
+# Send test messages
+echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
+```
+
+<div id="auth-errors">
+  ### أخطاء المصادقة
+</div>
+
+إذا رأيت `Authorization failed` أو `401 Unauthorized`:
+
+1. تحقّق من مفتاح API في واجهة مستخدم HyperDX (الإعدادات → مفاتيح API → مفتاح API للإدخال)
+2. أعِد التصدير ثم أعِد التشغيل:
+
+```bash
+export CLICKSTACK_API_KEY=your-correct-api-key
+docker compose down
+docker compose up -d
+```
+
+<div id="port-conflicts">
+  ### تعارضات المنافذ مع أوامر عميل Kafka
+</div>
+
+عند تشغيل أوامر Kafka من داخل حاوية Kafka، قد يظهر لك:
+
+```bash
+Error: Port already in use: 9999
+```
+
+ابدأ الأوامر بـ `unset JMX_PORT &&`:
+
+```bash
+docker exec kafka bash -c "unset JMX_PORT && kafka-topics --list --bootstrap-server kafka:9092"
+```
+
+<div id="network-issues">
+  ### مشكلات الاتصال بالشبكة
+</div>
+
+إذا كانت سجلات JMX exporter تعرض `Connection refused`:
+
+تحقّق من أن جميع الحاويات على شبكة Docker نفسها:
+
+```bash
+docker compose ps
+docker network inspect <network-name>
+```
+
+اختبر الاتصال:
+
+```bash
+# From JMX exporter to ClickStack
+docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null > /dev/tcp/clickstack/4318' && echo 'Connected' || echo 'Failed'"
+```
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* قم بإعداد [التنبيهات](/ar/clickstack/features/alerts) للمقاييس الحرجة (التقسيمات غير المكررة بما يكفي، وزيادة تأخر المستهلك، والارتفاعات المفاجئة في زمن استجابة الطلبات)
+* أنشئ لوحات معلومات إضافية لحالات استخدام محددة (معدل النقل لكل topic، ومراقبة consumer group)
+* راقب عدة وسطاء Kafka عبر إضافة مثيلات إضافية من JMX Metric Gatherer مع resource attributes فريدة لـ `kafka.broker.id`
+
+<div id="going-to-production">
+  ## الانتقال إلى بيئة الإنتاج
+</div>
+
+يرسل هذا الدليل المقاييس مباشرةً من JMX Metric Gatherer إلى نقطة نهاية OTLP الخاصة بـ ClickStack، وهو مناسب للاختبار وعمليات النشر الصغيرة.
+
+في بيئات الإنتاج، انشر OpenTelemetry Collector الخاص بك كعامل لاستقبال المقاييس من JMX Exporter وتمريرها إلى ClickStack. يوفّر ذلك المعالجة على دفعات، والمرونة، وإدارة التهيئة المركزية.
+
+راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئة الإنتاج وأمثلة على تهيئة الجامع.

@@ -1,0 +1,136 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/pydantic-ai
+sidebarTitle: 'PydanticAIを統合する'
+title: 'ClickHouse MCPサーバーを使用してPydanticAIエージェントを構築する方法'
+description: 'ClickHouse MCPサーバーとやり取りできるPydanticAIエージェントの構築方法を学びます。'
+keywords: ['ClickHouse', 'MCP', 'PydanticAI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+このガイドでは、[ClickHouseのMCPサーバー](https://github.com/ClickHouse/mcp-clickhouse) を使用して、[ClickHouseのSQL playground](https://sql.clickhouse.com/) とやり取りできる [PydanticAI](https://ai.pydantic.dev/mcp/client/#__tabbed_1_1) エージェントを構築する方法を学びます。
+
+<Info>
+  **サンプルノートブック**
+
+  このサンプルは、[examplesリポジトリ](https://github.com/ClickHouse/examples/blob/main/ai/mcp/pydanticai/pydantic.ipynb) 内のノートブックとして公開されています。
+</Info>
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* システムに Python がインストールされている必要があります。
+* システムに `pip` がインストールされている必要があります。
+* Anthropic の API key、または他の LLMプロバイダーの API key が必要です。
+
+以下の手順は、Python REPL でもスクリプトでも実行できます。
+
+<Steps>
+  <Step>
+    ## ライブラリをインストールする
+
+    以下のコマンドを実行して、必要なライブラリをインストールします。
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q "pydantic-ai-slim[mcp]"
+    pip install -q "pydantic-ai-slim[anthropic]" # 他の LLMプロバイダーを使用する場合は、適切なパッケージに置き換えてください
+    ```
+  </Step>
+
+  <Step>
+    ## 認証情報を設定する
+
+    次に、Anthropic の API key を設定します。
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="Response"
+    Enter Anthropic API Key: ········
+    ```
+
+    <Info>
+      **他の LLMプロバイダーを使用する場合**
+
+      Anthropic の API key を持っておらず、他の LLMプロバイダーを使用したい場合は、
+      [PydanticAI docs](https://ai.pydantic.dev/models/) で認証情報の設定手順を確認できます。
+    </Info>
+
+    次に、ClickHouse SQL playground に接続するために必要な認証情報を定義します。
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## MCPサーバーと PydanticAI エージェントを初期化する
+
+    次に、ClickHouse MCPサーバーが ClickHouse SQL playground を参照するように設定します。
+
+    ```python
+    from pydantic_ai import Agent
+    from pydantic_ai.mcp import MCPServerStdio
+    from pydantic_ai.messages import ToolCallPart, ToolReturnPart
+
+    server = MCPServerStdio(
+        'uv',
+        args=[
+            'run',
+            '--with', 'mcp-clickhouse',
+            '--python', '3.13',
+            'mcp-clickhouse'
+        ],
+        env=env
+    )
+    agent = Agent('anthropic:claude-sonnet-4-0', mcp_servers=[server])
+    ```
+  </Step>
+
+  <Step>
+    ## エージェントに質問する
+
+    最後に、エージェントに質問できます。
+
+    ```python
+    async with agent.run_mcp_servers():
+        result = await agent.run("Who's done the most PRs for ClickHouse?")
+        print(result.output)
+    ```
+
+    以下のような応答が返されます。
+
+    ```response title="Response"
+    ClickHouse GitHub repository のデータによると、作成した pull request 数が多い contributors の上位は次のとおりです。
+
+    **PR のオープン数による ClickHouse の上位 contributors:**
+
+    1. **alexey-milovidov** - 3,370 件の PR をオープン
+    2. **azat** - 1,905 件の PR をオープン  
+    3. **rschu1ze** - 979 件の PR をオープン
+    4. **alesapin** - 947 件の PR をオープン
+    5. **tavplubix** - 896 件の PR をオープン
+    6. **kssenii** - 871 件の PR をオープン
+    7. **Avogar** - 805 件の PR をオープン
+    8. **KochetovNicolai** - 700 件の PR をオープン
+    9. **Algunenano** - 658 件の PR をオープン
+    10. **kitaisreal** - 630 件の PR をオープン
+
+    **Alexey Milovidov** は 3,370 件を超える pull request をオープンしており、他のどの contributor よりも群を抜いて活発です。Alexey Milovidov は ClickHouse の創設者の一人であり、主要な開発者でもあるため、これは納得のいく結果です。
+
+    また、このデータからは、alexey-milovidov が PR の管理にも非常に積極的であることがわかります。自身の PR を作成するだけでなく、12,818 件の「closed」イベント（他の contributors の PR をレビューして close したものと思われます）もあります。
+
+    なお、ClickHouse に最も多くの PR を貢献した人物について、より意味のある回答を示すため、自動処理を行う各種 robot/bot account は除外し、人間の contributors に絞っています。
+    ```
+  </Step>
+</Steps>

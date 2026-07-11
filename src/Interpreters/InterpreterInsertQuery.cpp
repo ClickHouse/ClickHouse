@@ -69,6 +69,7 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
+    extern const SettingsBool parallel_view_processing;
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
@@ -104,7 +105,6 @@ namespace MergeTreeSetting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ErrorCodes
@@ -471,13 +471,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     if (!squash_with_strict_limits)
     {
-        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 context->getSettingsRef()[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 in_header);
         });
     }
@@ -517,13 +516,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     if (squash_with_strict_limits)
     {
-        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 in_header);
         });
     }
@@ -535,6 +533,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     pipeline.addChains(std::move(sink_chains));
 
     pipeline.setMaxThreads(max_threads);
+    // Cap to 1 when parallel_view_processing=0. Pipe::max_parallel_streams is a watermark that
+    // resize() does not lower, so limitMaxThreads is needed even after resize(sink_stream_size).
+    pipeline.limitMaxThreads(insert_dependencies->getViewProcessingNumThreads());
 
     pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
@@ -786,17 +787,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     //
     // With `use_strict_insert_block_limits`, the deduplication info (source block number) is stamped
     // by a per-stream `AddDeduplicationInfoTransform` *after* the fan-out (see below), so each parallel
-    // branch restarts its block numbering from zero. When the deduplication id folds in that source block
-    // number, two identical squashed blocks that land on different branches get identical ids, which
-    // `MergeTreeSink` / `ReplicatedMergeTreeSink` treat as duplicates and skip - silently dropping rows of
-    // a single parallel `INSERT`. The source block number participates in the id:
-    //  - for any non-empty `insert_deduplication_token` (the id is `token` + source block number,
-    //    independent of the block contents), and
-    //  - for a token-less insert unless `insert_deduplication_version = old_separate_hashes`, which for a
-    //    token-less SOURCE block derives the id from the data hash alone and drops the source number;
-    //    `new_unified_hash` (the default) and `compatible_double_hashes` still append the source number for
-    //    a synchronous insert, so identical blocks on different branches collide.
-    // Keep such strict inserts single-stream (as before), so the numbering stays global.
+    // branch restarts its block numbering from zero. The unified deduplication id folds in that source
+    // block number for any synchronous insert - both for a non-empty `insert_deduplication_token` (the
+    // id is `token` + source block number, independent of the block contents) and for a token-less
+    // insert (the id is the data hash + source block number). Two identical squashed blocks that land
+    // on different branches therefore get identical ids, which `MergeTreeSink` /
+    // `ReplicatedMergeTreeSink` treat as duplicates and skip - silently dropping rows of a single
+    // parallel `INSERT`. Keep such strict inserts single-stream (as before), so the numbering stays
+    // global.
     //
     // This only matters when the destination sink actually deduplicates: the colliding id is consulted
     // only by a MergeTree-family table with its deduplication window enabled, and only when deduplication
@@ -805,17 +803,15 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // session with deduplication disabled) the collision is harmless, so the fan-out stays safe and
     // `max_insert_threads` keeps applying.
     //
-    // The analogous VIEW-level collision for dependent materialized views (a per-branch view block
-    // number under the legacy deduplication hash modes) is handled inside `InsertDependenciesBuilder`,
-    // which keeps its sink stream size at 1 in that case regardless of the value passed here.
-    const auto dedup_version = context->getServerSettings()[ServerSetting::insert_deduplication_version].value;
+    // The analogous VIEW-level collision for dependent materialized views (a per-branch source block
+    // number folded into the view-level ids under strict limits) is handled inside
+    // `InsertDependenciesBuilder`, which keeps its sink stream size at 1 in that case regardless of
+    // the value passed here.
     const bool source_deduplicates = InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(table)
         && isDeduplicationEnabledForInsert(async_insert, settings);
     const bool strict_dedup_single_stream = !async_insert
         && settings[Setting::use_strict_insert_block_limits]
-        && source_deduplicates
-        && (!settings[Setting::insert_deduplication_token].value.empty()
-            || dedup_version != InsertDeduplicationVersions::OLD_SEPARATE_HASHES);
+        && source_deduplicates;
     const size_t insert_threads = (async_insert || strict_dedup_single_stream) ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,
@@ -869,7 +865,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             insert_dependencies,
             insert_dependencies->getRootViewID(),
             settings[Setting::insert_deduplication_token].value,
-            context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
             insert_header));
 
     if (should_squash)
@@ -898,7 +893,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 sink_chain.getInputSharedHeader()));
 
         if (should_squash)
@@ -945,7 +939,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // Pipeline ceiling: simple upper bound on parallelism. Actual slot grants are
     // demand-driven by lazy ConcurrencyControl / CPULeaseAllocation, so a wide ceiling
     // does not translate into reserved-but-unused slots.
-    pipeline.setNumThreads(max_threads);
+    // max_threads is already memory-adjusted; use it for the parallel case to preserve that adjustment.
+    const bool serial_views = !settings[Setting::parallel_view_processing] && insert_dependencies->isViewsInvolved();
+    pipeline.setNumThreads(serial_views ? 1 : max_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)

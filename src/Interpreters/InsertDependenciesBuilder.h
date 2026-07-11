@@ -127,6 +127,9 @@ public:
     /// collision only drops rows when some sink actually deduplicates.
     static bool storageDeduplicatesBlocksOnInsert(const StoragePtr & storage);
 
+    size_t getViewProcessingNumThreads() const;
+
+
 protected:
     InsertDependenciesBuilder(
         StoragePtr table,
@@ -150,7 +153,6 @@ private:
     Chain createSelect(StorageIDMaybeEmpty view_id) const;
     Chain createSink(StorageIDMaybeEmpty view_id) const;
     Chain createPostSink(StorageIDMaybeEmpty view_id) const;
-    Chain createRedefineDeduplicationInfoWithDataHashTransformChain() const;
 
     Chain createRetry(const std::vector<StorageIDMaybeEmpty> & path, StorageIDMaybeEmpty start_from, const std::string & partition) const;
 

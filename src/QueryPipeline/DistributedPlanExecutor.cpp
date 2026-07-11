@@ -608,7 +608,8 @@ static String serializeQueryPlan(const QueryPlan & query_plan)
 static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr context)
 {
     ReadBufferFromString in(serialized_query_plan);
-    auto plan_and_sets = QueryPlan::deserialize(in, context);
+    /// Trusted server-to-server plan fragment: decode types without the input complexity limit.
+    auto plan_and_sets = QueryPlan::deserialize(in, context, 0);
     return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
@@ -701,6 +702,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         no_ast, pipeline,
         /*interpreter*/ nullptr,
         /*internal*/ false,
+        /*log_as_internal*/ false,
         /*database*/ "",
         /*table*/ "",
         /*async_insert*/ false);
@@ -729,11 +731,11 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         executor.execute();
 
         logQueryFinish(query_log_elem, context, no_ast, std::move(pipeline), false,
-            query_span, QueryResultCacheUsage::None, false);
+            query_span, QueryResultCacheUsage::None, false, /*log_as_internal*/ false);
     }
     catch (...)
     {
-        logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, true);
+        logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, /*log_as_internal*/ false, true);
         throw;
     }
 }

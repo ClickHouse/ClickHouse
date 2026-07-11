@@ -1,0 +1,259 @@
+---
+slug: /optimize/skipping-indexes
+sidebarTitle: '数据跳过索引'
+description: '跳过索引让 ClickHouse 可以跳过读取那些可以确定不含匹配值的大块数据。'
+title: '了解 ClickHouse 数据跳过索引'
+doc_type: 'guide'
+keywords: ['跳过索引', '数据跳过', '性能', '索引', '最佳实践']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="introduction">
+  ## 简介
+</div>
+
+影响 ClickHouse 查询性能的因素有很多。在大多数场景下，关键在于 ClickHouse 在评估查询的 WHERE 子句条件时能否使用主键。因此，在表设计中，选择一个适用于最常见查询模式的主键至关重要。
+
+不过，无论主键调优得多么精细，总会有一些查询场景无法高效利用它。用户通常使用 ClickHouse 存储时间序列类型的数据，但往往也希望按照其他业务维度分析同一份数据，例如客户 id、网站 URL 或产品编号。在这种情况下，查询性能可能会明显下降，因为为了应用 WHERE 子句条件，可能需要扫描每一列中的所有值。尽管 ClickHouse 在这种情况下仍然相对较快，但如果要对数百万甚至数十亿个单独的值进行判断，这类“无索引”查询的执行速度仍会比基于主键的查询慢得多。
+
+在传统关系型数据库中，解决这一问题的一种方法是为表添加一个或多个“二级”索引。这是一种 B 树结构，使数据库能够以 O(log(n)) 的时间而不是 O(n) 的时间 (即全表扫描) 找到磁盘上所有匹配的行，其中 n 为行数。然而，这类二级索引不适用于 ClickHouse (或其他列式数据库) ，因为磁盘上并不存在可添加到索引中的单独行。
+
+相反，ClickHouse 提供了另一种类型的索引，在特定情况下可以显著提升查询速度。这些结构被称为“跳过”索引，因为它们使 ClickHouse 能够跳过读取那些可以确定不包含匹配值的大块数据。
+
+<div id="basic-operation">
+  ## 基本操作
+</div>
+
+只有 MergeTree 家族的表才能使用数据跳过索引。每个数据跳过索引都有四个主要参数：
+
+* 索引名称。索引名称用于在每个分区中创建索引文件。此外，在删除或物化索引时，也需要将其作为参数传入。
+* 索引表达式。索引表达式用于计算存储在索引中的值集合。它可以由列、简单运算符和/或由索引类型决定的一部分函数组合而成。
+* TYPE。索引类型决定用于判断是否可以跳过读取并评估每个索引块的计算方式。
+* GRANULARITY。每个已编制索引的块由 GRANULARITY 个粒度组成。例如，如果主表索引的粒度为 8192 行，而索引粒度为 4，那么每个已编制索引的&quot;块&quot;就是 32768 行。
+
+当用户创建数据跳过索引时，该表的每个数据分区片段目录中都会额外生成两个文件。
+
+* `skp_idx_{index_name}.idx`，其中包含按顺序排列的表达式值
+* `skp_idx_{index_name}.mrk2`，其中包含关联数据列文件中的对应偏移量。
+
+如果在执行查询、读取相关列文件时，WHERE 子句中的部分过滤条件与跳过索引表达式匹配，ClickHouse 将使用索引文件中的数据来判断每个相关数据块是必须处理，还是可以跳过 (前提是该块尚未因应用主键而被排除) 。为了用一个非常简化的例子来说明这一点，请看下表，其中加载了可预测的数据。
+
+```sql
+CREATE TABLE skip_table
+(
+  my_key UInt64,
+  my_value UInt64
+)
+ENGINE MergeTree primary key my_key
+SETTINGS index_granularity=8192;
+
+INSERT INTO skip_table SELECT number, intDiv(number,4096) FROM numbers(100000000);
+```
+
+执行一个不使用主键的简单查询时，`my_value`
+列中的全部 1 亿个值都会被扫描：
+
+```sql
+SELECT * FROM skip_table WHERE my_value IN (125, 700)
+```
+
+```response
+┌─my_key─┬─my_value─┐
+│ 512000 │      125 │
+│ 512001 │      125 │
+│    ... |      ... |
+└────────┴──────────┘
+
+8192 rows in set. Elapsed: 0.079 sec. Processed 100.00 million rows, 800.10 MB (1.26 billion rows/s., 10.10 GB/s.
+```
+
+现在添加一个最基本的跳过索引：
+
+```sql
+ALTER TABLE skip_table ADD INDEX vix my_value TYPE set(100) GRANULARITY 2;
+```
+
+通常，跳过索引只会应用于新插入的数据，因此仅添加索引不会影响上述查询。
+
+要为现有数据创建索引，请使用以下语句：
+
+```sql
+ALTER TABLE skip_table MATERIALIZE INDEX vix;
+```
+
+使用新创建的索引重新执行该查询：
+
+```sql
+SELECT * FROM skip_table WHERE my_value IN (125, 700)
+```
+
+```response
+┌─my_key─┬─my_value─┐
+│ 512000 │      125 │
+│ 512001 │      125 │
+│    ... |      ... |
+└────────┴──────────┘
+
+8192 rows in set. Elapsed: 0.051 sec. Processed 32.77 thousand rows, 360.45 KB (643.75 thousand rows/s., 7.08 MB/s.)
+```
+
+ClickHouse 不必处理 800 MB 的 1 亿行数据，而只读取并分析了 32768 行、360 KB 的数据
+——即 4 个粒度，每个粒度 8192 行。
+
+更直观地说，下图展示了 `my_value` 为 125 的 4096 行是如何被读取并选中的，以及后续这些行
+如何在不从磁盘读取的情况下被跳过：
+
+<Image img="/images/guides/best-practices/simple_skip.webp" size="md" alt="简单跳过" />
+
+你可以在执行查询时启用 trace，以查看跳过索引使用情况的详细信息。要在
+clickhouse-client 中执行此操作，请设置 `send_logs_level`：
+
+```sql
+SET send_logs_level='trace';
+```
+
+在尝试优化查询 SQL 和表索引时，这会提供有用的调试信息。  从上面的
+示例可以看出，调试日志显示跳过索引过滤掉了除两个粒度之外的所有内容：
+
+```sql
+<Debug> default.skip_table (933d4b2c-8cea-4bf9-8c93-c56e900eefd1) (SelectExecutor): Index `vix` has dropped 6102/6104 granules.
+```
+
+<div id="skip-index-types">
+  ## 跳过索引类型
+</div>
+
+{/* vale off */}
+
+<div id="minmax">
+  ### minmax
+</div>
+
+{/* vale on */}
+
+这种轻量级索引类型不需要任何参数。它会为每个块存储索引表达式的最小值和最大值
+(如果该表达式是 tuple，则会分别存储 tuple 中每个元素成员的值) 。这种类型非常适合那些值大致呈松散排序的列。这种索引类型在查询处理期间通常也是应用成本最低的一种。
+
+这种索引类型只会对 scalar 或 tuple 表达式正确生效——对于返回 array 或 map 数据类型的表达式，该索引绝不会被应用。
+
+{/* vale off */}
+
+<div id="set">
+  ### set
+</div>
+
+{/* vale on */}
+
+这种轻量级索引类型接受一个参数，即每个块中值集合的 max&#95;size (0 表示
+允许无限多个离散值) 。该集合包含块中的所有值 (如果值的数量超过 max&#95;size，则为空) 。这种索引类型非常适合用于这样的列：在每组粒度内基数较低 (本质上就是“聚集在一起”) ，但整体基数较高。
+
+这种索引的成本、性能和有效性取决于块内的基数。如果每个块都包含大量唯一值，那么要么针对庞大索引集合评估查询条件的代价会非常高，要么由于超过 max&#95;size 导致索引为空，从而无法应用该索引。
+
+{/* vale off */}
+
+<div id="text">
+  ### 文本
+</div>
+
+{/* vale on */}
+
+对于涉及自然语言或自由文本搜索的工作负载 (例如，在大型文本列中搜索单词或短语) ，ClickHouse 提供了 **文本索引** (真正的倒排索引) 。
+文本索引支持高效的全文搜索语义和标记化查找。对于全文搜索查询，这是推荐的选择，因为它能够提供确定性的标记索引，并为 `hasAnyToken`、`hasAllTokens` 等搜索函数以及所有常见文本搜索函数带来更好的性能。
+
+详情请参阅[此处](/zh/reference/engines/table-engines/mergetree-family/textindexes)的文本索引文档。
+
+<div id="bloom-filter-types">
+  ### 布隆过滤器类型
+</div>
+
+*布隆过滤器*是一种数据结构，能够以较高的空间效率测试元素是否属于某个集合，但会有少量误报。对于跳过索引来说，误报并不是什么大问题，因为唯一的代价只是多读取几个不必要的块。不过，存在误报也意味着，被索引的表达式应当通常为真，否则可能会跳过本应命中的有效数据。
+
+由于布隆过滤器更适合高效处理大量离散值的测试，因此它很适用于会产生较多待测值的条件表达式。尤其是，布隆过滤器索引可以应用于数组，此时会测试数组中的每个值；也可以应用于 Map，通过使用 mapKeys 或 mapValues 函数将键或值转换为数组。
+
+基于布隆过滤器的数据跳过索引类型共有三种：
+
+* 基础的 **bloom&#95;filter**，接受一个可选参数，用于指定 0 到 1 之间允许的“误报”率 (如果未指定，则使用 .025) 。
+
+* 专用的 **tokenbf&#95;v1**&#x20;*&#x20;(已弃用)&#x20;*。它接受三个参数，都用于调整所使用的布隆过滤器： (1) 过滤器的字节大小 (过滤器越大，误报越少，但会增加一些存储开销) ； (2) 应用的哈希函数个数 (同样，哈希函数越多，误报越少) ；以及 (3) 布隆过滤器哈希函数的种子。有关这些参数如何影响布隆过滤器功能的更多细节，请参见[这里](https://hur.st/bloomfilter/)的计算器。
+  此索引仅适用于 String、FixedString 和 Map 数据类型。输入表达式会按非字母数字字符拆分为多个字符序列。例如，列值 `This is a candidate for a "full text" search` 会包含这些标记：`This` `is` `a` `candidate` `for` `full` `text` `search`。它适用于在较长字符串中使用 LIKE、EQUALS、IN、hasToken() 以及类似方式搜索单词和其他值。例如，一种可能的用途是在自由格式的应用日志列中搜索少量类名或行号。
+
+* 专用的 **ngrambf&#95;v1**&#x20;*&#x20;(已弃用)&#x20;*。此索引的工作方式与 token 索引相同。它在布隆过滤器设置之前额外接受一个参数，即要索引的 ngram 大小。ngram 是长度为 `n` 的任意字符序列，因此，字符串 `A short string` 在 ngram 大小为 4 时会被索引为：
+  ```text
+  'A sh', ' sho', 'shor', 'hort', 'ort ', 'rt s', 't st', ' str', 'stri', 'trin', 'ring'
+  ```
+
+此索引对文本搜索也很有用，尤其适合中文这类没有词边界的语言。
+
+> 对于全文搜索工作负载，建议使用专用的 **文本索引** (参见 [Text index for full-text search](/zh/reference/engines/table-engines/mergetree-family/textindexes)) ，而不是已弃用的 *tokenbf&#95;v1* 或 *ngrambf&#95;v1* 索引。
+> 文本索引 提供真正的倒排索引；与基于标记的布隆过滤器索引相比，它具有更好的搜索性能、更可预测的行为，以及更高的灵活性。
+
+<div id="skip-index-functions">
+  ## 跳过索引函数
+</div>
+
+数据跳过索引的核心目的是减少常见查询需要分析的数据量。由于 ClickHouse 数据以分析型场景为主，这些查询在大多数情况下都会包含函数表达式。因此，跳过索引若要高效工作，就必须能够与常用函数正确配合。这通常发生在以下任一场景中：
+
+* 插入数据时，索引被定义为函数表达式 (表达式的结果会存储在索引文件中) ，或
+* 处理查询时，将表达式应用于已存储的索引值，以确定是否排除该块。
+
+每种类型的跳过索引都只适用于部分 ClickHouse 函数，具体取决于相应的索引实现，详见[此处](/zh/reference/engines/table-engines/mergetree-family/mergetree#functions-support)。一般来说，Set 索引和基于 Bloom filter 的索引 (也是一种 Set 索引) 都是无序的，因此不适用于范围条件。相比之下，MinMax 索引特别适合范围条件，因为判断范围是否相交的速度非常快。部分匹配函数 LIKE、startsWith、endsWith 和 hasToken 的效果取决于所使用的索引类型、索引表达式以及数据的具体形态。
+
+<div id="skip-index-settings">
+  ## 跳过索引设置
+</div>
+
+有两个可用设置适用于跳过索引。
+
+* **use&#95;skip&#95;indexes**   (0 或 1，默认值为 1) 。并非所有查询都能高效地使用跳过索引。如果某个过滤条件很可能会包含大多数粒度，应用数据跳过索引就会产生不必要的开销，有时甚至相当可观。对于不太可能从任何跳过索引中获益的查询，请将该值设为 0。
+* **force&#95;data&#95;skipping&#95;indices** (以逗号分隔的索引名称列表) 。此设置可用于防止某些低效查询。在某些情况下，查询某张表如果不使用跳过索引，代价就会过高；此时可通过该设置指定一个或多个索引名称，使任何未使用所列索引的查询都抛出异常。这样可以防止编写不当的查询消耗服务器资源。
+
+<div id="skip-best-practices">
+  ## 跳过索引最佳实践
+</div>
+
+跳过索引并不容易理解，尤其是对那些习惯了 RDBMS 领域基于行的二级索引，或文档存储中的倒排索引的人来说。要真正获得收益，应用 ClickHouse 数据跳过索引时，必须减少足够多的粒度读取，才能抵消计算索引本身的开销。关键在于，只要某个值在已建立索引的块中出现过哪怕一次，就意味着整个块都必须读入内存并进行评估，这样一来，索引计算的开销也就白白付出了。
+
+请看下面的数据分布：
+
+<Image img="/images/guides/best-practices/bad_skip.webp" size="md" alt="糟糕的跳过示例" />
+
+假设主键/ORDER BY 键是 `timestamp`，并且在 `visitor_id` 上建有索引。请看下面这个查询：
+
+```sql
+SELECT timestamp, url FROM table WHERE visitor_id = 1001`
+```
+
+对于这种数据分布，传统的二级索引会非常有用。它无需读取全部 32768 行来查找所需 visitor&#95;id 对应的 5 行，而是只在二级索引中记录这 5 行的位置，因此只需从磁盘读取这 5 行。对于 ClickHouse 数据跳过索引，情况则完全相反。无论跳过索引的类型是什么，`visitor_id` 列中的全部 32768 个值都会被检查。
+
+因此，想要仅靠给关键
+列添加索引来加速 ClickHouse 查询，这种直觉往往是错误的。只有在考察过其他替代方案之后，才应使用这类高级功能，例如修改主键 (参见 [如何选择主键](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)) 、使用 projections，或使用 materialized views。即使数据跳过索引确实适用，通常也仍需要对索引和表进行仔细调优。
+
+在大多数情况下，一个有用的跳过索引要求主键与目标非主键列/表达式之间具有很强的相关性。
+如果不存在相关性 (如上图所示) ，那么过滤条件在这个包含数千个值的数据块中至少匹配一行
+的概率就会很高，因此能被跳过的块很少。相反，如果某个主键值范围 (例如一天中的某个时段)
+与潜在索引列中的值 (例如电视观众年龄) 高度相关，那么 minmax 类型的索引
+很可能会带来收益。请注意，在插入数据时，可能可以提高这种相关性，方法包括在排序/ORDER BY 键中加入额外的
+列，或者采用批量插入的方式，使与主键相关的值在 on insert 时被分组。例如，某个特定 site&#95;id 的所有事件都可以在摄取过程中分组后一起插入，即使主键
+是一个包含大量站点事件的 timestamp。这样会产生许多只包含少数几个 site ids 的粒度，因此在按特定 site&#95;id 值搜索时，许多
+块都可以被跳过。
+
+跳过索引的另一个良好候选场景，是针对高基数表达式：其中任意单个值在数据中都相对稀疏。一个例子
+可能是跟踪 API 请求错误码的可观测性平台。某些错误码虽然在数据中很少见，但对于搜索可能
+特别重要。在 error&#95;code 列上建立 set 跳过索引，可以跳过绝大多数不包含
+错误的块，从而显著提升面向错误分析的查询性能。
+
+最后，最重要的最佳实践就是测试、测试、再测试。再次强调，与 b-tree 二级索引或用于文档搜索的倒排索引不同，
+数据跳过索引的行为并不容易预测。将它们添加到表中，会给数据摄取以及那些由于各种原因无法从索引中获益的查询
+带来显著成本。始终应当基于真实世界的数据对它们进行测试，而且测试还应
+包括类型、粒度大小以及其他参数的不同组合。测试往往会揭示出仅靠
+纸面推演难以发现的模式和陷阱。
+
+<div id="related-docs">
+  ## 相关文档
+</div>
+
+* [最佳实践指南](/zh/concepts/best-practices/using-data-skipping-indices)
+* [数据跳过索引示例](/zh/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [管理数据跳过索引](/zh/reference/statements/alter/skipping-index)
+* [系统表信息](/zh/reference/system-tables/data_skipping_indices)

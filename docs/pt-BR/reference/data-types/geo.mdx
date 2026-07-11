@@ -1,0 +1,190 @@
+---
+description: 'Documentação sobre os tipos de dados geométricos no ClickHouse usados para representar
+  objetos e localizações geográficas'
+sidebarTitle: 'Geo'
+slug: /sql-reference/data-types/geo
+title: 'Geométrico'
+doc_type: 'reference'
+---
+
+O ClickHouse oferece suporte a tipos de dados para representar objetos geográficos — localizações, áreas de terra etc.
+
+**Veja também**
+
+* [Representação de feições geográficas simples](https://en.wikipedia.org/wiki/GeoJSON).
+
+<div id="point">
+  ## Point
+</div>
+
+`Point` é representado por suas coordenadas X e Y, armazenadas como [Tuple](/pt-BR/reference/data-types/tuple)([Float64](/pt-BR/reference/data-types/float), [Float64](/pt-BR/reference/data-types/float)).
+
+**Exemplo**
+
+```sql title="Query"
+CREATE TABLE geo_point (p Point) ENGINE = Memory();
+INSERT INTO geo_point VALUES((10, 10));
+SELECT p, toTypeName(p) FROM geo_point;
+```
+
+```text title="Response"
+┌─p───────┬─toTypeName(p)─┐
+│ (10,10) │ Point         │
+└─────────┴───────────────┘
+```
+
+<div id="ring">
+  ## Ring
+</div>
+
+`Ring` é um polígono simples, sem buracos, armazenado como um array de pontos: [Array](/pt-BR/reference/data-types/array)([Point](#point)).
+
+**Exemplo**
+
+```sql title="Query"
+CREATE TABLE geo_ring (r Ring) ENGINE = Memory();
+INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
+SELECT r, toTypeName(r) FROM geo_ring;
+```
+
+```text title="Response"
+┌─r─────────────────────────────┬─toTypeName(r)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ Ring          │
+└───────────────────────────────┴───────────────┘
+```
+
+<div id="linestring">
+  ## LineString
+</div>
+
+`LineString` é uma linha armazenada como um Array de pontos: [Array](/pt-BR/reference/data-types/array)([Point](#point)).
+
+**Exemplo**
+
+```sql title="Query"
+CREATE TABLE geo_linestring (l LineString) ENGINE = Memory();
+INSERT INTO geo_linestring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
+SELECT l, toTypeName(l) FROM geo_linestring;
+```
+
+```text title="Response"
+┌─r─────────────────────────────┬─toTypeName(r)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ LineString    │
+└───────────────────────────────┴───────────────┘
+```
+
+<div id="multilinestring">
+  ## MultiLineString
+</div>
+
+`MultiLineString` é composto por múltiplas linhas armazenadas como um array de `LineString`: [Array](/pt-BR/reference/data-types/array)([LineString](#linestring)).
+
+**Exemplo**
+
+```sql title="Query"
+CREATE TABLE geo_multilinestring (l MultiLineString) ENGINE = Memory();
+INSERT INTO geo_multilinestring VALUES([[(0, 0), (10, 0), (10, 10), (0, 10)], [(1, 1), (2, 2), (3, 3)]]);
+SELECT l, toTypeName(l) FROM geo_multilinestring;
+```
+
+```text title="Response"
+┌─l───────────────────────────────────────────────────┬─toTypeName(l)───┐
+│ [[(0,0),(10,0),(10,10),(0,10)],[(1,1),(2,2),(3,3)]] │ MultiLineString │
+└─────────────────────────────────────────────────────┴─────────────────┘
+```
+
+<div id="polygon">
+  ## Polygon
+</div>
+
+`Polygon` é um polígono com buracos armazenado como um array de anéis: [Array](/pt-BR/reference/data-types/array)([Ring](#ring)). O primeiro elemento do array externo é o contorno externo do polígono, e todos os elementos seguintes são buracos.
+
+**Exemplo**
+
+Este é um polígono com um buraco:
+
+```sql title="Query"
+CREATE TABLE geo_polygon (pg Polygon) ENGINE = Memory();
+INSERT INTO geo_polygon VALUES([[(20, 20), (50, 20), (50, 50), (20, 50)], [(30, 30), (50, 50), (50, 30)]]);
+SELECT pg, toTypeName(pg) FROM geo_polygon;
+```
+
+```text title="Response"
+┌─pg────────────────────────────────────────────────────────────┬─toTypeName(pg)─┐
+│ [[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]] │ Polygon        │
+└───────────────────────────────────────────────────────────────┴────────────────┘
+```
+
+<div id="multipolygon">
+  ## MultiPolygon
+</div>
+
+`MultiPolygon` consiste em múltiplos polígonos e é armazenado como um array de polígonos: [Array](/pt-BR/reference/data-types/array)([Polygon](#polygon)).
+
+**Exemplo**
+
+Este multipolígono é composto por dois polígonos separados — o primeiro sem buracos e o segundo com um buraco:
+
+```sql title="Query"
+CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory();
+INSERT INTO geo_multipolygon VALUES([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]]);
+SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
+```
+
+```text title="Response"
+┌─mpg─────────────────────────────────────────────────────────────────────────────────────────────┬─toTypeName(mpg)─┐
+│ [[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]] │ MultiPolygon    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
+```
+
+<div id="geometry">
+  ## Geometry
+</div>
+
+`Geometry` é um tipo comum a todos os tipos acima. Equivale a um Variant desses tipos.
+
+**Exemplo**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo (geom Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ((1, 2));
+SELECT * FROM geo;
+```
+
+```text title="Response"
+   ┌─geom──┐
+1. │ (1,2) │
+   └───────┘
+```
+
+{/* */}
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+
+CREATE TABLE IF NOT EXISTS geo (geom String, id Int) ENGINE = Memory();
+INSERT INTO geo VALUES ('POLYGON((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 1);
+INSERT INTO geo VALUES ('POINT(0 0)', 2);
+INSERT INTO geo VALUES ('MULTIPOLYGON(((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))', 3);
+INSERT INTO geo VALUES ('LINESTRING(1 0,10 0,10 10,0 10,1 0)', 4);
+INSERT INTO geo VALUES ('MULTILINESTRING((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 5);
+INSERT INTO geo_dst SELECT readWKT(geom) FROM geo ORDER BY id;
+
+SELECT * FROM geo_dst;
+```
+
+```text title="Response"
+   ┌─geom─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+2. │ (0,0)                                                                                                            │
+3. │ [[[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]] │
+4. │ [(1,0),(10,0),(10,10),(0,10),(1,0)]                                                                              │
+5. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+   └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* [Explorando conjuntos massivos de dados do mundo real: mais de 100 anos de registros meteorológicos no ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)

@@ -127,11 +127,6 @@ namespace Setting
     extern const SettingsBool parallel_view_processing;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
-}
-
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
@@ -832,29 +827,29 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     /// Fanning out the writing side to `max_insert_threads` sink chains also fans out the dependent
     /// materialized-view chains when `parallel_view_processing` is enabled. Each branch then gets its own
     /// per-stream `UpdateDeduplicationInfoWithViewIDTransform`, whose `view_block_number` restarts from zero.
-    /// Under the legacy deduplication hash modes (`old_separate_hashes` / `compatible_double_hashes`) the
-    /// VIEW-level block id is `hash(data_hash : view_id : view_block_number)` and drops the (global) source
-    /// block number, so two identical source blocks landing on different branches produce the same MV block id
-    /// and one of them is skipped as a duplicate - silently dropping rows of a single parallel `INSERT`.
-    /// Keep the dependent-MV deduplication path single-stream in that case (as it was before parallelization).
-    /// Under `new_unified_hash` the VIEW id also folds in the global source block number, so identical blocks
-    /// on different branches stay distinct and the fan-out is safe.
+    /// The view-level deduplication ids still fold in the SOURCE block number, so they stay distinct across
+    /// branches as long as the source numbering is global: without strict insert block limits the source
+    /// block number is stamped by the single-stream head of the pipeline before the fan-out, and the
+    /// fan-out is safe. With `use_strict_insert_block_limits` the source block number is stamped per branch
+    /// *after* the fan-out, so two identical source blocks landing on different branches produce identical
+    /// view-level ids and one of them is skipped as a duplicate - silently dropping rows of a single
+    /// parallel `INSERT`. Keep the dependent-MV deduplication path single-stream in that case.
     ///
     /// The collision only drops rows when some dependent-MV target sink actually deduplicates. If every
     /// dependent target has its deduplication window disabled (e.g. a plain `MergeTree` target with
-    /// `non_replicated_deduplication_window = 0`, or a non-deduplicating engine), the per-branch view block
-    /// number is never consulted, so the fan-out stays safe and `max_insert_threads` should keep applying.
-    const auto dedup_version = init_context->getServerSettings()[ServerSetting::insert_deduplication_version].value;
+    /// `non_replicated_deduplication_window = 0`, or a non-deduplicating engine), the per-branch numbering
+    /// is never consulted, so the fan-out stays safe and `max_insert_threads` should keep applying.
+    const bool strict_insert_block_limits = !async_insert && settings[Setting::use_strict_insert_block_limits];
     const bool any_dependent_target_deduplicates = std::ranges::any_of(storages, [&] (const auto & entry)
         { return !isView(entry.first) && entry.first != init_table_id && storageDeduplicatesBlocksOnInsert(entry.second); });
-    const bool legacy_mv_dedup_single_stream = isViewsInvolved()
+    const bool strict_mv_dedup_single_stream = isViewsInvolved()
         && deduplicate_blocks_in_dependent_materialized_views
-        && dedup_version != InsertDeduplicationVersions::NEW_UNIFIED_HASHES
+        && strict_insert_block_limits
         && any_dependent_target_deduplicates;
 
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
-        && !legacy_mv_dedup_single_stream)
+        && !strict_mv_dedup_single_stream)
         sink_stream_size = max_insert_threads;
 }
 
@@ -998,25 +993,11 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
     {
         auto & chain = result_chains.emplace_back(std::move(processor_list));
         chain.attachResources(std::move(resources));
-        chain.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
+        chain.setNumThreads(getViewProcessingNumThreads());
         chain.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
     }
 
     return result_chains;
-}
-
-
-Chain InsertDependenciesBuilder::createRedefineDeduplicationInfoWithDataHashTransformChain() const
-{
-    const auto & dependent_views_ids = dependent_views.at(root_view);
-    if (dependent_views_ids.empty())
-        return {};
-
-    auto output_header = output_headers.at(root_view);
-
-    Chain chain;
-    chain.addSink(std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(output_header));
-    return chain;
 }
 
 
@@ -1035,7 +1016,6 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
     // When *Log storages push data to the dependent views, then `skip_destination_table` is true, data is pushed to the views only, not to the destination table
     if (!init_storage->noPushingToViewsOnInserts() || skip_destination_table)
     {
-        result = Chain::concat(std::move(result), createRedefineDeduplicationInfoWithDataHashTransformChain());
         result = Chain::concat(std::move(result), createPostSink(root_view));
     }
 
@@ -1047,7 +1027,7 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
         result.addSink(std::make_shared<NullSinkToStorage>(output_headers.at(root_view)));
     }
 
-    result.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
+    result.setNumThreads(getViewProcessingNumThreads());
     result.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
 
     result.addInsertDependenciesBuilder(shared_from_this());
@@ -1766,6 +1746,15 @@ QueryViewsLogElement::ViewStatus InsertDependenciesBuilder::getQueryViewStatus(s
 bool InsertDependenciesBuilder::isViewsInvolved() const
 {
     return isView(init_table_id) || !dependent_views.at(root_view).empty();
+}
+
+
+size_t InsertDependenciesBuilder::getViewProcessingNumThreads() const
+{
+    const auto & settings = init_context->getSettingsRef();
+    if (settings[Setting::parallel_view_processing] || !isViewsInvolved())
+        return static_cast<size_t>(settings[Setting::max_threads]);
+    return 1;
 }
 
 
