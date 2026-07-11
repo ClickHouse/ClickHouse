@@ -67,3 +67,21 @@ CREATE TABLE dist_over_tf (number UInt64) ENGINE = Distributed(test_shard_localh
 SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'dist_over_tf';
 DROP TABLE dist_over_tf;
 DROP DICTIONARY shard_dict;
+
+-- `additional_table_filters` matched against the Distributed table cannot be propagated to the shards
+-- when the target is a table function: the shard query reads from the table function, which has no named
+-- source table to re-key the filter onto (its shard-side expression is referenced only by an internally
+-- generated alias). It is rejected with a clear error instead of the confusing `UNKNOWN_TABLE`
+-- ("Both table name and UUID are empty") that `main_table.getShortName()` produced on the empty source id.
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, numbers(10));
+SELECT count() FROM dist_over_tf SETTINGS additional_table_filters = {'dist_over_tf': 'number > 5'}; -- { serverError NOT_IMPLEMENTED }
+DROP TABLE dist_over_tf;
+
+-- The classic named-table form still supports `additional_table_filters` (the filter is re-keyed onto the
+-- source table and applied on the shards): `number > 5` keeps 4 of the 10 rows, summing to 30.
+CREATE TABLE dist_over_tf_local (number UInt64) ENGINE = Memory;
+INSERT INTO dist_over_tf_local SELECT * FROM numbers(10);
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, currentDatabase(), dist_over_tf_local);
+SELECT count(), sum(number) FROM dist_over_tf SETTINGS additional_table_filters = {'dist_over_tf': 'number > 5'};
+DROP TABLE dist_over_tf;
+DROP TABLE dist_over_tf_local;

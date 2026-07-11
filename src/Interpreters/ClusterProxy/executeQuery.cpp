@@ -237,6 +237,17 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     /// It's just easier to add this filter for a source table.
     if (additional_filter_ast)
     {
+        /// When the distributed target is a table function (a `Distributed` table created over a table
+        /// function, or the `cluster`/`remote` table functions with a table-function argument) there is no
+        /// named source table on the shard: `main_table` is an empty `StorageID`. `additional_table_filters`
+        /// was matched against the `Distributed` table on the initiator, but it cannot be re-keyed onto a
+        /// source table name for the shards to apply, because the shard's table-function expression is
+        /// referenced only by an internally generated alias. Reject it with a clear error instead of failing
+        /// later with a confusing `UNKNOWN_TABLE` ("Both table name and UUID are empty") from `getShortName`.
+        if (main_table.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Setting `additional_table_filters` is not supported when a distributed query targets a table function");
+
         Tuple tuple;
         tuple.push_back(main_table.getShortName());
         tuple.push_back(additional_filter_ast->formatWithSecretsOneLine());
