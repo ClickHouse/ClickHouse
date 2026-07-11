@@ -96,8 +96,13 @@ SELECT 'be_unquoted_bare_int', toString(x[1]) FROM format(CSV, 'x Array(DateTime
 SELECT 'be_scalar_bare_s6', toString(toDateTime64('1783585473954', 6, 'UTC')) SETTINGS cast_string_to_date_time_mode = 'best_effort';
 SELECT 'be_quoted_bare_s6', arrayMap(e -> toString(e), x) FROM format(CSV, 'x Array(DateTime64(6, \'UTC\'))', '"[\'1783585473954\']"') SETTINGS date_time_input_format = 'best_effort';
 SELECT 'be_unquoted_bare_s6', arrayMap(e -> toString(e), x) FROM format(CSV, 'x Array(DateTime64(6, \'UTC\'))', '"[1783585473954]"') SETTINGS date_time_input_format = 'best_effort';
-SELECT 'be_scalar_eq_quoted_bare_s6', (SELECT toDateTime64('1783585473954', 6, 'UTC') SETTINGS cast_string_to_date_time_mode = 'best_effort') = (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(6, \'UTC\'))', '"[\'1783585473954\']"') SETTINGS date_time_input_format = 'best_effort');
-SELECT 'be_unquoted_differs_bare_s6', (SELECT toDateTime64('1783585473954', 6, 'UTC') SETTINGS cast_string_to_date_time_mode = 'best_effort') != (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(6, \'UTC\'))', '"[1783585473954]"') SETTINGS date_time_input_format = 'best_effort');
+-- The best_effort settings live on the OUTER query, not inside the subqueries: the old
+-- analyzer drops subquery-level SETTINGS clauses, so a subquery setting would leave both
+-- sides on the session-level basic reader and diverge (the quoted side would read raw ticks).
+-- An outer SETTINGS clause is honored by both analyzers and overrides the session SET and
+-- CI's date_time_input_format randomization.
+SELECT 'be_scalar_eq_quoted_bare_s6', (SELECT toDateTime64('1783585473954', 6, 'UTC')) = (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(6, \'UTC\'))', '"[\'1783585473954\']"')) SETTINGS cast_string_to_date_time_mode = 'best_effort', date_time_input_format = 'best_effort';
+SELECT 'be_unquoted_differs_bare_s6', (SELECT toDateTime64('1783585473954', 6, 'UTC')) != (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(6, \'UTC\'))', '"[1783585473954]"')) SETTINGS cast_string_to_date_time_mode = 'best_effort', date_time_input_format = 'best_effort';
 
 -- A leading '+' must be rejected under EVERY date_time_input_format, not just basic, so the
 -- effective parser does not depend on quoting/nesting. Scalar DateTime64 rejects '+' under both
