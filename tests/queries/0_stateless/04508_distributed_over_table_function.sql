@@ -38,3 +38,17 @@ DROP TABLE dist_over_tf;
 
 -- Too many arguments for the table-function form.
 CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, numbers(10), number, 'default', 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- A `*Cluster` table function cannot back a table (`ITableFunctionCluster::canBeUsedToCreateTable` is false),
+-- so it is rejected at create time, exactly as `CREATE TABLE ... AS urlCluster(...)` is - even when the
+-- columns are given explicitly (otherwise the unsupported combination would only surface later at read time).
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, urlCluster('test_shard_localhost', 'http://x/y', 'CSV')); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE dist_over_tf (x String) ENGINE = Distributed(test_shard_localhost, urlCluster('test_shard_localhost', 'http://x/y', 'CSV')); -- { serverError BAD_ARGUMENTS }
+
+-- A table function that resolves back to the Distributed table itself recurses, but the recursion is bounded
+-- by `max_distributed_depth` (it does not hang): reading raises `TOO_LARGE_DISTRIBUTED_DEPTH`, the same way two
+-- classic `Distributed` tables that reference each other do (self-references are only detected at create time
+-- for the direct `Distributed(cluster, database, table)` form).
+CREATE TABLE dist_over_tf (x UInt8) ENGINE = Distributed(test_shard_localhost, merge(currentDatabase(), '^dist_over_tf$'));
+SELECT * FROM dist_over_tf SETTINGS max_distributed_depth = 3; -- { serverError TOO_LARGE_DISTRIBUTED_DEPTH }
+DROP TABLE dist_over_tf;
