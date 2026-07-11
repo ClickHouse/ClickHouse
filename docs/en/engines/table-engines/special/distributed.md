@@ -54,6 +54,10 @@ CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
 
 The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
 
+:::note Read-only
+A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key`, `policy_name`, and the `INSERT`-related settings and behaviour described below therefore do not apply to it.
+:::
+
 ### Distributed parameters {#distributed-parameters}
 
 | Parameter                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
