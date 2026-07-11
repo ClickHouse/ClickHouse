@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -85,6 +86,13 @@ private:
             std::string database;
             std::string table;
             std::tie(database, table) = checker.getRemoteDatabaseAndTableName(*storage);
+
+            /// A table-function-backed Distributed table has no concrete remote table name, so there is
+            /// nothing to rewrite the subquery to. Reject the combination explicitly instead of producing
+            /// a broken identifier with an empty table name.
+            if (table.empty())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "distributed_product_mode = 'local' is not supported when a Distributed table targets a table function");
 
             String alias = database_and_table->tryGetAlias();
             if (alias.empty())

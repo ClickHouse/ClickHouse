@@ -129,6 +129,13 @@ public:
     /// Used by InterpreterInsertQuery
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
+
+    /// True when this table targets a table function (e.g. `Distributed(cluster, numbers(10))`) rather
+    /// than a concrete remote table. In that case there is no remote database/table name to fall back to,
+    /// so paths that need a concrete remote table id (INSERT rewrites, `distributed_product_mode = 'local'`)
+    /// are not supported.
+    bool isRemoteTableFunction() const { return remote_table_function_ptr != nullptr; }
+
     ClusterPtr getCluster() const;
 
     /// Used by InterpreterSystemQuery

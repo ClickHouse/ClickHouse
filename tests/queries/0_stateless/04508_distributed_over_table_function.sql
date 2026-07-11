@@ -85,3 +85,24 @@ CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, currentData
 SELECT count(), sum(number) FROM dist_over_tf SETTINGS additional_table_filters = {'dist_over_tf': 'number > 5'};
 DROP TABLE dist_over_tf;
 DROP TABLE dist_over_tf_local;
+
+-- `INSERT ... SELECT` into a table-function-backed Distributed table is rejected with the same
+-- `NOT_IMPLEMENTED` as the `INSERT ... VALUES` path, including with `parallel_distributed_insert_select`
+-- enabled (its distributed fast paths would otherwise build an `INSERT` into an empty remote table id).
+CREATE TABLE dist_over_tf_local (number UInt64) ENGINE = Memory;
+CREATE TABLE dist_over_tf_src ENGINE = Distributed(test_shard_localhost, currentDatabase(), dist_over_tf_local);
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, numbers(10));
+INSERT INTO dist_over_tf SELECT * FROM dist_over_tf_src SETTINGS parallel_distributed_insert_select = 2; -- { serverError NOT_IMPLEMENTED }
+INSERT INTO dist_over_tf SELECT * FROM dist_over_tf_src SETTINGS parallel_distributed_insert_select = 1; -- { serverError NOT_IMPLEMENTED }
+DROP TABLE dist_over_tf;
+DROP TABLE dist_over_tf_src;
+DROP TABLE dist_over_tf_local;
+
+-- `distributed_product_mode = 'local'` rewrites a nested Distributed subquery to its concrete remote table.
+-- A table-function-backed Distributed table has no such table, so the rewrite is rejected with a clear
+-- `NOT_IMPLEMENTED` instead of failing deep inside the rewrite on an empty table id. Covered for both the
+-- analyzer (`buildQueryTreeForShard`) and the old analyzer (`InJoinSubqueriesPreprocessor`); needs >= 2 shards.
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_cluster_two_shards_localhost, numbers(10));
+SELECT count() FROM dist_over_tf WHERE number IN (SELECT number FROM dist_over_tf) SETTINGS distributed_product_mode = 'local', enable_analyzer = 1; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM dist_over_tf WHERE number IN (SELECT number FROM dist_over_tf) SETTINGS distributed_product_mode = 'local', enable_analyzer = 0; -- { serverError NOT_IMPLEMENTED }
+DROP TABLE dist_over_tf;

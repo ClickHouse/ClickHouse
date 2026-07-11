@@ -1430,6 +1430,14 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
 std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
+    /// When this Distributed table targets a table function, there is no concrete remote table id to
+    /// insert into: both distributed `INSERT ... SELECT` fast paths would build `StorageID(getRemoteDatabaseName(),
+    /// getRemoteTableName())` out of empty names and fail with a confusing `UNKNOWN_TABLE`. Disable the
+    /// optimization here so the write falls back to `StorageDistributed::write`, which rejects the target
+    /// with the advertised `NOT_IMPLEMENTED`.
+    if (remote_table_function_ptr)
+        return {};
+
     const Settings & settings = local_context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");

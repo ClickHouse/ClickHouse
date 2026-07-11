@@ -65,6 +65,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -220,6 +221,12 @@ private:
 
         if (distributed_product_mode == DistributedProductMode::LOCAL)
         {
+            /// A table-function-backed Distributed table has no concrete remote table to localize the
+            /// subquery to, so the `local` rewrite is not applicable.
+            if (distributed_storage->isRemoteTableFunction())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "distributed_product_mode = 'local' is not supported when a Distributed table targets a table function");
+
             std::optional<StorageID> resolved_remote_storage_id;
 
             bool database_can_be_changed = distributed_storage->getCluster()->maybeCrossReplication();
