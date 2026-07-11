@@ -46,10 +46,12 @@ CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, urlCluster(
 CREATE TABLE dist_over_tf (x String) ENGINE = Distributed(test_shard_localhost, urlCluster('test_shard_localhost', 'http://x/y', 'CSV')); -- { serverError BAD_ARGUMENTS }
 -- A user-issued `ATTACH TABLE ... (columns) ENGINE = ...` is a fresh query (`LoadingStrictnessLevel::ATTACH`),
 -- not a load from previously-validated metadata, so it must be rejected too - otherwise it re-opens the bug
--- through a different entrypoint. Only server-startup / force-restore loads skip the check. (The `UUID` form is
--- how an `Atomic` database accepts `ATTACH TABLE` with an explicit definition; the check fires before the table
--- is registered, so the fixed UUID never persists.)
-ATTACH TABLE dist_over_tf UUID '04508000-0000-0000-0000-000000000000' (x String) ENGINE = Distributed(test_shard_localhost, urlCluster('test_shard_localhost', 'http://x/y', 'CSV')); -- { serverError BAD_ARGUMENTS }
+-- through a different entrypoint. Only server-startup / force-restore loads skip the check. (A `Memory`
+-- database accepts `ATTACH TABLE` with an explicit definition without a UUID, unlike an `Atomic` one.)
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.dist_over_tf (x String) ENGINE = Distributed(test_shard_localhost, urlCluster('test_shard_localhost', 'http://x/y', 'CSV')); -- { serverError BAD_ARGUMENTS }
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- A table function that resolves back to the Distributed table itself recurses, but the recursion is bounded
 -- by `max_distributed_depth` (it does not hang): reading raises `TOO_LARGE_DISTRIBUTED_DEPTH`, the same way two
