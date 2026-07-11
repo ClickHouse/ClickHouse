@@ -18,6 +18,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
 #include <cmath>
 #include <numeric>
 
@@ -113,6 +114,41 @@ static size_t computePaddedDim(size_t dim)
 {
     constexpr size_t ALIGN = 8;
     return (dim + ALIGN - 1) / ALIGN * ALIGN;
+}
+
+static size_t getAutoScannNumLeaves(size_t num_vectors, const ScannIndexParams & params)
+{
+    return params.num_leaves != 0
+        ? static_cast<size_t>(params.num_leaves)
+        : std::max(size_t(1), static_cast<size_t>(std::sqrt(static_cast<double>(num_vectors))));
+}
+
+static size_t getAutoScannNumLeavesToSearch(size_t num_vectors, const ScannIndexParams & params)
+{
+    /// Approximate MyScale's balanced alpha=2.0 profile:
+    /// l_search = 0.75 * floor(1 + num_leaves * exp(alpha * 0.8) * 0.015).
+    constexpr double alpha = 2.0;
+    const size_t num_leaves = getAutoScannNumLeaves(num_vectors, params);
+    const auto leaves_to_search = static_cast<size_t>(
+        0.75 * std::floor(1.0 + static_cast<double>(num_leaves) * std::exp(alpha * 0.8) * 0.015));
+    return std::clamp(leaves_to_search, size_t(1), num_leaves);
+}
+
+static size_t getAutoScannCandidatePoolSize(size_t num_candidates, size_t num_vectors, size_t data_dim)
+{
+    /// Approximate MyScale's balanced alpha=2.0 profile:
+    /// num_reorder = 20 * floor(topK^0.65 * sqrt(alpha)) * 2.5.
+    constexpr double alpha = 2.0;
+    double pool = 20.0 * std::floor(std::pow(static_cast<double>(num_candidates), 0.65) * std::sqrt(alpha));
+    if (num_vectors > 10000000)
+        pool *= std::sqrt(static_cast<double>(num_vectors) / 1e7);
+    if (data_dim >= 1024)
+        pool = pool * 768.0 / std::min<double>(static_cast<double>(data_dim), 1536.0);
+
+    /// ClickHouse ScaNN indexes are searched from memory, so use MyScale's memory-mode multiplier.
+    pool *= 2.5;
+    const auto pool_size = static_cast<size_t>(pool);
+    return std::min(std::max(num_candidates, pool_size), num_vectors);
 }
 
 static std::string buildScannConfigString(
@@ -1097,7 +1133,10 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
         num_candidates,
         (scann_candidate_pool_size > 0)
             ? std::min(scann_candidate_pool_size, granule->num_vectors)
-            : std::min(num_candidates * 1000, granule->num_vectors));
+            : getAutoScannCandidatePoolSize(num_candidates, granule->num_vectors, index_params.dimensions));
+    const size_t num_leaves_to_search = scann_num_leaves_to_search > 0
+        ? scann_num_leaves_to_search
+        : getAutoScannNumLeavesToSearch(granule->num_vectors, index_params);
 
     static constexpr size_t MAX_INT32 = static_cast<size_t>(std::numeric_limits<int32_t>::max());
     if (candidate_pool > MAX_INT32)
@@ -1113,16 +1152,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
     search_params[0].set_pre_reordering_epsilon(std::numeric_limits<float>::infinity());
     search_params[0].set_post_reordering_epsilon(std::numeric_limits<float>::infinity());
 
-    if (scann_num_leaves_to_search > MAX_INT32)
+    if (num_leaves_to_search > MAX_INT32)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "scann_num_leaves_to_search {} exceeds int32_t limit", scann_num_leaves_to_search);
+            "scann_num_leaves_to_search {} exceeds int32_t limit", num_leaves_to_search);
 
-    if (scann_num_leaves_to_search > 0)
-    {
-        auto tree_params = std::make_shared<research_scann::TreeXOptionalParameters>();
-        tree_params->set_num_partitions_to_search_override(static_cast<int32_t>(scann_num_leaves_to_search));
-        search_params[0].set_searcher_specific_optional_parameters(std::move(tree_params));
-    }
+    auto tree_params = std::make_shared<research_scann::TreeXOptionalParameters>();
+    tree_params->set_num_partitions_to_search_override(static_cast<int32_t>(num_leaves_to_search));
+    search_params[0].set_searcher_specific_optional_parameters(std::move(tree_params));
     std::vector<research_scann::NNResultsVector> result_vecs(1);
 
     const auto status = granule->searcher->inner->FindNeighborsBatched(

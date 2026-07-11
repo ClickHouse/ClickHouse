@@ -7704,13 +7704,16 @@ Allow creating `vector_similarity('scann', ...)` indexes. The ScaNN backend is e
 )", 0) \
     DECLARE(UInt64, scann_num_leaves_to_search, 0, R"(
 The number of IVF partitions to search at query time when using a `vector_similarity('scann', ...)` index.
-Value 0 means the default configured at index build time is used: `sqrt(num_leaves)` where `num_leaves = sqrt(num_vectors)`, i.e. `num_vectors^0.25` (17 for 100K vectors out of 316 total).
+Value 0 means automatic. ClickHouse uses a balanced recall/latency default:
+`0.75 * floor(1 + num_leaves * exp(2.0 * 0.8) * 0.015)`, where `num_leaves`
+is either specified in the index definition or selected automatically as `sqrt(num_vectors)`.
 Higher values increase recall at the cost of query latency.
 )", 0) \
     DECLARE(UInt64, scann_candidate_pool_size, 0, R"(
 The size of the approximate-hashing candidate pool fed into ScaNN's exact reranker when querying a `vector_similarity('scann', ...)` index.
 This is the number of vectors that are scored by the fast asymmetric hashing stage before the slower exact distance reranking.
-Value 0 means automatic: `1000 × num_candidates` where `num_candidates` is the number of results requested from the index.
+Value 0 means automatic. ClickHouse uses a balanced recall/latency default based on
+`20 * floor(LIMIT^0.65 * sqrt(2.0)) * 2.5`, adjusted for very large or high-dimensional granules.
 Higher values increase recall at the cost of query latency.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(

@@ -119,8 +119,8 @@ private:
     double index_fetch_multiplier;
     size_t max_limit;
     bool is_rescoring;
-    size_t scann_num_leaves_to_search; /// 0 = use index build-time default
-    size_t scann_candidate_pool_size;  /// 0 = auto (100 × num_candidates)
+    size_t scann_num_leaves_to_search; /// 0 = balanced automatic value
+    size_t scann_candidate_pool_size;  /// 0 = balanced automatic value
 };
 
 class MergeTreeIndexVectorSimilarityScann final : public IMergeTreeIndex

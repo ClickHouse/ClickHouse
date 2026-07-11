@@ -178,7 +178,7 @@ Unlike HNSW, ScaNN supports only `Array(Float32)` and `Array(Float64)` columns �
 
 These ScaNN-specific build parameters are available:
 - `<precision>` controls the on-disk precision of the exact-reordering vectors. Possible values are `f32` (float32), `bf16` (bfloat16), or `i8` (scalar-quantized int8). The default value is `f32`. The index is always trained in full float precision (the asymmetric-hashing codebook and IVF centroids are unaffected); only the reordering vectors are stored at the chosen precision. Lower precision shrinks the index on disk and speeds up cold loads (`bf16` roughly halves it, `i8` roughly quarters it) at a small recall cost, which can be recovered by raising `scann_candidate_pool_size`.
-- `<num_leaves>` controls the number of IVF partitions created in each index granule. It must be a positive integer. When the parameter is omitted, ClickHouse chooses `sqrt(num_vectors)` for each granule, with a minimum of `1`. More leaves produce finer partitions, but also increase index training work. The query-time default for `scann_num_leaves_to_search` is `sqrt(num_leaves)`.
+- `<num_leaves>` controls the number of IVF partitions created in each index granule. It must be a positive integer. When the parameter is omitted, ClickHouse chooses `sqrt(num_vectors)` for each granule, with a minimum of `1`. More leaves produce finer partitions, but also increase index training work.
 
 For example, the following definition stores exact-reordering vectors as `bf16`
 and creates `1024` IVF partitions per index granule:
@@ -196,11 +196,14 @@ parameters and use the three-argument form.
 Two settings allow per-query tuning of the recall/latency trade-off:
 
 - `scann_num_leaves_to_search` (default: `0`) — number of IVF partitions to probe at query time.
-  Value `0` uses the index's build-time default, `sqrt(num_leaves)`. If `<num_leaves>` was omitted from the index definition, `num_leaves` is `sqrt(num_vectors)` for the granule.
+  Value `0` means automatic. ClickHouse uses a balanced recall/latency value:
+  `0.75 * floor(1 + num_leaves * exp(2.0 * 0.8) * 0.015)`, where `num_leaves`
+  is taken from the index definition or selected automatically as `sqrt(num_vectors)` for the granule.
   Higher values increase recall at the cost of query latency.
 
 - `scann_candidate_pool_size` (default: `0`) — size of the asymmetric-hashing candidate pool fed into the exact reranker.
-  Value `0` means automatic: `1000 × LIMIT`.
+  Value `0` means automatic. ClickHouse uses a balanced recall/latency value based on
+  `20 * floor(LIMIT^0.65 * sqrt(2.0)) * 2.5`, adjusted for very large or high-dimensional granules.
   Higher values increase recall at the cost of query latency.
 
 Example with custom tuning:
