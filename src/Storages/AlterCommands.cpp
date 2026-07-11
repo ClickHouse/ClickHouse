@@ -550,7 +550,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
+void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     /// Helper function for column existence check with IF EXISTS
     auto should_skip_column_operation = [&]() -> bool {
@@ -559,6 +559,16 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
     if (type == ADD_COLUMN)
     {
+        /// IF NOT EXISTS is resolved in prepare() against the prepare-time snapshot, but apply() runs
+        /// on a fresher one (checkAlterIsPossible re-applies commands), and two IF NOT EXISTS adds of
+        /// the same column in one statement are both left un-ignored by prepare(). Skip here too so
+        /// IF NOT EXISTS never throws when the column already exists, matching prepare()/validate():
+        /// with share_nested_offsets enabled `n` and any `n.*` are the same logical column, so once
+        /// any `n.*` exists the whole nested add is a no-op (`hasNested` mirrors validate()'s check).
+        if (if_not_exists && share_nested_offsets
+            && (metadata.columns.has(column_name) || metadata.columns.hasNested(column_name)))
+            return;
+
         ColumnDescription column(column_name, data_type);
         if (default_expression)
         {
@@ -590,13 +600,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             columns_to_add.push_back(column);
         }
 
-        /// IF NOT EXISTS is resolved in prepare() against the prepare-time snapshot, but apply() runs
-        /// on a fresher one (checkAlterIsPossible re-applies commands), and two IF NOT EXISTS adds of
-        /// the same column in one statement are both left un-ignored by prepare(). Compare the EXACT
-        /// transformed names that would be inserted (not an `n.*` prefix): skip a name only when it
-        /// truly already exists. This makes IF NOT EXISTS a no-op for real collisions (e.g. the
-        /// flattened `n.a`) without wrongly skipping a genuinely new column, and stays consistent with
-        /// prepare()/validate() regardless of share_nested_offsets.
+        /// The share_nested_offsets-enabled whole-command no-op is handled by the early return above.
+        /// Here (share_nested_offsets disabled, so `n` and `n.*` are independent columns) skip only the
+        /// EXACT transformed names that truly already exist, not an `n.*` prefix. This still makes a
+        /// repeated flattened `n.a` add a no-op while never dropping a genuinely new distinct column.
         if (if_not_exists)
             std::erase_if(columns_to_add, [&](const ColumnDescription & c) { return metadata.columns.has(c.name); });
 
@@ -1383,7 +1390,7 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
+void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     if (!prepared)
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
@@ -1392,7 +1399,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(metadata_copy, context);
+            command.apply(metadata_copy, context, share_nested_offsets);
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);

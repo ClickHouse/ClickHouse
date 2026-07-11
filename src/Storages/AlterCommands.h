@@ -168,7 +168,9 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
+    /// share_nested_offsets mirrors prepare()/validate(): when true, `n` and `n.*` are treated as
+    /// the same logical column for IF NOT EXISTS existence checks; when false they are independent.
+    void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
 
     /// Check that alter command require data modification (mutation) to be
     /// executed. For example, cast from Date to UInt16 type can be executed
@@ -218,7 +220,9 @@ public:
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
+    /// share_nested_offsets is threaded to AlterCommand::apply so IF NOT EXISTS existence checks
+    /// stay consistent with prepare()/validate() for nested columns (see AlterCommand::apply).
+    void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
 
     /// At least one command modify settings or comments.
     bool hasNonReplicatedAlterCommand() const;

@@ -99,3 +99,41 @@ ALTER TABLE add_nested_prefix ADD COLUMN IF NOT EXISTS n String;
 SHOW CREATE TABLE add_nested_prefix;
 
 DROP TABLE IF EXISTS add_nested_prefix;
+
+DROP TABLE IF EXISTS add_nested_sno1;
+
+-- With share_nested_offsets enabled (default), prepare()/validate() treat any pre-existing `n.*`
+-- as "the whole nested column already exists": `ADD COLUMN n.a, ADD COLUMN IF NOT EXISTS n Nested(a, b)`
+-- in one statement no-ops the second command (via hasNested("n")). apply() must match that contract,
+-- so only `n.a` is added and `n.b` is NOT inserted (otherwise apply() would diverge from validate()).
+CREATE TABLE add_nested_sno1
+(
+    key UInt64
+)
+ENGINE = MergeTree()
+ORDER BY key;
+
+ALTER TABLE add_nested_sno1 ADD COLUMN `n.a` Array(UInt32), ADD COLUMN IF NOT EXISTS n Nested(a UInt32, b String);
+
+SHOW CREATE TABLE add_nested_sno1;
+
+DROP TABLE IF EXISTS add_nested_sno1;
+
+DROP TABLE IF EXISTS add_nested_sno0;
+
+-- With share_nested_offsets disabled, `n` and `n.*` are independent, so the exact-name compare applies:
+-- `ADD COLUMN n.a, ADD COLUMN IF NOT EXISTS n Nested(a, b)` skips only the colliding `n.a` and still
+-- adds the genuinely new `n.b`.
+CREATE TABLE add_nested_sno0
+(
+    key UInt64
+)
+ENGINE = MergeTree()
+ORDER BY key
+SETTINGS share_nested_offsets = 0;
+
+ALTER TABLE add_nested_sno0 ADD COLUMN `n.a` Array(UInt32), ADD COLUMN IF NOT EXISTS n Nested(a UInt32, b String);
+
+SHOW CREATE TABLE add_nested_sno0;
+
+DROP TABLE IF EXISTS add_nested_sno0;
