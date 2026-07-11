@@ -13,7 +13,7 @@ CREATE TABLE partition_pk_folding (a UInt64, b UInt64)
 ENGINE = MergeTree
 ORDER BY b
 PARTITION BY a
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO partition_pk_folding VALUES (1, 1), (1, 2), (1, 3);
 INSERT INTO partition_pk_folding VALUES (2, 4), (2, 5), (2, 6);
