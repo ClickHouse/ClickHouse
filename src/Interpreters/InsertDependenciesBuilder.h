@@ -120,12 +120,22 @@ public:
         return sink_stream_size;
     }
 
-    /// Whether a synchronous insert into `storage` would actually deduplicate blocks, i.e. its sink
-    /// consults the deduplication block ids. This mirrors how `MergeTreeSink` / `ReplicatedMergeTreeSink`
-    /// compute their own `deduplicate` flag (only MergeTree-family engines with an enabled deduplication
-    /// window). It is used to decide whether the parallel write fan-out is safe: a per-branch block-number
-    /// collision only drops rows when some sink actually deduplicates.
-    static bool storageDeduplicatesBlocksOnInsert(const StoragePtr & storage);
+    /// Whether a synchronous insert into `storage` would actually deduplicate blocks, i.e. some sink
+    /// consults the deduplication block ids. For MergeTree-family engines this mirrors how
+    /// `MergeTreeSink` / `ReplicatedMergeTreeSink` compute their own `deduplicate` flag (an enabled
+    /// deduplication window); for storages that forward the write into another table
+    /// (`MaterializedView`, `Alias`, proxies) the target is followed, and for storages whose ultimate
+    /// target is not cheaply known (`Distributed`, `Buffer`) the probe fails closed. It is used to
+    /// decide whether the parallel write fan-out is safe: a per-branch block-number collision only
+    /// drops rows when some sink actually deduplicates.
+    static bool storageDeduplicatesBlocksOnInsert(const StoragePtr & storage, size_t depth = 0);
+
+    /// Whether writing into `storage` forwards the data through a nested `INSERT` (`Alias`,
+    /// `Distributed`, `Buffer`) that stamps the deduplication info from scratch. Such nested inserts
+    /// restart the source block numbering per sink branch even when this query stamps the numbers
+    /// globally before the fan-out, so the fan-out may produce colliding deduplication ids for
+    /// identical blocks regardless of `use_strict_insert_block_limits`.
+    static bool storageRebuildsDeduplicationIdsOnInsert(const StoragePtr & storage, size_t depth = 0);
 
     size_t getViewProcessingNumThreads() const;
 

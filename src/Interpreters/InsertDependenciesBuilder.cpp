@@ -11,7 +11,11 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/WindowView/StorageWindowView.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageBuffer.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 
 #include <DataTypes/DataTypeEnum.h>
@@ -69,8 +73,6 @@
 #include <Core/Block.h>
 #include <Core/LogsLevel.h>
 #include <Core/Settings.h>
-#include <Core/ServerSettings.h>
-#include <Core/SettingsEnums.h>
 
 #include <base/UUID.h>
 #include <base/scope_guard.h>
@@ -772,21 +774,81 @@ private:
 };
 
 
-bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StoragePtr & storage)
-{
-    /// Only MergeTree-family engines deduplicate inserted blocks, and only when their (synchronous)
-    /// deduplication window is enabled. This mirrors how `MergeTreeSink` / `ReplicatedMergeTreeSink`
-    /// compute their own `deduplicate` flag. Other engines (`Memory`, `Null`, `Distributed`, ...)
-    /// never consult the deduplication block ids, so a per-branch block-number collision introduced by
-    /// the parallel write fan-out is harmless for them.
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
-    if (!merge_tree)
-        return false;
+/// Maximum length of a chain of forwarding storages (`MaterializedView` -> `Alias` -> ...) the probes
+/// below are willing to follow. A longer chain (or a cycle of aliases) fails closed.
+static constexpr size_t max_insert_forwarding_depth = 16;
 
-    const auto merge_tree_settings = merge_tree->getSettings();
-    if (storage->supportsReplication())
-        return (*merge_tree_settings)[MergeTreeSetting::replicated_deduplication_window] != 0;
-    return (*merge_tree_settings)[MergeTreeSetting::non_replicated_deduplication_window] > 0;
+bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StoragePtr & storage, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// MergeTree-family engines deduplicate inserted blocks when their (synchronous) deduplication
+    /// window is enabled. This mirrors how `MergeTreeSink` / `ReplicatedMergeTreeSink` compute their
+    /// own `deduplicate` flag.
+    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+    {
+        const auto merge_tree_settings = merge_tree->getSettings();
+        if (storage->supportsReplication())
+            return (*merge_tree_settings)[MergeTreeSetting::replicated_deduplication_window] != 0;
+        return (*merge_tree_settings)[MergeTreeSetting::non_replicated_deduplication_window] > 0;
+    }
+
+    /// Some storages forward the write into another table, which may deduplicate. Follow the target
+    /// where it is known locally (failing closed when it cannot be resolved) ...
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || storageDeduplicatesBlocksOnInsert(target, depth + 1);
+    }
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || storageDeduplicatesBlocksOnInsert(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return storageDeduplicatesBlocksOnInsert(proxy->getNested(), depth + 1);
+
+    /// ... and fail closed where the ultimate target is not cheaply known here: `Distributed` and
+    /// `Buffer` forward the write through a separate (remote or background) `INSERT` that may end up
+    /// in a deduplicating `MergeTree`.
+    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
+        return true;
+
+    /// Other engines (`Memory`, `Null`, `Log`, object storages, ...) never consult the deduplication
+    /// block ids, so a per-branch block-number collision introduced by the parallel write fan-out is
+    /// harmless for them.
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const StoragePtr & storage, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// `Alias` executes a full nested `INSERT` query per sink (`AliasSink`), and `Distributed` /
+    /// `Buffer` forward the data through a separate remote (or local / background) `INSERT`. The
+    /// nested `INSERT` stamps the deduplication info from scratch, so its source block numbering
+    /// restarts per sink branch even when this query stamps the numbers globally in the single-stream
+    /// head of the pipeline, before the fan-out.
+    if (dynamic_cast<const StorageAlias *>(storage.get())
+        || dynamic_cast<const StorageDistributed *>(storage.get())
+        || dynamic_cast<const StorageBuffer *>(storage.get()))
+        return true;
+
+    /// `MaterializedView` and proxies pass the write through to the target table's sink within the
+    /// same pipeline, preserving the deduplication info: look through them (failing closed when the
+    /// target cannot be resolved).
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || storageRebuildsDeduplicationIdsOnInsert(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return storageRebuildsDeduplicationIdsOnInsert(proxy->getNested(), depth + 1);
+
+    return false;
 }
 
 
@@ -835,21 +897,28 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     /// view-level ids and one of them is skipped as a duplicate - silently dropping rows of a single
     /// parallel `INSERT`. Keep the dependent-MV deduplication path single-stream in that case.
     ///
+    /// A dependent-MV target that forwards the write through a nested `INSERT` (`Alias`,
+    /// `Distributed`, `Buffer`) restarts the numbering per branch on its own, so for such a target the
+    /// fan-out is hazardous even without strict limits.
+    ///
     /// The collision only drops rows when some dependent-MV target sink actually deduplicates. If every
     /// dependent target has its deduplication window disabled (e.g. a plain `MergeTree` target with
     /// `non_replicated_deduplication_window = 0`, or a non-deduplicating engine), the per-branch numbering
     /// is never consulted, so the fan-out stays safe and `max_insert_threads` should keep applying.
     const bool strict_insert_block_limits = !async_insert && settings[Setting::use_strict_insert_block_limits];
-    const bool any_dependent_target_deduplicates = std::ranges::any_of(storages, [&] (const auto & entry)
-        { return !isView(entry.first) && entry.first != init_table_id && storageDeduplicatesBlocksOnInsert(entry.second); });
-    const bool strict_mv_dedup_single_stream = isViewsInvolved()
+    const bool any_dependent_target_dedup_hazard = std::ranges::any_of(storages, [&] (const auto & entry)
+    {
+        return !isView(entry.first) && entry.first != init_table_id
+            && (strict_insert_block_limits || storageRebuildsDeduplicationIdsOnInsert(entry.second))
+            && storageDeduplicatesBlocksOnInsert(entry.second);
+    });
+    const bool mv_dedup_single_stream = isViewsInvolved()
         && deduplicate_blocks_in_dependent_materialized_views
-        && strict_insert_block_limits
-        && any_dependent_target_deduplicates;
+        && any_dependent_target_dedup_hazard;
 
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
-        && !strict_mv_dedup_single_stream)
+        && !mv_dedup_single_stream)
         sink_stream_size = max_insert_threads;
 }
 

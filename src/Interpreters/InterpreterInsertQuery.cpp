@@ -796,6 +796,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // parallel `INSERT`. Keep such strict inserts single-stream (as before), so the numbering stays
     // global.
     //
+    // The same collision arises without strict limits when the destination storage forwards the data
+    // through a nested `INSERT` (`Alias`, `Distributed`, `Buffer`): each parallel branch gets its own
+    // sink, whose nested `INSERT` stamps the deduplication info from scratch, so the source block
+    // numbering restarts per branch even though this query stamped it globally in the single-stream
+    // head of the pipeline.
+    //
     // This only matters when the destination sink actually deduplicates: the colliding id is consulted
     // only by a MergeTree-family table with its deduplication window enabled, and only when deduplication
     // is not disabled by `deduplicate_insert` / `insert_deduplicate`. For a table that never deduplicates
@@ -804,15 +810,17 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // `max_insert_threads` keeps applying.
     //
     // The analogous VIEW-level collision for dependent materialized views (a per-branch source block
-    // number folded into the view-level ids under strict limits) is handled inside
-    // `InsertDependenciesBuilder`, which keeps its sink stream size at 1 in that case regardless of
-    // the value passed here.
+    // number folded into the view-level ids under strict limits, or a dependent target that forwards
+    // the write through a nested `INSERT`) is handled inside `InsertDependenciesBuilder`, which keeps
+    // its sink stream size at 1 in that case regardless of the value passed here.
     const bool source_deduplicates = InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(table)
         && isDeduplicationEnabledForInsert(async_insert, settings);
-    const bool strict_dedup_single_stream = !async_insert
-        && settings[Setting::use_strict_insert_block_limits]
+    const bool per_branch_dedup_ids = settings[Setting::use_strict_insert_block_limits]
+        || InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(table);
+    const bool dedup_single_stream = !async_insert
+        && per_branch_dedup_ids
         && source_deduplicates;
-    const size_t insert_threads = (async_insert || strict_dedup_single_stream) ? 1 : max_insert_threads;
+    const size_t insert_threads = (async_insert || dedup_single_stream) ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,
         query_ptr,
