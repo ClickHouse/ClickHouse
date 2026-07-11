@@ -18,6 +18,27 @@ namespace ErrorCodes
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
+namespace
+{
+
+bool csvDelimiterConflictsWithDateTime64(char delimiter, FormatSettings::DateTimeOutputFormat output_format, UInt32 scale)
+{
+    if (isNumericASCII(delimiter))
+        return true;
+
+    switch (output_format)
+    {
+        case FormatSettings::DateTimeOutputFormat::Simple:
+            return delimiter == '-' || delimiter == ':' || delimiter == ' ' || (scale > 0 && delimiter == '.');
+        case FormatSettings::DateTimeOutputFormat::ISO:
+            return delimiter == '-' || delimiter == ':' || delimiter == 'T' || delimiter == 'Z' || (scale > 0 && delimiter == '.');
+        case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
+            return delimiter == '-' || (scale > 0 && delimiter == '.');
+    }
+}
+
+}
+
 SerializationDateTime64::SerializationDateTime64(
     UInt32 scale_, const TimezoneMixin & time_zone_)
     : SerializationDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_)
@@ -229,10 +250,13 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
 
 void SerializationDateTime64::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.csv.quote_date_time_types)
+    const bool quote = settings.csv.quote_date_time_types
+        || csvDelimiterConflictsWithDateTime64(settings.csv.delimiter, settings.date_time_output_format, scale);
+
+    if (quote)
         writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
-    if (settings.csv.quote_date_time_types)
+    if (quote)
         writeChar('"', ostr);
 }
 

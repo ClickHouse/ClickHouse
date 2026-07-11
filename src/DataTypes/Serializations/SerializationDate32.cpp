@@ -121,10 +121,13 @@ bool SerializationDate32::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
 
 void SerializationDate32::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.csv.quote_date_time_types)
+    const char delimiter = settings.csv.delimiter;
+    const bool quote = settings.csv.quote_date_time_types || delimiter == '-' || isNumericASCII(delimiter);
+
+    if (quote)
         writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
-    if (settings.csv.quote_date_time_types)
+    if (quote)
         writeChar('"', ostr);
 }
 

@@ -94,6 +94,22 @@ inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
     return true;
 }
 
+bool csvDelimiterConflictsWithDateTime(char delimiter, FormatSettings::DateTimeOutputFormat output_format)
+{
+    if (isNumericASCII(delimiter))
+        return true;
+
+    switch (output_format)
+    {
+        case FormatSettings::DateTimeOutputFormat::Simple:
+            return delimiter == '-' || delimiter == ':' || delimiter == ' ';
+        case FormatSettings::DateTimeOutputFormat::ISO:
+            return delimiter == '-' || delimiter == ':' || delimiter == 'T' || delimiter == 'Z';
+        case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
+            return false;
+    }
+}
+
 }
 
 SerializationDateTime::SerializationDateTime(const TimezoneMixin & time_zone_)
@@ -256,10 +272,13 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
 void SerializationDateTime::serializeTextCSV(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.csv.quote_date_time_types)
+    const bool quote = settings.csv.quote_date_time_types
+        || csvDelimiterConflictsWithDateTime(settings.csv.delimiter, settings.date_time_output_format);
+
+    if (quote)
         writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
-    if (settings.csv.quote_date_time_types)
+    if (quote)
         writeChar('"', ostr);
 }
 

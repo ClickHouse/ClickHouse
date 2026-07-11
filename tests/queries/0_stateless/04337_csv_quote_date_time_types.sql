@@ -56,3 +56,12 @@ SELECT *
 FROM format(CSV, 't Nullable(Time64(3)), n UInt8', '"12:30:00.456":42')
 FORMAT CSV
 SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = ':', input_format_csv_use_default_on_bad_values = 1;
+
+SELECT 'temporal values remain quoted with numeric CSV delimiter' FORMAT TSVRaw;
+SELECT *
+FROM format(
+    CSV,
+    'd Date, d32 Date32, dt DateTime(\'UTC\'), dt64 DateTime64(3, \'UTC\'), t Time, t64 Time64(3), n UInt8',
+    '"2024-01-15"1"2024-01-16"1"1234567890"1"1234567890.123"1"12:30:00"1"12:30:00.456"142')
+FORMAT CSV
+SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = '1', date_time_output_format = 'unix_timestamp';
