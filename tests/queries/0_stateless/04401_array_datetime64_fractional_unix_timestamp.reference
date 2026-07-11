@@ -37,3 +37,6 @@ dot_rhs_scalar_eq_container	1
 infer_datelike_dot_is_string	Nullable(String)
 infer_datelike_dot_value	5981 10:01.000
 try_datelike_dot_is_null	\N
+datelike_dot_scalar_throw_saturates	2299-12-31 00:00:00.000
+datelike_dot_scalar_eq_try	1
+datelike_no_frac_scalar_throw_saturates	2299-12-31 00:00:00.000

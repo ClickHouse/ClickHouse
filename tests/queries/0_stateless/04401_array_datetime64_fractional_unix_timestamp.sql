@@ -162,3 +162,14 @@ SELECT 'dot_rhs_scalar_eq_container', (SELECT x[1] FROM format(CSV, 'x Array(Dat
 SELECT 'infer_datelike_dot_is_string', toTypeName(d) FROM format(JSONEachRow, '{"d" : "5981 10:01.000"}') SETTINGS date_time_input_format = 'basic';
 SELECT 'infer_datelike_dot_value', d FROM format(JSONEachRow, '{"d" : "5981 10:01.000"}') SETTINGS date_time_input_format = 'basic';
 SELECT 'try_datelike_dot_is_null', toDateTime64OrNull('5981 10:01.000', 9, 'UTC') SETTINGS date_time_input_format = 'basic';
+
+-- Direct scalar reader for the same date-like token. The out-of-range year (5981) saturates to the
+-- last supported day in readDateTimeTextFallback (src/IO/ReadHelpers.cpp), which this PR does not
+-- touch and which fires identically without any fraction (`5981 10:01` -> the same value). The
+-- throwing and non-throwing DateTime64 readers agree: both saturate when saturate_on_overflow is
+-- true (scalar reads, toDateTime64OrNull) and both surface out-of-range when it is false (schema
+-- inference -> String / NULL above). So there is no throwing-vs-try divergence here; the trailing
+-- `.000` does not turn a saturating date into a fractional unix timestamp on either path.
+SELECT 'datelike_dot_scalar_throw_saturates', toString(x) FROM format(CSV, 'x DateTime64(3, ''UTC'')', '5981 10:01.000') SETTINGS date_time_input_format = 'basic';
+SELECT 'datelike_dot_scalar_eq_try', (SELECT x FROM format(CSV, 'x DateTime64(3, ''UTC'')', '5981 10:01.000') SETTINGS date_time_input_format = 'basic') = toDateTime64OrNull('5981 10:01.000', 3, 'UTC') SETTINGS date_time_input_format = 'basic';
+SELECT 'datelike_no_frac_scalar_throw_saturates', toString(x) FROM format(CSV, 'x DateTime64(3, ''UTC'')', '5981 10:01') SETTINGS date_time_input_format = 'basic';
