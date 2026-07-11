@@ -8,9 +8,11 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
@@ -39,6 +41,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TABLE_ALREADY_EXISTS;
     extern const int UNEXPECTED_TABLE_ENGINE;
     extern const int UNKNOWN_TABLE;
 }
@@ -411,7 +414,8 @@ bool StorageTimeSeries::optimize(
         if (isInnerTable(target_kind))
         {
             auto inner_table = getTargetTable(target_kind, local_context);
-            optimized |= inner_table->optimize(query, inner_table->getInMemoryMetadataPtr(local_context, false), partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
+            const auto inner_metadata = inner_table->getInMemoryMetadataPtr(local_context, false);
+            optimized |= inner_table->optimize(query, inner_metadata, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
         }
     }
 
@@ -443,7 +447,8 @@ void StorageTimeSeries::checkAlterIsPossible(const AlterCommands & commands, Con
 
 void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
 {
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
 
     std::unique_ptr<TimeSeriesSettings> new_settings;
@@ -482,9 +487,52 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
 }
 
 
-void StorageTimeSeries::renameInMemory(const StorageID & /* new_table_id */)
+void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Renaming is not supported by storage {} yet", getName());
+    auto old_table_id = getStorageID();
+
+    /// In an Atomic/Replicated database both ids carry a UUID; inner tables are addressed by the
+    /// outer table's UUID (the `.inner_id.<kind>.<uuid>` name), which is preserved by the rename, so
+    /// only the outer table id changes. In an Ordinary database the inner table names embed the old
+    /// outer table name, so each inner table has to be renamed too (same as StorageMaterializedView).
+    bool from_atomic_to_atomic_database = old_table_id.hasUUID() && new_table_id.hasUUID();
+
+    if (!from_atomic_to_atomic_database && hasInnerTables())
+    {
+        /// Collect every inner table rename first so that all destination names can be checked
+        /// before any rename is executed. The inner renames are not transactional, so renaming
+        /// them one by one would leave the table half-renamed (some inner tables moved, the rest
+        /// not) if a later destination name happened to be occupied.
+        std::vector<std::pair<StorageID, String>> inner_renames;
+        for (auto target_kind : getTargetKinds())
+        {
+            if (!isInnerTable(target_kind))
+                continue;
+
+            auto inner_table = tryGetTargetTable(target_kind, getContext());
+            if (!inner_table)
+                continue;
+
+            auto inner_table_id = inner_table->getStorageID();
+            auto new_inner_table_name = getTimeSeriesInnerTableName(target_kind, new_table_id);
+
+            if (DatabaseCatalog::instance().isTableExist(StorageID{new_table_id.database_name, new_inner_table_name}, getContext()))
+                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists",
+                                StorageID{new_table_id.database_name, new_inner_table_name}.getNameForLogs());
+
+            inner_renames.emplace_back(std::move(inner_table_id), std::move(new_inner_table_name));
+        }
+
+        for (const auto & [inner_table_id, new_inner_table_name] : inner_renames)
+        {
+            auto rename = make_intrusive<ASTRenameQuery>();
+            rename->addElement(inner_table_id.database_name, inner_table_id.table_name,
+                               new_table_id.database_name, new_inner_table_name);
+            InterpreterRenameQuery(rename, getContext()).execute();
+        }
+    }
+
+    IStorage::renameInMemory(new_table_id);
 }
 
 

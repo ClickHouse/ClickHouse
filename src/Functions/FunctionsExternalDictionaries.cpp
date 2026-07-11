@@ -85,7 +85,7 @@ REGISTER_FUNCTION(ExternalDictionaries)
         FunctionDocumentation::Arguments arguments = {
             {"dict_name", "Name of the dictionary.", {"String"}},
             {"attr_names", "Name of the column of the dictionary, or tuple of column names.", {"String", "Tuple(String)"}},
-            {"id_expr", "Key value. An expression returning UInt64/Tuple(T).", {"UInt64", "Tuple(T)"}}
+            {"id_expr", "Key value. For a dictionary with a simple key, an expression returning a `UInt64` value. For a dictionary with a composite (complex) key, an expression returning a tuple of the key values. If the composite key consists of a single attribute, its value may be passed directly, without wrapping it in `tuple`.", {"UInt64", "Tuple(T)"}}
         };
         FunctionDocumentation::ReturnedValue returned_value =
 {R"(
@@ -135,7 +135,7 @@ R"(
         FunctionDocumentation::Arguments arguments = {
             {"dict_name", "Name of the dictionary.", {"String"}},
             {"attr_names", "Name of the column of the dictionary, or tuple of column names.", {"String", "Tuple(String)"}},
-            {"id_expr", "Key value. An expression returning UInt64/Tuple(T).", {"UInt64", "Tuple(T)"}},
+            {"id_expr", "Key value. For a dictionary with a simple key, an expression returning a `UInt64` value. For a dictionary with a composite (complex) key, an expression returning a tuple of the key values. If the composite key consists of a single attribute, its value may be passed directly, without wrapping it in `tuple`.", {"UInt64", "Tuple(T)"}},
             {"default_value", "Default value to return if the key is not found. Type must match the attribute's data type.", {}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {R"(
@@ -1046,12 +1046,26 @@ R"(
 
     /// dictGetAll
     {
-        const String type_name = "All";
+        FunctionDocumentation::Description description = R"(
+Retrieves the attribute values of all the nodes that matched each key in a [regular expression tree dictionary](/docs/sql-reference/statements/create/dictionary/layouts/regexp-tree).
 
-        FunctionDocumentation::Description description = getDictGetDescription(type_name);
-        FunctionDocumentation::Syntax syntax = getDictGetSyntax(type_name);
-        FunctionDocumentation::Arguments arguments = getDictGetArguments();
-        FunctionDocumentation::ReturnedValue returned_value = getDictGetReturnedValue();
+Besides returning values of type `Array(T)` instead of `T`, this function behaves similarly to [`dictGet`](#dictGet).
+)";
+        FunctionDocumentation::Syntax syntax = "dictGetAll(dict_name, attr_names, id_expr[, limit])";
+        FunctionDocumentation::Arguments arguments = {
+            {"dict_name", "Name of the dictionary.", {"String"}},
+            {"attr_names", "Name of the column of the dictionary, or tuple of column names.", {"String", "Tuple(String)"}},
+            {"id_expr", "Key value. An expression returning a dictionary key-type value or tuple value (dictionary configuration dependent).", {"Expression", "Tuple(T)"}},
+            {"limit", "Optional. Maximum length for each value array returned. When truncating, child nodes are given precedence over parent nodes, and otherwise the defined list order for the regexp tree dictionary is respected. If unspecified, the array length is unlimited.", {"UInt*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns an array of the dictionary attribute values that correspond to `id_expr` for each attribute specified by `attr_names`.
+If there is no key corresponding to `id_expr` in the dictionary, an empty array is returned.
+
+:::note
+ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
+:::
+)", {"Array(T)"}};
         FunctionDocumentation::Examples examples = {
             {"Usage example",
 R"(

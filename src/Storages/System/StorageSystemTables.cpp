@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
 #include <Core/UUID.h>
@@ -306,7 +307,7 @@ protected:
     {
         if (table)
         {
-            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
             if (!metadata_snapshot)
             {
                 columns[res_index++]->insertDefault();
@@ -607,7 +608,7 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
-                StorageMetadataPtr metadata_snapshot;
+                StorageMetadataHandle metadata_snapshot;
                 if (table)
                     metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
 
@@ -1051,3 +1052,6 @@ void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, c
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTables) }

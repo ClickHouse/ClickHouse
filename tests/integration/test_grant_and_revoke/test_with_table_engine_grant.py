@@ -538,8 +538,8 @@ def test_introspection():
         "SELECT * from system.grants WHERE user_name IN ('A', 'B') ORDER BY user_name, access_type, grant_option"
     ) == TSV(
         [
-            ["A", "\\N", "SELECT", "", "test", "table", "\\N", 0, 0],
-            ["B", "\\N", "CREATE", "", "\\N", "\\N", "\\N", 0, 1],
+            ["A", "\\N", "SELECT", "", "test", "table", "\\N", 0, 0, 0],
+            ["B", "\\N", "CREATE", "", "\\N", "\\N", "\\N", 0, 1, 0],
         ]
     )
 

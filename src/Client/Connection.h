@@ -157,8 +157,6 @@ public:
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
     /// Send all scalars.
     void sendScalarsData(Scalars & data);
-    /// Send parts' uuids to excluded them from query processing
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
 
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);

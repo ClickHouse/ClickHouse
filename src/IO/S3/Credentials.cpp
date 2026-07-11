@@ -1277,12 +1277,16 @@ AwsAuthSTSAssumeRoleCredentialsProvider::AwsAuthSTSAssumeRoleCredentialsProvider
 
 Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleCredentialsProvider::GetAWSCredentials()
 {
+    /// Honor `SetNeedRefresh()` like sibling providers (Web-Identity, SSO) do.
+    /// Without this, external callers (e.g. `S3::Client` on auth retries, or the
+    /// delta-kernel `ExpiredToken` retry path) can't force a re-AssumeRole even
+    /// after explicitly signalling the cached token is stale.
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
+    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
         return credentials;
 
     guard.UpgradeToWriterLock();
-    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
+    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
         return credentials;
 
     Reload();
@@ -1297,6 +1301,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     auto outcome = client->assumeRole(request);
     if (!outcome.IsSuccess())
     {
+        /// Keep `m_needsRefresh` and cached `credentials` so the next call retries STS.
         LOG_WARNING(logger, "Failed to get credentials using AssumeRule. Error: {}", outcome.GetError().GetMessage());
         return;
     }
@@ -1306,6 +1311,9 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     credentials.SetAWSSecretKey(result.getSecretAccessKey());
     credentials.SetSessionToken(result.getSessionToken());
     credentials.SetExpiration(result.getExpiration());
+
+    /// Clear `m_needsRefresh` so an external `SetNeedRefresh()` isn't latched.
+    AWSCredentialsProvider::Reload();
 
     LOG_TRACE(logger, "Successfully retrieved credentials");
 }

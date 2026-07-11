@@ -100,7 +100,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponse(
 {
     /// Pull until the first non-empty block is ready before writing the header
     /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
-    /// the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryAPIImpl.
+    /// the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryImpl.
     bool has_output = false;
     Block block;
     while (pulling_executor.pull(block))

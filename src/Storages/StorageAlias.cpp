@@ -14,6 +14,8 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
+#include <Common/assert_cast.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -72,12 +74,32 @@ public:
     AliasSink(
         StorageAlias & storage_,
         ContextPtr context_,
-        const StorageMetadataPtr & metadata_snapshot_)
+        const StorageMetadataPtr & metadata_snapshot_,
+        bool async_insert_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , WithContext(context_)
         , storage(storage_)
         , non_materialized_header(metadata_snapshot_->getSampleBlockNonMaterialized())
+        , async_insert(async_insert_)
     {
+    }
+
+    ~AliasSink() override
+    {
+        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
+        /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
+        /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
+        if (executor)
+        {
+            try
+            {
+                executor->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("AliasSink");
+            }
+        }
     }
 
     String getName() const override { return "AliasSink"; }
@@ -94,13 +116,17 @@ public:
         insert_context->makeQueryContext();
         addInterpreterContext(insert_context);
 
+        /// Thread the outer async-insert flag into the nested target pipeline so INSERT through
+        /// Alias matches a direct insert: async batches select async dedup settings and skip the
+        /// strict block-limit squashing that would slice their multi-token DeduplicationInfo and
+        /// break its row/offset invariant.
         InterpreterInsertQuery interpreter(
             query_ptr,
             insert_context,
             /* allow_materialized */ false,
             /* no_squash */ false,
             /* no_destination */ false,
-            /* async_insert */ false);
+            /* async_insert */ async_insert);
 
         block_io = interpreter.execute();
         executor = std::make_unique<PushingPipelineExecutor>(block_io.pipeline);
@@ -144,6 +170,7 @@ public:
 private:
     StorageAlias & storage;
     Block non_materialized_header;
+    bool async_insert;
     BlockIO block_io;
     std::unique_ptr<PushingPipelineExecutor> executor;
 };
@@ -184,14 +211,14 @@ SinkToStoragePtr StorageAlias::write(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    bool /*async_insert*/)
+    bool async_insert)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
 
     /// Use AliasSink which executes full INSERT pipeline on target
     /// Therefore it will trigger the MV on the target
-    return std::make_shared<AliasSink>(*this, local_context, target_metadata);
+    return std::make_shared<AliasSink>(*this, local_context, target_metadata, async_insert);
 }
 
 void StorageAlias::alter(
@@ -296,6 +323,39 @@ void StorageAlias::waitForMutation(const String & mutation_id, bool wait_for_ano
 void StorageAlias::setMutationCSN(const String & mutation_id, UInt64 csn)
 {
     getTargetTable()->setMutationCSN(mutation_id, csn);
+}
+
+namespace
+{
+
+/// Holds the resolved target StoragePtr alongside its task list
+struct AliasCheckTasks : IStorage::DataValidationTasksBase
+{
+    StoragePtr target;
+    IStorage::DataValidationTasksPtr inner;
+
+    AliasCheckTasks(StoragePtr target_, IStorage::DataValidationTasksPtr inner_)
+        : target(std::move(target_)), inner(std::move(inner_))
+    {
+        chassert(inner);
+    }
+
+    size_t size() const override { return inner->size(); }
+};
+
+}
+
+IStorage::DataValidationTasksPtr StorageAlias::getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context)
+{
+    auto target = getTargetTable(TargetAccess{query_context, AccessType::CHECK});
+    auto inner = target->getCheckTaskList(filter, query_context);
+    return std::make_shared<AliasCheckTasks>(std::move(target), std::move(inner));
+}
+
+std::optional<CheckResult> StorageAlias::checkDataNext(DataValidationTasksPtr & check_task_list)
+{
+    auto * tasks = assert_cast<AliasCheckTasks *>(check_task_list.get());
+    return tasks->target->checkDataNext(tasks->inner);
 }
 
 CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)

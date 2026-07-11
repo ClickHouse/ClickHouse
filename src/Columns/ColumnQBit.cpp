@@ -36,7 +36,13 @@ size_t ColumnQBit::getBitsCount() const
 
 std::string ColumnQBit::getName() const
 {
-    return fmt::format("QBit({}, {})", getBitsCount() == 16 ? "BFloat16" : getBitsCount() == 32 ? "Float32" : "Float64", dimension);
+    return fmt::format(
+        "QBit({}, {})",
+        getBitsCount() == 8        ? "Int8"
+            : getBitsCount() == 16 ? "BFloat16"
+            : getBitsCount() == 32 ? "Float32"
+                                   : "Float64",
+        dimension);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

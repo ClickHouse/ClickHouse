@@ -694,12 +694,24 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     ColumnsWithTypeAndName join_keys_probe_side;
     ColumnsWithTypeAndName join_keys_build_side;
 
-    /// Check that there are only equality predicates
+    /// Collect equality predicates for runtime filter construction.
+    /// Non-equality predicates (e.g. range conditions) are skipped for non-ANTI-JOIN:
+    /// the runtime filter is an over-approximation, so skipping them only lets extra rows
+    /// through the filter, which the join then rejects — no false negatives.
+    ///
+    /// For LEFT ANTI JOIN (is_left_anti_join) the all-equality requirement is
+    /// kept: the runtime filter is a NOT IN exclusion, so an over-broad set (built from
+    /// right-side rows that a post-condition would have excluded) produces false exclusions
+    /// — wrong results.
     for (const auto & condition : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Equals)
-            return false;
+        {
+            if (is_left_anti_join)
+                return false;
+            continue;
+        }
 
         /// For `LEFT ANTI JOIN`, the hash table may contain rows that are later filtered by post-condition.
         /// In this case we cannot build a runtime-filter key set from raw right-side rows, because it can be over-inclusive
@@ -970,11 +982,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             /// otherwise the Set/BloomFilter stays as fallback. Carry the rendezvous key (`id.key`),
             /// NOT the stable display name: the filter is registered in the lookup under that key, so
             /// `HashJoin::publishSharedRuntimeFilters` must find/replace it under the same key.
-            if (join_step->getJoinSettings().enable_join_runtime_filter_shared_fixed_hash_table
+            if (join_step->getJoinSettings().join_runtime_filter_from_fixed_hash_table
                 && !is_left_anti_join)
             {
-                join_step->getJoinOperator().shared_runtime_filter_descriptors.emplace_back(
-                    id.key, join_key_build_side.name);
+                join_step->getJoinOperator().shared_runtime_filter_descriptors.emplace_back(id.key, join_key_build_side.name);
             }
         }
 

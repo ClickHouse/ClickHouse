@@ -49,6 +49,10 @@ namespace ErrorCodes
     DECLARE(Double, keep_free_space_size_ratio, FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO, "A ratio of free space which cache would try to uphold in the background", 0) \
     DECLARE(Double, keep_free_space_elements_ratio, FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO, "A ratio of free elements which cache would try to uphold in the background", 0) \
     DECLARE(UInt64, keep_free_space_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "A remove batch size of cache elements made by background thread which upholds free space/elements ratio", 0) \
+    DECLARE(NonZeroUInt64, keep_free_space_eviction_threads, FILECACHE_DEFAULT_FREE_SPACE_EVICTION_THREADS, "Number of threads which perform the actual file segment removal (filesystem deletion) for the background free space/elements ratio keeping. The single background thread collects eviction candidates and frees their priority queue entries, while these threads do the lock-free removal in parallel", 0) \
+    DECLARE(NonZeroUInt64, invalidated_entries_cleanup_interval_ms, 10000, "Idle interval in milliseconds of the background task which purges invalidated (lazily-removed) priority queue entries", 0) \
+    DECLARE(NonZeroUInt64, invalidated_entries_cleanup_threshold, 1000, "Number of accumulated invalidated priority queue entries which triggers their background removal", 0) \
+    DECLARE(NonZeroUInt64, invalidated_entries_cleanup_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "Maximum number of invalidated priority queue entries removed under a single write lock per background iteration", 0) \
     DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Enable limiting maximum size of cache which can be written within a query", 0) \
     DECLARE(UInt64, cache_hits_threshold, 0, "Deprecated setting", 0) \
     DECLARE(Bool, enable_bypass_cache_with_threshold, false, "Undocumented. Not recommended for use", 0) \
@@ -235,6 +239,15 @@ void FileCacheSettings::validate()
 
     if (settings[FileCacheSetting::overcommit_eviction_evict_step] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`overcommit_eviction_evict_step` cannot be zero");
+
+    if (settings[FileCacheSetting::use_split_cache]
+        && (settings[FileCacheSetting::cache_policy] == FileCachePolicy::LRU_OVERCOMMIT
+            || settings[FileCacheSetting::cache_policy] == FileCachePolicy::SLRU_OVERCOMMIT))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`use_split_cache` is not supported with overcommit cache policies. "
+            "`SplitFileCachePriority` merges and fans out eviction infos of its sub-priorities "
+            "for total space cleanup, which the overcommit eviction cannot consume correctly");
 
     if (settings[FileCacheSetting::boundary_alignment] > settings[FileCacheSetting::max_file_segment_size])
         throw Exception(

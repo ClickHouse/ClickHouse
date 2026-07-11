@@ -647,7 +647,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     /// ClickHouse cloud setting
     {"shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold", rowsRangeSetting},
     /// ClickHouse cloud setting
-    {"shared_merge_tree_range_for_merge_window_size", highRangeSetting},
+    {"shared_merge_tree_range_for_merge_window_size", highRangeNonZeroSetting},
     /// ClickHouse cloud setting
     {"shared_merge_tree_read_virtual_parts_from_leader", trueOrFalseSetting},
     /// ClickHouse cloud setting

@@ -1107,52 +1107,39 @@ def test_insert_into_table(node, catalog_manager, request):
 
 @only_onelake
 def test_onelake_invalid_oauth_uri(node, catalog_manager):
-    """Invalid oauth_server_uri -> CREATE succeeds but catalog access fails."""
+    """Invalid oauth_server_uri -> CREATE DATABASE fails eagerly.
+
+    Catalog initialization now happens in the DatabaseDataLake constructor, so
+    the OAuth token is retrieved during CREATE DATABASE. An unreachable
+    oauth_server_uri therefore makes the statement fail immediately instead of
+    deferring the error to first catalog access.
+    """
 
     db = catalog_manager.make_database_name()
     sql = catalog_manager.create_db_sql(
         db, oauth_server_uri="https://invalid.example.com/oauth/token",
     )
 
-    _, create_err = node.query_and_get_answer_with_error(sql)
-    assert not create_err.strip(), f"CREATE unexpectedly failed: {create_err}"
-
-    tables_out, tables_err = node.query_and_get_answer_with_error(
-        f"SHOW TABLES FROM {db}"
-    )
-    assert not tables_out.strip() and not tables_err.strip(), (
-        "SHOW TABLES should return empty (lazy auth swallows errors)"
-    )
-
-    error = node.query_and_get_error(
-        f"SELECT * FROM {db}.nonexistent_table FORMAT TSV"
-    )
-    assert error, "Expected error when accessing table with invalid oauth URI"
+    error = node.query_and_get_error(sql)
+    assert error, "Expected CREATE DATABASE to fail with invalid oauth URI"
 
 
 @only_onelake
 def test_onelake_warehouse_wrong_format(node, catalog_manager):
-    """Malformed warehouse -> CREATE succeeds but catalog access fails."""
+    """Malformed warehouse -> CREATE DATABASE fails eagerly.
+
+    Catalog initialization now happens in the DatabaseDataLake constructor, so
+    a malformed warehouse makes catalog setup fail during CREATE DATABASE
+    instead of deferring the error to first catalog access.
+    """
 
     db = catalog_manager.make_database_name()
     sql = catalog_manager.create_db_sql(
         db, warehouse="not-a-valid-format-no-slash"
     )
 
-    _, create_err = node.query_and_get_answer_with_error(sql)
-    assert not create_err.strip(), f"CREATE unexpectedly failed: {create_err}"
-
-    tables_out, tables_err = node.query_and_get_answer_with_error(
-        f"SHOW TABLES FROM {db}"
-    )
-    assert not tables_out.strip() and not tables_err.strip(), (
-        "SHOW TABLES should return empty (lazy auth swallows errors)"
-    )
-
-    error = node.query_and_get_error(
-        f"SELECT * FROM {db}.nonexistent_table FORMAT TSV"
-    )
-    assert error, "Expected error when accessing table with malformed warehouse"
+    error = node.query_and_get_error(sql)
+    assert error, "Expected CREATE DATABASE to fail with malformed warehouse"
 
 
 # ---------------------------------------------------------------------------

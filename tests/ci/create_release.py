@@ -237,7 +237,11 @@ class ReleaseInfo:
         return self
 
     def prepare(
-        self, commit_ref: str, release_type: str, _skip_tag_check: bool
+        self,
+        commit_ref: str,
+        release_type: str,
+        _skip_tag_check: bool,
+        _skip_out_of_order_check: bool = False,
     ) -> "ReleaseInfo":
         version = None
         release_branch = None
@@ -300,19 +304,25 @@ class ReleaseInfo:
             # file at `origin/<release_branch>` HEAD, a release has been made on
             # a later commit — tagging `commit_ref` now would create an
             # out-of-order release.
-            ref_cmake = Shell.get_output_or_raise(
-                f"git show {commit_ref}:{FILE_WITH_VERSION_PATH}"
-            )
-            branch_cmake = Shell.get_output_or_raise(
-                f"git show origin/{release_branch}:{FILE_WITH_VERSION_PATH}"
-            )
-            if ref_cmake != branch_cmake:
-                raise RuntimeError(
-                    f"Refusing to release ref [{commit_ref}]: "
-                    f"{FILE_WITH_VERSION_PATH} differs from origin/{release_branch} "
-                    f"HEAD, which means a release has already been made on a "
-                    f"later commit. Tagging would create an out-of-order release."
+            #
+            # On a recovery run (`only-repo`/`only-docker`) we do not tag at all,
+            # we only rebuild repos/docker for an already-released tag, so an
+            # out-of-order check is irrelevant and would always trip once a later
+            # release exists on the branch. Skip it in that case.
+            if not _skip_out_of_order_check:
+                ref_cmake = Shell.get_output_or_raise(
+                    f"git show {commit_ref}:{FILE_WITH_VERSION_PATH}"
                 )
+                branch_cmake = Shell.get_output_or_raise(
+                    f"git show origin/{release_branch}:{FILE_WITH_VERSION_PATH}"
+                )
+                if ref_cmake != branch_cmake:
+                    raise RuntimeError(
+                        f"Refusing to release ref [{commit_ref}]: "
+                        f"{FILE_WITH_VERSION_PATH} differs from origin/{release_branch} "
+                        f"HEAD, which means a release has already been made on a "
+                        f"later commit. Tagging would create an out-of-order release."
+                    )
             if version.patch == 1:
                 expected_version = copy(version)
                 previous_release_tag = f"v{version.major}.{version.minor}.1.1-new"
@@ -920,6 +930,13 @@ def parse_args() -> argparse.Namespace:
         help="To skip check against latest git tag on a release branch",
     )
     parser.add_argument(
+        "--skip-out-of-order-check",
+        action="store_true",
+        help="Skip the out-of-order release check. Used by recovery runs "
+        "(only-repo/only-docker) that rebuild repos/docker for an "
+        "already-released tag without tagging",
+    )
+    parser.add_argument(
         "--push-release-tag",
         action="store_true",
         help="Creates and pushes git tag",
@@ -1012,6 +1029,7 @@ if __name__ == "__main__":
                 commit_ref=args.ref,
                 release_type=args.release_type,
                 _skip_tag_check=args.skip_tag_check,
+                _skip_out_of_order_check=args.skip_out_of_order_check,
             )
 
     if args.download_packages:

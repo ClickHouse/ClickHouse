@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_LIBPNG && USE_BASE64
+
 #include <string_view>
 #include <base/types.h>
 
@@ -36,3 +40,5 @@ void writeImageKitty(WriteBuffer & out, std::string_view png);
 void writeImageSixel(WriteBuffer & out, const UInt8 * pixels, size_t width, size_t height, size_t channels);
 
 }
+
+#endif

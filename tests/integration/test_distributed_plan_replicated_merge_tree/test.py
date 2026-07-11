@@ -19,6 +19,7 @@ the reference can be updated deliberately.
 
 import logging
 import textwrap
+import uuid
 from typing import Optional
 
 import pytest
@@ -83,6 +84,8 @@ DISTRIBUTED_SETTINGS = ", ".join([
     "query_plan_convert_any_join_to_semi_or_anti_join = 0",
     # Runtime filters are not yet implemented for distributed queries.
     "enable_join_runtime_filters = 0",
+    # To support old explain format
+    "explain_query_plan_default = 'legacy'",
 ])
 
 
@@ -405,6 +408,101 @@ def test_distributed_sort(started_cluster, exchange_kind):
         """,
     )
     assert distributed == baseline
+
+
+def _distributed_profile_events(query_id: str) -> dict:
+    """Read the make_distributed_plan ProfileEvents for a finished query from the
+    initiator's query_log.
+
+    Deterministic by construction (no reliance on async-flush timing): the query
+    is run synchronously with an explicit query_id, then SYSTEM FLUSH LOGS forces
+    the QueryFinish row out before it is read. The events are incremented on the
+    initiator inside the query's thread group, so they are aggregated into the
+    initial query's ProfileEvents. A missing event key reads as 0 via Map access.
+    """
+    INITIATOR.query("SYSTEM FLUSH LOGS query_log")
+    row = (
+        INITIATOR.query(
+            f"""
+            SELECT
+                count(),
+                sum(ProfileEvents['DistributedPlanRemoteTasks']),
+                sum(ProfileEvents['DistributedPlanHostsUsed']),
+                sum(ProfileEvents['DistributedPlanLocalExecution'])
+            FROM system.query_log
+            WHERE query_id = '{query_id}'
+              AND type = 'QueryFinish'
+              AND is_initial_query
+            """
+        )
+        .strip()
+        .split("\t")
+    )
+    rows_found = int(row[0])
+    assert rows_found > 0, f"no QueryFinish row found for query_id {query_id}"
+    return {
+        "remote_tasks": int(row[1]),
+        "hosts_used": int(row[2]),
+        "local_execution": int(row[3]),
+    }
+
+
+def test_profile_events_remote_execution(started_cluster):
+    """A distributed query run with the default (remote) executor emits:
+      - DistributedPlanRemoteTasks  > 0  : tasks were dispatched to workers, so
+                                           the query really executed distributedly,
+      - DistributedPlanHostsUsed   >= 2  : work spread across multiple replicas,
+      - DistributedPlanLocalExecution == 0 : the remote executor ran, not the
+                                             in-process local one.
+
+    All three are deterministic for this fixed 3-host worker cluster and reader
+    bucket count of 3 (the read stage alone produces 3 tasks round-robined onto
+    3 distinct hosts), so the assertions carry no timing/race component.
+    """
+    query = "SELECT count(), sum(id), sum(group_key) FROM big"
+    query_id = f"dist_profile_remote_{uuid.uuid4().hex}"
+
+    distributed = INITIATOR.query(
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id
+    )
+    # Confirm the distributed run is also correct, not just instrumented.
+    assert distributed == INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    events = _distributed_profile_events(query_id)
+    assert events["remote_tasks"] > 0, (
+        f"expected the query to run distributed, got events={events}"
+    )
+    assert events["hosts_used"] >= 2, (
+        f"expected work to spread across multiple replicas, got events={events}"
+    )
+    assert events["local_execution"] == 0, (
+        f"expected remote execution, got events={events}"
+    )
+
+
+def test_profile_events_local_execution(started_cluster):
+    """The same query with distributed_plan_execute_locally = 1 runs every stage
+    in-process via the local executor. It emits DistributedPlanLocalExecution and
+    dispatches nothing to remote workers, so the remote counters stay at 0."""
+    query = "SELECT count(), sum(id), sum(group_key) FROM big"
+    query_id = f"dist_profile_local_{uuid.uuid4().hex}"
+
+    distributed = INITIATOR.query(
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, distributed_plan_execute_locally = 1",
+        query_id=query_id,
+    )
+    assert distributed == INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    events = _distributed_profile_events(query_id)
+    assert events["local_execution"] > 0, (
+        f"expected local execution to be recorded, got events={events}"
+    )
+    assert events["remote_tasks"] == 0, (
+        f"expected no remote tasks for local execution, got events={events}"
+    )
+    assert events["hosts_used"] == 0, (
+        f"expected no host assignment for local execution, got events={events}"
+    )
 
 
 @EXCHANGE_KINDS

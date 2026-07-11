@@ -81,10 +81,17 @@ public:
 
 private:
     using TaskInfoPtr = std::shared_ptr<TaskInfo>;
-    using DelayedTasks = std::multimap<Poco::Timestamp, TaskInfoPtr>;
+    /// These pool queues are deliberately kept as plain `std` containers, NOT the throwing
+    /// `-WithMemoryTracking` aliases. Tasks are scheduled/cancelled (i.e. these containers are
+    /// mutated) from `BackgroundSchedulePoolTaskHolder`/`PauseHolder` destructors and other cleanup
+    /// paths that can run while the stack is already unwinding from another exception. A throwing
+    /// allocation (`MEMORY_LIMIT_EXCEEDED`) on such a path would be a second in-flight exception and
+    /// call `std::terminate`, killing the server.
+    /// In theory all this code should be made exception-safe, in practice we chose to avoid dealing with it for now.
+    using DelayedTasks = std::multimap<Poco::Timestamp, TaskInfoPtr>; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     /// BackgroundSchedulePool schedules a task on its own task queue, there's no need to construct/restore tracing context on this level.
     /// This is also how ThreadPool class treats the tracing context. See ThreadPool for more information.
-    using Threads = std::vector<ThreadFromGlobalPoolNoTracingContextPropagation>;
+    using Threads = std::vector<ThreadFromGlobalPoolNoTracingContextPropagation>; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// @param thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
     BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_);
@@ -111,14 +118,14 @@ private:
     {
         size_t num_running = 0;
         std::optional<size_t> runnable_list_pos;
-        std::deque<TaskInfoPtr> tasks;
+        std::deque<TaskInfoPtr> tasks; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     };
-    std::unordered_map<UInt64, TasksGroup> task_groups TSA_GUARDED_BY(tasks_mutex);
-    std::vector<UInt64> runnable_task_types TSA_GUARDED_BY(tasks_mutex);
+    std::unordered_map<UInt64, TasksGroup> task_groups TSA_GUARDED_BY(tasks_mutex); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::vector<UInt64> runnable_task_types TSA_GUARDED_BY(tasks_mutex); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     Threads threads;
     /// Tasks from tasks_groups are removed while executing, hold list of running tasks separately, for better introspection via system.background_schedule_pool.
-    std::unordered_set<TaskInfoPtr> running_tasks TSA_GUARDED_BY(tasks_mutex);
+    std::unordered_set<TaskInfoPtr> running_tasks TSA_GUARDED_BY(tasks_mutex); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Delayed tasks.
 

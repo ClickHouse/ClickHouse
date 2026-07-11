@@ -156,7 +156,7 @@ def start_cluster():
 def test_restore_table(start_cluster):
     fill_tables(cluster, "replicated")
     backup_name = new_backup_name()
-    node2.query(f"SYSTEM SYNC DATABASE REPLICA replicated")
+    node2.query("SYSTEM SYNC DATABASE REPLICA replicated")
 
     node2.query(f"BACKUP DATABASE replicated TO {backup_name}")
 
@@ -167,7 +167,7 @@ def test_restore_table(start_cluster):
     node2.query("DROP TABLE replicated.mysql_schema_inference_engine")
     node2.query("DROP TABLE replicated.mysql_schema_inference_function")
 
-    node3.query(f"SYSTEM SYNC DATABASE REPLICA replicated")
+    node3.query("SYSTEM SYNC DATABASE REPLICA replicated")
 
     assert node3.query("EXISTS replicated.mysql_schema_inference_engine") == "0\n"
     assert node3.query("EXISTS replicated.mysql_schema_inference_function") == "0\n"
@@ -175,7 +175,7 @@ def test_restore_table(start_cluster):
     node3.query(
         f"RESTORE DATABASE replicated FROM {backup_name} SETTINGS allow_different_database_def=true"
     )
-    node1.query(f"SYSTEM SYNC DATABASE REPLICA replicated")
+    node1.query("SYSTEM SYNC DATABASE REPLICA replicated")
 
     assert (
         node1.query(
@@ -206,7 +206,7 @@ def test_restore_table_null(start_cluster):
     fill_tables(cluster, "replicated2")
 
     backup_name = new_backup_name()
-    node2.query(f"SYSTEM SYNC DATABASE REPLICA replicated2")
+    node2.query("SYSTEM SYNC DATABASE REPLICA replicated2")
 
     node2.query(f"BACKUP DATABASE replicated2 TO {backup_name}")
 
@@ -217,7 +217,7 @@ def test_restore_table_null(start_cluster):
     node2.query("DROP TABLE replicated2.mysql_schema_inference_engine")
     node2.query("DROP TABLE replicated2.mysql_schema_inference_function")
 
-    node3.query(f"SYSTEM SYNC DATABASE REPLICA replicated2")
+    node3.query("SYSTEM SYNC DATABASE REPLICA replicated2")
 
     assert node3.query("EXISTS replicated2.mysql_schema_inference_engine") == "0\n"
     assert node3.query("EXISTS replicated2.mysql_schema_inference_function") == "0\n"
@@ -226,7 +226,7 @@ def test_restore_table_null(start_cluster):
         f"RESTORE DATABASE replicated2 FROM {backup_name} SETTINGS allow_different_database_def=1, allow_different_table_def=1 "
         f"SETTINGS restore_replace_external_engines_to_null=1, restore_replace_external_table_functions_to_null=1, restore_replace_external_dictionary_source_to_null=1"
     )
-    node1.query(f"SYSTEM SYNC DATABASE REPLICA replicated2")
+    node1.query("SYSTEM SYNC DATABASE REPLICA replicated2")
 
     assert (
         node1.query(

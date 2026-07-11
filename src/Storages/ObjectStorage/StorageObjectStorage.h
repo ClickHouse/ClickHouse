@@ -91,6 +91,12 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
+    /// Reading a `.null`/`.size0`/... subcolumn does not skip reading the parent column from
+    /// these file formats, and the native readers (e.g. Parquet V3 `PREWHERE`) cannot supply such
+    /// subcolumns as standalone inputs, so `isNotNull(x)` -> `not(x.null)` pushed into `PREWHERE`
+    /// throws `NOT_FOUND_COLUMN_IN_BLOCK`. Disable the optimization, like `StorageFile`/`StorageURL`.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }

@@ -17,7 +17,7 @@ To declare a column of `QBit` type, use the following syntax:
 column_name QBit(element_type, dimension)
 ```
 
-* `element_type` – the type of each vector element. The allowed types are `BFloat16`, `Float32` and `Float64`
+* `element_type` – the type of each vector element. The allowed types are `Int8`, `BFloat16`, `Float32` and `Float64`
 * `dimension` – the number of elements in each vector
 
 ## Creating QBit {#creating-qbit}
@@ -80,6 +80,7 @@ SELECT bin(vec.1) FROM test;
 
 The number of accessible subcolumns depends on the element type:
 
+* `Int8`: 8 subcolumns (1-8)
 * `BFloat16`: 16 subcolumns (1-16)
 * `Float32`: 32 subcolumns (1-32)
 * `Float64`: 64 subcolumns (1-64)

@@ -1,4 +1,5 @@
 #include <optional>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnsNumber.h>
@@ -155,7 +156,7 @@ protected:
                     continue;
                 }
 
-                StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+                const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 columns = metadata_snapshot->getColumns();
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
@@ -546,3 +547,6 @@ void ReadFromSystemColumns::initializePipeline(QueryPipelineBuilder & pipeline, 
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemColumns) }

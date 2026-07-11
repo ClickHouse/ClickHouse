@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#if USE_LIBPNG
+#if USE_LIBPNG && USE_BASE64
 
 #include <Core/Block_fwd.h>
 #include <Formats/FormatSettings.h>

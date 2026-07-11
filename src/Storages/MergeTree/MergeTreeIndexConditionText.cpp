@@ -98,6 +98,16 @@ SipHash TextSearchQuery::getHash() const
         }
     }
 
+    if (!phrase_tokens.empty())
+    {
+        hash.update(phrase_tokens.size());
+        for (const auto & token : phrase_tokens)
+        {
+            hash.update(token.size());
+            hash.update(token);
+        }
+    }
+
     return hash;
 }
 
@@ -106,11 +116,13 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     ContextPtr context_,
     const Block & index_sample_block,
     TokenizerPtr tokenizer_,
-    MergeTreeIndexTextPreprocessorPtr preprocessor_)
+    MergeTreeIndexTextPreprocessorPtr preprocessor_,
+    bool has_positions_)
     : WithContext(context_)
     , header(index_sample_block)
     , tokenizer(tokenizer_)
     , preprocessor(preprocessor_)
+    , has_positions(has_positions_)
 {
     if (!predicate)
     {
@@ -120,24 +132,28 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
     const auto & settings = context_->getSettingsRef();
     static constexpr auto cache_policy = "SLRU";
-    size_t max_memory_usage = std::min(settings[Setting::max_memory_usage] / 10ULL, 100ULL * 1024 * 1024);
+    /// Local caches: ~10% of the query memory budget, capped at 100 MiB; max_memory_usage == 0 (unlimited) uses the cap, not a 0-size cache.
+    static constexpr size_t local_cache_size_cap = 100ULL * 1024 * 1024;
+    const size_t query_memory_limit = settings[Setting::max_memory_usage];
+    const size_t local_cache_max_size
+        = query_memory_limit == 0 ? local_cache_size_cap : std::min<size_t>(query_memory_limit / 10, local_cache_size_cap);
 
     /// If usage of global text index caches is disabled, create local
     /// one to share them between threads that read the same data parts.
     if (settings[Setting::use_text_index_tokens_cache])
         tokens_cache = context_->getTextIndexTokensCache();
     else
-        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, max_memory_usage, 0, 1.0);
+        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, 1.0);
 
     if (settings[Setting::use_text_index_header_cache])
         header_cache = context_->getTextIndexHeaderCache();
     else
-        header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, max_memory_usage, 0, 1.0);
+        header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);
 
     if (settings[Setting::use_text_index_postings_cache])
         postings_cache = context_->getTextIndexPostingsCache();
     else
-        postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, max_memory_usage, 0, 1.0);
+        postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, local_cache_max_size, 0, 1.0);
 
     rpn = std::move(RPNBuilder<RPNElement>(
         predicate,
@@ -180,6 +196,7 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
         case RPNElement::FUNCTION_EQUALS:
         case RPNElement::FUNCTION_LIKE:
         case RPNElement::FUNCTION_HAS_ALL_TOKENS:
+        case RPNElement::FUNCTION_HAS_PHRASE:
         case RPNElement::FUNCTION_UNKNOWN:
         case RPNElement::ALWAYS_TRUE:
         case RPNElement::ALWAYS_FALSE:
@@ -233,6 +250,9 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         return TextIndexDirectReadMode::Exact;
     }
 
+    if (function_name == "hasPhrase")
+        return has_positions ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+
     bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
     bool has_preprocessor = preprocessor && preprocessor->hasActions();
 
@@ -256,7 +276,6 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     }
 
     if (function_name == "like"
-        || function_name == "hasPhrase"
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "mapContainsKeyLike"
@@ -317,6 +336,7 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
         {RPNElement::FUNCTION_EQUALS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
+         RPNElement::FUNCTION_HAS_PHRASE,
          RPNElement::FUNCTION_LIKE,
          RPNElement::FUNCTION_HAS_ANY_ELEMENTS});
 }
@@ -353,6 +373,15 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS)
         {
+            chassert(element.text_search_queries.size() == 1);
+            const auto & text_search_query = element.text_search_queries.front();
+            bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
+            rpn_stack.emplace_back(exists_in_granule, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_HAS_PHRASE)
+        {
+            /// At the granule level, phrase matching degrades to "all tokens must exist".
+            /// Actual positional phrase checking is done at the row level via position data.
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
@@ -799,6 +828,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "equals")
     {
+        /// Special case: Don't use the index if the needle is empty.
+        /// - Reason 1: The index doesn't index empty values (regardless of the tokenizer). So this needle
+        ///   is invalid.
+        /// - Reason 2: We also end up here if optimizer rule `optimize_empty_string_comparisons` (default: 1)
+        ///   is disabled, i.e. `col = ''` is _not_ rewritten into `empty(col)`. The latter doesn't
+        ///   use the index (because it doesn't support `empty`). For consistency, make sure `equals('')`
+        ///   behaves the same.
+        if (value_field.safeGet<String>().empty())
+            return false;
+
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -914,6 +953,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
+        /// A needle containing a token separator is invalid for hasToken and raises BAD_ARGUMENTS during a
+        /// brute-force scan. hasToken uses Exact direct read, so the index would tokenize the needle and
+        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception;
+        /// bypass the index so the row-level function runs. hasTokenOrNull is not affected: it returns NULL
+        /// instead of throwing and only uses the index for granule pruning, which never changes its result.
+        /// A separator is any ASCII non-alphanumeric character, matching HasTokenImpl.
+        if (function_name == "hasToken"
+            && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
+            return false;
+
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
         {
@@ -949,6 +998,29 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
 
+        const String value = preprocessor->processConstant(value_field.safeGet<String>());
+
+        /// When positions are available, use phrase search with positional intersection.
+        if (has_positions)
+        {
+            /// For phrase queries, we need tokens in their original order with duplicates preserved.
+            VectorWithMemoryTracking<String> phrase_tokens;
+            tokenizer->stringToTokens(value.data(), value.size(), phrase_tokens);
+            if (phrase_tokens.empty())
+                return false;
+
+            /// The sorted+deduplicated tokens are used for granule-level filtering (all tokens must exist).
+            auto unique_tokens = tokenizer->compactTokens(phrase_tokens);
+            std::sort(unique_tokens.begin(), unique_tokens.end());
+
+            auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Phrase, direct_read_mode, std::move(unique_tokens));
+            query->phrase_tokens = std::move(phrase_tokens);
+            out.function = RPNElement::FUNCTION_HAS_PHRASE;
+            out.text_search_queries.emplace_back(std::move(query));
+            return true;
+        }
+
+        /// Without positions, fallback to "all tokens must exist".
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));

@@ -30,7 +30,7 @@ public:
         return ret;
     }
 
-    SchedulerNodePtr get(const String & name, EventQueue * event_queue, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    SchedulerNodePtr get(const String & name, EventQueue & event_queue, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
         std::lock_guard lock{mutex};
         if (auto iter = methods.find(name); iter != methods.end())
@@ -42,7 +42,7 @@ public:
     void registerMethod(const String & name)
     {
         std::lock_guard lock{mutex};
-        methods[name] = [] (EventQueue * event_queue, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+        methods[name] = [] (EventQueue & event_queue, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         {
             return std::make_shared<TDerived>(event_queue, config, config_prefix);
         };
@@ -50,7 +50,7 @@ public:
 
 private:
     std::mutex mutex;
-    using Method = std::function<SchedulerNodePtr(EventQueue * event_queue, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)>;
+    using Method = std::function<SchedulerNodePtr(EventQueue & event_queue, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)>;
     std::unordered_map<String, Method> methods;
 };
 

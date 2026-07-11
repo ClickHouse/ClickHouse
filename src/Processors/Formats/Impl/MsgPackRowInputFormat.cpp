@@ -15,6 +15,7 @@
 
 #include <cstdlib>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Core/Defines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -48,6 +49,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int UNEXPECTED_END_OF_FILE;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
@@ -593,6 +595,14 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
 }
 
 
+/// Reference (don't copy) zero-length STR/BIN payloads: msgpack copies them via
+/// memcpy(dst, null, 0), which is UB under the nonnull attribute. The empty payload
+/// is never dereferenced during schema inference.
+static bool msgpackReferenceEmptyData(msgpack::type::object_type, size_t size, void *)
+{
+    return size == 0;
+}
+
 msgpack::object_handle MsgPackSchemaReader::readObject()
 {
     if (buf.eof())
@@ -607,7 +617,9 @@ msgpack::object_handle MsgPackSchemaReader::readObject()
         offset = 0;
         try
         {
-            object_handle = msgpack::unpack(buf.position(), buf.buffer().end() - buf.position(), offset);
+            object_handle = msgpack::unpack(
+                buf.position(), buf.buffer().end() - buf.position(), offset,
+                msgpackReferenceEmptyData, nullptr, msgpack::unpack_limit());
             need_more_data = false;
         }
         catch (msgpack::insufficient_bytes &)
@@ -624,8 +636,23 @@ msgpack::object_handle MsgPackSchemaReader::readObject()
     return object_handle;
 }
 
-DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
+DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object, size_t depth)
 {
+    /// MsgPack arrays and maps can be nested arbitrarily deep, and msgpack::unpack builds the
+    /// whole object tree iteratively (heap), so a deeply nested object would overflow the native
+    /// stack during this recursive descent. Reject deep nesting early (before building the type)
+    /// with an explicit limit: this keeps inference cheap and interruptible instead of walking and
+    /// allocating a pathologically deep type that later code (e.g. makeNullableRecursively) would
+    /// also recurse over. checkStackSize is a last-resort backstop if max_parser_depth is raised.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Too deep recursion while inferring the MsgPack schema: the nesting depth exceeds the limit ({}). "
+            "It can be raised with the setting 'max_parser_depth', but a very deep schema is rarely intentional",
+            format_settings.max_parser_depth);
+    checkStackSize();
+
     switch (object.type)
     {
         case msgpack::type::object_type::POSITIVE_INTEGER: [[fallthrough]];
@@ -651,12 +678,16 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             bool nested_types_are_equal = true;
             for (size_t i = 0; i != object_array.size; ++i)
             {
-                auto nested_type = getDataType(object_array.ptr[i]);
+                auto nested_type = getDataType(object_array.ptr[i], depth + 1);
                 if (!nested_type)
                     return nullptr;
 
+                /// Compare only against the first element. Comparing the first element to itself is
+                /// pointless and would recurse through the whole (possibly deeply nested) type via
+                /// DataTypeArray::equals, which is itself unguarded recursion.
+                if (!nested_types.empty())
+                    nested_types_are_equal &= nested_type->equals(*nested_types[0]);
                 nested_types.push_back(nested_type);
-                nested_types_are_equal &= nested_type->equals(*nested_types[0]);
             }
 
             if (nested_types_are_equal)
@@ -669,8 +700,8 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             msgpack::object_map object_map = object.via.map;
             if (object_map.size)
             {
-                auto key_type = removeNullable(getDataType(object_map.ptr[0].key));
-                auto value_type = getDataType(object_map.ptr[0].val);
+                auto key_type = removeNullable(getDataType(object_map.ptr[0].key, depth + 1));
+                auto value_type = getDataType(object_map.ptr[0].val, depth + 1);
                 if (key_type && value_type)
                     return std::make_shared<DataTypeMap>(key_type, value_type);
             }
@@ -698,7 +729,7 @@ std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
     for (size_t i = 0; i != number_of_columns; ++i)
     {
         auto object_handle = readObject();
-        data_types.push_back(getDataType(object_handle.get()));
+        data_types.push_back(getDataType(object_handle.get(), 1));
     }
 
     return data_types;
@@ -756,7 +787,7 @@ ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data
 
 Writing to a file ".msgpk":
 
-```sql
+```bash
 $ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
 $ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
 $ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;

@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexPositionData.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -89,6 +91,11 @@ private:
 
     PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
 
+    /// Fills a phrase virtual column from positional data (.pos), computing matching documents
+    /// via phrase intersection (cached per granule).
+    void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
+    void initializePositionsStream();
+
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
     MergeTreeIndexWithCondition index;
@@ -112,6 +119,11 @@ private:
     /// A separate stream is created for each token to read
     /// postings blocks continuously without additional seeks.
     absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> large_postings_streams;
+
+    /// Stream for position data (.pos file) used for phrase queries.
+    std::unique_ptr<MergeTreeReaderStream> positions_stream;
+    /// Per-reader memo of phrase results (shared via the postings cache) so repeated readRows calls skip the cache lookup.
+    absl::flat_hash_map<UInt128, FlatPostingsPtr> phrase_search_doc_ids;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;

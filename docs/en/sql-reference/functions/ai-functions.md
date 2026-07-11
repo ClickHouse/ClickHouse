@@ -9,6 +9,10 @@ doc_type: 'reference'
 AI Functions are built-in functions in ClickHouse that you can use to call AI or generate embeddings to work with your data, extract information, classify data, etc...
 
 :::note
+AI functions are experimental. Set [`allow_experimental_ai_functions`](/operations/settings/settings#allow_experimental_ai_functions) to enable them.
+:::
+
+:::note
 AI functions can return unpredictable outputs. The result will highly depend on the quality of the prompt and the model used.
 :::
 
