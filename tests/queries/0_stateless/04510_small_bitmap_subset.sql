@@ -7,3 +7,5 @@ SELECT bitmapToArray(subBitmap(bitmapBuild([5, 4, 1, 2, 3]), 0, 2));
 SELECT bitmapToArray(subBitmap(bitmapBuild([5, 4, 1, 2, 3]), 10, 2));
 -- offset and limit sum exceeds UInt64 max
 SELECT bitmapToArray(subBitmap(bitmapBuild([1, 2, 3]), 1, 18446744073709551615));
+-- negative signed bitmap
+SELECT bitmapToArray(subBitmap(bitmapBuild([-1, 0, 1]::Array(Int32)), 0, 1));

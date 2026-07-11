@@ -594,7 +594,10 @@ public:
             sorted.reserve(small.size());
             for (const auto & x : small)
                 sorted.push_back(x.getValue());
-            ::sort(sorted.begin(), sorted.end());
+            ::sort(
+                sorted.begin(),
+                sorted.end(),
+                [](const T & lhs, const T & rhs) { return static_cast<UnsignedT>(lhs) < static_cast<UnsignedT>(rhs); });
 
             const UInt64 start = std::min(offset, static_cast<UInt64>(sorted.size()));
             const UInt64 count = std::min(limit, static_cast<UInt64>(sorted.size()) - start);
