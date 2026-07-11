@@ -188,12 +188,28 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
         }
         else
         {
-            /// Regular negative value: read the unsigned magnitude and re-apply the sign.
+            /// Regular negative value. The sign was already consumed above (chunk-boundary
+            /// safety), so read the magnitude as an *unsigned* value and re-apply the sign via
+            /// well-defined two's-complement negation. Doing `readIntText(whole); whole = -whole`
+            /// on a signed `time_t` would be signed-overflow UB for the minimum tick value
+            /// -9223372036854775808 (magnitude 2^63 does not fit a signed Int64) and would also
+            /// diverge between the throw path (readIntText, no overflow check) and the try path
+            /// (tryReadIntText, CHECK_OVERFLOW rejects 2^63). Reading the magnitude as UInt64 keeps
+            /// both paths in agreement and preserves INT64_MIN, matching the pre-PR readIntText(x)
+            /// container behavior for bare tick counts.
+            using UnsignedTime = std::make_unsigned_t<time_t>;
+            /// Largest magnitude representable by a negative time_t (|INT64_MIN| == 2^63).
+            constexpr UnsignedTime max_magnitude = static_cast<UnsignedTime>(std::numeric_limits<time_t>::max()) + 1;
+            UnsignedTime magnitude = 0;
             if constexpr (throw_exception)
-                readIntText(whole, istr);
-            else if (!tryReadIntText(whole, istr))
+            {
+                readIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(magnitude, istr);
+                if (magnitude > max_magnitude)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Overflow while parsing a number");
+            }
+            else if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(magnitude, istr) || magnitude > max_magnitude)
                 return ReturnType(false);
-            whole = -whole;
+            whole = static_cast<time_t>(0 - magnitude);
         }
     }
     else if constexpr (throw_exception)
