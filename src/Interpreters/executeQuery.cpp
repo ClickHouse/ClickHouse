@@ -54,6 +54,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
@@ -170,8 +171,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsString polyglot_dialect;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
@@ -243,6 +242,22 @@ namespace FailPoints
     extern const char terminate_with_exception[];
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
+    extern const char trigger_sanitizer_error[];
+}
+
+static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
+{
+#if defined(ADDRESS_SANITIZER)
+    const auto data = std::make_unique_for_overwrite<char[]>(16);
+    [[maybe_unused]] volatile char c = data[16];
+#elif defined(THREAD_SANITIZER)
+    std::mutex mutex;
+    mutex.unlock();
+#elif defined(MEMORY_SANITIZER)
+    const auto data = std::make_unique_for_overwrite<char[]>(16);
+    if (data[7] == 42)
+        __builtin_trap();
+#endif
 }
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
@@ -1819,10 +1834,23 @@ static BlockIO executeQueryImpl(
                     quota = context->getQuota();
                     if (quota)
                     {
-                        /// Each governing quota is accounted appropriately: NORMALIZED_QUERY_HASH
-                        /// quotas track against per-hash intervals, the rest against shared session
-                        /// intervals. A user may be governed by several quotas of different key types.
-                        if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                        /// EXPLAIN ANALYZE executes the inner SELECT only when it is an executable
+                        /// analyze (inner SELECT, non-distributed), in which case it must be charged
+                        /// against the select-query quota just like a normal SELECT. Rejected forms such
+                        /// as EXPLAIN ANALYZE INSERT, EXPLAIN ANALYZE SYSTEM, or distributed EXPLAIN
+                        /// ANALYZE never run an inner SELECT and stay counted as generic queries only, so
+                        /// reuse the same predicate that gates execution instead of the AST kind alone.
+                        const auto * explain_interpreter = dynamic_cast<const InterpreterExplainQuery *>(interpreter.get());
+                        const bool is_executable_analyze = explain_interpreter && explain_interpreter->isExecutableAnalyze();
+                        const bool charge_as_select = query_plan
+                            || out_ast->as<ASTSelectQuery>()
+                            || out_ast->as<ASTSelectWithUnionQuery>()
+                            || is_executable_analyze;
+
+                        /// `usedForQuery` dispatches per quota: for `NORMALIZED_QUERY_HASH` keyed
+                        /// quotas it charges the per-hash intervals, otherwise the shared session
+                        /// intervals. So a single set of calls covers all key types.
+                        if (charge_as_select)
                             quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
                         else if (out_ast->as<ASTInsertQuery>())
                             quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
@@ -1841,10 +1869,7 @@ static BlockIO executeQueryImpl(
                 if (interpreter)
                 {
                     if (!interpreter->ignoreLimits())
-                    {
-                        limits.mode = LimitsMode::LIMITS_CURRENT;
-                        limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
-                    }
+                        limits = StreamLocalLimits::forQueryResult(settings);
 
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
                     {
@@ -2379,6 +2404,11 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         {
             std::vector<int> v;
             (void)v[0];
+        });
+
+        fiu_do_on(FailPoints::trigger_sanitizer_error,
+        {
+            triggerSanitizerError();
         });
     }
 

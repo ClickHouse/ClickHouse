@@ -16,6 +16,7 @@
               "group": "Primeiros passos",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
+                "pt-BR/get-started/quickstarts/home",
                 {
                   "expandable": true,
                   "expanded": true,
@@ -37,8 +38,7 @@
                   ],
                   "root": "pt-BR/get-started/use-cases/overview"
                 },
-                "pt-BR/get-started/about/deployment-modes",
-                "pt-BR/get-started/quickstarts/home"
+                "pt-BR/get-started/about/deployment-modes"
               ],
               "root": "pt-BR/get-started/index"
             },
