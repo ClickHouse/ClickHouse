@@ -56,6 +56,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/HypotheticalIndexStore.h>
 #include <Storages/MergeTree/WhatIfIndexEstimator.h>
+#include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -91,6 +92,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_STREAM;
 }
 
 namespace
@@ -1206,6 +1208,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     || dynamic_cast<const DelayedSource *>(proc_ptr))
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
+
+                /// A STREAM read builds a nested QueryPlan at run time whose steps are not part of the outer
+                /// plan the per-step wall-clock registry is populated from. Timing such a query has no
+                /// semantic meaning (a streaming read never completes), so reject it rather than execute it.
+                if (dynamic_cast<const MergeTreeCommitOrderSequentialSource *>(proc_ptr))
+                    throw Exception(ErrorCodes::ILLEGAL_STREAM,
+                        "EXPLAIN ANALYZE is not supported for streaming (STREAM) queries");
             }
 
             planning_ns += watch.elapsed();
