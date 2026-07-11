@@ -40,6 +40,7 @@
 #include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <orc/Vector.hh>
+#include <orc/Exceptions.hh>
 #include <Common/DateLUTImpl.h>
 #include <Common/setThreadName.h>
 #include <Common/Allocator.h>
@@ -1193,7 +1194,18 @@ Chunk NativeORCBlockInputFormat::read()
     auto batch = stripe_reader->createRowBatch(format_settings.orc.row_batch_size);
     while (true)
     {
-        bool ok = stripe_reader->next(*batch);
+        bool ok = false;
+        try
+        {
+            ok = stripe_reader->next(*batch);
+        }
+        catch (const orc::ParseError & e)
+        {
+            /// The ORC library throws ParseError when the encoded data of a stripe is corrupt (for
+            /// example, a union tag that is out of range for the union's branches). Surface it as
+            /// INCORRECT_DATA instead of letting it propagate as a generic std::exception.
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to read ORC data: {}", e.what());
+        }
         if (ok)
             break;
 
