@@ -35,6 +35,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 #if USE_AVRO && !CLICKHOUSE_CLOUD
 
@@ -626,6 +627,13 @@ static void writeMetadataFiles(
     metadata_object->set(Iceberg::f_last_sequence_number, 0);
     if (metadata_object->has(Iceberg::f_refs) && metadata_object->getObject(Iceberg::f_refs)->has(Iceberg::f_main))
         metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, -1);
+    /// Format-version 3 row lineage: `generateNextMetadata` uses the table-level `next-row-id` as
+    /// the starting `first-row-id` for each replayed snapshot and increments it by that snapshot's
+    /// added row count. Since the loop below rebuilds the whole snapshot history from row 0, the
+    /// preserved (inflated) `next-row-id` must be reset too — otherwise the first regenerated
+    /// snapshot starts at the old table tail and the final `next-row-id` becomes old value + replay.
+    if (metadata_object->has(Iceberg::f_next_row_id))
+        metadata_object->set(Iceberg::f_next_row_id, static_cast<Int64>(0));
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     Poco::JSON::Object::Ptr current_schema;
@@ -698,6 +706,37 @@ static void writeMetadataFiles(
 
         new_snapshots.push_back(new_snapshot);
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
+    }
+
+    /// Refs were preserved verbatim from the deep-copied source metadata, but the replay above
+    /// regenerates only append / append-like snapshots (`tryGetAppendUpdate` returns nullopt for
+    /// DELETE and position-delete-only OVERWRITE, which are skipped). A tag or branch pinned to a
+    /// skipped snapshot id would survive in `refs` while its target is absent from the rebuilt
+    /// `snapshots` list, leaving metadata that readers resolving refs cannot follow. Drop any ref
+    /// whose snapshot id was not regenerated. (`main` is re-pointed to the last replayed snapshot
+    /// by `generateNextMetadata`, so it stays valid.)
+    if (metadata_object->has(Iceberg::f_refs))
+    {
+        auto refs = metadata_object->getObject(Iceberg::f_refs);
+        std::vector<String> refs_to_remove;
+        for (const auto & ref_name : refs->getNames())
+        {
+            auto ref = refs->getObject(ref_name);
+            if (!ref || !ref->has(Iceberg::f_metadata_snapshot_id))
+                continue;
+            auto ref_snapshot_id = ref->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+            if (!snapshot_id_to_snapshot.contains(ref_snapshot_id))
+                refs_to_remove.push_back(ref_name);
+        }
+        for (const auto & ref_name : refs_to_remove)
+        {
+            LOG_WARNING(
+                log,
+                "Iceberg compaction: pruning ref '{}' whose target snapshot was not regenerated "
+                "(delete-only snapshots are not replayed)",
+                ref_name);
+            refs->remove(ref_name);
+        }
     }
 
     Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;

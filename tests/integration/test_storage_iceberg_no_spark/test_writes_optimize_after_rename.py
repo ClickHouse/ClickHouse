@@ -1,9 +1,29 @@
+import json
+
 import pytest
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
     get_uuid_str,
 )
+
+
+def _metadata_dir(table_name):
+    return f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
+
+
+def _read_latest_metadata(instance, table_name):
+    metadata_dir = _metadata_dir(table_name)
+    latest = instance.exec_in_container(
+        ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
+    ).strip()
+    return json.loads(instance.exec_in_container(["cat", latest])), latest
+
+
+def _write_metadata(instance, meta, path):
+    instance.exec_in_container(
+        ["bash", "-c", f"cat > {path} << 'JSONEOF'\n{json.dumps(meta, indent=4)}\nJSONEOF"]
+    )
 
 # Force the writer to roll the data over into several files so that a single
 # manifest ends up referencing more than one live data file. This exercises the
@@ -298,3 +318,155 @@ def test_optimize_preserves_partition_spec(
         == "3\tc\n4\td\n6\tf\n"
     )
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 5
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_prunes_refs_to_delete_only_snapshot(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """
+    Compaction preserves table-level `refs`, but the replay regenerates only append-like
+    snapshots (`tryGetAppendUpdate` returns nullopt for DELETE / position-delete-only OVERWRITE,
+    which are skipped). A tag or branch pinned to a skipped snapshot id would survive in `refs`
+    while its target is absent from the rebuilt `snapshots` list, leaving metadata that readers
+    resolving refs cannot follow. Such refs must be pruned; `main` is re-pointed to the last
+    replayed snapshot and must stay valid.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_refs_prune_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value Nullable(String))",
+        2,
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,'a'),(2,'b'),(3,'c');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # Positional delete -> a delete-only OVERWRITE snapshot that compaction will NOT replay.
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    # Inject a tag ref pinned to that delete-only snapshot into a fresh metadata version.
+    meta, prev_path = _read_latest_metadata(instance, TABLE_NAME)
+    delete_snapshot_id = None
+    for snapshot in meta["snapshots"]:
+        if snapshot.get("summary", {}).get("operation") in ("overwrite", "delete"):
+            delete_snapshot_id = snapshot["snapshot-id"]
+    assert delete_snapshot_id is not None, "expected a delete-only snapshot"
+    meta.setdefault("refs", {})["archive"] = {
+        "snapshot-id": delete_snapshot_id,
+        "type": "tag",
+    }
+    new_version = int(prev_path.split("/v")[-1].split(".")[0]) + 1
+    new_path = f"{_metadata_dir(TABLE_NAME)}/v{new_version}.metadata.json"
+    _write_metadata(instance, meta, new_path)
+    version_hint = f"{_metadata_dir(TABLE_NAME)}/version-hint.text"
+    instance.exec_in_container(
+        ["bash", "-c", f"test -f {version_hint} && echo -n {new_version} > {version_hint} || true"]
+    )
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+
+    meta_after, _ = _read_latest_metadata(instance, TABLE_NAME)
+    regenerated_ids = {s["snapshot-id"] for s in meta_after["snapshots"]}
+    refs = meta_after.get("refs", {})
+    # The tag pinned to the skipped delete-only snapshot must be gone.
+    assert "archive" not in refs, f"stale ref survived: {refs}"
+    # Every surviving ref must point at a regenerated snapshot (no dangling refs).
+    for name, ref in refs.items():
+        assert (
+            ref["snapshot-id"] in regenerated_ids
+        ), f"ref '{name}' points at non-regenerated snapshot {ref['snapshot-id']}"
+    # Data still correct after compaction.
+    assert (
+        instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id") == "1\ta\n3\tc\n"
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_resets_next_row_id_format_v3(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """
+    Format-version 3 row lineage: `MetadataGenerator::generateNextMetadata` uses the table-level
+    `next-row-id` as the starting `first-row-id` for each replayed snapshot and increments it by
+    that snapshot's added rows. Compaction rebuilds the whole snapshot history from scratch, so
+    the deep-copied (already-advanced) `next-row-id` must be reset first. Otherwise the first
+    regenerated snapshot starts at the old table tail and the final `next-row-id` becomes the old
+    value plus the replayed history (inflated row lineage).
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_next_row_id_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value Nullable(String))",
+        3,
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,'a'),(2,'b'),(3,'c');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (4,'d'),(5,'e');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    meta_before, _ = _read_latest_metadata(instance, TABLE_NAME)
+    # 5 rows appended across two snapshots -> next-row-id advanced to 5.
+    assert meta_before.get("next-row-id") == 5
+
+    # Positional delete so compaction has work to do.
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+
+    meta_after, _ = _read_latest_metadata(instance, TABLE_NAME)
+    # Row lineage must be replayed from 0: the first regenerated snapshot starts at first-row-id 0,
+    # and next-row-id equals the sum of the replayed added-rows (self-consistent from 0). Before the
+    # fix, the preserved next-row-id (>= 5) was reused as the starting first-row-id, so the first
+    # snapshot started at the old table tail and next-row-id ended at old_value + replayed_history.
+    replay_snapshots = [
+        s for s in meta_after["snapshots"] if s.get("first-row-id") is not None
+    ]
+    assert replay_snapshots, "format-v3 snapshots must carry first-row-id"
+    first_row_ids = [s["first-row-id"] for s in replay_snapshots]
+    assert min(first_row_ids) == 0, f"row lineage did not restart at 0: {first_row_ids}"
+    replayed_total = sum(s.get("added-rows", 0) for s in replay_snapshots)
+    assert (
+        meta_after.get("next-row-id") == replayed_total
+    ), (
+        f"next-row-id inflated after compaction: next-row-id="
+        f"{meta_after.get('next-row-id')} vs replayed_total={replayed_total} "
+        f"(pre-fix it would be old next-row-id + replayed_total)"
+    )
+    assert (
+        instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id")
+        == "1\ta\n3\tc\n4\td\n5\te\n"
+    )
