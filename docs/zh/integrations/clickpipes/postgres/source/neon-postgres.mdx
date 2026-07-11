@@ -1,0 +1,109 @@
+---
+sidebarTitle: 'Neon Postgres'
+description: '将 Neon Postgres 实例配置为 ClickPipes 的数据源'
+slug: /integrations/clickpipes/postgres/source/neon-postgres
+title: 'Neon Postgres 数据源设置指南'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'PostgreSQL', 'CDC（变更数据捕获）', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+这是一篇介绍如何设置 Neon Postgres 的指南，您可以将其用于 ClickPipes 中的复制。
+请确保您已登录 [Neon console](https://console.neon.tech/app/projects) 以进行此设置。
+
+<div id="creating-a-user-with-permissions">
+  ## 创建具有相应权限的用户
+</div>
+
+以管理员用户身份连接到您的 Neon 实例，并执行以下命令：
+
+1. 为 ClickPipes 创建一个专用用户：
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 为上一步创建的用户授予 schema 级别的只读权限。以下示例展示了 `public` schema 的权限。对于每个包含要复制表的 schema，都需要重复执行这些命令：
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 为该用户授予复制权限：
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. 使用您要复制的表创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。我们强烈建议只将所需的表包含在 publication 中，以避免额外的性能开销。
+
+<Warning>
+  publication 中包含的任何表都必须已定义**主键**，&#95;或者&#95;将其**副本标识**配置为 `FULL`。有关如何界定范围的指导，请参阅 [Postgres FAQs](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+</Warning>
+
+* 为特定表创建 publication：
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 为特定 schema 中的所有表创建 publication：
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication 将包含指定表生成的一组变更事件，后续将用于摄取复制 stream。
+
+<div id="enable-logical-replication">
+  ## 启用逻辑复制
+</div>
+
+在 Neon 中，您可以通过 UI 启用逻辑复制。这是 ClickPipes 的 CDC (变更数据捕获) 复制数据所必需的。
+前往 **Settings** 选项卡，然后进入 **Logical Replication** 部分。
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp" alt="启用逻辑复制" border />
+
+点击 **Enable** 即可完成此项设置。启用后，您应该会看到如下成功消息。
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp" alt="逻辑复制已启用" border />
+
+接下来，请验证您的 Neon Postgres 实例中的以下设置：
+
+```sql
+SHOW wal_level; -- 应为 logical
+SHOW max_wal_senders; -- 应为 10
+SHOW max_replication_slots; -- 应为 10
+```
+
+<div id="ip-whitelisting-for-neon-enterprise-plan">
+  ## IP 白名单 (适用于 Neon Enterprise 套餐)
+</div>
+
+如果您使用的是 Neon Enterprise 套餐，可以将 [ClickPipes IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips) 加入白名单，以允许 ClickPipes 将数据复制到您的 Neon Postgres 实例。
+为此，请点击 **Settings** 选项卡，然后进入 **IP Allow** 部分。
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp" alt="允许 IP 的界面" border />
+
+<div id="copy-connection-details">
+  ## 复制连接详情
+</div>
+
+现在用户和 publication 已准备就绪，且已启用复制，我们可以复制连接详情来创建新的 ClickPipe。
+前往 **Dashboard**，在显示连接字符串的文本框中，
+将视图切换为 **仅参数**。下一步会用到这些参数。
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp" alt="连接详情" border />
+
+<div id="whats-next">
+  ## 下一步是什么？
+</div>
+
+你现在可以[创建你的 ClickPipe](/zh/integrations/clickpipes/postgres/index)，并开始将 Postgres 实例中的数据摄取到 ClickHouse Cloud。
+请务必记下你在设置 Postgres 实例时使用的连接详情，因为在创建 ClickPipe 的过程中会用到这些信息。

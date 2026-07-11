@@ -36,6 +36,7 @@
             <values>
                 <value>L2DistanceTransposed</value>
                 <value>cosineDistanceTransposed</value>
+                <value>dotProductTransposed</value>
             </values>
         </substitution>
 

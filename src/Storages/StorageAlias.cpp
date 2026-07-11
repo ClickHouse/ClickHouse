@@ -15,6 +15,7 @@
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -81,6 +82,24 @@ public:
         , non_materialized_header(metadata_snapshot_->getSampleBlockNonMaterialized())
         , async_insert(async_insert_)
     {
+    }
+
+    ~AliasSink() override
+    {
+        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
+        /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
+        /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
+        if (executor)
+        {
+            try
+            {
+                executor->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("AliasSink");
+            }
+        }
     }
 
     String getName() const override { return "AliasSink"; }

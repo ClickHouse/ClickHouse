@@ -1,0 +1,51 @@
+---
+sidebarTitle: 'دمج Dataflow مع ClickHouse'
+slug: /integrations/google-dataflow/dataflow
+description: 'يمكنك إدخال البيانات إلى ClickHouse باستخدام Google Dataflow'
+title: 'دمج Google Dataflow مع ClickHouse'
+doc_type: 'guide'
+keywords: ['Google Dataflow ClickHouse', 'دمج Dataflow مع ClickHouse', 'Apache Beam ClickHouse', 'موصل ClickHouseIO', 'دمج Google Cloud مع ClickHouse']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+تُعد [Google Dataflow](https://cloud.google.com/dataflow) خدمة مُدارة بالكامل لمعالجة البيانات المتدفقة والدُفعية. وهي تدعم مسارات المعالجة المكتوبة بلغة Java أو بايثون، ومبنية على Apache Beam SDK.
+
+هناك طريقتان رئيسيتان لاستخدام Google Dataflow مع ClickHouse، وكلتاهما تعتمدان على [`ClickHouseIO Apache Beam connector`](/ar/integrations/connectors/data-ingestion/etl-tools/apache-beam).
+وهما:
+
+* [Java runner](#1-java-runner)
+* [القوالب الجاهزة](#2-predefined-templates)
+
+<div id="1-java-runner">
+  ## Java runner
+</div>
+
+يتيح لك [Java runner](/ar/integrations/connectors/data-ingestion/GCP/google-dataflow/java-runner) تنفيذ مسارات معالجة مخصّصة في Dataflow باستخدام تكامل `ClickHouseIO` ضمن Apache Beam SDK. يوفّر هذا النهج مرونة وتحكّمًا كاملين في منطق pipeline، مما يتيح لك تكييف عملية ETL بما يلائم متطلبات محددة.
+ومع ذلك، يتطلّب هذا الخيار معرفة ببرمجة Java وإلمامًا بإطار عمل Apache Beam.
+
+<div id="key-features">
+  ### الميزات الرئيسية
+</div>
+
+* درجة عالية من قابلية التخصيص.
+* مناسب جدًا لحالات الاستخدام المعقدة أو المتقدمة.
+* يتطلب البرمجة وفهم واجهة برمجة تطبيقات Beam.
+
+<div id="2-predefined-templates">
+  ## القوالب الجاهزة
+</div>
+
+يوفّر ClickHouse [قوالب جاهزة](/ar/integrations/connectors/data-ingestion/GCP/google-dataflow/templates) مصممة لحالات استخدام محددة، مثل الاستيراد الدُفعي من BigQuery أو إدخال البيانات المتدفقة من Pub/Sub إلى ClickHouse. وهذه القوالب جاهزة للاستخدام وتبسّط عملية التكامل، مما يجعلها خيارًا ممتازًا إذا كنت تفضّل حلاً من دون كتابة أي تعليمات برمجية.
+
+<div id="key-features">
+  ### الميزات الرئيسية
+</div>
+
+* لا حاجة إلى أي برمجة باستخدام Beam.
+* إعداد سريع وسهل لحالات الاستخدام البسيطة.
+* مناسب أيضًا إذا كانت خبرتك البرمجية محدودة.
+
+كلتا الطريقتين متوافقتان بالكامل مع Google Cloud ومنظومة ClickHouse، مما يوفّر مرونةً وفقًا لخبرتك التقنية ومتطلبات مشروعك.

@@ -1,0 +1,57 @@
+---
+slug: /cloud/managed-postgres/rbac
+sidebarTitle: 'RBAC'
+title: 'RBAC في Managed Postgres'
+description: 'تعرّف على RBAC (التحكم في الوصول المستند إلى الأدوار) في ClickHouse Managed Postgres'
+keywords: ['RBAC في Managed Postgres', 'التحكم في الوصول', 'الأدوار', 'الامتيازات', 'الأذونات']
+doc_type: 'مرجع'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
+
+يدعم ClickHouse Cloud التحكم في الوصول المستند إلى الأدوار (RBAC) لخدمات Managed Postgres. يمكنك إنشاء أدوار مخصّصة بأذونات محددة وتعيينها لأعضاء المؤسسة للتحكم في من يمكنه عرض خدمات Postgres أو إدارتها.
+
+<div id="available-permissions">
+  ## الأذونات المتاحة
+</div>
+
+يدعم Managed Postgres حاليًا إذنين:
+
+| الإذن                    | الوصف                                                |
+| ------------------------ | ---------------------------------------------------- |
+| **عرض خدمات Postgres**   | يتيح للمستخدم رؤية خدمة Postgres وتفاصيلها.          |
+| **إدارة خدمات Postgres** | يتيح للمستخدم تعديل خدمة Postgres وتحجيمها وتهيئتها. |
+
+يتطلب إنشاء خدمة Postgres جديدة توفر إذن **Organization manage** مسبقًا. وتنطبق الأذونات المذكورة أعلاه على الخدمات الحالية فقط.
+
+<Note>
+  ستتوفر أذونات أكثر تفصيلًا في إصدار مستقبلي.
+</Note>
+
+<div id="creating-a-custom-role">
+  ## إنشاء دور مخصّص
+</div>
+
+1. انقر على اسم المؤسسة في الشريط الجانبي الأيسر، ثم اختر **Users and roles**.
+
+<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="قائمة Users and roles" size="md" border />
+
+2. انتقل إلى علامة التبويب **Roles** وانقر على **Create role**.
+3. أدخل اسمًا للدور، ثم انقر على **+ Allow** واختر **Postgres Service** من قائمة الكيانات.
+
+<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="اختيار الكيان Postgres Service" size="md" border />
+
+4. اختر خدمة Postgres التي تريد قصر الدور عليها، ثم حدِّد الأذونات المطلوب منحها.
+
+<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="تهيئة أذونات Postgres على دور" size="md" border />
+
+5. انقر على **Create role** للحفظ.
+
+<div id="assigning-a-role">
+  ## تعيين دور
+</div>
+
+بمجرد إنشاء الدور، عيّنه للمستخدمين من علامة التبويب **Users** في صفحة **Users and roles** نفسها. يمكن أن يكون للمستخدم عدة أدوار، كما يمكن الجمع بين الأدوار لتكوين مستوى الوصول الدقيق الذي تحتاجه.

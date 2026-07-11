@@ -1,0 +1,58 @@
+---
+title: Uso de agregados filtrados en ClickHouse
+description: Aprende a usar agregados filtrados en ClickHouse con los combinadores de agregación `-If` y `-Distinct` para simplificar la sintaxis de las consultas y mejorar el análisis.
+date: 2023-03-01
+tags: ['Funciones']
+keywords: ['Agregados filtrados']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="using-filtered-aggregates">
+  ## Uso de agregados filtrados
+</div>
+
+ClickHouse ofrece una forma sencilla e intuitiva de escribir *agregados filtrados*.
+
+Por ejemplo, compare la forma estándar en SQL de escribir agregados filtrados (que funcionan bien en ClickHouse) con la sintaxis abreviada que utiliza el combinador de [funciones de agregación](/es/reference/functions/aggregate-functions/combinators) `-If`, que puede añadirse a cualquier función de agregado:
+
+```sql
+--SQL estándar
+SELECT
+   avg(number)
+FILTER (WHERE number > 50)
+FROM numbers(100)
+
+--ClickHouse usando un combinador de agregación
+SELECT
+   avgIf(number, number > 50)
+FROM numbers(100)
+```
+
+Asimismo, existe un combinador de agregación `-Distinct`:
+
+```sql
+--SQL estándar
+SELECT avg(DISTINCT number)
+
+--ClickHouse usando un combinador de agregación
+SELECT avgDistinct(number)
+```
+
+¿Por qué son importantes los agregados filtrados? Porque permiten implementar la funcionalidad de **&quot;comparación de segmentos&quot;** en los servicios de analítica web.
+Por ejemplo:
+
+```sql
+WITH
+   Region = 'us' AS segment1,
+   Browser = 'Chrome' AS segment2
+SELECT
+   uniqIf(UserID, segment1),
+   uniqIf(UserID, segment2)
+WHERE segment1 OR segment2
+```
+
+Consulta la página sobre [combinadores de funciones de agregación](/es/reference/functions/aggregate-functions/combinators) en la documentación
+para obtener más información.

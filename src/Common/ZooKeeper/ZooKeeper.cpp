@@ -2135,34 +2135,30 @@ Coordination::RequestPtr makeGetRequest(const std::string & path, Coordination::
 
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, Coordination::WatchCallbackPtrOrEventPtr watch)
 {
-    // Keeper server that support MultiRead also support FilteredList
-    auto request = std::make_shared<Coordination::ZooKeeperFilteredListRequest>();
+    auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
     request->path = path;
-    request->list_request_type = list_request_type;
     request->watch_callback = watch;
     request->has_watch = static_cast<bool>(watch);
+
+    if (list_request_type != Coordination::ListRequestType::ALL)
+        request->list_request_type = list_request_type;
+
     return request;
 }
 
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, bool with_stat, bool with_data, Coordination::WatchCallbackPtrOrEventPtr watch)
 {
-    // Use the derived request class when stats or data are requested
-    if (with_stat || with_data)
-    {
-        auto request = std::make_shared<Coordination::ZooKeeperFilteredListWithStatsAndDataRequest>();
-        request->path = path;
-        request->list_request_type = list_request_type;
-        request->with_stat = with_stat;
-        request->with_data = with_data;
-        request->watch_callback = watch;
-        request->has_watch = static_cast<bool>(watch);
-        return request;
-    }
-    else
-    {
-        // Fall back to base request if no extra data needed
+    if (!with_stat && !with_data)
         return makeListRequest(path, list_request_type, watch);
-    }
+
+    auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
+    request->path = path;
+    request->list_request_type = list_request_type;
+    request->with_stat = with_stat;
+    request->with_data = with_data;
+    request->watch_callback = watch;
+    request->has_watch = static_cast<bool>(watch);
+    return request;
 }
 
 Coordination::RequestPtr makeSimpleListRequest(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch)
@@ -2230,6 +2226,18 @@ String extractZooKeeperPath(const String & path, bool check_starts_with_slash, L
         return normalizeZooKeeperPath(path.substr(pos + 1, String::npos), check_starts_with_slash, log);
     }
     return normalizeZooKeeperPath(path, check_starts_with_slash, log);
+}
+
+String extractZooKeeperPathAndCollapseTrailingSlashes(const String & path, bool check_starts_with_slash, LoggerPtr log)
+{
+    String result = extractZooKeeperPath(path, check_starts_with_slash, log);
+    /// extractZooKeeperPath (via normalizeZooKeeperPath) strips only a single trailing slash, so a path
+    /// like "/a//" keeps a leftover one. Collapse all of them (keeping the leading root '/') to get a
+    /// canonical form: the interpreter concatenates "path + /replicas", and comparisons must treat
+    /// "/a", "/a/" and "/a//" as the same keeper path.
+    while (result.size() > 1 && result.back() == '/')
+        result.pop_back();
+    return result;
 }
 
 String getSequentialNodeName(const String & prefix, UInt64 number)

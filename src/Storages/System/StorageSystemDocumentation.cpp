@@ -343,7 +343,12 @@ String renderSettingDoc(std::string_view description, std::string_view type_name
     if (!type_name.empty())
         add_note("**Type:** `" + String(type_name) + "`");
 
-    add_note("**Default:** `" + default_value + "`");
+    /// An empty default value would render as empty backticks (an empty code span), which reads as if
+    /// the value were missing; spell it out as italic prose instead.
+    if (default_value.empty())
+        add_note("**Default:** *empty string*");
+    else
+        add_note("**Default:** `" + default_value + "`");
 
     if (tier == SettingsTierType::EXPERIMENTAL)
         add_note("**Tier:** Experimental");

@@ -1,0 +1,3 @@
+plain column pushdown sorting steps:	2
+expression ORDER BY sorting steps:	1
+expression ORDER BY result count:	10

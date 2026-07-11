@@ -1,0 +1,44 @@
+---
+title: مطابقة أنواع البيانات
+---
+
+يوضح الجدول أدناه جميع أنواع البيانات التي يدعمها تنسيق Apache Avro، وأنواع بيانات ClickHouse [المقابلة](/ar/reference/data-types/index) لها في استعلامات `INSERT` و`SELECT`.
+
+| نوع بيانات Avro `INSERT`                    | نوع بيانات ClickHouse                                                                           | نوع بيانات Avro `SELECT`      |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- |
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/ar/reference/data-types/int-uint), [UInt(8\16\32)](/ar/reference/data-types/int-uint) | `int`                         |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](/ar/reference/data-types/int-uint), [UInt64](/ar/reference/data-types/int-uint)               | `long`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](/ar/reference/data-types/float)                                                          | `float`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](/ar/reference/data-types/float)                                                          | `double`                      |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/ar/reference/data-types/string)                                                          | `bytes` أو `string` *         |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](/ar/reference/data-types/fixedstring)                                             | `fixed(N)`                    |
+| `enum`                                      | [Enum(8\16)](/ar/reference/data-types/enum)                                                        | `enum`                        |
+| `array(T)`                                  | [Array(T)](/ar/reference/data-types/array)                                                         | `array(T)`                    |
+| `map(V, K)`                                 | [Map(V, K)](/ar/reference/data-types/map)                                                          | `map(string, K)`              |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/ar/reference/data-types/date)                                                       | `union(null, T)`              |
+| `union(T1, T2, …)` **                       | [Variant(T1, T2, …)](/ar/reference/data-types/variant)                                             | `union(T1, T2, …)` **         |
+| `null`                                      | [Nullable(Nothing)](/ar/reference/data-types/special-data-types/nothing)                           | `null`                        |
+| `int (date)` ***                            | [Date](/ar/reference/data-types/date), [Date32](/ar/reference/data-types/date32)                      | `int (date)` ***              |
+| `long (timestamp-millis)` ***               | [DateTime64(3)](/ar/reference/data-types/datetime)                                                 | `long (timestamp-millis)` *** |
+| `long (timestamp-micros)` ***               | [DateTime64(6)](/ar/reference/data-types/datetime)                                                 | `long (timestamp-micros)` *** |
+| `bytes (decimal)`  ***                      | [DateTime64(N)](/ar/reference/data-types/datetime)                                                 | `bytes (decimal)`  ***        |
+| `int`                                       | [IPv4](/ar/reference/data-types/ipv4)                                                              | `int`                         |
+| `fixed(16)`                                 | [IPv6](/ar/reference/data-types/ipv6)                                                              | `fixed(16)`                   |
+| `bytes (decimal)` ***                       | [Decimal(P, S)](/ar/reference/data-types/decimal)                                                  | `bytes (decimal)` ***         |
+| `string (uuid)` ***                         | [UUID](/ar/reference/data-types/uuid)                                                              | `string (uuid)` ***           |
+| `fixed(16)`                                 | [Int128/UInt128](/ar/reference/data-types/int-uint)                                                | `fixed(16)`                   |
+| `fixed(32)`                                 | [Int256/UInt256](/ar/reference/data-types/int-uint)                                                | `fixed(32)`                   |
+| `record`                                    | [Tuple](/ar/reference/data-types/tuple)                                                            | `record`                      |
+
+* `bytes` هو الخيار الافتراضي، ويتحكم فيه الإعداد [`output_format_avro_string_column_pattern`](/ar/reference/settings/formats#output_format_avro_string_column_pattern)
+
+**  يقبل [نوع Variant](/ar/reference/data-types/variant) القيمة `null` ضمنيًا كقيمة للحقل، لذا سيُحوَّل Avro `union(T1, T2, null)`، على سبيل المثال، إلى `Variant(T1, T2)`.
+ونتيجةً لذلك، عند توليد Avro من ClickHouse، يجب علينا دائمًا تضمين النوع `null` ضمن مجموعة أنواع Avro `union` لأننا لا نعرف أثناء استنتاج المخطط ما إذا كانت أي قيمة تساوي بالفعل `null`.
+
+*** [الأنواع المنطقية في Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+أنواع البيانات المنطقية غير المدعومة في Avro:
+
+* `time-millis`
+* `time-micros`
+* `duration`

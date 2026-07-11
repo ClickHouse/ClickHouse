@@ -1,0 +1,112 @@
+---
+description: 'يوفر الوصول إلى نظام الملفات لعرض الملفات وإرجاع بياناتها الوصفية ومحتوياتها.'
+sidebarTitle: 'filesystem'
+slug: /sql-reference/table-functions/filesystem
+title: 'filesystem'
+doc_type: 'مرجع'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="filesystem-table-function">
+  # دالة الجدول filesystem
+</div>
+
+<CloudNotSupportedBadge />
+
+تستعرض هذه الدالة دليل بشكل متكرر وتُرجع table تتضمن البيانات الوصفية للملفات (المسارات، والأحجام، والأنواع، وpermissions، وأوقات التعديل)، وبشكل اختياري، محتويات الملفات.
+
+في وضع `clickhouse-server`، يجب أن يكون path ضمن دليل ‏[user&#95;files&#95;path](/ar/reference/settings/server-settings/settings#user_files_path). تتم متابعة الروابط الرمزية داخل `user_files_path` التي تشير إلى مسارات خارجه، ولكن لا تُرجع إلا entries التي يبدأ path الخاص بها (عبر الرابط الرمزي) بـ `user_files_path`.
+
+في وضع `clickhouse-local`، لا توجد قيود على path.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+filesystem([path])
+```
+
+<div id="arguments">
+  ## المعاملات
+</div>
+
+| المعامل | الوصف                                                                                                                                                                                                                                   |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`  | الدليل المراد عرض محتوياته. يمكن أن يكون مسارًا مطلقًا (ويجب أن يكون داخل `user_files_path` في وضع الخادم) أو مسارًا نسبيًا بالنسبة إلى `user_files_path`. وإذا كان فارغًا أو غير مذكور، فستكون القيمة الافتراضية هي `user_files_path`. |
+
+<div id="returned_columns">
+  ## الأعمدة المُعادة
+</div>
+
+| العمود              | النوع                      | الوصف                                                                                                                                                                                                                                                                      |
+| ------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`              | `String`                   | الدليل الذي يحتوي على الإدخال (ولا يتضمن اسم الملف/الدليل نفسه).                                                                                                                                                                                                           |
+| `name`              | `String`                   | اسم الملف أو الدليل (آخر مكوّن في المسار).                                                                                                                                                                                                                                 |
+| `file`              | `String` (ALIAS of `name`) | اسم مستعار للعمود `name`.                                                                                                                                                                                                                                                  |
+| `type`              | `Enum8`                    | نوع الملف: `'none'`, `'not_found'`, `'regular'`, `'directory'`, `'symlink'`, `'block'`, `'character'`, `'fifo'`, `'socket'`, `'unknown'`.                                                                                                                                  |
+| `size`              | `Nullable(UInt64)`         | حجم الملف بالبايت (للملفات العادية). وتكون القيمة `NULL` للملفات غير العادية (الأدلة والروابط الرمزية وما إلى ذلك) وعند حدوث خطأ.                                                                                                                                          |
+| `depth`             | `UInt16`                   | عمق التكرار. تكون القيمة `0` للدليل المطلوب نفسه ولأبنائه المباشرين، و`1` للإدخالات الأعمق بمستوى واحد، وهكذا.                                                                                                                                                             |
+| `modification_time` | `Nullable(DateTime64(6))`  | وقت آخر تعديل بدقة الميكروثانية. وتكون القيمة `NULL` عند حدوث خطأ.                                                                                                                                                                                                         |
+| `is_symlink`        | `Bool`                     | ما إذا كان الإدخال رابطًا رمزيًا.                                                                                                                                                                                                                                          |
+| `content`           | `Nullable(String)`         | محتويات الملف (للملفات العادية). وتكون القيمة `NULL` للملفات غير العادية (الأدلة والروابط الرمزية وما إلى ذلك). تؤدي أخطاء القراءة إلى إثارة استثناء. وتؤدي قراءة هذا العمود إلى تنفيذ عمليات إدخال/إخراج فعلية للملفات، لذا يُفضَّل عدم تضمينه إذا لم تكن هناك حاجة إليه. |
+| `owner_read`        | `Bool`                     | لدى المالك إذن قراءة.                                                                                                                                                                                                                                                      |
+| `owner_write`       | `Bool`                     | لدى المالك إذن كتابة.                                                                                                                                                                                                                                                      |
+| `owner_exec`        | `Bool`                     | لدى المالك إذن تنفيذ.                                                                                                                                                                                                                                                      |
+| `group_read`        | `Bool`                     | لدى المجموعة إذن قراءة.                                                                                                                                                                                                                                                    |
+| `group_write`       | `Bool`                     | لدى المجموعة إذن كتابة.                                                                                                                                                                                                                                                    |
+| `group_exec`        | `Bool`                     | لدى المجموعة إذن تنفيذ.                                                                                                                                                                                                                                                    |
+| `others_read`       | `Bool`                     | لدى الآخرين إذن قراءة.                                                                                                                                                                                                                                                     |
+| `others_write`      | `Bool`                     | لدى الآخرين إذن كتابة.                                                                                                                                                                                                                                                     |
+| `others_exec`       | `Bool`                     | لدى الآخرين إذن تنفيذ.                                                                                                                                                                                                                                                     |
+| `set_gid`           | `Bool`                     | بت Set-GID.                                                                                                                                                                                                                                                                |
+| `set_uid`           | `Bool`                     | بت Set-UID.                                                                                                                                                                                                                                                                |
+| `sticky_bit`        | `Bool`                     | البت اللاصق.                                                                                                                                                                                                                                                               |
+
+لا تُحتسب إلا الأعمدة المستخدمة فعليًا في الاستعلام، لذا فإن اختيار مجموعة فرعية من الأعمدة (وخاصةً مع استبعاد `content`) يكون فعّالًا.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="list-files">
+  ### عرض الملفات في user_files
+</div>
+
+```sql
+SELECT name, type, size, depth
+FROM filesystem()
+ORDER BY name;
+```
+
+<div id="find-large-files">
+  ### العثور على الملفات الكبيرة
+</div>
+
+```sql
+SELECT path, name, size
+FROM filesystem()
+WHERE type = 'regular' AND size > 1000000
+ORDER BY size DESC;
+```
+
+<div id="read-contents">
+  ### قراءة محتويات الملف
+</div>
+
+```sql
+SELECT name, content
+FROM filesystem('my_directory')
+WHERE name LIKE '%.csv';
+```
+
+<div id="list-immediate">
+  ### سرد العناصر الفرعية المباشرة فقط
+</div>
+
+```sql
+SELECT name, type
+FROM filesystem('my_directory')
+WHERE depth = 0;
+```

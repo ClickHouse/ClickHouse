@@ -1,0 +1,232 @@
+---
+slug: /optimize/prewhere
+sidebarTitle: 'PREWHERE 최적화'
+description: 'PREWHERE는 불필요한 컬럼 데이터를 읽지 않아 I/O를 줄입니다.'
+title: 'PREWHERE 최적화는 어떻게 동작합니까?'
+doc_type: 'guide'
+keywords: ['prewhere', 'query optimization', 'performance', 'filtering', 'best practices']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+[PREWHERE 절](/ko/reference/statements/select/prewhere)은 ClickHouse의 쿼리 실행 최적화 기능입니다. 불필요한 데이터 읽기를 피하고, 디스크에서 필터에 사용되지 않는 컬럼을 읽기 전에 관련 없는 데이터를 걸러내 I/O를 줄이고 쿼리 속도를 높입니다.
+
+이 가이드에서는 PREWHERE의 작동 방식, 영향을 측정하는 방법, 그리고 최상의 성능을 위해 조정하는 방법을 설명합니다.
+
+<div id="query-processing-without-prewhere-optimization">
+  ## PREWHERE 최적화 없이 쿼리가 처리되는 방식
+</div>
+
+먼저 [uk&#95;price&#95;paid&#95;simple](/ko/concepts/core-concepts/parts) 테이블에 대한 쿼리가 PREWHERE를 사용하지 않을 때 어떻게 처리되는지 살펴보겠습니다:
+
+<Image img="/images/guides/best-practices/prewhere_01.webp" size="md" alt="PREWHERE 최적화 없이 쿼리 처리" />
+
+<br />
+
+<br />
+
+① 이 쿼리에는 `town` 컬럼에 대한 필터가 포함되어 있으며, 이 컬럼은 테이블의 프라이머리 키에 포함되므로 프라이머리 인덱스의 일부이기도 합니다.
+
+② 쿼리 속도를 높이기 위해 ClickHouse는 테이블의 프라이머리 인덱스를 메모리에 로드합니다.
+
+③ 인덱스 엔트리를 스캔해 `town` 컬럼의 그래뉼 중 프레디케이트와 일치하는 행을 포함할 가능성이 있는 그래뉼을 식별합니다.
+
+④ 이렇게 관련 있을 가능성이 있는 그래뉼을 메모리에 로드하고, 쿼리에 필요한 다른 컬럼에서도 같은 위치에 정렬된 그래뉼을 함께 로드합니다.
+
+⑤ 그런 다음 쿼리 실행 중에 나머지 필터를 적용합니다.
+
+보시는 것처럼 PREWHERE가 없으면 실제로 일치하는 행이 몇 개 되지 않더라도 필터링 전에 관련 있을 가능성이 있는 모든 컬럼을 먼저 로드합니다.
+
+<div id="how-prewhere-improves-query-efficiency">
+  ## PREWHERE가 쿼리 효율을 개선하는 방식
+</div>
+
+다음 애니메이션은 위의 쿼리에서 모든 쿼리 프레디케이트에 PREWHERE 절을 적용했을 때 쿼리가 어떻게 처리되는지 보여줍니다.
+
+처음 세 단계는 앞서와 동일합니다:
+
+<Image img="/images/guides/best-practices/prewhere_02.webp" size="md" alt="PREWHERE 최적화가 적용된 쿼리 처리" />
+
+<br />
+
+<br />
+
+① 쿼리에는 `town` 컬럼에 대한 필터가 포함되어 있으며, 이 컬럼은 테이블의 프라이머리 키에 속하므로 프라이머리 인덱스에도 포함됩니다.
+
+② PREWHERE 절 없이 실행할 때와 마찬가지로, 쿼리 속도를 높이기 위해 ClickHouse는 프라이머리 인덱스를 메모리에 로드하고,
+
+③ 이어서 인덱스 엔트리를 스캔해 `town` 컬럼의 어떤 그래뉼에 프레디케이트와 일치하는 행이 있을 수 있는지 식별합니다.
+
+이제 PREWHERE 절 덕분에 다음 단계는 달라집니다. 관련된 모든 컬럼을 한 번에 읽는 대신, ClickHouse는 컬럼별로 데이터를 필터링하면서 실제로 필요한 데이터만 로드합니다. 이렇게 하면 특히 컬럼 수가 많은 테이블에서 I/O를 크게 줄일 수 있습니다.
+
+각 단계에서는 이전 필터를 통과한, 즉 일치하는 행이 하나 이상 들어 있는 그래뉼만 로드합니다. 따라서 각 필터에서 로드하고 평가해야 하는 그래뉼 수는 단계가 진행될수록 단조 감소합니다:
+
+**1단계: town으로 필터링**<br />
+ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실제로 `London`과 일치하는 행이 들어 있는 그래뉼을 확인하는 것으로 PREWHERE 처리를 시작합니다.
+
+이 예시에서는 선택된 모든 그래뉼이 일치하므로, ② 다음 필터 컬럼인 `date`에서 위치상 대응되는 그래뉼이 처리 대상으로 선택됩니다:
+
+<Image img="/images/guides/best-practices/prewhere_03.webp" size="md" alt="1단계: town으로 필터링" />
+
+<br />
+
+<br />
+
+**2단계: date로 필터링**<br />
+다음으로 ClickHouse는 ① 선택된 `date` 컬럼 그래뉼을 읽어 `date > '2024-12-31'` 필터를 평가합니다.
+
+이 경우 3개의 그래뉼 중 2개에 일치하는 행이 포함되어 있으므로, ② 다음 필터 컬럼인 `price`에서 위치상 대응되는 그래뉼만 후속 처리 대상으로 선택됩니다:
+
+<Image img="/images/guides/best-practices/prewhere_04.webp" size="md" alt="2단계: date로 필터링" />
+
+<br />
+
+<br />
+
+**3단계: price로 필터링**<br />
+마지막으로 ClickHouse는 ① `price` 컬럼에서 선택된 2개의 그래뉼을 읽어 마지막 필터 `price > 10_000`을 평가합니다.
+
+2개의 그래뉼 중 1개에만 일치하는 행이 포함되어 있으므로, ② `SELECT` 컬럼인 `street`에서 위치상 대응되는 그래뉼만 추가 처리를 위해 로드하면 됩니다:
+
+<Image img="/images/guides/best-practices/prewhere_05.webp" size="md" alt="2단계: price로 필터링" />
+
+<br />
+
+<br />
+
+최종 단계에서는 일치하는 행이 포함된 최소한의 컬럼 그래뉼만 로드됩니다. 그 결과 메모리 사용량이 줄고, 디스크 I/O가 감소하며, 쿼리 실행 속도도 빨라집니다.
+
+<Info>
+  **PREWHERE는 읽는 데이터만 줄이며, 처리하는 행 수는 줄이지 않습니다**
+
+  PREWHERE를 적용한 쿼리와 적용하지 않은 쿼리에서 ClickHouse가 처리하는 행 수는 동일합니다. 하지만 PREWHERE 최적화를 적용하면 처리되는 모든 행에 대해 모든 컬럼 값을 로드할 필요는 없습니다.
+</Info>
+
+<div id="prewhere-optimization-is-automatically-applied">
+  ## PREWHERE 최적화는 자동으로 적용됩니다
+</div>
+
+위 예시와 같이 PREWHERE 절은 수동으로 추가할 수 있습니다. 하지만 PREWHERE를 직접 작성할 필요는 없습니다. [`optimize_move_to_prewhere`](/ko/reference/settings/session-settings#optimize_move_to_prewhere) 설정이 활성화되면(기본값은 true) ClickHouse는 WHERE의 필터 조건을 PREWHERE로 자동 이동하며, 읽기량을 가장 크게 줄일 수 있는 조건을 우선적으로 선택합니다.
+
+핵심은 크기가 작은 컬럼일수록 더 빠르게 스캔할 수 있고, 크기가 큰 컬럼을 처리할 때쯤이면 대부분의 그래뉼이 이미 걸러져 있다는 점입니다. 모든 컬럼은 동일한 수의 행을 가지므로, 컬럼의 크기는 주로 데이터 타입에 따라 결정됩니다. 예를 들어 `UInt8` 컬럼은 일반적으로 `String` 컬럼보다 훨씬 작습니다.
+
+ClickHouse는 버전 [23.2](https://clickhouse.com/blog/clickhouse-release-23-02#multi-stage-prewhere--alexander-gololobov)부터 기본적으로 이 전략을 따르며, 다단계 처리를 위해 PREWHERE 필터 컬럼을 압축되지 않은 크기의 오름차순으로 정렬합니다.
+
+버전 [23.11](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere)부터는 선택적 컬럼 통계(column statistics)를 사용해 단순히 컬럼 크기뿐 아니라 실제 데이터 선택도를 기준으로 필터 처리 순서를 정함으로써 이를 더욱 개선할 수 있습니다.
+
+<div id="how-to-measure-prewhere-impact">
+  ## PREWHERE 영향 측정 방법
+</div>
+
+PREWHERE가 쿼리에 도움이 되는지 확인하려면 `optimize_move_to_prewhere` 설정을 활성화했을 때와 비활성화했을 때의 쿼리 성능을 비교하면 됩니다.
+
+먼저 `optimize_move_to_prewhere` 설정을 비활성화한 상태에서 쿼리를 실행합니다:
+
+```sql
+SELECT
+    street
+FROM
+   uk.uk_price_paid_simple
+WHERE
+   town = 'LONDON' AND date > '2024-12-31' AND price < 10_000
+SETTINGS optimize_move_to_prewhere = false;
+```
+
+```txt
+   ┌─street──────┐
+1. │ MOYSER ROAD │
+2. │ AVENUE ROAD │
+3. │ AVENUE ROAD │
+   └─────────────┘
+
+3 rows in set. Elapsed: 0.056 sec. Processed 2.31 million rows, 23.36 MB (41.09 million rows/s., 415.43 MB/s.)
+Peak memory usage: 132.10 MiB.
+```
+
+ClickHouse는 쿼리를 처리하는 동안 231만 개의 행에 대해 **23.36 MB**의 컬럼 데이터를 읽었습니다.
+
+다음으로, `optimize_move_to_prewhere` 설정을 활성화한 상태로 쿼리를 실행합니다. (이 설정은 기본적으로 활성화되어 있으므로 선택적으로 사용할 수 있습니다):
+
+```sql
+SELECT
+    street
+FROM
+   uk.uk_price_paid_simple
+WHERE
+   town = 'LONDON' AND date > '2024-12-31' AND price < 10_000
+SETTINGS optimize_move_to_prewhere = true;
+```
+
+```txt
+   ┌─street──────┐
+1. │ MOYSER ROAD │
+2. │ AVENUE ROAD │
+3. │ AVENUE ROAD │
+   └─────────────┘
+
+3 rows in set. Elapsed: 0.017 sec. Processed 2.31 million rows, 6.74 MB (135.29 million rows/s., 394.44 MB/s.)
+Peak memory usage: 132.11 MiB.
+```
+
+처리된 행 수는 동일하게 231만 개였지만, PREWHERE 덕분에 ClickHouse는 읽는 컬럼 데이터를 3배 이상 줄여 23.36 MB 대신 6.74 MB만 읽었고, 그 결과 전체 런타임도 3배 단축되었습니다.
+
+ClickHouse가 내부적으로 PREWHERE를 어떻게 적용하는지 더 자세히 이해하려면 EXPLAIN과 트레이스 로그를 사용하십시오.
+
+[EXPLAIN](/ko/reference/statements/explain#explain-plan) 절을 사용해 쿼리의 논리 계획을 살펴봅니다:
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT
+    street
+FROM
+   uk.uk_price_paid_simple
+WHERE
+   town = 'LONDON' and date > '2024-12-31' and price < 10_000;
+```
+
+```txt
+...
+Prewhere info                                                                                                                                                                                                                                          
+  Prewhere filter column: 
+    and(greater(__table1.date, '2024-12-31'_String), 
+    less(__table1.price, 10000_UInt16), 
+    equals(__table1.town, 'LONDON'_String)) 
+...
+```
+
+여기서는 실행 계획 출력의 대부분을 생략합니다. 내용이 상당히 길기 때문입니다. 핵심은 세 개의 컬럼 프레디케이트가 모두 자동으로 PREWHERE로 이동했다는 점입니다.
+
+이를 직접 재현하면, 쿼리 계획에서도 이 프레디케이트들의 순서가 컬럼의 데이터 타입 크기를 기준으로 정해지는 것을 확인할 수 있습니다. 컬럼 통계(column statistics)를 활성화하지 않았기 때문에, ClickHouse는 PREWHERE 처리 순서를 결정할 때 크기를 폴백으로 사용합니다.
+
+내부 동작을 더 자세히 살펴보려면, 쿼리 실행 중 모든 test-level 로그 항목을 반환하도록 ClickHouse에 지시하여 개별 PREWHERE 처리 단계를 각각 확인할 수 있습니다:
+
+```sql
+SELECT
+    street
+FROM
+   uk.uk_price_paid_simple
+WHERE
+   town = 'LONDON' AND date > '2024-12-31' AND price < 10_000
+SETTINGS send_logs_level = 'test';
+```
+
+```txt
+...
+<Trace> ... Condition greater(date, '2024-12-31'_String) moved to PREWHERE
+<Trace> ... Condition less(price, 10000_UInt16) moved to PREWHERE
+<Trace> ... Condition equals(town, 'LONDON'_String) moved to PREWHERE
+...
+<Test> ... Executing prewhere actions on block: greater(__table1.date, '2024-12-31'_String)
+<Test> ... Executing prewhere actions on block: less(__table1.price, 10000_UInt16)
+...
+```
+
+<div id="key-takeaways">
+  ## 핵심 사항
+</div>
+
+* PREWHERE는 나중에 필터링으로 제외될 컬럼 데이터를 미리 읽지 않아 I/O와 메모리를 절약합니다.
+* `optimize_move_to_prewhere`가 활성화되어 있으면(기본값) 자동으로 적용됩니다.
+* 필터링 순서는 중요합니다. 크기가 작고 선택도가 높은 컬럼을 먼저 배치해야 합니다.
+* `EXPLAIN`과 로그를 사용해 PREWHERE가 적용되었는지 확인하고, 그 효과를 파악하십시오.
+* PREWHERE는 wide 테이블과 선택적 필터가 있는 대규모 스캔에서 가장 큰 효과를 발휘합니다.

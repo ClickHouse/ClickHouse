@@ -1,0 +1,519 @@
+---
+slug: /use-cases/observability/clickstack/integrations/host-logs
+title: '使用 ClickStack 监控主机日志'
+sidebarTitle: '通用主机日志'
+description: '使用 ClickStack 监控通用主机日志'
+doc_type: 'guide'
+keywords: ['主机日志', 'systemd', 'syslog', 'OTEL', 'ClickStack', '系统监控', '服务器日志']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **简而言之**
+
+  使用 OTel `filelog` 接收器在 ClickStack 中采集并可视化主机系统日志 (syslog、auth、kernel) 。包含演示数据集和预置仪表板。
+</Info>
+
+<div id="existing-hosts">
+  ## 与现有主机集成
+</div>
+
+本节介绍如何通过修改 ClickStack OTel collector 的配置，使其读取所有系统日志文件 (syslog、auth、kernel、daemon 以及应用日志) ，从而将现有主机上的系统日志发送到 ClickStack。
+
+如果你想先测试主机日志集成，再配置自己的现有环境，可以在[&quot;演示数据集&quot;](/zh/clickstack/integration-examples/host-logs#demo-dataset)部分使用我们预先配置的设置和示例数据进行测试。
+
+<div id="prerequisites">
+  ##### 前置条件
+</div>
+
+* 正在运行的 ClickStack 实例
+* 包含 syslog 文件的系统
+* 具备修改 ClickStack 配置文件的权限
+
+<Steps>
+  <Step>
+    #### 验证 syslog 文件是否存在
+
+    首先，确认系统正在写入 syslog 文件：
+
+    ```bash
+    # 检查 syslog 文件是否存在（Linux）
+    ls -la /var/log/syslog /var/log/messages
+
+    # 或在 macOS 上
+    ls -la /var/log/system.log
+
+    # 查看最近的条目
+    tail -20 /var/log/syslog
+    ```
+
+    常见的 syslog 路径：
+
+    * **Ubuntu/Debian**: `/var/log/syslog`
+    * **RHEL/CentOS/Fedora**: `/var/log/messages`
+    * **macOS**: `/var/log/system.log`
+  </Step>
+
+  <Step>
+    #### 创建自定义 OTel collector 配置
+
+    ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。
+
+    创建一个名为 `host-logs-monitoring.yaml` 的文件，并填入适用于您系统的配置：
+
+    <Tabs>
+      <Tab title="现代 Linux（Ubuntu 24.04+）">
+        ```yaml
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/syslog
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout_type: gotime
+                layout: '2006-01-02T15:04:05.999999-07:00'
+              
+              - type: add
+                field: attributes.source
+                value: "host-logs"
+              
+              - type: add
+                field: resource["service.name"]
+                value: "host-production"
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/syslog]
+              processors:
+                - memory_limiter
+                - transform
+                - batch
+              exporters:
+                - clickhouse
+        ```
+      </Tab>
+
+      <Tab title="传统 Linux（Ubuntu 20.04、RHEL、CentOS）">
+        ```yaml
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/syslog
+              - /var/log/messages
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+ \d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout: '%b %d %H:%M:%S'
+              
+              - type: add
+                field: attributes.source
+                value: "host-logs"
+              
+              - type: add
+                field: resource["service.name"]
+                value: "host-production"
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/syslog]
+              processors:
+                - memory_limiter
+                - transform
+                - batch
+              exporters:
+                - clickhouse
+        ```
+      </Tab>
+
+      <Tab title="macOS">
+        ```yaml
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/system.log
+              - /host/private/var/log/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+ \d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout: '%b %d %H:%M:%S'
+              
+              - type: add
+                field: attributes.source
+                value: "host-logs"
+              
+              - type: add
+                field: resource["service.name"]
+                value: "host-production"
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/syslog]
+              processors:
+                - memory_limiter
+                - transform
+                - batch
+              exporters:
+                - clickhouse
+        ```
+      </Tab>
+    </Tabs>
+
+    <br />
+
+    所有配置：
+
+    * 从标准路径读取 syslog 文件
+    * 解析 syslog 格式，提取结构化字段 (时间戳、主机名、单元/服务、PID、消息)
+    * 保留原始日志时间戳
+    * 添加 `source: host-logs` 属性，以便在 HyperDX 中筛选
+    * 通过专用管道将日志发送到 ClickHouse exporter
+
+    <Note>
+      - 你只需在自定义配置中定义新的 receiver 和管道
+      - 处理器 (`memory_limiter`、`transform`、`batch`) 和 exporter (`clickhouse`) 已在 ClickStack 基础配置中定义，你只需按名称引用它们
+      - regex parser 会从 syslog 格式中提取 systemd 单元名称、PID 及其他元数据
+      - 此配置使用 `start_at: end`，以避免在 collector 重启后重复摄取日志。测试时，可改为 `start_at: beginning`，以便立即查看历史日志。
+    </Note>
+  </Step>
+
+  <Step>
+    #### 配置 ClickStack 以加载自定义配置
+
+    要在现有的 ClickStack 部署中启用自定义 collector 配置，您必须：
+
+    1. 将自定义配置文件挂载到 `/etc/otelcol-contrib/custom.config.yaml`
+    2. 设置环境变量 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+    3. 挂载 syslog 目录，以便 collector 能够读取其中的内容
+
+    ##### 选项 1：Docker Compose
+
+    更新 ClickStack 的部署配置：
+
+    ```yaml
+    services:
+      clickstack:
+        # ... 现有配置 ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+          # ... 其他环境变量 ...
+        volumes:
+          - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - /var/log:/var/log:ro
+          # ... 其他卷挂载 ...
+    ```
+
+    ##### 选项 2：Docker Run (All-in-One 镜像)
+
+    如果你使用 docker run 运行 All-in-One 镜像：
+
+    ```bash
+    docker run --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v /var/log:/var/log:ro \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      确保 ClickStack collector 具有读取 syslog 文件所需的适当权限。在生产环境中，应使用只读挂载 (`:ro`) ，并遵循最小权限原则。
+    </Note>
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证日志
+
+    配置完成后，登录 HyperDX 并确认日志已开始流入：
+
+    1. 进入搜索视图
+    2. 将 source 设置为 Logs
+    3. 使用 `source:host-logs` 作为过滤条件，以查看主机日志
+    4. 你应该会看到结构化的日志条目，其中包含 `unit`、`hostname`、`pid`、`message` 等字段
+
+    <Image img="/images/clickstack/host-logs/search-view.webp" alt="搜索视图" />
+
+    <Image img="/images/clickstack/host-logs/log-view.webp" alt="日志视图" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## 演示数据集
+</div>
+
+对于希望在配置生产系统之前先测试主机日志集成的用户，我们提供了一个预生成系统日志的演示数据集，其中包含贴近真实场景的日志模式。
+
+<Steps>
+  <Step>
+    #### 下载样本数据集
+
+    下载样本日志文件：
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+    ```
+
+    该数据集包含：
+
+    * 系统启动序列
+    * SSH 登录活动 (成功和失败的尝试)
+    * 安全事件 (暴力破解攻击及 fail2ban 响应)
+    * 计划维护 (cron 作业、anacron)
+    * 服务重启 (rsyslog)
+    * 内核消息和防火墙活动
+    * 正常操作与重要事件混合出现
+  </Step>
+
+  <Step>
+    #### 创建测试 collector 配置
+
+    创建一个名为 `host-logs-demo.yaml` 的文件，并写入以下配置：
+
+    ```yaml
+    cat > host-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/journal:
+        include:
+          - /tmp/host-demo/journal.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%Y-%m-%dT%H:%M:%S%z'
+          
+          - type: add
+            field: attributes.source
+            value: "host-demo"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "host-demo"
+
+    service:
+      pipelines:
+        logs/host-demo:
+          receivers: [filelog/journal]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### 使用演示配置运行 ClickStack
+
+    使用演示日志和配置运行 ClickStack：
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      **这会将日志文件直接挂载到容器中。这种方式仅用于使用静态演示数据进行测试。**
+
+    </Note>
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证日志
+
+    ClickStack 运行后：
+
+    1. 打开 [HyperDX](http://localhost:8080/) 并登录您的账户 (您可能需要先创建一个账户)
+    2. 前往搜索视图，并将 source 设置为 `Logs`
+    3. 将时间范围设置为 **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
+
+    <Image img="/images/clickstack/host-logs/search-view.webp" alt="搜索视图" />
+
+    <Image img="/images/clickstack/host-logs/log-view.webp" alt="日志视图" />
+
+    <Info>
+      **时区显示**
+
+      HyperDX 会按浏览器的本地时区显示时间戳。演示数据的时间跨度为 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**。较宽的时间范围可确保您无论位于何处都能看到这些演示日志。看到日志后，您可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## 仪表盘与可视化
+</div>
+
+为了帮助你开始使用 ClickStack 监控主机日志，我们提供了系统日志监控所需的关键可视化。
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+  </Step>
+
+  <Step>
+    #### 导入预构建仪表盘
+
+    1. 打开 HyperDX 并进入仪表盘部分
+    2. 点击右上角省略号菜单中的 **Import Dashboard**
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
+
+    3. 上传 `host-logs-dashboard.json` 文件，然后点击 **Finish Import**
+
+    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="完成导入" />
+  </Step>
+
+  <Step>
+    #### 查看仪表盘
+
+    该仪表盘创建后将自动预配置好所有可视化：
+
+    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="日志仪表盘" />
+
+    关键可视化包括：
+
+    * 按严重级别划分的日志量时间趋势
+    * 产生日志最多的 systemd 单元
+    * SSH 登录活动 (成功与失败)
+    * 防火墙活动 (已拦截与已放行)
+    * 安全事件 (登录失败、封禁、拦截)
+    * 服务重启活动
+
+    <Note>
+      对于演示数据集，请将时间范围设置为 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** (根据你的本地时区进行调整) 。默认情况下，导入的仪表盘不会预设时间范围。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### 自定义配置未加载
+</div>
+
+请确认环境变量已正确设置：
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+确认自定义配置文件已挂载且可读取：
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
+```
+
+<div id="no-logs">
+  ### HyperDX 中没有显示日志
+</div>
+
+**确认 syslog 文件存在且正在写入：**
+
+```bash
+# 检查 syslog 是否存在
+ls -la /var/log/syslog /var/log/messages
+
+# 验证日志是否正在写入
+tail -f /var/log/syslog
+```
+
+**检查 collector 能否读取日志：**
+
+```bash
+docker exec <container> cat /var/log/syslog | head -20
+```
+
+**检查当前生效的配置是否包含 filelog receiver：**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+**检查 collector 日志是否有错误：**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i "filelog\|syslog"
+```
+
+**如果使用演示数据集，请确认日志文件可正常访问：**
+
+```bash
+docker exec <container> cat /tmp/host-demo/journal.log | wc -l
+```
+
+<div id="logs-not-parsing">
+  ### 日志解析不正确
+</div>
+
+**请确认你的 syslog 格式与所选配置一致：**
+
+对于现代 Linux (Ubuntu 24.04+) ：
+
+```bash
+# 应显示 ISO8601 格式：2025-11-17T20:55:44.826796+00:00
+tail -5 /var/log/syslog
+```
+
+对于旧版 Linux 或 macOS：
+
+```bash
+# 应显示传统格式：Nov 17 14:16:16
+tail -5 /var/log/syslog
+# 或
+tail -5 /var/log/system.log
+```
+
+如果您的格式不一致，请在[创建自定义 OTel collector 配置](#custom-otel)部分选择相应的配置选项卡。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* 为关键系统事件 (服务故障、身份验证失败、磁盘警告) 设置[告警](/zh/clickstack/features/alerts)
+* 按特定单元筛选，以监控特定服务
+* 关联主机日志与应用程序日志，以便进行更全面的故障排查
+* 为安全监控 (SSH 尝试、sudo 使用情况、防火墙拦截) 创建自定义仪表盘
+
+<div id="going-to-production">
+  ## 投入生产环境
+</div>
+
+本指南在 ClickStack 内置的 OpenTelemetry Collector 基础上进行了扩展，便于快速完成设置。对于生产环境中的部署，我们建议运行您自己的 OTel collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

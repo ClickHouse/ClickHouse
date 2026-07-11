@@ -4,7 +4,9 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/StringUtils.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
 
 #include <Common/config_version.h>
@@ -15,6 +17,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 
 
 namespace DB
@@ -23,10 +26,73 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
 {
+
+/// Parse a string read off the native protocol wire into an "ip:port" SocketAddress WITHOUT resolving.
+/// ClientInfo::write always serializes the address as an IP literal plus a numeric port ("ip:port" or
+/// "[ipv6]:port", via SocketAddress::toString), but the value is attacker-controlled and may be
+/// corrupted or desynced. Poco's SocketAddress(String) constructor would resolve a non-numeric port
+/// via getservbyname() and a non-IP host via DNS::hostByName() - both reach a non-reentrant libc
+/// resolver family that base/harmful traps to an uncatchable SIGILL in debug/sanitizer builds. We split
+/// host and port exactly as Poco::Net::SocketAddress::init() does, require a numeric port <= 65535 and a
+/// host that parses as an IP literal, and build the address directly from the parsed IPAddress. Returns
+/// nullopt for anything else (empty, a leading-'/' UNIX-local form, a non-numeric/out-of-range port, or
+/// a non-IP host), so the caller decides whether to reject it or fall back to a default - never resolving.
+std::optional<Poco::Net::SocketAddress> tryParseIpEndpointFromWire(const String & host_and_port)
+{
+    /// A leading '/' makes Poco build a UNIX_LOCAL address, whose host()/port() throw later.
+    if (host_and_port.empty() || host_and_port.front() == '/')
+        return {};
+
+    std::string_view host;
+    size_t port_pos = String::npos;
+    if (host_and_port.front() == '[')
+    {
+        /// "[ipv6]:port" - Poco requires ':' immediately after the closing ']'. The host token
+        /// for IPAddress::tryParse is the address between the brackets (unbracketed).
+        const auto closing_bracket = host_and_port.find(']');
+        if (closing_bracket == String::npos)
+            return {};
+        host = std::string_view(host_and_port).substr(1, closing_bracket - 1);
+        if (closing_bracket + 1 < host_and_port.size() && host_and_port[closing_bracket + 1] == ':')
+            port_pos = closing_bracket + 2;
+    }
+    else
+    {
+        /// "host:port" - Poco splits on the first ':'.
+        const auto colon = host_and_port.find(':');
+        if (colon != String::npos)
+        {
+            host = std::string_view(host_and_port).substr(0, colon);
+            port_pos = colon + 1;
+        }
+    }
+
+    const std::string_view port
+        = port_pos == String::npos ? std::string_view{} : std::string_view(host_and_port).substr(port_pos);
+    if (port.empty())
+        return {};
+
+    UInt32 port_number = 0;
+    for (const char c : port)
+    {
+        if (!isNumericASCII(c))
+            return {};
+        port_number = port_number * 10 + static_cast<UInt32>(c - '0');
+        if (port_number > 0xFFFF)
+            return {};
+    }
+
+    Poco::Net::IPAddress ip;
+    if (!Poco::Net::IPAddress::tryParse(std::string(host), ip))
+        return {};
+
+    return Poco::Net::SocketAddress(ip, static_cast<UInt16>(port_number));
+}
 
 /// Detect whether the client (clickhouse-client or clickhouse-local) is being invoked under a known
 /// AI coding agent, by inspecting environment variables that these agents set for the processes they
@@ -115,7 +181,7 @@ String ClientInfo::getLastForwardedForHost() const
 }
 
 
-void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_client_agent) const
+void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::write is called for unsupported server revision");
@@ -213,13 +279,16 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
     /// Sent for all interfaces (not only TCP): the detected client agent must also be preserved
     /// when a clickhouse-local query (LOCAL interface) is forwarded to remote shards.
     /// Skipped for the embedded `ClientInfo` of the persisted async `Distributed` insert header
-    /// (see `with_client_agent` in the declaration), where it is stored as a trailing header field.
-    if (with_client_agent && server_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
+    /// (see `with_trailing_fields` in the declaration), where it is stored as a trailing header field.
+    if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
         writeBinary(client_agent, out);
+
+    if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG)
+        writeBinary(is_internal, out);
 }
 
 
-void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_client_agent)
+void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::read is called for unsupported client revision");
@@ -235,7 +304,18 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
 
     String initial_address_string;
     readBinary(initial_address_string, in);
-    initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address_string);
+    /// The wire address must never reach Poco's resolver (getservbyname/DNS, trapped to SIGILL). For a
+    /// SECONDARY_QUERY the value is consumed verbatim (system.query_log, interserver authenticate), so a
+    /// non-"ip:port" form is corrupted input and is rejected as INCORRECT_DATA. For an INITIAL_QUERY the
+    /// server overwrites initial_address with the real peer address in Session::makeQueryContextImpl, so
+    /// the wire value is discarded; to stay compatible with the pre-validation native protocol (which
+    /// documented a generic host:port) we accept it leniently and fall back to a default endpoint when it
+    /// is not a plain IP literal, instead of rejecting otherwise-valid initiating clients.
+    auto parsed_address = tryParseIpEndpointFromWire(initial_address_string);
+    if (!parsed_address && query_kind == QueryKind::SECONDARY_QUERY)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Malformed initial_address received over the network: expected an IP literal with a numeric port");
+    initial_address = std::make_shared<Poco::Net::SocketAddress>(parsed_address.value_or(Poco::Net::SocketAddress{}));
 
     if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
     {
@@ -321,8 +401,11 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
             readBinary(jwt, in);
     }
 
-    if (with_client_agent && client_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
+    if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO)
         readBinary(client_agent, in);
+
+    if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG)
+        readBinary(is_internal, in);
 }
 
 
