@@ -1,0 +1,138 @@
+---
+description: '원격 HTTP/HTTPS 서버에서 데이터를 조회하거나 서버로 전송합니다. 이 엔진은 File 엔진과
+  유사합니다.'
+sidebarTitle: 'URL'
+slug: /engines/table-engines/special/url
+title: 'URL 테이블 엔진'
+doc_type: '참고'
+---
+
+원격 HTTP/HTTPS 서버에서 데이터를 조회하거나 서버로 전송합니다. 이 엔진은 [File](/ko/reference/engines/table-engines/special/file) 엔진과 유사합니다.
+
+구문: `URL(URL [,Format] [,CompressionMethod])`
+
+* `URL` 매개변수는 Uniform Resource Locator 구조를 따라야 합니다. 지정된 URL은 HTTP 또는 HTTPS를 사용하는 서버를 가리켜야 합니다. 서버에서 응답을 받기 위해 추가 헤더는 필요하지 않습니다.
+
+* `Format`은 ClickHouse가 `SELECT` 쿼리에서 사용할 수 있어야 하며, 필요한 경우 `INSERTs`에서도 사용할 수 있어야 합니다. 지원되는 포맷의 전체 목록은 [Formats](/ko/reference/formats/index#formats-overview)를 참조하십시오.
+
+  이 인수를 지정하지 않으면 ClickHouse가 `URL` 매개변수의 접미사를 기반으로 포맷을 자동으로 감지합니다. `URL` 매개변수의 접미사가 지원되는 포맷과 일치하지 않으면 테이블 생성에 실패합니다. 예를 들어 엔진 표현식 `URL('http://localhost/test.json')`에는 `JSON` 포맷이 적용됩니다.
+
+* `CompressionMethod`는 HTTP 본문을 압축할지 여부를 나타냅니다. 압축이 활성화되면 URL 엔진이 보내는 HTTP 패킷에는 어떤 압축 방식이 사용되었는지 나타내는 &#39;Content-Encoding&#39; 헤더가 포함됩니다.
+
+압축을 활성화하기 전에 먼저 `URL` 매개변수가 가리키는 원격 HTTP 엔드포인트가 해당 압축 알고리즘을 지원하는지 확인하십시오.
+
+지원되는 `CompressionMethod`는 다음 중 하나여야 합니다.
+
+* gzip or gz
+* deflate
+* brotli or br
+* lzma or xz
+* zstd or zst
+* lz4
+* bz2
+* snappy
+* none
+* auto
+
+`CompressionMethod`를 지정하지 않으면 기본값은 `auto`입니다. 즉, ClickHouse가 `URL` 매개변수의 접미사를 기반으로 압축 방식을 자동으로 감지합니다. 접미사가 위에 나열된 압축 방식 중 하나와 일치하면 해당 압축이 적용되고, 그렇지 않으면 압축이 적용되지 않습니다.
+
+예를 들어 엔진 표현식 `URL('http://localhost/test.gzip')`에는 `gzip` 압축 방식이 적용되지만, `URL('http://localhost/test.fr')`의 경우 접미사 `fr`이 위의 어떤 압축 방식과도 일치하지 않으므로 압축이 적용되지 않습니다.
+
+<div id="using-the-engine-in-the-clickhouse-server">
+  ## 사용법
+</div>
+
+`INSERT` 및 `SELECT` 쿼리는 각각 `POST` 및 `GET` 요청으로 변환됩니다.
+`POST` 요청을 처리하려면 원격 서버에서
+[청크 전송 인코딩](https://en.wikipedia.org/wiki/Chunked_transfer_encoding)을 지원해야 합니다.
+
+[max&#95;http&#95;get&#95;redirects](/ko/reference/settings/session-settings#max_http_get_redirects) 설정을 사용하여 HTTP GET 리디렉션의 최대 홉 수를 제한할 수 있습니다.
+
+<div id="example">
+  ## 예시
+</div>
+
+**1.** 서버에 `url_engine_table` 테이블을 생성합니다:
+
+```sql
+CREATE TABLE url_engine_table (word String, value UInt64)
+ENGINE=URL('http://127.0.0.1:12345/', CSV)
+```
+
+**2.** 표준 Python 3 도구를 사용하여 간단한 HTTP 서버를 만들고
+시작하세요:
+
+```python3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```bash
+$ python3 server.py
+```
+
+**3.** 데이터 요청:
+
+```sql
+SELECT * FROM url_engine_table
+```
+
+```text
+┌─word──┬─value─┐
+│ Hello │     1 │
+│ World │     2 │
+└───────┴───────┘
+```
+
+<div id="details-of-implementation">
+  ## 구현 세부 사항
+</div>
+
+* 읽기와 쓰기는 병렬로 수행할 수 있습니다.
+* 다음은 지원되지 않습니다:
+  * `ALTER` 및 `SELECT...SAMPLE` 작업
+  * 인덱스
+  * 복제
+
+<div id="virtual-columns">
+  ## 가상 컬럼
+</div>
+
+* `_path` — `URL`의 경로입니다. 유형: `LowCardinality(String)`.
+* `_file` — `URL` 리소스의 이름입니다. 유형: `LowCardinality(String)`.
+* `_size` — 리소스의 크기(바이트)입니다. 유형: `Nullable(UInt64)`. 크기를 알 수 없으면 값은 `NULL`입니다.
+* `_time` — 파일의 최종 수정 시간입니다. 유형: `Nullable(DateTime)`. 시간을 알 수 없으면 값은 `NULL`입니다.
+* `_headers` - HTTP 응답 헤더입니다. 유형: `Map(LowCardinality(String), LowCardinality(String))`.
+
+<div id="resolving-relative-urls">
+  ## 상대 URL 해석
+</div>
+
+[url&#95;base](/ko/reference/settings/session-settings#url_base) 설정을 사용하면 `URL` 엔진에서 상대 URL을 사용할 수 있습니다. `url_base`가 설정되어 있으면 엔진에 전달된 URL은 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)에 따라 `url_base`를 기준으로 해석됩니다. 해석 규칙에 대한 전체 설명은 [url 테이블 함수 문서](/ko/reference/functions/table-functions/url#resolving-relative-urls)를 참조하십시오.
+
+**예시**
+
+```sql
+SET url_base = 'http://127.0.0.1:12345/';
+CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.csv', CSV);
+SELECT * FROM url_engine_table;
+```
+
+<div id="storage-settings">
+  ## 스토리지 설정
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/ko/reference/settings/session-settings#engine_url_skip_empty_files) - 읽을 때 빈 파일을 건너뛸 수 있습니다. 기본적으로 비활성화되어 있습니다.
+* [enable&#95;url&#95;encoding](/ko/reference/settings/session-settings#enable_url_encoding) - URI 경로의 디코딩/인코딩을 활성화하거나 비활성화할 수 있습니다. 기본적으로 활성화되어 있습니다.
+* [url&#95;base](/ko/reference/settings/session-settings#url_base) - 엔진에 전달된 상대 URL을 해석하기 위한 기준 URL입니다.

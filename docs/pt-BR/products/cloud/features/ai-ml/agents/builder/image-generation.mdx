@@ -1,0 +1,42 @@
+---
+sidebarTitle: 'Geração de imagens'
+slug: /cloud/features/ai-ml/agents/builder/image-generation
+title: 'Geração de imagens'
+description: 'Gere e edite imagens no ClickHouse Agents'
+keywords: ['IA', 'ClickHouse Cloud', 'agents', 'geração de imagens', 'DALL-E', 'Flux', 'Stable Diffusion']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge />
+
+A geração de imagens permite que um agente crie novas imagens a partir de um prompt de texto ou edite imagens enviadas pelo usuário. O agente escolhe entre gerar e editar com base no que foi solicitado e no contexto disponível.
+
+<div id="enable-it">
+  ## Habilitar a geração de imagens
+</div>
+
+A geração de imagens é ativada por meio da janela modal **Add Tools** no Agent Builder (não na seção Capabilities). Clique em **Add Tools** na parte inferior do painel do Agent Builder e, em seguida, adicione uma das ferramentas de modelo de imagem — por exemplo, **OpenAI Image Tools**, **DALL-E-3** ou **Stable Diffusion**. O agente escolhe automaticamente a opção mais adequada com base na solicitação, ou você pode restringi-la nas instruções.
+
+<Image img="/images/cloud/agent-builder/tools-modal.webp" alt="Janela modal Agent Tools mostrando integrações de modelos de imagem, incluindo OpenAI Image Tools, DALL-E-3 e Stable Diffusion, ao lado de outras ferramentas de terceiros" size="md" />
+
+<div id="generation">
+  ## Geração
+</div>
+
+Quando o usuário solicita uma imagem, o agente chama a ferramenta de geração com um prompt e retorna a imagem resultante embutida. O agente mantém uma referência à imagem em seu contexto para poder descrevê-la ou reutilizá-la na mesma conversa.
+
+<div id="editing">
+  ## Edição
+</div>
+
+Se o usuário enviar uma imagem e pedir uma modificação — mudar uma cor, adicionar um objeto, ampliar uma composição — o agente invoca a variante de edição da ferramenta. A saída substitui a região relevante ou estende a imagem original, conforme solicitado.
+
+<div id="notes">
+  ## Observações
+</div>
+
+* Imagens geradas não são enviadas automaticamente para uma análise separada com vision. Se você precisar que o agente *interprete* uma imagem, use [vision](/pt-BR/products/cloud/features/ai-ml/agents/builder/vision) com uma imagem enviada pelo usuário.
+* As políticas de conteúdo do provedor se aplicam. Prompts que violam a política do provedor retornam um erro em vez de uma imagem.

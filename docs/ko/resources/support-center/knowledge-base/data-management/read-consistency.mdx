@@ -1,0 +1,54 @@
+---
+date: 2024-02-14
+title: "ClickHouse에서 데이터 읽기 일관성을 확보하려면 어떻게 해야 하나요?"
+description: "같은 노드에 연결된 경우든 임의의 노드에 연결된 경우든, ClickHouse에서 데이터를 읽을 때 데이터 일관성을 보장하는 방법을 알아보세요."
+tags: ['성능 및 최적화']
+keywords: ['읽기 일관성']
+---
+
+<div id="question">
+  ## 질문
+</div>
+
+ClickHouse Cloud에 데이터를 기록하고 있으며, 데이터를 읽을 때 항상 가장 최신의 완전한 정보를 읽고 있다는 보장이 필요합니다.
+
+<div id="answer">
+  ## 답변
+</div>
+
+<div id="talking-to-the-same-node">
+  ### 동일한 노드에 연결하는 경우
+</div>
+
+네이티브 프로토콜을 사용하거나 쓰기/읽기 작업에 세션을 사용하는 경우에는 동일한 레플리카에 연결해야 합니다. 이 경우 쓰기를 수행하는 노드에서 직접 읽게 되므로 읽기 결과는 항상 일관성이 보장됩니다.
+
+<div id="talking-to-a-random-node">
+  ### 임의의 노드와 통신하기
+</div>
+
+항상 같은 노드와 통신한다고 보장할 수 없는 경우(예: 로드 밸런서를 거치면서 HTTPS 호출의 대상 노드가 바뀌는 경우) 다음 중 하나를 선택할 수 있습니다.
+
+A)
+
+1. 데이터를 씁니다
+2. 새로운 레플리카에 연결합니다
+3. `SYSTEM SYNC REPLICA db.table_name LIGHTWEIGHT`를 실행합니다
+4. 최신 데이터를 읽습니다
+
+`SYSTEM` 명령 [참고](/ko/reference/statements/system#sync-replica)를 확인하십시오
+
+또는
+
+B) 순차 일관성을 사용해 언제든지 읽기
+
+```sql
+SELECT 
+...
+SETTINGS select_sequential_consistency = 1
+```
+
+ClickHouse Cloud와 기본 [SharedMergeTree](/ko/products/cloud/features/infrastructure/shared-merge-tree) 테이블 엔진을 사용할 때는 `insert_quorum_parallel`을 사용할 필요가 없습니다. SharedMergeTree에 대한 모든 삽입은 quorum 삽입으로 처리되도록 설계되어 있습니다.
+
+[`SYSTEM SYNC REPLICAS`](/ko/reference/statements/system#sync-replica) 또는 [`select_sequential_consistency`](/ko/reference/settings/session-settings#select_sequential_consistency)를 사용하면 ClickHouse Keeper의 부하가 증가하며, 서비스 부하에 따라 성능이 저하될 수 있습니다.
+
+권장되는 방법은 동일한 세션이나 네이티브 프로토콜(sticky connection)을 사용해 쓰기와 읽기를 수행하는 것입니다.

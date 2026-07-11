@@ -1,0 +1,79 @@
+---
+sidebarTitle: 'Embeddable'
+slug: /integrations/embeddable
+keywords: ['clickhouse', 'Embeddable', 'подключить', 'интегрировать', 'интерфейс']
+description: 'Embeddable — это инструментарий для разработчиков, который позволяет встраивать в приложение быстрые, интерактивные и полностью настраиваемые аналитические возможности.'
+title: 'Подключение Embeddable к ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+В [Embeddable](https://embeddable.com/) вы определяете [модели данных](https://docs.embeddable.com/data-modeling/introduction) и [компоненты](https://docs.embeddable.com/development/introduction) в коде (который хранится в вашем собственном репозитории) и используете наш **SDK**, чтобы сделать их доступными вашей команде в мощном **no-code builder** Embeddable.
+
+В результате вы получаете возможность предоставлять быструю интерактивную клиентскую аналитику прямо в своём продукте; спроектированную вашей продуктовой командой; созданную вашей инженерной командой; поддерживаемую вашими командами по работе с клиентами и данными. Именно так, как и должно быть.
+
+Встроенная защита на уровне строк означает, что каждый пользователь видит только те данные, к которым у него есть доступ. А два уровня полностью настраиваемого кэширования позволяют предоставлять быструю аналитику в реальном времени в любом масштабе.
+
+<div id="1-gather-your-connection-details">
+  ## 1. Подготовьте сведения о подключении
+</div>
+
+<ConnectionDetails />
+
+<div id="2-create-a-clickhouse-connection-type">
+  ## 2. Создайте тип подключения к ClickHouse
+</div>
+
+Подключение к базе данных добавляется с помощью Embeddable API. Это подключение используется для подключения к вашему сервису ClickHouse. Добавить подключение можно следующим вызовом API:
+
+```javascript title="Query"
+// из соображений безопасности это *никогда* не должно вызываться на стороне клиента
+fetch('https://api.embeddable.com/api/v1/connections', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    Authorization: `Bearer ${apiKey}` /* храните ваш API Key в безопасности */,
+  },
+  body: JSON.stringify({
+    name: 'my-clickhouse-db',
+    type: 'clickhouse',
+    credentials: {
+      host: 'my.clickhouse.host',
+      user: 'clickhouse_user',
+      port: 8443,
+      password: '*****',
+    },
+  }),
+});
+```
+
+```text title="Response"
+Status 201 { errorMessage: null }
+```
+
+Выше показано действие `CREATE`, но доступны все операции `CRUD`.
+
+`apiKey` можно найти, нажав &quot;**Publish**&quot; на одной из панелей мониторинга Embeddable.
+
+`name` — это уникальное имя для идентификации этого подключения.
+
+* По умолчанию ваши модели данных будут искать подключение с именем &quot;default&quot;, но вы можете указать в моделях другие имена `data_source`, чтобы разные модели данных подключались к разным подключениям (просто укажите имя data&#95;source в модели)
+
+`type` сообщает Embeddable, какой драйвер использовать
+
+* Здесь следует использовать `clickhouse`, но к одному рабочему пространству Embeddable можно подключить несколько разных источников данных, поэтому вы также можете использовать другие, например: `postgres`, `bigquery`, `mongodb` и т. д.
+
+`credentials` — это объект JavaScript, содержащий учетные данные, необходимые драйверу
+
+* Они надежно зашифрованы и используются только для получения именно тех данных, которые вы описали в своих моделях данных.
+  Embeddable настоятельно рекомендует создавать отдельного пользователя базы данных с правами только для чтения для каждого подключения (Embeddable будет только читать данные из вашей базы данных, а не записывать их).
+
+Чтобы поддерживать подключение к разным базам данных для prod, qa, test и т. д. (или использовать разные базы данных для разных клиентов), вы можете назначить каждому подключению окружение (см. [Environments API](https://docs.embeddable.com/data/environments)).
