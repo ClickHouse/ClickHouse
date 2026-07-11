@@ -7,6 +7,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/IDataType.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -17,6 +18,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -41,6 +43,33 @@ namespace DB::ErrorCodes
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// True if the type is, or recursively contains, a Variant or Dynamic type.
+static bool typeIsOrContainsDynamic(const IDataType & type)
+{
+    if (WhichDataType(type).isVariant() || WhichDataType(type).isDynamic())
+        return true;
+
+    bool found = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        found |= typeIsOrContainsDynamic(child);
+    });
+    return found;
+}
+
+/// True if any input column of the filter has a Variant/Dynamic type. Such a filter can throw
+/// at runtime depending on the concrete alternative a row carries, so pushing it below a
+/// row-eliminating step (INTERSECT/EXCEPT) may surface errors the unoptimized plan never does.
+static bool filterInputsHaveDynamicType(const FilterStep & filter)
+{
+    for (const auto & input : filter.getExpression().getInputs())
+    {
+        if (input->result_type && typeIsOrContainsDynamic(*input->result_type))
+            return true;
+    }
+    return false;
+}
 
 /// Assert that `node->children` has at least `child_num` elements
 static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
@@ -1172,6 +1201,64 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///       - Filter - Something
         /// Union - Filter - Something
         ///       - Filter - Something
+
+        return 3;
+    }
+
+    if (auto * intersect_or_except = typeid_cast<IntersectOrExceptStep *>(child.get()))
+    {
+        /// IntersectOrExcept does not change the header and its branches are positionally
+        /// aligned, so a deterministic filter above it can be cloned into every branch,
+        /// exactly as for UnionStep. This is equivalence-preserving for all set operators:
+        /// values failing the predicate cannot appear in the output, so dropping them from
+        /// each input does not change the result.
+        ///
+        /// Unlike UNION ALL, INTERSECT/EXCEPT eliminate rows, so the pushed-down filter is
+        /// evaluated on branch rows that the set operation would have removed. If a filter
+        /// input is a Variant/Dynamic type, a statically valid function can throw at runtime
+        /// on the concrete alternative carried by an eliminated row (e.g. ilike over the Tuple
+        /// alternative of Variant(String, Tuple(...))). That would surface an error the
+        /// unoptimized plan never produces, so skip the pushdown in that case.
+        if (filterInputsHaveDynamicType(*filter))
+            return 0;
+
+        auto input_headers = child->getInputHeaders();
+        auto expected_output = filter->getOutputHeader();
+
+        for (auto & input_header : input_headers)
+            input_header = expected_output;
+
+        ///                          - Something
+        /// Filter - IntersectExcept - Something
+        ///                          - Something
+
+        child = std::make_unique<IntersectOrExceptStep>(
+            input_headers, intersect_or_except->getOperator(), intersect_or_except->getMaxThreads());
+
+        std::swap(parent, child);
+        std::swap(parent_node->children, child_node->children);
+        std::swap(parent_node->children.front(), child_node->children.front());
+
+        ///                - Filter - Something
+        /// IntersectExcept - Something
+        ///                - Something
+
+        for (size_t i = 1; i < parent_node->children.size(); ++i)
+        {
+            auto & filter_node = nodes.emplace_back();
+            filter_node.children.push_back(parent_node->children[i]);
+            parent_node->children[i] = &filter_node;
+
+            filter_node.step = std::make_unique<FilterStep>(
+                filter_node.children.front()->step->getOutputHeader(),
+                filter->getExpression().clone(),
+                filter->getFilterColumnName(),
+                filter->removesFilterColumn());
+        }
+
+        ///                - Filter - Something
+        /// IntersectExcept - Filter - Something
+        ///                - Filter - Something
 
         return 3;
     }

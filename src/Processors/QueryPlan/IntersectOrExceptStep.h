@@ -22,6 +22,9 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    Operator getOperator() const { return current_operator; }
+    size_t getMaxThreads() const { return max_threads; }
+
 private:
     void updateOutputHeader() override;
 
