@@ -11,6 +11,8 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/MergeTree/TTLResortUtils.h>
 
 namespace DB
 {
@@ -87,27 +89,35 @@ TTLTransform::TTLTransform(
 
     /// Each GROUP BY TTL's TTLAggregationAlgorithm assumes its input is ordered by its own
     /// group_by_keys. The algorithms run sequentially on the same block, so if an EARLIER GROUP BY
-    /// TTL's SET rewrites a column that is a LATER TTL's group_by key, the later algorithm's input
-    /// is no longer ordered by that key and, with the streaming flush-on-key-change, it would
-    /// fragment/lose groups. Track the SET targets seen so far and tell such a later algorithm its
-    /// input is unsorted so it defers finalization to end of stream.
+    /// TTL's SET rewrites a column that a LATER TTL's group_by key derives from, the later
+    /// algorithm's input is no longer ordered by that key and, with the streaming flush-on-key-change,
+    /// it would fragment/lose groups. Worse, a derived key (a computed key such as `toStartOfDay(ts)`,
+    /// a subcolumn key such as `t.a`, or a MATERIALIZED column used as a key) still holds its pre-SET
+    /// value in the block, so the aggregation would even group by the stale key. Detect such a later
+    /// TTL by mapping its group_by keys back to their physical storage columns and comparing with the
+    /// earlier SET targets (a raw name comparison misses computed/subcolumn keys): tell its algorithm
+    /// the input is unsorted (defer finalization to end of stream) AND refresh the derived key columns
+    /// in the block before it runs.
     NameSet earlier_group_by_set_targets;
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
     {
-        bool input_sorted_by_group_by_keys = true;
-        for (const auto & key : group_by_ttl.group_by_keys)
+        const bool affected_by_earlier_set = groupByKeysAffectedByEarlierSet(
+            group_by_ttl.group_by_keys, earlier_group_by_set_targets, metadata_snapshot_, context);
+
+        ExpressionActionsPtr key_refresh_actions;
+        if (affected_by_earlier_set)
         {
-            if (earlier_group_by_set_targets.contains(key))
-            {
-                input_sorted_by_group_by_keys = false;
-                break;
-            }
+            if (auto refresh_dag = buildRefreshGroupByKeysDAG(
+                    getInputPort().getHeader(), metadata_snapshot_, group_by_ttl.group_by_keys, context))
+                key_refresh_actions = std::make_shared<ExpressionActions>(std::move(*refresh_dag));
         }
 
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
                 getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
                 old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
-                getInputPort().getHeader(), storage_, input_sorted_by_group_by_keys));
+                getInputPort().getHeader(), storage_, /*input_sorted_by_group_by_keys=*/!affected_by_earlier_set));
+        algorithm_key_refresh_actions.resize(algorithms.size());
+        algorithm_key_refresh_actions.back() = std::move(key_refresh_actions);
 
         for (const auto & set_part : group_by_ttl.set_parts)
             earlier_group_by_set_targets.insert(set_part.column_name);
@@ -209,8 +219,12 @@ void TTLTransform::consume(Chunk chunk)
             block.insert(ColumnWithTypeAndName(default_column, data.type, column));
     }
 
-    for (const auto & algorithm : algorithms)
-        algorithm->execute(block);
+    for (size_t i = 0; i < algorithms.size(); ++i)
+    {
+        if (i < algorithm_key_refresh_actions.size() && algorithm_key_refresh_actions[i])
+            algorithm_key_refresh_actions[i]->execute(block);
+        algorithms[i]->execute(block);
+    }
 
     if (block.empty())
         return;
@@ -222,8 +236,18 @@ void TTLTransform::consume(Chunk chunk)
 Chunk TTLTransform::generate()
 {
     Block block;
-    for (const auto & algorithm : algorithms)
-        algorithm->execute(block);
+    for (size_t i = 0; i < algorithms.size(); ++i)
+    {
+        /// On the end-of-stream flush, an earlier GROUP BY TTL finalizes its accumulated state into
+        /// `block` (its last group). A later GROUP BY TTL then consumes that block, so if its
+        /// group_by key was rewritten by the earlier SET, the key's derived column in the just-flushed
+        /// rows is stale and must be refreshed here too (exactly as in `consume`). Only run the refresh
+        /// once the block actually carries flushed rows; while it is still empty the algorithm only
+        /// finalizes its own state and there is nothing to refresh.
+        if (!block.empty() && i < algorithm_key_refresh_actions.size() && algorithm_key_refresh_actions[i])
+            algorithm_key_refresh_actions[i]->execute(block);
+        algorithms[i]->execute(block);
+    }
 
     if (block.empty())
         return {};

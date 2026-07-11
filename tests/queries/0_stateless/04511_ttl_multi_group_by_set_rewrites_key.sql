@@ -34,3 +34,101 @@ SELECT k, payload FROM ttl_multi_group_by ORDER BY k;
 SELECT count(), sum(payload) FROM ttl_multi_group_by;
 
 DROP TABLE ttl_multi_group_by;
+
+-- Computed key: the group_by key is toStartOfDay(ts), not a physical column. An earlier SET rewrites
+-- ts (the column the key derives from), so the later toStartOfDay(ts) key must be recomputed before the
+-- later aggregation groups by it. tgt maps each source day to one of two target days: rows must merge
+-- into 2 final groups by the post-SET day, not fragment by the stale pre-SET day.
+CREATE TABLE ttl_multi_group_by (ts DateTime, payload UInt64, tgt UInt8)
+ENGINE = MergeTree ORDER BY toStartOfDay(ts)
+TTL ts + toIntervalDay(1) GROUP BY toStartOfDay(ts) SET ts = toDateTime('2020-01-01 00:00:00') + toIntervalDay(any(tgt)), payload = sum(payload),
+    ts + toIntervalDay(1) GROUP BY toStartOfDay(ts) SET payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 2;
+
+INSERT INTO ttl_multi_group_by VALUES
+    (toDateTime('2020-03-01 00:00:00'), 1, 0), (toDateTime('2020-03-02 00:00:00'), 10, 1),
+    (toDateTime('2020-03-03 00:00:00'), 100, 0), (toDateTime('2020-03-04 00:00:00'), 1000, 1);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+SELECT ts, payload FROM ttl_multi_group_by ORDER BY ts;
+SELECT count(), sum(payload) FROM ttl_multi_group_by;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
+-- Subcolumn key: the group_by key is a subcolumn t.a of a Tuple column. An earlier SET rewrites the
+-- whole tuple t; the later t.a key must be re-extracted from the post-SET t before grouping.
+CREATE TABLE ttl_multi_group_by (t Tuple(a UInt32, b UInt32), ts DateTime, payload UInt64, newa UInt32)
+ENGINE = MergeTree ORDER BY t.a
+TTL ts + toIntervalDay(1) GROUP BY t.a SET t = tuple(any(newa), 0), payload = sum(payload),
+    ts + toIntervalDay(1) GROUP BY t.a SET payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 2;
+
+INSERT INTO ttl_multi_group_by VALUES
+    (tuple(1, 0), '2020-03-01', 1, 7), (tuple(2, 0), '2020-03-01', 10, 8),
+    (tuple(3, 0), '2020-03-01', 100, 7), (tuple(4, 0), '2020-03-01', 1000, 8);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+SELECT t.a AS a, payload FROM ttl_multi_group_by ORDER BY a;
+SELECT count(), sum(payload) FROM ttl_multi_group_by;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
+-- Non-sort-key MATERIALIZED column: d = toDate(ts) is MATERIALIZED but NOT in the sorting key. The SET
+-- rewrites ts, so the stored d would stay stale (its pre-SET any(d) value) unless recomputed. d must be
+-- refreshed to toDate(post-SET ts) in the written part.
+CREATE TABLE ttl_multi_group_by (k UInt32, ts DateTime, d Date MATERIALIZED toDate(ts), payload UInt64)
+ENGINE = MergeTree ORDER BY k
+TTL ts + toIntervalDay(1) GROUP BY k SET ts = max(ts) + toIntervalYear(5), payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO ttl_multi_group_by (k, ts, payload) VALUES (1, '2020-01-01 00:00:00', 10), (1, '2020-01-02 00:00:00', 20);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+-- d must equal toDate(ts) after the SET, not the stale pre-SET date.
+SELECT k, ts, d, payload, d = toDate(ts) AS d_is_fresh FROM ttl_multi_group_by ORDER BY k;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
+-- MATERIALIZE TTL mutation path (not merge): the same computed-key fix must hold when the GROUP BY TTL
+-- runs as a mutation. Without the fix the last group flushed at end-of-stream keeps a stale key and
+-- fragments (extra rows in the written part).
+CREATE TABLE ttl_multi_group_by (ts DateTime, payload UInt64, tgt UInt8)
+ENGINE = MergeTree ORDER BY toStartOfDay(ts)
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO ttl_multi_group_by VALUES
+    (toDateTime('2020-03-01 00:00:00'), 1, 0), (toDateTime('2020-03-02 00:00:00'), 10, 1),
+    (toDateTime('2020-03-03 00:00:00'), 100, 0), (toDateTime('2020-03-04 00:00:00'), 1000, 1);
+
+ALTER TABLE ttl_multi_group_by MODIFY TTL
+    ts + toIntervalDay(1) GROUP BY toStartOfDay(ts) SET ts = toDateTime('2020-01-01 00:00:00') + toIntervalDay(any(tgt)), payload = sum(payload),
+    ts + toIntervalDay(1) GROUP BY toStartOfDay(ts) SET payload = sum(payload)
+SETTINGS materialize_ttl_after_modify = 0;
+ALTER TABLE ttl_multi_group_by MATERIALIZE TTL SETTINGS mutations_sync = 2;
+
+SELECT ts, payload FROM ttl_multi_group_by ORDER BY ts;
+SELECT count(), sum(payload) FROM ttl_multi_group_by;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
+-- Skip index over a non-sort-key MATERIALIZED column affected by the SET: because d is recomputed
+-- before the part is written, the rebuilt minmax index over d observes the fresh value, so a query
+-- filtering on the post-SET d finds the row.
+CREATE TABLE ttl_multi_group_by (k UInt32, ts DateTime, d Date MATERIALIZED toDate(ts), payload UInt64, INDEX d_idx d TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+TTL ts + toIntervalDay(1) GROUP BY k SET ts = max(ts) + toIntervalYear(5), payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO ttl_multi_group_by (k, ts, payload) VALUES (1, '2020-01-01 00:00:00', 10), (1, '2020-01-02 00:00:00', 20);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+-- The minmax index over d must reflect the fresh d (post-SET, year 2030), so a range query on d that
+-- only the fresh value satisfies still finds the row through the skip index. A stale index (pre-SET
+-- d = 2020) would prune the granule and wrongly return 0.
+SELECT count() FROM ttl_multi_group_by WHERE d >= toDate('2025-01-01') SETTINGS force_data_skipping_indices = 'd_idx';
+
+DROP TABLE ttl_multi_group_by;

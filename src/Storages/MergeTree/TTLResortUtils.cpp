@@ -44,6 +44,65 @@ NameSet getGroupByTTLSetTargets(const StorageMetadataPtr & metadata_snapshot)
     return set_targets;
 }
 
+/// Map one `GROUP BY` key (a primary-key column NAME, which may be a computed expression such as
+/// `toStartOfDay(ts)`, a subcolumn such as `t.a`, or a physical/MATERIALIZED column) to the physical
+/// storage columns whose value it depends on. A physical column maps to itself; a MATERIALIZED
+/// column additionally pulls in the (transitive) sources of its default expression; a computed key
+/// pulls in the storage columns its primary-key expression reads.
+NameSet getGroupByKeyStorageDependencies(
+    const String & key,
+    const StorageMetadataPtr & metadata_snapshot,
+    const std::unordered_map<String, NameSet> & materialized_sources)
+{
+    const auto & columns_desc = metadata_snapshot->getColumns();
+    const auto storage_names = columns_desc.getAllPhysical().getNameSet();
+
+    /// Resolve a physical column to its own name plus, if MATERIALIZED, the transitive physical
+    /// sources of its default expression.
+    auto expand_physical = [&](const String & physical, NameSet & out)
+    {
+        NameSet frontier{physical};
+        while (!frontier.empty())
+        {
+            NameSet next;
+            for (const auto & name : frontier)
+            {
+                if (!out.insert(name).second)
+                    continue;
+                if (auto it = materialized_sources.find(name); it != materialized_sources.end())
+                    for (const auto & source : it->second)
+                        if (!out.contains(source))
+                            next.insert(source);
+            }
+            frontier = std::move(next);
+        }
+    };
+
+    NameSet deps;
+    if (storage_names.contains(key))
+    {
+        expand_physical(key, deps);
+    }
+    else if (auto key_in_storage = Nested::tryGetColumnNameInStorage(key, storage_names))
+    {
+        /// Subcolumn key such as `t.a` -> physical column `t`.
+        expand_physical(*key_in_storage, deps);
+    }
+    else if (metadata_snapshot->hasPrimaryKey())
+    {
+        /// Computed key such as `toStartOfDay(ts)`: pull the storage columns the primary-key
+        /// expression reads (mapped through storage for subcolumn reads).
+        for (const auto & source : metadata_snapshot->getPrimaryKey().expression->getRequiredColumns())
+        {
+            if (storage_names.contains(source))
+                expand_physical(source, deps);
+            else if (auto source_in_storage = Nested::tryGetColumnNameInStorage(source, storage_names))
+                expand_physical(*source_in_storage, deps);
+        }
+    }
+    return deps;
+}
+
 /// Map each sorting-key dependency to its physical storage column (a dependency may be a
 /// subcolumn, e.g. `t.a` for `ORDER BY t.a`, whose storage column is `t`), so it can be compared
 /// with a `SET` target, which always names a physical column.
@@ -169,6 +228,32 @@ NameSet getMaterializedColumnsAffectedBySet(
 
 }
 
+NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
+{
+    NamesAndTypesList affected;
+
+    if (metadata_snapshot->getGroupByTTLs().empty())
+        return affected;
+
+    const auto & columns_desc = metadata_snapshot->getColumns();
+    const auto set_targets = getGroupByTTLSetTargets(metadata_snapshot);
+    const auto materialized_sources = getMaterializedColumnSourcesMap(metadata_snapshot, context);
+
+    /// Every MATERIALIZED column (transitively) reading a `SET` target holds a stale stored value:
+    /// the aggregation rewrites the source but nothing recomputes the materialized column.
+    const auto affected_materialized = getMaterializedColumnsAffectedBySet(materialized_sources, set_targets);
+
+    /// Return in physical column order so recomputation is deterministic (chained defaults such as
+    /// `y MATERIALIZED toDate(x)`, `z MATERIALIZED toYYYYMM(y)` are all present, and
+    /// `evaluateMissingDefaults` resolves the dependency order between them).
+    for (const auto & column : columns_desc.getAllPhysical())
+        if (affected_materialized.contains(column.name))
+            affected.emplace_back(column.name, column.type);
+
+    return affected;
+}
+
 NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
@@ -219,6 +304,106 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
             affected.emplace_back(column.name, column.type);
 
     return affected;
+}
+
+static ActionsDAG buildRecomputeSortKeyExpressionDAG(
+    const Block & header,
+    const StorageMetadataPtr & metadata_snapshot,
+    const NamesAndTypesList & storage_columns,
+    const ContextPtr & context);
+
+bool groupByKeysAffectedByEarlierSet(
+    const Names & group_by_keys,
+    const NameSet & earlier_set_targets,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context)
+{
+    if (earlier_set_targets.empty())
+        return false;
+
+    const auto materialized_sources = getMaterializedColumnSourcesMap(metadata_snapshot, context);
+    for (const auto & key : group_by_keys)
+    {
+        auto deps = getGroupByKeyStorageDependencies(key, metadata_snapshot, materialized_sources);
+        for (const auto & dep : deps)
+            if (earlier_set_targets.contains(dep))
+                return true;
+    }
+    return false;
+}
+
+std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
+    const Block & header,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Names & group_by_keys,
+    const ContextPtr & context)
+{
+    if (!metadata_snapshot->hasPrimaryKey())
+        return std::nullopt;
+
+    const auto & columns_desc = metadata_snapshot->getColumns();
+    const auto storage_names = columns_desc.getAllPhysical().getNameSet();
+    const auto set_targets = getGroupByTTLSetTargets(metadata_snapshot);
+    const auto materialized_sources = getMaterializedColumnSourcesMap(metadata_snapshot, context);
+    const auto affected_materialized = getMaterializedColumnsAffectedBySet(materialized_sources, set_targets);
+
+    /// Split this TTL's group_by keys (which are primary-key column NAMES) into the two derived
+    /// forms whose in-stream value goes stale after an earlier `SET`:
+    ///  - `expression_keys`: computed or subcolumn keys such as `toStartOfDay(ts)` or `t.a` -- not a
+    ///    physical column, recomputed from the primary-key expression.
+    ///  - `materialized_keys`: a physical MATERIALIZED column used as a key (e.g. `ORDER BY d` with
+    ///    `d MATERIALIZED toDate(ts)`, `SET ts = ...`) -- recomputed from its default expression.
+    /// A plain physical key (including the `SET` target itself, which the earlier aggregation already
+    /// rewrote in the block) needs no refresh.
+    NameSet expression_keys;
+    bool has_materialized_key = false;
+    for (const auto & key : group_by_keys)
+    {
+        if (storage_names.contains(key))
+        {
+            if (affected_materialized.contains(key))
+                has_materialized_key = true;
+        }
+        else
+        {
+            expression_keys.insert(key);
+        }
+    }
+
+    if (expression_keys.empty() && !has_materialized_key)
+        return std::nullopt;
+
+    std::optional<ActionsDAG> result;
+
+    /// Refresh affected MATERIALIZED columns first (the full transitive set, so a materialized key
+    /// computed from another materialized column is fed fresh inputs), then recompute the
+    /// expression keys from them and the post-`SET` physical columns.
+    if (has_materialized_key)
+    {
+        auto affected_materialized_columns = getGroupByTTLSetAffectedMaterializedColumns(metadata_snapshot, context);
+        if (!affected_materialized_columns.empty())
+            result = buildRecomputeMaterializedColumnsDAG(header, affected_materialized_columns, columns_desc, context);
+    }
+
+    if (!expression_keys.empty())
+    {
+        const Block & expr_input_header = result ? Block(result->getResultColumns()) : header;
+
+        /// A `GROUP BY` key is a prefix of the primary key, which is a prefix of the sorting key, so
+        /// a computed/subcolumn key such as `toStartOfDay(ts)` or `t.a` IS a sorting-key expression
+        /// column. Reuse the sorting-key recompute: it recomputes every sorting-key expression column
+        /// from the post-`SET` storage columns (extracting subcolumns as needed) while passing through
+        /// every other stream column, so the refreshed key is available and no source column is lost.
+        auto recompute_keys_dag = buildRecomputeSortKeyExpressionDAG(
+            expr_input_header, metadata_snapshot, columns_desc.getAllPhysical(), context);
+
+        if (result)
+            result = ActionsDAG::merge(std::move(*result), std::move(recompute_keys_dag));
+        else
+            result = std::move(recompute_keys_dag);
+    }
+
+    return result;
 }
 
 bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
@@ -288,28 +473,12 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
         ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*recompute_dag)));
 }
 
-void resortPipelineAfterTTLGroupBySet(
-    QueryPipelineBuilder & builder,
+static ActionsDAG buildRecomputeSortKeyExpressionDAG(
+    const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
     const NamesAndTypesList & storage_columns,
     const ContextPtr & context)
 {
-    /// If a MATERIALIZED sort-key column's source was rewritten by the `SET` (e.g.
-    /// `d MATERIALIZED toDate(ts)`, `ORDER BY d`, `... SET ts = ...`), the stored `d` in the stream
-    /// is stale. Recompute such columns from their default expression before recomputing the
-    /// sorting-key expression and re-sorting, otherwise the re-sort would key on the stale value.
-    auto materialized_sort_key_columns = getGroupByTTLSetAffectedMaterializedSortKeyColumns(metadata_snapshot, context);
-    if (!materialized_sort_key_columns.empty())
-    {
-        auto recompute_dag = buildRecomputeMaterializedColumnsDAG(
-            builder.getHeader(), materialized_sort_key_columns, metadata_snapshot->getColumns(), context);
-        builder.addSimpleTransform([&](const SharedHeader & header)
-        {
-            return std::make_shared<ExpressionTransform>(
-                header, std::make_shared<ExpressionActions>(recompute_dag.clone()));
-        });
-    }
-
     /// Recompute the sorting-key expression columns from the post-SET values, overwriting the
     /// now-stale ones already materialized in the stream before the TTL step.
     const auto & sorting_key_expression = metadata_snapshot->getSortingKey().expression;
@@ -320,14 +489,13 @@ void resortPipelineAfterTTLGroupBySet(
     /// (non-storage) sort-key columns are dropped: the storage columns the expression reads from
     /// (e.g. `ts`, `k`, or a `Tuple` column `t` whose subcolumn `t.a` is in the sorting key) must
     /// stay so they can feed the recomputation.
-    const auto & current_header = builder.getHeader();
     const auto storage_column_names = storage_columns.getNameSet();
     NameSet columns_to_recompute;
     for (const auto & name : sorting_key_expression_dag.getNames())
         if (!storage_column_names.contains(name))
             columns_to_recompute.insert(name);
 
-    ActionsDAG drop_stale_dag(current_header.getColumnsWithTypeAndName());
+    ActionsDAG drop_stale_dag(header.getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs kept_outputs;
     kept_outputs.reserve(drop_stale_dag.getOutputs().size());
     for (const auto * output : drop_stale_dag.getOutputs())
@@ -336,21 +504,62 @@ void resortPipelineAfterTTLGroupBySet(
     drop_stale_dag.getOutputs() = std::move(kept_outputs);
 
     /// When the sorting key depends on a subcolumn (e.g. `ORDER BY t.a`), the stale `t.a`
-    /// materialized before the TTL step is still in `current_header`. Hide the stale computed
+    /// materialized before the TTL step is still in `header`. Hide the stale computed
     /// sort-key columns from the subcolumn extractor so it re-extracts them from the post-SET
     /// physical columns; otherwise it would treat the stale `t.a` as available, skip
     /// re-extraction, and the re-sort would key on the pre-SET value.
     Block header_for_extraction;
-    for (const auto & column : current_header)
+    for (const auto & column : header)
         if (!columns_to_recompute.contains(column.name))
             header_for_extraction.insert(column);
 
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
         header_for_extraction, sorting_key_expression_dag.getRequiredColumnsNames(), context);
 
-    auto recalculate_sorting_key_dag = ActionsDAG::merge(
+    return ActionsDAG::merge(
         std::move(drop_stale_dag),
         ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_expression_dag)));
+}
+
+bool recomputeAffectedMaterializedColumns(
+    QueryPipelineBuilder & builder,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context)
+{
+    /// If a MATERIALIZED column's source was rewritten by the `SET` (e.g. `d MATERIALIZED toDate(ts)`,
+    /// `... SET ts = ...`), the stored `d` in the stream is stale. Recompute EVERY affected
+    /// MATERIALIZED column so the written part (and any rebuilt skip index / projection reading them)
+    /// is not stale. Independent of the sort-key re-sort: it must run even when no sort-key column is
+    /// assigned. Returns true when a recompute step was added.
+    auto affected_materialized_columns = getGroupByTTLSetAffectedMaterializedColumns(metadata_snapshot, context);
+    if (affected_materialized_columns.empty())
+        return false;
+
+    auto recompute_dag = buildRecomputeMaterializedColumnsDAG(
+        builder.getHeader(), affected_materialized_columns, metadata_snapshot->getColumns(), context);
+    builder.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<ExpressionTransform>(
+            header, std::make_shared<ExpressionActions>(recompute_dag.clone()));
+    });
+    return true;
+}
+
+void resortPipelineAfterTTLGroupBySet(
+    QueryPipelineBuilder & builder,
+    const StorageMetadataPtr & metadata_snapshot,
+    const NamesAndTypesList & storage_columns,
+    const ContextPtr & context)
+{
+    /// A MATERIALIZED sort-key column whose source the `SET` rewrote (e.g. `d MATERIALIZED toDate(ts)`,
+    /// `ORDER BY d`, `... SET ts = ...`) is stale in the stream; recompute the affected MATERIALIZED
+    /// columns before recomputing the sorting-key expression and re-sorting, otherwise the re-sort
+    /// would key on the stale value. `recomputeAffectedMaterializedColumns` covers every affected
+    /// MATERIALIZED column (including the sort-key subset), so nothing else is needed here.
+    recomputeAffectedMaterializedColumns(builder, metadata_snapshot, context);
+
+    auto recalculate_sorting_key_dag
+        = buildRecomputeSortKeyExpressionDAG(builder.getHeader(), metadata_snapshot, storage_columns, context);
 
     builder.addSimpleTransform([&](const SharedHeader & header)
     {

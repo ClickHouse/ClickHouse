@@ -3224,34 +3224,39 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
 
-        /// `TTL ... GROUP BY ... SET` can assign a column that the sorting key depends on.
-        /// The aggregation emits groups in input order, so after such a SET the stream is no
-        /// longer ordered by the sorting key, and the materialized sort-key expression columns
-        /// (e.g. `toStartOfDay(ts)`) still hold their pre-SET values. Recompute the sort-key
-        /// expression from the updated columns and re-sort, so the written part is consistent
-        /// with its primary index. Gated so it is a no-op for every other merge.
+        /// `TTL ... GROUP BY ... SET` can leave columns stale in the written part. Two independent
+        /// repairs, each gated so they are a no-op for every other merge:
+        ///  (1) A MATERIALIZED column whose source the `SET` rewrote (e.g. `d MATERIALIZED toDate(ts)`,
+        ///      `... SET ts = ...`) keeps its pre-`SET` `any(col)` value. Recompute EVERY affected
+        ///      MATERIALIZED column (not only the sort-key ones), so the stored column and any rebuilt
+        ///      skip index / projection reading it are correct. Runs whenever a `GROUP BY` TTL `SET`
+        ///      affects a MATERIALIZED column, independent of the sorting key.
+        ///  (2) If the `SET` assigns a column the sorting key depends on, the aggregation emits groups
+        ///      in input order, so the stream is no longer ordered by the sorting key. Recompute the
+        ///      sort-key expression from the updated columns and re-sort, so the written part is
+        ///      consistent with its primary index.
         const auto & merge_context = global_ctx->data->getContext();
+
+        /// (1) Recompute affected MATERIALIZED columns. Must precede the sort-key recompute below so
+        /// a MATERIALIZED sort-key column feeds the recomputation with its post-`SET` value.
+        auto affected_materialized_columns
+            = getGroupByTTLSetAffectedMaterializedColumns(global_ctx->metadata_snapshot, merge_context);
+        if (!affected_materialized_columns.empty())
+        {
+            auto recompute_materialized_step = std::make_unique<ExpressionStep>(
+                merge_parts_query_plan.getCurrentHeader(),
+                buildRecomputeMaterializedColumnsDAG(
+                    *merge_parts_query_plan.getCurrentHeader(),
+                    affected_materialized_columns,
+                    global_ctx->metadata_snapshot->getColumns(),
+                    merge_context));
+            recompute_materialized_step->setStepDescription("Recompute materialized columns after TTL GROUP BY SET");
+            merge_parts_query_plan.addStep(std::move(recompute_materialized_step));
+        }
+
+        /// (2) Sort-key recompute + re-sort, only when a sort-key column is assigned.
         if (groupByTTLAssignsSortKeyColumn(global_ctx->metadata_snapshot, merge_context))
         {
-            /// If a MATERIALIZED sort-key column's source was rewritten by the `SET` (e.g.
-            /// `d MATERIALIZED toDate(ts)`, `ORDER BY d`, `... SET ts = ...`), the stored `d` in the
-            /// stream is stale. Recompute such columns from their default expression first, so the
-            /// sorting-key recompute and re-sort below key on the post-SET value.
-            auto materialized_sort_key_columns
-                = getGroupByTTLSetAffectedMaterializedSortKeyColumns(global_ctx->metadata_snapshot, merge_context);
-            if (!materialized_sort_key_columns.empty())
-            {
-                auto recompute_materialized_step = std::make_unique<ExpressionStep>(
-                    merge_parts_query_plan.getCurrentHeader(),
-                    buildRecomputeMaterializedColumnsDAG(
-                        *merge_parts_query_plan.getCurrentHeader(),
-                        materialized_sort_key_columns,
-                        global_ctx->metadata_snapshot->getColumns(),
-                        merge_context));
-                recompute_materialized_step->setStepDescription("Recompute materialized sorting key columns after TTL GROUP BY SET");
-                merge_parts_query_plan.addStep(std::move(recompute_materialized_step));
-            }
-
             /// Recompute the sorting-key expression columns from the post-SET values, overwriting
             /// the now-stale ones already present in the stream.
             const auto & sorting_key_expression = global_ctx->metadata_snapshot->getSortingKey().expression;

@@ -2376,6 +2376,13 @@ private:
                 if (resort_after_group_by_ttl)
                     resortPipelineAfterTTLGroupBySet(
                         *builder, ctx->metadata_snapshot, ctx->new_data_part->getColumns(), ctx->context);
+                else
+                    /// Even without a sort-key re-sort, a `SET` can leave MATERIALIZED columns stale
+                    /// (`TTLAggregationAlgorithm` keeps them as `any(col)` from the pre-`SET` rows).
+                    /// Recompute them before the skip-index expressions so neither the stored column
+                    /// nor a rebuilt skip index / projection is written stale. (`resortPipelineAfterTTLGroupBySet`
+                    /// already does this in its branch.)
+                    recomputeAffectedMaterializedColumns(*builder, ctx->metadata_snapshot, ctx->context);
                 add_skip_indices_expression();
             }
         }
