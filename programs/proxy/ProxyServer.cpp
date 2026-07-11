@@ -86,7 +86,7 @@ int connectionFiber(HandlerParams * params) noexcept
 #if USE_SSL
             client = FiberSocket::adoptTLS(params->fd, ctx.server_tls_context);
 #else
-            ::close(params->fd);
+            [[maybe_unused]] int err = ::close(params->fd);
             return 0;
 #endif
         }
@@ -113,7 +113,7 @@ void spawnConnection(int fd, const FrontendContext * ctx)
     {
         LOG_WARNING(ctx->log, "Cannot allocate a fiber for a new connection; dropping it");
         delete future;
-        ::close(fd);
+        [[maybe_unused]] int err = ::close(fd);
         return;
     }
     if (!future->subscribe(+[](silk::FiberFuture * f) noexcept { delete f; }))

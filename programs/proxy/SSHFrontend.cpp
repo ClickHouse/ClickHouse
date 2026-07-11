@@ -274,7 +274,7 @@ ssh_channel onChannelOpen(ssh_session session, void * userdata)
 
 void runSSHSession(int owned_fd, const FrontendContext & ctx)
 {
-    SCOPE_EXIT({ ::close(owned_fd); });
+    SCOPE_EXIT({ [[maybe_unused]] int err = ::close(owned_fd); });
 
     ssh::SSHBind bind;
     bind.disableDefaultConfig();
@@ -363,7 +363,7 @@ void handleSSH(int fd, const FrontendContext & ctx)
     if (ctx.config.ssh.backend_key_file.empty())
     {
         LOG_ERROR(ctx.log, "An SSH listener requires <proxy><ssh><backend_key_file> to authenticate to backends");
-        ::close(fd);
+        [[maybe_unused]] int err = ::close(fd);
         return;
     }
 
@@ -389,7 +389,7 @@ void handleSSH(int fd, const FrontendContext & ctx)
 void handleSSH(int fd, const FrontendContext & ctx)
 {
     LOG_ERROR(ctx.log, "SSH proxying requires a build with libssh (USE_SSH) on Linux");
-    ::close(fd);
+    [[maybe_unused]] int err = ::close(fd);
 }
 
 #endif

@@ -10,6 +10,9 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+
 #include <base/scope_guard.h>
 
 #include <silk/fibers/fiber.h>
@@ -18,8 +21,7 @@
 #include <Poco/String.h>
 #include <Poco/URI.h>
 
-#include <fstream>
-#include <sstream>
+#include <fmt/format.h>
 
 
 namespace DB::Proxy
@@ -30,13 +32,9 @@ namespace
 
 void sendResponse(FiberSocket & client, int code, const String & reason, const String & content_type, const String & body)
 {
-    std::ostringstream out;
-    out << "HTTP/1.1 " << code << ' ' << reason << "\r\n"
-        << "Content-Type: " << content_type << "\r\n"
-        << "Content-Length: " << body.size() << "\r\n"
-        << "Connection: close\r\n\r\n"
-        << body;
-    const String data = out.str();
+    const String data = fmt::format(
+        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        code, reason, content_type, body.size(), body);
     try
     {
         client.sendAll(data.data(), data.size());
@@ -79,12 +77,14 @@ void serveStaticPage(FiberSocket & client, const StaticPageConfig & page)
     {
         /// Reading a file from disk blocks; step out of the cooperative scheduler while doing it.
         silk::FiberScheduler::ThreadModeScope thread_mode;
-        std::ifstream file(page.file, std::ios::binary);
-        if (file)
+        try
         {
-            std::ostringstream contents;
-            contents << file.rdbuf();
-            body = contents.str();
+            ReadBufferFromFile file(page.file);
+            readStringUntilEOF(body, file);
+        }
+        catch (...)  // NOLINT(bugprone-empty-catch)
+        {
+            /// A missing or unreadable file is Ok: it is reported as 404 below.
         }
     }
 
@@ -107,10 +107,18 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
         return;
 
     /// Method SP request-target SP HTTP-version.
-    std::istringstream request_stream(request_line);
-    String method;
+    const size_t method_end = request_line.find(' ');
+    const String method = request_line.substr(0, method_end);
     String target;
-    request_stream >> method >> target;
+    if (method_end != String::npos)
+    {
+        const size_t target_begin = request_line.find_first_not_of(' ', method_end);
+        if (target_begin != String::npos)
+        {
+            const size_t target_end = request_line.find(' ', target_begin);
+            target = request_line.substr(target_begin, target_end - target_begin);
+        }
+    }
     if (method.empty() || target.empty())
     {
         sendResponse(client, 400, "Bad Request", "text/plain; charset=UTF-8", "Bad request\n");

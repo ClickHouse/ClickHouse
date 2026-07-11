@@ -136,8 +136,8 @@ int spliceLoop(SpliceDirection * d) noexcept
                     d->backend->addBytesFromClient(in_bytes);
             }
         }
-        ::close(pipe_fd[0]);
-        ::close(pipe_fd[1]);
+        [[maybe_unused]] int err0 = ::close(pipe_fd[0]);
+        [[maybe_unused]] int err1 = ::close(pipe_fd[1]);
     }
 
     endRelay(*d->finished, d->client_fd, d->backend_fd);

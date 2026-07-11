@@ -65,7 +65,7 @@ String buildStatusJSON(const Router & router)
         describePool(*pools, *pool);
     root.set("pools", pools);
 
-    std::ostringstream out;
+    std::ostringstream out;    // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     root.stringify(out, 2);
     return out.str();
 }

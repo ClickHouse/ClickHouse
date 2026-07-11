@@ -7,7 +7,6 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #include <fstream>
-#include <sstream>
 
 
 namespace DB
@@ -96,12 +95,15 @@ void collectKey(const String & line, std::unordered_set<String> & keys)
     if (trimmed.empty() || trimmed[0] == '#')
         return;
 
-    std::istringstream stream(trimmed);
-    String type;
-    String base64;
-    stream >> type >> base64;
-    if (!type.empty() && !base64.empty())
-        keys.insert(type + " " + base64);
+    const size_t type_end = trimmed.find_first_of(" \t");
+    if (type_end == String::npos)
+        return;
+    const size_t base64_begin = trimmed.find_first_not_of(" \t", type_end);
+    if (base64_begin == String::npos)
+        return;
+    const size_t base64_end = trimmed.find_first_of(" \t", base64_begin);
+
+    keys.insert(trimmed.substr(0, type_end) + " " + trimmed.substr(base64_begin, base64_end - base64_begin));
 }
 
 }
