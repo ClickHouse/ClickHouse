@@ -96,11 +96,6 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
-}
-
 namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
@@ -1050,6 +1045,13 @@ try
     String query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
     UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
+    /// Make the hash available to the parts of the insert that account `NORMALIZED_QUERY_HASH` quotas
+    /// but do not otherwise have it: the `WRITTEN_BYTES` pre-check in `InterpreterInsertQuery` and the
+    /// `CountingTransform` built from this context. The normal query path does this in `executeQuery`,
+    /// but async insert flushes build the interpreter directly, so without this every async insert
+    /// pattern would charge `WRITTEN_BYTES` to hash `0` and share a single bucket.
+    insert_context->setNormalizedQueryHash(normalized_query_hash);
+
     /// We add it to the process list so
     /// a) it appears in system.processes
     /// b) can be cancelled if we want to
@@ -1175,13 +1177,14 @@ try
             pipeline,
             interpreter.get(),
             internal,
+            /*log_as_internal=*/ internal,
             query_database,
             query_table,
             async_insert);
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal, /*log_as_internal=*/ internal);
 
         if (async_insert_log)
         {
@@ -1207,7 +1210,7 @@ try
         queue_shard_flush_time_history.updateWithCurrentTime();
 
         LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
-        logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
+        logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal, /*log_as_internal=*/ internal);
 
         /// Finish entries (and notify waiting clients) after logging,
         /// so that SYSTEM FLUSH LOGS issued right after the async insert
@@ -1256,7 +1259,7 @@ try
     catch (...)
     {
         bool log_error = true;
-        logQueryException(query_log_elem, insert_context, start_watch, key.query, query_span, internal, log_error);
+        logQueryException(query_log_elem, insert_context, start_watch, key.query, query_span, internal, /*log_as_internal=*/ internal, log_error);
         if (!log_elements.empty())
         {
             auto exception = getCurrentExceptionMessage(false);
@@ -1327,9 +1330,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         data->entries.size(),
         std::move(adding_defaults_transform));
 
-    auto deduplication_info = DeduplicationInfo::create(
-        /*async_insert=*/true,
-        insert_context->getServerSettings()[ServerSetting::insert_deduplication_version].value);
+    auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
 
     for (const auto & entry : data->entries)
     {
@@ -1372,9 +1373,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
     LogFunc && add_to_async_insert_log)
 {
     size_t total_rows = 0;
-    auto deduplication_info = DeduplicationInfo::create(
-        /*async_insert=*/true,
-        context_->getServerSettings()[ServerSetting::insert_deduplication_version].value);
+    auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
     auto result_columns = header.cloneEmptyColumns();
 
     for (const auto & entry : data->entries)

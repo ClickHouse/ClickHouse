@@ -151,7 +151,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     else
         tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, 1.0);
 
-    if (settings[Setting::use_text_index_header_cache])
+    use_global_header_cache = settings[Setting::use_text_index_header_cache];
+    if (use_global_header_cache)
         header_cache = context_->getTextIndexHeaderCache();
     else
         header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);
@@ -1004,21 +1005,26 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        /// Unlike hasToken, hasTokenOrNull is never rewritten on the direct-read / row-scan path, so the
-        /// pre/postprocessor is not applied to its row-level needle. Using the index here (where
-        /// stringToTokens does apply them, e.g. mapping a dropped token to the empty sentinel that prunes
-        /// every granule) would disagree with the row-level result. Bail out so the index is not used for
-        /// hasTokenOrNull when a pre/postprocessor is configured; the plain index path is unaffected.
+        // hasToken and hasTokenOrNull are legacy functions which assume splitByNonAlpha as
+        /// tokenizer. The text index can answer it only correctly if this is the index tokenizer.
+        /// In all other cases, bypass the index.
+        if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
+            return false;
+
+        /// Unlike hasToken, hasTokenOrNull is never rewritten to direct-read, so the pre/postprocessor
+        /// is also not applied to its needle. Using the index here (where stringToTokens does apply them,
+        /// e.g. mapping a dropped token to the empty sentinel that prunes every granule) would disagree
+        /// with the scan result. Bail out so the index is not used for hasTokenOrNull when a
+        /// pre/postprocessor is configured; the plain index path is unaffected.
         if (function_name == "hasTokenOrNull" && (has_preprocessor || has_postprocessor))
             return false;
 
-        /// stringToTokens applies both preprocessor and postprocessor.
-        /// A needle containing a token separator is invalid for hasToken and raises BAD_ARGUMENTS during a
-        /// brute-force scan. hasToken uses Exact direct read, so the index would tokenize the needle and
-        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception;
-        /// bypass the index so the row-level function runs. hasTokenOrNull is not affected: it returns NULL
-        /// instead of throwing and only uses the index for granule pruning, which never changes its result.
-        /// A separator is any ASCII non-alphanumeric character, matching HasTokenImpl.
+        /// A needle containing a token separator is invalid for `hasToken` and the brute-force scan raises
+        /// BAD_ARGUMENTS for this. hasToken uses Exact direct read, so the index would tokenize the needle and
+        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception.
+        /// Therefore bypass the index and do a brute-force scan. hasTokenOrNull is not affected: it returns NULL
+        ///
+        /// A separator is any ASCII non-alphanumeric character.
         if (function_name == "hasToken"
             && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
             return false;
@@ -1041,6 +1047,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
                     return false;
             }
+            /// - If the needle does contain word characters (e.g. "abc" with ngrams(4)), it is valid but too short for the index's tokenizer:
+            ///   Fall through but push "" so all granules are pruned and the query returns 0 rows.
             tokens.push_back("");
         }
 

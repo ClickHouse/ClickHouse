@@ -1,0 +1,155 @@
+---
+title: 'Créer un utilisateur AWS IAM et un bucket S3'
+description: 'Créer un utilisateur AWS IAM et un bucket S3.'
+keywords: ['AWS', 'IAM', 'bucket S3']
+slug: /integrations/s3/creating-iam-user-and-s3-bucket
+sidebarTitle: 'Créer un utilisateur AWS IAM et un bucket S3'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+> Ce guide explique comment configurer un utilisateur IAM et un bucket S3 dans AWS,
+> une étape préalable pour effectuer des sauvegardes vers S3 ou configurer ClickHouse afin de
+> stocker des données sur S3
+
+<div id="create-an-aws-iam-user">
+  ## Créer un utilisateur AWS IAM
+</div>
+
+Dans cette procédure, nous allons créer un utilisateur de compte de service, et non un utilisateur de connexion.
+
+1. Connectez-vous à l&#39;AWS IAM Management Console.
+
+2. Dans l&#39;onglet `Users`, sélectionnez `Create user`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-1.webp" alt="AWS IAM Management Console - Ajout d'un nouvel utilisateur" />
+
+3. Saisissez un nom d&#39;utilisateur
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-2.webp" alt="AWS IAM Management Console - Ajout d'un nouvel utilisateur" />
+
+4. Sélectionnez `Next`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-3.webp" alt="AWS IAM Management Console - Ajout d'un nouvel utilisateur" />
+
+5. Sélectionnez `Next`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-4.webp" alt="AWS IAM Management Console - Ajout d'un nouvel utilisateur" />
+
+6. Sélectionnez `Create user`
+
+L&#39;utilisateur est maintenant créé.
+Cliquez sur l&#39;utilisateur que vous venez de créer
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-5.webp" alt="AWS IAM Management Console - Ajout d'un nouvel utilisateur" />
+
+7. Sélectionnez `Create access key`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-6.webp" alt="AWS IAM Management Console - Ajout d'un nouvel utilisateur" />
+
+8. Sélectionnez `Application running outside AWS`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-7.webp" alt="AWS IAM Management Console - Ajout d'un nouvel utilisateur" />
+
+9. Sélectionnez `Create access key`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-8.webp" alt="AWS IAM Management Console - Ajout d'un nouvel utilisateur" />
+
+10. Téléchargez votre clé d&#39;accès et votre clé secrète au format .csv pour les utiliser ultérieurement
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-9.webp" alt="AWS IAM Management Console - Ajout d'un nouvel utilisateur" />
+
+<div id="create-an-s3-bucket">
+  ## Créer un bucket S3
+</div>
+
+1. Dans la section des buckets S3, sélectionnez **Create bucket**
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-10.webp" alt="AWS IAM Management Console - Ajout d’un nouvel utilisateur" />
+
+2. Saisissez un nom de bucket et laissez les autres options par défaut
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-11.webp" alt="AWS IAM Management Console - Ajout d’un nouvel utilisateur" />
+
+<Note>
+  Le nom du bucket doit être unique à l’échelle d’AWS, et pas seulement au sein de l’organisation, sinon une erreur sera renvoyée.
+</Note>
+
+3. Laissez `Block all Public Access` activé ; l’accès public n’est pas nécessaire.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-12.webp" alt="AWS IAM Management Console - Ajout d’un nouvel utilisateur" />
+
+4. Sélectionnez **Create Bucket** en bas de la page
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-13.webp" alt="AWS IAM Management Console - Ajout d’un nouvel utilisateur" />
+
+5. Sélectionnez le lien, copiez l’ARN et enregistrez-le pour l’utiliser lors de la configuration de la stratégie d’accès du bucket
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-14.webp" alt="AWS IAM Management Console - Ajout d’un nouvel utilisateur" />
+
+6. Une fois le bucket créé, repérez le nouveau bucket S3 dans la liste des buckets S3 et sélectionnez son nom pour accéder à la page ci-dessous :
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-15.webp" alt="AWS IAM Management Console - Ajout d’un nouvel utilisateur" />
+
+7. Sélectionnez `Create folder`
+
+8. Saisissez un nom de dossier qui servira de cible pour le S3 disk ou le Backup de ClickHouse, puis sélectionnez `Create folder` en bas de la page
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-16.webp" alt="AWS IAM Management Console - Ajout d’un nouvel utilisateur" />
+
+9. Le dossier doit maintenant apparaître dans la liste du bucket
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-17.webp" alt="AWS IAM Management Console - Ajout d’un nouvel utilisateur" />
+
+10. Cochez la case du nouveau dossier, puis cliquez sur `Copy URL`. Enregistrez l’URL pour l’utiliser dans la Storage configuration de ClickHouse à l’étape suivante.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-18.webp" alt="AWS IAM Management Console - Ajout d’un nouvel utilisateur" />
+
+11. Sélectionnez l’onglet **Permissions** et cliquez sur le bouton **Edit** dans la section **Bucket Policy**
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-19.webp" alt="AWS IAM Management Console - Ajout d’un nouvel utilisateur" />
+
+12. Ajoutez une stratégie de bucket, par exemple comme ci-dessous
+
+```json
+{
+    "Version": "2012-10-17",
+    "Id": "Policy123456",
+    "Statement": [
+        {
+            "Sid": "abc123",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::782985192762:user/docs-s3-user"
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::ch-docs-s3-bucket",
+                "arn:aws:s3:::ch-docs-s3-bucket/*"
+            ]
+        }
+    ]
+}
+```
+
+<Note>
+  La stratégie ci-dessus permet d’effectuer toutes les actions sur le bucket
+</Note>
+
+| Paramètre | Description                                                       | Valeur d’exemple                                                                         |
+| --------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Version   | Version de l’interpréteur de stratégies, à laisser telle quelle   | 2012-10-17                                                                               |
+| Sid       | Identifiant de stratégie défini par l’utilisateur                 | abc123                                                                                   |
+| Effect    | Indique si les requêtes utilisateur seront autorisées ou refusées | Allow                                                                                    |
+| Principal | Les comptes ou l’utilisateur qui seront autorisés                 | arn:aws:iam::782985192762:user/docs-s3-user                                              |
+| Action    | Quelles opérations sont autorisées sur le bucket                  | s3:*                                                                                     |
+| Resource  | Sur quelles ressources du bucket les opérations seront autorisées | &quot;arn:aws:s3:::ch-docs-s3-bucket&quot;, &quot;arn:aws:s3:::ch-docs-s3-bucket/*&quot; |
+
+<Note>
+  Vous devriez travailler avec votre équipe de sécurité pour déterminer les autorisations à utiliser ; considérez-les comme un point de départ.
+  Pour plus d’informations sur les stratégies et les paramètres, consultez la documentation AWS :
+  https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
+</Note>
+
+13. Enregistrez la configuration de la stratégie
