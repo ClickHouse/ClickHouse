@@ -40,11 +40,11 @@ ORDER BY (id);
 INSERT INTO tab_arr VALUES(1, ['bar']), (2, ['foo']);
 
 SELECT '-- has() with empty needle (index vs no index)';
-SELECT count() FROM tab_arr WHERE has(arr, '') SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab_arr WHERE has(arr, '') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 SELECT count() FROM tab_arr WHERE has(arr, '') SETTINGS use_skip_indexes = 0;
 SELECT '-- has() with present/absent needle (index)';
-SELECT count() FROM tab_arr WHERE has(arr, 'foo') SETTINGS use_skip_indexes = 1;
-SELECT count() FROM tab_arr WHERE has(arr, 'baz') SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab_arr WHERE has(arr, 'foo') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT count() FROM tab_arr WHERE has(arr, 'baz') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE tab_arr;
 
@@ -63,19 +63,19 @@ ORDER BY (id);
 INSERT INTO tab_map VALUES(1, map('k1', 'v1')), (2, map('k2', 'v2'));
 
 SELECT '-- mapContainsKey/Value with empty needle (index vs no index)';
-SELECT count() FROM tab_map WHERE mapContainsKey(m, '') SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab_map WHERE mapContainsKey(m, '') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 SELECT count() FROM tab_map WHERE mapContainsKey(m, '') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab_map WHERE mapContainsValue(m, '') SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab_map WHERE mapContainsValue(m, '') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 SELECT count() FROM tab_map WHERE mapContainsValue(m, '') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab_map WHERE mapContainsKeyLike(m, '') SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab_map WHERE mapContainsKeyLike(m, '') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 SELECT count() FROM tab_map WHERE mapContainsKeyLike(m, '') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab_map WHERE mapContainsValueLike(m, '') SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab_map WHERE mapContainsValueLike(m, '') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 SELECT count() FROM tab_map WHERE mapContainsValueLike(m, '') SETTINGS use_skip_indexes = 0;
 
 SELECT '-- mapContainsKey/Value with present/absent needle (index)';
-SELECT count() FROM tab_map WHERE mapContainsKey(m, 'k1') SETTINGS use_skip_indexes = 1;
-SELECT count() FROM tab_map WHERE mapContainsKey(m, 'nope') SETTINGS use_skip_indexes = 1;
-SELECT count() FROM tab_map WHERE mapContainsValue(m, 'v1') SETTINGS use_skip_indexes = 1;
-SELECT count() FROM tab_map WHERE mapContainsValue(m, 'nope') SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab_map WHERE mapContainsKey(m, 'k1') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT count() FROM tab_map WHERE mapContainsKey(m, 'nope') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT count() FROM tab_map WHERE mapContainsValue(m, 'v1') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT count() FROM tab_map WHERE mapContainsValue(m, 'nope') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE tab_map;
