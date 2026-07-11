@@ -1190,11 +1190,17 @@ NativeORCSchemaReader::NativeORCSchemaReader(ReadBuffer & in_, const FormatSetti
 {
 }
 
+void NativeORCSchemaReader::initializeIfNeeded()
+{
+    if (initialized)
+        return;
+    getFileReader(in, file_reader, format_settings, false, 0, is_stopped);
+    initialized = true;
+}
+
 NamesAndTypesList NativeORCSchemaReader::readSchema()
 {
-    std::unique_ptr<orc::Reader> file_reader;
-    std::atomic<int> is_stopped = 0;
-    getFileReader(in, file_reader, format_settings, false, 0, is_stopped);
+    initializeIfNeeded();
 
     const auto & schema = file_reader->getType();
     Block header;
@@ -1223,6 +1229,12 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
     if (format_settings.schema_inference_make_columns_nullable != 0)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
+}
+
+std::optional<size_t> NativeORCSchemaReader::readNumberOrRows()
+{
+    initializeIfNeeded();
+    return file_reader->getNumberOfRows();
 }
 
 ORCColumnToCHColumn::ORCColumnToCHColumn(
