@@ -2173,6 +2173,22 @@ void registerStorageDistributed(StorageFactory & factory)
                                 "name of configuration section with list of remote servers, table function, "
                                 "sharding key expression (optional), policy to store data in (optional).");
 
+            /// Not every table function can back a table. The `*Cluster` table functions (`urlCluster`,
+            /// `s3Cluster`, `fileCluster`, ...) are meant to be called directly and cannot be used to create
+            /// a table (`ITableFunctionCluster::canBeUsedToCreateTable` is false). Instantiate the candidate
+            /// and reject it here at create time, exactly as `InterpreterCreateQuery` does for
+            /// `CREATE TABLE ... AS table_function`. Otherwise, with explicit columns the unsupported
+            /// combination would be silently written to metadata and only discovered later at read time.
+            /// Skip the check on ATTACH, where the table already exists and the cluster may be unavailable.
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            {
+                auto table_function = TableFunctionFactory::instance().get(engine_args[1], local_context);
+                if (!table_function->canBeUsedToCreateTable())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Table function '{}' cannot be used to create a Distributed table",
+                                    table_function->getName());
+            }
+
             remote_table_function_ptr = engine_args[1];
 
             if (engine_args.size() >= 3)
