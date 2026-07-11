@@ -68,6 +68,32 @@ SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregatin
     EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY GROUPING SETS ((v), ()) LIMIT 5
 );
 
+-- ... LIMIT + OFFSET above optimize_group_by_limit_to_distinct_max_limit (a large limit would
+-- route high-cardinality data through the single-stream final distinct transform, which is
+-- slower than parallel aggregation and cannot spill to disk);
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 1001
+);
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 1000 OFFSET 1
+);
+
+-- (exactly at the threshold the rewrite still fires; OFFSET counts towards it because
+-- DISTINCT has to produce LIMIT + OFFSET distinct rows before the read can stop)
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 995 OFFSET 5
+);
+
+-- (the threshold is adjustable)
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 SETTINGS optimize_group_by_limit_to_distinct_max_limit = 4
+);
+
+-- (setting the threshold to 0 effectively disables the rewrite)
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 SETTINGS optimize_group_by_limit_to_distinct_max_limit = 0
+);
+
 -- ... no LIMIT (the rewrite would buy nothing);
 SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
     EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v
