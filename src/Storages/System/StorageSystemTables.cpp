@@ -470,7 +470,7 @@ protected:
                                 // parameterized view parameters
                                 fillParametralizedViewData(res_columns, table.second, res_index);
                             }
-                            else if (src_index == 21 && columns_mask[src_index])
+                            else if (src_index == 22 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -488,7 +488,7 @@ protected:
                                 ++res_index;
                             }
                             // total_bytes
-                            else if (src_index == 22 && columns_mask[src_index])
+                            else if (src_index == 23 && columns_mask[src_index])
                             {
                                 try
                                 {
