@@ -305,6 +305,23 @@ protected:
         return inner_query->as<ASTSelectWithUnionQuery>()->getQueryParameters();
     }
 
+    void fillSkippingIndicesTypes(MutableColumns & columns, const StorageMetadataPtr & metadata_snapshot, size_t & res_index)
+    {
+        Array skipping_indices_types;
+        if (metadata_snapshot)
+        {
+            /// Collect distinct types, sorted, so the result is deterministic.
+            std::set<String> types;
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                types.insert(index.type);
+
+            skipping_indices_types.reserve(types.size());
+            for (const auto & type : types)
+                skipping_indices_types.push_back(type);
+        }
+        columns[res_index++]->insert(skipping_indices_types);
+    }
+
     void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
     {
         if (table)
@@ -469,6 +486,11 @@ protected:
                             {
                                 // parameterized view parameters
                                 fillParametralizedViewData(res_columns, table.second, res_index);
+                            }
+                            // skipping_indices_types
+                            else if (src_index == 20 && columns_mask[src_index])
+                            {
+                                fillSkippingIndicesTypes(res_columns, table.second->getInMemoryMetadataPtr(context, false), res_index);
                             }
                             else if (src_index == 22 && columns_mask[src_index])
                             {
@@ -733,21 +755,7 @@ protected:
                 }
 
                 if (columns_mask[src_index++])
-                {
-                    Array skipping_indices_types;
-                    if (metadata_snapshot)
-                    {
-                        /// Collect distinct types, sorted, so the result is deterministic.
-                        std::set<String> types;
-                        for (const auto & index : metadata_snapshot->getSecondaryIndices())
-                            types.insert(index.type);
-
-                        skipping_indices_types.reserve(types.size());
-                        for (const auto & type : types)
-                            skipping_indices_types.push_back(type);
-                    }
-                    res_columns[res_index++]->insert(skipping_indices_types);
-                }
+                    fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
 
                 if (columns_mask[src_index++])
                 {
