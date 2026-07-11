@@ -7,6 +7,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/CompressionMethod.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -232,30 +233,58 @@ static void writeDataFiles(
     SharedHeader sample_block,
     ObjectStoragePtr object_storage,
     const IcebergPathResolver & path_resolver,
+    const IcebergSchemaProcessorPtr & schema_processor,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
     const String & write_format,
     CompressionMethod write_compression_method)
 {
+    auto current_schema_id = static_cast<Int32>(initial_plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id));
+
     ColumnMapperPtr column_mapper;
     {
-        auto current_schema_id = initial_plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
         auto schemas = initial_plan.initial_metadata_object->getArray(Iceberg::f_schemas);
         for (size_t i = 0; i < schemas->size(); ++i)
         {
             auto schema_object = schemas->getObject(static_cast<UInt32>(i));
+            /// Make every historical schema known to the processor so that a data file
+            /// written under an older schema can be remapped to the current one below.
+            /// Reading a data file only registers that file's own schema, so the current
+            /// schema (and any other evolution step) may otherwise be missing here.
+            schema_processor->addIcebergTableSchema(schema_object);
             if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
-            {
                 column_mapper = createColumnMapper(schema_object);
-                break;
-            }
         }
     }
 
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
+        /// Data files written under an older schema (e.g. before `ALTER ... RENAME COLUMN`)
+        /// store columns by their old names/ids. Read such a file by its own schema and then
+        /// remap it to the current schema before writing the compacted file. This mirrors the
+        /// normal read path (`StorageObjectStorageSource`): `getInitialSchemaByPath` picks the
+        /// file's schema for the reader header and `getSchemaTransformer` remaps old -> current.
+        /// Without this, the old file would be read by current-schema names and produce
+        /// DEFAULT/NULL values (data corruption) or a read failure after schema evolution.
+        const Int32 file_schema_id = data_file->data_object_info->info.underlying_format_read_schema_id;
+        const bool schema_changed = file_schema_id != current_schema_id;
+
+        SharedHeader reader_header = sample_block;
+        std::shared_ptr<ExpressionActions> schema_transform;
+        if (schema_changed)
+        {
+            auto initial_schema = schema_processor->getClickhouseTableSchemaById(file_schema_id);
+            Block old_header;
+            for (const auto & [name, type] : *initial_schema)
+                old_header.insert({type->createColumn(), type, name});
+            reader_header = std::make_shared<const Block>(std::move(old_header));
+
+            if (auto transform_dag = schema_processor->getSchemaTransformationDagByIds(file_schema_id, current_schema_id))
+                schema_transform = std::make_shared<ExpressionActions>(transform_dag->clone());
+        }
+
         auto delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
-            sample_block,
+            reader_header,
             data_file->data_object_info,
             object_storage,
             format_settings,
@@ -274,7 +303,7 @@ static void writeDataFiles(
         auto input_format = FormatFactory::instance().getInput(
             data_file->data_object_info->getFileFormat().value_or(write_format),
             *read_buffer,
-            *sample_block,
+            *reader_header,
             context,
             8192,
             format_settings,
@@ -302,8 +331,19 @@ static void writeDataFiles(
             if (chunk.empty())
                 break;
 
-            data_file->manifest_list->statistics.update(chunk);
+            /// Position deletes reference row positions in the original data file, so drop
+            /// deleted rows first (against the old-schema header the delete transform was
+            /// built with), then remap the surviving rows to the current schema.
             delete_file_transform->transform(chunk);
+
+            if (schema_transform)
+            {
+                auto block = reader_header->cloneWithColumns(chunk.getColumns());
+                schema_transform->execute(block);
+                chunk.setColumns(block.getColumns(), block.rows());
+            }
+
+            data_file->manifest_list->statistics.update(chunk);
             data_file->new_records_count += chunk.getNumRows();
             ColumnsWithTypeAndName columns_with_types_and_name;
             for (size_t i = 0; i < sample_block->columns(); ++i)
@@ -380,6 +420,17 @@ static void writeMetadataFiles(
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
 
+    /// `createEmptyMetadataFile` always synthesizes a single `schema-id 0` from the current
+    /// column names with fresh positional field ids. After schema evolution (e.g. RENAME) the
+    /// table's real current schema has a non-zero id and preserves the original field ids, so
+    /// the synthesized schema both loses the field ids the data files reference and rebinds
+    /// `schema-id 0` to different fields (an Iceberg spec violation on the next read). Carry the
+    /// real schemas from the source metadata instead so the compacted metadata stays consistent
+    /// with the data files written by `writeDataFiles`.
+    metadata_object->set(Iceberg::f_schemas, plan.initial_metadata_object->getArray(Iceberg::f_schemas));
+    metadata_object->set(Iceberg::f_current_schema_id, plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id));
+    metadata_object->set(Iceberg::f_last_column_id, plan.initial_metadata_object->getValue<Int32>(Iceberg::f_last_column_id));
+
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     Poco::JSON::Object::Ptr current_schema;
     auto schemas = metadata_object->getArray(Iceberg::f_schemas);
@@ -389,6 +440,26 @@ static void writeMetadataFiles(
         {
             current_schema = schemas->getObject(static_cast<UInt32>(i));
             break;
+        }
+    }
+
+    /// The schema id each original snapshot was committed under. `generateNextMetadata` stamps
+    /// every regenerated snapshot with the current schema id, but compaction reuses the original
+    /// snapshot ids, and a snapshot id is bound to its committed schema id on read. After schema
+    /// evolution the original snapshots were committed under older schema ids, so preserve them
+    /// to avoid a "snapshot already registered with schema id" conflict on the next read.
+    std::unordered_map<Int64, Int32> snapshot_id_to_committed_schema_id;
+    {
+        auto source_snapshots = plan.initial_metadata_object->getArray(Iceberg::f_snapshots);
+        if (source_snapshots)
+        {
+            for (size_t i = 0; i < source_snapshots->size(); ++i)
+            {
+                auto snapshot = source_snapshots->getObject(static_cast<UInt32>(i));
+                if (snapshot->has(Iceberg::f_schema_id) && !snapshot->isNull(Iceberg::f_schema_id))
+                    snapshot_id_to_committed_schema_id[snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id)]
+                        = snapshot->getValue<Int32>(Iceberg::f_schema_id);
+            }
         }
     }
 
@@ -424,6 +495,10 @@ static void writeMetadataFiles(
             0,
             history_record.snapshot_id,
             history_record.made_current_at.value);
+
+        if (auto it = snapshot_id_to_committed_schema_id.find(history_record.snapshot_id);
+            it != snapshot_id_to_committed_schema_id.end() && new_snapshot.snapshot)
+            new_snapshot.snapshot->set(Iceberg::f_schema_id, it->second);
 
         new_snapshots.push_back(new_snapshot);
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
@@ -648,6 +723,7 @@ void compactIcebergTable(
             sample_block_,
             object_storage_,
             persistent_table_components.path_resolver,
+            persistent_table_components.schema_processor,
             format_settings_,
             context_,
             write_format,
