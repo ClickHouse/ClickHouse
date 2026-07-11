@@ -34,6 +34,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/SettingsEnums.h>
 
 namespace DB
@@ -584,7 +585,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 Processors processors;
 
                 /// scatter_outputs[stream * num_shards + shard]
-                std::vector<OutputPort *> scatter_outputs;
+                VectorWithMemoryTracking<OutputPort *> scatter_outputs;
                 scatter_outputs.reserve(num_streams * num_shards);
                 for (size_t stream = 0; stream < num_streams; ++stream)
                 {
@@ -869,9 +870,11 @@ void AggregatingStep::describePipeline(FormatSettings & settings) const
     }
     else
     {
-        /// Processors are printed in reverse order.
+        /// Processors are printed in reverse order (most downstream first).
         IQueryPlanStep::describePipeline(aggregating_sorted, settings);
         IQueryPlanStep::describePipeline(aggregating_in_order, settings);
+        /// Non-empty only for shuffled aggregation-in-order (the scatter + per-shard merge stage).
+        IQueryPlanStep::describePipeline(scatter, settings);
     }
 }
 
