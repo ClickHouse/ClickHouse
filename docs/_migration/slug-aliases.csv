@@ -121,12 +121,12 @@ https://clickhouse.com/docs/get-started/quick-start,2,/get-started/setup/install
 /core/get-started/quick-start,7,/get-started/setup/install,manual,
 /operations/settings/settings-formats.md/#input_format_with_names_use_header,7,,no-match,
 /integrations/data-ingestion/clickpipes/mysql/faq.md,7,/integrations/clickpipes/mysql/faq,basename+parent-unique,/integrations/clickpipes/kafka/faq | /integrations/clickpipes/mongodb/faq | /integrations/clickpipes/postgres/faq | /products/bring-your-own-cloud/reference/faq | /products/clickstack/faq | /products/cloud/features/backups/faq | /products/managed-postgres/faq
-/integrations/data-ingestion/kafka/index.md,7,/integrations/connectors/data-ingestion/kafka,basename+parent-unique,/integrations/clickpipes/kafka | /core/reference/engines/table-engines/integrations/kafka
+/integrations/data-ingestion/kafka/index.md,7,/integrations/connectors/data-ingestion/kafka/index,basename+parent-unique,/integrations/clickpipes/kafka | /core/reference/engines/table-engines/integrations/kafka
 /core/get-started/quickstarts/create-your-first-mergetree-table,6,,no-match,
 /operations/settings/settings-formats.md/#input_format_import_nested_json,6,,no-match,
 /operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields,6,,no-match,
 /operations/storing-data.md/#using-local-cache,6,/concepts/features/configuration/server-config/storing-data,basename-unique,
-/integrations/data-ingestion/etl-tools/dbt/index.md,5,/integrations/connectors/data-ingestion/etl-tools/dbt,basename-unique,
+/integrations/data-ingestion/etl-tools/dbt/index.md,5,/integrations/connectors/data-ingestion/etl-tools/dbt/index,basename-unique,
 /sql-reference/functions/string-search-functions.md/#hasToken,5,/reference/functions/regular-functions/string-search-functions,basename-unique,
 /sql-reference/functions/string-search-functions.md/#hasAllTokens,5,/reference/functions/regular-functions/string-search-functions,basename-unique,
 /sql-reference/functions/string-search-functions.md/#hasAnyTokens,5,/reference/functions/regular-functions/string-search-functions,basename-unique,
@@ -179,12 +179,12 @@ https://clickhouse.com/docs,4,,no-match,
 /sql-reference/functions/string-functions.md/#startsWith,3,/reference/functions/regular-functions/string-functions,basename-unique,
 /sql-reference/functions/string-functions.md/#endsWith,3,/reference/functions/regular-functions/string-functions,basename-unique,
 /sql-reference/functions/string-search-functions.md/#hasTokenOrNull,3,/reference/functions/regular-functions/string-search-functions,basename-unique,
-/core/guides/sre/keeper/index.md,3,/guides/oss/deployment-and-scaling/keeper,basename-unique,
+/core/guides/sre/keeper/index.md,3,/guides/oss/deployment-and-scaling/keeper/index,basename-unique,
 /sql-reference/statements/create/table.md/#default,3,/reference/statements/create/table,basename-unique,
 /operations/settings/settings-formats.md/#input_format_with_types_use_header,3,,no-match,
-/sql-reference/data-types/nested-data-structures/index.md,3,/reference/data-types/nested-data-structures,basename-unique,
-/sql-reference/dictionaries#dictionary-sources,3,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
-/sql-reference/dictionaries,3,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/data-types/nested-data-structures/index.md,3,/reference/data-types/nested-data-structures/index,basename-unique,
+/sql-reference/dictionaries#dictionary-sources,3,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries,3,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
 https://clickhouse.com/docs/introduction/distinctive-features/#data-compression,3,/get-started/about/distinctive-features,basename-unique,
 /whats-new/changelog/2019.md/#experimental-features-1,3,/resources/changelogs/oss/2019,basename-unique,
 /language-clients/javascript/usage#streaming-files-nodejs-only,3,/products/cloud/guides/best-practices/usagelimits,contains-unique,
@@ -224,8 +224,8 @@ https://clickhouse.com/docs/en/interfaces/formats,2,/reference/formats/index,man
 /operations/server-configuration-parameters/settings.md/#background_schedule_pool_size,2,/products/cloud/reference/settings,basename-ambiguous,/products/managed-postgres/settings | /core/reference/settings | /core/reference/settings/server-settings/settings | /core/reference/system-tables/settings
 /engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-multiple-volumes,2,/reference/engines/table-engines/mergetree-family/mergetree,basename-unique,
 /sql-reference/statements/insert-into.md/#inserting-the-results-of-select,2,/reference/statements/insert-into,basename-unique,
-/sql-reference/dictionaries#storing-dictionaries-in-memory,2,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
-/sql-reference/dictionaries#refreshing-dictionary-data-using-lifetime,2,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries#storing-dictionaries-in-memory,2,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries#refreshing-dictionary-data-using-lifetime,2,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
 /operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata,2,,no-match,
 /operations/settings/settings-formats.md/#format_json_object_each_row_column_for_object_name,2,,no-match,
 /operations/settings/settings-formats.md/#input_format_csv_enum_as_number,2,,no-match,
@@ -256,7 +256,7 @@ https://clickhouse.com/docs/en/operations/system-tables/tables/,2,/reference/sys
 /whats-new/cloud,2,/cloud/reference/changelog/changelog,redirect-direct,
 https://clickhouse.com/docs/cloud/security/cloud-access-management/overview,2,/products/cloud/guides/security/cloud-access-management/manage-database-users,manual,/core/concepts/features/configuration/settings/overview | /core/concepts/features/operations/delete/overview | /core/concepts/features/operations/update/overview | /core/get-started/migration-guides/bigquery/overview | /core/get-started/migration-guides/elastic/overview
 https://clickhouse.com/docs/cloud/manage/api/usageCost-api-reference,2,/api-reference/billing/get-organization-usage-costs,manual,
-/integrations/data-visualization/grafana/index.md,2,/integrations/connectors/data-visualization/grafana,basename+parent-unique,/core/guides/use-cases/observability/build-your-own/grafana
+/integrations/data-visualization/grafana/index.md,2,/integrations/connectors/data-visualization/grafana/index,basename+parent-unique,/core/guides/use-cases/observability/build-your-own/grafana
 /interfaces/cli.md/#cli-queries-with-parameters,2,/concepts/features/interfaces/cli,basename-ambiguous,/products/cloud/features/cli
 /knowledgebase/useful-queries-for-troubleshooting,2,,no-match,
 /knowledgebase/certificate_verify_failed_error,2,/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error,manual,
@@ -272,7 +272,7 @@ https://clickhouse.com/docs/cloud/manage/api/swagger#/paths/~1v1~1organizations~
 /use-cases/observability/clickstack/ingesting-data/kubernetes#forwarding-resouce-tags-to-pods,2,/products/clickstack/example-datasets/kubernetes,basename-ambiguous,/products/clickstack/integration-examples/kubernetes
 /examples/host-logs-dashboard.json,2,,no-match,
 https://clickhouse.com/docs/en/sql-reference/data-types/aggregatefunction,2,/reference/data-types/aggregatefunction,basename-unique,
-/chdb/datastore/debugging,2,/products/chdb/debugging,basename-unique,
+/chdb/datastore/debugging,2,/products/chdb/debugging/index,basename-unique,
 /chdb/datastore/guides/pandas-differences,2,/products/chdb/guides/pandas-differences,basename-unique,
 /chdb/datastore/guides/migration-from-pandas,2,/products/chdb/guides/migration-from-pandas,basename-unique,
 /getting-started/index.md,1,/products/chdb/getting-started,basename-ambiguous,/products/clickstack/getting-started
@@ -288,7 +288,7 @@ https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree,
 /quickstarts/etl-pipeline,1,/get-started/migrate/other-methods/etl-tool-to-clickhouse,manual,
 /en/engines/table-engines/mergetree-family/mergetree,1,/reference/engines/table-engines/mergetree-family/mergetree,basename-unique,
 /en/operations/system-tables/parts,1,/reference/system-tables/parts,basename+parent-unique,/core/concepts/core-concepts/parts
-/en/sql-reference/data-types,1,/reference/data-types,manual,/core/reference/data-types
+/en/sql-reference/data-types,1,/reference/data-types/index,manual,/core/reference/data-types
 https://clickhouse.com/docs/en/interfaces/cli,1,/concepts/features/interfaces/cli,basename-ambiguous,/products/cloud/features/cli
 https://clickhouse.com/docs/en/cloud/bestpractices/cloud-connection,1,,no-match,
 https://clickhouse.com/docs/en/interfaces/tcp,1,/concepts/features/interfaces/tcp,basename-unique,
@@ -375,7 +375,7 @@ https://clickhouse.com/docs/en/interfaces/http,1,/concepts/features/security/ext
 /sql-reference/statements/rename.md/#rename-table,1,/reference/statements/rename,basename-unique,
 /core/guides/best-practices/sparse-primary-indexes.md/#option-3-projections,1,/guides/clickhouse/data-modelling/sparse-primary-indexes,basename-unique,
 /sql-reference/statements/create/dictionary/overview.md,1,/concepts/features/backup-restore/overview,basename-ambiguous,/core/concepts/features/configuration/settings/overview | /core/concepts/features/operations/delete/overview | /core/concepts/features/operations/update/overview | /core/get-started/migration-guides/bigquery/overview | /core/get-started/migration-guides/elastic/overview
-/sql-reference/dictionaries#dbms,1,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries#dbms,1,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
 /knowledgebase/oracle-odbc,1,/resources/support-center/knowledge-base/integrations/oracle-odbc,basename-unique,
 /operations/settings/settings-formats.md/#format_custom_field_delimiter,1,,no-match,
 /operations/settings/settings-formats.md/#format_custom_row_before_delimiter,1,,no-match,
@@ -425,13 +425,13 @@ https://clickhouse.com/docs/best-practices/...,1,,no-match,
 /deployment-guides/terminology.md,1,/guides/oss/deployment-and-scaling/terminology,basename-unique,
 /managing-data/update_mutations,1,/managing-data/updating-data/update_mutations,redirect-direct,
 /integrations/data-ingestion/s3/index.md#configuring-s3-for-clickhouse-use,1,/reference/engines/table-engines/integrations/s3,basename-ambiguous,/core/reference/functions/table-functions/s3
-/sql-reference/dictionaries#postgresql,1,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
-/sql-reference/dictionaries#ways-to-store-dictionaries-in-memory,1,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
-/sql-reference/dictionaries#hierarchical-dictionaries,1,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
-/sql-reference/dictionaries#polygon-dictionaries,1,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
-/sql-reference/dictionaries#regexp-tree-dictionary,1,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
-/interfaces/third-party/gui#clickhouse-flamegraph,1,/guides/use-cases/ai-ml,contains-ambiguous,/core/guides/use-cases/ai-ml/MCP | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk
-/core/guides/sre/keeper/index.md#four-letter-word-commands,1,/guides/oss/deployment-and-scaling/keeper,basename-unique,
+/sql-reference/dictionaries#postgresql,1,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries#ways-to-store-dictionaries-in-memory,1,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries#hierarchical-dictionaries,1,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries#polygon-dictionaries,1,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries#regexp-tree-dictionary,1,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
+/interfaces/third-party/gui#clickhouse-flamegraph,1,/guides/use-cases/ai-ml/index,contains-ambiguous,/core/guides/use-cases/ai-ml/MCP | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk
+/core/guides/sre/keeper/index.md#four-letter-word-commands,1,/guides/oss/deployment-and-scaling/keeper/index,basename-unique,
 /operations/settings/settings-query-level.md,1,/concepts/features/configuration/settings/settings-query-level,basename-unique,
 /operations/settings/settings.md/#http_connection_timeout,1,/products/cloud/reference/settings,basename-ambiguous,/products/managed-postgres/settings | /core/reference/settings | /core/reference/settings/server-settings/settings | /core/reference/system-tables/settings
 /operations/settings/settings.md/#http_receive_timeout,1,/products/cloud/reference/settings,basename-ambiguous,/products/managed-postgres/settings | /core/reference/settings | /core/reference/settings/server-settings/settings | /core/reference/system-tables/settings
@@ -447,9 +447,9 @@ https://clickhouse.com/docs/best-practices/...,1,,no-match,
 /core/guides/best-practices/skipping-indexes.md,1,/concepts/features/performance/skip-indexes/skipping-indexes,basename-unique,
 /engines/table-engines/mergetree-family/mergetree.md/#choosing-a-primary-key-that-differs-from-the-sorting-key,1,/reference/engines/table-engines/mergetree-family/mergetree,basename-unique,
 https://clickhouse.com/docs/introduction/distinctive-features/#true-column-oriented-dbms,1,/get-started/about/distinctive-features,basename-unique,
-/sql-reference/dictionaries#ip_trie,1,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
-/sql-reference/dictionaries#use-regular-expression-tree-dictionary-in-clickhouse-open-source,1,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
-/sql-reference/dictionaries#collecting-attribute-values,1,/concepts/features/dictionaries,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries#ip_trie,1,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries#use-regular-expression-tree-dictionary-in-clickhouse-open-source,1,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries#collecting-attribute-values,1,/concepts/features/dictionaries/index,basename-ambiguous,/core/reference/system-tables/dictionaries
 /blog/clickhouse-and-parquet-a-foundation-for-fast-lakehouse-analytics,1,,no-match,
 /optimize/sparse-primary-indexes,1,/guides/clickhouse/data-modelling/sparse-primary-indexes,basename-unique,
 /sql-reference/data-types/json,1,/concepts/best-practices/json-type,contains-ambiguous,/core/guides/clickhouse/data-formats/json/exporting | /core/guides/clickhouse/data-formats/json/formats | /core/guides/clickhouse/data-formats/json/inference | /core/guides/clickhouse/data-formats/json/intro | /core/guides/clickhouse/data-formats/json/loading
@@ -458,7 +458,7 @@ https://clickhouse.com/docs/introduction/distinctive-features/#true-column-orien
 /images/clickpipes/cp_advanced_settings.png,1,,no-match,
 /knowledgebase/aws-privatelink-setup-for-msk-clickpipes,1,,no-match,
 /integrations/clickpipes/object-storage,1,/get-started/migrate/other-methods/object-storage-to-clickhouse,contains-ambiguous,/integrations/clickpipes/object-storage/amazon-s3/get-started | /integrations/clickpipes/object-storage/amazon-s3/overview | /integrations/clickpipes/object-storage/amazon-s3/unordered-mode | /integrations/clickpipes/object-storage/azure-blob-storage/get-started | /integrations/clickpipes/object-storage/azure-blob-storage/overview
-/integrations/data-ingestion/clickpipes/kinesis.md,1,/integrations/clickpipes/kinesis,basename-unique,
+/integrations/data-ingestion/clickpipes/kinesis.md,1,/integrations/clickpipes/kinesis/index,basename-unique,
 https://clickhouse.com/docs/en/sql-reference/data-types/special-data-types/interval,1,/reference/data-types/special-data-types/interval,basename-unique,
 /language-clients/javascript/usage#contact-us,1,/products/cloud/guides/best-practices/usagelimits,contains-unique,
 /language-clients/javascript/usage#proxy-with-a-pathname,1,/products/cloud/guides/best-practices/usagelimits,contains-unique,
@@ -483,7 +483,7 @@ https://clickhouse.com/docs/integrations/gcs#create-a-service-account-hmac-key-a
 /images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.png,1,,no-match,
 /images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.png,1,,no-match,
 /images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.png,1,,no-match,
-/interfaces/third-party/gui,1,/guides/use-cases/ai-ml,contains-ambiguous,/core/guides/use-cases/ai-ml/MCP | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk
+/interfaces/third-party/gui,1,/guides/use-cases/ai-ml/index,contains-ambiguous,/core/guides/use-cases/ai-ml/MCP | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit | /core/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk
 /interfaces/third-party/proxy,1,,no-match,
 /interfaces/third-party/integrations,1,/products/cloud/features/integrations,basename-ambiguous,/products/cloud/features/monitoring/integrations | /core/reference/engines/table-engines/integrations | /resources/support-center/knowledge-base/integrations
 /integrations/azure-data-factory,1,/integrations/data-ingestion/azure-data-factory,redirect-direct,
@@ -506,12 +506,12 @@ https://clickhouse.com/docs/integrations/gcs#create-a-service-account-hmac-key-a
 /operations/settings/settings-formats.md/#format_regexp_skip_unmatched,1,,no-match,
 /engines/table-engines/integrations/s3.md/#wildcards-in-path,1,/reference/engines/table-engines/integrations/s3,basename+parent-unique,/core/reference/functions/table-functions/s3
 /operations/server-configuration-parameters/settings.md/#default_replica_path,1,/products/cloud/reference/settings,basename-ambiguous,/products/managed-postgres/settings | /core/reference/settings | /core/reference/settings/server-settings/settings | /core/reference/system-tables/settings
-/integrations/dbt/materialized-views,1,/concepts/features/materialized-views,basename-ambiguous,/products/clickstack/managing/materialized-views | /resources/support-center/tips-and-tricks/materialized-views
+/integrations/dbt/materialized-views,1,/concepts/features/materialized-views/index,basename-ambiguous,/products/clickstack/managing/materialized-views | /resources/support-center/tips-and-tricks/materialized-views
 https://clickhouse.com/docs/en/beta-and-experimental-features,1,/reference/settings/beta-and-experimental-features,basename-unique,
-https://clickhouse.com/docs/en/materialized-view,1,/concepts/features/materialized-views,contains-ambiguous,/core/concepts/features/materialized-views/cascading-materialized-views | /core/concepts/features/materialized-views/incremental-materialized-view | /core/concepts/features/materialized-views/refreshable-materialized-view | /core/concepts/features/projections/materialized-views-versus-projections | /core/guides/use-cases/real-time-analytics/time-series/materialized-view-rollup
+https://clickhouse.com/docs/en/materialized-view,1,/concepts/features/materialized-views/index,contains-ambiguous,/core/concepts/features/materialized-views/cascading-materialized-views | /core/concepts/features/materialized-views/incremental-materialized-view | /core/concepts/features/materialized-views/refreshable-materialized-view | /core/concepts/features/projections/materialized-views-versus-projections | /core/guides/use-cases/real-time-analytics/time-series/materialized-view-rollup
 https://clickhouse.com/docs/en/engines/table-engines/special/distributed,1,/reference/engines/table-engines/special/distributed,basename-unique,
 https://clickhouse.com/docs/en/engines/table-engines/special/dictionary,1,/reference/engines/table-engines/special/dictionary,basename+parent-unique,/core/reference/functions/table-functions/dictionary | /core/reference/statements/create/dictionary
-/materialized-view,1,/concepts/features/materialized-views,contains-ambiguous,/core/concepts/features/materialized-views/cascading-materialized-views | /core/concepts/features/materialized-views/incremental-materialized-view | /core/concepts/features/materialized-views/refreshable-materialized-view | /core/concepts/features/projections/materialized-views-versus-projections | /core/guides/use-cases/real-time-analytics/time-series/materialized-view-rollup
+/materialized-view,1,/concepts/features/materialized-views/index,contains-ambiguous,/core/concepts/features/materialized-views/cascading-materialized-views | /core/concepts/features/materialized-views/incremental-materialized-view | /core/concepts/features/materialized-views/refreshable-materialized-view | /core/concepts/features/projections/materialized-views-versus-projections | /core/guides/use-cases/real-time-analytics/time-series/materialized-view-rollup
 https://clickhouse.com/docs/en/materialized-view/refreshable-materialized-view,1,/concepts/features/materialized-views/refreshable-materialized-view,basename-unique,
 https://clickhouse.com/docs/en/cloud/security/secure-s3,1,,no-match,
 /operations/settings/settings.md/#use_structure_from_insertion_table_in_table_functions,1,/products/cloud/reference/settings,basename-ambiguous,/products/managed-postgres/settings | /core/reference/settings | /core/reference/settings/server-settings/settings | /core/reference/system-tables/settings
@@ -523,7 +523,7 @@ https://clickhouse.com/docs/en/cloud/security/secure-s3,1,,no-match,
 /whats-new/cloud#clickhouse-231-version-upgrade,1,/cloud/reference/changelog/changelog,redirect-direct,
 /whats-new/cloud#clickhouse-2212-version-upgrade,1,/cloud/reference/changelog/changelog,redirect-direct,
 /whats-new/cloud#clickhouse-2211-version-upgrade,1,/cloud/reference/changelog/changelog,redirect-direct,
-/sql-reference/dictionaries/index.md,1,/concepts/features/dictionaries,manual,/core/reference/system-tables/dictionaries
+/sql-reference/dictionaries/index.md,1,/concepts/features/dictionaries/index,manual,/core/reference/system-tables/dictionaries
 /whats-new/cloud#clickhouse-2210-version-upgrade,1,/cloud/reference/changelog/changelog,redirect-direct,
 /knowledgebase/useful-queries-for-troubleshooting#show-disk-storage-number-of-parts-number-of-rows-in-systemparts-and-marks-across-databases,1,,no-match,
 /knowledgebase/find-expensive-queries,1,/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries,basename-unique,
@@ -534,7 +534,7 @@ https://clickhouse.com/docs/en/cloud/security/secure-s3,1,,no-match,
 /core/guides/sre/user-management/configuring-ldap.md,1,/concepts/features/security/configuring-ldap,basename-unique,
 /core/guides/starter-guides/mutations.md,1,/get-started/quickstarts/mutations,basename+parent-unique,/core/reference/system-tables/mutations
 /knowledgebase/how-do-i-contribute-code-to-clickhouse,1,,no-match,
-/knowledgebase/time-series,1,/guides/use-cases/real-time-analytics/time-series,basename-ambiguous,/core/reference/engines/table-engines/integrations/time-series | /resources/support-center/knowledge-base/general-faqs/time-series
+/knowledgebase/time-series,1,/guides/use-cases/real-time-analytics/time-series/index,basename-ambiguous,/core/reference/engines/table-engines/integrations/time-series | /resources/support-center/knowledge-base/general-faqs/time-series
 /integrations/data-ingestion/s3,1,/reference/engines/table-engines/integrations/s3,basename-ambiguous,/core/reference/functions/table-functions/s3
 /integrations/data-ingestion/gcs,1,/reference/functions/table-functions/gcs,basename-unique,
 https://clickhouse.com/docs/knowledgebase/file-export,1,,no-match,
@@ -562,7 +562,7 @@ https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickStack,1,,no-match,
 /managed-postgres/benchmarks,1,/products/managed-postgres/benchmarks,basename-unique,
 /interfaces/cpp,1,/integrations/language-clients/cpp,redirect-direct,
 /interfaces/third-party/client-libraries,1,,no-match,
-/cloud/security/cloud-access-management,1,/products/cloud/guides/security/cloud-access-management,basename-unique,
+/cloud/security/cloud-access-management,1,/products/cloud/guides/security/cloud-access-management/index,basename-unique,
 /knowledgebase/terraform_example,1,/resources/support-center/knowledge-base/integrations/terraform-example,manual,
 /cloud/reference/byoc/faq/aws,1,/integrations/clickpipes/aws-privatelink,contains-ambiguous,/products/clickstack/ingesting-data/sdks/aws-lambda | /products/clickstack/integration-examples/aws-lambda | /products/cloud/guides/security/connectivity/private-networking/aws-privatelink | /products/cloud/reference/billing/marketplace/aws-marketplace-committed | /products/cloud/reference/billing/marketplace/aws-marketplace-payg
 /cloud/reference/byoc/observability,1,/cloud/guides/infrastructure/deployment_options/byoc/observability,redirect-direct,
@@ -641,7 +641,7 @@ https://clickhouse.com/docs/operations/backup#take-an-incremental-backup,1,/refe
 /cloud/guides/infrastructure/deployment_options/byoc/observability,1,/products/cloud/guides/infrastructure/deployment-options/byoc/observability/aws,manual,
 /cloud/reference/changelog/changelog,1,/resources/changelogs/cloud/changelog,manual,
 /api-reference/billing/get-organization-usage-costs,1,/api-reference/organization/get-list-of-available-organizations,manual,
-/sql-reference/operators,1,/reference/operators,manual,
+/sql-reference/operators,1,/reference/operators/index,manual,
 /core/guides/best-practices/partitioningkey,1,/concepts/best-practices/partitioning-keys,manual,
 /optimize/partitioning-key,1,/concepts/best-practices/partitioning-keys,manual,
 /integrations/gcs,1,/integrations/connectors/data-ingestion/GCP,manual,
