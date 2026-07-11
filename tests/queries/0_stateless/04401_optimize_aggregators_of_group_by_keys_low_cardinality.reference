@@ -85,3 +85,17 @@ Granules: 8/128
 4
 5
 6
+-- eliminated aggregate inside a lambda body: LambdaNode result type stays the analyzed type
+10
+10
+10
+['0']
+['1']
+['2']
+-- observable lambda-body type preserved (Array(String), not Array(LowCardinality(String)))
+Array(String)
+Array(String)
+-- nested lambdas over the eliminated key
+10
+10
+10

@@ -4,6 +4,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
@@ -41,6 +42,22 @@ public:
     {
         if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
             return;
+
+        if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
+        {
+            /// A lambda body is a computation whose type is cached on LambdaNode::result_type and in
+            /// the higher-order parent's DataTypeFunction signature; it is never a storage-pushdown
+            /// predicate, even when the lambda syntactically sits inside a filter section. Treat it
+            /// like a nested-query boundary: save and reset the filter context so an eliminated
+            /// aggregate in the lambda body is cast back to its analyzed type, keeping the lambda body
+            /// type (and the parent higher-order signature) unchanged. group_by_keys_stack is left
+            /// intact - the lambda body still refers to the enclosing query's GROUP BY keys.
+            filter_depth_save_stack.push_back(filter_depth);
+            filter_roots_save_stack.push_back(std::move(active_filter_roots));
+            filter_depth = 0;
+            active_filter_roots.clear();
+            return;
+        }
 
         auto * query_node = node->as<QueryNode>();
         if (!query_node)
@@ -174,6 +191,15 @@ public:
         {
             group_by_keys_stack.pop_back();
             /// Restore the enclosing query's filter context (see enterImpl).
+            filter_depth = filter_depth_save_stack.back();
+            filter_depth_save_stack.pop_back();
+            active_filter_roots = std::move(filter_roots_save_stack.back());
+            filter_roots_save_stack.pop_back();
+        }
+        else if (node->getNodeType() == QueryTreeNodeType::LAMBDA)
+        {
+            /// Restore the filter context saved when entering the lambda (see enterImpl). The
+            /// group_by_keys_stack was not touched, so it is not popped here.
             filter_depth = filter_depth_save_stack.back();
             filter_depth_save_stack.pop_back();
             active_filter_roots = std::move(filter_roots_save_stack.back());

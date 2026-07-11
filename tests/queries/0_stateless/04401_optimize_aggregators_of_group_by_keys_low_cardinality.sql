@@ -159,3 +159,19 @@ SELECT anyHeavy(a) AS m FROM t_lc_more_matrix GROUP BY a ORDER BY m;
 SELECT any(b) RESPECT NULLS AS m FROM t_lc_more_matrix GROUP BY b ORDER BY m;
 SELECT anyLast(c) RESPECT NULLS AS m FROM t_lc_more_matrix GROUP BY c ORDER BY m;
 DROP TABLE t_lc_more_matrix;
+
+SELECT '-- eliminated aggregate inside a lambda body: LambdaNode result type stays the analyzed type';
+-- The lambda body min(s) is an output-ish position carried by the higher-order function signature,
+-- not a storage-pushdown predicate, so the eliminated LowCardinality key is cast back to String.
+-- Regression for https://github.com/ClickHouse/ClickHouse/pull/110059 (visitLambda type mismatch).
+DROP TABLE IF EXISTS t_lc_lambda;
+CREATE TABLE t_lc_lambda (s LowCardinality(String)) ENGINE = Memory;
+INSERT INTO t_lc_lambda SELECT toString(number % 3) FROM numbers(30);
+SELECT count() FROM t_lc_lambda GROUP BY s HAVING arrayMap(x -> min(s), [1]) = [s] ORDER BY min(s);
+SELECT arrayMap(x -> max(s), [1]) AS m FROM t_lc_lambda GROUP BY s ORDER BY m;
+SELECT '-- observable lambda-body type preserved (Array(String), not Array(LowCardinality(String)))';
+SELECT DISTINCT toTypeName(arrayMap(x -> any(s), [1])) FROM t_lc_lambda GROUP BY s;
+SELECT DISTINCT toTypeName(arrayMap(x -> anyLast(s), [1])) FROM t_lc_lambda GROUP BY s;
+SELECT '-- nested lambdas over the eliminated key';
+SELECT count() FROM t_lc_lambda GROUP BY s HAVING arrayMap(y -> arrayMap(x -> min(s), [1])[1], [1]) = [s];
+DROP TABLE t_lc_lambda;
