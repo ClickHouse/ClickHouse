@@ -254,6 +254,9 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
             /// consistent with their own semantics).
             "studentttest", "studentttestonesample", "welchttest", "meanztest", "analysisofvariance",
             "rankcorr", "mannwhitneyutest", "kolmogorovsmirnovtest",
+            /// Linear regression: reads both numeric arguments via `getFloat64` and returns the Float64 slope and
+            /// intercept, so a Float64 cast of the inputs is exactly what it computes internally.
+            "simplelinearregression",
         };
 
         while (true)

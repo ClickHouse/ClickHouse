@@ -42,5 +42,6 @@ analysisOfVariance	1
 rankCorr	1
 mannWhitneyUTest	1
 kolmogorovSmirnovTest	1
+simpleLinearRegression	1
 studentTTestIf	1
 varPopStableState	1

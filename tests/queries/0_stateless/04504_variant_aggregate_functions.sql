@@ -222,6 +222,11 @@ SELECT 'analysisOfVariance',    analysisOfVariance(x, grp)      = analysisOfVari
 SELECT 'rankCorr',              rankCorr(x, y)                  = rankCorr(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))                    FROM t_variant_stat;
 SELECT 'mannWhitneyUTest',      mannWhitneyUTest(x, g)          = mannWhitneyUTest(CAST(x AS Nullable(Float64)), g)                                       FROM t_variant_stat;
 SELECT 'kolmogorovSmirnovTest', kolmogorovSmirnovTest(x, g)     = kolmogorovSmirnovTest(CAST(x AS Nullable(Float64)), g)                                  FROM t_variant_stat;
+-- simpleLinearRegression also reads both numeric arguments via getFloat64 and returns Float64 (slope, intercept), so
+-- it is float-promoting too: over a numeric mix with no lossless supertype it must aggregate over Float64, matching
+-- the explicit Nullable(Float64) cast. Its base name was missing from the allowlist, so this is a regression for it
+-- (the gap also leaked into simpleLinearRegressionIf / State / Merge through suffix stripping).
+SELECT 'simpleLinearRegression', simpleLinearRegression(x, y)    = simpleLinearRegression(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))      FROM t_variant_stat;
 
 -- Combinators compose with the fallback (the adapter is the outermost wrapper): -If filters rows, and a stored
 -- -State round-trips through -Merge, both aggregating over the same Float64 supertype.
