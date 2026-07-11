@@ -56,6 +56,17 @@ chcache_secret = Secret.Config(
 
 SECRETS = [
     Secret.Config(
+        name="clickhouse-dockerhub-registry",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="clickhouse-test-stat-connection",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    #TODO: remove
+    Secret.Config(
         name="dockerhub_robot_password",
         type=Secret.Type.AWS_SSM_PARAMETER,
     ),
