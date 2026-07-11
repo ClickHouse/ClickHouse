@@ -11,6 +11,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsCommon.h>
 
@@ -20,6 +21,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -196,6 +198,14 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
                 getORCType(map_type->getKeyType()),
                 getORCType(map_type->getValueType())
                 );
+        }
+        case TypeIndex::Variant:
+        {
+            const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
+            auto union_type = orc::createUnionType();
+            for (const auto & nested_type : variant_type.getVariants())
+                union_type->addUnionChild(getORCType(nested_type));
+            return union_type;
         }
         default:
         {
@@ -541,6 +551,42 @@ void ORCBlockOutputFormat::writeColumn(
             orc::ColumnVectorBatch & values_orc_column = *map_orc_column.elements;
             auto value_type = map_type.getValueType();
             writeColumn(values_orc_column, *nested_columns[1], value_type, nullptr);
+            break;
+        }
+        case TypeIndex::Variant:
+        {
+            auto & union_orc_column = dynamic_cast<orc::UnionVectorBatch &>(orc_column);
+            const auto & variant_column = assert_cast<const ColumnVariant &>(column);
+            const auto & variant_types = assert_cast<const DataTypeVariant &>(*type).getVariants();
+
+            /// The ORC union branches are created in the same order as the Variant's variants (see
+            /// getORCType), so a global discriminator is exactly the ORC tag. A Variant NULL row (the
+            /// NULL discriminator) is written as a NULL union row.
+            bool has_nulls = orc_column.hasNulls;
+            for (size_t i = 0; i < rows; ++i)
+            {
+                auto global_discr = variant_column.globalDiscriminatorAt(i);
+                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || (null_bytemap && (*null_bytemap)[i]))
+                {
+                    union_orc_column.notNull[i] = 0;
+                    union_orc_column.tags[i] = 0;
+                    union_orc_column.offsets[i] = 0;
+                    has_nulls = true;
+                }
+                else
+                {
+                    union_orc_column.tags[i] = static_cast<unsigned char>(global_discr);
+                    union_orc_column.offsets[i] = variant_column.offsetAt(i);
+                }
+            }
+            union_orc_column.hasNulls = has_nulls;
+
+            /// Each branch column already contains exactly the rows routed to it (in offset order).
+            for (size_t i = 0; i < variant_types.size(); ++i)
+            {
+                auto nested_type = variant_types[i];
+                writeColumn(*union_orc_column.children[i], variant_column.getVariantByGlobalDiscriminator(i), nested_type, nullptr);
+            }
             break;
         }
         default:
