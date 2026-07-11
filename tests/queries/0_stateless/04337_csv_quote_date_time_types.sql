@@ -39,11 +39,11 @@ FROM format(CSV, 't Time, n UInt8', '"12:30:00":42')
 FORMAT CSV
 SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = ':';
 
-SELECT 'Time64 remains quoted with conflicting period CSV delimiter' FORMAT TSVRaw;
+SELECT 'Time64 remains quoted with conflicting colon CSV delimiter' FORMAT TSVRaw;
 SELECT *
-FROM format(CSV, 't Time64(3), n UInt8', '"12:30:00.456".42')
+FROM format(CSV, 't Time64(3), n UInt8', '"12:30:00.456":42')
 FORMAT CSV
-SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = '.';
+SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = ':';
 
 SELECT 'Nullable Time remains quoted with conflicting colon CSV delimiter' FORMAT TSVRaw;
 SELECT *
@@ -51,8 +51,8 @@ FROM format(CSV, 't Nullable(Time), n UInt8', '"12:30:00":42')
 FORMAT CSV
 SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = ':', input_format_csv_use_default_on_bad_values = 1;
 
-SELECT 'Nullable Time64 remains quoted with conflicting period CSV delimiter' FORMAT TSVRaw;
+SELECT 'Nullable Time64 remains quoted with conflicting colon CSV delimiter' FORMAT TSVRaw;
 SELECT *
-FROM format(CSV, 't Nullable(Time64(3)), n UInt8', '"12:30:00.456".42')
+FROM format(CSV, 't Nullable(Time64(3)), n UInt8', '"12:30:00.456":42')
 FORMAT CSV
-SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = '.', input_format_csv_use_default_on_bad_values = 1;
+SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = ':', input_format_csv_use_default_on_bad_values = 1;

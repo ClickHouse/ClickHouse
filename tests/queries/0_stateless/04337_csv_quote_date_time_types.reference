@@ -12,9 +12,9 @@ CSVWithNames with disabled date/time CSV quoting
 2024-01-15,"value"
 Time remains quoted with conflicting colon CSV delimiter
 "12:30:00":42
-Time64 remains quoted with conflicting period CSV delimiter
-"12:30:00.456".42
+Time64 remains quoted with conflicting colon CSV delimiter
+"12:30:00.456":42
 Nullable Time remains quoted with conflicting colon CSV delimiter
 "12:30:00":42
-Nullable Time64 remains quoted with conflicting period CSV delimiter
-"12:30:00.456".42
+Nullable Time64 remains quoted with conflicting colon CSV delimiter
+"12:30:00.456":42
