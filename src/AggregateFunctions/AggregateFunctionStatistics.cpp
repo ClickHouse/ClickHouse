@@ -505,6 +505,18 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
     return res;
 }
 
+/// The numerically stable statistics functions build their aggregate directly from the argument type instead of going
+/// through createWithNumericType, so without this check they would accept a Variant or Dynamic argument and only fail
+/// later in getFloat64 during execution. Reject these types at resolution instead (matching argMin/argMax): reporting
+/// ILLEGAL_TYPE_OF_ARGUMENT here also lets the Variant adapter retry over the least common supertype of the variants.
+void assertNoDynamicOrVariantArguments(const std::string & name, const DataTypes & argument_types)
+{
+    for (const auto & argument_type : argument_types)
+        if (isDynamic(*argument_type) || isVariant(*argument_type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument for aggregate function {}", argument_type->getName(), name);
+}
+
 }
 
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & factory);
@@ -566,6 +578,7 @@ SELECT round(varSampStable(x),3) AS var_samp_stable FROM test_data;
         {
             assertNoParameters(name, parameters);
             assertUnary(name, argument_types);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionVariance>(VarKind::varSampStable, argument_types[0]);
         },
         documentation_varSampStable
@@ -618,6 +631,7 @@ FROM test_data;
         {
             assertNoParameters(name, parameters);
             assertUnary(name, argument_types);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionVariance>(VarKind::varPopStable, argument_types[0]);
         },
         documentation_varPopStable
@@ -666,6 +680,7 @@ FROM test_data;
     {
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
+        assertNoDynamicOrVariantArguments(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevSampStable, argument_types[0]);
     }, documentation_stddevSampStable});
 
@@ -712,6 +727,7 @@ FROM test_data;
     {
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
+        assertNoDynamicOrVariantArguments(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevPopStable, argument_types[0]);
     }, documentation_stddevPopStable});
 
@@ -785,6 +801,7 @@ FROM
         {
             assertNoParameters(name, parameters);
             assertBinary(name, argument_types);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarSampStable, argument_types);
         },
         covarSampStable_documentation
@@ -835,6 +852,7 @@ FROM series
         {
             assertNoParameters(name, parameters);
             assertBinary(name, argument_types);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<false>>(CovarKind::covarPopStable, argument_types);
         },
         covarPopStable_documentation
@@ -893,6 +911,7 @@ FROM series
         {
             assertNoParameters(name, parameters);
             assertBinary(name, argument_types);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCovariance<true>>(CovarKind::corrStable, argument_types);
         },
         corrStable_documentation
