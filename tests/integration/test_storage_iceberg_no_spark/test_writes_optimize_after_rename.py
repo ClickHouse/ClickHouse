@@ -175,3 +175,126 @@ def test_optimize_rejected_after_lossy_schema_evolution(
         )
         == "1\ta\tx1\n2\tb\tx2\n3\tc\tx3\n"
     )
+
+
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_optimize_noop_after_lossy_schema_evolution(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """
+    The lossy-evolution guard must only fire when compaction actually rewrites files. With no
+    live positional deletes there is nothing to compact, so a no-op OPTIMIZE on a table with a
+    historical `DROP COLUMN` must stay a no-op, not throw NOT_IMPLEMENTED (`need_optimize` is
+    known only after the manifest scan). This mirrors the pre-existing behavior where an OPTIMIZE
+    with nothing to do returned without touching metadata.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_noop_lossy_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value Nullable(String), extra Nullable(String))",
+        2,
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,'a','x1'),(2,'b','x2'),(3,'c','x3');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # Lossy schema evolution, but NO delete -> nothing to compact.
+    instance.query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN extra;")
+
+    # OPTIMIZE must not throw: there are no positional deletes, so compaction is a no-op and the
+    # lossy-evolution guard (which protects time travel across a rewrite) must not trigger.
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+
+    # Data is unchanged.
+    assert (
+        instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id")
+        == "1\ta\n2\tb\n3\tc\n"
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["local", "s3"])
+def test_optimize_preserves_partition_spec(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """
+    Compaction must start the new metadata from the source table metadata, not from a synthetic
+    `createEmptyMetadataFile` object. Otherwise a partitioned table loses its `partition-specs` /
+    `default-spec-id` after OPTIMIZE: the next INSERT reads the emptied spec, `partitioner ==
+    nullopt`, and writes unpartitioned data into a partitioned table. This test writes a
+    partitioned table, forces compaction (positional delete), then INSERTs again and asserts the
+    data files are still partitioned and the rows read back correctly.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_partition_spec_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(part Int32, id Int32, value Nullable(String))",
+        2,
+        partition_by="part",
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (0,1,'a'),(0,2,'b'),(1,3,'c'),(1,4,'d');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # DELETE one row -> positional delete file so compaction has work to do.
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+
+    # Compaction consumed the positional delete.
+    assert (
+        int(
+            instance.query(
+                f"SELECT countIf(content = 'POSITION_DELETE') FROM system.iceberg_files WHERE table = '{TABLE_NAME}'"
+            )
+        )
+        == 0
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 3
+
+    # A fresh INSERT after compaction must still be partitioned: the partition spec was
+    # preserved, so each partition value lands in its own data file. Before the fix the spec was
+    # empty and the new rows went into a single unpartitioned file.
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (0,5,'e'),(1,6,'f');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    # Partition pruning must return exactly the live rows of a single partition. If the metadata
+    # had lost its partition spec, the post-OPTIMIZE writes would be unpartitioned and pruning by
+    # `part` would drop live rows (or scan everything).
+    assert (
+        instance.query(f"SELECT id, value FROM {TABLE_NAME} WHERE part = 0 ORDER BY id")
+        == "1\ta\n5\te\n"
+    )
+    assert (
+        instance.query(f"SELECT id, value FROM {TABLE_NAME} WHERE part = 1 ORDER BY id")
+        == "3\tc\n4\td\n6\tf\n"
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 5

@@ -15,6 +15,7 @@
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -30,6 +31,7 @@
 #include <fmt/format.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -40,6 +42,11 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace DB::DataLakeStorageSetting
+{
+    extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
 
 namespace DB::Iceberg
@@ -293,6 +300,10 @@ static Plan getPlan(
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
 
+    /// The compacted metadata is the next version of this table, so the generated
+    /// `vN.metadata.json` and the `version-hint.text` must advance past the current version.
+    plan.generator.setVersion(metadata_version + 1);
+
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     auto schemas = initial_metadata_object->getArray(Iceberg::f_schemas);
     Poco::JSON::Array::Ptr current_schema;
@@ -305,8 +316,6 @@ static Plan getPlan(
         }
     }
     plan.initial_metadata_object = initial_metadata_object;
-
-    checkCompactionSupportsSchemaEvolution(initial_metadata_object);
 
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
@@ -382,6 +391,15 @@ static Plan getPlan(
     }
     plan.history = std::move(snapshots_info);
     plan.need_optimize = !all_positional_delete_files.empty();
+
+    /// Only reject lossy schema evolution when compaction will actually rewrite files.
+    /// The guard rejects OPTIMIZE because rewriting historical files into the current schema
+    /// would break time travel; but if there are no live positional deletes there is nothing
+    /// to rewrite, so a no-op OPTIMIZE on an evolved table must stay a no-op, not throw
+    /// NOT_IMPLEMENTED. `need_optimize` is known only after the manifest scan above.
+    if (plan.need_optimize)
+        checkCompactionSupportsSchemaEvolution(initial_metadata_object);
+
     return plan;
 }
 
@@ -529,6 +547,16 @@ static void writeDataFiles(
 namespace
 {
 
+/// Deep copy a metadata JSON object (Poco shares child arrays/objects by pointer on a shallow
+/// copy, so we round-trip through a string to get an independent tree we can safely mutate).
+Poco::JSON::Object::Ptr deepCopyMetadata(const Poco::JSON::Object::Ptr & source)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    source->stringify(oss);
+    Poco::JSON::Parser parser;
+    return parser.parse(oss.str()).extract<Poco::JSON::Object::Ptr>();
+}
+
 [[nodiscard]] std::optional<SnapshotSummaryUpdateAppend> tryGetAppendUpdate(const Iceberg::IcebergHistoryRecord & history_record)
 {
     if (!history_record.snapshot_summary)
@@ -570,23 +598,34 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
 }
 
 static void writeMetadataFiles(
-    Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
+    Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, bool write_version_hint)
 {
     auto log = getLogger("IcebergCompaction");
 
-    ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
-    auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
+    /// Start the compacted metadata from a deep copy of the source table metadata rather than a
+    /// synthetic `createEmptyMetadataFile` object. The synthetic object invents a fresh
+    /// `table-uuid` and leaves `partition-specs`/`default-spec-id`/`sort-orders`/`properties`
+    /// empty, so after OPTIMIZE a partitioned table would lose its partition spec (the next
+    /// INSERT reads an empty spec, `partitioner == nullopt`, and writes unpartitioned data into a
+    /// partitioned table) and `iceberg_metadata_table_uuid` / `iceberg_use_version_hint` readers
+    /// could stop finding the table after the new uuid replaced the old one. Deep-copying
+    /// preserves every table-level field (uuid, location, partition specs, sort orders,
+    /// properties, refs, schemas + current-schema-id) while we regenerate only the snapshot
+    /// history below.
+    auto metadata_object = deepCopyMetadata(plan.initial_metadata_object);
 
-    /// `createEmptyMetadataFile` always synthesizes a single `schema-id 0` from the current
-    /// column names with fresh positional field ids. After schema evolution (e.g. RENAME) the
-    /// table's real current schema has a non-zero id and preserves the original field ids, so
-    /// the synthesized schema both loses the field ids the data files reference and rebinds
-    /// `schema-id 0` to different fields (an Iceberg spec violation on the next read). Carry the
-    /// real schemas from the source metadata instead so the compacted metadata stays consistent
-    /// with the data files written by `writeDataFiles`.
-    metadata_object->set(Iceberg::f_schemas, plan.initial_metadata_object->getArray(Iceberg::f_schemas));
-    metadata_object->set(Iceberg::f_current_schema_id, plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id));
-    metadata_object->set(Iceberg::f_last_column_id, plan.initial_metadata_object->getValue<Int32>(Iceberg::f_last_column_id));
+    /// The snapshot history is rebuilt from scratch by the loop below (it reuses the original
+    /// snapshot ids via `generateNextMetadata`), so clear the source snapshot state to avoid
+    /// duplicating snapshots or leaving `current-snapshot-id` / `last-sequence-number` pointing at
+    /// pre-compaction manifest lists that no longer exist.
+    metadata_object->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    metadata_object->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    metadata_object->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    metadata_object->set(Iceberg::f_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    metadata_object->set(Iceberg::f_current_snapshot_id, -1);
+    metadata_object->set(Iceberg::f_last_sequence_number, 0);
+    if (metadata_object->has(Iceberg::f_refs) && metadata_object->getObject(Iceberg::f_refs)->has(Iceberg::f_main))
+        metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, -1);
 
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     Poco::JSON::Object::Ptr current_schema;
@@ -825,15 +864,17 @@ static void writeMetadataFiles(
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);
 
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(path_resolver.resolve(generated_metadata_info.path)),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
-
-        buffer_metadata->write(json_representation.data(), json_representation.size());
-        buffer_metadata->finalize();
+        /// Write the metadata file and keep `version-hint.text` in sync (via the same helper the
+        /// INSERT/mutation paths use), so `iceberg_use_version_hint = 1` readers still find the
+        /// compacted metadata after `clearOldFiles` removes the previous version.
+        Iceberg::writeMetadataFileAndVersionHint(
+            path_resolver,
+            generated_metadata_info,
+            json_representation,
+            plan.generator.generateVersionHint(),
+            object_storage,
+            context,
+            write_version_hint);
     }
 }
 
@@ -889,7 +930,14 @@ void compactIcebergTable(
             context_,
             write_format,
             persistent_table_components.metadata_compression_method);
-        writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
+        writeMetadataFiles(
+            plan,
+            persistent_table_components.path_resolver,
+            object_storage_,
+            context_,
+            sample_block_,
+            write_format,
+            data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]);
         clearOldFiles(object_storage_, old_files);
     }
 }
