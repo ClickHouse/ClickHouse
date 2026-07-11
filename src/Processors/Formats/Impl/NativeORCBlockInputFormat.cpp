@@ -1955,10 +1955,18 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                     tag, num_children, column_name);
 
             const size_t offset = orc_offsets[row];
+            /// A malformed file can point past the selected branch's values; reject it rather than
+            /// reading out of bounds (the branch column and its null map share this size).
+            if (offset >= branch_columns[tag]->size())
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Invalid ORC union offset {} into branch {} of size {} while reading column {}",
+                    offset, tag, branch_columns[tag]->size(), column_name);
+
             /// A non-null union row can still select a branch whose payload is null (ORC keeps the
             /// union-level null count at 0 in that case). Variant branches are non-nullable, so
             /// represent such a row as a Variant NULL rather than the branch's nested default value.
-            if (branch_null_maps[tag] && offset < branch_null_maps[tag]->size() && (*branch_null_maps[tag])[offset])
+            if (branch_null_maps[tag] && (*branch_null_maps[tag])[offset])
             {
                 discriminators_data[row] = ColumnVariant::NULL_DISCRIMINATOR;
                 offsets_data[row] = 0;
