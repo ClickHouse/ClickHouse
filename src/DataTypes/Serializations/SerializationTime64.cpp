@@ -244,10 +244,17 @@ bool SerializationTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
 void SerializationTime64::serializeTextCSV(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.csv.quote_date_time_types)
+    const char delimiter = settings.csv.delimiter;
+    const bool quote = settings.csv.quote_date_time_types
+        || delimiter == ':'
+        || delimiter == '-'
+        || (scale > 0 && delimiter == '.')
+        || isNumericASCII(delimiter);
+
+    if (quote)
         writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
-    if (settings.csv.quote_date_time_types)
+    if (quote)
         writeChar('"', ostr);
 }
 
@@ -268,23 +275,16 @@ void SerializationTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr
     }
     else
     {
-        if (settings.csv.delimiter != ',')
-        {
-            readText(x, scale, istr, settings, DateLUT::instance(), DateLUT::instance());
-        }
-        else
-        {
-            String datetime_str;
-            readCSVString(datetime_str, istr, settings.csv);
-            ReadBufferFromString buf(datetime_str);
-            readText(x, scale, buf, settings, DateLUT::instance(), DateLUT::instance());
-            if (!buf.eof())
-                throw Exception(
-                    ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
-                    "Unexpected data '{}' after parsed Time64 value '{}'",
-                    String(buf.position(), buf.buffer().end()),
-                    String(buf.buffer().begin(), buf.position()));
-        }
+        String datetime_str;
+        readCSVString(datetime_str, istr, settings.csv);
+        ReadBufferFromString buf(datetime_str);
+        readText(x, scale, buf, settings, DateLUT::instance(), DateLUT::instance());
+        if (!buf.eof())
+            throw Exception(
+                ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                "Unexpected data '{}' after parsed Time64 value '{}'",
+                String(buf.position(), buf.buffer().end()),
+                String(buf.buffer().begin(), buf.position()));
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(x);
@@ -307,19 +307,11 @@ bool SerializationTime64::tryDeserializeTextCSV(IColumn & column, ReadBuffer & i
     }
     else
     {
-        if (settings.csv.delimiter != ',')
-        {
-            if (!tryReadText(x, scale, istr, settings, DateLUT::instance(), DateLUT::instance()))
-                return false;
-        }
-        else
-        {
-            String datetime_str;
-            readCSVString(datetime_str, istr, settings.csv);
-            ReadBufferFromString buf(datetime_str);
-            if (!tryReadText(x, scale, buf, settings, DateLUT::instance(), DateLUT::instance()) || !buf.eof())
-                return false;
-        }
+        String datetime_str;
+        readCSVString(datetime_str, istr, settings.csv);
+        ReadBufferFromString buf(datetime_str);
+        if (!tryReadText(x, scale, buf, settings, DateLUT::instance(), DateLUT::instance()) || !buf.eof())
+            return false;
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(x);
