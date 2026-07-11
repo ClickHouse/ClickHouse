@@ -36,7 +36,11 @@ THIS_REPO = Path(__file__).resolve().parent.parent
 DEFAULT_DOCUSAURUS = Path.home() / "Desktop" / "clickhouse-docs"
 SKIP_DIRS = {"node_modules", ".git", "i18n", ".claude", ".mintlify", "scripts", "snippets", "static"}
 # Translation dirs are managed by the localisation bot — never migrate them.
-TRANSLATION_DIRS = {"ja", "ko", "ru", "zh", "es", "pt-BR"}
+TRANSLATION_DIRS = {"ja", "ko", "ru", "zh", "es", "pt-BR", "ar", "fr"}
+# The legacy Docusaurus tree: kept in the repo pre-cutover but excluded from
+# the Mintlify build (.mintignore), so its pages are not live URLs and its
+# frontmatter slugs (the old Docusaurus slugs) must not resolve links there.
+LEGACY_DIRS = {"en"}
 # Same as SKIP_DIRS but allows the migrator's `--all` to descend into snippets/
 # so partials get the same transforms as pages.
 ITER_SKIP_DIRS = (SKIP_DIRS | TRANSLATION_DIRS) - {"snippets"}
@@ -115,7 +119,8 @@ def build_lookups(slug_map_csv: Path) -> tuple[Lookups, list[dict]]:
         rel = p.relative_to(THIS_REPO)
         if any(part in SKIP_DIRS for part in rel.parts):
             continue
-        if any(part in TRANSLATION_DIRS for part in rel.parts):
+        if any(part in TRANSLATION_DIRS or part in LEGACY_DIRS
+               for part in rel.parts):
             continue
         url = file_to_url(str(rel).replace("\\", "/"))
         lk.slug_to_url.setdefault(url, url)
