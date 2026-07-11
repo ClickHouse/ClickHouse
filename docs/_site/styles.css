@@ -2930,18 +2930,26 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
     display: flex !important;
     align-items: center !important;
     gap: 0.5rem !important;
-    height: 2.25rem !important;                    /* h-9, like the sidebar search */
-    padding: 0 0.75rem !important;
+    height: 2.75rem !important;                    /* larger than the compact sidebar search */
+    padding: 0 0.875rem !important;
     border: 1px solid rgba(156, 163, 175, 0.3) !important;  /* gray-400/30 ring */
     border-radius: 4px !important;
     background: #ffffff !important;
-    transition: border-color 0.12s ease !important;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease !important;
 }
-.ch-cse-form:hover,
-.ch-cse-form:focus-within {
+.ch-cse-form:hover {
     border-color: rgba(75, 85, 99, 0.3) !important;         /* gray-600/30 */
 }
-.ch-cse-icon { flex: 0 0 auto !important; color: #374151 !important; } /* gray-700 */
+.ch-cse-form:focus-within {
+    border-color: rgba(31, 31, 28, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(31, 31, 28, 0.08) !important;
+}
+.ch-cse-icon {
+    flex: 0 0 auto !important;
+    width: 1.125rem !important;
+    height: 1.125rem !important;
+    color: #374151 !important;
+} /* gray-700 */
 .ch-cse-input {
     flex: 1 1 auto !important;
     min-width: 0 !important;
@@ -2962,8 +2970,8 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
     display: inline-flex !important;
     align-items: center !important;
     gap: 0.3rem !important;
-    height: 1.5rem !important;
-    padding: 0 0.45rem !important;
+    height: 1.75rem !important;
+    padding: 0 0.5rem !important;
     border: 1px solid rgba(156, 163, 175, 0.4) !important;
     border-radius: 4px !important;
     background: #f3f4f6 !important;
@@ -2996,7 +3004,7 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
 }
 
 /* Gap between the box and the results block. */
-.ch-cse > div:last-child { margin-top: 1.25rem !important; }
+.ch-cse > div:last-child { margin-top: 1rem !important; }
 /* results-only mode emits no visible search box, but hide any Google-rendered
    input box defensively so it can never flash alongside our own. */
 .ch-cse .gsc-search-box,
@@ -3009,10 +3017,13 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
     border-color: rgba(255, 255, 255, 0.07) !important;
 }
 .dark .ch-cse-form:hover,
-.dark .ch-cse-form:focus-within,
-:is(.dark) .ch-cse-form:hover,
-:is(.dark) .ch-cse-form:focus-within {
+:is(.dark) .ch-cse-form:hover {
     border-color: rgba(255, 255, 255, 0.14) !important;
+}
+.dark .ch-cse-form:focus-within,
+:is(.dark) .ch-cse-form:focus-within {
+    border-color: rgba(250, 255, 105, 0.7) !important;
+    box-shadow: 0 0 0 3px rgba(250, 255, 105, 0.16) !important;
 }
 .dark .ch-cse-icon, :is(.dark) .ch-cse-icon { color: rgb(206, 206, 206) !important; }
 .dark .ch-cse-input, :is(.dark) .ch-cse-input { color: rgb(206, 206, 206) !important; }
@@ -3022,12 +3033,25 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
 /* — Results toolbar ("About N results", tabs) — */
 .gsc-above-wrapper-area {
     border-bottom: 1px solid #e5e7eb !important;
-    padding: 0.5rem 0 !important;
+    padding: 0.75rem 0 !important;
+}
+/* Mintlify's prose rules add margins to tables and generous padding to their
+   cells. Google's toolbar is a layout table, so reset those inherited styles
+   or the compact results/sort row becomes especially tall on mobile. */
+.gsc-above-wrapper-area-container {
+    margin: 0 !important;
+    border: none !important;
+}
+.gsc-above-wrapper-area-container td {
+    padding: 0 !important;
+    border: none !important;
 }
 .gsc-result-info {
     color: #6b7280 !important;
-    padding-left: 0 !important;
+    padding: 0 !important;
 }
+.gsc-orderby-container { text-align: right !important; }
+.gsc-orderby-label { font-size: 0.8125rem !important; }
 .gsc-tabsArea { border-color: #e5e7eb !important; }
 
 /* — Results list — */
@@ -3069,6 +3093,7 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
 .gs-webResult .gs-visibleUrl-breadcrumb {
     color: #0b8043 !important;
     font-size: 0.85rem !important;
+    overflow-wrap: anywhere !important;
 }
 
 /* Snippet body text. */
@@ -3165,3 +3190,9 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
 :is(.dark) .gcsc-find-more-on-google { color: #FAFF69 !important; }
 .dark .gcsc-find-more-on-google-magnifier,
 :is(.dark) .gcsc-find-more-on-google-magnifier { fill: #FAFF69 !important; }
+
+@media (max-width: 480px) {
+    /* Preserve room for the query while keeping the submit affordance. */
+    .ch-cse-enter-label { display: none !important; }
+    .ch-cse-enter { padding-inline: 0.45rem !important; }
+}

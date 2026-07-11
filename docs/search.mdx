@@ -30,12 +30,11 @@ export const DocSearch = () => {
   const inputRef = useRef(null);
   const lastQRef = useRef(undefined); // last query handed to the CSE element
 
-  const execute = (q) => {
+  const getElement = () => {
     try {
       const cse = window.google && window.google.search && window.google.search.cse;
-      const el = cse && window.google.search.cse.element.getElement(GNAME);
-      if (el) el.execute(q);
-    } catch (e) { /* noop */ }
+      return cse && cse.element.getElement(GNAME);
+    } catch (e) { return null; }
   };
 
   // Run a query in place: sync the input, and re-execute only when it actually
@@ -43,9 +42,15 @@ export const DocSearch = () => {
   // the results — it updates rather than destroys.
   const runQuery = (q) => {
     if (inputRef.current && inputRef.current.value !== q) inputRef.current.value = q;
-    if (q === lastQRef.current) return;
-    lastQRef.current = q;
-    if (q) execute(q);
+    const el = getElement();
+    if (!el || q === lastQRef.current) return;
+    try {
+      if (q) el.execute(q);
+      else el.clearAllResults();
+      // Only dedup after the ready element has accepted the query/reset. Calls
+      // made while cse.js is loading must still be replayed by boot().
+      lastQRef.current = q;
+    } catch (e) { /* noop */ }
   };
 
   const syncFromUrl = () => {
@@ -69,8 +74,10 @@ export const DocSearch = () => {
     }
     if (node.parentNode !== wrapper) wrapper.appendChild(node);
 
-    const initial = (new URLSearchParams(window.location.search).get('q') || '').trim();
-    if (initial && inputRef.current) inputRef.current.value = initial;
+    // Reflect the URL in the input immediately. If cse.js is not ready yet,
+    // runQuery intentionally leaves the dedup state untouched so boot can
+    // execute (or clear) the current URL once the element exists.
+    syncFromUrl();
 
     const boot = () => {
       const cse = window.google && window.google.search && window.google.search.cse;
@@ -83,7 +90,9 @@ export const DocSearch = () => {
           attributes: { enableHistory: false },
         });
       }
-      runQuery(initial);
+      // The URL may have changed while cse.js was loading. Read it at callback
+      // time so the latest `?q=` remains the source of truth.
+      syncFromUrl();
     };
 
     // Update (don't destroy) the search when the `?q=` param changes via
