@@ -1,0 +1,10 @@
+<test>
+    <!-- Aggregate-free `GROUP BY ... LIMIT n` is rewritten into `SELECT DISTINCT ... LIMIT n`,
+         which stops reading the input once `n` distinct groups are produced instead of
+         aggregating the entire input (https://github.com/ClickHouse/ClickHouse/issues/110047).
+         The key has low cardinality so the rewritten query terminates after the first blocks,
+         while the baseline processes all 100M rows. -->
+
+    <query tag="rewritten">SELECT number % 1000 AS k FROM numbers_mt(100000000) GROUP BY k LIMIT 5 FORMAT Null SETTINGS optimize_group_by_limit_to_distinct = 1</query>
+    <query tag="baseline">SELECT number % 1000 AS k FROM numbers_mt(100000000) GROUP BY k LIMIT 5 FORMAT Null SETTINGS optimize_group_by_limit_to_distinct = 0</query>
+</test>

@@ -4710,6 +4710,16 @@ Possible values:
    - 0 — Optimization disabled.
    - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_group_by_limit_to_distinct, true, R"(
+Rewrites `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` into `SELECT DISTINCT key_expr FROM table LIMIT n` when the query has no aggregate functions, no `HAVING`/`ORDER BY`/`QUALIFY`/`LIMIT BY`/window clauses, no `GROUP BY` modifiers, and the projection is exactly the set of `GROUP BY` keys. The two forms are semantically identical (the order of the emitted groups is unspecified, so any `n` distinct groups are a valid result), but `DISTINCT` with `LIMIT` stops reading the input as soon as `n` distinct rows are produced and streams the results, while the aggregation processes the whole input.
+
+The rewrite is suppressed when `max_rows_to_group_by`, `max_rows_in_distinct` or `max_bytes_in_distinct` is set (the rewrite would change which of the limits apply to the query), and when `group_by_use_nulls` is enabled.
+
+Possible values:
+
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+)", 0) \
     DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
 Enables or disables the optimization of a trivial query `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (with no aggregate functions in the projection, no `HAVING`/`ORDER BY`/`LIMIT BY`/window clauses, and no `GROUP BY` modifiers) by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'`. The aggregation stops once `n + offset` distinct keys are produced.
 

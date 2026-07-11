@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"optimize_group_by_limit_to_distinct", false, true, "New setting that rewrites aggregate-free `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries into `SELECT DISTINCT key_expr FROM t LIMIT n`, which stops reading the input once `n` distinct groups are produced and streams the results (https://github.com/ClickHouse/ClickHouse/issues/110047)."},
             {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},
             {"optimize_trivial_count_with_sparsity_filter", false, false, "New (experimental) setting to serve `SELECT count() FROM t WHERE <pred>` from per-column `num_defaults` / `num_rows` recorded in `serialization.json` when `<pred>` partitions rows into defaults vs non-defaults."},
