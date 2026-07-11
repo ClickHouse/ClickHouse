@@ -106,6 +106,27 @@ DROP TABLE dist_over_tf;
 DROP TABLE dist_over_tf_src;
 DROP TABLE dist_over_tf_local;
 
+-- `INSERT ... SELECT` *from* a table-function-backed Distributed table with
+-- `parallel_distributed_insert_select` keeps the projection and the filter of the original query:
+-- the query shipped to the shards is rebuilt from the original `SELECT` with the table replaced by
+-- the (aliased) table function, the same way it is done for a named-table source - not replaced with
+-- a bare `SELECT * FROM table_function()`, which would silently drop them and write wrong rows.
+CREATE TABLE dist_over_tf_local (x UInt64) ENGINE = Memory;
+CREATE TABLE dist_over_tf_dst ENGINE = Distributed(test_shard_localhost, currentDatabase(), dist_over_tf_local);
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, numbers(10));
+INSERT INTO dist_over_tf_dst SELECT dist_over_tf.number + 1 FROM dist_over_tf WHERE number < 5 SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1;
+SELECT count(), sum(x) FROM dist_over_tf_dst;
+-- The same holds for a `view` source (whose inner `SELECT` used to replace the whole query) read
+-- through the `cluster` table function, which shares this code path.
+TRUNCATE TABLE dist_over_tf_local;
+INSERT INTO FUNCTION cluster('test_shard_localhost', currentDatabase(), dist_over_tf_local)
+SELECT v.number * 2 FROM cluster('test_shard_localhost', view(SELECT number FROM numbers(10))) AS v WHERE v.number >= 8
+SETTINGS parallel_distributed_insert_select = 2;
+SELECT count(), sum(x) FROM dist_over_tf_dst;
+DROP TABLE dist_over_tf;
+DROP TABLE dist_over_tf_dst;
+DROP TABLE dist_over_tf_local;
+
 -- `distributed_product_mode = 'local'` rewrites a nested Distributed subquery to its concrete remote table.
 -- A table-function-backed Distributed table has no such table, so the rewrite is rejected with a clear
 -- `NOT_IMPLEMENTED` instead of failing deep inside the rewrite on an empty table id. Covered for both the

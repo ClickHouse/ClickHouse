@@ -38,7 +38,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/setThreadName.h>
 
-#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -82,10 +81,11 @@
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
-#include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Storages/buildQueryTreeForShard.h>
@@ -1156,44 +1156,38 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     const auto & settings = local_context->getSettingsRef();
     auto new_query = boost::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
 
+    const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
+
+    auto * select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.at(0)->as<ASTSelectQuery>();
+    auto new_select_query = boost::dynamic_pointer_cast<ASTSelectQuery>(select->clone());
+    select_with_union_query->list_of_selects->children.push_back(new_select_query);
+
     if (src_distributed.remote_table_function_ptr)
     {
-        const TableFunctionPtr src_table_function =
-            TableFunctionFactory::instance().get(src_distributed.remote_table_function_ptr, local_context);
-        if (const TableFunctionView * view_function = typeid_cast<const TableFunctionView *>(src_table_function.get()))
+        /// The source has no concrete remote table: each shard reads from the table function itself.
+        /// Replace the table expression with the table function in a copy of the original `SELECT`
+        /// (the same way the named-table branch below swaps in the remote table), keeping the
+        /// projection, filter and the other clauses intact - replacing the whole `SELECT` with a bare
+        /// `SELECT * FROM table_function()` would silently drop them. The table function is aliased
+        /// with the qualifier the query used for the source table, so that references qualified by it
+        /// keep resolving on the shards (mirrors `ClusterProxy::rewriteSelectQuery`).
+        ASTPtr table_function = src_distributed.remote_table_function_ptr->clone();
+        if (const auto * table_expression = getTableExpression(*select, 0))
         {
-            new_query->setOrReplace(new_query->select, view_function->getSelectQuery().clone());
+            const DatabaseAndTableWithAlias original(*table_expression);
+            const String & qualifier = original.alias.empty() ? original.table : original.alias;
+            if (!qualifier.empty())
+                table_function->setAlias(qualifier);
         }
-        else
-        {
-            const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-            select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
-
-            const auto select = make_intrusive<ASTSelectQuery>();
-
-            auto expression_list = make_intrusive<ASTExpressionList>();
-            expression_list->children.push_back(make_intrusive<ASTAsterisk>());
-            select->setExpression(ASTSelectQuery::Expression::SELECT, expression_list->clone());
-            select->addTableFunction(src_distributed.remote_table_function_ptr);
-
-            select_with_union_query->list_of_selects->children.push_back(select->clone());
-
-            new_query->setOrReplace(new_query->select, select_with_union_query);
-        }
+        new_select_query->addTableFunction(table_function);
     }
     else
     {
-        const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-        select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
-
-        auto * select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.at(0)->as<ASTSelectQuery>();
-        auto new_select_query = boost::dynamic_pointer_cast<ASTSelectQuery>(select->clone());
-        select_with_union_query->list_of_selects->children.push_back(new_select_query);
-
         new_select_query->replaceDatabaseAndTable(src_distributed.getRemoteDatabaseName(), src_distributed.getRemoteTableName());
-
-        new_query->setOrReplace(new_query->select, select_with_union_query);
     }
+
+    new_query->setOrReplace(new_query->select, select_with_union_query);
 
     const auto src_cluster = src_distributed.getCluster();
     const auto dst_cluster = getCluster();
