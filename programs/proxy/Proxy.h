@@ -30,7 +30,11 @@ protected:
     bool allowTextLog() const override;
 
 private:
+#if USE_SILK
+    /// Guarded because `ProxyServer` is only defined when silk is available, and the implicit
+    /// destructor of `ProxyApplication` needs the complete type to destroy the `unique_ptr`.
     std::unique_ptr<Proxy::ProxyServer> server;
+#endif
 };
 
 }
