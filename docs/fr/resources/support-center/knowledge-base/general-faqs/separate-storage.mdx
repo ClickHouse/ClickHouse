@@ -1,0 +1,14 @@
+---
+slug: /faq/operations/deploy-separate-storage-and-compute
+title: 'Est-il possible de déployer ClickHouse avec un stockage et un calcul dissociés ?'
+sidebarTitle: 'Est-il possible de déployer ClickHouse avec un stockage et un calcul dissociés ?'
+toc_hidden: true
+toc_priority: 20
+description: 'Cette page indique s’il est possible de déployer ClickHouse avec un stockage et un calcul dissociés'
+doc_type: 'guide'
+keywords: ['stockage', 'configuration de disque', 'organisation des données', 'gestion des volumes', 'niveaux de stockage']
+---
+
+La réponse courte est « oui ».
+
+Le stockage d’objets (S3, GCS) peut être utilisé comme backend principal de stockage élastique pour les données des tables ClickHouse. Des guides sur [MergeTree adossé à S3](/fr/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse) et [MergeTree adossé à GCS](/fr/reference/functions/table-functions/gcs) sont disponibles. Dans cette configuration, seules les métadonnées sont stockées localement sur les nœuds de calcul. Vous pouvez facilement augmenter ou réduire les ressources de calcul dans cette configuration, car les nœuds supplémentaires n’ont qu’à répliquer les métadonnées.

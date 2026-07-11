@@ -1,0 +1,15 @@
+---
+title: إعدادات صيغة Common Row Binary
+---
+
+{/* ملاحظة: يُعاد استخدام هذا المقتطف في أي ملف يُستورد فيه */}
+
+الإعدادات التالية مشتركة بين جميع التنسيقات من نوع `RowBinary`.
+
+| الإعداد                                                                                                                               | الوصف                                                                                                                                                                                                                                                                    | الافتراضي |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
+| [`format_binary_max_string_size`](/ar/reference/settings/formats#format_binary_max_string_size)                                          | الحد الأقصى المسموح به لحجم String في تنسيق RowBinary.                                                                                                                                                                                                                   | `1GiB`    |
+| [`output_format_binary_encode_types_in_binary_format`](/ar/reference/settings/formats#input_format_binary_decode_types_in_binary_format) | يتيح كتابة الأنواع في الترويسة باستخدام [`الترميز الثنائي`](/ar/reference/data-types/data-types-binary-encoding) بدلًا من السلاسل النصية التي تتضمن أسماء الأنواع في تنسيق الإخراج [`RowBinaryWithNamesAndTypes`](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes). | `false`   |
+| [`input_format_binary_decode_types_in_binary_format`](/ar/reference/settings/formats#input_format_binary_decode_types_in_binary_format)  | يتيح قراءة الأنواع في الترويسة باستخدام [`الترميز الثنائي`](/ar/reference/data-types/data-types-binary-encoding) بدلًا من السلاسل النصية التي تتضمن أسماء الأنواع في تنسيق الإدخال [`RowBinaryWithNamesAndTypes`](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes). | `false`   |
+| [`output_format_binary_write_json_as_string`](/ar/reference/settings/formats#output_format_binary_write_json_as_string)                  | يتيح كتابة قيم نوع البيانات [`JSON`](/ar/reference/data-types/newjson) كقيم `JSON` من نوع [String](/ar/reference/data-types/string) في تنسيق الإخراج [`RowBinary`](/ar/reference/formats/RowBinary/RowBinary).                                                                    | `false`   |
+| [`input_format_binary_read_json_as_string`](/ar/reference/settings/formats#input_format_binary_read_json_as_string)                      | يتيح قراءة قيم نوع البيانات [`JSON`](/ar/reference/data-types/newjson) كقيم `JSON` من نوع [String](/ar/reference/data-types/string) في تنسيق الإدخال [`RowBinary`](/ar/reference/formats/RowBinary/RowBinary).                                                                    | `false`   |

@@ -1,0 +1,75 @@
+---
+sidebarTitle: '架构'
+slug: /cloud/reference/architecture
+title: 'ClickHouse Cloud 架构'
+description: '本页介绍 ClickHouse Cloud 的架构'
+keywords: ['ClickHouse Cloud', '云架构', '存储与计算分离']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Cloud 的架构" />
+
+<div id="storage-backed-by-object-store">
+  ## 基于对象存储的存储
+</div>
+
+* 几乎无限的存储容量
+* 无需手动对数据进行分片
+* 存储数据的成本显著更低，尤其适合访问频率较低的数据
+
+<div id="compute">
+  ## 计算资源
+</div>
+
+* 自动扩缩容和自动闲置：无需预先估算规模，也无需为峰值使用而过度配置
+* 自动闲置和恢复：无人使用时，无需让闲置的计算资源持续运行
+* 默认安全且高可用
+
+<div id="administration">
+  ## 管理
+</div>
+
+* 配置、监控、备份和计费均由我们代您处理。
+* 成本控制默认已启用，您可以通过 Cloud 控制台进行调整。
+
+<div id="service-isolation">
+  ## 服务隔离
+</div>
+
+<div id="network-isolation">
+  ### 网络隔离
+</div>
+
+所有服务在网络层彼此隔离。
+
+<div id="compute-isolation">
+  ### 计算隔离
+</div>
+
+所有服务都部署在各自的 Kubernetes 命名空间中的独立 pod (容器组) 内，并实现了网络级隔离。
+
+<div id="storage-isolation">
+  ### 存储隔离
+</div>
+
+所有服务都使用共享 bucket (AWS、GCP) 或存储容器 (Azure) 中的独立子路径。
+
+对于 AWS，存储访问由 AWS IAM 控制，并且每个服务都有唯一的 IAM role。对于 Enterprise service，可启用 [CMEK](/zh/products/cloud/guides/security/cmek)，以提供更高级别的静态数据隔离。目前，CMEK 仅支持 AWS services。
+
+对于 GCP 和 Azure，服务具备对象存储隔离 (所有服务都有各自的 bucket 或存储容器) 。
+
+<div id="compute-compute-separation">
+  ## Compute-compute separation
+</div>
+
+[Compute-compute separation](/zh/products/cloud/features/infrastructure/warehouses) 让您可以创建多个计算节点组，每个节点组都有各自的服务 URL，但共享同一个对象存储。这使您能够在共享同一份数据的前提下，隔离不同用例的计算资源，例如将读取与写入分离。它还支持根据需要对各个计算组进行独立扩缩容，从而更高效地利用资源。
+
+<div id="concurrency-limits">
+  ## 并发限制
+</div>
+
+您的 ClickHouse Cloud 服务对每秒查询数 (QPS) 没有限制。不过，每个副本的并发查询上限为 1000。QPS 最终取决于查询的平均执行时间以及服务中的副本数量。
+
+相比自管理 ClickHouse 实例或其他数据库/数据仓库，ClickHouse Cloud 的一大优势是，您可以通过[添加更多副本 (横向扩缩容) ](/zh/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)轻松提升并发能力。

@@ -38,6 +38,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -654,6 +655,7 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
 
     auto transform = std::make_shared<LimitsCheckingTransform>(output->getSharedHeader(), limits);
     transform->setQuota(quota_);
+    transform->setNormalizedQueryHash(normalized_query_hash);
     connect(*output, transform->getInputPort());
     output = &transform->getOutputPort();
     processors->emplace_back(std::move(transform));
@@ -667,6 +669,11 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     result_rows = output_format->getResultRows();
     result_bytes = output_format->getResultBytes();
     return true;
+}
+
+void QueryPipeline::setStepWallClockRegistry(StepWallClockRegistryPtr step_wall_clock_registry_)
+{
+    step_wall_clock_registry = std::move(step_wall_clock_registry_);
 }
 
 void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer)
@@ -821,6 +828,7 @@ std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() c
 
     callback->setProgressCallback(progress_callback);
     callback->setQuota(quota);
+    callback->setNormalizedQueryHash(normalized_query_hash);
     callback->setProcessListElement(process_list_element);
 
     if (!update_profile_events)

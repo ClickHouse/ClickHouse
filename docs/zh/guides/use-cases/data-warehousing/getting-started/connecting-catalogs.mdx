@@ -1,0 +1,167 @@
+---
+title: '连接到数据目录'
+sidebarTitle: '连接到目录'
+slug: /use-cases/data-lake/getting-started/connecting-catalogs
+toc_max_heading_level: 3
+description: '使用 DataLakeCatalog 数据库引擎将 ClickHouse 连接到外部数据目录，并将目录中的表暴露为原生 ClickHouse 数据库。'
+keywords: ['数据湖', '湖仓', '数据目录', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+在[上一节](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly)中，你通过直接传入存储路径来查询开放表格式。实际使用中，大多数组织都会通过**数据目录**管理表元数据——也就是一个集中式注册中心，用于跟踪表的位置、schema 和分区。当你使用 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎将 ClickHouse 连接到某个目录时，整个目录都会作为一个 ClickHouse 数据库对外暴露。目录中的每张表都会自动显示出来，并且都可以使用完整的 ClickHouse SQL 进行查询——无需知道各个表的具体路径，也无需为每张表单独管理凭证。
+
+本指南将逐步介绍如何连接到 [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog)。ClickHouse 还支持以下目录——完整设置说明请参阅各自的参考指南：
+
+| 目录                   | 参考指南                                                                        |
+| -------------------- | --------------------------------------------------------------------------- |
+| AWS Glue             | [AWS Glue catalog](/zh/guides/use-cases/data-warehousing/glue-catalog)         |
+| Iceberg REST Catalog | [REST catalog](/zh/guides/use-cases/data-warehousing/rest-catalog)             |
+| Lakekeeper           | [Lakekeeper catalog](/zh/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| Project Nessie       | [Nessie catalog](/zh/guides/use-cases/data-warehousing/nessie-catalog)         |
+| Microsoft OneLake    | [Fabric OneLake](/zh/guides/use-cases/data-warehousing/onelake-catalog)        |
+
+<div id="connecting-to-unity-catalog">
+  ## 连接到 Unity Catalog
+</div>
+
+<BetaBadge />
+
+为便于演示，我们将使用 Unity Catalog。
+
+[Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) 为 Databricks 湖仓中的数据提供集中式治理。
+
+Databricks 的湖仓支持多种数据格式。借助 ClickHouse，你可以以 Delta 和 Iceberg 格式查询 Unity Catalog 中的表。
+
+<Note>
+  与 Unity Catalog 的集成支持托管表和外部表。
+  此集成当前仅支持 AWS。
+</Note>
+
+<div id="configuring-unity-in-databricks">
+  ### 在 Databricks 中配置 Unity
+</div>
+
+要让 ClickHouse 能与 Unity Catalog 交互，您需要确保 Unity Catalog 已配置为允许外部读取器访问。可按照[“启用 Unity Catalog 的外部数据访问”](https://docs.databricks.com/aws/en/external-access/admin)指南进行配置。
+
+除了启用外部访问外，还要确保负责配置该集成的主体对包含这些表的 schema 具有 `EXTERNAL USE SCHEMA` [权限](https://docs.databricks.com/aws/en/external-access/admin#external-schema)。
+
+配置好目录后，您还必须为 ClickHouse 生成 credentials。根据您与 Unity 的交互方式，可以采用两种不同的方法：
+
+* 对于 Iceberg 客户端，请使用[服务主体](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m)进行身份验证。
+
+* 对于 Delta 客户端，请使用个人访问令牌 ([PAT](https://docs.databricks.com/aws/en/dev-tools/auth/pat)) 。
+
+<div id="connect-catalog">
+  ### 连接到目录
+</div>
+
+有了凭据后，您可以连接到相应的端点，查询 Iceberg 或 Delta 表。
+
+<Tabs>
+  <Tab title="Delta">
+    应使用 [Unity 目录](/zh/guides/use-cases/data-warehousing/unity-catalog) 访问 Delta 格式的数据。
+
+    ```sql
+    SET allow_experimental_database_unity_catalog = 1;
+
+    CREATE DATABASE unity
+    ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog')
+    SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type = 'unity';
+    ```
+  </Tab>
+
+  <Tab title="Iceberg">
+    ```sql
+    SET allow_database_iceberg = 1;
+
+    CREATE DATABASE unity
+    ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest')
+    SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret>', warehouse = 'workspace',
+    oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql';
+    ```
+  </Tab>
+</Tabs>
+
+<div id="list-tables">
+  ### 列出表
+</div>
+
+与您的目录建立连接后，您就可以列出其中的表。
+
+```sql
+SHOW TABLES FROM unity
+```
+
+```response
+┌─name───────────────────────────────────────────────┐
+│ unity.logs                                         │
+│ unity.single_day_log                               │
+└────────────────────────────────────────────────────┘
+
+31 rows in set.
+```
+
+<div id="exploring-table-schemas">
+  ### 探索表 schema
+</div>
+
+我们可以使用标准的 `SHOW CREATE TABLE` 命令来查看这些表的创建方式。
+
+<Info>
+  **需要使用反引号**
+
+  请注意，需要指定命名空间和表名，并用反引号括起来——ClickHouse 不支持多个命名空间。
+</Info>
+
+以下内容假定查询的是 REST Iceberg 目录：
+
+```sql
+SHOW CREATE TABLE unity.`icebench.single_day_log`
+
+CREATE TABLE unity.`icebench.single_day_log`
+(
+    `pull_request_number` Nullable(Int64),
+    `commit_sha` Nullable(String),
+    `check_start_time` Nullable(DateTime64(6, 'UTC')),
+    `check_name` Nullable(String),
+    `instance_type` Nullable(String),
+    `instance_id` Nullable(String),
+    `event_date` Nullable(Date32),
+    `event_time` Nullable(DateTime64(6, 'UTC')),
+    `event_time_microseconds` Nullable(DateTime64(6, 'UTC')),
+    `thread_name` Nullable(String),
+    `thread_id` Nullable(Decimal(20, 0)),
+    `level` Nullable(String),
+    `query_id` Nullable(String),
+    `logger_name` Nullable(String),
+    `message` Nullable(String),
+    `revision` Nullable(Int64),
+    `source_file` Nullable(String),
+    `source_line` Nullable(Decimal(20, 0)),
+    `message_format_string` Nullable(String)
+)
+ENGINE = Iceberg('s3://...')
+```
+
+<div id="querying-a-table">
+  ### 查询表
+</div>
+
+支持所有 ClickHouse 函数。同样，命名空间和表名都应使用反引号括起来。
+
+```sql
+SELECT count()
+FROM unity.`icebench.single_day_log`
+```
+
+```response
+┌───count()─┐
+│ 282634391 │ -- 2.8263 亿
+└───────────┘
+
+1 row in set. Elapsed: 1.265 sec.
+```
+
+如需完整的设置说明，请参阅 [Unity Catalog 参考指南](/zh/guides/use-cases/data-warehousing/unity-catalog)。

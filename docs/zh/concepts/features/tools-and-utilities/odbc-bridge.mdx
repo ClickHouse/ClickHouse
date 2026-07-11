@@ -1,0 +1,47 @@
+---
+description: 'ODBC Bridge 文档'
+slug: /operations/utilities/odbc-bridge
+title: 'clickhouse-odbc-bridge'
+doc_type: 'reference'
+---
+
+一个简单的 HTTP 服务器，用作 ODBC Driver 的代理。其主要目的是隔离 ODBC 实现中可能出现的段错误或其他故障，因为这些问题可能导致整个 clickhouse-server 进程崩溃。
+
+该工具通过 HTTP 工作，而不是通过管道、共享内存或 TCP，原因如下：
+
+* 更容易实现
+* 更容易调试
+* jdbc-bridge 也可以采用相同的方式实现
+
+<div id="usage">
+  ## 用法
+</div>
+
+`clickhouse-server` 会在 ODBC 表函数和 StorageODBC 中使用此工具。
+不过，它也可以作为独立工具从命令行使用，并在 POST 请求 URL 中传入以下
+参数：
+
+* `connection_string` -- ODBC 连接字符串。
+* `sample_block` -- ClickHouse NamesAndTypesList 格式的列描述，名称用反引号括起，
+  类型为字符串。名称和类型之间以空格分隔，各行之间以
+  换行符分隔。
+* `max_block_size` -- 可选参数，用于设置单个块的最大大小。
+  查询通过 POST 请求体发送。响应以 RowBinary 格式返回。
+
+<div id="example">
+  ## 示例：
+</div>
+
+```bash
+$ clickhouse-odbc-bridge --http-port 9018 --daemon
+
+$ curl -d "query=SELECT PageID, ImpID, AdType FROM Keys ORDER BY PageID, ImpID" --data-urlencode "connection_string=DSN=ClickHouse;DATABASE=stat" --data-urlencode "sample_block=columns format version: 1
+3 columns:
+\`PageID\` String
+\`ImpID\` String
+\`AdType\` String
+"  "http://localhost:9018/" > result.txt
+
+$ cat result.txt
+12246623837185725195925621517
+```
