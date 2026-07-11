@@ -47,7 +47,7 @@ flowchart TD
     Cdata --> Comp["Composite<br/>recursive, shape from type string"]
     Cdata --> Ver["Versioned / stateful<br/>per-block version prefix"]
 
-    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, IPv4, IPv6, FixedString(N)"]
+    Fixed --> FixedEx["Int*, UInt*, Float*, Decimal*<br/>Date, DateTime, DateTime64<br/>UUID, UUID2, IPv4, IPv6, FixedString(N)"]
     Comp --> CompEx["Nullable(T), Array(T)<br/>Tuple(...), Map(K, V), Nested(...)"]
     Ver --> VerEx["LowCardinality(T), JSON<br/>Variant(...), Dynamic"]
 ```
@@ -436,6 +436,7 @@ Each value occupies a constant number of bytes. A column of `M` rows occupies ex
 | `Time64(s)`         | 8               | Signed clock duration in ticks at scale `s`       | Little-endian Int64 |
 | `Interval<Unit>`    | 8               | Signed count; the unit lives in the type string   | Little-endian Int64 |
 | `UUID`              | 16              | 128-bit identifier                                | Two byte-swapped LE UInt64 halves (see [UUID](#uuid)) |
+| `UUID2`             | 16              | 128-bit identifier with lexicographic sorting     | Canonical big-endian bytes, no swap (see [UUID](#uuid)) |
 | `IPv4`              | 4               | IPv4 address                                      | Little-endian UInt32 |
 | `IPv6`              | 16              | IPv6 address                                      | Network byte order, no swap |
 | `Enum8`             | 1               | Signed 8-bit (variant index)                      | Raw byte      |
@@ -605,6 +606,14 @@ D4 41 9B E2 00 84 0E 55  high half byte-reversed
 ```
 
 The nil UUID (all zeros) appears identically in both representations.
+
+`UUID2` — a variant of `UUID` whose values sort in the lexicographic (textual) order — does **not** use the swapped layout: its wire encoding is exactly the 16 canonical big-endian bytes, in the same order as the canonical text form. The same UUID as above, as a `UUID2` value:
+
+```text
+Wire bytes (= canonical): 55 0E 84 00 E2 9B 41 D4  A7 16 44 66 55 44 00 00
+```
+
+Its binary type encoding is the tag `0x38` (see [binary type encoding](/sql-reference/data-types/data-types-binary-encoding)).
 
 #### IPv4 and IPv6 {#ipv4-and-ipv6}
 
