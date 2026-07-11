@@ -200,3 +200,40 @@ SELECT 'mat key mut consistent', countIf(d = toDate(ts)) = count() FROM t_mat_ke
 SELECT 'mat key mut sorted', (SELECT groupArray(d) FROM (SELECT d FROM t_mat_key_mut SETTINGS optimize_read_in_order = 0))
                            = (SELECT groupArray(d) FROM (SELECT d FROM t_mat_key_mut ORDER BY d));
 DROP TABLE t_mat_key_mut;
+
+-- Transitive MATERIALIZED chain: the sorting key is `z`, `z` is MATERIALIZED from `y`, and `y` is
+-- MATERIALIZED from the base column `x` that the SET rewrites. A one-hop check misses `z`, so the
+-- stored `z` would keep its pre-SET value and the part would be written and pruned by stale
+-- sort-key data. The affected-column detection must take the transitive closure and recompute the
+-- intermediate `y` before `z`.
+DROP TABLE IF EXISTS t_mat_chain;
+CREATE TABLE t_mat_chain (x DateTime, y Date MATERIALIZED toDate(x), z UInt32 MATERIALIZED toYYYYMM(y))
+ENGINE = MergeTree ORDER BY z
+TTL x + toIntervalDay(1) GROUP BY z SET x = max(x) + interval 100 year
+SETTINGS min_bytes_for_full_part_storage = 128, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_mat_chain;
+INSERT INTO t_mat_chain (x) SELECT toDateTime('2020-01-01') + number * 86400 * 40 FROM numbers(10);
+ALTER TABLE t_mat_chain MATERIALIZE TTL SETTINGS mutations_sync = 2;
+-- Stored `z` must equal the recomputed `toYYYYMM(toDate(x))` for every row.
+SELECT 'mat chain consistent', countIf(z = toYYYYMM(toDate(x))) = count() FROM t_mat_chain;
+SELECT 'mat chain sorted', (SELECT groupArray(z) FROM (SELECT z FROM t_mat_chain SETTINGS optimize_read_in_order = 0))
+                        = (SELECT groupArray(z) FROM (SELECT z FROM t_mat_chain ORDER BY z));
+DROP TABLE t_mat_chain;
+
+-- MATERIALIZED sort-key column defined over a Tuple SUBCOLUMN source (`d = toDate(tup.ts)`,
+-- `ORDER BY d`), with the SET rewriting the whole `tup` via an aggregate over an unrelated plain
+-- column. Recomputing `d` needs the subcolumn `tup.ts`, which is not directly present in the
+-- stream (only the physical `tup` is), so the recompute DAG must prepend a subcolumn-extraction
+-- step. Before the fix this failed with NOT_FOUND_COLUMN_IN_BLOCK.
+DROP TABLE IF EXISTS t_mat_subcol;
+CREATE TABLE t_mat_subcol (tup Tuple(ts DateTime), v UInt32, d Date MATERIALIZED toDate(tup.ts))
+ENGINE = MergeTree ORDER BY d
+TTL tup.ts + toIntervalDay(1) GROUP BY d SET tup = tuple(toDateTime('2200-01-01') + toIntervalSecond(max(v)))
+SETTINGS min_bytes_for_full_part_storage = 128, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_mat_subcol;
+INSERT INTO t_mat_subcol (tup, v) SELECT tuple(toDateTime('2020-01-01') + number * 86400), number FROM numbers(10);
+ALTER TABLE t_mat_subcol MATERIALIZE TTL SETTINGS mutations_sync = 2;
+SELECT 'mat subcol consistent', countIf(d = toDate(tup.ts)) = count() FROM t_mat_subcol;
+SELECT 'mat subcol sorted', (SELECT groupArray(d) FROM (SELECT d FROM t_mat_subcol SETTINGS optimize_read_in_order = 0))
+                         = (SELECT groupArray(d) FROM (SELECT d FROM t_mat_subcol ORDER BY d));
+DROP TABLE t_mat_subcol;
