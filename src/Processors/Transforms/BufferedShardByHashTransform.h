@@ -34,7 +34,10 @@ namespace DB
 class BufferedShardByHashTransform : public IProcessor
 {
 public:
-    BufferedShardByHashTransform(SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_);
+    /// `max_queue_length_` bounds each per-shard queue: once a queue hits it the transform stops pulling
+    /// new input (back-pressure). Pass 0 for unbounded queues (never stall on a full queue) — required when
+    /// a downstream *sorted* merge consumes the shards selectively, where back-pressure could deadlock.
+    BufferedShardByHashTransform(SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_, size_t max_queue_length_ = MAX_QUEUE_LENGTH);
 
     String getName() const override { return "BufferedShardByHashTransform"; }
 
@@ -44,12 +47,14 @@ public:
 private:
     void generateOutputChunks();
 
-    /// Once any queue hits this length the transform stops pulling new input until
-    /// the slow consumer drains it. Otherwise, we can have very high memory usage.
+    /// Default back-pressure threshold. Once any queue hits this length the transform stops pulling new
+    /// input until the slow consumer drains it. Otherwise, we can have very high memory usage.
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
 
     size_t num_shards;
     ColumnNumbers key_columns;
+    /// 0 means unbounded (never stall on a full queue).
+    size_t max_queue_length;
 
     /// Input chunk that was pulled in prepare() and will be split in work().
     bool has_pending_input_chunk = false;

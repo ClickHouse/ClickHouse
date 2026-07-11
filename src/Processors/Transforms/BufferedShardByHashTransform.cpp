@@ -7,10 +7,11 @@
 namespace DB
 {
 
-BufferedShardByHashTransform::BufferedShardByHashTransform(SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_)
+BufferedShardByHashTransform::BufferedShardByHashTransform(SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_, size_t max_queue_length_)
     : IProcessor(InputPorts{header}, OutputPorts{num_shards_, header})
     , num_shards(num_shards_)
     , key_columns(std::move(key_columns_))
+    , max_queue_length(max_queue_length_)
     , output_queues(num_shards)
     , shard_columns(num_shards)
 {
@@ -51,7 +52,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     for (size_t shard = 0; shard < num_shards; ++shard, ++queued_output_it)
     {
         const auto & queue = output_queues[shard];
-        if (queue.size() >= MAX_QUEUE_LENGTH)
+        if (max_queue_length != 0 && queue.size() >= max_queue_length)
             any_queue_at_capacity = true;
         if (!queue.empty())
         {
@@ -72,8 +73,12 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         return Status::Finished;
     }
 
-    /// Cannot push any output port
-    if (has_queued_chunks && !has_pushable_queued_chunks)
+    /// Cannot push any output port.
+    /// In bounded mode this is back-pressure: stop and wait for a consumer to drain.
+    /// In unbounded mode (max_queue_length == 0) we must keep pulling instead: a downstream *sorted* merge
+    /// is a selective consumer that only reads its current smallest-key input, so if we stopped here we
+    /// could starve exactly that input (whose rows are in a not-yet-pulled chunk) and deadlock.
+    if (has_queued_chunks && !has_pushable_queued_chunks && max_queue_length != 0)
         return Status::PortFull;
 
     if (any_queue_at_capacity)

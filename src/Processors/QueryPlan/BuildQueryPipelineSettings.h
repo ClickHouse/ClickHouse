@@ -37,6 +37,7 @@ struct BuildQueryPipelineSettings
 
 
     size_t max_threads;
+    bool aggregation_in_order_shuffle;
     size_t aggregation_memory_efficient_merge_threads;
     size_t min_outstreams_per_resize_after_split;
     size_t max_streams_for_union_step;

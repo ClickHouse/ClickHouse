@@ -15,6 +15,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Core/SortCursor.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -534,6 +536,101 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// We don't really care about optimality of this sorting, because it's required only in fairly marginal cases.
             SortingStep::fullSortStreams(
                 pipeline, SortingStep::Settings(params.max_block_size), sort_description_for_merging, 0 /* limit */);
+        }
+
+        /// Shuffled aggregation-in-order.
+        /// The default in-order pipeline funnels every partially-aggregated stream through a single
+        /// FinishAggregatingInOrderTransform, which serializes the finish/merge stage and caps the whole
+        /// aggregation at a couple of cores. Instead, reshuffle-then-merge: scatter each sorted input stream
+        /// by hash(GROUP BY keys) into `num_shards` groups, merge each group back into a single sorted
+        /// stream (disjoint keys across groups), then run streaming in-order aggregation on each group in
+        /// parallel. This parallelizes aggregation-in-order across threads while keeping its bounded (O(1))
+        /// memory. The output is no longer globally ordered by the GROUP BY keys, so this is only used when
+        /// the order is not relied upon downstream (see the gate below).
+        const bool use_shuffle_in_order
+            = settings.aggregation_in_order_shuffle
+            && !memoryBoundMergingWillBeUsed()
+            && !should_produce_results_in_order_of_bucket_number
+            && limit_hint == 0
+            && !skip_merging
+            && max_threads > 1
+            && pipeline.getNumStreams() > 1;
+
+        if (use_shuffle_in_order)
+        {
+            const size_t num_shards = max_threads;
+            const size_t num_streams = pipeline.getNumStreams();
+            auto stream_header = pipeline.getSharedHeader();
+
+            ColumnNumbers key_columns;
+            key_columns.reserve(transform_params->params.keys.size());
+            for (const auto & key : transform_params->params.keys)
+                key_columns.push_back(stream_header->getPositionByName(key));
+
+            /// Stage 1: reshuffle. Scatter each sorted stream by hash(keys) into num_shards (order is
+            /// preserved per output), producing num_shards groups of num_streams sorted sub-streams that
+            /// are non-intersecting by key across groups. Then merge each group's sub-streams back into a
+            /// single sorted stream. Scatter + merge are added in one transform() so the intermediate
+            /// num_streams * num_shards port count does not inflate the pipeline's parallelism limit.
+            ///
+            /// The scatter uses unbounded per-shard queues (max_queue_length = 0). A per-shard sorted merge
+            /// is a *selective* consumer (it waits for the smallest-key input), so bounding the scatter with
+            /// back-pressure could deadlock (a stalled merge backs the scatter up across all shards). With
+            /// unbounded queues each scatter always drains its input; memory stays bounded because all shard
+            /// merges advance through the global key order roughly in lockstep.
+            pipeline.transform([&](OutputPortRawPtrs ports)
+            {
+                chassert(ports.size() == num_streams);
+                Processors processors;
+
+                /// scatter_outputs[stream * num_shards + shard]
+                std::vector<OutputPort *> scatter_outputs;
+                scatter_outputs.reserve(num_streams * num_shards);
+                for (size_t stream = 0; stream < num_streams; ++stream)
+                {
+                    auto scatter_transform = std::make_shared<BufferedShardByHashTransform>(
+                        stream_header, num_shards, key_columns, /*max_queue_length=*/ 0);
+                    connect(*ports[stream], scatter_transform->getInputs().front());
+                    for (auto & output : scatter_transform->getOutputs())
+                        scatter_outputs.push_back(&output);
+                    processors.push_back(std::move(scatter_transform));
+                }
+
+                for (size_t shard = 0; shard < num_shards; ++shard)
+                {
+                    auto merge = std::make_shared<MergingSortedTransform>(
+                        stream_header, num_streams, sort_description_for_merging,
+                        max_block_size, /*max_block_size_bytes=*/ 0,
+                        /*max_dynamic_subcolumns=*/ std::nullopt,
+                        SortingQueueStrategy::Batch);
+                    auto input_it = merge->getInputs().begin();
+                    for (size_t stream = 0; stream < num_streams; ++stream, ++input_it)
+                        connect(*scatter_outputs[stream * num_shards + shard], *input_it);
+                    processors.push_back(std::move(merge));
+                }
+                return processors;
+            });
+
+            chassert(pipeline.getNumStreams() == num_shards);
+            scatter = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Scatter));
+
+            /// Stage 2: streaming in-order aggregation per shard. Keys are disjoint across shards, so each
+            /// shard aggregates independently and emits completed key groups as it goes (O(1) memory).
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<AggregatingInOrderTransform>(
+                    header, transform_params,
+                    sort_description_for_merging, group_by_sort_description,
+                    max_block_size, aggregation_in_order_max_block_bytes,
+                    limit_hint, nullptr);
+            });
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FinalizeAggregatedTransform>(header, transform_params);
+            });
+
+            aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
+            return;
         }
 
         if (pipeline.getNumStreams() > 1)

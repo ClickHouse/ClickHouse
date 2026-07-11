@@ -4157,6 +4157,16 @@ Possible values:
     DECLARE(Bool, optimize_aggregation_in_order_limit, true, R"(
 When enabled and aggregation in order is active, pushes LIMIT into the aggregation step to enable early termination after producing enough groups. This reduces the amount of data read when ORDER BY matches the GROUP BY key prefix. May reduce the value reported by `rows_before_limit_at_least`; use `exact_rows_before_limit` if exact counts are needed.
 )", 0) \
+    DECLARE(Bool, aggregation_in_order_shuffle, false, R"(
+When enabled together with [optimize_aggregation_in_order](#optimize_aggregation_in_order), repartitions the sorted input by the hash of the `GROUP BY` keys into independent shards so that aggregation-in-order runs in parallel across threads, instead of funneling all partially-aggregated streams through the single-threaded `FinishAggregatingInOrderTransform`. Each shard aggregates a disjoint set of keys, so no cross-shard merge is needed, while keeping the bounded memory of aggregation-in-order.
+
+The order of `GROUP BY` keys in the output is not preserved, so this optimization is only applied when the result order is not relied upon downstream (i.e. when memory-bound merging is not used).
+
+Possible values:
+
+- 0 — Shuffled aggregation-in-order is disabled.
+- 1 — Shuffled aggregation-in-order is enabled.
+)", 0) \
     DECLARE(Bool, enable_sharding_aggregator, false, R"(
 Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
 
