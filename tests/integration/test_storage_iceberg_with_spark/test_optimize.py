@@ -238,7 +238,9 @@ def test_optimize_after_nested_rename(started_cluster_iceberg_with_spark, storag
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 2")
     upload()
     # Nested rename: struct field s.a -> s.b (field id and type preserved, only the name changes).
-    spark.sql(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN s.a TO s.b")
+    # Spark's Iceberg RENAME COLUMN target is the new LEAF name only (not the dotted path), so the
+    # field s.a becomes s.b via `... TO b`.
+    spark.sql(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN s.a TO b")
     upload()
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 2
