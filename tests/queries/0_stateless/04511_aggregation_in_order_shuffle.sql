@@ -2,6 +2,10 @@
 -- input by the hash of the GROUP BY keys into independent shards. The results must be identical to both the
 -- default hash aggregation and the ordinary (funnel) aggregation-in-order.
 
+-- With parallel replicas the aggregation plan changes (memory-bound merging) and the shuffle is not applied,
+-- so pin the plain single-replica plan to keep the EXPLAIN PIPELINE check below meaningful.
+SET enable_parallel_replicas = 0;
+
 DROP TABLE IF EXISTS t_aio_shuffle;
 
 CREATE TABLE t_aio_shuffle (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128;
