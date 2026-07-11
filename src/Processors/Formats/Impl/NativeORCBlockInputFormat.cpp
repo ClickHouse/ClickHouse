@@ -1857,9 +1857,12 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const Str
 /// ordinary column path accepts through the final cast (the unsigned and Enum types of the
 /// matching width - they are what the ORC writer maps to these ORC types - and int -> IPv4) and
 /// the special binary readers (binary -> IPv6/Int128/UInt128/Int256/UInt256/Decimal256,
-/// char -> big integers and Decimal256). Variant sorts its nested types, so the positional
-/// correspondence between ORC union branches and Variant alternatives is lost; this predicate is
-/// used to reconstruct it.
+/// char -> big integers and Decimal256). Custom type names matter here: `Bool` is a custom-named
+/// `UInt8`, but the writer maps it to BOOLEAN while a plain `UInt8` goes to BYTE, so only BOOLEAN
+/// accepts `Bool` - otherwise `Variant(Bool, UInt8)` over `uniontype<boolean,tinyint>` would leave
+/// both branches ambiguous. Variant sorts its nested types, so the positional correspondence
+/// between ORC union branches and Variant alternatives is lost; this predicate is used to
+/// reconstruct it.
 static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const DataTypePtr & target_type)
 {
     checkStackSize();
@@ -1872,7 +1875,7 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
         case orc::TypeKind::BOOLEAN:
             return which.isUInt8();
         case orc::TypeKind::BYTE:
-            return which.isInt8() || which.isUInt8() || which.isEnum8();
+            return which.isInt8() || (which.isUInt8() && !isBool(type)) || which.isEnum8();
         case orc::TypeKind::SHORT:
             return which.isInt16() || which.isUInt16() || which.isEnum16();
         case orc::TypeKind::INT:
@@ -2048,8 +2051,10 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             /// With a per-branch hint the branch must end up as exactly that alternative, so that
             /// the resulting Variant type equals the hinted one (e.g. a branch of a
             /// non-dictionary-encoded file read for a LowCardinality(String) alternative comes
-            /// back as plain String).
-            if (branch_hints[i] && !branch_hints[i]->equals(*branch_non_nullable.type))
+            /// back as plain String). Compared by name, not equals: Variant identity is name-based
+            /// and e.g. equals cannot tell the custom-named Bool from a plain UInt8, which would
+            /// skip the Bool -> UInt8 repair cast for a boolean branch hinted as UInt8.
+            if (branch_hints[i] && branch_hints[i]->getName() != branch_non_nullable.type->getName())
             {
                 /// Cast through Nullable when the branch has nulls: a value-checking cast (e.g.
                 /// Int8 -> Enum8) must not inspect the placeholder values at null-payload
