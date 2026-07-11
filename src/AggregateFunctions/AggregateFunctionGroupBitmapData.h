@@ -596,11 +596,12 @@ public:
                 sorted.push_back(x.getValue());
             ::sort(sorted.begin(), sorted.end());
 
-            const UInt64 start = std::min(offset, sorted.size());
-            const UInt64 end = std::min(start + limit, sorted.size());
+            const UInt64 start = std::min(offset, static_cast<UInt64>(sorted.size()));
+            const UInt64 count = std::min(limit, static_cast<UInt64>(sorted.size()) - start);
+            const UInt64 end = start + count;
             for (UInt64 i = start; i < end; ++i)
                 r1.add(sorted[i]);
-            return end - start;
+            return count;
         }
 
         UInt64 count = 0;
