@@ -236,13 +236,17 @@ is one extra network hop and a fiber hand-off). Because every connection is a fi
 thread, memory scales gently with connection count — on the order of tens of kilobytes of resident
 memory per idle connection.
 
+Plaintext connections (both legs unencrypted) are relayed with `splice(2)`, moving bytes through a
+kernel pipe without copying them into user space; a TLS-terminated leg falls back to a user-space
+copy because its bytes must be decrypted and re-encrypted.
+
 Two settings trade throughput against memory:
 
-- `relay_buffer_size` (default 64 KiB) is the per-direction copy buffer. Bulk transfers are
-  buffer-bound: 16 KiB caps a single stream well under 1 GB/s, 64 KiB reaches roughly 2 GB/s, and
-  256 KiB approaches a direct connection. Each actively-transferring connection holds about twice
-  this much resident memory, so lower it for very many mostly-idle connections and raise it for
-  throughput-heavy workloads.
+- `relay_buffer_size` (default 256 KiB) is the per-direction relay chunk (the pipe size for a splice
+  relay). Bulk transfers are buffer-bound: 16 KiB caps a single stream well under 1 GB/s, 64 KiB
+  reaches roughly 2 GB/s, and 256 KiB reaches near line rate (a splice relay matches a direct
+  connection). Each actively-transferring connection holds about twice this much memory, so lower it
+  for very many mostly-idle connections and raise it for throughput-heavy workloads.
 - `fiber_stack_size` (default 512 KiB) is the per-fiber stack size. It must stay large enough for
   the TLS handshake (which runs on a fiber); stacks are allocated lazily, so only the touched pages
   count against resident memory.

@@ -178,10 +178,11 @@ struct ProxyConfiguration
     UInt64 connect_timeout_ms = 3000;
     UInt64 handshake_timeout_ms = 10000;
     UInt64 send_timeout_ms = 300000;
-    /// Per-direction relay buffer. Larger values raise bulk throughput (a 16 KiB buffer caps a single
-    /// stream at well under 1 GB/s, 64 KiB reaches ~2 GB/s) at the cost of ~2x this much resident
-    /// memory per actively-transferring connection. Lower it for many mostly-idle connections.
-    size_t relay_buffer_size = 65536;
+    /// Per-direction relay buffer (for a splice relay, the pipe/chunk size). Larger values raise bulk
+    /// throughput: 16 KiB caps a single stream well under 1 GB/s, 64 KiB reaches ~2 GB/s, and 256 KiB
+    /// (the default) reaches near line rate. The cost is ~2x this much memory per actively-transferring
+    /// connection, so lower it for very many mostly-idle connections.
+    size_t relay_buffer_size = 262144;
     UInt32 fiber_stack_size = 512 * 1024;
 
     static ProxyConfiguration load(const Poco::Util::AbstractConfiguration & config);
