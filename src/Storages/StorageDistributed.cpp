@@ -1109,13 +1109,15 @@ void StorageDistributed::read(
 
 SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
-    /// A Distributed table backed by a table function has no concrete remote table to route
-    /// inserts to, so `DistributedSink` cannot build a valid `INSERT INTO ...` query for the shards.
-    /// Reject it explicitly instead of building a broken query (or spooling undeliverable files).
+    /// When the target is a table function (e.g. `numbers(...)`, `view(...)`), there is no remote
+    /// table to insert into: `remote_storage` is an empty `StorageID`, so `DistributedSink` would
+    /// build an `INSERT` into an empty table id. Such targets are read-only by nature, so reject the
+    /// write explicitly instead of producing a malformed query. This covers both the `remote()`/`cluster()`
+    /// table functions and a `Distributed` engine created over a table function.
     if (remote_table_function_ptr)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "INSERT into a Distributed table ({}) that is backed by a table function is not supported",
-            getStorageID().getNameForLogs());
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Method write is not supported by storage {} with a table function target", getName());
 
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
@@ -1428,12 +1430,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
 std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
-    /// See the same guard in `write`: a table-function-backed Distributed table is not a valid INSERT target.
-    if (remote_table_function_ptr)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "INSERT into a Distributed table ({}) that is backed by a table function is not supported",
-            getStorageID().getNameForLogs());
-
     const Settings & settings = local_context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
