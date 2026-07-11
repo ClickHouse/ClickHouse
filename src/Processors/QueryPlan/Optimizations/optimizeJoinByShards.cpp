@@ -526,7 +526,7 @@ static void disableVirtualRowInSubtree(QueryPlan::Node & node)
         stack.pop();
 
         if (auto * reading = typeid_cast<ReadFromMergeTree *>(current->step.get()))
-            reading->disableVirtualRow();
+            reading->resetVirtualRowConversions();
 
         for (auto * child : current->children)
             stack.push(child);
