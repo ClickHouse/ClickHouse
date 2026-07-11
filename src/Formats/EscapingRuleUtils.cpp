@@ -62,6 +62,25 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
     }
 }
 
+FormatSettings getFormatSettingsForCSVFieldDelimiter(const FormatSettings & format_settings, const String & field_delimiter)
+{
+    FormatSettings result = format_settings;
+    result.csv.custom_delimiter.clear();
+
+    if (field_delimiter.empty())
+        return result;
+
+    if (field_delimiter.size() == 1)
+        result.csv.delimiter = field_delimiter.front();
+    else
+    {
+        result.csv.custom_delimiter = field_delimiter;
+        result.csv.quote_date_time_types = true;
+    }
+
+    return result;
+}
+
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings)
 {
     NullOutput out;

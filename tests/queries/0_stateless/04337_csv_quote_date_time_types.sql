@@ -69,3 +69,20 @@ SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = '1'
 SELECT 'negative subsecond DateTime64 Unix timestamp remains quoted' FORMAT TSVRaw;
 SELECT startsWith(formatRow('CSV', toDateTime64(-0.456, 3, 'UTC')), '"')
 SETTINGS output_format_csv_quote_date_time_types = 0, date_time_output_format = 'unix_timestamp';
+
+SELECT 'CustomSeparated CSV escaping uses its field delimiter' FORMAT TSVRaw;
+SELECT toDate('2024-01-15') AS d, 42 AS n
+FORMAT CustomSeparated
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '-',
+    format_custom_row_after_delimiter = '\n';
+
+SELECT 'Template CSV escaping uses its following delimiter' FORMAT TSVRaw;
+SELECT toDate('2024-01-15') AS d, 42 AS n
+FORMAT Template
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_template_row_format = '${d:CSV}-${n:CSV}\n',
+    format_template_resultset_format = '${data}';

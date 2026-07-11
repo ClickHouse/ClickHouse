@@ -16,7 +16,10 @@ CustomSeparatedRowOutputFormat::CustomSeparatedRowOutputFormat(
     : IRowOutputFormat(header_, out_)
     , with_names(with_names_)
     , with_types(with_types_)
-    , format_settings(format_settings_)
+    , format_settings(
+        format_settings_.custom.escaping_rule == FormatSettings::EscapingRule::CSV
+            ? getFormatSettingsForCSVFieldDelimiter(format_settings_, format_settings_.custom.field_delimiter)
+            : format_settings_)
     , escaping_rule(format_settings.custom.escaping_rule)
 {
 }
