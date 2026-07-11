@@ -1,0 +1,423 @@
+---
+slug: /use-cases/observability/clickstack/integrations/redis
+title: 'ClickStack による Redis ログの監視'
+sidebarTitle: 'Redis ログ'
+description: 'ClickStack による Redis ログの監視'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **要点**
+
+  OTel `filelog` receiver を使って、ClickStack で Redis のサーバーログを収集し、可視化します。デモデータセットとあらかじめ用意されたダッシュボードが含まれます。
+</Info>
+
+<div id="existing-redis">
+  ## 既存のRedisとのインテグレーション
+</div>
+
+このセクションでは、ClickStack OTel collectorの設定を変更し、既存のRedis環境からClickStackにログを送信するよう構成する方法を説明します。
+既存環境の設定を行う前にRedisインテグレーションを試したい場合は、[&quot;デモデータセット&quot;](/ja/clickstack/integration-examples/redis-logs#demo-dataset) セクションにある事前設定済みのセットアップとサンプルデータを使ってテストできます。
+
+<div id="prerequisites">
+  ### 前提条件
+</div>
+
+* 稼働中の ClickStack インスタンス
+* 既存の Redis 環境 (バージョン 3.0 以降)
+* Redis のログファイルへのアクセス
+
+<Steps>
+  <Step>
+    #### Redis のログ設定を確認する
+
+    まず、Redis のログ設定を確認します。Redis に接続し、ログファイルの保存場所を確認します。
+
+    ```bash
+    redis-cli CONFIG GET logfile
+    ```
+
+    Redis の一般的なログ出力先:
+
+    * **Linux (apt/yum)**: `/var/log/redis/redis-server.log`
+    * **macOS (Homebrew)**: `/usr/local/var/log/redis.log`
+    * **Docker**: 多くの場合 stdout に出力されますが、設定により `/data/redis.log` に書き込むこともできます
+
+    Redis が stdout にログを出力している場合は、`redis.conf` を更新してファイルに書き込むように設定します:
+
+    ```bash
+    # stdoutの代わりにファイルへログを出力する
+    logfile /var/log/redis/redis-server.log
+
+    # ログレベルを設定する（オプション: debug, verbose, notice, warning）
+    loglevel notice
+    ```
+
+    設定を変更したら、Redis を再起動します。
+
+    ```bash
+    # systemdの場合
+    sudo systemctl restart redis
+
+    # Dockerの場合
+    docker restart <redis-container>
+    ```
+  </Step>
+
+  <Step>
+    #### カスタム OTel collector 設定を作成する
+
+    ClickStack では、カスタム設定ファイルをマウントして環境変数を設定することで、OpenTelemetry Collector のベース設定を拡張できます。カスタム設定は、HyperDX が OpAMP 経由で管理するベース設定にマージされます。
+
+    次の内容で、`redis-monitoring.yaml` という名前のファイルを作成します。
+
+    ```yaml
+    receivers:
+      filelog/redis:
+        include:
+          - /var/log/redis/redis-server.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P\d+):(?P\w+) (?P\d{2} \w+ \d{4} \d{2}:\d{2}:\d{2})\.\d+ (?P[.\-*#]) (?P.*)$'
+            parse_from: body
+            parse_to: attributes
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%d %b %Y %H:%M:%S'
+          
+          - type: add
+            field: attributes.source
+            value: "redis"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "redis-production"
+
+    service:
+      pipelines:
+        logs/redis:
+          receivers: [filelog/redis]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    この構成では、次のことを行います。
+
+    * 標準の場所から Redis ログを読み取ります
+    * 正規表現を使用して Redis のログフォーマットをパースし、構造化されたフィールド (`pid`、`role`、`timestamp`、`log_level`、`message`) を抽出します
+    * HyperDX でフィルタリングできるように `source: redis` 属性を追加します
+    * 専用のパイプラインを介してログを ClickHouse exporter にルーティングします
+
+    <Note>
+      - カスタム構成で定義するのは、新しい receiver とパイプラインのみです
+      - プロセッサ (`memory_limiter`、`transform`、`batch`) とエクスポーター (`clickhouse`) は、ベースの ClickStack 構成ですでに定義されているため、ここでは名前で参照するだけです
+      - `time_parser` operator は Redis ログから timestamp を抽出し、元のログ時刻を保持します
+      - この構成では `start_at: beginning` を使用しているため、collector の起動時に既存のログをすべて読み込み、すぐにログを確認できます。collector の再起動時にログを再取り込みしたくない本番環境のデプロイメントでは、`start_at: end` に変更してください。
+    </Note>
+  </Step>
+
+  <Step>
+    #### ClickStack がカスタム設定を読み込むように構成する
+
+    既存の ClickStack デプロイで collector のカスタム設定を有効にするには、次の対応が必要です。
+
+    1. カスタム設定ファイルを `/etc/otelcol-contrib/custom.config.yaml` にマウントします
+    2. 環境変数 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml` を設定します
+    3. collector が Redis のログを読み取れるように、Redis のログディレクトリをマウントします
+
+    ##### オプション 1: Docker Compose
+
+    ClickStack のデプロイ設定を更新します。
+
+    ```yaml
+    services:
+      clickstack:
+        # ... 既存の設定 ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+          # ... その他の環境変数 ...
+        volumes:
+          - ./redis-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - /var/log/redis:/var/log/redis:ro
+          # ... その他のボリューム ...
+    ```
+
+    ##### オプション 2: Docker Run (オールインワン イメージ)
+
+    Docker でオールインワン イメージを使用している場合は、次を実行してください。
+
+    ```bash
+    docker run --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/redis-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v /var/log/redis:/var/log/redis:ro \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      ClickStack collector に、Redis のログファイルを読み取るための適切な権限が付与されていることを確認してください。本番環境では、読み取り専用マウント (`:ro`) を使用し、最小権限の原則に従ってください。
+    </Note>
+  </Step>
+
+  <Step>
+    #### HyperDXでログを確認する
+
+    設定が完了したら、HyperDX にログインし、ログが取り込まれていることを確認します。
+
+    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="ログビュー" />
+
+    <Image img="/images/clickstack/redis/redis-log.webp" alt="ログ" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## デモデータセット
+</div>
+
+本番環境を構成する前に Redis インテグレーションを試したいユーザー向けに、実際の傾向に近いパターンを含む、事前生成済みの Redis ログのサンプルデータセットを用意しています。
+
+<Steps>
+  <Step>
+    #### サンプルデータセットをダウンロードする
+
+    サンプルのログファイルをダウンロードします。
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/redis/redis-server.log
+    ```
+  </Step>
+
+  <Step>
+    #### テスト用の collector 設定を作成する
+
+    以下の内容で、`redis-demo.yaml` という名前のファイルを作成します。
+
+    ```yaml
+    cat > redis-demo.yaml << 'EOF'
+    receivers:
+      filelog/redis:
+        include:
+          - /tmp/redis-demo/redis-server.log
+        start_at: beginning  # デモデータでは先頭から読み取る
+        operators:
+          - type: regex_parser
+            regex: '^(?P<pid>\d+):(?P<role>\w+) (?P<timestamp>\d{2} \w+ \d{4} \d{2}:\d{2}:\d{2})\.\d+ (?P<log_level>[.\-*#]) (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%d %b %Y %H:%M:%S'
+          
+          - type: add
+            field: attributes.source
+            value: "redis-demo"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "redis-demo"
+
+    service:
+      pipelines:
+        logs/redis-demo:
+          receivers: [filelog/redis]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### デモ設定で ClickStack を実行する
+
+    デモログと設定を使って ClickStack を実行します。
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/redis-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/redis-server.log:/tmp/redis-demo/redis-server.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      **これはログファイルをコンテナーに直接マウントする方法です。静的なデモデータを使ったテストを目的としています。**
+    </Note>
+
+    ## HyperDX でログを確認する
+
+    ClickStack が起動したら、次の手順を実行します。
+
+    1. [HyperDX](http://localhost:8080/) を開き、アカウントにログインします (先にアカウント作成が必要な場合があります)
+    2. Search ビューに移動し、ログソースを `Logs` に設定します
+    3. 時間範囲を **2025-10-26 10:00:00 - 2025-10-29 10:00:00** に設定します
+
+    <Info>
+      **タイムゾーン表示**
+
+      HyperDX はタイムスタンプをブラウザーのローカルタイムゾーンで表示します。デモデータの期間は **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** です。広めの時間範囲を設定しているため、どの地域からでもデモログを確認できます。ログが表示されたら、より見やすく可視化するために範囲を 24 時間に絞り込めます。
+    </Info>
+
+    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="ログビュー" />
+
+    <Image img="/images/clickstack/redis/redis-log.webp" alt="ログ" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## ダッシュボードと可視化
+</div>
+
+ClickStack で Redis を監視し始める際に役立つよう、Redis ログ向けの主要な可視化を用意しています。
+
+<Steps>
+  <Step>
+    #### ダッシュボード設定を<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">ダウンロード</TrackedLink>
+  </Step>
+
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポート
+
+    1. HyperDX を開き、ダッシュボードセクションに移動します。
+    2. 右上の三点メニューから「Import Dashboard」をクリックします。
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードをインポート" />
+
+    3. redis-logs-dashboard.json ファイルをアップロードし、「finish import」をクリックします。
+
+    <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="インポートを完了" />
+  </Step>
+
+  <Step>
+    #### ダッシュボードが作成され、すべての可視化があらかじめ設定された状態になります
+
+    <Note>
+      デモデータセットでは、時間範囲を **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が設定されていません。
+    </Note>
+
+    <Image img="/images/clickstack/redis/redis-logs-dashboard.webp" alt="ダッシュボードの例" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### カスタム設定が読み込まれない
+</div>
+
+**環境変数が正しく設定されているか確認してください。**
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+# 期待される出力: /etc/otelcol-contrib/custom.config.yaml
+```
+
+**カスタム設定ファイルがマウントされているか確認してください:**
+
+```bash
+docker exec <container-name> ls -lh /etc/otelcol-contrib/custom.config.yaml
+# 期待される出力: ファイルサイズとパーミッションが表示されます
+```
+
+**カスタム設定の内容を確認します：**
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
+# redis-monitoring.yaml の内容が表示されます
+```
+
+**有効なconfigに使用中のfilelog receiverが含まれているか確認してください:**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+# filelog/redis receiverの設定が表示されます
+```
+
+<div id="no-logs">
+  ### HyperDX にログが表示されない
+</div>
+
+**Redis がログをファイルに書き出していることを確認してください:**
+
+```bash
+redis-cli CONFIG GET logfile
+# 期待される出力: ファイルパスが表示されるはずです（空文字列ではない）
+# 例: 1) "logfile" 2) "/var/log/redis/redis-server.log"
+```
+
+**Redis が実際にログを出力していることを確認します:**
+
+```bash
+tail -f /var/log/redis/redis-server.log
+# Redisフォーマットの最新ログエントリが表示されるはずです
+```
+
+**collector がログを読み取れることを確認してください。**
+
+```bash
+docker exec <container> cat /var/log/redis/redis-server.log
+# Redisのログエントリが表示されるはずです
+```
+
+**collector のログにエラーが出ていないか確認してください：**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log
+# filelogまたはRedisに関連するエラーメッセージを探す
+```
+
+**docker-composeを使用している場合は、共有ボリュームを確認してください：**
+
+```bash
+# 両方のコンテナーが同じボリュームを使用していることを確認する
+docker volume inspect <volume-name>
+# 両方のコンテナーにボリュームがマウントされていることを確認する
+```
+
+<div id="logs-not-parsing">
+  ### ログが正しくパースされない
+</div>
+
+**Redis のログフォーマットが想定どおりのパターンに一致していることを確認してください:**
+
+```bash
+# Redis ログの形式は次のようになります:
+# 12345:M 28 Oct 2024 14:23:45.123 * Server started
+tail -5 /var/log/redis/redis-server.log
+```
+
+Redis ログのフォーマットが異なる場合は、`regex_parser` オペレーターの正規表現パターンを調整する必要がある場合があります。標準的なフォーマットは次のとおりです。
+
+* `pid:role timestamp level message`
+* 例: `12345:M 28 Oct 2024 14:23:45.123 * Server started`
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* 重要なメトリクス (エラー率やレイテンシのしきい値) に対する[アラート](/ja/clickstack/features/alerts)を設定する
+* 特定のユースケース (API監視、セキュリティイベント) 向けの追加の[ダッシュボード](/ja/clickstack/features/dashboards/overview)を作成する
+
+<div id="going-to-production">
+  ## 本番環境への移行
+</div>
+
+このガイドでは、迅速にセットアップできるよう、ClickStack に組み込まれている OpenTelemetry Collector を使用します。本番環境でのデプロイには、独自の OTel Collector を実行し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

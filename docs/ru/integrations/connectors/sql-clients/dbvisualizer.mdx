@@ -1,0 +1,69 @@
+---
+sidebarTitle: 'DbVisualizer'
+slug: /integrations/dbvisualizer
+description: 'DbVisualizer — инструмент для работы с базами данных с расширенной поддержкой ClickHouse.'
+title: 'Подключение DbVisualizer к ClickHouse'
+keywords: ['DbVisualizer', 'визуализация баз данных', 'SQL-клиент', 'JDBC-драйвер', 'инструмент для работы с базами данных']
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<div id="start-or-download-dbvisualizer">
+  ## Запустите или скачайте DbVisualizer
+</div>
+
+DbVisualizer доступен для скачивания по адресу https://www.dbvis.com/download/
+
+<div id="1-gather-your-connection-details">
+  ## 1. Подготовьте сведения о подключении
+</div>
+
+<ConnectionDetails />
+
+<div id="2-built-in-jdbc-driver-management">
+  ## 2. Встроенное управление JDBC-драйверами
+</div>
+
+DbVisualizer включает самые актуальные JDBC-драйверы для ClickHouse. В нем есть полноценное встроенное управление JDBC-драйверами с доступом как к последним релизам, так и к более ранним версиям драйверов.
+
+<Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="Интерфейс Driver Manager в DbVisualizer с конфигурацией JDBC-драйвера ClickHouse" />
+
+<div id="3-connect-to-clickhouse">
+  ## 3. Подключение к ClickHouse
+</div>
+
+Чтобы подключить базу данных в DbVisualizer, сначала нужно создать и настроить подключение к базе данных.
+
+1. Создайте новое подключение через **Database-&gt;Create Database Connection** и выберите драйвер для вашей базы данных во всплывающем меню.
+
+2. Откроется вкладка **Object View** для нового подключения.
+
+3. Введите имя подключения в поле **Name** и, при необходимости, описание подключения в поле **Notes**.
+
+4. Оставьте значение **Database Type** как **Auto Detect**.
+
+5. Если выбранный драйвер в **Driver Type** отмечен зелёной галочкой, он готов к использованию. Если зелёной галочки нет, возможно, вам потребуется настроить драйвер в **Driver Manager**.
+
+6. В оставшихся полях укажите сведения о сервере базы данных.
+
+7. Нажмите кнопку **Ping Server**, чтобы проверить, можно ли установить сетевое connection с указанным адресом и портом.
+
+8. Если результат Ping Server показывает, что server доступен, нажмите **Connect**, чтобы подключиться к серверу базы данных.
+
+:::tip
+Если у вас возникают проблемы с подключением к базе данных, ознакомьтесь с [Fixing Connection Issues](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) — там приведены полезные советы.
+
+<div id="learn-more">
+  ## Подробнее
+</div>
+
+Дополнительную информацию о DbVisualizer см. в [документации DbVisualizer](https://www.dbvis.com/docs/ug/).

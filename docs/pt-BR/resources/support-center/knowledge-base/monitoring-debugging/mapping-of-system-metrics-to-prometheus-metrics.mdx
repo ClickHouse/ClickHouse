@@ -1,0 +1,72 @@
+---
+title: Mapeamento das métricas usadas em system.dashboards para as métricas do Prometheus em `system.custom_metrics`
+description: "Mapeamento das métricas usadas em system.dashboards para as métricas do Prometheus em system.custom_metrics"
+date: 2024-07-23
+tags: ['Tabelas do sistema']
+keywords: ['Métricas', 'system.dashboards', 'system.custom_metrics']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="mapping-of-metrics-used-in-systemdashboards-to-prometheus-metrics-in-systemcustom_metrics">
+  ## Mapeamento das métricas usadas em `system.dashboards` para métricas do Prometheus em `system.custom_metrics`
+</div>
+
+A tabela abaixo apresenta o mapeamento das métricas usadas em `system.dashboards` para métricas do Prometheus em `system.custom_metrics`.
+Isso é útil para clientes que desejam monitorar as mesmas métricas presentes em `system.dashboards`. 
+
+<div id="mapping-table-for-metrics-in-systemdashboards-to-prometheus-metrics-in-systemcustom_metrics">
+  ### Tabela de mapeamento das métricas em system.dashboards para métricas do Prometheus em system.custom_metrics
+</div>
+
+| Dashboard            | Título                                         | Nome da métrica do Prometheus (system.custom&#95;metrics)                                                                                                                                                             |
+| -------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Visão geral          | Consultas/segundo                              | ClickHouseProfileEvents&#95;Query                                                                                                                                                                                     |
+| Visão geral          | Uso de CPU (núcleos)                           | ClickHouseProfileEvents&#95;OSCPUVirtualTimeMicroseconds                                                                                                                                                              |
+| Visão geral          | Consultas em execução                          | ClickHouseMetrics&#95;Query                                                                                                                                                                                           |
+| Visão geral          | Merges em execução                             | ClickHouseMetrics&#95;Merge                                                                                                                                                                                           |
+| Visão geral          | Bytes selecionados/segundo                     | ClickHouseProfileEvents&#95;SelectedBytes                                                                                                                                                                             |
+| Visão geral          | Espera de E/S                                  | ClickHouseProfileEvents&#95;OSIOWaitMicroseconds                                                                                                                                                                      |
+| Visão geral          | Espera de CPU                                  | ClickHouseProfileEvents&#95;OSCPUWaitMicroseconds                                                                                                                                                                     |
+| Visão geral          | Uso de CPU do SO (userspace)                   | ClickHouseAsyncMetrics&#95;OSUserTimeNormalized                                                                                                                                                                       |
+| Visão geral          | Uso de CPU do SO (Kernel)                      | ClickHouseAsyncMetrics&#95;OSSystemTimeNormalized                                                                                                                                                                     |
+| Visão geral          | Leitura do disco                               | ClickHouseProfileEvents&#95;OSReadBytes                                                                                                                                                                               |
+| Visão geral          | Leitura do sistema de arquivos                 | ClickHouseProfileEvents&#95;OSReadChars                                                                                                                                                                               |
+| Visão geral          | Memória (rastreada)                            | ClickHouseMetrics&#95;MemoryTracking                                                                                                                                                                                  |
+| Visão geral          | Carga média (15 minutos)                       | ClickHouseAsyncMetrics&#95;LoadAverage15                                                                                                                                                                              |
+| Visão geral          | Linhas selecionadas/segundo                    | ClickHouseProfileEvents&#95;SelectedRows                                                                                                                                                                              |
+| Visão geral          | Linhas inseridas/segundo                       | ClickHouseProfileEvents&#95;InsertedRows                                                                                                                                                                              |
+| Visão geral          | Total de partes do MergeTree                   | ClickHouseAsyncMetrics&#95;TotalPartsOfMergeTreeTables                                                                                                                                                                |
+| Visão geral          | Máximo de partes por partição                  | ClickHouseAsyncMetrics&#95;MaxPartCountForPartition                                                                                                                                                                   |
+| Visão geral do Cloud | Consultas/segundo                              | ClickHouseProfileEvents&#95;Query                                                                                                                                                                                     |
+| Visão geral do Cloud | Uso de CPU (núcleos)                           | ClickHouseProfileEvents&#95;OSCPUVirtualTimeMicroseconds                                                                                                                                                              |
+| Visão geral do Cloud | Consultas em execução                          | ClickHouseMetrics&#95;Query                                                                                                                                                                                           |
+| Visão geral do Cloud | Merges em execução                             | ClickHouseMetrics&#95;Merge                                                                                                                                                                                           |
+| Visão geral do Cloud | Bytes selecionados/segundo                     | ClickHouseProfileEvents&#95;SelectedBytes                                                                                                                                                                             |
+| Visão geral do Cloud | Espera de E/S (fs local)                       | ClickHouseProfileEvents&#95;OSIOWaitMicroseconds                                                                                                                                                                      |
+| Visão geral do Cloud | Espera na leitura do S3                        | ClickHouseProfileEvents&#95;ReadBufferFromS3Microseconds                                                                                                                                                              |
+| Visão geral do Cloud | Erros de leitura do S3/seg                     | ProfileEvent&#95;ReadBufferFromS3RequestsErrors                                                                                                                                                                       |
+| Visão geral do Cloud | Espera de CPU                                  | ClickHouseProfileEvents&#95;OSCPUWaitMicroseconds                                                                                                                                                                     |
+| Visão geral do Cloud | Uso de CPU do SO (userspace, normalizado)      | ClickHouseAsyncMetrics&#95;OSUserTimeNormalized                                                                                                                                                                       |
+| Visão geral do Cloud | Uso de CPU do SO (Kernel, normalizado)         | ClickHouseAsyncMetrics&#95;OSSystemTimeNormalized                                                                                                                                                                     |
+| Visão geral do Cloud | Leitura do disco (bytes/seg)                   | ClickHouseProfileEvents&#95;OSReadBytes                                                                                                                                                                               |
+| Visão geral do Cloud | Leitura do sistema de arquivos (bytes/seg)     | ClickHouseProfileEvents&#95;OSReadChars                                                                                                                                                                               |
+| Visão geral do Cloud | Memória (rastreada, bytes)                     | ClickHouseMetrics&#95;MemoryTracking                                                                                                                                                                                  |
+| Visão geral do Cloud | Carga média (15 minutos)                       | ClickHouseAsyncMetrics&#95;LoadAverage15                                                                                                                                                                              |
+| Visão geral do Cloud | Linhas selecionadas/seg                        | ClickHouseProfileEvents&#95;SelectedRows                                                                                                                                                                              |
+| Visão geral do Cloud | Linhas inseridas/seg                           | ClickHouseProfileEvents&#95;InsertedRows                                                                                                                                                                              |
+| Visão geral do Cloud | Total de partes do MergeTree                   | ClickHouseAsyncMetrics&#95;TotalPartsOfMergeTreeTables                                                                                                                                                                |
+| Visão geral do Cloud | Máximo de partes por partição                  | ClickHouseAsyncMetrics&#95;MaxPartCountForPartition                                                                                                                                                                   |
+| Visão geral do Cloud | Leitura do S3 (bytes/seg)                      | ClickHouseProfileEvents&#95;ReadBufferFromS3Bytes                                                                                                                                                                     |
+| Visão geral do Cloud | Tamanho do cache do sistema de arquivos        | ClickHouseMetrics&#95;FilesystemCacheSize                                                                                                                                                                             |
+| Visão geral do Cloud | Requisições de gravação do Disk S3/seg         | ClickHouseProfileEvents&#95;DiskS3PutObject + ClickHouseProfileEvents&#95;DiskS3UploadPart + ClickHouseProfileEvents&#95;DiskS3CreateMultipartUpload + ClickHouseProfileEvents&#95;DiskS3CompleteMultipartUpload      |
+| Visão geral do Cloud | Requisições de leitura do Disk S3/seg          | ClickHouseProfileEvents&#95;DiskS3GetObject + ClickHouseProfileEvents&#95;DiskS3HeadObject + ClickHouseProfileEvents&#95;DiskS3ListObjects                                                                            |
+| Visão geral do Cloud | Taxa de acerto do cache do sistema de arquivos | ClickHouseProfileEvents&#95;CachedReadBufferReadFromCacheBytes / (ClickHouseProfileEvents&#95;CachedReadBufferReadFromCacheBytes + ClickHouseProfileEvents&#95;CachedReadBufferReadFromSourceBytes)                   |
+| Visão geral do Cloud | Taxa de acerto do cache de páginas             | greatest(0, (sum(ClickHouseProfileEvents&#95;OSReadChars) - sum(ClickHouseProfileEvents&#95;OSReadBytes)) /  (sum(ClickHouseProfileEvents&#95;OSReadChars) + sum(ClickHouseProfileEvents&#95;ReadBufferFromS3Bytes))) |
+| Visão geral do Cloud | Bytes recebidos pela rede/seg                  | ClickHouseProfileEvents&#95;NetworkReceiveBytes                                                                                                                                                                       |
+| Visão geral do Cloud | Bytes enviados pela rede/seg                   | ClickHouseProfileEvents&#95;NetworkSendBytes                                                                                                                                                                          |
+
+Links relacionados:
+https://clickhouse.com/docs/integrations/prometheus

@@ -5,6 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Common/AsyncTaskExecutor.h>
+#include <Common/ProfileEvents.h>
 
 namespace DB
 {

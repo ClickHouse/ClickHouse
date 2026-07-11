@@ -135,6 +135,10 @@ if (TARGET ch_contrib::h3)
     list (APPEND PRIVATE_LIBS ch_contrib::h3)
 endif()
 
+if (TARGET ch_contrib::wagyu)
+    list (APPEND PRIVATE_LIBS ch_contrib::wagyu)
+endif()
+
 if (TARGET ch_contrib::vectorscan)
     list (APPEND PRIVATE_LIBS ch_contrib::vectorscan)
 endif()

@@ -6,6 +6,7 @@
 #include <variant>
 #include <vector>
 
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowRefs.h>
 
@@ -114,7 +115,8 @@ public:
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
-        bool use_two_level_maps_ = false);
+        bool use_two_level_maps_ = false,
+        const StatsCollectingParams & stats_collecting_params_ = {});
 
     ~HashJoin() override;
 
@@ -411,22 +413,14 @@ public:
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
 
-    struct ScatteredColumns
-    {
-        ColumnsInfo columns_info;
-        ScatteredBlock::Selector selector;
-
-        size_t allocatedBytes() const;
-    };
-
     struct NullMapHolder
     {
-        const ScatteredColumns * columns{};
+        const StoredBlock * columns{};
         ColumnPtr column;
         size_t selector_rows = 0;
 
         NullMapHolder() = default;
-        explicit NullMapHolder(const ScatteredColumns * columns_, ColumnPtr column_)
+        explicit NullMapHolder(const StoredBlock * columns_, ColumnPtr column_)
             : columns(columns_), column(column_)
         {
             // we can cache the selector size at construction to make the holder robust
@@ -438,7 +432,7 @@ public:
     };
 
     using NullmapList = std::deque<NullMapHolder>;
-    using ScatteredColumnsList = std::list<ScatteredColumns>;
+    using StoredBlocksList = std::list<StoredBlock>;
 
     struct RightTableData
     {
@@ -450,8 +444,13 @@ public:
         /// join tab2 on [not_joined(t1.x = t2.x)] and t1.y = t2.y
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        ScatteredColumnsList columns; /// Columns of "right" table.
+        StoredBlocksList columns; /// Columns of "right" table.
         NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
+
+        /// Resolves RowRef::block_no to the stored block.
+        /// Shared between all slots of a ConcurrentHashJoin so that block numbers stay
+        /// globally unique: cells built by any slot end up in the shared two-level map.
+        StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
@@ -508,7 +507,7 @@ public:
     const Block & savedBlockSample() const { return data->sample_block; }
 
     bool isUsed(size_t off) const;
-    bool isUsed(const Columns * columns_ptr, size_t row_idx) const;
+    bool isUsed(UInt32 block_no, size_t row_idx) const;
 
     void debugKeys() const;
 
@@ -609,6 +608,9 @@ private:
 
     /// Track if shared runtime filters were already published to keep publication one-shot.
     bool shared_runtime_filters_publish_attempted = false;
+
+    const StatsCollectingParams stats_collecting_params;
+    bool build_phase_finished = false;
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets

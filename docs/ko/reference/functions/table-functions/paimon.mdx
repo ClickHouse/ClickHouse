@@ -1,0 +1,140 @@
+---
+description: 'Amazon S3, Azure, HDFS 또는 로컬에 저장된 Apache Paimon 테이블에 읽기 전용 테이블과 유사한 인터페이스를 제공합니다.'
+sidebarTitle: 'paimon'
+slug: /sql-reference/table-functions/paimon
+title: 'paimon'
+doc_type: '참고'
+---
+
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="paimon-table-function">
+  # paimon 테이블 함수
+</div>
+
+<ExperimentalBadge />
+
+Amazon S3, Azure, HDFS 또는 로컬에 저장된 Apache [Paimon](https://paimon.apache.org/) 테이블에 읽기 전용 테이블형 인터페이스를 제공합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+paimonHDFS(path_to_table, [,format] [,compression_method])
+
+paimonLocal(path_to_table, [,format] [,compression_method])
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+인수 설명은 각각 테이블 함수 `s3`, `azureBlobStorage`, `HDFS`, `file`의 인수 설명과 동일합니다.
+`format`은 Paimon 테이블의 데이터 파일 포맷을 나타냅니다.
+
+`paimonS3`에서는 선택적 `extra_credentials` 매개변수를 사용해 ClickHouse Cloud에서 역할 기반 접근을 위한 `role_arn`을 전달할 수 있습니다. 구성 단계는 [Secure S3](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 참조하십시오.
+
+<div id="returned-value">
+  ### 반환 값
+</div>
+
+지정된 Paimon 테이블의 데이터를 읽기 위한, 지정된 구조의 테이블입니다.
+
+<div id="defining-a-named-collection">
+  ## 명명된 컬렉션 정의
+</div>
+
+다음은 URL과 자격 증명을 저장할 명명된 컬렉션을 구성하는 예시입니다:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <paimon_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+            <format>auto</format>
+            <structure>auto</structure>
+        </paimon_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+SELECT * FROM paimonS3(paimon_conf, filename = 'test_table')
+DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
+```
+
+<div id="aliases">
+  ## 별칭
+</div>
+
+테이블 함수 `paimon`은 이제 `paimonS3`의 별칭으로 사용됩니다.
+
+<div id="virtual-columns">
+  ## 가상 컬럼
+</div>
+
+* `_path` — 파일 경로. 유형: `LowCardinality(String)`.
+* `_file` — 파일 이름. 유형: `LowCardinality(String)`.
+* `_size` — 파일 크기(바이트). 유형: `Nullable(UInt64)`. 파일 크기를 알 수 없으면 값은 `NULL`입니다.
+* `_time` — 파일의 마지막 수정 시각. 유형: `Nullable(DateTime)`. 시각을 알 수 없으면 값은 `NULL`입니다.
+* `_etag` — 파일의 etag 값. 유형: `LowCardinality(String)`. etag를 알 수 없으면 값은 `NULL`입니다.
+
+<div id="data-types-supported">
+  ## 지원되는 데이터 타입
+</div>
+
+| Paimon 데이터 타입                     | ClickHouse 데이터 타입         |
+| --------------------------------- | ------------------------- |
+| BOOLEAN                           | Int8                      |
+| TINYINT                           | Int8                      |
+| SMALLINT                          | Int16                     |
+| INTEGER                           | Int32                     |
+| BIGINT                            | Int64                     |
+| FLOAT                             | Float32                   |
+| DOUBLE                            | Float64                   |
+| STRING,VARCHAR,BYTES,VARBINARY    | String                    |
+| DATE                              | Date                      |
+| TIME(p),TIME                      | Time(&#39;UTC&#39;)       |
+| TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                |
+| TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;) |
+| CHAR                              | FixedString(1)            |
+| BINARY(n)                         | FixedString(n)            |
+| DECIMAL(P,S)                      | Decimal(P,S)              |
+| ARRAY                             | Array                     |
+| MAP                               | Map                       |
+
+<div id="partition-supported">
+  ## 파티션에서 지원되는 데이터 타입
+</div>
+
+Paimon 파티션 키에서 지원되는 데이터 타입:
+
+* `CHAR`
+* `VARCHAR`
+* `BOOLEAN`
+* `DECIMAL`
+* `TINYINT`
+* `SMALLINT`
+* `INTEGER`
+* `DATE`
+* `TIME`
+* `TIMESTAMP`
+* `TIMESTAMP WITH LOCAL TIME ZONE`
+* `BIGINT`
+* `FLOAT`
+* `DOUBLE`
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [Paimon 클러스터 테이블 함수](/ko/reference/functions/table-functions/paimonCluster)

@@ -1,0 +1,198 @@
+---
+sidebarTitle: '사용자 정의 함수'
+slug: /cloud/features/user-defined-functions
+title: 'Cloud의 사용자 정의 함수'
+description: 'Cloud에 실행형 Python 사용자 정의 함수를 추가합니다'
+doc_type: 'guide'
+keywords: ['사용자 정의 함수', 'UDF']
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+사용자 정의 함수(UDF)를 사용하면 1,000개가 넘는 기본 제공 [함수](/ko/reference/functions/regular-functions/regular-functions-index)만으로는 제공되지 않는 ClickHouse의 기능까지 확장할 수 있습니다.
+
+ClickHouse Cloud에서 사용자 정의 함수를 생성하는 방법은 두 가지입니다:
+
+1. SQL 사용
+2. UI와 직접 작성한 코드 사용(공개 베타)
+
+<div id="sql-udfs">
+  ## SQL 사용자 정의 함수
+</div>
+
+SQL UDF는 람다 표현식으로 [`CREATE FUNCTION`](/ko/reference/statements/create/function) SQL 문을 사용해 생성할 수 있습니다.
+
+이 예시에서는 간단한 실행형 사용자 정의 함수 `isBusinessHours`를 생성합니다.
+이 함수는 특정 타임스탬프가 일반적인 업무 시간 내에 해당하는지 확인하고, 해당하면 true를, 그렇지 않으면 false를 반환합니다.
+
+1. Cloud Console에 로그인한 다음 SQL 콘솔을 엽니다
+2. 다음 SQL 쿼리를 작성하여 `isBusinessHours` 함수를 생성합니다:
+
+```sql
+CREATE FUNCTION isBusinessHours AS (ts) ->
+toDayOfWeek(ts) BETWEEN 1 AND 5
+AND toHour(ts) BETWEEN 9 AND 17;
+```
+
+3. 새로 생성한 UDF를 테스트하려면 아래 명령을 실행하세요:
+
+```sql
+SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+```
+
+다음과 같은 결과가 반환됩니다:
+
+```response
+1   0
+```
+
+4. 방금 생성한 UDF를 삭제하려면 `DROP FUNCTION` 명령을 사용할 수 있습니다:
+
+```sql
+DROP FUNCTION isBusinessHours
+```
+
+<Warning>
+  **중요**
+
+  ClickHouse Cloud의 UDF는 **사용자 수준 설정을 상속하지 않습니다**. UDF는 기본 시스템 설정으로 실행됩니다.
+</Warning>
+
+이는 다음을 의미합니다:
+
+* 세션 수준 설정(`SET` 문로 설정)은 UDF 실행 Context로 전달되지 않습니다
+* 사용자 프로필 설정은 UDF에 상속되지 않습니다
+* 쿼리 수준 설정은 UDF 실행 중에는 적용되지 않습니다
+
+<div id="ui-udfs">
+  ## UI를 통해 생성한 사용자 정의 함수
+</div>
+
+<BetaBadge />
+
+ClickHouse Cloud는 UI를 통해 사용자 정의 함수를 생성할 수 있는 환경을 제공합니다.
+
+이 예시에서는 특정 타임스탬프가 일반적인 업무 시간에 해당하는지 확인하는 동일한 간단한 실행형 사용자 정의 함수 `isBusinessHours`를 생성합니다.
+이전에는 SQL로 이를 생성했지만, 이번에는 Python으로 작성하고 UI를 통해 구성합니다.
+
+<Steps>
+  <Step>
+    ### Python 파일 생성
+
+    로컬에 새 파일 `main.py`를 만드세요:
+
+    ```python
+    cat > main.py << 'EOF'
+    import sys
+    from datetime import datetime
+
+    for line in sys.stdin:
+        ts = datetime.fromisoformat(line.strip())
+        result = 1 if (0 <= ts.weekday() <= 4 and 9 <= ts.hour <= 17) else 0
+        print(result)
+        sys.stdout.flush()
+    EOF
+    ```
+
+    Python 스크립트에서 서드파티 패키지를 import하는 경우, 해당 패키지를 `requirements.txt` 파일에 나열하면 ClickHouse Cloud가 이를 설치합니다. ZIP에 의존성을 직접 번들할 수도 있지만, 이 경우 두 CPU 아키텍처 모두에 대한 캐시된 패키지를 포함해야 하므로 `requirements.txt`를 사용하는 편이 더 간단합니다. 예시는 다음과 같습니다:
+
+    ```text
+    requests>=2.28.0
+    numpy>=1.23.0
+    ```
+
+    <Note>
+      ClickHouse Cloud는 다음 단계에서 UI를 통해 업로드할 zip 파일에 `main.py`가 포함되어 있다고 가정합니다.
+      파일 이름을 다르게 지정하면 오류가 발생합니다.
+    </Note>
+  </Step>
+
+  <Step>
+    ### 번들 종속성 및 로컬 파일
+
+    종속성 패키지와 추가 로컬 파일(예: wheel 파일, 설정 파일, 데이터 파일)을 포함하려면 `main.py` 및 `requirements.txt`와 같은 디렉터리에 배치하십시오. ZIP 아카이브를 만들 때는 모든 파일을 포함하십시오:
+
+    ```bash
+    zip is_business_hours.zip main.py requirements.txt
+    ```
+
+    Python 코드에서 `os.path.dirname(os.path.abspath(__file__))`를 사용하면 로컬에 번들된 기본 디렉터리 경로를 참조할 수 있습니다. 이 값은 ZIP 아카이브 내에서 `main.py`가 위치한 디렉터리의 절대 경로를 반환하므로, 함께 번들된 다른 파일에도 접근할 수 있습니다:
+
+    ```python
+    import os
+
+    # Get the base directory of the bundled files
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(base_dir, 'config.json')
+    ```
+
+    다음과 같은 작업이 필요할 때 유용합니다:
+
+    * UDF와 함께 번들된 설정 파일에 액세스
+    * 사용자 지정 종속성에 필요한 wheel 패키지 로드
+    * 추가 스크립트 또는 데이터 파일 참조
+
+    이제 파일을 ZIP 아카이브로 압축하십시오:
+
+    ```bash
+    zip is_business_hours.zip main.py
+    ```
+
+    <Warning>
+      **심볼릭 링크는 허용되지 않습니다**
+
+      ClickHouse Cloud는 심볼릭 링크가 포함된 UDF 아카이브를 허용하지 않습니다. ZIP 번들에는 일반 파일과 디렉터리만 포함되도록 하십시오 — 심볼릭 링크가 포함된 업로드는 유효성 검사에 실패합니다.
+    </Warning>
+  </Step>
+
+  <Step>
+    ### UI를 통해 UDF 만들기
+
+    1. Cloud Console 홈 페이지에서 왼쪽 하단 메뉴의 조직 이름을 클릭합니다.
+    2. 메뉴에서 **사용자 정의 함수**를 선택합니다.
+    3. 사용자 정의 함수 페이지에서 **UDF 설정**을 클릭합니다. 화면 오른쪽에 구성 패널이 열립니다.
+    4. 함수 이름을 입력합니다. 이 예시에서는 `isBusinessHours`를 사용합니다.
+    5. 함수 유형으로 **실행형 풀** 또는 **실행형** 중 하나를 선택합니다.
+       * **실행형 풀**: 지속적으로 유지되는 프로세스 풀이 관리되며, 읽기 시 풀에서 프로세스를 가져와 사용합니다.
+       * **실행형**: 모든 쿼리마다 스크립트가 실행됩니다.
+    6. 이 예시에서는 기본 설정을 사용합니다. 전체 구성 매개변수 목록은 [Executable user-defined functions](/ko/reference/functions/regular-functions/udf#executable-user-defined-functions)를 참조하십시오.
+    7. **파일 찾아보기**를 클릭하여 이 튜토리얼 시작 부분에서 만든 `.zip` 파일을 업로드합니다.
+    8. 새 인수를 추가합니다. 이 예시에서는 유형이 `DateTime`인 인수 `timestamp`를 추가합니다.
+    9. 반환 유형을 선택합니다. 이 예시에서는 `Bool`을 선택합니다.
+    10. **UDF 만들기**를 클릭합니다. 현재 빌드 상태를 보여주는 대화 상자가 표시됩니다.
+        * 문제가 있으면 상태가 **오류**로 변경됩니다.
+        * 그렇지 않으면 상태가 **빌드 중**에서 **프로비저닝 중**으로 진행됩니다. 프로비저닝을 완료하려면 서비스가 실행 중이어야 합니다. 서비스가 유휴 상태이면 서비스 이름 옆의 **UDF 세부 정보** 패널에서 **서비스 깨우기**를 클릭합니다.
+        * 완료되면 상태가 **배포됨**으로 변경됩니다。
+  </Step>
+
+  <Step>
+    ### UDF를 테스트해 보세요
+
+    1. 페이지 왼쪽 상단의 **Settings - return to your service view**를 클릭하여 SQL 콘솔의 홈 페이지로 돌아가세요
+    2. 왼쪽 메뉴에서 **SQL 콘솔**을 클릭하세요
+    3. 다음 쿼리를 작성하세요:
+
+    ```sql
+    SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+    ```
+
+    다음과 같은 결과가 표시됩니다:
+
+    ```response
+    true    false
+    ```
+  </Step>
+
+  <Step>
+    ### 새 버전 만들기
+
+    UDF의 코드를 변경하려면 새 버전을 만드십시오. **Edit** 패널은 UDF가 할당된 서비스를 관리하는 용도로만 사용되며, 여기에서 파일을 업로드해도 배포된 코드가 교체되지는 않습니다.
+
+    1. Cloud Console 홈페이지에서 왼쪽 하단 메뉴의 조직 이름을 클릭합니다.
+    2. 메뉴에서 **사용자 정의 함수**를 선택합니다.
+    3. `isBusinessHours` UDF의 **Actions** 아래에 있는 점 3개를 선택한 다음 **새 버전 만들기**를 클릭합니다.
+    4. 수정된 코드가 포함된 zip 파일을 업로드하거나 설정을 변경한 다음 **새 버전 만들기**를 클릭합니다.
+
+    이제 UI를 통해 첫 번째 사용자 정의 함수를 성공적으로 추가하고, 해당 함수가 실행되는 것을 확인했으며, 필요할 경우 새 버전을 만드는 방법도 확인했습니다.
+  </Step>
+</Steps>
