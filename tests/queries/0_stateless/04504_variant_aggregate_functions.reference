@@ -47,5 +47,7 @@ exponentialMovingAverage	1
 boundingRatio	1
 largestTriangleThreeBuckets	1
 sumCount	1
+stochasticLinearRegression	1
+stochasticLogisticRegression	1
 studentTTestIf	1
 varPopStableState	1

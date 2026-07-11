@@ -262,6 +262,10 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
             /// return Float64 results (the smoothed average, the ratio, the downsampled point coordinates), so a
             /// Float64 cast of the inputs is exactly what they compute internally.
             "exponentialmovingaverage", "boundingratio", "largesttrianglethreebuckets",
+            /// Stochastic machine-learning aggregates: training reads the target and every feature via `getFloat64`
+            /// and the trained model weights are Float64, so a Float64 cast of the inputs is exactly what they
+            /// compute internally.
+            "stochasticlinearregression", "stochasticlogisticregression",
         };
 
         while (true)

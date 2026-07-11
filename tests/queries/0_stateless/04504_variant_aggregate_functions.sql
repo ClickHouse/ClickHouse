@@ -239,6 +239,13 @@ SELECT 'largestTriangleThreeBuckets', largestTriangleThreeBuckets(4)(x, y) = lar
 -- Float64, matching the explicit Nullable(Float64) cast. Its base name was missing from the allowlist, so this is
 -- a regression for it (the gap also leaked into sumCountIf / State / Merge through suffix stripping).
 SELECT 'sumCount',              sumCount(x)                     = sumCount(CAST(x AS Nullable(Float64)))                                                  FROM t_variant_stat;
+-- The stochastic machine-learning aggregates also read their numeric inputs (the target and every feature) via
+-- getFloat64 and return Float64 model weights, so they are float-promoting too: over a numeric mix with no lossless
+-- supertype they must train over Float64, matching the explicit Nullable(Float64) cast. Their base names were
+-- missing from the allowlist, so these are regressions for them (the gap also leaked into their State / Merge forms
+-- through suffix stripping).
+SELECT 'stochasticLinearRegression', stochasticLinearRegression(0.1, 0.5, 1, 'SGD')(x, y) = stochasticLinearRegression(0.1, 0.5, 1, 'SGD')(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64))) FROM t_variant_stat;
+SELECT 'stochasticLogisticRegression', stochasticLogisticRegression(0.1, 0.5, 1, 'SGD')(g, x) = stochasticLogisticRegression(0.1, 0.5, 1, 'SGD')(g, CAST(x AS Nullable(Float64))) FROM t_variant_stat;
 
 -- Combinators compose with the fallback (the adapter is the outermost wrapper): -If filters rows, and a stored
 -- -State round-trips through -Merge, both aggregating over the same Float64 supertype.
