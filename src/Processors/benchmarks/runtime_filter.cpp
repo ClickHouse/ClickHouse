@@ -72,10 +72,14 @@ enum class RuntimeFilterKind
     Approximate,
 };
 
+/// `mix` spreads sequential row numbers across key buckets for non-contiguous benchmark access patterns.
 UInt64 mix(UInt64 value)
 {
+    /// Odd 64-bit golden-ratio increment; repeated addition visits every `UInt64` value before repeating.
     value += 0x9e3779b97f4a7c15ULL;
+    /// SplitMix64 avalanche multiplier; the preceding xor-shift folds high bits into lower positions before spreading them.
     value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    /// Second SplitMix64 avalanche multiplier; it further breaks correlations between nearby row numbers.
     value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
     return value ^ (value >> 31);
 }
@@ -531,9 +535,10 @@ static void BM_RuntimeFilterBuildTransformUInt64(benchmark::State & state)
     {
         BuildRuntimeFilterTransform transform(
             header,
-            "key",
-            type,
-            "_runtime_filter_benchmark",
+            /*filter_column_name_=*/"key",
+            /*filter_column_type_=*/type,
+            /*filter_name_=*/"_runtime_filter_benchmark",
+            /*filter_key_=*/String{},
             /*filters_to_merge_=*/0,
             EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
             BLOOM_FILTER_BYTES,
@@ -571,9 +576,10 @@ static void BM_RuntimeFilterBuildTransformCastUInt32ToUInt64(benchmark::State & 
     {
         BuildRuntimeFilterTransform transform(
             header,
-            "key",
-            target_type,
-            "_runtime_filter_benchmark",
+            /*filter_column_name_=*/"key",
+            /*filter_column_type_=*/target_type,
+            /*filter_name_=*/"_runtime_filter_benchmark",
+            /*filter_key_=*/String{},
             /*filters_to_merge_=*/0,
             EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
             BLOOM_FILTER_BYTES,
@@ -596,64 +602,64 @@ static void BM_RuntimeFilterBuildTransformCastUInt32ToUInt64(benchmark::State & 
 }
 
 BENCHMARK(BM_RuntimeFilterExactContainsFindUInt64)
-    ->Args({0, 65536, 0})
-    ->Args({1, 65536, 100})
-    ->Args({100, 65536, 50})
-    ->Args({10000, 65536, 50});
+    ->Args({/*key_count=*/0, /*rows=*/65536, /*hit_ratio=*/0})
+    ->Args({/*key_count=*/1, /*rows=*/65536, /*hit_ratio=*/100})
+    ->Args({/*key_count=*/100, /*rows=*/65536, /*hit_ratio=*/50})
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/50});
 
 BENCHMARK(BM_RuntimeFilterExactNotContainsFindUInt64)
-    ->Args({100, 65536, 50})
-    ->Args({10000, 65536, 50});
+    ->Args({/*key_count=*/100, /*rows=*/65536, /*hit_ratio=*/50})
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/50});
 
 BENCHMARK(BM_RuntimeFilterExactContainsFindNullableUInt64)
-    ->Args({1, 65536, 0})
-    ->Args({1, 65536, 1})
-    ->Args({10000, 65536, 50});
+    ->Args({/*key_count=*/1, /*rows=*/65536, /*null_percent=*/0})
+    ->Args({/*key_count=*/1, /*rows=*/65536, /*null_percent=*/1})
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/50});
 
 BENCHMARK(BM_RuntimeFilterApproximateFindUInt64)
-    ->Args({10000, 65536, 0})
-    ->Args({10000, 65536, 50})
-    ->Args({10000, 65536, 100})
-    ->Args({100000, 65536, 50});
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/0})
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/50})
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/100})
+    ->Args({/*key_count=*/100000, /*rows=*/65536, /*hit_ratio=*/50});
 
 BENCHMARK(BM_RuntimeFilterApproximateFindNullableUInt64)
-    ->Args({10000, 65536, 0})
-    ->Args({10000, 65536, 1})
-    ->Args({10000, 65536, 50});
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/0})
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/1})
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/50});
 
 BENCHMARK(BM_RuntimeFilterApproximateFindString)
-    ->Args({10000, 65536, 0})
-    ->Args({10000, 65536, 50});
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/0})
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/50});
 
 BENCHMARK(BM_RuntimeFilterApproximateFindLowCardinalityString)
-    ->Args({10000, 65536, 0})
-    ->Args({10000, 65536, 50});
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/0})
+    ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/50});
 
 BENCHMARK(BM_RuntimeFilterApproximateBuildUInt64)
-    ->Arg(10000)
-    ->Arg(100000);
+    ->Arg(/*rows=*/10000)
+    ->Arg(/*rows=*/100000);
 
 BENCHMARK(BM_RuntimeFilterApproximateBuildString)
-    ->Arg(10000)
-    ->Arg(100000);
+    ->Arg(/*rows=*/10000)
+    ->Arg(/*rows=*/100000);
 
 BENCHMARK(BM_RuntimeFilterApproximateMergeUInt64)
-    ->Args({2, 10000})
-    ->Args({8, 10000})
-    ->Args({32, 10000});
+    ->Args({/*filters_to_merge=*/2, /*keys_per_filter=*/10000})
+    ->Args({/*filters_to_merge=*/8, /*keys_per_filter=*/10000})
+    ->Args({/*filters_to_merge=*/32, /*keys_per_filter=*/10000});
 
 BENCHMARK(BM_RuntimeFilterExactMergeUInt64)
-    ->Args({2, 1000})
-    ->Args({8, 1000})
-    ->Args({32, 1000});
+    ->Args({/*filters_to_merge=*/2, /*keys_per_filter=*/1000})
+    ->Args({/*filters_to_merge=*/8, /*keys_per_filter=*/1000})
+    ->Args({/*filters_to_merge=*/32, /*keys_per_filter=*/1000});
 
 BENCHMARK(BM_RuntimeFilterAdaptiveSkipApproximateUInt64)
-    ->Args({10000, 65536});
+    ->Args({/*key_count=*/10000, /*rows=*/65536});
 
 BENCHMARK(BM_RuntimeFilterBuildTransformUInt64)
-    ->Args({10000, 8192})
-    ->Args({100000, 8192});
+    ->Args({/*rows=*/10000, /*chunk_rows=*/8192})
+    ->Args({/*rows=*/100000, /*chunk_rows=*/8192});
 
 BENCHMARK(BM_RuntimeFilterBuildTransformCastUInt32ToUInt64)
-    ->Args({10000, 8192})
-    ->Args({100000, 8192});
+    ->Args({/*rows=*/10000, /*chunk_rows=*/8192})
+    ->Args({/*rows=*/100000, /*chunk_rows=*/8192});
