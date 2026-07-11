@@ -37,9 +37,12 @@ FULL_PAGE_MIN_LEN = 500
 TABLE_ENGINE_PAGE_OVERRIDES = {
     "ReplicatedMergeTree": "reference/engines/table-engines/mergetree-family/replication.mdx",
     "GenerateRandom": "reference/engines/table-engines/special/generate.mdx",
-    # Documented together with `Executable` on a shared page.
-    "ExecutablePool": "reference/engines/table-engines/special/executable.mdx",
 }
+
+# Documented together with `Executable` on a shared page, which the
+# `Executable` row owns. Writing both rows would oscillate: the two share a
+# body but differ in the assembled `**Syntax**`/`**Related:**` tails.
+TABLE_ENGINE_SHARED_PAGE_ALIASES = {"ExecutablePool"}
 
 DATA_TYPE_PAGE_OVERRIDES = {
     "Bool": "reference/data-types/boolean.mdx",
@@ -157,16 +160,15 @@ def _item_generators(domain, rows, docs_dir, migrate, lk):
 
 def build_generators(docs_map, binary, docs_dir, migrate, lk):
     def doc_rows(entity_type):
-        # The documentation body with the machine-assembled tail peeled off;
-        # for full-page items the body IS the page. The catalog domains never
-        # register a separate `examples` field, so an `**Examples**` block is
-        # always author-written body content (peel_examples=False).
+        # The assembled documentation, verbatim: `system.documentation` renders
+        # the structured fields (`**Syntax**`, `**Introduced in:**`,
+        # `**Related:**`) into the description, and the page shows the same
+        # content as the website. Peeling them off here would silently drop
+        # source-registered fields (e.g. the `Bool` syntax block).
         return [
             {
                 "name": name,
-                "description": catalog.split_assembled(
-                    row["description"], peel_examples=False
-                )["body"],
+                "description": row["description"].rstrip("\n"),
                 "source": row["source"],
             }
             for name, row in sorted(docs_map.get(entity_type, {}).items())
@@ -197,6 +199,7 @@ def build_generators(docs_map, binary, docs_dir, migrate, lk):
             # family directory but belongs to another domain.
             "exclude_dirs": ("skipping-indexes",),
             "overrides": TABLE_ENGINE_PAGE_OVERRIDES,
+            "skip": lambda row: row["name"] in TABLE_ENGINE_SHARED_PAGE_ALIASES,
             "legacy_prefix": "engines/table-engines",
             "new_item": engine_new_item,
         },
