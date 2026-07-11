@@ -1,0 +1,12 @@
+--- Exact UInt64 Build Side Below Exact Limit (Enabled) ---
+1
+--- String Build Side Below Exact Limit (Enabled) ---
+1
+--- Nullable Build Side Below Exact Limit (Enabled) ---
+1
+--- Empty Build Predicate Estimate (Enabled) ---
+1
+--- MergeTree Missing Statistics (Enabled) ---
+1
+--- Stacked Build Filters With Limit (Enabled) ---
+1

@@ -10,6 +10,7 @@
 #include <Common/ProfileEvents.h>
 #include <algorithm>
 #include <vector>
+#include <fmt/format.h>
 
 namespace ProfileEvents
 {
@@ -30,6 +31,57 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static String formatDisableReasons(UInt64 mask)
+{
+    if (mask == 0)
+        return "none";
+
+    std::vector<String> reasons;
+    if (mask & static_cast<UInt64>(RuntimeFilterDisableReason::ExactSetOverflow))
+        reasons.emplace_back("exact_set_overflow");
+    if (mask & static_cast<UInt64>(RuntimeFilterDisableReason::BloomSaturation))
+        reasons.emplace_back("bloom_saturation");
+    if (mask & static_cast<UInt64>(RuntimeFilterDisableReason::PassRatio))
+        reasons.emplace_back("pass_ratio");
+
+    if (reasons.empty())
+        return "unknown";
+
+    String result = reasons.front();
+    for (size_t i = 1; i < reasons.size(); ++i)
+    {
+        result += '|';
+        result += reasons[i];
+    }
+    return result;
+}
+
+void IRuntimeFilter::addDisableReason(RuntimeFilterDisableReason reason) const
+{
+    disable_reasons_mask.fetch_or(static_cast<UInt64>(reason), std::memory_order_relaxed);
+}
+
+void IRuntimeFilter::setFullyDisabled(RuntimeFilterDisableReason reason)
+{
+    addDisableReason(reason);
+    is_fully_disabled = true;
+}
+
+void IRuntimeFilter::absorbBuildInfoFrom(const IRuntimeFilter & source)
+{
+    build_rows_processed += source.build_rows_processed.load(std::memory_order_relaxed);
+    disable_reasons_mask.fetch_or(source.disable_reasons_mask.load(std::memory_order_relaxed), std::memory_order_relaxed);
+}
+
+RuntimeFilterBuildStats IRuntimeFilter::getBuildStats() const
+{
+    auto result = getBuildStatsImpl();
+    result.rows_processed = build_rows_processed.load(std::memory_order_relaxed);
+    result.fully_disabled = is_fully_disabled.load(std::memory_order_relaxed);
+    result.disable_reasons = formatDisableReasons(disable_reasons_mask.load(std::memory_order_relaxed));
+    return result;
+}
+
 void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
 {
     stats.blocks_processed++;
@@ -40,9 +92,12 @@ void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsChecked, rows_checked);
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsPassed, rows_passed);
 
-    /// Skip next 30 blocks if too few rows got filtered out
+    /// Skip next blocks if too few rows got filtered out.
     if (static_cast<double>(rows_passed) > pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked))
+    {
+        addDisableReason(RuntimeFilterDisableReason::PassRatio);
         rows_to_skip += rows_checked * blocks_to_skip_before_reenabling;
+    }
 }
 
 bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
@@ -178,7 +233,8 @@ void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
     if (!source_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
-    insert(source_typed->getValuesColumn());
+    insertExactValues(source_typed->getValuesColumn(), /*record_rows=*/false);
+    absorbBuildInfoFrom(*source_typed);
     --filters_to_merge;
 }
 
@@ -189,7 +245,7 @@ void ExactContainsRuntimeFilter::finishInsertImpl()
     if (isFull())
     {
         /// Some keys were dropped so we cannot filter by partial set of keys
-        setFullyDisabled();
+        setFullyDisabled(RuntimeFilterDisableReason::ExactSetOverflow);
         releaseExactValues();
     }
 }
@@ -203,7 +259,8 @@ void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
     if (!source_typed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
 
-    insert(source_typed->getValuesColumn());
+    insertExactValues(source_typed->getValuesColumn(), /*record_rows=*/false);
+    absorbBuildInfoFrom(*source_typed);
     --filters_to_merge;
 }
 
@@ -235,6 +292,7 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
 
     if (bloom_filter)
     {
+        recordBuildRows(values->size());
         insertIntoBloomFilter(values);
     }
     else
@@ -275,10 +333,17 @@ void ApproximateRuntimeFilter::merge(const IRuntimeFilter * source)
         switchToBloomFilter();
         mergeBloomFilters(*bloom_filter, *source_typed->bloom_filter);
     }
+    else if (bloom_filter)
+    {
+        insertIntoBloomFilter(source_typed->getValuesColumn());
+    }
     else
     {
-        insert(source_typed->getValuesColumn());
+        insertExactValues(source_typed->getValuesColumn(), /*record_rows=*/false);
+        if (isFull())
+            switchToBloomFilter();
     }
+    absorbBuildInfoFrom(*source_typed);
     --filters_to_merge;
 }
 
@@ -368,6 +433,29 @@ void ApproximateRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
         });
 }
 
+static std::pair<size_t, size_t> getBloomFilterBitStats(const BloomFilter & bloom_filter)
+{
+    const auto & raw_filter_words = bloom_filter.getFilter();
+    const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;
+    size_t set_bits = 0;
+    for (auto word : raw_filter_words)
+        set_bits += std::popcount(word);
+    return {set_bits, total_bits};
+}
+
+RuntimeFilterBuildStats ApproximateRuntimeFilter::getBuildStatsImpl() const
+{
+    if (!bloom_filter)
+        return Base::getBuildStatsImpl();
+
+    RuntimeFilterBuildStats result;
+    result.build_mode = "bloom";
+    const auto [set_bits, total_bits] = getBloomFilterBitStats(*bloom_filter);
+    result.bloom_filter_set_bits = set_bits;
+    result.bloom_filter_total_bits = total_bits;
+    return result;
+}
+
 void ApproximateRuntimeFilter::switchToBloomFilter()
 {
     if (bloom_filter)
@@ -381,14 +469,10 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
 
 void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
 {
-    const auto & raw_filter_words = bloom_filter->getFilter();
-    const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;
-    size_t set_bits = 0;
-    for (auto word : raw_filter_words)
-        set_bits += std::popcount(word);
+    const auto [set_bits, total_bits] = getBloomFilterBitStats(*bloom_filter);
     /// If too many bits are set then it is likely that the filter will not filter out much
     if (static_cast<double>(set_bits) > max_ratio_of_set_bits_in_bloom_filter * static_cast<double>(total_bits))
-        setFullyDisabled();
+        setFullyDisabled(RuntimeFilterDisableReason::BloomSaturation);
 }
 
 SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
@@ -464,9 +548,24 @@ public:
             /// `filter_key` is the opaque random rendezvous key; prefer the readable structural name.
             auto name_it = display_names.find(filter_key);
             const String & name = (name_it != display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
+            const auto build_stats = filter->getBuildStats();
+            const String unique_values = build_stats.unique_values ? std::to_string(*build_stats.unique_values) : "unknown";
+            String bloom_bits = "unknown";
+            String bloom_ratio = "unknown";
+            if (build_stats.bloom_filter_set_bits && build_stats.bloom_filter_total_bits)
+            {
+                bloom_bits = fmt::format("{}/{}", *build_stats.bloom_filter_set_bits, *build_stats.bloom_filter_total_bits);
+                if (*build_stats.bloom_filter_total_bits > 0)
+                    bloom_ratio = fmt::format("{:.2f}%", 100.0 * static_cast<double>(*build_stats.bloom_filter_set_bits) / static_cast<double>(*build_stats.bloom_filter_total_bits));
+            }
+
             LOG_TRACE(getLogger("RuntimeFilter"),
-                "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
-                name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load());
+                "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}, "
+                "build rows {}, build unique values {}, build mode {}, fully disabled {}, bloom bits {}, bloom ratio {}, disable reasons {}",
+                name,
+                stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load(),
+                build_stats.rows_processed, unique_values, build_stats.build_mode, build_stats.fully_disabled ? "true" : "false",
+                bloom_bits, bloom_ratio, build_stats.disable_reasons);
         }
     }
 

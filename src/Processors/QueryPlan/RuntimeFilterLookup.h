@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -35,6 +36,24 @@ struct RuntimeFilterStats
     std::atomic<Int64> blocks_skipped = 0;
 };
 
+struct RuntimeFilterBuildStats
+{
+    UInt64 rows_processed = 0;
+    std::optional<UInt64> unique_values;
+    String build_mode = "unknown";
+    bool fully_disabled = false;
+    std::optional<UInt64> bloom_filter_set_bits;
+    std::optional<UInt64> bloom_filter_total_bits;
+    String disable_reasons = "none";
+};
+
+enum class RuntimeFilterDisableReason : UInt64
+{
+    ExactSetOverflow = 1ULL << 0,
+    BloomSaturation = 1ULL << 1,
+    PassRatio = 1ULL << 2,
+};
+
 class IRuntimeFilter
 {
 public:
@@ -54,7 +73,8 @@ public:
     /// Usage statistics
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
-    void setFullyDisabled() { is_fully_disabled = true; }
+    RuntimeFilterBuildStats getBuildStats() const;
+    void setFullyDisabled(RuntimeFilterDisableReason reason);
 
     Float64 getPassRatioThresholdForDisabling() const { return pass_ratio_threshold_for_disabling; }
     UInt64 getBlocksToSkipBeforeReenabling() const { return blocks_to_skip_before_reenabling; }
@@ -76,9 +96,15 @@ protected:
     /// Checks if a block of rows should be skipped because this filter was disabled.
     bool shouldSkip(size_t next_block_rows) const;
 
+    void recordBuildRows(UInt64 rows) { build_rows_processed += rows; }
+    void absorbBuildInfoFrom(const IRuntimeFilter & source);
+    void addDisableReason(RuntimeFilterDisableReason reason) const;
+
     virtual void finishInsertImpl() = 0;
 
     virtual ColumnPtr findImpl(const ColumnWithTypeAndName & values) const = 0;
+
+    virtual RuntimeFilterBuildStats getBuildStatsImpl() const = 0;
 
     size_t filters_to_merge;
     const DataTypePtr filter_column_target_type;
@@ -89,6 +115,8 @@ protected:
     const UInt64 blocks_to_skip_before_reenabling = 30;
 
     mutable RuntimeFilterStats stats;
+    std::atomic<UInt64> build_rows_processed = 0;
+    mutable std::atomic<UInt64> disable_reasons_mask = 0;
 
     /// How many rows should be skipped before trying to re-enable the filter after it was disabled due to
     /// low percentage of filtered rows
@@ -122,14 +150,7 @@ public:
 
     void insert(ColumnPtr values) override
     {
-        if (inserts_are_finished)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
-
-        if (is_full)
-            return;
-
-        exact_values->insertFromColumns({values});
-        is_full = exact_values->getTotalRowCount() > exact_values_limit || exact_values->getTotalByteCount() > bytes_limit;
+        insertExactValues(std::move(values), /*record_rows=*/true);
     }
 
     void finishInsertImpl() override
@@ -163,13 +184,48 @@ protected:
 
     bool isFull() const noexcept { return is_full; }
 
+    void insertExactValues(ColumnPtr values, bool record_rows)
+    {
+        if (inserts_are_finished)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
+
+        if (record_rows)
+            recordBuildRows(values->size());
+
+        if (is_full)
+            return;
+
+        exact_values->insertFromColumns({values});
+        is_full = exact_values->getTotalRowCount() > exact_values_limit || exact_values->getTotalByteCount() > bytes_limit;
+    }
+
     ColumnPtr getValuesColumn() const
     {
         exact_values->finishInsert();
         return exact_values->getSetElements().front();
     }
 
-    void releaseExactValues() { exact_values.reset(); }
+    void releaseExactValues()
+    {
+        if (exact_values)
+            released_exact_values_count = exact_values->getTotalRowCount();
+        exact_values.reset();
+    }
+
+    std::optional<UInt64> getExactValuesCountForStats() const
+    {
+        if (exact_values)
+            return exact_values->getTotalRowCount();
+        return released_exact_values_count;
+    }
+
+    RuntimeFilterBuildStats getBuildStatsImpl() const override
+    {
+        RuntimeFilterBuildStats result;
+        result.build_mode = "exact";
+        result.unique_values = getExactValuesCountForStats();
+        return result;
+    }
 
 private:
     enum class ValuesCount
@@ -188,6 +244,7 @@ private:
     ValuesCount values_count = ValuesCount::UNKNOWN;
 
     bool is_full = false;
+    std::optional<UInt64> released_exact_values_count;
 
     ColumnPtr single_element_column;
 };
@@ -260,6 +317,8 @@ public:
     void merge(const IRuntimeFilter * source) override;
 
 private:
+    RuntimeFilterBuildStats getBuildStatsImpl() const override;
+
     void insertIntoBloomFilter(ColumnPtr values);
     void switchToBloomFilter();
 
@@ -295,6 +354,12 @@ public:
 protected:
     void finishInsertImpl() override {}
     ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;
+    RuntimeFilterBuildStats getBuildStatsImpl() const override
+    {
+        RuntimeFilterBuildStats result;
+        result.build_mode = "shared_fixed_hash_table";
+        return result;
+    }
 
 private:
     ProbeFn probe_fn;

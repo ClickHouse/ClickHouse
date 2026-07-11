@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -29,6 +30,7 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 
 
 namespace DB
@@ -170,7 +172,32 @@ const ReadFromMergeTree * getMergeTreeStep(QueryPlan::Node * node)
     return nullptr;
 }
 
-std::optional<UInt64> estimateBuildSubtreeRows(QueryPlan::Node * node, const ActionsDAG::Node * filter = nullptr)
+RelationProfile estimateRelationProfileWithPredicates(
+    const ConditionSelectivityEstimator & estimator,
+    const StorageMetadataPtr & metadata,
+    const std::vector<const ActionsDAG::Node *> & filters,
+    const ActionsDAG::Node * prewhere)
+{
+    if (filters.empty() && !prewhere)
+        return estimator.estimateRelationProfile();
+
+    RPNBuilderTreeContext tree_context(estimator.getContext());
+    std::vector<RPNBuilderTreeNode> predicate_nodes;
+    predicate_nodes.reserve(filters.size() + (prewhere ? 1 : 0));
+
+    for (const auto * filter : filters)
+    {
+        if (filter)
+            predicate_nodes.emplace_back(filter, tree_context);
+    }
+
+    if (prewhere)
+        predicate_nodes.emplace_back(prewhere, tree_context);
+
+    return estimator.estimateRelationProfile(metadata, predicate_nodes);
+}
+
+std::optional<UInt64> estimateBuildSubtreeRows(QueryPlan::Node * node, std::vector<const ActionsDAG::Node *> filters = {})
 {
     if (!node || !node->step)
         return std::nullopt;
@@ -189,7 +216,7 @@ std::optional<UInt64> estimateBuildSubtreeRows(QueryPlan::Node * node, const Act
             ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
             : nullptr;
 
-        auto profile = estimator->estimateRelationProfile(read_step->getStorageMetadata(), filter, prewhere_node);
+        auto profile = estimateRelationProfileWithPredicates(*estimator, read_step->getStorageMetadata(), filters, prewhere_node);
         return profile.rows;
     }
 
@@ -199,7 +226,7 @@ std::optional<UInt64> estimateBuildSubtreeRows(QueryPlan::Node * node, const Act
     QueryPlan::Node * child = node->children.front();
     if (const auto * limit_step = typeid_cast<const LimitStep *>(node->step.get()))
     {
-        auto child_rows = estimateBuildSubtreeRows(child, filter);
+        auto child_rows = estimateBuildSubtreeRows(child, filters);
         if (!child_rows)
             return static_cast<UInt64>(limit_step->getLimit());
         return std::min<UInt64>(*child_rows, limit_step->getLimit());
@@ -209,14 +236,16 @@ std::optional<UInt64> estimateBuildSubtreeRows(QueryPlan::Node * node, const Act
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        return estimateBuildSubtreeRows(child, predicate ? predicate : filter);
+        if (predicate)
+            filters.push_back(predicate);
+        return estimateBuildSubtreeRows(child, std::move(filters));
     }
 
     /// Expression-like unary steps preserve row count.
     if (typeid_cast<const ExpressionStep *>(node->step.get()))
-        return estimateBuildSubtreeRows(child, filter);
+        return estimateBuildSubtreeRows(child, std::move(filters));
 
-    return estimateBuildSubtreeRows(child, filter);
+    return estimateBuildSubtreeRows(child, std::move(filters));
 }
 
 }
@@ -365,7 +394,7 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
     };
 
     QueryPlan::Node * stats_node = build_filter_node;
-    const ActionsDAG::Node * filter_node = nullptr;
+    std::vector<const ActionsDAG::Node *> filter_nodes;
     while (stats_node)
     {
         if (const auto * filter_step = typeid_cast<const FilterStep *>(stats_node->step.get()))
@@ -373,13 +402,14 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
             const auto & dag = filter_step->getExpression();
             const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
             if (predicate)
-                filter_node = predicate;
+                filter_nodes.push_back(predicate);
         }
 
         if (const auto * join_step = typeid_cast<const JoinStepLogical *>(stats_node->step.get()))
         {
             UInt64 n = 0;
-            if (join_step->getResultRowsEstimation())
+            const bool has_result_rows_estimation = join_step->getResultRowsEstimation().has_value();
+            if (has_result_rows_estimation)
                 n = apply_limit(*join_step->getResultRowsEstimation());
 
             UInt64 ndv = find_ndv(join_step->getResultColumnStats());
@@ -472,8 +502,9 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
                 n = n > 0 ? std::min(n, *upstream_join_ndv_bound) : *upstream_join_ndv_bound;
 
             UInt64 final_total_rows = apply_limit(join_step->getResultRowsEstimation().value_or(n));
+            const bool has_any_estimate = has_result_rows_estimation || ndv > 0 || upstream_join_ndv_bound.has_value();
 
-            if (n == 0 && final_total_rows == 0)
+            if (!has_any_estimate)
                 return std::nullopt;
             if (n == 0)
                 n = final_total_rows;
@@ -492,7 +523,7 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
                 ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                 : nullptr;
 
-            auto profile = estimator->estimateRelationProfile(merge_tree_step->getStorageMetadata(), filter_node, prewhere_node);
+            auto profile = estimateRelationProfileWithPredicates(*estimator, merge_tree_step->getStorageMetadata(), filter_nodes, prewhere_node);
 
             /// --- Determining 'n' (Estimated Number of Distinct Values) ---
 
@@ -509,15 +540,8 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
             if (ndv > 0)
                 n = std::min(n, ndv);
 
-            /// Priority 3: Storage Fallback (The Safety Net).
-            /// If 'n' is 0, it means the estimator is uninitialized (common with new tables or missing stats).
-            /// Should fallback to the raw storage count, BUT re-apply the LIMIT check should also be done.
-            /// This prevents a "LIMIT 10" query on a 1M row table from being treated as 1M rows.
-            if (n == 0)
-            {
-                n = merge_tree_step->getParts().getRowsCountAllParts();
-                n = apply_limit(n);
-            }
+            /// A zero estimate is meaningful: the build-side predicate may be contradictory or outside min/max ranges.
+            /// Missing statistics are represented by a missing estimator above, not by profile.rows == 0.
 
             /// Calculate the final total rows estimate to return in the struct.
             UInt64 final_total_rows = apply_limit(profile.rows);
@@ -558,54 +582,116 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
  * Runtime dynamic disabling is controlled by
  * `join_runtime_bloom_filter_max_ratio_of_set_bits`.
  */
-static bool shouldDisableRuntimeFilter(
-    const std::optional<JoinKeyStats> & build_stats,
+static bool mayRuntimeFilterUseBloom(
+    UInt64 estimated_distinct_values,
+    const DataTypePtr & filter_element_type,
     const QueryPlanOptimizationSettings & optimization_settings,
-    size_t build_side_row_count = 0) /// Fallback row count from the plan step if stats are missing.
+    const BuildRuntimeFilterStep::RuntimeBloomFilterSettings & normalized_bloom_settings)
 {
-    // If the threshold is 1.0 (or higher), the user has explicitly disabled planning-time disabling.
-    if (optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits >= 1.0)
+    if (estimated_distinct_values == 0)
         return false;
 
-    // Determine 'n' (NDV).
-    // Priority:
-    // 1. Specific column NDV from statistics (most accurate).
-    // 2. Fallback to total row count if NDV is unknown/missing.
-    double n = 0;
-    if (build_stats)
-    {
-        if (build_stats->distinct_values > 0)
-            n = static_cast<double>(build_stats->distinct_values);
+    if (!ApproximateRuntimeFilter::isDataTypeSupported(filter_element_type))
+        return false;
 
-        if (build_stats->total_rows > 0)
-        {
-            double total_rows = static_cast<double>(build_stats->total_rows);
-            n = n > 0 ? std::min(n, total_rows) : total_rows;
-        }
+    if (estimated_distinct_values > optimization_settings.join_runtime_filter_exact_values_limit)
+        return true;
+
+    /// The runtime filter starts as an exact Set and switches to Bloom only when the exact Set overflows
+    /// by row count or byte count. The Set's internal byte accounting includes overhead that we cannot
+    /// reproduce here, so use only a conservative fixed-width payload lower bound for byte overflow.
+    if (filter_element_type->haveMaximumSizeOfValue())
+    {
+        const auto bytes_per_value = filter_element_type->getMaximumSizeOfValueInMemory();
+        if (bytes_per_value > 0 && estimated_distinct_values > normalized_bloom_settings.bytes / bytes_per_value)
+            return true;
     }
 
-    if (n == 0 && build_side_row_count > 0)
-        n = static_cast<double>(build_side_row_count);
+    return false;
+}
 
-    // If still have no estimate for n, default to ENABLED (return false) to be safe.
-    if (n == 0)
-        return false;
+struct RuntimeFilterPlanningDecision
+{
+    bool skip = false;
+    String reason = "unknown";
+    bool bloom_supported = false;
+    bool may_use_bloom = false;
+    std::optional<double> estimated_bloom_ratio;
+};
+
+static RuntimeFilterPlanningDecision analyzeRuntimeFilterPlanningDecision(
+    bool has_build_stats,
+    UInt64 estimated_distinct_values,
+    const DataTypePtr & filter_element_type,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    RuntimeFilterPlanningDecision decision;
+    decision.bloom_supported = ApproximateRuntimeFilter::isDataTypeSupported(filter_element_type);
+
+    // If we have no trustworthy statistics, or the statistics say the build side is empty, default to ENABLED.
+    if (estimated_distinct_values == 0)
+    {
+        decision.reason = has_build_stats ? "empty_build_estimate" : "no_statistics";
+        return decision;
+    }
 
     const auto normalized_settings = BuildRuntimeFilterStep::normalizeBloomFilterSettings(
         optimization_settings.join_runtime_bloom_filter_bytes,
         optimization_settings.join_runtime_bloom_filter_hash_functions);
 
+    decision.may_use_bloom = mayRuntimeFilterUseBloom(estimated_distinct_values, filter_element_type, optimization_settings, normalized_settings);
+
+    // If the threshold is 1.0 (or higher), the user has explicitly disabled planning-time disabling.
+    if (optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits >= 1.0)
+    {
+        decision.reason = "planning_threshold_disabled";
+        return decision;
+    }
+    if (!decision.bloom_supported)
+    {
+        decision.reason = "not_bloom_capable";
+        return decision;
+    }
+
+    if (!decision.may_use_bloom)
+    {
+        decision.reason = "exact_filter_expected";
+        return decision;
+    }
+
+    const double n = static_cast<double>(estimated_distinct_values);
     double k = static_cast<double>(normalized_settings.hash_functions);
     double m = static_cast<double>(normalized_settings.bytes) * 8.0;
 
     // Calculate expected saturation: P = 1 - e^(-kn/m)
     double p = 1.0 - std::exp(-k * n / m);
+    decision.estimated_bloom_ratio = p;
 
     LOG_DEBUG(getLogger("joinRuntimeFilter"),
         "Saturation Check: n={}, m={}, k={}, p={:.4f}, threshold={:.2f}",
         n, m, k, p, optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits);
 
-    return p >= optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits;
+    if (p >= optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits)
+    {
+        decision.skip = true;
+        decision.reason = "planner_estimated_bloom_saturation";
+    }
+    else
+    {
+        decision.reason = "estimated_bloom_not_saturated";
+    }
+
+    return decision;
+}
+
+static String formatOptionalUInt64(std::optional<UInt64> value)
+{
+    return value ? std::to_string(*value) : "unknown";
+}
+
+static String formatOptionalRatio(std::optional<double> value)
+{
+    return value ? fmt::format("{:.6f}", *value) : "unknown";
 }
 
 /// Deterministic structural fingerprint of this join's runtime filters. Unlike a random name, it is
@@ -879,7 +965,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     {
         /// Standard per-column runtime filters (for INNER, SEMI, RIGHT, and single-key ANTI joins)
         ActionsDAG::NodeRawConstPtrs all_filter_conditions;
-        size_t build_side_row_count = 0;
+        std::optional<UInt64> build_side_row_count;
         std::optional<size_t> top_limit;
         {
             QueryPlan::Node * lnode = build_filter_node;
@@ -898,13 +984,13 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (const auto * merge_tree_step = getMergeTreeStep(build_filter_node))
         {
             build_side_row_count = merge_tree_step->getParts().getRowsCountAllParts();
-            if (top_limit && build_side_row_count > *top_limit)
-                build_side_row_count = *top_limit;
+            if (top_limit && *build_side_row_count > *top_limit)
+                build_side_row_count = static_cast<UInt64>(*top_limit);
         }
 
-        if (auto build_subtree_rows = estimateBuildSubtreeRows(build_filter_node); build_subtree_rows && *build_subtree_rows > 0)
+        if (auto build_subtree_rows = estimateBuildSubtreeRows(build_filter_node))
         {
-            if (build_side_row_count == 0 || build_side_row_count > *build_subtree_rows)
+            if (!build_side_row_count || *build_side_row_count > *build_subtree_rows)
                 build_side_row_count = *build_subtree_rows;
         }
 
@@ -919,35 +1005,80 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             const auto build_key_name = join_key_build_side.name;
 
             auto build_stats = getJoinKeyStats(build_filter_node, build_key_name);
-            if (build_stats && build_side_row_count > 0)
+            if (build_stats && build_side_row_count)
             {
-                if (build_stats->total_rows == 0 || build_stats->total_rows > build_side_row_count)
-                    build_stats->total_rows = build_side_row_count;
+                if (build_stats->total_rows > *build_side_row_count)
+                    build_stats->total_rows = *build_side_row_count;
+                if (build_stats->distinct_values > *build_side_row_count)
+                    build_stats->distinct_values = *build_side_row_count;
             }
 
-            // Determine effective n
-            // Priority 1: NDV from column stats (if > 0)
-            // Priority 2: Total rows from the plan step (fallback)
-            size_t effective_n = build_side_row_count;
-            if (build_stats && build_stats->total_rows > 0)
-                effective_n = static_cast<size_t>(build_stats->total_rows);
-            if (build_stats && build_stats->distinct_values > 0)
+            /// Determine effective n from trustworthy statistics only. Raw part row counts are useful as
+            /// upper bounds for available stats, but missing statistics should not disable runtime filters.
+            UInt64 effective_n = 0;
+            if (build_stats)
             {
-                size_t ndv = static_cast<size_t>(build_stats->distinct_values);
-                effective_n = effective_n > 0 ? std::min(effective_n, ndv) : ndv;
+                if (build_stats->total_rows > 0)
+                    effective_n = build_stats->total_rows;
+                if (build_stats->distinct_values > 0)
+                    effective_n = effective_n > 0 ? std::min(effective_n, build_stats->distinct_values) : build_stats->distinct_values;
             }
 
-            /// Planning-time saturation is only meaningful for Bloom-capable runtime filters.
-            if (!is_left_anti_join && shouldDisableRuntimeFilter(build_stats, optimization_settings, effective_n))
+            const std::optional<UInt64> estimated_rows = build_stats ? std::optional<UInt64>(build_stats->total_rows) : std::nullopt;
+            const std::optional<UInt64> estimated_distinct_values = build_stats ? std::optional<UInt64>(build_stats->distinct_values) : std::nullopt;
+            RuntimeFilterPlanningDecision planning_decision;
+            if (is_left_anti_join)
+            {
+                planning_decision.reason = "anti_join_exact_filter";
+                planning_decision.bloom_supported = ApproximateRuntimeFilter::isDataTypeSupported(common_type);
+            }
+            else
+            {
+                planning_decision = analyzeRuntimeFilterPlanningDecision(
+                    build_stats.has_value(), effective_n, common_type, optimization_settings);
+            }
+
+            LOG_TRACE(getLogger("joinRuntimeFilter"),
+                "Runtime filter '{}' on `{}` -> `{}` planning decision: {} "
+                "(reason {}, estimated build rows {}, estimated distinct values {}, effective n {}, "
+                "bloom supported {}, may use bloom {}, estimated bloom ratio {}, threshold {})",
+                filter_name,
+                join_key_build_side.name,
+                join_key_probe_side.name,
+                planning_decision.skip ? "skip" : "build",
+                planning_decision.reason,
+                formatOptionalUInt64(estimated_rows),
+                formatOptionalUInt64(estimated_distinct_values),
+                effective_n,
+                planning_decision.bloom_supported ? "true" : "false",
+                planning_decision.may_use_bloom ? "true" : "false",
+                formatOptionalRatio(planning_decision.estimated_bloom_ratio),
+                optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits);
+
+            /// Planning-time saturation is only meaningful when the runtime filter may actually switch to Bloom.
+            if (!is_left_anti_join && planning_decision.skip)
             {
                 LOG_DEBUG(getLogger("joinRuntimeFilter"),
-                    "Saturation Check: Disabling filter for '{}' (n={})",
-                    build_key_name, effective_n);
+                    "Runtime filter '{}' on `{}` -> `{}` was skipped during planning due to estimated Bloom saturation "
+                    "(disable reason {}, estimated build rows {}, estimated distinct values {}, effective n {}, threshold {})",
+                    filter_name,
+                    join_key_build_side.name,
+                    join_key_probe_side.name,
+                    planning_decision.reason,
+                    formatOptionalUInt64(estimated_rows),
+                    formatOptionalUInt64(estimated_distinct_values),
+                    effective_n,
+                    optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits);
                 continue;
             }
 
-            LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from `{}` and applied to `{}`",
-                filter_name, join_key_build_side.name, join_key_probe_side.name);
+            LOG_TRACE(getLogger("joinRuntimeFilter"),
+                "Runtime filter '{}' will be built from `{}` and applied to `{}` (estimated build rows {}, estimated distinct values {})",
+                filter_name,
+                join_key_build_side.name,
+                join_key_probe_side.name,
+                formatOptionalUInt64(estimated_rows),
+                formatOptionalUInt64(estimated_distinct_values));
 
             /// Add filter lookup to the probe subtree
             const auto & filter_condition = createRuntimeFilterCondition(filter_dag, id, join_key_probe_side, common_type);

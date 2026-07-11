@@ -1,0 +1,144 @@
+<test>
+    <settings>
+        <allow_experimental_analyzer>1</allow_experimental_analyzer>
+        <allow_statistics_optimize>1</allow_statistics_optimize>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    </settings>
+
+    <!--
+        Exercises statistics-based planning-time disabling of JOIN runtime Bloom filters.
+        Keep join_runtime_filter_from_fixed_hash_table disabled so the benchmark measures
+        Set/Bloom runtime filters rather than replacement by a shared fixed hash table.
+    -->
+
+    <create_query>CREATE TABLE rf_stats_probe (id UInt64, g UInt16, payload UInt64) ENGINE MergeTree ORDER BY id SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE rf_stats_build (id UInt64, g UInt16, payload UInt64) ENGINE MergeTree ORDER BY id SETTINGS auto_statistics_types = 'minmax,uniq,tdigest'</create_query>
+    <create_query>CREATE TABLE rf_stats_build_no_stats (id UInt64, g UInt16, payload UInt64) ENGINE MergeTree ORDER BY id SETTINGS auto_statistics_types = ''</create_query>
+    <create_query>CREATE TABLE rf_stats_gate (id UInt64) ENGINE MergeTree ORDER BY id SETTINGS auto_statistics_types = 'minmax,uniq,tdigest'</create_query>
+
+    <fill_query>INSERT INTO rf_stats_probe SELECT number, number % 1024, number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>INSERT INTO rf_stats_build SELECT number, number % 16, number FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO rf_stats_build_no_stats SELECT number, number % 16, number FROM numbers_mt(2000000)</fill_query>
+    <fill_query>INSERT INTO rf_stats_gate SELECT number FROM numbers_mt(16)</fill_query>
+
+    <fill_query>OPTIMIZE TABLE rf_stats_probe FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE rf_stats_build FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE rf_stats_build_no_stats FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE rf_stats_gate FINAL</fill_query>
+
+    <fill_query>ALTER TABLE rf_stats_build MATERIALIZE STATISTICS ALL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>ALTER TABLE rf_stats_gate MATERIALIZE STATISTICS ALL SETTINGS mutations_sync=1</fill_query>
+
+    <!-- High-NDV build side: tiny Bloom filter is saturated. With stats and planning cap enabled,
+         runtime filter creation should be skipped and avoid saturated-Bloom overhead. -->
+    <query short="high_ndv_no_runtime_filter">
+        SELECT sum(p.payload)
+        FROM rf_stats_probe p
+        INNER JOIN rf_stats_build b ON p.id = b.id
+        SETTINGS enable_join_runtime_filters=0, join_algorithm='hash', query_plan_join_swap_table=false, query_plan_optimize_join_order_limit=0, join_runtime_filter_from_fixed_hash_table=0
+        FORMAT Null
+    </query>
+
+    <query short="high_ndv_bloom_runtime_filter">
+        SELECT sum(p.payload)
+        FROM rf_stats_probe p
+        INNER JOIN rf_stats_build b ON p.id = b.id
+        SETTINGS enable_join_runtime_filters=1, join_algorithm='hash', query_plan_join_swap_table=false, query_plan_optimize_join_order_limit=0, join_runtime_filter_from_fixed_hash_table=0, join_runtime_filter_exact_values_limit=0, join_runtime_bloom_filter_bytes=128, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits=1.0
+        FORMAT Null
+    </query>
+
+    <query short="high_ndv_stats_planning_cap">
+        SELECT sum(p.payload)
+        FROM rf_stats_probe p
+        INNER JOIN rf_stats_build b ON p.id = b.id
+        SETTINGS enable_join_runtime_filters=1, join_algorithm='hash', query_plan_join_swap_table=false, query_plan_optimize_join_order_limit=0, join_runtime_filter_from_fixed_hash_table=0, join_runtime_filter_exact_values_limit=0, join_runtime_bloom_filter_bytes=128, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits=0.9
+        FORMAT Null
+    </query>
+
+    <!-- Same high-NDV shape without build-side statistics: the planner cannot prove saturation,
+         so it keeps the runtime filter even with the planning cap enabled. -->
+    <query short="high_ndv_no_stats_planning_cap">
+        SELECT sum(p.payload)
+        FROM rf_stats_probe p
+        INNER JOIN rf_stats_build_no_stats b ON p.id = b.id
+        SETTINGS enable_join_runtime_filters=1, join_algorithm='hash', query_plan_join_swap_table=false, query_plan_optimize_join_order_limit=0, join_runtime_filter_from_fixed_hash_table=0, join_runtime_filter_exact_values_limit=0, join_runtime_bloom_filter_bytes=128, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits=0.9
+        FORMAT Null
+    </query>
+
+    <!-- Selective build predicate: statistics should keep the runtime filter enabled because
+         the estimated build NDV is small enough for a useful Bloom filter. -->
+    <query short="selective_build_no_runtime_filter">
+        SELECT sum(p.payload)
+        FROM rf_stats_probe p
+        INNER JOIN (SELECT id FROM rf_stats_build WHERE id &lt; 16) b ON p.id = b.id
+        SETTINGS enable_join_runtime_filters=0, join_algorithm='hash', query_plan_join_swap_table=false, query_plan_optimize_join_order_limit=0, join_runtime_filter_from_fixed_hash_table=0
+        FORMAT Null
+    </query>
+
+    <query short="selective_build_planning_cap">
+        SELECT sum(p.payload)
+        FROM rf_stats_probe p
+        INNER JOIN (SELECT id FROM rf_stats_build WHERE id &lt; 16) b ON p.id = b.id
+        SETTINGS enable_join_runtime_filters=1, join_algorithm='hash', query_plan_join_swap_table=false, query_plan_optimize_join_order_limit=0, join_runtime_filter_from_fixed_hash_table=0, join_runtime_filter_exact_values_limit=0, join_runtime_bloom_filter_bytes=128, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits=0.9
+        FORMAT Null
+    </query>
+
+    <!-- Build side reduced by an upstream join: recursive join-result/NDV estimates should
+         keep the final runtime filter enabled. -->
+    <query short="upstream_join_no_runtime_filter">
+        SELECT sum(p.payload)
+        FROM rf_stats_probe p
+        INNER JOIN
+        (
+            SELECT b.id
+            FROM rf_stats_build b
+            INNER JOIN rf_stats_gate g ON b.id = g.id
+        ) x ON p.id = x.id
+        SETTINGS enable_join_runtime_filters=0, join_algorithm='hash', query_plan_join_swap_table=false, query_plan_optimize_join_order_limit=0, join_runtime_filter_from_fixed_hash_table=0
+        FORMAT Null
+    </query>
+
+    <query short="upstream_join_planning_cap">
+        SELECT sum(p.payload)
+        FROM rf_stats_probe p
+        INNER JOIN
+        (
+            SELECT b.id
+            FROM rf_stats_build b
+            INNER JOIN rf_stats_gate g ON b.id = g.id
+        ) x ON p.id = x.id
+        SETTINGS enable_join_runtime_filters=1, join_algorithm='hash', query_plan_join_swap_table=false, query_plan_optimize_join_order_limit=0, join_runtime_filter_from_fixed_hash_table=0, join_runtime_filter_exact_values_limit=0, join_runtime_bloom_filter_bytes=128, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits=0.9
+        FORMAT Null
+    </query>
+
+    <!-- Multi-key join: the high-NDV id filter is saturated and should be skipped,
+         but the low-NDV g filter should remain and still filter most probe rows. -->
+    <query short="multi_key_no_runtime_filter">
+        SELECT sum(p.payload)
+        FROM rf_stats_probe p
+        INNER JOIN rf_stats_build b ON p.id = b.id AND p.g = b.g
+        SETTINGS enable_join_runtime_filters=0, join_algorithm='hash', query_plan_join_swap_table=false, query_plan_optimize_join_order_limit=0, join_runtime_filter_from_fixed_hash_table=0
+        FORMAT Null
+    </query>
+
+    <query short="multi_key_all_bloom_filters">
+        SELECT sum(p.payload)
+        FROM rf_stats_probe p
+        INNER JOIN rf_stats_build b ON p.id = b.id AND p.g = b.g
+        SETTINGS enable_join_runtime_filters=1, join_algorithm='hash', query_plan_join_swap_table=false, query_plan_optimize_join_order_limit=0, join_runtime_filter_from_fixed_hash_table=0, join_runtime_filter_exact_values_limit=0, join_runtime_bloom_filter_bytes=128, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits=1.0
+        FORMAT Null
+    </query>
+
+    <query short="multi_key_partial_planning_cap">
+        SELECT sum(p.payload)
+        FROM rf_stats_probe p
+        INNER JOIN rf_stats_build b ON p.id = b.id AND p.g = b.g
+        SETTINGS enable_join_runtime_filters=1, join_algorithm='hash', query_plan_join_swap_table=false, query_plan_optimize_join_order_limit=0, join_runtime_filter_from_fixed_hash_table=0, join_runtime_filter_exact_values_limit=0, join_runtime_bloom_filter_bytes=128, join_runtime_bloom_filter_max_estimated_ratio_of_set_bits=0.9
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE rf_stats_probe</drop_query>
+    <drop_query>DROP TABLE rf_stats_build</drop_query>
+    <drop_query>DROP TABLE rf_stats_build_no_stats</drop_query>
+    <drop_query>DROP TABLE rf_stats_gate</drop_query>
+</test>
