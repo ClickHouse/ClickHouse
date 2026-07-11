@@ -1851,6 +1851,81 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const Str
     return {std::move(internal_column), internal_type, column_name};
 }
 
+/// Whether a ClickHouse type can serve as the per-branch type hint for an ORC union branch of the
+/// given ORC type. The correspondence is structural (up to Nullable and LowCardinality wrappers),
+/// extended with the special explicit-schema conversions the scalar readers support
+/// (binary -> IPv6/Int128/UInt128/Int256/UInt256/Decimal256, char -> big integers and Decimal256,
+/// int -> IPv4). Variant sorts its nested types, so the positional correspondence between ORC
+/// union branches and Variant alternatives is lost; this predicate is used to reconstruct it.
+static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const DataTypePtr & target_type)
+{
+    checkStackSize();
+
+    const DataTypePtr type = removeLowCardinality(removeNullableOrLowCardinalityNullable(target_type));
+    const WhichDataType which(type);
+
+    switch (orc_branch_type->getKind())
+    {
+        case orc::TypeKind::BOOLEAN:
+            return which.isUInt8();
+        case orc::TypeKind::BYTE:
+            return which.isInt8();
+        case orc::TypeKind::SHORT:
+            return which.isInt16();
+        case orc::TypeKind::INT:
+            return which.isInt32() || which.isIPv4();
+        case orc::TypeKind::LONG:
+            return which.isInt64();
+        case orc::TypeKind::FLOAT:
+            return which.isFloat32();
+        case orc::TypeKind::DOUBLE:
+            return which.isFloat64();
+        case orc::TypeKind::DATE:
+            return which.isDate32() || which.isDate();
+        case orc::TypeKind::TIMESTAMP:
+        case orc::TypeKind::TIMESTAMP_INSTANT:
+            return which.isDateTime64() || which.isDateTime();
+        case orc::TypeKind::DECIMAL:
+            return which.isDecimal();
+        case orc::TypeKind::STRING:
+        case orc::TypeKind::VARCHAR:
+            return which.isStringOrFixedString();
+        case orc::TypeKind::BINARY:
+            return which.isStringOrFixedString() || which.isIPv6() || which.isInt128() || which.isUInt128() || which.isInt256()
+                || which.isUInt256() || which.isDecimal256();
+        case orc::TypeKind::CHAR:
+            return which.isStringOrFixedString() || which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256()
+                || which.isDecimal256();
+        case orc::TypeKind::LIST:
+            return which.isArray() && orc_branch_type->getSubtypeCount() == 1
+                && orcUnionBranchMatchesType(orc_branch_type->getSubtype(0), assert_cast<const DataTypeArray &>(*type).getNestedType());
+        case orc::TypeKind::MAP:
+        {
+            if (!which.isMap() || orc_branch_type->getSubtypeCount() != 2)
+                return false;
+            const auto & map_type = assert_cast<const DataTypeMap &>(*type);
+            return orcUnionBranchMatchesType(orc_branch_type->getSubtype(0), map_type.getKeyType())
+                && orcUnionBranchMatchesType(orc_branch_type->getSubtype(1), map_type.getValueType());
+        }
+        case orc::TypeKind::STRUCT:
+        {
+            if (!which.isTuple())
+                return false;
+            const auto & elements = assert_cast<const DataTypeTuple &>(*type).getElements();
+            if (elements.size() != orc_branch_type->getSubtypeCount())
+                return false;
+            for (size_t i = 0; i < elements.size(); ++i)
+                if (!orcUnionBranchMatchesType(orc_branch_type->getSubtype(i), elements[i]))
+                    return false;
+            return true;
+        }
+        case orc::TypeKind::UNION:
+            return which.isVariant();
+    }
+
+    return false;
+}
+
 ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
     const orc::ColumnVectorBatch * orc_column,
     const orc::Type * orc_type,
@@ -1890,12 +1965,58 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         const size_t num_children = orc_type->getSubtypeCount();
         const size_t num_rows = orc_union_column->numElements;
 
+        /// Variant sorts its nested types, so the positional correspondence between ORC union
+        /// branches and the alternatives of an explicit Variant type hint is lost. Reconstruct it
+        /// structurally: collect the alternatives each branch can be read as, then keep only the
+        /// forced assignments (a branch takes an alternative when it is its only remaining
+        /// candidate). A branch whose correspondence stays ambiguous is read without a hint, so no
+        /// guess is ever made. The hints enable the explicit-schema conversions the scalar readers
+        /// support (e.g. binary -> IPv6) and keep the branch types aligned with the hinted Variant
+        /// (e.g. Array(Nullable(...)) produced by schema inference).
+        DataTypes branch_hints(num_children);
+        if (const auto * variant_hint = type_hint ? typeid_cast<const DataTypeVariant *>(type_hint.get()) : nullptr)
+        {
+            const auto & alternatives = variant_hint->getVariants();
+            std::vector<std::vector<size_t>> candidates(num_children);
+            for (size_t i = 0; i < num_children; ++i)
+                for (size_t a = 0; a < alternatives.size(); ++a)
+                    if (orcUnionBranchMatchesType(orc_type->getSubtype(i), alternatives[a]))
+                        candidates[i].push_back(a);
+
+            std::vector<bool> alternative_taken(alternatives.size(), false);
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (size_t i = 0; i < num_children; ++i)
+                {
+                    if (branch_hints[i] || candidates[i].size() != 1)
+                        continue;
+                    const size_t a = candidates[i].front();
+                    if (alternative_taken[a])
+                    {
+                        /// Another branch already took this alternative; leave this branch without a hint.
+                        candidates[i].clear();
+                        continue;
+                    }
+                    alternative_taken[a] = true;
+                    branch_hints[i] = alternatives[a];
+                    changed = true;
+                    for (size_t j = 0; j < num_children; ++j)
+                        if (j != i)
+                            std::erase(candidates[j], a);
+                }
+            }
+        }
+
         /// Read each ORC union branch into its own column. ORC keeps a separate physical batch per
-        /// branch. Variant branches are non-nullable, so a branch read back as Nullable is unwrapped
-        /// to its nested column; its null map is kept, because an ORC union row can be non-null yet
+        /// branch. Variant branches are non-nullable, and an ORC union row can be non-null yet
         /// select a branch whose payload is null - such a row is represented by the Variant NULL
-        /// discriminator too (see the row loop below). The explicit type hint (if any) is not
-        /// propagated to branches, because Variant reorders its types and matching would be ambiguous.
+        /// discriminator (see the row loop below). The branch null map is taken directly from the
+        /// ORC batch rather than from a Nullable result column: complex (LIST/MAP) and
+        /// dictionary-encoded branches never come back as ColumnNullable, yet their payload can
+        /// still be null. inside_nullable is set because nulls are handled here, and e.g. a STRUCT
+        /// branch could not be wrapped in Nullable anyway (Tuple cannot be inside Nullable).
         DataTypes branch_types;
         Columns branch_columns;
         std::vector<ColumnPtr> branch_null_map_columns(num_children); /// keeps the null maps alive
@@ -1905,18 +2026,34 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         for (size_t i = 0; i < num_children; ++i)
         {
             auto branch = readColumnFromORCColumn(
-                orc_union_column->children[i], orc_type->getSubtype(i), column_name, /*inside_nullable=*/false, nullptr);
+                orc_union_column->children[i], orc_type->getSubtype(i), column_name, /*inside_nullable=*/true, branch_hints[i]);
 
-            ColumnPtr branch_column = branch.column;
-            if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(branch_column.get()))
+            if (orc_union_column->children[i]->hasNulls)
             {
-                branch_null_map_columns[i] = nullable_column->getNullMapColumnPtr();
-                branch_null_maps[i] = &nullable_column->getNullMapData();
-                branch_column = nullable_column->getNestedColumnPtr();
+                branch_null_map_columns[i] = readByteMapFromORCColumn(orc_union_column->children[i]);
+                branch_null_maps[i] = &assert_cast<const ColumnUInt8 &>(*branch_null_map_columns[i]).getData();
             }
 
-            branch_types.push_back(removeNullable(branch.type));
-            branch_columns.push_back(std::move(branch_column));
+            /// A dictionary-encoded branch read without a hint comes back as
+            /// LowCardinality(Nullable(...)); Variant alternatives cannot be nullable, so strip the
+            /// inner Nullable (the nulls are tracked by the branch null map above).
+            ColumnWithTypeAndName branch_non_nullable{
+                removeNullableOrLowCardinalityNullable(branch.column),
+                removeNullableOrLowCardinalityNullable(branch.type),
+                branch.name};
+
+            /// With a per-branch hint the branch must end up as exactly that alternative, so that
+            /// the resulting Variant type equals the hinted one (e.g. a branch of a
+            /// non-dictionary-encoded file read for a LowCardinality(String) alternative comes
+            /// back as plain String).
+            if (branch_hints[i] && !branch_hints[i]->equals(*branch_non_nullable.type))
+            {
+                branch_non_nullable.column = castColumn(branch_non_nullable, branch_hints[i]);
+                branch_non_nullable.type = branch_hints[i];
+            }
+
+            branch_types.push_back(branch_non_nullable.type);
+            branch_columns.push_back(std::move(branch_non_nullable.column));
         }
 
         /// ORC keeps one physical stream per branch, so branches with identical types cannot be
