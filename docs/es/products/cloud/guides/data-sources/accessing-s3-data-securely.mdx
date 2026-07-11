@@ -1,0 +1,216 @@
+---
+slug: /cloud/data-sources/secure-s3
+sidebarTitle: 'Acceder de forma segura a datos en S3'
+title: 'Acceder de forma segura a datos en S3'
+description: 'Este artículo muestra cómo los clientes de ClickHouse Cloud pueden usar el acceso basado en roles para autenticarse con Amazon Simple Storage Service (S3) y acceder de forma segura a sus datos.'
+keywords: ['RBAC', 'Amazon S3', 'autenticación']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Esta guía muestra cómo los clientes de ClickHouse Cloud pueden aprovechar el acceso basado en roles para autenticarse con Amazon Simple Storage Service (S3) y acceder de forma segura a sus datos.
+Antes de entrar en la configuración del acceso seguro a S3, es importante entender cómo funciona. A continuación, se ofrece una visión general de cómo los servicios de ClickHouse pueden acceder a buckets de S3 privados al asumir un rol dentro de la cuenta de AWS del cliente.
+
+<Image img="/images/cloud/security/secures3.webp" size="lg" alt="Descripción general del acceso seguro a S3 con ClickHouse" />
+
+<br />
+
+Este enfoque permite a los clientes gestionar todo el acceso a sus buckets de S3 desde un único lugar (la política de IAM del rol asumido), sin tener que revisar todas las políticas de sus buckets para añadir o quitar acceso.
+En la sección siguiente, aprenderá a configurarlo.
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ## Obtén el ARN del rol de IAM de tu servicio de ClickHouse
+</div>
+
+1. Inicia sesión en tu cuenta de ClickHouse Cloud.
+
+2. Selecciona el servicio de ClickHouse para el que quieres crear la integración
+
+3. Selecciona la pestaña **Settings**
+
+4. Desplázate hacia abajo hasta la sección **Network security information**, al final de la página
+
+5. Copia el valor de **Service role ID (IAM)** correspondiente al servicio, como se muestra a continuación.
+
+<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Obtención del ARN del rol de IAM del servicio de ClickHouse" border />
+
+<div id="setting-up-iam-assume-role">
+  ## Configurar la asunción de roles de IAM
+</div>
+
+La asunción de roles de IAM se puede configurar de una de estas dos maneras:
+
+* [Usando una pila de CloudFormation](#option-1-deploying-with-cloudformation-stack)
+* [Creando manualmente un rol de IAM](#option-2-manually-create-iam-role)
+
+<div id="option-1-deploying-with-cloudformation-stack">
+  ### Implementación con una pila de CloudFormation
+</div>
+
+1. Inicie sesión en su cuenta de AWS desde el navegador web con un usuario de IAM que tenga permiso para crear y administrar roles de IAM.
+
+2. Visite la siguiente [URL de CloudFormation](https://us-west-2.console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/quickcreate?templateURL=https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/secure-s3.yaml\&stackName=ClickHouseSecureS3) para rellenar la pila de CloudFormation.
+
+3. Introduzca (o pegue) el **ID del service role (IAM)** de su servicio que obtuvo anteriormente en el campo titulado &quot;ClickHouse Instance Roles&quot;
+   Puede pegar el ID del service role exactamente como aparece en la Cloud Console.
+
+4. Introduzca el nombre de su bucket en el campo titulado &quot;Bucket Names&quot;. Si la URL de su bucket es `https://ch-docs-s3-bucket.s3.eu-central-1.amazonaws.com/clickhouseS3/`, entonces el nombre del bucket es `ch-docs-s3-bucket`.
+
+<Note>
+  No introduzca el ARN completo del bucket; solo el nombre del bucket.
+</Note>
+
+5. Configure la pila de CloudFormation. A continuación se ofrece información adicional sobre estos parámetros.
+
+| Parámetro                 | Valor predeterminado | Descripción                                                                                                                                            |
+| :------------------------ | :------------------: | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RoleName                  | ClickHouseAccess-001 | El nombre del nuevo rol que ClickHouse Cloud usará para acceder a su bucket de S3.                                                                     |
+| Role Session Name         |           *          | Role Session Name puede usarse como un secreto compartido para proteger aún más su bucket.                                                             |
+| ClickHouse Instance Roles |                      | Lista separada por comas de los roles de IAM del servicio de ClickHouse que pueden usar esta integración segura con S3.                                |
+| Bucket Access             |         Read         | Establece el nivel de acceso para los buckets proporcionados.                                                                                          |
+| Bucket Names              |                      | Lista separada por comas de los nombres de bucket a los que este rol tendrá acceso. **Nota:** use el nombre del bucket, no el ARN completo del bucket. |
+
+6. Seleccione la casilla **I acknowledge that AWS CloudFormation might create IAM resources with custom names.**
+
+7. Haga clic en el botón **Create stack** en la esquina inferior derecha
+
+8. Asegúrese de que la pila de CloudFormation se complete sin errores.
+
+9. Seleccione la pila recién creada y, a continuación, la pestaña **Outputs** de la pila de CloudFormation
+
+10. Copie el valor de **RoleArn** de esta integración, que es lo que necesita para acceder a su bucket de S3.
+
+<Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="Salida de la pila de CloudFormation que muestra el ARN del rol de IAM" border />
+
+<div id="option-2-manually-create-iam-role">
+  ### Crear manualmente un rol de IAM
+</div>
+
+1. Inicie sesión en su cuenta de AWS desde el navegador web con un usuario de IAM que tenga permisos para crear y administrar roles de IAM.
+
+2. Vaya a la consola del servicio IAM
+
+3. Cree un nuevo rol de IAM con la siguiente política de IAM y de confianza. Sustituya `{ClickHouse_IAM_ARN}` por el ARN del rol de IAM correspondiente a su instancia de ClickHouse.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "{ClickHouse_IAM_ARN}"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+
+**Política de IAM**
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "s3:GetBucketLocation",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::{BUCKET_NAME}"
+            ],
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "s3:Get*",
+                "s3:List*"
+            ],
+            "Resource": [
+                "arn:aws:s3:::{BUCKET_NAME}/*"
+            ],
+            "Effect": "Allow"
+        }
+    ]
+}
+```
+
+4. Copia el nuevo **IAM Role Arn** una vez creado, ya que es necesario para acceder a tu bucket de S3.
+
+<div id="access-your-s3-bucket-with-the-clickhouseaccess-role">
+  ## Acceda a su bucket de S3 con el rol ClickHouseAccess
+</div>
+
+ClickHouse Cloud le permite especificar `extra_credentials` como parte de la función de tabla S3.
+A continuación se muestra un ejemplo de cómo ejecutar una consulta con el rol recién creado que se copió arriba.
+
+```sql
+DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001'))
+```
+
+A continuación se muestra una consulta de ejemplo que usa `role_session_name` como secreto compartido para consultar datos de un bucket.
+Si `role_session_name` no es correcto, esta operación fallará.
+
+```sql
+DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', role_session_name = 'secret-role-name'))
+```
+
+<Note>
+  Recomendamos que su S3 de origen esté en la misma región que su servicio de ClickHouse Cloud para reducir los costos de transferencia de datos.
+  Para obtener más información, consulte [los precios de S3](https://aws.amazon.com/s3/pricing/)
+</Note>
+
+<div id="advanced-action-control">
+  ## Control avanzado de acciones
+</div>
+
+Para un control de acceso más estricto, es posible restringir la política del bucket para que solo acepte solicitudes que se originen en los endpoints de VPC de ClickHouse Cloud mediante la [condición `aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Para obtener los endpoints de VPC de tu región de ClickHouse Cloud, abre una terminal y ejecuta:
+
+```bash
+# Reemplaza <your-region> con tu región de ClickHouse Cloud
+curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
+```
+
+A continuación, agregue una regla de denegación a la política de IAM con los endpoints obtenidos:
+
+```json
+{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "VisualEditor0",
+                "Effect": "Allow",
+                "Action": [
+                    "s3:List*",
+                    "s3:Get*"
+                ],
+                "Resource": [
+                    "arn:aws:s3:::{BUCKET_NAME}",
+                    "arn:aws:s3:::{BUCKET_NAME}/*"
+                ]
+            },
+            {
+                "Sid": "VisualEditor3",
+                "Effect": "Deny",
+                "Action": [
+                    "s3:GetObject"
+                ],
+                "Resource": "*",
+                "Condition": {
+                    "StringNotEquals": {
+                        "aws:SourceVpce": [
+                            "{ClickHouse VPC ID from your S3 region}",
+                            "{ClickHouse VPC ID from your S3 region}",
+                            "{ClickHouse VPC ID from your S3 region}"
+                        ]
+                    }
+                }
+            }
+        ]
+}
+```
+
+Para más detalles sobre el acceso a los endpoints de los servicios de ClickHouse Cloud, consulta [Direcciones IP de Cloud](/es/products/cloud/guides/data-sources/cloud-endpoints-api).

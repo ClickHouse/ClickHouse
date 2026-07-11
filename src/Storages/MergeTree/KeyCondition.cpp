@@ -690,13 +690,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
+                out.relaxed = true;
                 return true;
             }
         }
 };
-
-static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
-    = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE, KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON};
 
 /// Functions with range inversion cannot be relaxed. It will become stricter instead.
 /// For example:
@@ -1393,7 +1391,6 @@ KeyCondition::KeyCondition(
     if (skip_analysis_)
     {
         has_filter = (filter_dag.predicate != nullptr);
-        relaxed = true;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
@@ -1406,7 +1403,6 @@ KeyCondition::KeyCondition(
     if (!filter_dag.predicate)
     {
         has_filter = false;
-        relaxed = true;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
@@ -1421,21 +1417,28 @@ KeyCondition::KeyCondition(
     rpn = std::move(builder).extractRPN();
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
-
-    if (std::any_of(rpn.begin(), rpn.end(), [&](const auto & elem) { return always_relaxed_atom_elements.contains(elem.function); }))
-        relaxed = true;
 }
 
 KeyCondition::KeyCondition(
     ThisIsPrivate, ColumnIndices key_columns_, size_t num_key_columns_, bool single_point_,
-    bool date_time_overflow_behavior_ignore_, bool relaxed_)
+    bool date_time_overflow_behavior_ignore_)
     : has_filter(true)
     , key_columns(std::move(key_columns_))
     , num_key_columns(num_key_columns_)
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(date_time_overflow_behavior_ignore_)
-    , relaxed(relaxed_)
 {}
+
+bool KeyCondition::isRelaxed() const
+{
+    return std::any_of(rpn.begin(), rpn.end(), [](const auto & elem)
+    {
+        return elem.relaxed
+            || elem.function == RPNElement::FUNCTION_UNKNOWN
+            || ((elem.function == RPNElement::FUNCTION_IN_SET || elem.function == RPNElement::FUNCTION_NOT_IN_SET)
+                && elem.set_index->size() > 1);
+    });
+}
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
 {
@@ -1524,20 +1527,7 @@ static bool applyFunctionChainToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_data_type)
 {
-    /// Strip outer-level wrappers (Const/Replicated/Sparse/LowCardinality) to prepare
-    /// the column for the monotonic function chain. This must be symmetric with
-    /// `removeLowCardinality` on the type — both strip only outer-level LowCardinality,
-    /// preserving `LowCardinality` nested inside container types (`Array`, `Tuple`, `Map`, `Variant`).
-    /// Calling `convertToFullIfNeeded` here would recurse into subcolumns and strip inner
-    /// `LowCardinality`, creating a column/type mismatch when the type still has inner LC
-    /// (e.g. `Variant(LowCardinality(Date), String)` wrapped in `ColumnConst` bypasses
-    /// `ColumnVariant`'s override of `convertToFullIfNeeded`) — leading to `typeid_cast`
-    /// failures in `FunctionCast` wrappers such as `prepareUnpackDictionaries`.
-    auto result_column = in_column
-        ->convertToFullColumnIfConst()
-        ->convertToFullColumnIfReplicated()
-        ->convertToFullColumnIfSparse()
-        ->convertToFullColumnIfLowCardinality();
+    auto result_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     auto result_type = removeLowCardinality(in_data_type);
 
     /// In case function sequence is empty, return full non-LowCardinality column
@@ -1984,16 +1974,7 @@ static bool applyDeterministicDagToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_type)
 {
-    /// Strip only outer-level wrappers (Const/Replicated/Sparse/LowCardinality), symmetrically with
-    /// `removeLowCardinality` on the type. `convertToFullIfNeeded` must not be used here: it recurses
-    /// into subcolumns and strips inner `LowCardinality`, which `removeLowCardinality` keeps, producing a
-    /// column/type mismatch for inner LC (e.g. `Variant(LowCardinality(String), Int)`) and a `typeid_cast`
-    /// failure in `FunctionCast` wrappers. This mirrors `applyFunctionChainToColumn` above.
-    ColumnPtr input_column = in_column
-        ->convertToFullColumnIfConst()
-        ->convertToFullColumnIfReplicated()
-        ->convertToFullColumnIfSparse()
-        ->convertToFullColumnIfLowCardinality();
+    ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
 
     /// This is the final check for the output column after DAG execution:
@@ -2002,11 +1983,7 @@ static bool applyDeterministicDagToColumn(
     /// - strip Nullable/LowCardinality wrappers to get the actual column
     auto finalize_output_column_and_type = [&](ColumnPtr & column, DataTypePtr & type) -> bool
     {
-        column = column
-            ->convertToFullColumnIfConst()
-            ->convertToFullColumnIfReplicated()
-            ->convertToFullColumnIfSparse()
-            ->convertToFullColumnIfLowCardinality();
+        column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         type = removeLowCardinality(type);
 
         if (column->isNullable())
@@ -2623,9 +2600,6 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     if (adjusted_indexes_mapping.size() < set_types.size())
         out.relaxed = true;
 
-    if (out.set_index->size() > 1 || out.relaxed)
-        relaxed = true;
-
     return true;
 }
 
@@ -2710,9 +2684,6 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     ///    which is not equivalent.
     if (adjusted_indexes_mapping.size() < set_types.size())
         out.relaxed = true;
-
-    if (out.set_index->size() > 1 || out.relaxed)
-        relaxed = true;
 
     return true;
 }
@@ -3600,10 +3571,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 if (tryPrepareSetIndexForIn(func, info, out))
                 {
                     const auto atom_it = atom_map.find(func_name);
-                    bool valid_atom = atom_it->second(out, const_value);
-                    if (valid_atom && out.relaxed)
-                        relaxed = true;
-                    return valid_atom;
+                    return atom_it->second(out, const_value);
                 }
                 else
                     return false;
@@ -3618,10 +3586,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         return true;
 
                     const auto atom_it = atom_map.find(func_name);
-                    bool valid_atom = atom_it->second(out, const_value);
-                    if (valid_atom && out.relaxed)
-                        relaxed = true;
-                    return valid_atom;
+                    return atom_it->second(out, const_value);
                 }
                 else
                     return false;
@@ -3874,10 +3839,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
-        bool valid_atom = atom_it->second(out, const_value);
-        if (valid_atom && out.relaxed)
-            relaxed = true;
-        return valid_atom;
+        return atom_it->second(out, const_value);
     }
     if (node.tryGetConstant(const_value, const_type))
     {
@@ -3992,6 +3954,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 
             RPNElement collapsed_elem;
             collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
+            collapsed_elem.relaxed = true;
             collapsed_elem.key_columns = elem.key_columns;
             collapsed_elem.space_filling_curve_args_hyperrectangle = std::move(hyperrectangle);
 
@@ -4014,6 +3977,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 
                 RPNElement collapsed_elem;
                 collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
+                collapsed_elem.relaxed = true;
                 collapsed_elem.key_columns = cond1.key_columns;
                 collapsed_elem.space_filling_curve_args_hyperrectangle
                     = intersect(cond1.space_filling_curve_args_hyperrectangle, cond2.space_filling_curve_args_hyperrectangle);
@@ -5006,7 +4970,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
         /// `FUNCTION_IS_NULL`, `FUNCTION_IS_NOT_NULL`, ...) and any future atom that introduces
         /// relaxation handling. Operator elements (`FUNCTION_AND`, `FUNCTION_OR`, `FUNCTION_NOT`,
         /// `ALWAYS_TRUE`, `ALWAYS_FALSE`) are never set as relaxed; relaxation propagates through them
-        /// via their child atoms (see the comment on `KeyCondition::relaxed` in `KeyCondition.h`).
+        /// via their child atoms (see the comment on `KeyCondition::isRelaxed` in `KeyCondition.h`).
         if (element.relaxed)
             return false;
 
@@ -5191,7 +5155,7 @@ Ranges KeyCondition::extractBounds() const
     {
         /// Evaluate a single top-level conjunct in isolation, because `extractPlainRanges()` requires
         /// the whole RPN to be representable by plain range operations.
-        KeyCondition one_conjunct(ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
+        KeyCondition one_conjunct(ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore);
         one_conjunct.rpn.assign(rpn.begin() + start, rpn.begin() + end);
 
         Ranges conjunct_ranges;
@@ -6669,7 +6633,7 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
                 continue;
 
             ColumnIndices one_key_column = {{*key_column_names[i], i}};
-            auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
+            auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore);
             add_rpn_ranges(*condition, *this, ranges);
             out_column_conditions.emplace_back(i, std::move(condition));
         }

@@ -1,0 +1,45 @@
+---
+description: 'Página que describe el motor de base de datos `Shared`, disponible en ClickHouse Cloud'
+sidebarTitle: 'Shared'
+slug: /engines/database-engines/shared
+title: 'Shared'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/es/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+<div id="shared-database-engine">
+  # Motor de base de datos Shared
+</div>
+
+El motor de base de datos `Shared` funciona en conjunto con Shared Catalog para gestionar bases de datos cuyas tablas utilizan motores de tabla sin estado, como [`SharedMergeTree`](/es/products/cloud/features/infrastructure/shared-merge-tree).
+Estos motores de tabla no escriben estado persistente en disco y son compatibles con entornos de compute dinámico.
+
+El motor de base de datos `Shared` en Cloud elimina la dependencia de los discos locales.
+Es un motor que funciona íntegramente en memoria y solo requiere CPU y memoria.
+
+<div id="how-it-works">
+  ## ¿Cómo funciona?
+</div>
+
+El motor de base de datos `Shared` almacena todas las definiciones de bases de datos y tablas en un Shared Catalog central respaldado por Keeper. En lugar de escribir en el disco local, mantiene un único estado global versionado que comparten todos los nodos de cómputo.
+
+Cada nodo solo registra la última versión aplicada y, al iniciarse, obtiene el estado más reciente sin necesidad de archivos locales ni de configuración manual.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+Para los usuarios finales, el uso de Shared Catalog y del motor de base de datos Shared no requiere ninguna configuración adicional. La creación de bases de datos se realiza como siempre:
+
+```sql
+CREATE DATABASE my_database;
+```
+
+ClickHouse Cloud asigna automáticamente el motor de base de datos Shared a las bases de datos. Cualquier tabla que se cree dentro de una base de datos de este tipo con motores sin estado se beneficiará automáticamente de las capacidades de replicación y coordinación de Shared Catalog.
+
+<Tip>
+  Para obtener más información sobre Shared Catalog y sus ventajas, consulta [&quot;Shared catalog and shared database engine&quot;](/es/products/cloud/features/infrastructure/shared-catalog) en la sección de referencia de Cloud.
+</Tip>

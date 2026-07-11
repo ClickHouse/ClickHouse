@@ -1,0 +1,169 @@
+---
+description: 'Documentation for the ClickHouse C++ client library and integration
+  with u-server framework'
+sidebarTitle: 'C++'
+slug: /interfaces/cpp
+title: 'C++ client library'
+doc_type: 'reference'
+---
+
+`clickhouse-cpp` is the official C++ client library for ClickHouse, providing a fast and type-safe
+interface to ClickHouse using its native binary protocol.
+
+Build instructions, usage examples, and additional documentation are available in the project’s
+GitHub repository: [https://github.com/ClickHouse/clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp). 
+
+<Note>
+The library is under active development. While it already supports core ClickHouse functionality,
+some features and data types may not yet be fully implemented or supported.
+
+Your feedback is highly valuable and helps guide the prioritization of new features and
+improvements. If you encounter limitations, missing functionality, or unexpected behavior, please
+share your observations or feature requests through the issue tracker at 
+[https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
+</Note>
+
+## Including the library into your project {#including-library-into-project}
+The simplest way to incorporate the library into your project is using CMake’s `FetchContent`
+module. This approach lets you pin an exact library version and build it as part of your normal
+CMake workflow. 
+
+```cmake
+include(FetchContent)
+
+set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
+FetchContent_Declare(
+    clickhouse-cpp
+    GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
+    GIT_TAG v2.6.0   # can also be `master` or other banch
+)
+FetchContent_MakeAvailable(clickhouse-cpp)
+```
+
+The `WITH_OPENSSL` option enables TLS support in the library and is required when connecting to
+ClickHouse Cloud or other SSL-enabled ClickHouse deployments. While it can be omitted for non-TLS
+connections, enabling it is generally recommended.
+
+Building with SSL support requires the OpenSSL development packages to be installed. Install
+`libssl-dev` on Debian, Ubuntu or their derivatives; `openssl-devel` for Fedora, Red Hat; or
+`openssl` on macOS, using homebrew.
+
+After the dependency is made available, link your target against the exported library target:
+```cmake
+target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
+```
+
+## Examples {#examples}
+
+### Setting the client object {#example-setup-client}
+
+Create a `Client` instance to establish a connection to ClickHouse. The following example
+demonstrates connecting to a local ClickHouse instance, where no password is required and SSL isn't
+enabled.
+
+```cpp
+#include <clickhouse/client.h>
+
+clickhouse::Client client{clickhouse::ClientOptions().SetHost("localhost")};
+```
+
+In more advanced setups, additional configuration is required. The following example demonstrates
+connecting to a ClickHouse Cloud instance using several additional parameters:
+
+```cpp
+#include <clickhouse/client.h>
+
+clickhouse::Client client{
+    clickhouse::ClientOptions{}
+      .SetHost("your.instance.clickhouse.cloud")
+      .SetUser("default")
+      .SetPassword("your-password")
+      .SetSSLOptions({})   // Enable SSL
+      .SetPort(9440)       // for connections over SSL ClickHouse Cloud uses port 9440
+    };
+```
+
+### Creating tables and running queries without data {#example-create-table}
+
+To execute a query that doesn't return any data, such as creating tables, use the `Execute` method.
+The same approach applies to other statements like `ALTER TABLE`, `DROP`, etc..
+
+```cpp
+client.Execute(R"(
+    CREATE TABLE IF NOT EXISTS greetings (
+        id UInt64,
+        message String,
+        language String) 
+    ENGINE = MergeTree ORDER BY id)");
+```
+
+### Inserting Data {#example-insert-data}
+
+To insert data into a table, construct a `Block` and populate it with column objects matching the
+table schema. Data is appended column-by-column and then inserted in a single operation using the
+`Insert` method, which is optimized for efficient batch writes.
+
+```cpp
+auto id = std::make_shared<clickhouse::ColumnUInt64>();
+auto message = std::make_shared<clickhouse::ColumnString>();
+auto language = std::make_shared<clickhouse::ColumnString>();
+
+id->Append(1);
+message->Append("Hello, World!");
+language->Append("English");
+
+id->Append(2);
+message->Append("¡Hola, Mundo!");
+language->Append("Spanish");
+
+id->Append(3);
+message->Append("Hallo wereld!");
+language->Append("Dutch");
+
+clickhouse::Block block{};
+block.AppendColumn("id", id);
+block.AppendColumn("message", message);
+block.AppendColumn("language", language);
+
+client.Insert("greetings", block);
+```
+
+### Selecting the data {#example-select}
+
+To execute a query that returns data, use the `Select` method and provide a callback to process the
+result. Query results are delivered as `Block` objects, reflecting ClickHouse’s native
+column-oriented data representation.
+
+```cpp
+client.Select(
+    "SELECT id, message, language FROM greetings",
+    [](const clickhouse::Block & block){
+        for (size_t i = 0; i < block.GetRowCount(); ++i) {
+            auto id = block[0]->AsStrict<clickhouse::ColumnUInt64>()->At(i);
+            auto message = block[1]->AsStrict<clickhouse::ColumnString>()->At(i);
+            auto language = block[2]->AsStrict<clickhouse::ColumnString>()->At(i);
+            std::cout << id << "\t" << message << "\t" << language << "\n";
+        }
+    });
+```
+
+## Supported Data Types {#supported-data-types}
+
+- `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
+- `UInt128`, `Int128`
+- `Decimal32`, `Decimal64`, `Decimal128`
+- `Float32`, `Float64`
+- `Date`
+- `DateTime`, `DateTime64`
+- `DateTime([timezone])`, `DateTime64(N, [timezone])`
+- `UUID`
+- `Enum8`, `Enum16`
+- `String`
+- `FixedString(N)`
+- `LowCardinality(String)` and `LowCardinality(FixedString(N))`
+- `Nullable(T)`
+- `Array(T)`
+- `Tuple`
+- `Map`
+- `IPv4`, `IPv6`
+- `Point`, `Ring`, `Polygon`, `MultiPolygon`
