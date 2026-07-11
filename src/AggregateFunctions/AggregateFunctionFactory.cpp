@@ -238,8 +238,9 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     {
         static const NameSet float_promoting_aggregate_functions
         {
-            /// Arithmetic accumulation over the input.
-            "sum", "sumkahan", "avg", "avgweighted",
+            /// Arithmetic accumulation over the input (`sumCount` returns the (sum, count) pair computed by the
+            /// same accumulation as `avg`).
+            "sum", "sumkahan", "sumcount", "avg", "avgweighted",
             /// Variance / standard deviation / covariance / correlation and higher moments (skewness, kurtosis),
             /// computed as Float64 moments -- the moment-based implementations, their numerically stable `*Stable`
             /// siblings, and the matrix forms.

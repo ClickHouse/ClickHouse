@@ -234,6 +234,11 @@ SELECT 'simpleLinearRegression', simpleLinearRegression(x, y)    = simpleLinearR
 SELECT 'exponentialMovingAverage', exponentialMovingAverage(1)(x, y) = exponentialMovingAverage(1)(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64))) FROM t_variant_stat;
 SELECT 'boundingRatio',           boundingRatio(x, y)              = boundingRatio(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64)))            FROM t_variant_stat;
 SELECT 'largestTriangleThreeBuckets', largestTriangleThreeBuckets(4)(x, y) = largestTriangleThreeBuckets(4)(CAST(x AS Nullable(Float64)), CAST(y AS Nullable(Float64))) FROM t_variant_stat;
+-- sumCount is the same arithmetic family as sum/avg (it computes the (sum, count) pair via the same accumulation
+-- as avg), so it is float-promoting too: over a numeric mix with no lossless supertype it must aggregate over
+-- Float64, matching the explicit Nullable(Float64) cast. Its base name was missing from the allowlist, so this is
+-- a regression for it (the gap also leaked into sumCountIf / State / Merge through suffix stripping).
+SELECT 'sumCount',              sumCount(x)                     = sumCount(CAST(x AS Nullable(Float64)))                                                  FROM t_variant_stat;
 
 -- Combinators compose with the fallback (the adapter is the outermost wrapper): -If filters rows, and a stored
 -- -State round-trips through -Merge, both aggregating over the same Float64 supertype.
