@@ -66,6 +66,18 @@ SELECT 'container_plus_shorthand', toString(x[1]) FROM format(CSV, 'x Array(Date
 SELECT 'container_plus_bare_int', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[+1783585473954]"'); -- { serverError CANNOT_PARSE_NUMBER }
 SELECT 'scalar_plus_frac', toString(x) FROM format(CSV, 'x DateTime64(3)', '+1783585473.954'); -- { serverError CANNOT_PARSE_DATETIME }
 
+-- The dotted fractional / sign / shorthand forms are a basic-parser feature. Under best_effort
+-- (and best_effort_us) scalar and quoted-nested DateTime64 route through parseDateTime64BestEffort,
+-- which rejects them, so the unquoted container/JSON element must reject them too: the effective
+-- parser depends on date_time_input_format, not on quoting/nesting. A bare integer tick count still
+-- parses under best_effort (unchanged, backward compatible).
+SELECT 'be_scalar_dotted', toString(x) FROM format(CSV, 'x DateTime64(3)', '-0.123') SETTINGS date_time_input_format = 'best_effort'; -- { serverError CANNOT_PARSE_DATETIME }
+SELECT 'be_unquoted_dotted', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[-0.123]"') SETTINGS date_time_input_format = 'best_effort'; -- { serverError CANNOT_READ_ARRAY_FROM_TEXT }
+SELECT 'be_unquoted_dot_pos', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[.123]"') SETTINGS date_time_input_format = 'best_effort'; -- { serverError CANNOT_READ_ARRAY_FROM_TEXT }
+SELECT 'be_unquoted_frac', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[1783585473.954]"') SETTINGS date_time_input_format = 'best_effort'; -- { serverError CANNOT_READ_ARRAY_FROM_TEXT }
+SELECT 'beus_unquoted_dotted', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[-0.123]"') SETTINGS date_time_input_format = 'best_effort_us'; -- { serverError CANNOT_READ_ARRAY_FROM_TEXT }
+SELECT 'be_unquoted_bare_int', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[1783585473954]"') SETTINGS date_time_input_format = 'best_effort';
+
 -- Fraction is truncated / padded to the column scale.
 SELECT 'scale0', [1783585473.954]::Array(DateTime64(0));
 SELECT 'scale6_extra', [1783585473.954321987]::Array(DateTime64(6));

@@ -123,10 +123,29 @@ static inline bool tryReadText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, 
 /// A bare integer is a scaled tick count, e.g. `1783585473954` for scale 3 (unchanged, backward compatible).
 /// If a decimal point follows, the integer part is whole seconds and the fraction is subseconds,
 /// e.g. `1783585473.954`, matching how scalar columns already parse the fractional unix-timestamp form.
+///
+/// The dotted fractional / signed / shorthand forms are a Basic-parser feature: scalar DateTime64
+/// accepts them only via readDateTime64Text under date_time_input_format = 'basic', while best_effort
+/// routes through parseDateTime64BestEffort, which rejects them. This helper honours the same setting
+/// so the effective parser depends on date_time_input_format, not on quoting/nesting.
 template <typename ReturnType>
-static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
+static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadBuffer & istr, FormatSettings::DateTimeInputFormat input_format)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    if (input_format != FormatSettings::DateTimeInputFormat::Basic)
+    {
+        /// Under best_effort / best_effort_us fall back to the pre-PR bare-integer tick-count path.
+        /// A trailing '.' is left unread and the outer container reader rejects it, exactly as the
+        /// scalar and quoted-nested best_effort paths reject the dotted fractional unix-timestamp form.
+        if constexpr (throw_exception)
+        {
+            readIntText(x, istr);
+            return;
+        }
+        else
+            return ReturnType(tryReadIntText(x, istr));
+    }
 
     /// Reject a leading '+' to stay in parity with scalar DateTime64 basic parsing, which
     /// rejects it (readDateTimeTextFallback only special-cases '-'). readIntText would
@@ -230,14 +249,14 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
     }
 }
 
-static inline void readNumericText(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
+static inline void readNumericText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, FormatSettings::DateTimeInputFormat input_format)
 {
-    readNumericTextImpl<void>(x, scale, istr);
+    readNumericTextImpl<void>(x, scale, istr, input_format);
 }
 
-static inline bool tryReadNumericText(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
+static inline bool tryReadNumericText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, FormatSettings::DateTimeInputFormat input_format)
 {
-    return readNumericTextImpl<bool>(x, scale, istr);
+    return readNumericTextImpl<bool>(x, scale, istr, input_format);
 }
 
 SerializationPtr SerializationDateTime64::create(UInt32 scale_, const TimezoneMixin & time_zone_)
@@ -288,7 +307,7 @@ void SerializationDateTime64::deserializeTextQuoted(IColumn & column, ReadBuffer
     }
     else /// Just 1504193808 or 01504193808 or 1504193808.808
     {
-        readNumericText(x, scale, istr);
+        readNumericText(x, scale, istr, settings.date_time_input_format);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
@@ -303,7 +322,7 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
     }
     else /// Just 1504193808 or 01504193808 or 1504193808.808
     {
-        if (!tryReadNumericText(x, scale, istr))
+        if (!tryReadNumericText(x, scale, istr, settings.date_time_input_format))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
@@ -327,7 +346,7 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     }
     else
     {
-        readNumericText(x, scale, istr);
+        readNumericText(x, scale, istr, settings.date_time_input_format);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
@@ -342,7 +361,7 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     }
     else
     {
-        if (!tryReadNumericText(x, scale, istr))
+        if (!tryReadNumericText(x, scale, istr, settings.date_time_input_format))
             return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
