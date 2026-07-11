@@ -685,7 +685,7 @@ SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in
 ```
 
 ```text
-┌─v───┬─dynamicType(v)─┐
+┌─d───┬─dynamicType(d)─┐
 │ 1   │ Int64          │
 │ 100 │ Int64          │
 │ 1   │ UInt32         │
