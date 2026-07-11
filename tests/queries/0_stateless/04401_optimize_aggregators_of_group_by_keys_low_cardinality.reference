@@ -35,3 +35,12 @@ Granules: 8/128
 -- IN subquery must not break: the pass re-resolves ordinary functions but must skip non-column/function arguments (a non-correlated subquery QueryNode has no result type)
 3
 1	2
+-- correlated subquery in WHERE over LowCardinality key (min/max/any/anyLast), opt on == off
+2
+2
+2
+2
+-- correlated subquery in SELECT position over LowCardinality key
+1	x
+2	m
+3	z

@@ -69,3 +69,25 @@ SELECT '-- IN subquery must not break: the pass re-resolves ordinary functions b
 SELECT count() FROM numbers(10) WHERE number IN (SELECT number FROM numbers(3));
 SELECT s, count() FROM (SELECT toLowCardinality(toString(number % 5)) AS s, number AS id FROM numbers(20))
 WHERE id IN (SELECT number FROM numbers(10)) GROUP BY s HAVING min(s) = '1' ORDER BY s;
+
+-- Correlated scalar subquery whose projection is an eliminated aggregate over a LowCardinality
+-- key: the rewrite flips the subquery result type String -> LowCardinality(String), so both the
+-- query node's projection_columns metadata and any parent operator on the subquery must be
+-- refreshed. Otherwise the outer `= 'm'` still expects the old type and the query tree validator
+-- (or PlannerCorrelatedSubqueries) throws. Result must be identical with the optimization on/off.
+SET allow_experimental_correlated_subqueries = 1, allow_suspicious_low_cardinality_types = 1;
+DROP TABLE IF EXISTS t_lc_correlated;
+CREATE TABLE t_lc_correlated (id UInt64, s LowCardinality(String), sn LowCardinality(Nullable(String)), u LowCardinality(UInt8))
+ENGINE = Memory;
+INSERT INTO t_lc_correlated VALUES (1, 'x', 'x', 1), (2, 'm', 'm', 7), (3, 'z', NULL, 3);
+
+SELECT '-- correlated subquery in WHERE over LowCardinality key (min/max/any/anyLast), opt on == off';
+SELECT id FROM t_lc_correlated AS o WHERE (SELECT min(s) FROM t_lc_correlated AS i WHERE i.id = o.id GROUP BY s) = 'm' ORDER BY id;
+SELECT id FROM t_lc_correlated AS o WHERE (SELECT max(sn) FROM t_lc_correlated AS i WHERE i.id = o.id GROUP BY sn) = 'm' ORDER BY id;
+SELECT id FROM t_lc_correlated AS o WHERE (SELECT any(u) FROM t_lc_correlated AS i WHERE i.id = o.id GROUP BY u) = 7 ORDER BY id;
+SELECT id FROM t_lc_correlated AS o WHERE (SELECT anyLast(s) FROM t_lc_correlated AS i WHERE i.id = o.id GROUP BY s) = 'm' ORDER BY id;
+
+SELECT '-- correlated subquery in SELECT position over LowCardinality key';
+SELECT id, (SELECT min(s) FROM t_lc_correlated AS i WHERE i.id = o.id GROUP BY s) AS m FROM t_lc_correlated AS o ORDER BY id;
+
+DROP TABLE t_lc_correlated;

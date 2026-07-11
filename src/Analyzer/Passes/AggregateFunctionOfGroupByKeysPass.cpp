@@ -5,6 +5,7 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
@@ -116,6 +117,13 @@ public:
         }
         else if (node->getNodeType() == QueryTreeNodeType::QUERY)
         {
+            /// Projection nodes are rewritten before we leave the query node (post-order visit), so
+            /// a projection column that was an eliminated/re-resolved aggregate may now have a
+            /// different type. Refresh QueryNode::projection_columns so QueryNode::getResultType()
+            /// reports the true post-rewrite type; otherwise a correlated scalar subquery over a
+            /// LowCardinality key would report the stale analyzed type and
+            /// PlannerCorrelatedSubqueries::addStepForResultRenaming would throw on the header mismatch.
+            refreshProjectionColumnTypes(*node->as<QueryNode>());
             group_by_keys_stack.pop_back();
         }
     }
@@ -134,9 +142,30 @@ private:
         bool parents_are_only_deterministic = false;
     };
 
+    /// Whether a function argument node has a well-defined result type that can be compared. Only a
+    /// correlated QUERY/UNION exposes one (see getResultType() on QueryNode/UnionNode); a plain
+    /// (non-correlated) subquery, list, etc. does not.
+    static bool argumentExposesResultType(const IQueryTreeNode & argument_node)
+    {
+        switch (argument_node.getNodeType())
+        {
+            case QueryTreeNodeType::FUNCTION:
+            case QueryTreeNodeType::COLUMN:
+            case QueryTreeNodeType::CONSTANT:
+                return true;
+            case QueryTreeNodeType::QUERY:
+                return argument_node.as<QueryNode &>().isCorrelated();
+            case QueryTreeNodeType::UNION:
+                return argument_node.as<UnionNode &>().isCorrelated();
+            default:
+                return false;
+        }
+    }
+
     /// Re-resolve an ordinary function if any argument's current result type no longer matches the
     /// type the function was resolved with (a child aggregate was replaced by its differently-typed
-    /// argument). Cascades upward as parents are visited in leaveImpl.
+    /// argument, possibly inside a correlated scalar subquery). Cascades upward as parents are
+    /// visited in leaveImpl.
     void reresolveIfArgumentTypesChanged(FunctionNode & function_node)
     {
         const auto & resolved_argument_types = function_node.getArgumentTypes();
@@ -147,13 +176,14 @@ private:
         bool argument_types_changed = false;
         for (size_t i = 0; i < argument_nodes.size(); ++i)
         {
-            /// Only these argument node types expose a result type and can be substituted by this
-            /// pass (an eliminated aggregate is replaced by its FUNCTION/COLUMN argument). Other
-            /// argument kinds (a non-correlated QueryNode/UnionNode from an IN subquery, ListNode,
-            /// etc.) throw from getResultType() and are never rewritten here, so skip them.
-            const auto arg_type = argument_nodes[i]->getNodeType();
-            if (arg_type != QueryTreeNodeType::FUNCTION && arg_type != QueryTreeNodeType::COLUMN
-                && arg_type != QueryTreeNodeType::CONSTANT)
+            /// Skip arguments that do not expose a result type. FUNCTION/COLUMN/CONSTANT always do
+            /// and may have been substituted by this pass (an eliminated aggregate is replaced by
+            /// its argument). A QUERY/UNION argument exposes a result type only when it is a
+            /// correlated scalar subquery, whose type can also flip if its projection was an
+            /// eliminated aggregate over a LowCardinality key; a non-correlated subquery (e.g. an
+            /// IN subquery) throws from getResultType() and is never rewritten, so skip it. ListNode
+            /// and other kinds have no result type either.
+            if (!argumentExposesResultType(*argument_nodes[i]))
                 continue;
 
             if (!resolved_argument_types[i] || !resolved_argument_types[i]->equals(*argument_nodes[i]->getResultType()))
@@ -165,6 +195,40 @@ private:
 
         if (argument_types_changed)
             resolveOrdinaryFunctionNodeByName(function_node, function_node.getFunctionName(), getContext());
+    }
+
+    /// Re-derive projection column types from the (already rewritten) projection nodes so the query
+    /// node's result-type metadata stays consistent with what the planner will build. Names are kept;
+    /// only types are refreshed. No-op for a query node whose projection types did not change.
+    static void refreshProjectionColumnTypes(QueryNode & query_node)
+    {
+        if (!query_node.isResolved())
+            return;
+
+        const auto & projection_nodes = query_node.getProjection().getNodes();
+        const auto & projection_columns = query_node.getProjectionColumns();
+        if (projection_nodes.size() != projection_columns.size())
+            return;
+
+        NamesAndTypes refreshed_columns = projection_columns;
+        bool changed = false;
+        for (size_t i = 0; i < projection_nodes.size(); ++i)
+        {
+            /// Skip projection nodes without a well-defined result type (e.g. a not-yet-evaluated
+            /// non-correlated scalar subquery) so getResultType() below never throws.
+            if (!argumentExposesResultType(*projection_nodes[i]))
+                continue;
+
+            auto projection_type = projection_nodes[i]->getResultType();
+            if (projection_type && !projection_type->equals(*refreshed_columns[i].type))
+            {
+                refreshed_columns[i].type = std::move(projection_type);
+                changed = true;
+            }
+        }
+
+        if (changed)
+            query_node.resolveProjectionColumns(std::move(refreshed_columns));
     }
 
     bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
