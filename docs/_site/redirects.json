@@ -1,5 +1,9 @@
 [
   {
+    "source": "/en/:path*",
+    "destination": "/:path*"
+  },
+  {
     "source": "/about",
     "destination": "/resources/about"
   },
@@ -1714,10 +1718,6 @@
   {
     "source": "/dictionary/best-practices",
     "destination": "/concepts/features/dictionaries/best-practices"
-  },
-  {
-    "source": "/docs/en/cloud/manage/service-types",
-    "destination": "/products/cloud/features/cloud-tiers"
   },
   {
     "source": "/engines",

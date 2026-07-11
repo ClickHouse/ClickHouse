@@ -2628,33 +2628,47 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
    Banner Styling
    ============================================ */
 
-/* Light mode: black background, white text, yellow link */
-html:not(.dark) #banner {
-    background-color: #1a1a1a !important;
-    color: #ffffff !important;
-}
+/* Mintlify paints the banner text via `[&_*]:text-white/95!`, an `!important`
+   utility that lives in Tailwind's `@layer utilities`. For `!important`
+   declarations the cascade reverses layer order and treats un-layered styles
+   as the lowest-priority (implicit final) layer, so an un-layered override —
+   however specific — always loses to that utility and the text stays white.
+   Declaring these rules inside `@layer components` (ordered before `utilities`)
+   makes our `!important` win, so the banner text takes the colors below. */
+@layer components {
+    /* Light mode: black background, white text, yellow link */
+    html:not(.dark) #banner {
+        background-color: #1a1a1a !important;
+        color: #ffffff !important;
+    }
 
-html:not(.dark) #banner a {
-    color: #FAFF69 !important;
-    font-weight: 700 !important;
-}
+    html:not(.dark) #banner *,
+    html:not(.dark) #banner p {
+        color: #ffffff !important;
+    }
 
-/* Dark mode: yellow background, black text, white link */
-html.dark #banner,
-:is(.dark) #banner {
-    background-color: #FAFF69 !important;
-    color: #1a1a1a !important;
-}
+    html:not(.dark) #banner a {
+        color: #FAFF69 !important;
+        font-weight: 700 !important;
+    }
 
-html.dark #banner *,
-:is(.dark) #banner * {
-    color: #1a1a1a !important;
-}
+    /* Dark mode: yellow background, black text, black link */
+    html.dark #banner,
+    :is(.dark) #banner {
+        background-color: #FAFF69 !important;
+        color: #1a1a1a !important;
+    }
 
-html.dark #banner a,
-:is(.dark) #banner a {
-    color: #1a1a1a !important;
-    font-weight: 700 !important;
+    html.dark #banner *,
+    :is(.dark) #banner * {
+        color: #1a1a1a !important;
+    }
+
+    html.dark #banner a,
+    :is(.dark) #banner a {
+        color: #1a1a1a !important;
+        font-weight: 700 !important;
+    }
 }
 
 /* ============================================

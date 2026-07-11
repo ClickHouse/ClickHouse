@@ -143,13 +143,32 @@ public:
             else if (container_type == details::ContainerType::MEDIUM)
             {
                 auto & container = getContainer<Medium>();
-                for (; i < n; ++i)
-                    container.insert(values[i]);
 
-                /// Allow to overflow the medium container to avoid check in the loop.
-                /// Medium container supports arbitrary number of elements oppsite to the small container.
-                if (container.size() > medium_set_size_max)
+                if (container.size() >= medium_set_size_max)
+                {
                     toLarge();
+                    continue;
+                }
+
+                size_t max_unique_values = std::min(n - i, medium_set_size_max - container.size());
+                size_t batch_end = i + max_unique_values;
+
+                /// Add up to max_unique_values without checking the size in the loop.
+                for (; i < batch_end; ++i)
+                {
+                    container.insert(values[i]);
+                }
+
+                for (; i < n; ++i)
+                {
+                    if (container.size() >= medium_set_size_max)
+                    {
+                        toLarge();
+                        break;
+                    }
+
+                    container.insert(values[i]);
+                }
             }
             else if (container_type == details::ContainerType::LARGE)
             {
