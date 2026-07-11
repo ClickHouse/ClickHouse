@@ -422,6 +422,14 @@ def main(argv=None):
         all_generators.append(async_metrics.build_generator(repo_root))
     if any(family_selected(f) for f in
            ("table-engines", "database-engines", "data-types", "formats")):
+        if migrate is None:
+            p.error(
+                "--no-remap-legacy is not supported for the catalog domains"
+                " (table-engines, database-engines, data-types, formats):"
+                " they need the slug map to anchor legacy-link rewriting and"
+                " the migrator for frontmatter synthesis. Select other"
+                " families with --only, or drop --no-remap-legacy."
+            )
         all_generators += catalog_domains.build_generators(
             docs_map, binary, docs_dir, migrate, lk
         )
