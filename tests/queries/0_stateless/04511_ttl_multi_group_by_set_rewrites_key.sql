@@ -78,9 +78,12 @@ DROP TABLE ttl_multi_group_by;
 -- Non-sort-key MATERIALIZED column: d = toDate(ts) is MATERIALIZED but NOT in the sorting key. The SET
 -- rewrites ts, so the stored d would stay stale (its pre-SET any(d) value) unless recomputed. d must be
 -- refreshed to toDate(post-SET ts) in the written part.
+-- The SET pushes ts 50 years into the future so the post-SET row is no longer expired and the GROUP BY
+-- TTL fires exactly once; a smaller offset would leave ts still expired and the number of re-fires would
+-- depend on merge scheduling, making the printed ts non-deterministic across runs.
 CREATE TABLE ttl_multi_group_by (k UInt32, ts DateTime, d Date MATERIALIZED toDate(ts), payload UInt64)
 ENGINE = MergeTree ORDER BY k
-TTL ts + toIntervalDay(1) GROUP BY k SET ts = max(ts) + toIntervalYear(5), payload = sum(payload)
+TTL ts + toIntervalDay(1) GROUP BY k SET ts = max(ts) + toIntervalYear(50), payload = sum(payload)
 SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO ttl_multi_group_by (k, ts, payload) VALUES (1, '2020-01-01 00:00:00', 10), (1, '2020-01-02 00:00:00', 20);
@@ -118,18 +121,20 @@ DROP TABLE ttl_multi_group_by;
 -- Skip index over a non-sort-key MATERIALIZED column affected by the SET: because d is recomputed
 -- before the part is written, the rebuilt minmax index over d observes the fresh value, so a query
 -- filtering on the post-SET d finds the row.
+-- ts is pushed 50 years into the future (same reason as above) so the GROUP BY TTL fires exactly once
+-- and the fresh d (post-SET, year 2070) is deterministic across merge schedules.
 CREATE TABLE ttl_multi_group_by (k UInt32, ts DateTime, d Date MATERIALIZED toDate(ts), payload UInt64, INDEX d_idx d TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-TTL ts + toIntervalDay(1) GROUP BY k SET ts = max(ts) + toIntervalYear(5), payload = sum(payload)
+TTL ts + toIntervalDay(1) GROUP BY k SET ts = max(ts) + toIntervalYear(50), payload = sum(payload)
 SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO ttl_multi_group_by (k, ts, payload) VALUES (1, '2020-01-01 00:00:00', 10), (1, '2020-01-02 00:00:00', 20);
 OPTIMIZE TABLE ttl_multi_group_by FINAL;
 
--- The minmax index over d must reflect the fresh d (post-SET, year 2030), so a range query on d that
+-- The minmax index over d must reflect the fresh d (post-SET, year 2070), so a range query on d that
 -- only the fresh value satisfies still finds the row through the skip index. A stale index (pre-SET
 -- d = 2020) would prune the granule and wrongly return 0.
-SELECT count() FROM ttl_multi_group_by WHERE d >= toDate('2025-01-01') SETTINGS force_data_skipping_indices = 'd_idx';
+SELECT count() FROM ttl_multi_group_by WHERE d >= toDate('2069-01-01') SETTINGS force_data_skipping_indices = 'd_idx';
 
 DROP TABLE ttl_multi_group_by;
 
