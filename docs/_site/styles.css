@@ -1029,6 +1029,14 @@ html.dark .dark\:hover\:bg-primary-light\/10:hover {
     background-color: rgba(253, 255, 117, 0.1) !important;
 }
 
+/* Card CTAs use a group-hover dark variant. Keep that CTA readable when the
+   card body is hovered instead of allowing the dark theme token to resolve
+   to a near-black color. */
+html.dark .card:hover [data-component-part="card-cta"] button,
+:is(.dark) .card:hover [data-component-part="card-cta"] button {
+    color: #FDFF75 !important;
+}
+
 /* ============================================
    Card Icon Color Override
    ============================================ */
@@ -2033,6 +2041,15 @@ h5#sidebar-title {
 #content-area {
     max-width: 48rem !important;
     /* 768px */
+}
+
+/* Custom explorers should use the full available width while the sidebar is
+   hidden at intermediate tablet sizes; otherwise the 768px prose cap leaves a
+   large unused area on the right. */
+@media (min-width: 768px) and (max-width: 1023px) {
+    html[data-page-mode="custom"] #content-area {
+        max-width: none !important;
+    }
 }
 
 /* Reduce outer container padding */
