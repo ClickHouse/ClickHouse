@@ -56,3 +56,32 @@ Granules: 8/128
 1	x
 2	m
 3	z
+-- anyHeavy / RESPECT NULLS variants of a LowCardinality key are eliminated too
+-- same single group as the direct predicate (aggregate wrapper eliminated)
+rare token	8
+rare token	8
+rare token	8
+-- observable result type preserved (String, not LowCardinality(String))
+String
+String
+String
+-- aggregate gone from the query tree for anyHeavy
+0
+-- skip-index pruning fires for HAVING anyHeavy(s) = ... just like min(s): 8/128
+Granules: 8/128
+-- wrapper matrix for the newly-covered aggregates: result identical with optimization on and off
+0
+1
+2
+3
+4
+0
+1
+2
+0
+1
+2
+3
+4
+5
+6

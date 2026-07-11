@@ -257,10 +257,21 @@ private:
         if (!function || !function->isAggregateFunction())
             return false;
 
-        if (!(function->getFunctionName() == "min"
-                || function->getFunctionName() == "max"
-                || function->getFunctionName() == "any"
-                || function->getFunctionName() == "anyLast"))
+        /// Every aggregate here returns an actual element of its input column, so over a group where
+        /// the argument is a GROUP BY key (constant within the group) the result equals that key and
+        /// the aggregate can be dropped. Aliases (any_value / first_value -> any, last_value ->
+        /// anyLast, *RespectNulls -> *_respect_nulls) are normalized to these canonical names by name
+        /// resolution before this pass runs, so matching the canonical names covers them too.
+        /// singleValueOrNull is excluded: it returns NULL unless the group has exactly one distinct
+        /// value, so it is not value-preserving; argMin/argMax are two-argument and handled elsewhere.
+        const auto & function_name = function->getFunctionName();
+        if (!(function_name == "min"
+                || function_name == "max"
+                || function_name == "any"
+                || function_name == "anyLast"
+                || function_name == "anyHeavy"
+                || function_name == "any_respect_nulls"
+                || function_name == "anyLast_respect_nulls"))
             return false;
 
         std::vector<NodeWithInfo> candidates;

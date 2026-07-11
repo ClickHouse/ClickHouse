@@ -105,3 +105,57 @@ SELECT '-- correlated subquery in SELECT position over LowCardinality key';
 SELECT id, (SELECT min(s) FROM t_lc_correlated AS i WHERE i.id = o.id GROUP BY s) AS m FROM t_lc_correlated AS o ORDER BY id;
 
 DROP TABLE t_lc_correlated;
+
+-- The pass eliminates every value-preserving single-argument aggregate it handles, not just
+-- min/max/any/anyLast: anyHeavy and the RESPECT NULLS variants any_respect_nulls /
+-- anyLast_respect_nulls also return an actual element of the group, so over a GROUP BY key they
+-- equal the key and are dropped. Aliases (first_value/last_value/any_value, *RespectNulls) resolve
+-- to these canonical names before the pass runs. singleValueOrNull is intentionally excluded (it
+-- returns NULL unless the group has a single distinct value, so it is not value-preserving).
+SELECT '-- anyHeavy / RESPECT NULLS variants of a LowCardinality key are eliminated too';
+DROP TABLE IF EXISTS t_lc_more_aggs;
+CREATE TABLE t_lc_more_aggs
+(
+    id UInt64,
+    s LowCardinality(String),
+    INDEX s_text s TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 64;
+INSERT INTO t_lc_more_aggs
+SELECT number, if(number % 1024 = 42, 'rare token', concat('ordinary token ', toString(number)))
+FROM numbers(8192)
+SETTINGS max_insert_threads = 1;
+
+SELECT '-- same single group as the direct predicate (aggregate wrapper eliminated)';
+SELECT s, count() FROM t_lc_more_aggs GROUP BY s HAVING anyHeavy(s) = 'rare token';
+SELECT s, count() FROM t_lc_more_aggs GROUP BY s HAVING any(s) RESPECT NULLS = 'rare token';
+SELECT s, count() FROM t_lc_more_aggs GROUP BY s HAVING anyLast(s) RESPECT NULLS = 'rare token';
+
+SELECT '-- observable result type preserved (String, not LowCardinality(String))';
+SELECT DISTINCT toTypeName(anyHeavy(s)) FROM t_lc_more_aggs GROUP BY s;
+SELECT DISTINCT toTypeName(any(s) RESPECT NULLS) FROM t_lc_more_aggs GROUP BY s;
+SELECT DISTINCT toTypeName(anyLast(s) RESPECT NULLS) FROM t_lc_more_aggs GROUP BY s;
+
+SELECT '-- aggregate gone from the query tree for anyHeavy';
+SELECT countIf(explain ILIKE '%function_type: aggregate%')
+FROM (EXPLAIN QUERY TREE SELECT anyHeavy(s) FROM t_lc_more_aggs GROUP BY s);
+
+SELECT '-- skip-index pruning fires for HAVING anyHeavy(s) = ... just like min(s): 8/128';
+SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT s, count() FROM t_lc_more_aggs GROUP BY s HAVING anyHeavy(s) = 'rare token')
+WHERE explain ILIKE '%Granules: %/128%' AND explain ILIKE '%/128%' AND explain NOT ILIKE '%128/128%';
+
+DROP TABLE t_lc_more_aggs;
+
+SELECT '-- wrapper matrix for the newly-covered aggregates: result identical with optimization on and off';
+DROP TABLE IF EXISTS t_lc_more_matrix;
+CREATE TABLE t_lc_more_matrix (a LowCardinality(String), b LowCardinality(Nullable(String)), c LowCardinality(UInt8))
+ENGINE = Memory
+SETTINGS allow_suspicious_low_cardinality_types = 1;
+INSERT INTO t_lc_more_matrix SELECT toString(number % 5), toString(number % 3), number % 7 FROM numbers(1000);
+SET allow_suspicious_low_cardinality_types = 1;
+SELECT anyHeavy(a) AS m FROM t_lc_more_matrix GROUP BY a ORDER BY m;
+SELECT any(b) RESPECT NULLS AS m FROM t_lc_more_matrix GROUP BY b ORDER BY m;
+SELECT anyLast(c) RESPECT NULLS AS m FROM t_lc_more_matrix GROUP BY c ORDER BY m;
+DROP TABLE t_lc_more_matrix;
