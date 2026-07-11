@@ -44,59 +44,77 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         return Status::Ready;
 
     /// Scan queues to decide what to do next.
-    bool has_queued_chunks = false; /// any shard has chunks waiting in its queue
+    bool has_queued_chunks = false;         /// any shard has chunks waiting in its queue
     bool has_pushable_queued_chunks = false; /// at least one queued chunk can be pushed right now (port is ready)
-    bool any_queue_at_capacity = false; /// at least one shard's queue hit the back-pressure cap
+    bool any_queue_at_capacity = false;      /// at least one shard's queue hit the back-pressure cap
+    bool has_starving_ready_output = false;  /// at least one output wants data (canPush) but has nothing queued
 
     auto queued_output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++queued_output_it)
     {
         const auto & queue = output_queues[shard];
+        const bool can_push = !queued_output_it->isFinished() && queued_output_it->canPush();
         if (max_queue_length != 0 && queue.size() >= max_queue_length)
             any_queue_at_capacity = true;
         if (!queue.empty())
         {
             has_queued_chunks = true;
-            if (!queued_output_it->isFinished() && queued_output_it->canPush())
+            if (can_push)
                 has_pushable_queued_chunks = true;
         }
+        else if (can_push)
+            has_starving_ready_output = true;
     }
 
     /// Input exhausted - drain remaining queues, then finish.
     if (input.isFinished())
     {
-        if (has_queued_chunks)
-            return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
-
-        for (auto & output : outputs)
-            output.finish();
-        return Status::Finished;
-    }
-
-    /// Cannot push any output port.
-    /// In bounded mode this is back-pressure: stop and wait for a consumer to drain.
-    /// In unbounded mode (max_queue_length == 0) we must keep pulling instead: a downstream *sorted* merge
-    /// is a selective consumer that only reads its current smallest-key input, so if we stopped here we
-    /// could starve exactly that input (whose rows are in a not-yet-pulled chunk) and deadlock.
-    if (has_queued_chunks && !has_pushable_queued_chunks && max_queue_length != 0)
-        return Status::PortFull;
-
-    if (any_queue_at_capacity)
+        /// No more input will arrive, so finish every output whose queue is already drained. This is
+        /// essential when a downstream *sorted* merge consumes the shards: a merge waits for EOF (or data)
+        /// on every open input, and different shards drain at different times, so an already-empty output
+        /// left open would make the merge wait forever while this scatter still holds data for other shards.
+        bool any_queue_non_empty = false;
+        auto drain_it = outputs.begin();
+        for (size_t shard = 0; shard < num_shards; ++shard, ++drain_it)
+        {
+            if (output_queues[shard].empty())
+                drain_it->finish();
+            else
+                any_queue_non_empty = true;
+        }
+        if (!any_queue_non_empty)
+            return Status::Finished;
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
-
-    /// Try to pull a new input chunk.
-    input.setNeeded();
-    if (input.hasData())
-    {
-        pending_input_chunk = input.pull();
-        has_pending_input_chunk = true;
-        return Status::Ready;
     }
 
-    /// No new input yet - drain what we can while waiting.
+    /// Push-priority: drain everything we can before reading more input. This keeps read-ahead (and hence
+    /// memory) bounded by how far the fastest consumer runs ahead of the slowest, instead of pulling the
+    /// whole input into the queues.
     if (has_pushable_queued_chunks)
         return Status::Ready;
-    return Status::NeedData;
+
+    /// Nothing can be pushed right now. Decide whether to pull a new input chunk.
+    ///   - Unbounded mode (max_queue_length == 0, used when a downstream *sorted* merge consumes the shards
+    ///     selectively): pull only to feed an output that is ready AND starving (empty queue). This never
+    ///     stalls the shared scatter on a slow lane — a slow lane just keeps its data buffered — so there is
+    ///     no cross-lane deadlock, while a lane that is genuinely waiting for its next rows always gets fed.
+    ///   - Bounded mode: classic back-pressure — pull unless some queue is at capacity.
+    const bool may_pull = (max_queue_length == 0) ? has_starving_ready_output : !any_queue_at_capacity;
+    if (may_pull)
+    {
+        input.setNeeded();
+        if (input.hasData())
+        {
+            pending_input_chunk = input.pull();
+            has_pending_input_chunk = true;
+            return Status::Ready;
+        }
+        return Status::NeedData;
+    }
+
+    /// Otherwise wait for a slow consumer to drain (it is not blocked on us: whenever a merge needs an input
+    /// it marks that output "needed", which makes the corresponding lane pushable above).
+    return has_queued_chunks ? Status::PortFull : Status::NeedData;
 }
 
 /// Split pending input chunk into per-shard queues, then drain queues to output ports.
