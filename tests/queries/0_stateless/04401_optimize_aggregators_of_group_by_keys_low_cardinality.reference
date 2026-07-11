@@ -133,3 +133,12 @@ x	1
 1
 -- type-insensitive and type-sensitive parents together in the same QUALIFY
 x	1
+-- correlated scalar subquery as the whole filter root must not underflow the filter depth
+-- correctness across the LC matrix (correlated subquery is the whole HAVING, later QUALIFY min(key))
+x
+x
+1
+-- the later QUALIFY min(s) keeps the bare LowCardinality key (0 = no output cast = pushdown-eligible)
+0
+-- correlated subquery is the whole HAVING, later ORDER BY min(s) still eliminated (observable type String)
+String

@@ -240,3 +240,40 @@ SELECT count() FROM t_lc_qualify_type GROUP BY u QUALIFY toTypeName(min(u)) = 'U
 SELECT '-- type-insensitive and type-sensitive parents together in the same QUALIFY';
 SELECT s, count() FROM t_lc_qualify_type GROUP BY s QUALIFY min(s) = 'x' AND toTypeName(min(s)) = 'String' ORDER BY s;
 DROP TABLE t_lc_qualify_type;
+
+SELECT '-- correlated scalar subquery as the whole filter root must not underflow the filter depth';
+-- enterImpl increments filter_depth only for non-QUERY, non-LAMBDA nodes; a correlated scalar
+-- subquery that is itself the whole HAVING/QUALIFY root saves and resets the filter context instead.
+-- leaveImpl must therefore not decrement filter_depth for such a node, or it underflows to size_t(-1)
+-- and the next filter root wraps back to 0 and loses the bare-key rewrite (and its pushdown) for a
+-- later LC aggregate elimination. Regression for
+-- https://github.com/ClickHouse/ClickHouse/pull/110059: the later QUALIFY min(s) must still be a
+-- type-insensitive predicate on the bare key (result and pushdown-eligibility identical on and off).
+DROP TABLE IF EXISTS t_lc_filter_root;
+DROP TABLE IF EXISTS u_lc_filter_root;
+CREATE TABLE t_lc_filter_root
+    (id UInt64, s LowCardinality(String), sn LowCardinality(Nullable(String)), u LowCardinality(UInt8))
+ENGINE = Memory
+SETTINGS allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE u_lc_filter_root (id UInt64) ENGINE = Memory;
+INSERT INTO t_lc_filter_root VALUES (1, 'x', 'x', 1), (2, 'y', NULL, 2);
+INSERT INTO u_lc_filter_root VALUES (1), (2);
+SET allow_suspicious_low_cardinality_types = 1;
+SET allow_experimental_correlated_subqueries = 1;
+SELECT '-- correctness across the LC matrix (correlated subquery is the whole HAVING, later QUALIFY min(key))';
+SELECT s FROM t_lc_filter_root AS o GROUP BY s, o.id
+    HAVING (SELECT any(u_lc_filter_root.id = o.id) FROM u_lc_filter_root) QUALIFY min(o.s) = 'x' ORDER BY s;
+SELECT sn FROM t_lc_filter_root AS o GROUP BY sn, o.id
+    HAVING (SELECT any(u_lc_filter_root.id = o.id) FROM u_lc_filter_root) QUALIFY min(o.sn) = 'x' ORDER BY sn;
+SELECT u FROM t_lc_filter_root AS o GROUP BY u, o.id
+    HAVING (SELECT any(u_lc_filter_root.id = o.id) FROM u_lc_filter_root) QUALIFY min(o.u) = 1 ORDER BY u;
+SELECT '-- the later QUALIFY min(s) keeps the bare LowCardinality key (0 = no output cast = pushdown-eligible)';
+SELECT countIf(explain LIKE '%_CAST%' AND explain LIKE '%String%') FROM (
+    EXPLAIN QUERY TREE
+    SELECT count() OVER () FROM t_lc_filter_root AS o GROUP BY s, o.id
+        HAVING (SELECT any(u_lc_filter_root.id = o.id) FROM u_lc_filter_root) QUALIFY min(o.s) = 'x');
+SELECT '-- correlated subquery is the whole HAVING, later ORDER BY min(s) still eliminated (observable type String)';
+SELECT DISTINCT toTypeName(min(o.s)) FROM t_lc_filter_root AS o GROUP BY s, o.id
+    HAVING (SELECT any(u_lc_filter_root.id = o.id) FROM u_lc_filter_root) ORDER BY min(o.s);
+DROP TABLE t_lc_filter_root;
+DROP TABLE u_lc_filter_root;

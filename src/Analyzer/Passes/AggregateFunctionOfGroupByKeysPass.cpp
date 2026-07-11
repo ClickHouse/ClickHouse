@@ -141,9 +141,11 @@ public:
         if (!getSettings()[Setting::optimize_aggregators_of_group_by_keys])
             return;
 
-        /// Capture the node identity before any rewrite so a filter-section root that is itself a
-        /// function (e.g. WHERE equals(...)) still has its filter_depth decremented below.
+        /// Capture the node identity and type before any rewrite so a filter-section root that is
+        /// itself a function (e.g. WHERE equals(...)) still has its filter_depth decremented below,
+        /// and so the decrement stays gated on the pre-rewrite node type.
         const IQueryTreeNode * node_before_rewrite = node.get();
+        const auto node_type_before_rewrite = node->getNodeType();
 
         if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
         {
@@ -207,7 +209,15 @@ public:
             filter_roots_save_stack.pop_back();
         }
 
-        if (active_filter_roots.contains(node_before_rewrite))
+        /// Decrement symmetrically with enterImpl, which increments filter_depth only for nodes that
+        /// take the non-QUERY, non-LAMBDA branch. A QUERY or LAMBDA node instead saves and resets the
+        /// whole filter context (filter_depth is already restored above), so it never incremented on
+        /// entry; decrementing here for such a node when it is itself the outer filter root (e.g.
+        /// HAVING is directly a correlated scalar subquery) would underflow filter_depth to
+        /// size_t(-1), and the next filter root would wrap it back to 0 and lose the bare-key pushdown.
+        if (node_type_before_rewrite != QueryTreeNodeType::QUERY
+            && node_type_before_rewrite != QueryTreeNodeType::LAMBDA
+            && active_filter_roots.contains(node_before_rewrite))
             --filter_depth;
     }
 
