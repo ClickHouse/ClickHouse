@@ -72,7 +72,7 @@ git fetch origin "$BASE_BRANCH"
 git merge-base --is-ancestor "origin/$BASE_BRANCH" HEAD || echo "needs merge"
 ```
 
-If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts (including when GitHub reports the PR as `CONFLICTING` or its mergeability as unknown), merge:
+If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts (including when GitHub reports the PR as `CONFLICTING` or its mergeability as unknown), or if at least one CI failure is unrelated to this PR and its fix has already landed on the base branch (merging pulls the fix in and clears the red — see step 4), merge:
 
 ```bash
 git merge "origin/$BASE_BRANCH"
@@ -114,6 +114,10 @@ For each CI failure:
    gh pr list --repo ClickHouse/ClickHouse --state open --search "<failure_description>" --limit 5
    ```
    Only dismiss a failure as unrelated if there is a concrete open issue or PR that matches. Do NOT dismiss failures without evidence.
+
+   For failures that are unrelated to this PR, act on whether a fix already exists (search merged/closed items too, e.g. `gh pr list --repo ClickHouse/ClickHouse --state merged --search "<failure_description>"`):
+   - **If the fix has already merged into the base branch** (the matching issue is closed by a merged PR, or the fixing commit is already on the base branch), **update the branch**: merge the base branch (step 3) so the fix is pulled in and the red clears on the next CI run, instead of merely dismissing it.
+   - **If none of the unrelated failures have a fix on the base branch yet**, post a comment asking `@groeneai` to fix it (see item 5) rather than silently dismissing it.
 
 2. **Investigate the failure:** Download logs if needed:
    ```bash
