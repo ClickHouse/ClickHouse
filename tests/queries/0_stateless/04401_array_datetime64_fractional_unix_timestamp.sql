@@ -119,3 +119,17 @@ SELECT 'scale3_short', [1783585473.95]::Array(DateTime64(3));
 -- Backward compatibility: a bare integer is still a scaled tick count, not seconds.
 SELECT 'bc_bare_int_ticks', [1504193808]::Array(DateTime64(3));
 SELECT 'bc_neg_bare_int_ticks', [-1390214744]::Array(DateTime64(3));
+
+-- A lone '.' or '-.' has no digit on either side of the decimal point. Both were rejected before
+-- this PR; the fractional support must not silently coerce a missing mantissa to the epoch. The
+-- check lives in the shared scalar/container path so scalar and container agree.
+SELECT 'empty_dot_container', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[.]"') SETTINGS date_time_input_format = 'basic'; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'empty_neg_dot_container', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[-.]"') SETTINGS date_time_input_format = 'basic'; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'empty_dot_json', toString(x[1]) FROM format(JSONEachRow, 'x Array(DateTime64(3))', '{"x":[.]}') SETTINGS date_time_input_format = 'basic'; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'empty_neg_dot_json', toString(x[1]) FROM format(JSONEachRow, 'x Array(DateTime64(3))', '{"x":[-.]}') SETTINGS date_time_input_format = 'basic'; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT 'empty_dot_scalar', toString(x) FROM format(CSV, 'x DateTime64(3)', '.') SETTINGS date_time_input_format = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
+SELECT 'empty_neg_dot_scalar', toString(x) FROM format(CSV, 'x DateTime64(3)', '-.') SETTINGS date_time_input_format = 'basic'; -- { serverError CANNOT_PARSE_DATETIME }
+-- A digit on either side of the point is enough: `.5`, `5.`, `-.5`, `0.` all remain valid and agree
+-- between the scalar and container numeric readers.
+SELECT 'dot_lhs_scalar_eq_container', (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3, ''UTC''))', '"[5.]"') SETTINGS date_time_input_format = 'basic') = (SELECT x FROM format(CSV, 'x DateTime64(3, ''UTC'')', '5.') SETTINGS date_time_input_format = 'basic');
+SELECT 'dot_rhs_scalar_eq_container', (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3, ''UTC''))', '"[.5]"') SETTINGS date_time_input_format = 'basic') = (SELECT x FROM format(CSV, 'x DateTime64(3, ''UTC'')', '.5') SETTINGS date_time_input_format = 'basic');

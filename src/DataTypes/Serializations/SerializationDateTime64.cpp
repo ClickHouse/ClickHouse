@@ -168,6 +168,7 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
     bool is_negative = (!istr.eof() && *istr.position() == '-');
 
     time_t whole = 0;
+    bool whole_has_digit = false;
     if (is_negative)
     {
         /// Consume the sign up front, then decide from the next byte. This is chunk-boundary
@@ -216,16 +217,24 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
             else if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(magnitude, istr) || magnitude > max_magnitude)
                 return ReturnType(false);
             whole = static_cast<time_t>(0 - magnitude);
+            whole_has_digit = true;
         }
     }
     else if constexpr (throw_exception)
+    {
         /// CHECK_OVERFLOW mirrors the scalar readDateTime64Text whole-part parse (which uses
         /// ReadIntTextCheckOverflow::CHECK_OVERFLOW) and keeps the throw path in agreement with
         /// the try path below (tryReadIntText also checks overflow). A bare readIntText would
         /// default to DO_NOT_CHECK_OVERFLOW and silently wrap an out-of-range whole seconds value.
+        whole_has_digit = !istr.eof() && isNumericASCII(*istr.position());
         readIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(whole, istr);
-    else if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(whole, istr))
-        return ReturnType(false);
+    }
+    else
+    {
+        whole_has_digit = !istr.eof() && isNumericASCII(*istr.position());
+        if (!tryReadIntText<ReadIntTextCheckOverflow::CHECK_OVERFLOW>(whole, istr))
+            return ReturnType(false);
+    }
 
     if (istr.eof() || *istr.position() != '.')
     {
@@ -238,25 +247,19 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
 
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
 
-    /// Read digits, up to 'scale' positions.
-    for (size_t i = 0; i < scale; ++i)
-    {
-        if (!istr.eof() && isNumericASCII(*istr.position()))
-        {
-            components.fractional *= 10;
-            components.fractional += *istr.position() - '0';
-            ++istr.position();
-        }
-        else
-        {
-            /// Adjust to scale.
-            components.fractional *= 10;
-        }
-    }
+    /// Shared with the scalar readDateTime64Text path (reads fractional digits, pads to scale).
+    size_t fractional_digits = readFractionalDateTimePart(components, scale, istr);
 
-    /// Ignore digits that are out of precision.
-    while (!istr.eof() && isNumericASCII(*istr.position()))
-        ++istr.position();
+    /// A lone '.' / '-.' with no digit on either side of the point (e.g. `[.]`, `[-.]`) is
+    /// malformed: the scale-padding loop above would otherwise coerce it to the epoch. Reject
+    /// it, matching the scalar readDateTime64Text path so scalar and container agree.
+    if (!whole_has_digit && fractional_digits == 0)
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
+        else
+            return ReturnType(false);
+    }
 
     /// Shared with the scalar readDateTime64Text path so both agree on pre-epoch sub-second signs.
     int negative_fraction_multiplier = adjustFractionalDateTimeSign(components, is_negative, scale);

@@ -1187,6 +1187,43 @@ inline int adjustFractionalDateTimeSign(DB::DecimalUtils::DecimalComponents<Deci
     return negative_fraction_multiplier;
 }
 
+/// Reads the fractional digits of a DateTime64/Time64 after a consumed '.', accumulating them
+/// into `components.fractional` (padded to `scale`) and skipping any digits beyond precision.
+/// Returns the number of fractional digits present (0 when '.' is immediately followed by a
+/// non-digit). Callers reject a token that carries neither a whole part nor a fractional digit
+/// (a lone '.' or '-.'), which the padding loop would otherwise silently coerce to the epoch.
+template <typename DecimalType>
+inline size_t readFractionalDateTimePart(DB::DecimalUtils::DecimalComponents<DecimalType> & components, UInt32 scale, ReadBuffer & buf)
+{
+    size_t num_digits = 0;
+
+    /// Read digits, up to 'scale' positions.
+    for (size_t i = 0; i < scale; ++i)
+    {
+        if (!buf.eof() && isNumericASCII(*buf.position()))
+        {
+            components.fractional *= 10;
+            components.fractional += *buf.position() - '0';
+            ++buf.position();
+            ++num_digits;
+        }
+        else
+        {
+            /// Adjust to scale.
+            components.fractional *= 10;
+        }
+    }
+
+    /// Ignore digits that are out of precision.
+    while (!buf.eof() && isNumericASCII(*buf.position()))
+    {
+        ++buf.position();
+        ++num_digits;
+    }
+
+    return num_digits;
+}
+
 template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true)
 {
@@ -1195,6 +1232,12 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     time_t whole = 0;
     bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
     bool is_empty = buf.eof();
+
+    /// Cumulative byte offset before the whole part. The whole reader consumes an optional leading
+    /// '-' plus the whole digits (it tolerates a sign-only whole such as `-.5`, leaving '.' unread).
+    /// Comparing the advance against the sign length tells us whether a whole digit was actually
+    /// consumed, without a buffer lookahead (chunk-boundary safe, unlike inspecting position()[1]).
+    size_t count_before_whole = buf.count();
 
     if (!is_empty)
     {
@@ -1212,10 +1255,14 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         }
         else
         {
-            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow))
+            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow)
+                && (buf.eof() || *buf.position() != '.'))
                 return ReturnType(false);
         }
     }
+
+    /// A whole digit was consumed if the reader advanced past the optional leading '-'.
+    bool whole_has_digit = buf.count() > count_before_whole + (is_negative_timestamp ? 1 : 0);
 
     int negative_fraction_multiplier = 1;
 
@@ -1225,25 +1272,17 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     {
         ++buf.position();
 
-        /// Read digits, up to 'scale' positions.
-        for (size_t i = 0; i < scale; ++i)
-        {
-            if (!buf.eof() && isNumericASCII(*buf.position()))
-            {
-                components.fractional *= 10;
-                components.fractional += *buf.position() - '0';
-                ++buf.position();
-            }
-            else
-            {
-                /// Adjust to scale.
-                components.fractional *= 10;
-            }
-        }
+        size_t fractional_digits = readFractionalDateTimePart(components, scale, buf);
 
-        /// Ignore digits that are out of precision.
-        while (!buf.eof() && isNumericASCII(*buf.position()))
-            ++buf.position();
+        /// Reject a lone '.' / '-.' (no digit before or after the point) which the scale-padding
+        /// loop would otherwise coerce to the epoch. `.5`, `5.`, `-.5`, `0.` all carry a digit.
+        if (!whole_has_digit && fractional_digits == 0)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime64: no digits in the fractional unix timestamp");
+            else
+                return ReturnType(false);
+        }
 
         negative_fraction_multiplier = adjustFractionalDateTimeSign(components, is_negative_timestamp, scale);
     }
@@ -1304,6 +1343,10 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
 
     // try to parse the whole part
     bool parse_success = false;
+    /// Cumulative byte offset before the whole part, to tell whether a whole digit was actually
+    /// consumed (the whole reader tolerates a sign-only whole such as `-.5`, leaving '.' unread).
+    /// Chunk-boundary safe, unlike inspecting position()[1].
+    size_t count_before_whole = buf.count();
     if constexpr (throw_exception)
     {
         try
@@ -1330,6 +1373,9 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
             return ReturnType(false);
     }
 
+    /// A whole digit was consumed if the reader advanced past the optional leading '-'.
+    bool whole_has_digit = buf.count() > count_before_whole + (is_negative_timestamp ? 1 : 0);
+
     int negative_fraction_multiplier = 1;
 
     DB::DecimalUtils::DecimalComponents<Time64> components{static_cast<Time64::NativeType>(whole), 0};
@@ -1339,25 +1385,17 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
     {
         ++buf.position();
 
-        /// Read digits, up to 'scale' positions.
-        for (size_t i = 0; i < scale; ++i)
-        {
-            if (!buf.eof() && isNumericASCII(*buf.position()))
-            {
-                components.fractional *= 10;
-                components.fractional += *buf.position() - '0';
-                ++buf.position();
-            }
-            else
-            {
-                /// Adjust to scale.
-                components.fractional *= 10;
-            }
-        }
+        size_t fractional_digits = readFractionalDateTimePart(components, scale, buf);
 
-        /// Ignore digits that are out of precision.
-        while (!buf.eof() && isNumericASCII(*buf.position()))
-            ++buf.position();
+        /// Reject a lone '.' / '-.' (no digit on either side of the point) which the scale-padding
+        /// loop would otherwise coerce to the epoch. `.5`, `5.`, `-.5` all carry a digit and pass.
+        if (!whole_has_digit && fractional_digits == 0)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time64: no digits in the fractional value");
+            else
+                return ReturnType(false);
+        }
 
         negative_fraction_multiplier = adjustFractionalDateTimeSign(components, is_negative_timestamp, scale);
     }
