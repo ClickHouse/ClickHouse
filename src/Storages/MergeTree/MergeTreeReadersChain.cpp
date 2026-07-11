@@ -731,6 +731,10 @@ void MergeTreeReadersChain::applyPatches(
     auto result_block = result_header.cloneWithColumns(result_columns);
     addPatchVirtuals(result_block, additional_columns);
 
+    /// Release the second references to columns (result_columns is rebuilt from result_block
+    /// at the end), so that updateInplaceFrom doesn't have to clone the updated columns.
+    result_columns.clear();
+
     /// Combine patches with the same structure.
     std::unordered_map<Names, PatchesToApply, NamesHash> patches_to_apply;
     UInt64 source_data_version = patch_readers.front()->getPatchPart().source_data_version;
