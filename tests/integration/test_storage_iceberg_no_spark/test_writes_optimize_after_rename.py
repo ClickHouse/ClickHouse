@@ -470,3 +470,75 @@ def test_optimize_resets_next_row_id_format_v3(
         instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id")
         == "1\ta\n3\tc\n4\td\n5\te\n"
     )
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_clears_partition_statistics(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    """
+    `clearOldFiles` removes the entire pre-compaction `metadata/` subtree, and
+    SnapshotFilesTraversal treats both `statistics` and `partition-statistics` as reachable files.
+    The deep-copy bootstrap therefore must clear `partition-statistics` alongside `statistics`,
+    otherwise a non-empty `partition-statistics` array copied from Spark/Flink source metadata
+    publishes a dangling `statistics-path` after OPTIMIZE.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = "test_optimize_part_stats_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(id Int32, value Nullable(String))",
+        2,
+    )
+
+    instance.query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1,'a'),(2,'b'),(3,'c');",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # Positional delete so compaction has work to do.
+    instance.query(
+        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    # Inject a partition-statistics entry pointing at a metadata-side file (as Spark/Flink emit).
+    meta, prev_path = _read_latest_metadata(instance, TABLE_NAME)
+    current_snapshot_id = meta["current-snapshot-id"]
+    dangling_path = f"{_metadata_dir(TABLE_NAME)}/partition-stats-injected.parquet"
+    meta["partition-statistics"] = [
+        {
+            "snapshot-id": current_snapshot_id,
+            "statistics-path": dangling_path,
+            "file-size-in-bytes": 123,
+        }
+    ]
+    new_version = int(prev_path.split("/v")[-1].split(".")[0]) + 1
+    new_path = f"{_metadata_dir(TABLE_NAME)}/v{new_version}.metadata.json"
+    _write_metadata(instance, meta, new_path)
+    version_hint = f"{_metadata_dir(TABLE_NAME)}/version-hint.text"
+    instance.exec_in_container(
+        ["bash", "-c", f"test -f {version_hint} && echo -n {new_version} > {version_hint} || true"]
+    )
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "allow_insert_into_iceberg": 1,
+        },
+    )
+
+    meta_after, _ = _read_latest_metadata(instance, TABLE_NAME)
+    # The compacted metadata must not carry the injected partition-statistics entry (which would
+    # point at a statistics-path under the deleted pre-compaction metadata subtree).
+    assert not meta_after.get("partition-statistics"), (
+        f"partition-statistics survived compaction: {meta_after.get('partition-statistics')}"
+    )
+    # Data still correct.
+    assert (
+        instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id") == "1\ta\n3\tc\n"
+    )

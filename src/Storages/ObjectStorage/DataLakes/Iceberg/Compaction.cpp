@@ -622,7 +622,11 @@ static void writeMetadataFiles(
     metadata_object->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     metadata_object->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     metadata_object->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    /// Both `statistics` and `partition-statistics` point at statistics files inside the
+    /// pre-compaction `metadata/` subtree that `clearOldFiles` deletes, and SnapshotFilesTraversal
+    /// treats both as reachable files, so both must be cleared to avoid dangling `statistics-path`s.
     metadata_object->set(Iceberg::f_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    metadata_object->set(Iceberg::f_partition_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     metadata_object->set(Iceberg::f_current_snapshot_id, -1);
     metadata_object->set(Iceberg::f_last_sequence_number, 0);
     if (metadata_object->has(Iceberg::f_refs) && metadata_object->getObject(Iceberg::f_refs)->has(Iceberg::f_main))
