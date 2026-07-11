@@ -13,6 +13,8 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include <Functions/IFunctionAdaptors.h>
+
 
 namespace DB
 {
@@ -253,7 +255,7 @@ private:
     void reresolveIfArgumentTypesChanged(FunctionNode & function_node)
     {
         const auto & resolved_argument_types = function_node.getArgumentTypes();
-        const auto & argument_nodes = function_node.getArguments().getNodes();
+        auto & argument_nodes = function_node.getArguments().getNodes();
         if (resolved_argument_types.size() != argument_nodes.size())
             return;
 
@@ -270,8 +272,49 @@ private:
             }
         }
 
-        if (argument_types_changed)
-            resolveOrdinaryFunctionNodeByName(function_node, function_node.getFunctionName(), getContext());
+        if (!argument_types_changed)
+            return;
+
+        /// A filter section is a predicate position only for functions that are transparent to
+        /// LowCardinality (they use the default LC implementation: the framework strips LC, computes
+        /// on the nested column and rewraps, so leaving the bare LC key changes only the internal
+        /// representation, not the values, and the predicate still pushes down to skip indexes). A
+        /// function that OBSERVES LowCardinality (useDefaultImplementationForLowCardinalityColumns()
+        /// is false, e.g. toTypeName) would instead change its observable result if re-resolved
+        /// against the bare key type - HAVING toTypeName(min(s)) = 'String' would flip from 'String'
+        /// to 'LowCardinality(String)' and drop the row. For such a function, cast each changed
+        /// argument back to its originally-resolved (LC-stripped) type so the function keeps its
+        /// analyzed signature and result; pushdown below the cast is lost, but an LC-observing
+        /// function does not push down to storage anyway.
+        if (!functionIsTransparentToLowCardinality(function_node))
+        {
+            for (size_t i = 0; i < argument_nodes.size(); ++i)
+            {
+                if (!argumentExposesResultType(*argument_nodes[i]))
+                    continue;
+
+                if (resolved_argument_types[i] && !resolved_argument_types[i]->equals(*argument_nodes[i]->getResultType()))
+                    argument_nodes[i] = createCastFunction(argument_nodes[i], resolved_argument_types[i], getContext());
+            }
+            return;
+        }
+
+        resolveOrdinaryFunctionNodeByName(function_node, function_node.getFunctionName(), getContext());
+    }
+
+    /// Whether the resolved ordinary function computes on the LowCardinality nested column (default
+    /// LC implementation) rather than observing the LowCardinality wrapper. Transparent functions
+    /// (comparisons and most scalar functions) yield the same values on the bare LC key as on the
+    /// LC-stripped type, so re-resolving them against the key preserves both results and pushdown.
+    /// Non-transparent functions (e.g. toTypeName) must not see the key type. Conservatively treat a
+    /// function whose IFunction we cannot reach as non-transparent (fall back to the boundary cast).
+    static bool functionIsTransparentToLowCardinality(const FunctionNode & function_node)
+    {
+        const auto & function_base = function_node.getFunction();
+        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_base.get());
+        if (!adaptor || !adaptor->getFunction())
+            return false;
+        return adaptor->getFunction()->useDefaultImplementationForLowCardinalityColumns();
     }
 
     bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)

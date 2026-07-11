@@ -99,3 +99,14 @@ Array(String)
 10
 10
 10
+-- type-sensitive parent inside HAVING must observe the analyzed type, not the key type
+1
+1
+1
+1
+1
+1
+1
+1
+-- type-insensitive predicate in the same HAVING still pushes down (equality on the key)
+x	1

@@ -175,3 +175,26 @@ SELECT DISTINCT toTypeName(arrayMap(x -> anyLast(s), [1])) FROM t_lc_lambda GROU
 SELECT '-- nested lambdas over the eliminated key';
 SELECT count() FROM t_lc_lambda GROUP BY s HAVING arrayMap(y -> arrayMap(x -> min(s), [1])[1], [1]) = [s];
 DROP TABLE t_lc_lambda;
+
+SELECT '-- type-sensitive parent inside HAVING must observe the analyzed type, not the key type';
+-- A filter section is a predicate position only for functions transparent to LowCardinality
+-- (comparisons run on the nested column, so leaving the bare key preserves values and pushdown). A
+-- function that observes LowCardinality (e.g. toTypeName) would otherwise see LowCardinality(String)
+-- and change its result inside HAVING, dropping rows. Regression for
+-- https://github.com/ClickHouse/ClickHouse/pull/110059: toTypeName(min(s)) = 'String' in HAVING must
+-- stay true (result identical with the optimization on and off).
+DROP TABLE IF EXISTS t_lc_having_type;
+CREATE TABLE t_lc_having_type (s LowCardinality(String), sn LowCardinality(Nullable(String)), u LowCardinality(UInt8))
+ENGINE = Memory
+SETTINGS allow_suspicious_low_cardinality_types = 1;
+INSERT INTO t_lc_having_type VALUES ('x', 'x', 1), ('y', NULL, 2);
+SET allow_suspicious_low_cardinality_types = 1;
+SELECT count() FROM t_lc_having_type GROUP BY s HAVING toTypeName(min(s)) = 'String';
+SELECT count() FROM t_lc_having_type GROUP BY s
+    HAVING toTypeName(max(s)) = 'String' AND toTypeName(any(s)) = 'String'
+        AND toTypeName(anyLast(s)) = 'String' AND toTypeName(anyHeavy(s)) = 'String';
+SELECT count() FROM t_lc_having_type GROUP BY sn HAVING toTypeName(min(sn)) = 'Nullable(String)';
+SELECT count() FROM t_lc_having_type GROUP BY u HAVING toTypeName(min(u)) = 'UInt8';
+SELECT '-- type-insensitive predicate in the same HAVING still pushes down (equality on the key)';
+SELECT s, count() FROM t_lc_having_type GROUP BY s HAVING min(s) = 'x' AND toTypeName(min(s)) = 'String' ORDER BY s;
+DROP TABLE t_lc_having_type;
