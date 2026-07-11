@@ -1379,6 +1379,15 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
+
+    # Capture the path while the database is still attached: after DETACH the table
+    # is gone from system.tables, so querying it later can race and return an empty
+    # path, which makes the removal below a no-op and fails to force recovery.
+    metadata_path = competing_node.query(
+        "SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
+    ).strip()
+    db_disk_name = get_database_disk_name(competing_node)
+
     competing_node.query("DETACH DATABASE table_structure")
 
     main_node.query(
@@ -1388,11 +1397,6 @@ def test_replicated_table_structure_alter(started_cluster):
         "ALTER TABLE table_structure.rmt COMMENT COLUMN v 'version'", settings=settings
     )
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
-
-    metadata_path = competing_node.query(
-        "SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
-    ).strip()
-    db_disk_name = get_database_disk_name(competing_node)
     competing_node.exec_in_container(
         [
             "/usr/bin/clickhouse",
