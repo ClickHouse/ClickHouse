@@ -737,27 +737,27 @@
   },
   {
     "source": "/cloud/manage/api/keys-api-reference",
-    "destination": "/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/cloud/manage/api/members-api-reference",
-    "destination": "/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/cloud/manage/api/organizations-api-reference",
-    "destination": "/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/cloud/manage/api/services-api-reference",
-    "destination": "/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/cloud/manage/api/swagger",
-    "destination": "/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/cloud/manage/api/usageCost-api-reference",
-    "destination": "/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/cloud/manage/backups",
@@ -5601,23 +5601,23 @@
   },
   {
     "source": "/jp/cloud/manage/api/keys-api-reference",
-    "destination": "/ja/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/jp/cloud/manage/api/members-api-reference",
-    "destination": "/ja/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/jp/cloud/manage/api/organizations-api-reference",
-    "destination": "/ja/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/jp/cloud/manage/api/services-api-reference",
-    "destination": "/ja/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/jp/cloud/manage/api/usageCost-api-reference",
-    "destination": "/ja/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/jp/cloud/manage/backups",
@@ -16189,23 +16189,23 @@
   },
   {
     "source": "/ko/cloud/manage/api/keys-api-reference",
-    "destination": "/ko/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/ko/cloud/manage/api/members-api-reference",
-    "destination": "/ko/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/ko/cloud/manage/api/organizations-api-reference",
-    "destination": "/ko/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/ko/cloud/manage/api/services-api-reference",
-    "destination": "/ko/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/ko/cloud/manage/api/usageCost-api-reference",
-    "destination": "/ko/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/ko/cloud/manage/backups",
@@ -28305,23 +28305,23 @@
   },
   {
     "source": "/ru/cloud/manage/api/keys-api-reference",
-    "destination": "/ru/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/ru/cloud/manage/api/members-api-reference",
-    "destination": "/ru/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/ru/cloud/manage/api/organizations-api-reference",
-    "destination": "/ru/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/ru/cloud/manage/api/services-api-reference",
-    "destination": "/ru/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/ru/cloud/manage/api/usageCost-api-reference",
-    "destination": "/ru/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/ru/cloud/manage/backups",
@@ -41869,23 +41869,23 @@
   },
   {
     "source": "/zh/cloud/manage/api/keys-api-reference",
-    "destination": "/zh/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/zh/cloud/manage/api/members-api-reference",
-    "destination": "/zh/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/zh/cloud/manage/api/organizations-api-reference",
-    "destination": "/zh/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/zh/cloud/manage/api/services-api-reference",
-    "destination": "/zh/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/zh/cloud/manage/api/usageCost-api-reference",
-    "destination": "/zh/api-reference/organization/get-list-of-available-organizations"
+    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations"
   },
   {
     "source": "/zh/cloud/manage/backups",
@@ -51434,5 +51434,9 @@
   {
     "source": "/zh/resources/about/history",
     "destination": "https://clickhouse.com/company/our-story"
+  },
+  {
+    "source": "/api-reference/:path*",
+    "destination": "/products/cloud/api-reference/:path*"
   }
 ]
