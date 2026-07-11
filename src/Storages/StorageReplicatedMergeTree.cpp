@@ -3993,6 +3993,28 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
     if (metadata_snapshot->getMetadataVersion() >= zk_metadata_version)
         return false;
 
+    /// The applied in-memory metadata version being behind does not by itself mean the entry is missing:
+    /// the real ALTER_METADATA may already be pending in our local queue (e.g. a restarting replica pulled
+    /// /log first, so fixReplicaMetadataVersionIfNeeded returned 0 while metadata_alters_in_queue != 0).
+    /// Injecting a second entry with the same alter_version would corrupt the alters sequence
+    /// (ReplicatedMergeTreeAltersSequence keeps a single slot per alter_version; the duplicate flips it back
+    /// to unfinished and the first completion erases it, so the second finishMetadataAlter hits its head
+    /// invariant). Only enqueue the synthetic repair if no queued ALTER_METADATA already covers this version.
+    {
+        ReplicatedMergeTreeQueue::LogEntriesData queue_entries;
+        queue.getEntries(queue_entries);
+        for (const auto & queued : queue_entries)
+        {
+            if (queued.type == LogEntry::ALTER_METADATA && queued.alter_version >= zk_metadata_version)
+            {
+                LOG_INFO(log, "Local metadata version ({}) is behind ZooKeeper ({}), but an ALTER_METADATA entry "
+                              "with alter_version {} is already queued; skipping the synthetic metadata resync.",
+                         metadata_snapshot->getMetadataVersion(), zk_metadata_version, queued.alter_version);
+                return false;
+            }
+        }
+    }
+
     LOG_WARNING(log, "Local metadata version ({}) is behind the metadata version ({}) in ZooKeeper after recovery. "
                      "Forcing a metadata resync from {}.",
                 metadata_snapshot->getMetadataVersion(), zk_metadata_version, zookeeper_path);
