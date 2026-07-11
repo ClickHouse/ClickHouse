@@ -223,6 +223,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
+    ONCE(mt_skip_scheduling_merge_once) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
