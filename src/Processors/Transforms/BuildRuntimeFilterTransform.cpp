@@ -1,10 +1,10 @@
-#include <Processors/Transforms/BuildRuntimeFilterTransform.h>
-#include <Processors/Chunk.h>
+#include <algorithm>
 #include <Columns/IColumn.h>
-#include <Interpreters/Context.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <algorithm>
+#include <Interpreters/Context.h>
+#include <Processors/Chunk.h>
+#include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 
 
 namespace DB
@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
@@ -57,7 +57,8 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
                 bloom_filter_bytes_,
                 exact_values_limit_,
                 bloom_filter_hash_functions_,
-                max_ratio_of_set_bits_in_bloom_filter_);
+                max_ratio_of_set_bits_in_bloom_filter_,
+                distinct_keys_hint_);
         }
         else if (ApproximateGenericRuntimeFilter::isDataTypeSupported(filter_column_target_type))
         {
