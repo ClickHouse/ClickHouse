@@ -1609,17 +1609,12 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 /// by the time it re-attaches, the entry is never applied and SYSTEM SYNC REPLICA (which
                 /// only drains the queue) cannot re-read the structure, so the table stays on the old
                 /// structure indefinitely. Force a metadata resync from ZooKeeper if we are behind.
+                /// Let any failure propagate: recoverLostReplica must not report success and let the
+                /// caller advance the database log pointer while a table is left stale, otherwise the
+                /// missing ALTER_METADATA is never replayed. Propagating aborts recovery so it is retried
+                /// (same contract as cloneMetadataIfNeeded in the clone path).
                 if (auto * rmt = dynamic_cast<StorageReplicatedMergeTree *>(existing_tables_it->table().get()))
-                {
-                    try
-                    {
-                        rmt->syncTableStructureFromZooKeeperIfNeeded();
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log, fmt::format("Failed to resync structure of table {} during recovery", name));
-                    }
-                }
+                    rmt->syncTableStructureFromZooKeeperIfNeeded();
                 continue;
             }
         }
