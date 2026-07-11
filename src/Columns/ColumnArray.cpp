@@ -53,11 +53,14 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
     /// (arrayRandomSample, many array functions) creates the ColumnArray with an empty nested column
     /// and an offsets column that is pre-sized but not yet filled (ColumnUInt64::create(rows)), then
     /// populates both afterwards through getData()/getOffsets(). At that point the offsets still hold
-    /// uninitialized values, so neither the last-offset check nor the monotonicity check can be applied.
-    /// Gating on !data->empty() skips exactly that transient state and validates the fully built column.
+    /// uninitialized values, so no consistency check can be applied yet.
+    /// Gating on !data->empty() skips exactly that transient state and validates the fully built column:
+    /// the existing last-offset check already runs here in release on every non-empty-data construction,
+    /// which means every such site presents finalized offsets at construction time.
     if (!offsets_concrete->empty() && data && !data->empty())
     {
-        Offset last_offset = offsets_concrete->getData().back();
+        const auto & offset_values = offsets_concrete->getData();
+        Offset last_offset = offset_values.back();
 
         /// This will also prevent possible overflow in offset.
         if (data->size() != last_offset)
@@ -68,12 +71,17 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
         /// Offsets are cumulative array sizes, so they must be monotonically non-decreasing.
         /// A column whose offsets decrease (offsets[i] < offsets[i - 1]) is malformed: offsetAt(i)
         /// then exceeds offsets[i] and consumers that read the nested column at [offsetAt(i), offsets[i])
-        /// (compareAt, getExtremes, ...) index it out of bounds. Enforce the invariant at the point of
-        /// construction so a producer that builds an inconsistent column aborts at its own stack in
-        /// debug/sanitizer builds instead of far away in a consumer (checked only there via chassert;
-        /// release builds keep the O(1) last-offset check above).
-        chassert(std::is_sorted(offsets_concrete->getData().begin(), offsets_concrete->getData().end()),
-            "ColumnArray constructed with non-monotonic offsets");
+        /// (compareAt, getExtremes, ...) index it out of bounds. Enforce the invariant at the single
+        /// point of trust, construction, as a real runtime failure so a producer that builds an
+        /// inconsistent column is rejected in release too (not only in debug/sanitizer): a chassert
+        /// would be a no-op under !DEBUG_OR_SANITIZER_BUILD and would let the malformed column reach a
+        /// consumer and read out of bounds in production. The check is O(number of rows), of the same
+        /// order as building the offsets column that is already being passed in, and runs only on the
+        /// finalized column (empty transient states above are skipped).
+        if (!std::is_sorted(offset_values.begin(), offset_values.end()))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "offsets_column has non-monotonic offsets (cumulative array sizes must be "
+                "non-decreasing), last offset: {}", last_offset);
     }
 
     /** NOTE
