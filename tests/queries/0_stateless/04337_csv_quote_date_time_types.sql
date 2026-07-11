@@ -32,3 +32,15 @@ SELECT toLowCardinality(toDate('2024-01-15')) AS d FORMAT CSV SETTINGS output_fo
 
 SELECT 'CSVWithNames with disabled date/time CSV quoting' FORMAT TSVRaw;
 SELECT toDate('2024-01-15') AS d, 'value' AS s FORMAT CSVWithNames SETTINGS output_format_csv_quote_date_time_types = 0;
+
+SELECT 'Time round-trip with colon CSV delimiter' FORMAT TSVRaw;
+SELECT *
+FROM format(CSV, 't Time, n UInt8', '12:30:00:42')
+FORMAT CSV
+SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = ':';
+
+SELECT 'Time64 round-trip with period CSV delimiter' FORMAT TSVRaw;
+SELECT *
+FROM format(CSV, 't Time64(3), n UInt8', '12:30:00.456.42')
+FORMAT CSV
+SETTINGS output_format_csv_quote_date_time_types = 0, format_csv_delimiter = '.';

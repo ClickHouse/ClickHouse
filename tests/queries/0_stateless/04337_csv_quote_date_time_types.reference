@@ -10,3 +10,7 @@ low cardinality date with disabled date/time CSV quoting
 CSVWithNames with disabled date/time CSV quoting
 "d","s"
 2024-01-15,"value"
+Time round-trip with colon CSV delimiter
+12:30:00:42
+Time64 round-trip with period CSV delimiter
+12:30:00.456.42

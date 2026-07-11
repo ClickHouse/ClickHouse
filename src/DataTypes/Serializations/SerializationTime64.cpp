@@ -268,16 +268,23 @@ void SerializationTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr
     }
     else
     {
-        String datetime_str;
-        readCSVString(datetime_str, istr, settings.csv);
-        ReadBufferFromString buf(datetime_str);
-        readText(x, scale, buf, settings, DateLUT::instance(), DateLUT::instance());
-        if (!buf.eof())
-            throw Exception(
-                ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
-                "Unexpected data '{}' after parsed Time64 value '{}'",
-                String(buf.position(), buf.buffer().end()),
-                String(buf.buffer().begin(), buf.position()));
+        if (settings.csv.delimiter != ',')
+        {
+            readText(x, scale, istr, settings, DateLUT::instance(), DateLUT::instance());
+        }
+        else
+        {
+            String datetime_str;
+            readCSVString(datetime_str, istr, settings.csv);
+            ReadBufferFromString buf(datetime_str);
+            readText(x, scale, buf, settings, DateLUT::instance(), DateLUT::instance());
+            if (!buf.eof())
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                    "Unexpected data '{}' after parsed Time64 value '{}'",
+                    String(buf.position(), buf.buffer().end()),
+                    String(buf.buffer().begin(), buf.position()));
+        }
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(x);
@@ -300,11 +307,19 @@ bool SerializationTime64::tryDeserializeTextCSV(IColumn & column, ReadBuffer & i
     }
     else
     {
-        String datetime_str;
-        readCSVString(datetime_str, istr, settings.csv);
-        ReadBufferFromString buf(datetime_str);
-        if (!tryReadText(x, scale, buf, settings, DateLUT::instance(), DateLUT::instance()) || !buf.eof())
-            return false;
+        if (settings.csv.delimiter != ',')
+        {
+            if (!tryReadText(x, scale, istr, settings, DateLUT::instance(), DateLUT::instance()))
+                return false;
+        }
+        else
+        {
+            String datetime_str;
+            readCSVString(datetime_str, istr, settings.csv);
+            ReadBufferFromString buf(datetime_str);
+            if (!tryReadText(x, scale, buf, settings, DateLUT::instance(), DateLUT::instance()) || !buf.eof())
+                return false;
+        }
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(x);

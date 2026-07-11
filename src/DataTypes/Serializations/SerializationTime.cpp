@@ -201,16 +201,23 @@ void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
     }
     else
     {
-        String time_str;
-        readCSVString(time_str, istr, settings.csv);
-        ReadBufferFromString buf(time_str);
-        readTimeText(x, buf);
-        if (!buf.eof())
+        if (settings.csv.delimiter != ',')
+        {
+            readTimeText(x, istr);
+        }
+        else
+        {
+            String time_str;
+            readCSVString(time_str, istr, settings.csv);
+            ReadBufferFromString buf(time_str);
+            readTimeText(x, buf);
+            if (!buf.eof())
                 throw Exception(
                     ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
                     "Unexpected data '{}' after parsed Time value '{}'",
                     String(buf.position(), buf.buffer().end()),
                     String(buf.buffer().begin(), buf.position()));
+        }
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
@@ -233,11 +240,19 @@ bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
     }
     else
     {
-        String time_str;
-        readCSVString(time_str, istr, settings.csv);
-        ReadBufferFromString buf(time_str);
-        if (!tryReadTimeText(x, buf) || !buf.eof())
-            return false;
+        if (settings.csv.delimiter != ',')
+        {
+            if (!tryReadTimeText(x, istr))
+                return false;
+        }
+        else
+        {
+            String time_str;
+            readCSVString(time_str, istr, settings.csv);
+            ReadBufferFromString buf(time_str);
+            if (!tryReadTimeText(x, buf) || !buf.eof())
+                return false;
+        }
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
