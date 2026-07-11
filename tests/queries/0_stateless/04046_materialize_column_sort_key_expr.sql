@@ -437,3 +437,22 @@ CREATE TABLE t_mat_dep_is_deleted (a Int, ver UInt32, c2 UInt8 MATERIALIZED 0, d
     ENGINE = ReplacingMergeTree(ver, d) ORDER BY a;
 ALTER TABLE t_mat_dep_is_deleted MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_dep_is_deleted;
+
+-- Case 37: A column TTL can target a merge-semantic column (`checkTTLExpressions` forbids a column TTL
+-- only on sorting / partition key columns), so materializing `c` with `sign Int8 TTL c + INTERVAL ...`
+-- would reset the sign column through the TTL side effect after the direct (Case 17) and dependent
+-- (Case 19) checks have already passed. Refused up front.
+DROP TABLE IF EXISTS t_mat_ttl_sign;
+CREATE TABLE t_mat_ttl_sign
+    (a Int, c DateTime MATERIALIZED toDateTime(2000000000), sign Int8 TTL c + INTERVAL 1 SECOND)
+    ENGINE = CollapsingMergeTree(sign) ORDER BY a;
+ALTER TABLE t_mat_ttl_sign MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_sign;
+
+-- Case 38: Same as Case 37, with the is_deleted column as the TTL target.
+DROP TABLE IF EXISTS t_mat_ttl_is_deleted;
+CREATE TABLE t_mat_ttl_is_deleted
+    (a Int, ver UInt32, c DateTime MATERIALIZED toDateTime(2000000000), d UInt8 TTL c + INTERVAL 1 SECOND)
+    ENGINE = ReplacingMergeTree(ver, d) ORDER BY a;
+ALTER TABLE t_mat_ttl_is_deleted MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_is_deleted;

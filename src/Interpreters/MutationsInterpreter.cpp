@@ -1350,6 +1350,24 @@ void MutationsInterpreter::prepare(bool dry_run)
                     ttl_target_columns.push_back(dependency.column_name);
             }
 
+            /// A TTL-driven reset must not touch a merge-semantic column either.
+            /// `checkTTLExpressions` forbids a column TTL only on sorting / partition key columns,
+            /// so a table with e.g. `sign Int8 TTL c + INTERVAL ...` is valid, and `MATERIALIZE
+            /// COLUMN c` would reset `sign` through the TTL side effect after the direct and
+            /// dependent-MATERIALIZED checks above have already passed. Follow the same fail-close
+            /// approach and refuse the command up front. (UNIQUE KEY columns need no such check:
+            /// TTL is not supported on tables with UNIQUE KEY at all.)
+            for (const auto & ttl_target_column : ttl_target_columns)
+            {
+                if (std::ranges::find(merge_key_columns, ttl_target_column) != merge_key_columns.end())
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Refused to materialize column {} because it drives a TTL that resets column {}, "
+                        "which is used as the sign, version or is_deleted column of the table engine, "
+                        "which the merge logic depends on. Resetting it could change the collapsing or "
+                        "replacing semantics of existing data",
+                        backQuote(command.column_name), backQuote(ttl_target_column));
+            }
+
             /// A TTL-target column rewritten as above lands in `changed_columns`, so the generic
             /// derived-object scan near the end of `prepare` rebuilds a skip index that reads it.
             /// That rebuild is only correct when the index reads the target as a *plain column*: its
