@@ -153,6 +153,14 @@ BackendPoolPtr Router::resolvePool(const RouteAttributes & attributes, const Lis
     return nullptr;
 }
 
+Router::Decision Router::routeStatic(const RouteAttributes & attributes, const ListenerConfig & listener)
+{
+    BackendPoolPtr pool = resolvePool(attributes, listener);
+    if (!pool)
+        return {};
+    return {pool, pool->choose(attributes)};
+}
+
 Router::Decision Router::route(const RouteAttributes & attributes, const ListenerConfig & listener)
 {
     runFirstSeenHook(hooks.on_first_seen_user, "first_seen_user", attributes.user, seen_users, attributes);

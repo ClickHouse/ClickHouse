@@ -59,10 +59,18 @@
                 <pool>analytics</pool>
             </listener>
 
-            <!-- Opaque TCP forwarding, e.g. for SSH. -->
+            <!-- Terminate SSH and route by the client's public key (see the <ssh> section and the
+                 <authorized_key> rule below). -->
+            <listener>
+                <protocol>ssh</protocol>
+                <port>9022</port>
+                <pool>analytics</pool>
+            </listener>
+
+            <!-- Opaque TCP forwarding, e.g. for gRPC or Arrow Flight. -->
             <listener>
                 <protocol>stream</protocol>
-                <port>9022</port>
+                <port>9100</port>
                 <pool>analytics</pool>
             </listener>
         </listeners>
@@ -124,6 +132,14 @@
                 <query_type>insert</query_type>
                 <pool>analytics</pool>
             </rule>
+
+            <!-- Route SSH connections by the client's public key. Provide keys inline (newline- or
+                 comma-separated "<type> <base64>") or point at an authorized_keys file. -->
+            <rule>
+                <!-- <authorized_key_file>/etc/clickhouse-proxy/staging.keys</authorized_key_file> -->
+                <authorized_key>ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAExampleStagingKey</authorized_key>
+                <pool>staging</pool>
+            </rule>
         </rules>
 
         <!-- Prefer the same backend for repeated connections. -->
@@ -146,6 +162,14 @@
             <failures_to_mark_down>3</failures_to_mark_down>
             <resource_poll_interval_ms>10000</resource_poll_interval_ms>
         </health_check>
+
+        <!-- SSH termination: the proxy's own host key, and the bastion credential it uses to log in to
+             backends after it has identified the client by its public key. Required for `ssh` listeners. -->
+        <ssh>
+            <host_key_file>/etc/clickhouse-proxy/ssh_host_ed25519_key</host_key_file>
+            <backend_user>default</backend_user>
+            <backend_key_file>/etc/clickhouse-proxy/bastion_ed25519_key</backend_key_file>
+        </ssh>
 
         <http>
             <ping_path>/ping</ping_path>

@@ -28,6 +28,10 @@ public:
     /// May run hooks (shell commands) and wait for backends; call only from a fiber.
     Decision route(const RouteAttributes & attributes, const ListenerConfig & listener);
 
+    /// Route without running any hooks or waiting. Pure lookup, so it is safe to call from a
+    /// non-cooperative context (e.g. inside a libssh callback running in thread mode).
+    Decision routeStatic(const RouteAttributes & attributes, const ListenerConfig & listener);
+
     bool needsCredentials(ListenerProtocol protocol) const { return table->needsCredentials(protocol); }
     bool needsQueryType(ListenerProtocol protocol) const { return table->needsQueryType(protocol); }
 

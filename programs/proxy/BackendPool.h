@@ -14,6 +14,7 @@ struct RouteAttributes
     String user;
     String database;
     String query_type;      /// select, insert or other.
+    String authorized_key;  /// The SSH public key offered by the client, as "<type> <base64>".
     String session_id;      /// From the HTTP URL.
     String peer_address;    /// Client IP address, without the port.
 };

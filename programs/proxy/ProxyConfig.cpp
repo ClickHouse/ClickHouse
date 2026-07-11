@@ -27,6 +27,7 @@ std::string_view toString(ListenerProtocol protocol)
         case ListenerProtocol::Native: return "native";
         case ListenerProtocol::MySQL: return "mysql";
         case ListenerProtocol::PostgreSQL: return "postgresql";
+        case ListenerProtocol::SSH: return "ssh";
         case ListenerProtocol::TLS: return "tls";
         case ListenerProtocol::Stream: return "stream";
     }
@@ -42,12 +43,14 @@ ListenerProtocol parseListenerProtocol(const String & name)
         return ListenerProtocol::MySQL;
     if (name == "postgresql" || name == "postgres")
         return ListenerProtocol::PostgreSQL;
+    if (name == "ssh")
+        return ListenerProtocol::SSH;
     if (name == "tls")
         return ListenerProtocol::TLS;
     if (name == "stream")
         return ListenerProtocol::Stream;
     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-        "Unknown listener protocol '{}'. Supported protocols: http, native, mysql, postgresql, tls, stream", name);
+        "Unknown listener protocol '{}'. Supported protocols: http, native, mysql, postgresql, ssh, tls, stream", name);
 }
 
 static PeekMode parsePeekMode(const String & name)
@@ -76,6 +79,8 @@ UInt16 backendPortFor(ListenerProtocol protocol, const BackendConfig & backend, 
             return backend.mysql_port ? backend.mysql_port : 9004;
         case ListenerProtocol::PostgreSQL:
             return backend.postgresql_port ? backend.postgresql_port : 9005;
+        case ListenerProtocol::SSH:
+            return backend.ssh_port ? backend.ssh_port : 9022;
         case ListenerProtocol::TLS:
         case ListenerProtocol::Stream:
             return backend.raw_port ? backend.raw_port : listener_port;
@@ -90,6 +95,7 @@ static BackendConfig loadBackend(const Poco::Util::AbstractConfiguration & confi
     backend.http_port = static_cast<UInt16>(config.getUInt(prefix + ".http_port", 0));
     backend.mysql_port = static_cast<UInt16>(config.getUInt(prefix + ".mysql_port", 0));
     backend.postgresql_port = static_cast<UInt16>(config.getUInt(prefix + ".postgresql_port", 0));
+    backend.ssh_port = static_cast<UInt16>(config.getUInt(prefix + ".ssh_port", 0));
     backend.raw_port = static_cast<UInt16>(config.getUInt(prefix + ".raw_port", 0));
     backend.secure = config.getBool(prefix + ".secure", false);
     backend.weight = config.getUInt(prefix + ".weight", 1);
@@ -193,6 +199,10 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                 "Listener on port {}: the 'tls' protocol forwards TLS transparently and never terminates it, remove <secure>", listener.port);
 
+        if (listener.secure && listener.protocol == ListenerProtocol::SSH)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "Listener on port {}: SSH is not layered over TLS, remove <secure>", listener.port);
+
         if (!listener.default_pool.empty() && !res.pools.contains(listener.default_pool))
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                 "Listener on port {} references unknown pool '{}'", listener.port, listener.default_pool);
@@ -224,6 +234,8 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
             rule.database_regexp = config.getString(prefix + ".database_regexp", "");
             rule.query_type = config.getString(prefix + ".query_type", "");
             rule.protocol = config.getString(prefix + ".protocol", "");
+            rule.authorized_key = config.getString(prefix + ".authorized_key", "");
+            rule.authorized_key_file = config.getString(prefix + ".authorized_key_file", "");
             rule.pool = config.getString(prefix + ".pool", "");
 
             if (config.has(prefix + ".backend_template"))
@@ -266,6 +278,19 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
     res.health_check.resource_query = config.getString("proxy.health_check.resource_query",
         "SELECT (SELECT sum(value) FROM system.asynchronous_metrics WHERE metric IN ('OSUserTimeNormalized', 'OSSystemTimeNormalized')),"
         " (SELECT value FROM system.asynchronous_metrics WHERE metric = 'MemoryResident') FORMAT TSV");
+
+    res.ssh.host_key_file = config.getString("proxy.ssh.host_key_file", "");
+    res.ssh.banner = config.getString("proxy.ssh.banner", "ClickHouse-proxy");
+    res.ssh.backend_user = config.getString("proxy.ssh.backend_user", "default");
+    res.ssh.backend_key_file = config.getString("proxy.ssh.backend_key_file", "");
+    res.ssh.auth_timeout_ms = config.getUInt64("proxy.ssh.auth_timeout_ms", 10000);
+
+    for (const auto & listener : res.listeners)
+    {
+        if (listener.protocol == ListenerProtocol::SSH && res.ssh.host_key_file.empty())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "An 'ssh' listener requires the proxy host key in <proxy><ssh><host_key_file>");
+    }
 
     res.http.ping_path = config.getString("proxy.http.ping_path", "/ping");
     res.http.status_path = config.getString("proxy.http.status_path", "/proxy_status");

@@ -58,6 +58,7 @@ void dispatch(FiberSocket & client, const FrontendContext & ctx)
         case ListenerProtocol::PostgreSQL: handlePostgreSQL(client, ctx); break;
         case ListenerProtocol::TLS:
         case ListenerProtocol::Stream: handlePassthrough(client, ctx); break;
+        case ListenerProtocol::SSH: break;    /// Handled before dispatch, on the raw fd.
     }
 }
 
@@ -72,6 +73,13 @@ int connectionFiber(HandlerParams * params) noexcept
     const FrontendContext & ctx = *params->ctx;
     try
     {
+        if (ctx.listener.protocol == ListenerProtocol::SSH)
+        {
+            /// SSH is terminated with libssh, which owns the raw fd and drives its own I/O.
+            handleSSH(params->fd, ctx);
+            return 0;
+        }
+
         FiberSocket client;
         if (ctx.listener.secure)
         {

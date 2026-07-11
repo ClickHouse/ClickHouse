@@ -16,6 +16,7 @@ set (CLICKHOUSE_PROXY_SOURCES
     MySQLFrontend.cpp
     PostgreSQLFrontend.cpp
     PassthroughFrontend.cpp
+    SSHFrontend.cpp
     HealthMonitor.cpp
     ProxyServer.cpp
 )

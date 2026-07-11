@@ -2,6 +2,8 @@
 
 #include "BackendPool.h"
 
+#include <unordered_set>
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wms-bitfield-padding"
 #include <re2/re2.h>
@@ -65,12 +67,14 @@ private:
         Matcher database;
         std::vector<String> query_types;
         std::vector<ListenerProtocol> protocols;
+        std::unordered_set<String> authorized_keys;   /// Canonical "<type> <base64>" keys; empty means unspecified.
         Target target;
     };
 
     std::vector<Rule> rules;
 
     static Matcher makeMatcher(const String & exact, const String & regexp);
+    static std::unordered_set<String> loadAuthorizedKeys(const String & inline_keys, const String & file);
     static bool appliesToProtocol(const Rule & rule, ListenerProtocol protocol);
 };
 

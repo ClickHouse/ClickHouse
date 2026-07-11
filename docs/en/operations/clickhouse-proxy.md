@@ -37,6 +37,7 @@ protocol or the inter-server replication protocol.
 | Native TCP    | `native`            | Yes (parsed from the `Hello` packet)                |
 | PostgreSQL    | `postgresql`        | Yes (parsed from the `StartupMessage`)              |
 | MySQL         | `mysql`             | No — routed by peer address or default pool         |
+| SSH           | `ssh`               | By the client's public key (terminated; see below)  |
 | TLS by SNI    | `tls`               | By hostname (SNI), without decryption               |
 | Opaque stream | `stream`            | By peer address or default pool                     |
 
@@ -44,6 +45,52 @@ MySQL is server-speaks-first and negotiates TLS in-band, so the proxy cannot rea
 the database before it must answer the greeting; such connections are forwarded transparently and
 routed by peer address or the listener's default pool. Query-type routing (see below) applies to
 the HTTP protocol only.
+
+## SSH {#ssh}
+
+SSH carries no cleartext identity (there is no equivalent of TLS SNI, and the user name is only sent
+inside the encrypted transport, after key exchange). To route it, the proxy therefore *terminates*
+SSH: it presents its own host key, completes the handshake, and reads the client's offered public
+key during authentication. It routes by that key — a pool is chosen by which key the client presents
+— and then re-originates a fresh SSH connection to the selected backend as a bastion, splicing the
+two sessions (pty, shell, exec, and their input/output).
+
+Because the client's signature cannot be replayed to the backend, the proxy authorizes the client by
+its public key and logs in to the backend with a configured bastion key that the backend trusts:
+
+```xml
+<proxy>
+    <listeners>
+        <listener><protocol>ssh</protocol><port>22</port></listener>
+    </listeners>
+    <ssh>
+        <host_key_file>/etc/clickhouse-proxy/ssh_host_ed25519_key</host_key_file>
+        <backend_user>default</backend_user>
+        <backend_key_file>/etc/clickhouse-proxy/bastion_ed25519_key</backend_key_file>
+    </ssh>
+    <pools>
+        <pool>
+            <name>tenant-a</name>
+            <backend><host>tenant-a.example.net</host><ssh_port>9022</ssh_port></backend>
+        </pool>
+    </pools>
+    <rules>
+        <rule>
+            <!-- Route by the client's public key. Use the whole "authorized_keys" file or list keys inline. -->
+            <authorized_key_file>/etc/clickhouse-proxy/tenant-a.keys</authorized_key_file>
+            <pool>tenant-a</pool>
+        </rule>
+        <rule>
+            <authorized_key>ssh-ed25519 AAAAC3Nza...tenant-b-key</authorized_key>
+            <pool>tenant-b</pool>
+        </rule>
+    </rules>
+</proxy>
+```
+
+Each SSH connection borrows an OS thread for its lifetime (libssh drives its own blocking I/O), so
+SSH does not scale as cheaply as the byte-spliced protocols; it is intended for interactive and
+command sessions rather than very high connection counts.
 
 ## TLS {#tls}
 

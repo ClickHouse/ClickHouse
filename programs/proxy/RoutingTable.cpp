@@ -6,12 +6,16 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
+#include <fstream>
+#include <sstream>
+
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int CANNOT_OPEN_FILE;
     extern const int INVALID_CONFIG_PARAMETER;
 }
 }
@@ -81,6 +85,50 @@ ConfigRoutingTable::Matcher ConfigRoutingTable::makeMatcher(const String & exact
     return matcher;
 }
 
+namespace
+{
+
+/// Turn an "authorized_keys"-style line ("<type> <base64> [comment]") into the canonical "<type> <base64>".
+void collectKey(const String & line, std::unordered_set<String> & keys)
+{
+    String trimmed = line;
+    boost::trim(trimmed);
+    if (trimmed.empty() || trimmed[0] == '#')
+        return;
+
+    std::istringstream stream(trimmed);
+    String type;
+    String base64;
+    stream >> type >> base64;
+    if (!type.empty() && !base64.empty())
+        keys.insert(type + " " + base64);
+}
+
+}
+
+std::unordered_set<String> ConfigRoutingTable::loadAuthorizedKeys(const String & inline_keys, const String & file)
+{
+    std::unordered_set<String> keys;
+
+    std::vector<String> lines;
+    if (!inline_keys.empty())
+        boost::split(lines, inline_keys, boost::is_any_of("\n,"));
+    for (const auto & line : lines)
+        collectKey(line, keys);
+
+    if (!file.empty())
+    {
+        std::ifstream stream(file);
+        if (!stream)
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot open authorized_key_file '{}'", file);
+        String line;
+        while (std::getline(stream, line))
+            collectKey(line, keys);
+    }
+
+    return keys;
+}
+
 bool ConfigRoutingTable::Matcher::matches(const String & value, std::vector<String> & captures) const
 {
     if (!specified())
@@ -129,6 +177,8 @@ ConfigRoutingTable::ConfigRoutingTable(const std::vector<RuleConfig> & rules_)
         for (const auto & name : splitList(rule_config.protocol))
             rule.protocols.push_back(parseListenerProtocol(name));
 
+        rule.authorized_keys = loadAuthorizedKeys(rule_config.authorized_key, rule_config.authorized_key_file);
+
         rule.target.pool_name = rule_config.pool;
         rule.target.backend = rule_config.backend_template;
 
@@ -152,6 +202,10 @@ std::optional<IRoutingTable::Target> ConfigRoutingTable::resolve(const RouteAttr
 
         if (!rule.query_types.empty()
             && std::find(rule.query_types.begin(), rule.query_types.end(), attributes.query_type) == rule.query_types.end())
+            continue;
+
+        if (!rule.authorized_keys.empty()
+            && (attributes.authorized_key.empty() || !rule.authorized_keys.contains(attributes.authorized_key)))
             continue;
 
         /// Captures are numbered across the host, user and database matchers, in this order.

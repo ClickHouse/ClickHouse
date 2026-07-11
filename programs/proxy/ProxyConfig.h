@@ -21,8 +21,9 @@ enum class ListenerProtocol : uint8_t
     Native,        /// ClickHouse native TCP protocol.
     MySQL,         /// MySQL wire protocol.
     PostgreSQL,    /// PostgreSQL wire protocol.
+    SSH,           /// SSH: terminated by the proxy to route by the offered public key, then re-originated.
     TLS,           /// Transparent TLS routing by SNI, without decryption.
-    Stream,        /// Opaque TCP forwarding (SSH, gRPC, Arrow Flight, ...).
+    Stream,        /// Opaque TCP forwarding (gRPC, Arrow Flight, or any other TCP protocol).
 };
 
 std::string_view toString(ListenerProtocol protocol);
@@ -59,6 +60,7 @@ struct BackendConfig
     UInt16 http_port = 0;
     UInt16 mysql_port = 0;
     UInt16 postgresql_port = 0;
+    UInt16 ssh_port = 0;
     UInt16 raw_port = 0;                /// For TLS and Stream listeners. Zero means the same port as the listener.
 
     bool secure = false;                /// Encrypt the proxy-to-backend leg.
@@ -95,6 +97,8 @@ struct RuleConfig
     String database_regexp;
     String query_type;                  /// select, insert or other; comma-separated list.
     String protocol;                    /// Restrict the rule to listeners of these protocols; comma-separated list.
+    String authorized_key;              /// SSH public key(s) the offered key must equal; each is "<type> <base64>". Newline/comma-separated.
+    String authorized_key_file;         /// Path to an `authorized_keys` file whose keys this rule matches.
 
     String pool;                        /// The target pool.
     std::optional<BackendConfig> backend_template;  /// Alternatively, a backend address where $1..$9 are replaced
@@ -120,6 +124,21 @@ struct HealthCheckConfig
     UInt32 failures_to_mark_down = 3;
     UInt64 resource_poll_interval_ms = 10000;
     String resource_query;              /// Query for resource polling. Must return one row in TSV: CPU usage in cores, memory usage in bytes.
+};
+
+struct SSHConfig
+{
+    /// The proxy's own host key, presented to clients when it terminates SSH. Required for `ssh` listeners.
+    String host_key_file;
+    String banner = "ClickHouse-proxy";
+
+    /// Credentials for the proxy-to-backend leg (re-origination): a private key the backends trust.
+    /// The client is authenticated by the proxy through its offered public key; the proxy then logs
+    /// in to the backend as a bastion.
+    String backend_user = "default";
+    String backend_key_file;
+
+    UInt64 auth_timeout_ms = 10000;
 };
 
 struct StaticPageConfig
@@ -150,6 +169,7 @@ struct ProxyConfiguration
     HooksConfig hooks;
     HealthCheckConfig health_check;
     HTTPConfig http;
+    SSHConfig ssh;
 
     String display_name = "ClickHouse proxy";   /// Server name reported when the proxy answers a hello packet on its own.
     UInt64 advertised_tcp_protocol_version = 0; /// Native protocol revision to advertise; 0 means the one the proxy is built with.

@@ -59,6 +59,10 @@ void handleMySQL(FiberSocket & client, const FrontendContext & ctx);
 void handlePostgreSQL(FiberSocket & client, const FrontendContext & ctx);
 void handlePassthrough(FiberSocket & client, const FrontendContext & ctx);
 
+/// SSH is terminated by the proxy: it reads the client's offered public key, routes by it, and
+/// re-originates a new SSH connection to the chosen backend (bastion). Takes ownership of @p fd.
+void handleSSH(int fd, const FrontendContext & ctx);
+
 /// Classify a SQL query as "select", "insert" or "other" by its leading keyword.
 String classifyQuery(std::string_view query);
 
