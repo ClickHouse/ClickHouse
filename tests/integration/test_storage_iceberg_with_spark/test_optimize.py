@@ -270,3 +270,124 @@ def test_optimize_after_nested_rename(started_cluster_iceberg_with_spark, storag
         )
         == "1\tx\t10\n2\ty\t20\n3\tz\t30\n"
     )
+
+
+def test_optimize_multi_partition_manifest(started_cluster_iceberg_with_spark):
+    """
+    A single Spark manifest can pack data files from several partitions (one INSERT that
+    writes multiple partitions groups them into one manifest). Compaction keys partition
+    values and statistics per rewritten DATA FILE, not per manifest: otherwise every output
+    entry in the manifest would inherit one partition tuple (partition pruning skips live
+    files -> wrong results) and one unioned bounds tuple (predicate pruning regresses).
+
+    The table is partitioned by identity(part) with disjoint id ranges per partition, so a
+    per-manifest aggregation would be observable. After OPTIMIZE every partition's rows must
+    survive with correct values (incl. partition-filtered reads), each data-file manifest
+    entry must carry its own partition value, and the two entries' bounds must NOT be unioned.
+
+    storage_type is "local": the manifest inspection below reads the regenerated Avro from
+    the node's local user_files (as the sibling per-file-stats test does).
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    storage_type = "local"
+    TABLE_NAME = "test_optimize_multi_part_" + storage_type + "_" + get_uuid_str()
+
+    def upload():
+        default_upload_directory(
+            started_cluster_iceberg_with_spark,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (part int, id long) USING iceberg PARTITIONED BY (identity(part))
+        TBLPROPERTIES ('format-version' = '2', 'write.update.mode' = 'merge-on-read',
+        'write.delete.mode' = 'merge-on-read', 'write.merge.mode' = 'merge-on-read')
+        """
+    )
+    # One INSERT writing two disjoint partitions -> one manifest listing two data files,
+    # one per partition, with disjoint id ranges (part 0: 10..49, part 1: 100..149).
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} SELECT 0, id FROM range(10, 50) "
+        f"UNION ALL SELECT 1, id FROM range(100, 150)"
+    )
+    upload()
+
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+
+    # Positional delete (merge-on-read) in one partition so compaction has work to do.
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE part = 0 AND id < 20")
+    upload()
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+
+    # Correctness after compaction, including partition-filtered reads. If partition values were
+    # stamped per manifest (all entries -> last-visited partition), pruning would drop live files.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} WHERE part = 0")) == 30
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} WHERE part = 1")) == 50
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} WHERE part = 0 ORDER BY id") == instance.query(
+        "SELECT number FROM numbers(20, 30)"
+    )
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} WHERE part = 1 ORDER BY id") == instance.query(
+        "SELECT number FROM numbers(100, 50)"
+    )
+
+    metadata_dir = (
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    )
+    manifest_files = (
+        instance.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"find '{metadata_dir}' -maxdepth 1 -name '*.avro' "
+                f"-not -name 'snap-*.avro' -type f",
+            ]
+        )
+        .strip()
+        .splitlines()
+    )
+    assert manifest_files
+
+    # A data-file manifest entry exposes its own partition value and its own bounds. Collect,
+    # per manifest, the (partition, lower_bounds) of every DATA entry. Per-manifest aggregation
+    # would make every entry in the same manifest identical; per-file accounting keeps them
+    # distinct across the two partitions.
+    saw_multi_partition_manifest = False
+    for manifest in manifest_files:
+        rows = instance.query(
+            f"""
+            SELECT
+                tupleElement(tupleElement(data_file, 'partition'), 'part') AS part_val,
+                tupleElement(data_file, 'lower_bounds')                    AS lower_bounds
+            FROM file('{manifest}', Avro)
+            WHERE tupleElement(data_file, 'content') = 0
+            ORDER BY part_val
+            FORMAT TSV
+            """
+        ).strip()
+        if not rows:
+            continue
+        lines = rows.splitlines()
+        if len(lines) < 2:
+            continue
+        saw_multi_partition_manifest = True
+        parts = [line.split("\t")[0] for line in lines]
+        lower_bounds = [line.split("\t")[1] for line in lines]
+        # Comment 1: each rewritten file keeps its own partition value (0 and 1), not one shared.
+        assert parts == ["0", "1"], f"partition values not per-file: {parts}"
+        # Comment 2: bounds are per-file, not unioned across every file in the manifest.
+        assert lower_bounds[0] != lower_bounds[1], "bounds were unioned across files"
+
+    assert saw_multi_partition_manifest, "expected a manifest packing both partitions"

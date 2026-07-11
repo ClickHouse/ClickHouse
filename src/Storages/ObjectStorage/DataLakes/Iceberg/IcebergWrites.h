@@ -62,7 +62,14 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    std::optional<Int64> user_defined_sequence_number = std::nullopt);
+    std::optional<Int64> user_defined_sequence_number = std::nullopt,
+    /// Optional per-data-file overrides, aligned index-for-index with `data_file_names`.
+    /// When non-null they take precedence over the single shared `partition_values` /
+    /// `data_file_statistics` above, so a manifest that mixes files from several partitions
+    /// (or that needs distinct per-file bounds) is written correctly. Left null by the
+    /// normal write/mutation paths, which emit one partition per manifest.
+    const std::vector<std::vector<Field>> * per_file_partition_values = nullptr,
+    const std::vector<const DataFileStatistics *> * per_file_statistics = nullptr);
 
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,

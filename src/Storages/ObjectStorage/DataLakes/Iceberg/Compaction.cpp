@@ -49,14 +49,10 @@ using namespace DB;
 
 struct ManifestFilePlan
 {
-    explicit ManifestFilePlan(Poco::JSON::Array::Ptr schema_)
-        : statistics(schema_)
-    {
-    }
+    ManifestFilePlan() = default;
 
     Iceberg::IcebergPathFromMetadata path;
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_lists_path;
-    DataFileStatistics statistics;
 
     Iceberg::IcebergPathFromMetadata patched_path;
 };
@@ -69,6 +65,15 @@ struct DataFilePlan
     Iceberg::IcebergPathFromMetadata patched_path;
     UInt64 new_records_count = 0;
     UInt64 new_bytes_count = 0;
+
+    /// Statistics and partition value are kept per DATA FILE, not per manifest: a single
+    /// original manifest can pack data files from different partitions (Spark/Flink/Trino),
+    /// and after compaction each rewritten file needs its own bounds/null counts/column
+    /// sizes and its own partition tuple. Aggregating them per manifest would union bounds
+    /// across unrelated files (breaking predicate pruning) and stamp one partition on all of
+    /// them (breaking partition pruning). Mirrors MultipleFileWriter::getPerFileStatistics.
+    DataFileStatisticsPtr statistics;
+    size_t partition_index = 0;
 };
 
 /// Plan of compaction consists of information about all data files and what delete files should be applied for them.
@@ -318,7 +323,7 @@ static Plan getPlan(
 
             if (!manifest_files.contains(manifest_file.manifest_file_path))
             {
-                manifest_files[manifest_file.manifest_file_path] = std::make_shared<ManifestFilePlan>(current_schema);
+                manifest_files[manifest_file.manifest_file_path] = std::make_shared<ManifestFilePlan>();
                 manifest_files[manifest_file.manifest_file_path]->path = manifest_file.manifest_file_path;
             }
             manifest_files[manifest_file.manifest_file_path]->manifest_lists_path.push_back(snapshot.manifest_list_path);
@@ -346,7 +351,9 @@ static Plan getPlan(
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
-                        .patched_path = plan.generator.generateDataFileName()});
+                        .patched_path = plan.generator.generateDataFileName(),
+                        .statistics = std::make_shared<DataFileStatistics>(current_schema),
+                        .partition_index = partition_index});
                     plan.path_to_data_file[data_file_key] = data_file_ptr;
                 }
                 else
@@ -493,7 +500,7 @@ static void writeDataFiles(
                 chunk.setColumns(block.getColumns(), block.rows());
             }
 
-            data_file->manifest_list->statistics.update(chunk);
+            data_file->statistics->update(chunk);
             data_file->new_records_count += chunk.getNumRows();
             ColumnsWithTypeAndName columns_with_types_and_name;
             for (size_t i = 0; i < sample_block->columns(); ++i)
@@ -660,23 +667,14 @@ static void writeMetadataFiles(
 
     {
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, std::unordered_set<Iceberg::IcebergPathFromMetadata>> grouped_by_manifest_files_result;
-        std::unordered_map<std::shared_ptr<ManifestFilePlan>, size_t> grouped_by_manifest_files_partitions;
-        std::unordered_map<std::shared_ptr<ManifestFilePlan>, size_t> partition_values;
 
         std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> patched_path_to_data_file;
         for (const auto & [_, data_file] : plan.path_to_data_file)
             patched_path_to_data_file[data_file->patched_path] = data_file;
 
-        for (size_t i = 0; i < plan.partitions.size(); ++i)
-        {
-            const auto & partition = plan.partitions[i];
+        for (const auto & partition : plan.partitions)
             for (const auto & data_file : partition)
-            {
-                grouped_by_manifest_files_partitions[data_file->manifest_list] = i;
                 grouped_by_manifest_files_result[data_file->manifest_list].insert(data_file->patched_path);
-                partition_values[data_file->manifest_list] = i;
-            }
-        }
 
         auto partition_spec_id = initial_metadata_object->getValue<Int32>(f_default_spec_id);
         auto partitions_specs = initial_metadata_object->getArray(f_partition_specs);
@@ -718,35 +716,48 @@ static void writeMetadataFiles(
             std::vector<Iceberg::IcebergPathFromMetadata> data_files_vec(data_filenames.begin(), data_filenames.end());
             std::vector<UInt64> file_row_counts;
             std::vector<UInt64> file_byte_counts;
+            /// Per-file partition value and per-file statistics, aligned index-for-index with
+            /// `data_files_vec`. A manifest can mix files from several partitions, so each
+            /// output entry must carry its own partition tuple and its own bounds/counts.
+            std::vector<std::vector<Field>> per_file_partition_values;
+            std::vector<const DataFileStatistics *> per_file_statistics;
             for (const auto & path : data_files_vec)
             {
                 if (auto it = patched_path_to_data_file.find(path); it != patched_path_to_data_file.end())
                 {
-                    file_row_counts.push_back(it->second->new_records_count);
-                    file_byte_counts.push_back(it->second->new_bytes_count);
+                    const auto & data_file = it->second;
+                    file_row_counts.push_back(data_file->new_records_count);
+                    file_byte_counts.push_back(data_file->new_bytes_count);
+                    per_file_partition_values.push_back(plan.partition_encoder.getPartitionValue(data_file->partition_index));
+                    per_file_statistics.push_back(data_file->statistics.get());
                 }
                 else
                 {
                     file_row_counts.push_back(0);
                     file_byte_counts.push_back(0);
+                    per_file_partition_values.emplace_back();
+                    per_file_statistics.push_back(nullptr);
                 }
             }
             generateManifestFile(
                 metadata_object,
                 partition_columns,
-                plan.partition_encoder.getPartitionValue(grouped_by_manifest_files_partitions[manifest_entry]),
+                /*partition_values=*/{},
                 ChunkPartitioner(fields_from_partition_spec, current_schema->getArray(Iceberg::f_fields), context, sample_block_).getResultTypes(),
                 data_files_vec,
                 file_row_counts,
                 file_byte_counts,
-                manifest_entry->statistics,
+                /*data_file_statistics=*/std::nullopt,
                 sample_block_,
                 snapshot,
                 write_format,
                 partititon_spec,
                 partition_spec_id,
                 *buffer_manifest_entry,
-                Iceberg::FileContentType::DATA);
+                Iceberg::FileContentType::DATA,
+                /*user_defined_sequence_number=*/std::nullopt,
+                &per_file_partition_values,
+                &per_file_statistics);
 
             buffer_manifest_entry->finalize();
             auto manifest_bytes = buffer_manifest_entry->count();

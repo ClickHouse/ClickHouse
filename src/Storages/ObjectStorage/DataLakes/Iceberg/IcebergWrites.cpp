@@ -306,8 +306,15 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    std::optional<Int64> user_defined_sequence_number)
+    std::optional<Int64> user_defined_sequence_number,
+    const std::vector<std::vector<Field>> * per_file_partition_values,
+    const std::vector<const DataFileStatistics *> * per_file_statistics)
 {
+    if (per_file_partition_values && per_file_partition_values->size() != data_file_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "per_file_partition_values size does not match data files");
+    if (per_file_statistics && per_file_statistics->size() != data_file_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "per_file_statistics size does not match data files");
+
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
@@ -359,7 +366,13 @@ void generateManifestFile(
         data_file.field(Iceberg::f_file_path) = avro::GenericDatum(data_file_name.serialize());
         data_file.field(Iceberg::f_file_format) = avro::GenericDatum(format);
 
-        if (data_file_statistics)
+        /// Per-file overrides take precedence over the shared arguments when supplied.
+        const DataFileStatistics * effective_statistics
+            = per_file_statistics ? (*per_file_statistics)[file_idx] : (data_file_statistics ? &*data_file_statistics : nullptr);
+        const std::vector<Field> & effective_partition_values
+            = per_file_partition_values ? (*per_file_partition_values)[file_idx] : partition_values;
+
+        if (effective_statistics)
         {
             auto set_fields = [&]<typename T, typename U>(
                                   const std::vector<std::pair<size_t, T>> & statistics, const std::string & field_name, U && dump_function)
@@ -378,26 +391,26 @@ void generateManifestFile(
                 }
             };
 
-            auto statistics = data_file_statistics->getColumnSizes();
+            auto statistics = effective_statistics->getColumnSizes();
             set_fields(statistics, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
-            statistics = data_file_statistics->getNullCounts();
+            statistics = effective_statistics->getNullCounts();
             set_fields(statistics, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
             std::unordered_map<size_t, size_t> field_id_to_column_index;
-            auto field_ids = data_file_statistics->getFieldIds();
+            auto field_ids = effective_statistics->getFieldIds();
             for (size_t i = 0; i < field_ids.size(); ++i)
                 field_id_to_column_index[field_ids[i]] = i;
 
             auto dump_fields = [&](size_t field_id, Field value)
             { return dumpFieldToBytes(value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]); };
 
-            auto lower_statistics = data_file_statistics->getLowerBounds();
+            auto lower_statistics = effective_statistics->getLowerBounds();
             if (canWriteStatistics(lower_statistics, field_id_to_column_index, sample_block))
             {
                 set_fields(lower_statistics, Iceberg::f_lower_bounds, dump_fields);
             }
-            auto upper_statistics = data_file_statistics->getUpperBounds();
+            auto upper_statistics = effective_statistics->getUpperBounds();
             if (canWriteStatistics(upper_statistics, field_id_to_column_index, sample_block))
             {
                 set_fields(upper_statistics, Iceberg::f_upper_bounds, dump_fields);
@@ -412,29 +425,29 @@ void generateManifestFile(
             /// the surrounding union). Throws on an unsupported value type.
             auto make_value_datum = [&]() -> avro::GenericDatum
             {
-                switch (partition_values[i].getType())
+                switch (effective_partition_values[i].getType())
                 {
                     case Field::Types::Int64:
                     case Field::Types::UInt64:
-                        return avro::GenericDatum(partition_values[i].safeGet<Int64>());
+                        return avro::GenericDatum(effective_partition_values[i].safeGet<Int64>());
                     case Field::Types::String:
-                        return avro::GenericDatum(partition_values[i].safeGet<String>());
+                        return avro::GenericDatum(effective_partition_values[i].safeGet<String>());
                     case Field::Types::Float64:
-                        return avro::GenericDatum(partition_values[i].safeGet<Float64>());
+                        return avro::GenericDatum(effective_partition_values[i].safeGet<Float64>());
                     case Field::Types::Decimal32:
-                        return avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
+                        return avro::GenericDatum(effective_partition_values[i].safeGet<Decimal32>().getValue());
                     case Field::Types::Decimal64:
-                        return avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                        return avro::GenericDatum(effective_partition_values[i].safeGet<Decimal64>().getValue());
                     default:
                         throw Exception(
                             ErrorCodes::BAD_ARGUMENTS,
                             "Unsupported type to write into avro file {}",
-                            partition_values[i].getType());
+                            effective_partition_values[i].getType());
                 }
             };
 
             const bool is_nullable_partition = partition_types[i]->isNullable();
-            const bool is_null_value = partition_values[i].getType() == Field::Types::Null;
+            const bool is_null_value = effective_partition_values[i].getType() == Field::Types::Null;
 
             if (is_nullable_partition)
             {
