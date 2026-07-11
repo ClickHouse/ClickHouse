@@ -1,0 +1,77 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schemas
+description: 'Таблицы и схемы, используемые ClickStack — стек обсервабилити ClickHouse'
+sidebarTitle: 'Таблицы и схемы'
+title: 'Таблицы и схемы, используемые ClickStack'
+doc_type: 'reference'
+keywords: ['clickstack', 'схема', 'модель данных', 'проектирование таблиц', 'журналы']
+---
+
+import OtelLogsSchema from '/snippets/ru/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/ru/clickstack/_schema_otel_traces.mdx';
+import OtelMetricsGaugeSchema from '/snippets/ru/clickstack/_schema_otel_metrics_gauge.mdx';
+import OtelMetricsSumSchema from '/snippets/ru/clickstack/_schema_otel_metrics_sum.mdx';
+import OtelMetricsHistogramSchema from '/snippets/ru/clickstack/_schema_otel_metrics_histogram.mdx';
+import OtelMetricsExponentialHistogramSchema from '/snippets/ru/clickstack/_schema_otel_metrics_exponential_histogram.mdx';
+import OtelMetricsSummarySchema from '/snippets/ru/clickstack/_schema_otel_metrics_summary.mdx';
+import HyperdxSessionsSchema from '/snippets/ru/clickstack/_schema_hyperdx_sessions.mdx';
+
+OTel collector ClickStack OpenTelemetry (OTel) использует [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md) для создания таблиц в ClickHouse и вставки данных.
+
+Следующие таблицы создаются для каждого типа данных в базе данных `default`. Вы можете изменить эту целевую базу данных, изменив переменную окружения `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` в образе, где размещён OTel collector.
+
+<div id="logs">
+  ## Журналы
+</div>
+
+<OtelLogsSchema />
+
+<div id="traces">
+  ## Трассировки
+</div>
+
+<OtelTracesSchema />
+
+<div id="metrics">
+  ## Метрики
+</div>
+
+<div id="gauge">
+  ### Метрики типа Gauge
+</div>
+
+<OtelMetricsGaugeSchema />
+
+<div id="sum">
+  ### Суммарные метрики
+</div>
+
+<OtelMetricsSumSchema />
+
+<div id="histogram">
+  ### Гистограммные метрики
+</div>
+
+<OtelMetricsHistogramSchema />
+
+<div id="exponential-histograms">
+  ### Экспоненциальные гистограммы
+</div>
+
+<Note>
+  HyperDX пока не поддерживает получение и отображение метрик экспоненциальных гистограмм. Вы можете настроить их в источнике метрик, но в будущем такая поддержка появится.
+</Note>
+
+<OtelMetricsExponentialHistogramSchema />
+
+<div id="summary-table">
+  ### Сводная таблица
+</div>
+
+<OtelMetricsSummarySchema />
+
+<div id="sessions">
+  ## Сеансы
+</div>
+
+<HyperdxSessionsSchema />

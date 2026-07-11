@@ -1,0 +1,42 @@
+---
+title: INSERT...SELECT 중 TOO MANY PARTS 오류를 어떻게 해결하나요?
+description: "더 큰 블록을 처리하도록 고급 설정을 조정하고 파티션 임계값을 높여 ClickHouse의 `INSERT...SELECT` 중 발생하는 TOO_MANY_PARTS 오류를 해결합니다."
+date: 2023-07-21
+tags: ['설정', '오류 및 예외']
+---
+
+<div id="question">
+  ## 질문
+</div>
+
+`INSERT...SELECT` 문을 실행할 때 TOO&#95;MANY&#95;PARTS(너무 많은 파트) 오류가 발생합니다.
+
+이 문제는 어떻게 해결할 수 있습니까?
+
+<div id="answer">
+  ## 답변
+</div>
+
+아래는 이 오류를 방지하기 위해 조정할 수 있는 설정 몇 가지입니다. 이는 ClickHouse에 대한 전문가 수준의 튜닝이며, 이 값들은 실제로 사용할 ClickHouse Cloud 서비스 또는 온프레미스 클러스터의 사양을 충분히 이해한 후에만 설정해야 합니다. 따라서 이 값을 &quot;어떤 경우에도 통하는 일률적인 기준&quot;으로 받아들이지 마십시오.
+
+[max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings#settings-max_insert_block_size) = `100_000_000` (default `1_048_576`)
+
+약 100만에서 1억으로 늘리면 더 큰 블록이 형성될 수 있습니다.
+
+참고: 이 설정은 서버가 블록을 형성할 때만 적용됩니다. 즉, HTTP 인터페이스를 통한 INSERT에만 적용되며 `clickhouse-client`에는 적용되지 않습니다.
+
+[min&#95;insert&#95;block&#95;size&#95;rows](/ko/reference/settings/session-settings#min-insert-block-size-rows) = `100_000_000` (default `1_048_576`)
+
+약 100만에서 1억으로 늘리면 더 큰 블록이 형성될 수 있습니다.
+
+[min&#95;insert&#95;block&#95;size&#95;bytes](/ko/reference/settings/session-settings#min-insert-block-size-bytes) = `500_000_000` (default `268_435_456`)
+
+268.44 MB에서 500 MB로 늘리면 더 큰 블록이 형성될 수 있습니다.
+
+[parts&#95;to&#95;delay&#95;insert](/ko/reference/settings/merge-tree-settings#parts-to-delay-insert) = `500` (default `150`)
+
+단일 파티션의 활성 파트 수에 도달했을 때 INSERT가 인위적으로 느려지지 않도록 이 값을 늘립니다.
+
+[parts&#95;to&#95;throw&#95;insert](/ko/reference/settings/merge-tree-settings#parts-to-throw-insert) = `1500` (default `3000`)
+
+이 값을 늘리면 일반적으로 해당 테이블의 쿼리 성능에 영향을 주지만, 데이터 마이그레이션에는 무리가 없습니다.

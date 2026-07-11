@@ -1,0 +1,447 @@
+---
+description: 'WebAssembly ユーザー定義関数のドキュメント'
+sidebarTitle: 'WebAssembly UDF'
+slug: /sql-reference/functions/wasm_udf
+title: 'WebAssembly ユーザー定義関数'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="webassembly-user-defined-functions">
+  # WebAssembly ユーザー定義関数
+</div>
+
+ClickHouse では、WebAssembly で記述したユーザー定義関数 (UDF) を作成できます。これにより、Rust、C、C++ などの言語で実装したカスタムロジックを、WebAssembly モジュールとしてコンパイルして実行できます。
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+<div id="overview">
+  ## 概要
+</div>
+
+WebAssembly モジュールは、ClickHouse から呼び出せる 1 つ以上の関数を含むコンパイル済みのバイナリファイルです。
+モジュールは、一度読み込んだら何度でも再利用できるライブラリや共有オブジェクトのようなものだと考えてください。
+
+UDF を含む WebAssembly モジュールは、Rust、C、C++ など、WebAssembly にコンパイル可能な任意の言語で記述できます。
+
+WebAssembly にコンパイルされたコード (「ゲスト」コード) は、ClickHouse (「ホスト」) によって実行され、専用のメモリ空間にのみアクセスできるサンドボックス環境で動作します。
+
+ゲストコードは、ClickHouse から呼び出せる関数をエクスポートします。これには、カスタムロジックを実装する関数 (UDF の定義に使用されるもの) に加え、メモリ管理や ClickHouse と WebAssembly コード間でのデータ交換に必要な補助関数も含まれます。
+
+コードは、オペレーティングシステムや標準ライブラリに依存しない「フリースタンディング」WebAssembly (別名 `wasm32-unknown-unknown`) としてコンパイルする必要があります。また、サポートされるのはデフォルトの 32 ビット WebAssembly ターゲットのみです (`wasm64` 拡張はサポートされません) 。
+モジュールは、ClickHouse と連携するために、サポートされている通信プロトコル (ABI) のいずれかに従う必要があります。
+
+コンパイル後、モジュールのバイナリコードは `system.webassembly_modules` テーブルに insert することで ClickHouse に読み込まれます。
+その後、`CREATE FUNCTION ... LANGUAGE WASM` ステートメントを使用して、モジュールがエクスポートした関数を参照する UDF を作成できます。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+ClickHouse の設定で、WebAssembly サポートを有効にします。
+
+```xml
+<clickhouse>
+    <allow_experimental_webassembly_udf>true</allow_experimental_webassembly_udf>
+    <webassembly_udf_engine>wasmtime</webassembly_udf_engine>
+</clickhouse>
+```
+
+利用可能なエンジン実装:
+
+* `wasmtime` (デフォルト、推奨) — [WasmTime](https://github.com/bytecodealliance/wasmtime) を使用します
+* `wasmedge` — [WasmEdge](https://github.com/WasmEdge/WasmEdge) を使用します
+
+<div id="quick-start">
+  ## クイックスタート
+</div>
+
+この例では、[コラッツ予想](https://en.wikipedia.org/wiki/Collatz_conjecture)の計算機を実装しながら、WebAssembly UDF を作成する一連のワークフロー全体を示します。
+
+コードは WebAssembly Text 形式 (WAT) で記述します。これは WebAssembly を人間が読める形で表現したものなので、この段階ではプログラミング言語は不要です。
+ClickHouse ではモジュールがバイナリ形式である必要があるため、トランスパイラを使用して WAT を WASM に変換します。
+この変換には、[WebAssembly Binary Toolkit (WABT)](https://github.com/WebAssembly/wabt) の `wat2wasm`、または [wasm-tools](https://github.com/bytecodealliance/wasm-tools) の `parse` コマンドを使用できます。
+
+```bash
+cat << 'EOF' | wasm-tools parse | clickhouse client -q "INSERT INTO system.webassembly_modules (name, code) SELECT 'collatz', code FROM input('code String') FORMAT RawBlob"
+(module
+  (func $next (param $n i32) (result i32)
+    local.get $n i32.const 1 i32.and
+    (if (result i32)
+      (then local.get $n i32.const 3 i32.mul i32.const 1 i32.add)
+      (else local.get $n i32.const 2 i32.div_u)))
+  (func $steps (export "steps") (param $n i32) (result i32)
+    (local $count i32)
+    local.get $n i32.const 1 i32.lt_u
+    (if (then i32.const 0 return))
+    (block $done (loop $loop
+      local.get $n i32.const 1 i32.eq br_if $done
+      local.get $n call $next local.set $n
+      local.get $count i32.const 1 i32.add local.set $count
+      br $loop))
+    local.get $count)
+)
+EOF
+```
+
+上のスニペットでは、`FORMAT RawBlob` を使ってバイナリの WASM コードを `ClickHouse client` に直接パイプし、`system.webassembly_modules` テーブルに挿入しています。
+
+次に、モジュールからエクスポートされた `steps` 関数を参照する UDF を定義します。
+
+```sql
+CREATE FUNCTION collatz_steps LANGUAGE WASM ARGUMENTS (n UInt32) RETURNS UInt32 FROM 'collatz' :: 'steps';
+```
+
+UDF名とは異なるため、`::` の後にはモジュール内の関数名を指定している点に注意してください。
+
+これで、クエリで `collatz_steps` 関数を使用できます。
+
+```sql
+SELECT groupArray(collatz_steps(number :: UInt32))
+FROM numbers(1, 100)
+FORMAT TSV
+```
+
+`number` カラムは、WebAssembly 関数では `CREATE FUNCTION` ステートメントで指定されたシグネチャどおりに型が完全に一致している必要があるため、明示的に `UInt32` にキャストされています。
+
+その結果、1 から 100 までの数に対する Collatz のステップ数列が得られ、これは [OEIS の数列 A006577](https://oeis.org/A006577) に対応します。
+
+```text
+[0,1,7,2,5,8,16,3,19,6,14,9,9,17,17,4,12,20,20,7,7,15,15,10,23,10,111,18,18,18,106,5,26,13,13,21,21,21,34,8,109,8,29,16,16,16,104,11,24,24,24,11,11,112,112,19,32,19,32,19,19,107,107,6,27,27,27,14,14,14,102,22,115,22,14,22,22,35,35,9,22,110,110,9,9,30,30,17,30,17,92,17,17,105,105,12,118,25,25,25]
+```
+
+<div id="manage-wasm-modules-via-system-table">
+  ## system table 経由での WASM モジュール管理
+</div>
+
+WebAssembly モジュールは `system.webassembly_modules` テーブルに、次の構造で格納されます。
+
+* **カラム**
+  * `name` String — モジュール名。空は不可で、使用できるのは単語文字のみです。
+  * `code` String — 生のバイナリ WASM コード。書き込み専用で、読み出し時には空文字列が返されます。
+  * `hash` UInt256 — モジュールバイナリの SHA256 (ディスク上には存在するが、まだ読み込まれていない場合は 0) 。
+
+モジュールの管理は、このテーブルに対する標準的な SQL 操作で行います:
+
+<div id="insert-a-module">
+  ### モジュールを追加する
+</div>
+
+```sql
+INSERT INTO system.webassembly_modules (name, code)
+SELECT 'my_module', base64Decode('AGFzbQEAAAA...');
+```
+
+必要に応じて、整合性確認用のハッシュを指定します。
+
+```sql
+INSERT INTO system.webassembly_modules (name, code, hash)
+SELECT 'my_module', base64Decode('...'), reinterpretAsUInt256(unhex('369f...c57d'));
+```
+
+指定されたハッシュ値がモジュールコードの算出済み SHA256 と一致しない場合、挿入は失敗します。これは、S3 や HTTP などの外部ソースからモジュールを読み込む際に役立ちます。
+
+<div id="distribute-a-module-across-a-cluster">
+  ### クラスター全体にモジュールを配布する
+</div>
+
+`system.webassembly_modules` はインスタンスごとのテーブルであり、`INSERT` は接続を処理しているレプリカにしか反映されません。`INSERT` ステートメントには `ON CLUSTER` 形式がないため、その後の `CREATE FUNCTION ... ON CLUSTER` は、モジュールがないレプリカでは失敗します。
+
+```text
+Code: 674. DB::Exception: WebAssembly module 'collatz' not found:
+while adding user defined function `collatz_steps`. (RESOURCE_NOT_FOUND)
+```
+
+`insert` をすべてのノードに分散するには、ローカルの `system.webassembly_modules` テーブルではなく、`cluster` テーブル関数に書き込みます。
+
+```bash
+cat collatz.wasm | clickhouse client -q "
+  INSERT INTO FUNCTION cluster('default', 'system', 'webassembly_modules') (name, code)
+  SELECT 'collatz', code FROM input('code String') FORMAT RawBlob"
+```
+
+<Note>
+  この方法は、基盤となる分散書き込み経路が各分片内のすべてのレプリカを巡回することを前提としていますが、これはクラスターが `internal_replication=false` に設定されている場合にのみ起こります。`internal_replication=true` (`ReplicatedMergeTree` を使ってレプリケーションを自前で処理するクラスターのデフォルト) では、insert は分片ごとに正常な 1 つのレプリカにのみ送られ、`system.webassembly_modules` はこの経路ではレプリケーションされません。そのため、一部のレプリカには引き続きモジュールが存在しないままになります。この構成では、各レプリカに対して個別に insert する必要があります。たとえば、`system.clusters` を順に処理してホストごとに `remote(...)` 経由で書き込むか、すべてのホストの `user_scripts/wasm/` に binary をコピーします。
+
+  クラスターの `internal_replication` は、`SELECT cluster, shard_num, internal_replication FROM system.clusters` で確認できます。
+</Note>
+
+このようにファンアウトして insert した後は、モジュールがすべてのレプリカに存在するようになり、`CREATE FUNCTION ... ON CLUSTER` が成功します:
+
+```sql
+CREATE FUNCTION collatz_steps ON CLUSTER 'default'
+LANGUAGE WASM FROM 'collatz' :: 'steps'
+ARGUMENTS (n UInt32) RETURNS UInt32;
+```
+
+`clusterAllReplicas` を使うと、すべてのレプリカでモジュールが読み込まれていることを確認できます。
+
+```sql
+SELECT hostName(), name FROM clusterAllReplicas('default', system.webassembly_modules) WHERE name = 'collatz';
+```
+
+`system.webassembly_modules` への挿入は、同じ `(name, hash)` の組み合わせに対しては冪等です。そのため、分散された insert を再実行しても安全であり、レプリカの置き換え後に状態を修復する現実的な方法でもあります。なお、新たに追加されたサーバーには既存のモジュールは自動では配布されません。更新後のクラスターに対して insert を再実行するか、新しいホストの `user_scripts/wasm/` ディレクトリにバイナリを配置する必要があります。
+
+<div id="list-modules">
+  ### モジュールを一覧表示
+</div>
+
+```sql
+SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.webassembly_modules
+
+   ┌─name────┬─sha256───────────────────────────────────────────────────────────┐
+1. │ collatz │ a084a10b7b5cb07db198bc93bf1f3c1f8cb8ef279df7a4f6b66b1cdd55d79c48 │
+   └─────────┴──────────────────────────────────────────────────────────────────┘
+```
+
+<div id="delete-a-module">
+  ### モジュールを削除する
+</div>
+
+削除には `DELETE FROM system.webassembly_modules WHERE name = '...'` ステートメントを使用します。
+条件式には、完全一致の `name = 'literal'` または、名前がパターンに一致するすべてのモジュールを削除する `name LIKE 'pattern'` のいずれかを指定する必要があります。これ以外の形式は受け付けられません。
+
+```sql
+DELETE FROM system.webassembly_modules WHERE name = 'collatz';
+
+-- 名前が `tmp_` で始まるすべてのモジュールを一括削除する（リテラルのアンダースコアは `\_` としてエスケープされる）:
+DELETE FROM system.webassembly_modules WHERE name LIKE 'tmp\_%';
+```
+
+既存のUDFsのいずれかが該当するモジュールのいずれかを参照している場合、削除は失敗するため、先にそれらのUDFsをドロップする必要があります。
+
+<div id="create-a-webassembly-udf">
+  ## WebAssembly UDFを作成する
+</div>
+
+**構文**:
+
+```sql
+CREATE [OR REPLACE] FUNCTION function_name
+LANGUAGE WASM
+FROM 'module_name' [:: 'source_function_name']
+ARGUMENTS ( [name type[, ...]] | [type[, ...]] )
+RETURNS return_type
+[ABI ROW_DIRECT | ABI BUFFERED_V1 | ABI ASSEMBLYSCRIPT]
+[DETERMINISTIC]
+[SHA256_HASH 'hex']
+[SETTINGS key = value[, ...]];
+```
+
+**パラメータ**:
+
+* `function_name`: ClickHouse 内の関数名。モジュール内でエクスポートされた関数名と異なる場合があります。
+* `FROM 'module_name' :: 'source_function_name'`: 読み込まれた WASM モジュール名と、使用する WASM モジュール内の関数名 (デフォルトは function&#95;name)
+* `ARGUMENTS`: 引数名と型の一覧 (名前は省略可能で、名前付きフィールドをサポートするシリアライゼーションフォーマットで使用されます)
+* `ABI`: Application Binary Interface のバージョン
+  * `ROW_DIRECT`: 直接的な型マッピング、行単位の処理
+  * `BUFFERED_V1`: シリアライゼーションを伴うブロックベースの処理
+  * `ASSEMBLYSCRIPT`: [AssemblyScript](https://www.assemblyscript.org) コンパイラで生成されたモジュール向けの行単位処理。数値型は AssemblyScript のプリミティブにマップされ、ClickHouse `String` は AssemblyScript `string` にマップされます。
+* `DETERMINISTIC`: 関数を決定論的として宣言します。つまり、同じ入力に対して常に同じ出力を返します。指定すると、ClickHouse はすべての引数が定数である呼び出しを定数畳み込みすることがあります。関数はクエリ解析時に一度評価され、その結果がすべての行で再利用されます。
+* `SHA256_HASH`: 検証用の想定モジュールハッシュ (省略した場合は自動入力) 。異なるレプリカ間で正しい WASM モジュールが読み込まれていることを保証するために使用できます。
+* `SETTINGS`: 関数ごとの設定
+  * `serialization_format` String — ABI で必要なシリアライゼーションフォーマット。サポートされる値: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, `Buffers`。デフォルト: `MsgPack`。`Buffers` などのブロックベースのフォーマットでは、宣言された関数シグネチャに一致する型の単一カラムを返す必要があります。
+  * `webassembly_udf_enable_fuel` Bool — 関数の有限 fuel バジェットを有効にします。デフォルト: `true`。`false` の場合、この関数ではクエリレベルの設定 `webassembly_udf_max_fuel` は無視されます。fuel 制限を無効にすると、`wasmtime` engine の使用時にパフォーマンスが向上することがあります。ただし、信頼できない ゲストコード や不具合のある ゲストコード では、暴走実行のリスクが高まる可能性があります。
+
+<div id="abis-versions">
+  ## ABI バージョン
+</div>
+
+ClickHouse と連携するには、WebAssembly モジュールがサポート対象の ABI (Application Binary Interface) のいずれかに準拠している必要があります。
+
+* `ROW_DIRECT`: 直接型マッピング (プリミティブ型 `Int32`、`UInt32`、`Int64`、`UInt64`、`Float32`、`Float64` のみ)
+* `BUFFERED_V1`: シリアライゼーションを伴う複合型
+* `ASSEMBLYSCRIPT`: [AssemblyScript](https://www.assemblyscript.org) モジュールとの行ごとの相互運用。数値型と `String` をサポートします。
+
+<div id="abi-row_direct">
+  ### ABI ROW_DIRECT
+</div>
+
+エクスポートされた WASM 関数を各行に対して直接呼び出します。
+
+* 引数と戻り値の型には、数値型 `Int32/UInt32/Int64/UInt64/Float32/Float64/Int128/UInt128` を使用します。
+* この ABI では文字列はサポートされていません。
+* シグネチャは WASM のエクスポート (`i32/i64/f32/f64/v128`) と一致している必要があります。
+* モジュール側でエクスポートが必要なサポート関数はありません。
+
+たとえば、次のシグネチャを持つ関数の場合:
+
+```
+(func (param i32 i64 f32) (result f64) ...)
+```
+
+以下のように作成できます。
+
+```sql
+CREATE FUNCTION my_func ARGUMENTS (Int32, UInt64, Float32) RETURNS Float64 ...
+```
+
+WebAssembly は符号付き引数と符号なし引数を区別せず、代わりに値をどのように解釈するかによって異なる命令を使います。したがって、引数のサイズは厳密に一致している必要があり、符号の有無は関数内の演算によって決まります。
+
+<div id="abi-buffered_v1">
+  ### ABI BUFFERED_V1
+</div>
+
+<Note>
+  この ABI は実験的機能であり、今後のリリースで変更される可能性があります。
+</Note>
+
+WASM メモリを介した (デ) シリアライゼーションを使用して、ブロック全体を一度に処理します。任意の引数型および戻り値型をサポートします。
+
+シリアライズされたデータは wasm メモリにコピーされ、入力の行数とともに UDF 関数に渡されます。このとき、wasm メモリはバッファへのポインタ (データへのポインタとデータサイズで構成) として渡されます。したがって、wasm 側のユーザー定義関数は常に 2 つの `i32` 引数を受け取り、1 つの `i32` 値を返します。
+ゲストコードはデータを処理し、シリアライズされた結果データを含む結果バッファへのポインタを返します。
+
+ゲストコードは、これらのバッファを作成および破棄するための 2 つの関数を提供する必要があります。
+
+```
+(module
+  ;; 指定されたサイズの新しいバッファを割り当てる
+  ;; 戻り値: Buffer構造体へのハンドル（データへの直接ポインタではない）。データへのポインタとサイズを含む
+  (func (export "clickhouse_create_buffer")
+    (param $size i32)    ;; 割り当てるデータのサイズ
+    (result i32))        ;; 十分な領域を持つバッファハンドルを返す
+
+  ;; ハンドルを使ってバッファを解放する
+  (func (export "clickhouse_destroy_buffer")
+    (param $handle i32)  ;; 解放するバッファハンドル
+    (result))            ;; 戻り値なし
+
+    ;; ユーザー定義関数
+    (func (export "user_defined_function1")
+      (param $input_buffer_handle i32)  ;; 入力バッファハンドル
+      (param $n i32)                    ;; 入力の行数
+      (result i32))                     ;; 出力バッファハンドルを返す
+)
+```
+
+C の定義例:
+
+```c
+typedef struct {
+    uint8_t * data;
+    uint32_t size;
+} ClickhouseBuffer;
+
+ClickhouseBuffer * clickhouse_create_buffer(uint32_t size) { /* ... */ }
+
+void clickhouse_destroy_buffer(ClickhouseBuffer * data) { /* ... */ }
+
+/// ユーザー定義関数の例
+ClickhouseBuffer * user_defined_function1(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
+ClickhouseBuffer * user_defined_function2(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
+```
+
+<div id="abi-assemblyscript">
+  ### ABI ASSEMBLYSCRIPT
+</div>
+
+[AssemblyScript](https://www.assemblyscript.org) コンパイラで生成されたモジュールを対象とします。各行につき 1 回、エクスポートされた関数が呼び出され、その際 ClickHouse の値は AssemblyScript のプリミティブ型および string オブジェクトにマッピングされます。
+
+**サポートされる型**:
+
+* 数値: `Int8`/`UInt8`、`Int16`/`UInt16` (境界では `i32` に拡張) 、`Int32`/`UInt32`、`Int64`/`UInt64`、`Float32`、`Float64`
+
+* `String` — AssemblyScript の `string` にマッピングされます (WASM メモリ内では UTF-16) 。ClickHouse が UTF-8 ↔ UTF-16 の変換を自動的に処理します。
+
+* カスタム AssemblyScript クラスは、引数型または戻り値の型としてはサポートされていません。実行時クラス ID がコンパイルごとに安定しないためです ([AssemblyScript#2982](https://github.com/AssemblyScript/assemblyscript/issues/2982) を参照) 。
+
+**モジュール要件**:
+
+モジュールは、`__new`、`__pin`、`__unpin` がエクスポートされるよう、AssemblyScript の managed runtime でコンパイルする必要があります。標準の入力/出力 string 処理はこれらを前提としています。推奨される呼び出しは次のとおりです:
+
+```bash
+asc src.ts --runtime incremental --exportRuntime -o src.wasm
+```
+
+AssemblyScript は、実行時トラップ (メモリ不足、境界チェックなど) 用に `env.abort` もインポートします。ClickHouse はこのインポートを自動的に提供します。`abort` がトリガーされると、実行中のクエリは、デコードされた AssemblyScript のメッセージとソース位置を含む `WASM_ERROR` 例外で失敗します。
+
+**例**:
+
+```typescript
+// src.ts
+export function add(a: u32, b: u32): u32 {
+  return a + b;
+}
+
+export function greet(name: string): string {
+  return "Hello, " + name + "!";
+}
+```
+
+`asc` でコンパイルし、生成された `.wasm` を `system.webassembly_modules` にロードした後、UDFs を次のように宣言します。
+
+```sql
+CREATE FUNCTION as_add
+    LANGUAGE WASM ABI ASSEMBLYSCRIPT
+    FROM 'as_example' :: 'add'
+    ARGUMENTS (a UInt32, b UInt32) RETURNS UInt32;
+
+CREATE FUNCTION as_greet
+    LANGUAGE WASM ABI ASSEMBLYSCRIPT
+    FROM 'as_example' :: 'greet'
+    ARGUMENTS (name String) RETURNS String;
+```
+
+<div id="note-for-developing-udfs-in-rust">
+  ### RustでUDFを開発する際の注意
+</div>
+
+Rustプログラム向けには、ClickHouse用のWebAssembly UDF開発を簡単にするヘルパーcrate [clickhouse-wasm-udf](https://crates.io/crates/clickhouse-wasm-udf) を提供しています。このcrateにはメモリ管理用の関数が含まれているため、`clickhouse_create_buffer` と `clickhouse_destroy_buffer` を手動で実装する必要はなく、依存関係として追加するだけで済みます。さらに、通常のRust関数を必要なABI形式でラップするマクロ `#[clickhouse_wasm_udf]` も用意されています。
+
+このcrateを使うと、次のようにUDFを書けます。
+
+```rust
+
+use clickhouse_wasm_udf_bindgen::clickhouse_udf;
+
+#[clickhouse_udf]
+pub fn some_udf(data: String) -> HashMap<String, String> {
+    // ここに実装を記述してください
+}
+
+```
+
+マクロは、バッファ構造体を受け取り、返すラッパー関数を生成し、`serde` を使用してシリアライゼーション/デシリアライゼーションを自動的に処理します。
+
+<div id="host-api-available-to-modules">
+  ## モジュールから利用できるホスト API
+</div>
+
+モジュールは、以下のホスト関数をインポートして使用できます。
+
+* `clickhouse_server_version() -> i64` — ClickHouse server のバージョンを整数で返します (例: v25.11.1.1 の場合は 25011001) 。
+* `clickhouse_throw(ptr: i32, size: i32)` — 指定されたメッセージでエラーをスローします。エラーメッセージ文字列を含むメモリ位置へのポインタと、その文字列のサイズを受け取ります。
+* `clickhouse_log(ptr: i32, size: i32)` — ClickHouse server のテキストログにメッセージを記録します。
+* `clickhouse_random(ptr: i32, size: i32)` — メモリをランダムなバイト列で埋めます。
+* `env.abort(message: i32, fileName: i32, line: i32, column: i32)` — AssemblyScript 互換モジュール向けに提供されています。これを呼び出すと (またはそれを呼び出す AssemblyScript runtime トラップがトリガーされると) 、デコードされたメッセージとソース位置を含む `WASM_ERROR` 例外によって UDF が終了します。`env.abort` をインポートしないモジュールには影響ありません。
+
+<div id="settings">
+  ## 設定
+</div>
+
+以下のクエリレベルの設定で、WebAssembly UDF の実行を制御できます。
+
+* `webassembly_udf_max_fuel` — WebAssembly UDF インスタンスの実行ごとの fuel 上限です。各 WebAssembly 命令は一定量の fuel を消費します。この値はランタイムに渡される前に 1024 倍されるため、`webassembly_udf_max_fuel = 1` はおよそ 1024 fuel 単位に相当します。有限の制限を設けない場合は 0 に設定します。これは、関数ごとの設定 `webassembly_udf_enable_fuel` が true の関数にのみ適用され、これがデフォルトです。
+
+* `webassembly_udf_max_memory` — WebAssembly UDF インスタンスごとのメモリ上限です (バイト単位) 。
+
+* `webassembly_udf_max_input_block_size` — 1 つのブロックで WebAssembly UDF に渡される最大行数です。すべての行を一度に処理する場合は 0 に設定します。
+
+* `webassembly_udf_max_instances` — 関数ごとに並列実行できる WebAssembly UDF インスタンスの最大数です。
+
+使用例:
+
+```sql
+SET webassembly_udf_max_fuel = 200000;
+SELECT my_wasm_udf(column) FROM table;
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [ClickHouse UDF概要](/ja/reference/functions/regular-functions/udf)

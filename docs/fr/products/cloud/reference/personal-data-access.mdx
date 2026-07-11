@@ -1,0 +1,73 @@
+---
+sidebarTitle: 'Accès aux données personnelles'
+slug: /cloud/manage/personal-data-access
+title: 'Accès aux données personnelles'
+description: "En tant qu'utilisateur enregistré, ClickHouse vous permet de consulter et de gérer les données personnelles associées à votre compte, y compris vos coordonnées."
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'données personnelles', 'DSAR', "demande d'accès aux données personnelles", 'Politique de confidentialité', 'RGPD']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="intro">
+  ## Introduction
+</div>
+
+En tant qu&#39;utilisateur enregistré, ClickHouse vous permet de consulter et de gérer les données personnelles de votre compte, y compris vos coordonnées. Selon votre rôle, cela peut également inclure l&#39;accès aux coordonnées d&#39;autres utilisateurs de votre organisation, aux détails des clés API et à d&#39;autres informations pertinentes. Vous pouvez gérer ces informations directement depuis la console ClickHouse, en libre-service.
+
+**Qu&#39;est-ce qu&#39;une demande d’accès aux données personnelles (DSAR)**
+
+Selon votre lieu de résidence, la législation applicable peut également vous accorder des droits supplémentaires concernant les données personnelles que ClickHouse détient à votre sujet (droits des personnes concernées), comme décrit dans la Politique de confidentialité de ClickHouse. Le processus d&#39;exercice de ces droits est appelé demande d’accès aux données personnelles (DSAR).
+
+**Portée des données personnelles**
+
+Veuillez consulter la Politique de confidentialité de ClickHouse pour plus d&#39;informations sur les données personnelles que ClickHouse collecte et sur la manière dont elles peuvent être utilisées.
+
+<div id="self-service">
+  ## En libre-service
+</div>
+
+Par défaut, ClickHouse permet aux utilisateurs de consulter directement leurs données personnelles dans la console ClickHouse.
+
+Vous trouverez ci-dessous un résumé des données que ClickHouse collecte lors de la création du compte et de l’utilisation du service, ainsi que des informations sur l’endroit où certaines données personnelles peuvent être consultées dans la console ClickHouse.
+
+| Emplacement/URL                                              | Description                                                       | Données personnelles           |
+| ------------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------ |
+| https://auth.clickhouse.cloud/u/signup/                      | Inscription au compte                                             | e-mail, mot de passe           |
+| https://console.clickhouse.cloud/profile                     | Informations générales du profil utilisateur                      | nom, e-mail                    |
+| https://console.clickhouse.cloud/organizations/OrgID/members | Liste des utilisateurs d’une organisation                         | nom, e-mail                    |
+| https://console.clickhouse.cloud/organizations/OrgID/keys    | Liste des clés API et des personnes qui les ont créées            | e-mail                         |
+| https://console.clickhouse.cloud/organizations/OrgID/audit   | Journal d’activité répertoriant les actions de chaque utilisateur | e-mail                         |
+| https://console.clickhouse.cloud/organizations/OrgID/billing | Informations de facturation et factures                           | adresse de facturation, e-mail |
+| https://console.clickhouse.cloud/support                     | Interactions avec ClickHouse Support                              | nom, e-mail                    |
+
+Remarque : les URL contenant `OrgID` doivent être mises à jour pour correspondre à l’`OrgID` de votre compte.
+
+<div id="current-customers">
+  ### Clients actuels
+</div>
+
+Si vous avez un compte chez nous et que l’option self-service n’a pas résolu votre problème lié à vos données personnelles, vous pouvez soumettre une demande d’accès aux données personnelles au titre de la Privacy Policy. Pour ce faire, connectez-vous à votre compte ClickHouse et ouvrez un [support case](https://console.clickhouse.cloud/support). Cela nous aide à vérifier votre identité et à simplifier le traitement de votre demande.
+
+Veillez à inclure les informations suivantes dans votre support case :
+
+| Champ       | Texte à inclure dans votre demande                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------- |
+| Sujet       | demande d’accès aux données personnelles (DSAR)                                                               |
+| Description | Description détaillée des informations que vous souhaitez que ClickHouse recherche, collecte et/ou fournisse. |
+
+<Image img="/images/cloud/security/support-case-form.webp" size="sm" alt="Formulaire de support case dans ClickHouse Cloud" border />
+
+<div id="individuals-without-an-account">
+  ### Personnes sans compte
+</div>
+
+Si vous n’avez pas de compte chez nous, que l’option en libre-service ci-dessus n’a pas permis de résoudre votre problème concernant vos données personnelles, et que vous souhaitez soumettre une demande d’accès aux données personnelles conformément à la Politique de confidentialité, vous pouvez envoyer cette demande par e-mail à [privacy@clickhouse.com](mailto:privacy@clickhouse.com).
+
+<div id="identity-verification">
+  ## Vérification de l’identité
+</div>
+
+Si vous soumettez une demande d’accès aux données personnelles par e-mail, nous pourrons vous demander certaines informations afin de confirmer votre identité et de traiter votre demande. La législation applicable peut nous imposer ou nous autoriser à refuser votre demande. Si nous refusons votre demande, nous vous en indiquerons les raisons, sous réserve des restrictions légales.
+
+Pour plus d’informations, veuillez consulter la [Politique de confidentialité de ClickHouse](https://clickhouse.com/legal/privacy-policy)

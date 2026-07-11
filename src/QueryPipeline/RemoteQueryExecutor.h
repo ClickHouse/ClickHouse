@@ -128,7 +128,7 @@ public:
     ///                     But clickhouse-benchmark uses the same code,
     ///                     and it should pass INITIAL_QUERY.
     void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
-    void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
+    void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {}) TSA_REQUIRES(was_cancelled_mutex);
 
     int sendQueryAsync();
 
@@ -246,6 +246,8 @@ public:
 
     bool isFinished() const { return finished; }
 
+    bool isCancelled() const { LockAndBlocker lock(was_cancelled_mutex); return was_cancelled; }
+
 private:
     RemoteQueryExecutor(
         const String & query_,
@@ -309,8 +311,8 @@ private:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side
       */
-    bool was_cancelled = false;
-    std::mutex was_cancelled_mutex;
+    mutable std::mutex was_cancelled_mutex;
+    bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
 
     /** Set by `finish` (under `was_cancelled_mutex`) while it owns the drain loop, which runs
       * with `was_cancelled_mutex` released so a concurrent hard cancel can preempt it. A
@@ -392,8 +394,8 @@ private:
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
-    void cancelUnlocked();
-    void tryCancel(const char * reason);
+    void cancelUnlocked() TSA_REQUIRES(was_cancelled_mutex);
+    void tryCancel(const char * reason) TSA_REQUIRES(was_cancelled_mutex);
 
     /// Returns true if query was sent
     bool isQueryPending() const;

@@ -1,0 +1,234 @@
+---
+sidebarTitle: 'Vector'
+slug: /integrations/vector
+description: '如何使用 Vector 持续读取日志文件并将其导入 ClickHouse'
+title: '集成 Vector 与 ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://vector.dev/'
+keywords: ['vector', '日志收集', '可观测性', '数据摄取', '管道']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+能够实时分析日志，对生产应用至关重要。
+ClickHouse 凭借出色的压缩能力 (对于日志最高可达 [170x](https://clickhouse.com/blog/log-compression-170x)) 以及对海量数据的快速聚合能力，非常适合存储和分析日志数据。
+
+本指南将向你展示如何使用流行的数据管道 [Vector](https://vector.dev/docs/about/what-is-vector/)，对 Nginx 日志文件进行 tail 并将其发送到 ClickHouse。
+下面的步骤同样适用于 tail 任何类型的日志文件。
+
+**前置条件：**
+
+* 你已成功运行 ClickHouse
+* 你已安装 Vector
+
+<Steps>
+  <Step>
+    ## 创建数据库和表
+
+    定义一个用于存储日志事件的表：
+
+    1. 先创建一个名为 `nginxdb` 的新数据库：
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS nginxdb
+    ```
+
+    2. 将整个日志事件作为单个字符串插入。显然，这并不是对日志数据进行分析的理想格式，但我们会在下文借助 ***materialized views*** 解决这个问题。
+
+    ```sql
+    CREATE TABLE IF NOT EXISTS  nginxdb.access_logs (
+      message String
+    )
+    ENGINE = MergeTree()
+    ORDER BY tuple()
+    ```
+
+    <Note>
+      由于目前还不需要主键，因此将 **ORDER BY** 设置为 **tuple()** (空 Tuple) 。
+    </Note>
+  </Step>
+
+  <Step>
+    ## 配置 Nginx
+
+    在这一步中，您将了解如何配置 Nginx 日志。
+
+    1. 以下 `access_log` 属性会以 **combined** 格式将日志写入 `/var/log/nginx/my_access.log`。
+       该值应放在 `nginx.conf` 文件的 `http` 部分中：
+
+    ```bash
+    http {
+      include       /etc/nginx/mime.types;
+      default_type  application/octet-stream;
+      access_log  /var/log/nginx/my_access.log combined;
+      sendfile        on;
+      keepalive_timeout  65;
+      include /etc/nginx/conf.d/*.conf;
+    }
+    ```
+
+    2. 如果你修改了 `nginx.conf`，请务必重启 Nginx。
+
+    3. 访问 Web 服务器上的页面，以在访问日志中生成一些日志事件。
+       **combined** 格式的日志如下所示：
+
+    ```bash
+    192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET / HTTP/1.1" 200 615 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET /favicon.ico HTTP/1.1" 404 555 "http://localhost/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    192.168.208.1 - - [12/Oct/2021:03:31:49 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    ```
+  </Step>
+
+  <Step>
+    ## 配置 Vector
+
+    Vector 用于收集、转换并将日志、指标和链路追踪 (统称为 **sources**) 路由到许多不同的厂商平台 (称为 **sinks**) ，并且开箱即用地支持 ClickHouse。
+    sources 和 sinks 在名为 **vector.toml** 的配置文件中定义。
+
+    1. 以下 **vector.toml** 文件定义了一个类型为 **file** 的 **source**，用于持续跟踪 **my&#95;access.log** 文件末尾追加的内容；它还将上面定义的 **access&#95;logs** 表定义为一个 **sink**：
+
+    ```bash
+    [sources.nginx_logs]
+    type = "file"
+    include = [ "/var/log/nginx/my_access.log" ]
+    read_from = "end"
+
+    [sinks.clickhouse]
+    type = "clickhouse"
+    inputs = ["nginx_logs"]
+    endpoint = "http://clickhouse-server:8123"
+    database = "nginxdb"
+    table = "access_logs"
+    skip_unknown_fields = true
+    ```
+
+    2. 使用上述配置启动 Vector。有关如何定义 sources 和 sinks 的更多信息，请参阅 Vector [文档](https://vector.dev/docs/)。
+
+    3. 运行以下查询，验证访问日志是否已插入 ClickHouse。你应该会在表中看到访问日志：
+
+    ```sql
+    SELECT * FROM nginxdb.access_logs
+    ```
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="以表格形式查看 ClickHouse 日志" />
+  </Step>
+
+  <Step>
+    ## 解析日志
+
+    将日志存储在 ClickHouse 中固然很好，但将每个事件存储为单一字符串并不利于深入的数据分析。
+    接下来，我们将介绍如何使用 [materialized view](/zh/concepts/features/materialized-views/incremental-materialized-view) 解析日志事件。
+
+    **materialized view** 的功能类似于 SQL 中的插入触发器。当数据行插入源表时，materialized view 会对这些行进行转换，并将结果插入目标表。
+    可以配置 materialized view，以生成 **access&#95;logs** 中日志事件的解析表示。
+    以下是此类日志事件的一个示例：
+
+    ```bash
+    192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    ```
+
+    ClickHouse 中有多种函数可用于解析上述字符串。[`splitByWhitespace`](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByWhitespace) 函数按空白字符拆分字符串，并以数组形式返回每个标记。
+    如需演示，请运行以下命令：
+
+    ```sql title="Query"
+    SELECT splitByWhitespace('192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"')
+    ```
+
+    ```text title="Response"
+    ["192.168.208.1","-","-","[12/Oct/2021:15:32:43","+0000]","\"GET","/","HTTP/1.1\"","304","0","\"-\"","\"Mozilla/5.0","(Macintosh;","Intel","Mac","OS","X","10_15_7)","AppleWebKit/537.36","(KHTML,","like","Gecko)","Chrome/93.0.4577.63","Safari/537.36\""]
+    ```
+
+    部分字符串包含一些多余字符，User-Agent (浏览器详情) 也无需解析，但最终得到的数组已基本满足需求。
+
+    与 `splitByWhitespace` 类似，[`splitByRegexp`](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) 函数根据正则表达式将字符串拆分为数组。
+    运行以下命令，该命令返回两个字符串。
+
+    ```sql
+    SELECT splitByRegexp('\S \d+ "([^"]*)"', '192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"')
+    ```
+
+    请注意，返回的第二个字符串是从日志中成功解析出的 User-Agent：
+
+    ```text
+    ["192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] \"GET / HTTP/1.1\" 30"," \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36\""]
+    ```
+
+    在查看最终的 `CREATE MATERIALIZED VIEW` 命令之前，让我们先了解几个用于清理数据的函数。
+    例如，`RequestMethod` 的值为 `"GET`，其中包含一个多余的双引号。
+    您可以使用 [`trimBoth` (别名 `trim`) ](/zh/reference/functions/regular-functions/string-functions#trimBoth) 函数去除该双引号：
+
+    ```sql
+    SELECT trim(LEADING '"' FROM '"GET')
+    ```
+
+    时间字符串以 `[` 开头，且格式无法被 ClickHouse 解析为日期。
+    不过，如果将分隔符从冒号 (**:**) 改为逗号 (**,**) ，解析便可正常工作：
+
+    ```sql
+    SELECT parseDateTimeBestEffort(replaceOne(trim(LEADING '[' FROM '[12/Oct/2021:15:32:43'), ':', ' '))
+    ```
+
+    现在我们可以定义 materialized view 了。
+    以下定义包含 `POPULATE`，这意味着 **access&#95;logs** 中的现有行将被立即处理并写入。
+    执行以下 SQL 语句：
+
+    ```sql
+    CREATE MATERIALIZED VIEW nginxdb.access_logs_view
+    (
+      RemoteAddr String,
+      Client String,
+      RemoteUser String,
+      TimeLocal DateTime,
+      RequestMethod String,
+      Request String,
+      HttpVersion String,
+      Status Int32,
+      BytesSent Int64,
+      UserAgent String
+    )
+    ENGINE = MergeTree()
+    ORDER BY RemoteAddr
+    POPULATE AS
+    WITH
+      splitByWhitespace(message) as split,
+      splitByRegexp('\S \d+ "([^"]*)"', message) as referer
+    SELECT
+      split[1] AS RemoteAddr,
+      split[2] AS Client,
+      split[3] AS RemoteUser,
+      parseDateTimeBestEffort(replaceOne(trim(LEADING '[' FROM split[4]), ':', ' ')) AS TimeLocal,
+      trim(LEADING '"' FROM split[6]) AS RequestMethod,
+      split[7] AS Request,
+      trim(TRAILING '"' FROM split[8]) AS HttpVersion,
+      split[9] AS Status,
+      split[10] AS BytesSent,
+      trim(BOTH '"' from referer[2]) AS UserAgent
+    FROM
+      (SELECT message FROM nginxdb.access_logs)
+    ```
+
+    现在验证操作是否成功。
+    您应该能看到访问日志已被整齐地解析成各列：
+
+    ```sql
+    SELECT * FROM nginxdb.access_logs_view
+    ```
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="以表格形式查看解析后的 ClickHouse 日志" />
+
+    <Note>
+      上面的课程将数据存储在两个表中，但你也可以把初始的 `nginxdb.access_logs` 表改为使用 [`Null`](/zh/reference/engines/table-engines/special/null) 表引擎。
+      解析后的数据仍会进入 `nginxdb.access_logs_view` 表，但原始数据不会存储到任何表中。
+    </Note>
+  </Step>
+</Steps>
+
+> 使用 Vector 时，只需简单安装并快速配置，即可将 Nginx 服务器的日志发送到 ClickHouse 中的表。通过使用 materialized view，您可以将这些日志解析到多个列中，以便更轻松地进行分析。

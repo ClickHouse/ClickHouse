@@ -1,0 +1,289 @@
+---
+slug: /guides/sizing-and-hardware-recommendations
+sidebarTitle: '사이징 및 하드웨어 권장 사항'
+title: '사이징 및 하드웨어 권장 사항'
+description: '이 가이드는 오픈소스 사용자를 위한 하드웨어, 컴퓨트, 메모리, 디스크 구성에 대한 일반적인 권장 사항을 설명합니다.'
+doc_type: 'guide'
+keywords: ['사이징', '하드웨어', '용량 계획', '모범 사례', '성능']
+---
+
+이 가이드는 오픈소스 사용자를 위한 하드웨어, 컴퓨트, 메모리, 디스크 구성에 대한 일반적인 권장 사항을 설명합니다. 설정을 간소화하려면 [ClickHouse Cloud](https://clickhouse.com/cloud) 사용을 권장합니다. ClickHouse Cloud는 인프라 관리 비용을 최소화하면서 워크로드에 맞춰 자동으로 확장되고 조정됩니다.
+
+ClickHouse 클러스터의 구성은 애플리케이션의 사용 사례와 워크로드 패턴에 크게 좌우됩니다. 아키텍처를 계획할 때는 다음 요소를 고려해야 합니다:
+
+* 동시성(초당 요청 수)
+* 처리량(초당 처리되는 행 수)
+* 데이터 볼륨
+* 데이터 보존 정책
+* 하드웨어 비용
+* 유지 관리 비용
+
+<div id="disk">
+  ## 디스크
+</div>
+
+ClickHouse에 사용할 디스크 유형은 데이터 양, 지연 시간 또는 처리량 요구 사항에 따라 달라집니다.
+
+<div id="optimizing-for-performance">
+  ### 성능 최적화
+</div>
+
+성능을 극대화하려면 [AWS의 프로비저닝된 IOPS SSD 볼륨](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/provisioned-iops.html) 또는 IO 성능에 최적화된 사용 중인 클라우드 제공업체의 동급 서비스를 직접 연결할 것을 권장합니다.
+
+<div id="optimizing-for-storage-costs">
+  ### 스토리지 비용 최적화
+</div>
+
+비용을 절감하려면 [범용 SSD EBS 볼륨](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/general-purpose.html)을 사용할 수 있습니다.
+
+또한 [hot/warm/cold 아키텍처](/ko/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture)에서 SSD와 HDD를 사용해 계층형 스토리지를 구현할 수도 있습니다. 또는 [AWS S3](https://aws.amazon.com/s3/)를 스토리지로 사용하여 컴퓨트와 스토리지를 분리할 수도 있습니다. 컴퓨트와 스토리지 분리를 사용하는 오픈소스 ClickHouse에 대해서는 [이 가이드](/ko/guides/oss/deployment-and-scaling/separation-storage-compute)를 참조하십시오. ClickHouse Cloud에서는 컴퓨트와 스토리지 분리가 기본적으로 제공됩니다.
+
+<div id="cpu">
+  ## CPU
+</div>
+
+<div id="which-cpu-should-i-use">
+  ### 어떤 CPU를 사용해야 하나요?
+</div>
+
+사용할 CPU 유형은 사용 패턴에 따라 달라집니다. 하지만 일반적으로 빈번한 동시 쿼리가 많거나, 더 많은 데이터를 처리하거나, 컴퓨트 집약적인 UDF를 사용하는 애플리케이션은 더 많은 CPU 코어가 필요합니다.
+
+**낮은 지연 시간 또는 고객 대상 애플리케이션**
+
+고객 대상 워크로드처럼 지연 시간 요구 사항이 수십 밀리초 수준인 경우에는, IO에 최적화된 AWS EC2 [i3 계열](https://aws.amazon.com/ec2/instance-types/i3/) 또는 [i4i 계열](https://aws.amazon.com/ec2/instance-types/i4i/)이나, 클라우드 제공업체에서 제공하는 이에 상응하는 제품을 권장합니다.
+
+**높은 동시성 애플리케이션**
+
+동시성(초당 100개 이상의 쿼리) 최적화가 필요한 워크로드에는 AWS의 [컴퓨트 최적화 C 시리즈](https://aws.amazon.com/ec2/instance-types/#Compute_Optimized) 또는 클라우드 제공업체에서 제공하는 이에 상응하는 제품을 권장합니다.
+
+**데이터 웨어하우징 사용 사례**
+
+데이터 웨어하우징 워크로드와 애드혹 분석 쿼리에는 메모리에 최적화된 AWS의 [R 계열](https://aws.amazon.com/ec2/instance-types/#Memory_Optimized) 또는 클라우드 제공업체에서 제공하는 이에 상응하는 제품을 권장합니다.
+
+***
+
+<div id="what-should-cpu-utilization-be">
+  ### CPU 사용률은 어느 정도가 적절합니까?
+</div>
+
+ClickHouse에 권장되는 표준 CPU 사용률 목표는 없습니다. [iostat](https://linux.die.net/man/1/iostat)와 같은 도구를 사용해 평균 CPU 사용량을 측정하고, 예상치 못한 트래픽 급증에 대응할 수 있도록 그에 맞춰 서버 크기를 조정하십시오. 다만 ad-hoc 쿼리를 사용하는 분석 또는 데이터 웨어하우징 워크로드에서는 CPU 사용률을 10~20% 수준으로 유지하는 것이 좋습니다.
+
+<div id="how-many-cpu-cores-should-i-use">
+  ### 몇 개의 CPU 코어를 사용해야 합니까?
+</div>
+
+필요한 CPU 수는 워크로드에 따라 달라집니다. 하지만 일반적으로는 CPU 유형에 따라 다음과 같은 메모리:CPU 코어 비율을 권장합니다.
+
+* **[M-type](https://aws.amazon.com/ec2/instance-types/) (범용 사용 사례):** 메모리:CPU 코어 비율 4 GB:1
+* **[R-type](https://aws.amazon.com/ec2/instance-types/#Memory_Optimized) (데이터 웨어하우징 사용 사례):** 메모리:CPU 코어 비율 8 GB:1
+* **[C-type](https://aws.amazon.com/ec2/instance-types/#Compute_Optimized) (컴퓨트 최적화 사용 사례):** 메모리:CPU 코어 비율 2 GB:1
+
+예를 들어 M-type CPU를 사용하는 경우, CPU 코어 25개당 메모리 100GB를 프로비저닝하는 것을 권장합니다. 애플리케이션에 적합한 메모리 용량을 결정하려면 메모리 사용량을 프로파일링해야 합니다. [메모리 문제 디버깅 가이드](/ko/concepts/features/performance/troubleshoot/debugging-memory-issues)를 참조하거나 [기본 제공 관측성 대시보드](/ko/guides/oss/deployment-and-scaling/monitoring/monitoring)를 사용해 ClickHouse를 모니터링할 수 있습니다.
+
+<div id="memory">
+  ## 메모리
+</div>
+
+CPU를 선택할 때와 마찬가지로, 메모리 대 스토리지 비율과 메모리 대비 CPU 비율은 사용 사례에 따라 달라집니다.
+
+일반적으로 필요한 RAM 용량은 다음 요소에 따라 결정됩니다.
+
+* 쿼리의 복잡도
+* 쿼리에서 처리되는 데이터의 양
+
+다만 일반적으로 메모리가 많을수록 쿼리는 더 빠르게 실행됩니다.
+비용에 민감한 사용 사례라면 더 적은 메모리로도 운영할 수 있습니다. 데이터를 디스크로 스필할 수 있도록 설정([`max_bytes_before_external_group_by`](/ko/reference/settings/session-settings#max_bytes_before_external_group_by) 및 [`max_bytes_before_external_sort`](/ko/reference/settings/session-settings#max_bytes_before_external_sort))을 활성화할 수 있기 때문입니다. 다만, 이 경우 쿼리 성능에 상당한 영향이 있을 수 있습니다.
+
+<div id="what-should-the-memory-to-storage-ratio-be">
+  ### 메모리 대 스토리지 비율은 어느 정도가 적절합니까?
+</div>
+
+데이터 양이 적다면 메모리 대 스토리지 비율은 1:1도 괜찮지만, 총 메모리는 8GB 이상이어야 합니다.
+
+데이터 보존 기간이 길거나 데이터 양이 많은 사용 사례에는 메모리 대 스토리지 비율을 1:100~1:130으로 권장합니다. 예를 들어 10TB의 데이터를 저장하는 경우, 레플리카당 100GB의 RAM을 권장합니다.
+
+고객 대상 워크로드처럼 자주 액세스되는 사용 사례에는 메모리를 더 많이 사용하도록, 메모리 대 스토리지 비율을 1:30~1:50으로 권장합니다.
+
+<div id="replicas">
+  ## 레플리카
+</div>
+
+세그먼트당 최소 3개의 레플리카(또는 [Amazon EBS](https://aws.amazon.com/ebs/)를 사용하는 경우 2개의 레플리카)를 두는 것을 권장합니다. 또한 레플리카를 추가해 수평 스케일링하기 전에, 모든 레플리카를 먼저 수직으로 스케일링하는 것이 좋습니다.
+
+ClickHouse는 자동으로 세그먼트 분할을 수행하지 않으며, 데이터셋을 다시 세그먼트 분할하려면 상당한 컴퓨트 리소스가 필요합니다. 따라서 향후 데이터를 다시 세그먼트 분할할 필요가 없도록, 일반적으로 사용 가능한 가장 큰 서버를 사용하는 것을 권장합니다.
+
+자동으로 스케일링되며 사용 사례에 맞게 레플리카 수를 쉽게 제어할 수 있는 [ClickHouse Cloud](https://clickhouse.com/cloud) 사용도 고려해 보십시오.
+
+<div id="example-configurations-for-large-workloads">
+  ## 대규모 워크로드를 위한 예시 구성
+</div>
+
+ClickHouse 구성은 사용하는 애플리케이션의 구체적인 요구 사항에 따라 크게 달라집니다. 비용과 성능 측면에서 아키텍처 최적화에 도움이 필요하면 [영업팀에 문의하세요](https://clickhouse.com/company/contact?loc=docs-sizing-and-hardware-recommendations).
+
+권장 사항이 아닌 참고용 안내를 위해, 아래에 프로덕션 환경에서 ClickHouse를 사용하는 사용자들의 예시 구성을 소개합니다:
+
+<div id="fortune-500-b2b-saas">
+  ### 포춘 500대 B2B SaaS
+</div>
+
+<table>
+  <tr>
+    <td col="2"><strong><em>스토리지</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>월간 신규 데이터량</strong></td>
+    <td>30TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>총 스토리지(압축 기준)</strong></td>
+    <td>540TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>데이터 보존 기간</strong></td>
+    <td>18개월</td>
+  </tr>
+
+  <tr>
+    <td><strong>노드당 디스크 용량</strong></td>
+    <td>25TB</td>
+  </tr>
+
+  <tr>
+    <td col="2"><strong><em>CPU</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>동시성</strong></td>
+    <td>동시 쿼리 200개 이상</td>
+  </tr>
+
+  <tr>
+    <td><strong>레플리카 수(HA 쌍 포함)</strong></td>
+    <td>44</td>
+  </tr>
+
+  <tr>
+    <td><strong>노드당 vCPU</strong></td>
+    <td>62</td>
+  </tr>
+
+  <tr>
+    <td><strong>총 vCPU</strong></td>
+    <td>2700</td>
+  </tr>
+
+  <tr>
+    <td col="2"><strong><em>메모리</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>총 RAM</strong></td>
+    <td>11TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>레플리카당 RAM</strong></td>
+    <td>256GB</td>
+  </tr>
+
+  <tr>
+    <td><strong>RAM:vCPU 비율</strong></td>
+    <td>4 GB:1</td>
+  </tr>
+
+  <tr>
+    <td><strong>RAM:디스크 비율</strong></td>
+    <td>1:50</td>
+  </tr>
+</table>
+
+<div id="fortune-500-telecom-operator-for-a-logging-use-case">
+  ### Fortune 500 통신 사업자의 로깅 사용 사례
+</div>
+
+<table>
+  <tr>
+    <td col="2"><strong><em>스토리지</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>월간 로그 데이터 규모</strong></td>
+    <td>4860TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>총 스토리지</strong></td>
+    <td>608TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>데이터 보존 기간</strong></td>
+    <td>30일</td>
+  </tr>
+
+  <tr>
+    <td><strong>노드당 디스크 용량</strong></td>
+    <td>13TB</td>
+  </tr>
+
+  <tr>
+    <td col="2"><strong><em>CPU</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>레플리카 수(고가용성(HA) 쌍 포함)</strong></td>
+    <td>38</td>
+  </tr>
+
+  <tr>
+    <td><strong>노드당 vCPU</strong></td>
+    <td>42</td>
+  </tr>
+
+  <tr>
+    <td><strong>총 vCPU</strong></td>
+    <td>1600</td>
+  </tr>
+
+  <tr>
+    <td col="2"><strong><em>메모리</em></strong></td>
+  </tr>
+
+  <tr>
+    <td><strong>총 RAM</strong></td>
+    <td>10TB</td>
+  </tr>
+
+  <tr>
+    <td><strong>레플리카당 RAM</strong></td>
+    <td>256GB</td>
+  </tr>
+
+  <tr>
+    <td><strong>RAM:vCPU 비율</strong></td>
+    <td>6 GB:1</td>
+  </tr>
+
+  <tr>
+    <td><strong>RAM:디스크 비율</strong></td>
+    <td>1:60</td>
+  </tr>
+</table>
+
+<div id="further-reading">
+  ## 추가로 읽어볼 자료
+</div>
+
+아래는 오픈소스 ClickHouse를 사용하는 기업들의 아키텍처를 다룬 공개 블로그 게시물입니다:
+
+* [Cloudflare](https://blog.cloudflare.com/http-analytics-for-6m-requests-per-second-using-clickhouse/?utm_source=linkedin\&utm_medium=social\&utm_campaign=blog)
+* [eBay](https://innovation.ebayinc.com/tech/engineering/ou-online-analytical-processing/)
+* [GitLab](https://handbook.gitlab.com/handbook/engineering/development/ops/monitor/observability/#clickhouse-datastore)
+* [Lyft](https://eng.lyft.com/druid-deprecation-and-clickhouse-adoption-at-lyft-120af37651fd)
+* [MessageBird](https://clickhouse.com/blog/how-messagebird-uses-clickhouse-to-monitor-the-delivery-of-billions-of-messages)
+* [Microsoft](https://clickhouse.com/blog/self-service-data-analytics-for-microsofts-biggest-web-properties)
+* [Uber](https://www.uber.com/en-ES/blog/logging/)
+* [Zomato](https://blog.zomato.com/building-a-cost-effective-logging-platform-using-clickhouse-for-petabyte-scale)
