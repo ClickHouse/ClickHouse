@@ -1260,21 +1260,32 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
     if (file_reader->getNumberOfStripes())
         stripe_info = file_reader->getStripe(0);
 
-    for (size_t i = 0; i < schema.getSubtypeCount(); ++i)
+    try
     {
-        const std::string & name = schema.getFieldName(i);
-        const orc::Type * orc_type = schema.getSubtype(i);
+        for (size_t i = 0; i < schema.getSubtypeCount(); ++i)
+        {
+            const std::string & name = schema.getFieldName(i);
+            const orc::Type * orc_type = schema.getSubtype(i);
 
-        bool skipped = false;
-        DataTypePtr type = parseORCType(
-            orc_type,
-            format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
-            format_settings.orc.dictionary_as_low_cardinality,
-            stripe_info.get(),
-            skipped,
-            format_settings.max_parser_depth);
-        if (!skipped)
-            header.insert(ColumnWithTypeAndName{type, name});
+            bool skipped = false;
+            DataTypePtr type = parseORCType(
+                orc_type,
+                format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference,
+                format_settings.orc.dictionary_as_low_cardinality,
+                stripe_info.get(),
+                skipped,
+                format_settings.max_parser_depth);
+            if (!skipped)
+                header.insert(ColumnWithTypeAndName{type, name});
+        }
+    }
+    catch (const orc::ParseError & e)
+    {
+        /// The ORC library throws ParseError when the stripe footer is corrupt (for example, a
+        /// column id that has no matching column encoding, which is consulted here to detect
+        /// dictionary encoding). Surface it as INCORRECT_DATA instead of letting it propagate as a
+        /// generic std::exception.
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to read ORC schema: {}", e.what());
     }
 
     /// ORC doesn't have non-nullable data types.
