@@ -75,34 +75,37 @@ ASTPtr rewriteSelectQuery(
 
     if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
+        const DatabaseAndTableWithAlias original(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
+
         if (table_function_ptr)
         {
-            /// A table-function target has no concrete remote table, so the qualified-name
-            /// restoration below (which rewrites `distributed_table.column` onto the remote
-            /// `database.table`) does not apply. Instead, alias the shard-side table function with
-            /// the same qualifier the original query used for the Distributed table - its explicit
-            /// alias, or otherwise its name - so that qualified references such as `dist.x` or `d.x`
-            /// (for `... FROM dist AS d`) keep resolving on the shard. Without this the qualifier
-            /// would dangle after the `FROM` clause is replaced.
+            /// A table-function target has no concrete remote table to restore qualified names onto.
+            /// Instead, alias the shard-side table function with the same qualifier the original query
+            /// used for the Distributed table - its explicit alias, or otherwise its name - and restore
+            /// qualified references (`dist.x`, `d.x` for `... FROM dist AS d`, `db.dist.x`) onto that
+            /// alias, so they keep resolving on the shard after the `FROM` clause is replaced.
+            const String & qualifier = original.alias.empty() ? original.table : original.alias;
             ASTPtr table_function = table_function_ptr->clone();
-            if (table_function->tryGetAlias().empty())
-            {
-                const DatabaseAndTableWithAlias original(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
-                const String & qualifier = original.alias.empty() ? original.table : original.alias;
-                if (!qualifier.empty())
-                    table_function->setAlias(qualifier);
-            }
+            if (!qualifier.empty())
+                table_function->setAlias(qualifier);
             select_query.addTableFunction(table_function);
+
+            if (!qualifier.empty())
+            {
+                RestoreQualifiedNamesVisitor::Data data;
+                data.distributed_table = original;
+                data.remote_table.alias = qualifier;
+                RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
+            }
         }
         else
+        {
             select_query.replaceDatabaseAndTable(remote_database, remote_table);
 
-        /// Restore long column names (cause our short names are ambiguous).
-        /// TODO: aliased table functions & CREATE TABLE AS table function cases
-        if (!table_function_ptr)
-        {
+            /// Restore long column names (cause our short names are ambiguous).
+            /// TODO: aliased table functions & CREATE TABLE AS table function cases
             RestoreQualifiedNamesVisitor::Data data;
-            data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
+            data.distributed_table = original;
             data.remote_table.database = remote_database;
             data.remote_table.table = remote_table;
             RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);

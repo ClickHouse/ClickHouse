@@ -139,11 +139,14 @@ DROP TABLE dist_over_tf;
 -- Qualified column references against a table-function-backed Distributed table must resolve on the shard
 -- on the legacy (enable_analyzer = 0) read path too. That path replaces the `FROM` clause with the table
 -- function, so the table function is aliased with the same qualifier the original query used for the
--- Distributed table - its name, or an explicit alias - otherwise `dist_over_tf.number` / `d.number` would
+-- Distributed table - its name, or an explicit alias - and qualified references (including the
+-- database-qualified `db.table.column` form) are restored onto that alias, otherwise they would
 -- dangle on the shard. (The analyzer path resolves columns structurally; it is covered as well.)
 CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, numbers(10));
 SELECT sum(dist_over_tf.number) FROM dist_over_tf SETTINGS enable_analyzer = 0;
 SELECT sum(d.number) FROM dist_over_tf AS d SETTINGS enable_analyzer = 0;
+SELECT sum({CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.number) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf SETTINGS enable_analyzer = 0;
 SELECT sum(dist_over_tf.number) FROM dist_over_tf SETTINGS enable_analyzer = 1;
 SELECT sum(d.number) FROM dist_over_tf AS d SETTINGS enable_analyzer = 1;
+SELECT sum({CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.number) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf SETTINGS enable_analyzer = 1;
 DROP TABLE dist_over_tf;
