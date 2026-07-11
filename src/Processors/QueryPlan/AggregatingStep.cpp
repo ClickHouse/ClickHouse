@@ -545,15 +545,24 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// aggregation at a couple of cores. Instead, reshuffle-then-merge: scatter each sorted input stream
         /// by hash(GROUP BY keys) into `num_shards` groups, merge each group back into a single sorted
         /// stream (disjoint keys across groups), then run streaming in-order aggregation on each group in
-        /// parallel. This parallelizes aggregation-in-order across threads while keeping its bounded (O(1))
-        /// memory. The output is no longer globally ordered by the GROUP BY keys, so this is only used when
-        /// the order is not relied upon downstream (see the gate below).
+        /// parallel. This parallelizes aggregation-in-order across threads while keeping its bounded memory
+        /// (the reshuffle buffering is capped by aggregation_in_order_shuffle_max_buffered_bytes). The output
+        /// is no longer globally ordered by the GROUP BY keys, so this is only used when the order is not
+        /// relied upon downstream (see the gate below).
+        /// aggregation-in-order does not enforce `max_rows_to_group_by`: it keeps only a bounded working set
+        /// of keys (completed groups are streamed out as the sorted input advances), so neither the streaming
+        /// per-shard path (executeOnBlockSmall / mergeOnBlockSmall) nor the ordinary funnel path (whose
+        /// MergingAggregatedBucketTransform merges each bucket via Aggregator::mergeBlocks) ever calls
+        /// Aggregator::checkLimits. To keep this experimental optimization from changing the observable
+        /// behavior of a query that sets the limit, do not use it when `max_rows_to_group_by` is set (fall
+        /// back to the ordinary aggregation-in-order pipeline).
         const bool use_shuffle_in_order
             = settings.aggregation_in_order_shuffle
             && !memoryBoundMergingWillBeUsed()
             && !should_produce_results_in_order_of_bucket_number
             && limit_hint == 0
             && !skip_merging
+            && transform_params->params.max_rows_to_group_by == 0
             && max_threads > 1
             && pipeline.getNumStreams() > 1;
 
@@ -574,11 +583,16 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// single sorted stream. Scatter + merge are added in one transform() so the intermediate
             /// num_streams * num_shards port count does not inflate the pipeline's parallelism limit.
             ///
-            /// The scatter uses unbounded per-shard queues (max_queue_length = 0). A per-shard sorted merge
-            /// is a *selective* consumer (it waits for the smallest-key input), so bounding the scatter with
-            /// back-pressure could deadlock (a stalled merge backs the scatter up across all shards). With
-            /// unbounded queues each scatter always drains its input; memory stays bounded because all shard
-            /// merges advance through the global key order roughly in lockstep.
+            /// The scatter does not use per-queue back-pressure (max_queue_length = 0). A per-shard sorted
+            /// merge is a *selective* consumer (it waits for the smallest-key input), so bounding the scatter
+            /// with back-pressure could deadlock (a stalled merge backs the scatter up across all shards).
+            /// Instead, the scatter pulls new input only on demand (to feed a starving lane), which keeps the
+            /// buffering small in practice because all shard merges advance through the global key order
+            /// roughly in lockstep. The demand-driven read-ahead is still unbounded in the worst case (long
+            /// runs of a single key park everything on one shard while another lane starves), so all scatters
+            /// share a byte budget; exceeding it fails the query instead of buffering without limit.
+            auto total_buffered_bytes = std::make_shared<std::atomic<Int64>>(0);
+            const size_t max_buffered_bytes = settings.aggregation_in_order_shuffle_max_buffered_bytes;
             pipeline.transform([&](OutputPortRawPtrs ports)
             {
                 chassert(ports.size() == num_streams);
@@ -590,7 +604,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 for (size_t stream = 0; stream < num_streams; ++stream)
                 {
                     auto scatter_transform = std::make_shared<BufferedShardByHashTransform>(
-                        stream_header, num_shards, key_columns, /*max_queue_length=*/ 0);
+                        stream_header, num_shards, key_columns, /*max_queue_length=*/ 0,
+                        max_buffered_bytes, total_buffered_bytes);
                     connect(*ports[stream], scatter_transform->getInputs().front());
                     for (auto & output : scatter_transform->getOutputs())
                         scatter_outputs.push_back(&output);

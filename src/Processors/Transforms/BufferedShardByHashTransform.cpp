@@ -1,21 +1,58 @@
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/MapToRange.h>
 
 namespace DB
 {
 
-BufferedShardByHashTransform::BufferedShardByHashTransform(SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_, size_t max_queue_length_)
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_ROWS_OR_BYTES;
+}
+
+BufferedShardByHashTransform::BufferedShardByHashTransform(
+    SharedHeader header,
+    size_t num_shards_,
+    ColumnNumbers key_columns_,
+    size_t max_queue_length_,
+    size_t max_buffered_bytes_,
+    std::shared_ptr<std::atomic<Int64>> total_buffered_bytes_)
     : IProcessor(InputPorts{header}, OutputPorts{num_shards_, header})
     , num_shards(num_shards_)
     , key_columns(std::move(key_columns_))
     , max_queue_length(max_queue_length_)
+    , max_buffered_bytes(max_buffered_bytes_)
+    , total_buffered_bytes(total_buffered_bytes_ ? std::move(total_buffered_bytes_) : std::make_shared<std::atomic<Int64>>(0))
     , output_queues(num_shards)
     , shard_columns(num_shards)
 {
     chassert(num_shards > 0);
+}
+
+void BufferedShardByHashTransform::enqueue(size_t shard, Chunk chunk)
+{
+    total_buffered_bytes->fetch_add(static_cast<Int64>(chunk.allocatedBytes()), std::memory_order_relaxed);
+    output_queues[shard].push_back(std::move(chunk));
+}
+
+Chunk BufferedShardByHashTransform::dequeue(size_t shard)
+{
+    Chunk chunk = std::move(output_queues[shard].front());
+    output_queues[shard].pop_front();
+    total_buffered_bytes->fetch_sub(static_cast<Int64>(chunk.allocatedBytes()), std::memory_order_relaxed);
+    return chunk;
+}
+
+void BufferedShardByHashTransform::clearQueue(size_t shard)
+{
+    Int64 bytes = 0;
+    for (const auto & chunk : output_queues[shard])
+        bytes += static_cast<Int64>(chunk.allocatedBytes());
+    total_buffered_bytes->fetch_sub(bytes, std::memory_order_relaxed);
+    output_queues[shard].clear();
 }
 
 IProcessor::Status BufferedShardByHashTransform::prepare()
@@ -28,7 +65,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
         if (output_it->isFinished())
-            output_queues[shard].clear();
+            clearQueue(shard);
         else
             all_finished = false;
     }
@@ -94,14 +131,26 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         return Status::Ready;
 
     /// Nothing can be pushed right now. Decide whether to pull a new input chunk.
-    ///   - Unbounded mode (max_queue_length == 0, used when a downstream *sorted* merge consumes the shards
-    ///     selectively): pull only to feed an output that is ready AND starving (empty queue). This never
-    ///     stalls the shared scatter on a slow lane — a slow lane just keeps its data buffered — so there is
-    ///     no cross-lane deadlock, while a lane that is genuinely waiting for its next rows always gets fed.
+    ///   - Demand-driven mode (max_queue_length == 0, used when a downstream *sorted* merge consumes the
+    ///     shards selectively): pull only to feed an output that is ready AND starving (empty queue). This
+    ///     never stalls the shared scatter on a slow lane — a slow lane just keeps its data buffered — so
+    ///     there is no cross-lane deadlock, while a lane that is genuinely waiting for its next rows always
+    ///     gets fed. The read-ahead this buffers is capped by max_buffered_bytes (shared across all scatters
+    ///     of the stage): once the cap is hit, the next pull throws. Refusing to pull instead could deadlock
+    ///     (a merge may need this scatter's EOF to make progress, and reaching EOF requires buffering
+    ///     everything in between), so with a selective consumer the only bounded-memory behavior that cannot
+    ///     hang is to fail the query.
     ///   - Bounded mode: classic back-pressure — pull unless some queue is at capacity.
     const bool may_pull = (max_queue_length == 0) ? has_starving_ready_output : !any_queue_at_capacity;
     if (may_pull)
     {
+        if (max_queue_length == 0 && max_buffered_bytes != 0
+            && total_buffered_bytes->load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes))
+        {
+            budget_exceeded = true;
+            return Status::Ready;
+        }
+
         input.setNeeded();
         if (input.hasData())
         {
@@ -120,6 +169,14 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
 /// Split pending input chunk into per-shard queues, then drain queues to output ports.
 void BufferedShardByHashTransform::work()
 {
+    if (budget_exceeded)
+        throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
+            "Shuffled aggregation-in-order buffered more than {} bytes while repartitioning the input: "
+            "the data distribution requires reading too far ahead (e.g. long runs of a single set of GROUP BY keys). "
+            "Increase the setting `aggregation_in_order_shuffle_max_buffered_bytes` or disable the setting "
+            "`aggregation_in_order_shuffle`",
+            max_buffered_bytes);
+
     if (has_pending_input_chunk)
     {
         generateOutputChunks();
@@ -134,7 +191,7 @@ void BufferedShardByHashTransform::work()
 
         if (output_it->isFinished())
         {
-            queue.clear();
+            clearQueue(shard);
             continue;
         }
 
@@ -144,8 +201,7 @@ void BufferedShardByHashTransform::work()
         if (!output_it->canPush())
             continue;
 
-        output_it->push(std::move(queue.front()));
-        queue.pop_front();
+        output_it->push(dequeue(shard));
     }
 }
 
@@ -186,7 +242,7 @@ void BufferedShardByHashTransform::generateOutputChunks()
         if (shard_rows == 0)
             continue;
 
-        output_queues[shard].push_back(Chunk(std::move(shard_columns[shard]), shard_rows));
+        enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows));
     }
 }
 

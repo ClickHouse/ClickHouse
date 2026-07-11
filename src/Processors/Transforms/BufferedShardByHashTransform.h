@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <deque>
+#include <memory>
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
@@ -35,9 +37,19 @@ class BufferedShardByHashTransform : public IProcessor
 {
 public:
     /// `max_queue_length_` bounds each per-shard queue: once a queue hits it the transform stops pulling
-    /// new input (back-pressure). Pass 0 for unbounded queues (never stall on a full queue) — required when
-    /// a downstream *sorted* merge consumes the shards selectively, where back-pressure could deadlock.
-    BufferedShardByHashTransform(SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_, size_t max_queue_length_ = MAX_QUEUE_LENGTH);
+    /// new input (back-pressure). Pass 0 for queues without per-queue back-pressure (never stall on a full
+    /// queue) — required when a downstream *sorted* merge consumes the shards selectively, where
+    /// back-pressure could deadlock. In that mode, `max_buffered_bytes_` caps the total bytes queued across
+    /// all transforms sharing `total_buffered_bytes_` (0 = no cap); exceeding the cap throws
+    /// TOO_MANY_ROWS_OR_BYTES instead of buffering without limit, because with a selective consumer the only
+    /// alternatives to reading ahead are deadlock or spilling.
+    BufferedShardByHashTransform(
+        SharedHeader header,
+        size_t num_shards_,
+        ColumnNumbers key_columns_,
+        size_t max_queue_length_ = MAX_QUEUE_LENGTH,
+        size_t max_buffered_bytes_ = 0,
+        std::shared_ptr<std::atomic<Int64>> total_buffered_bytes_ = nullptr);
 
     String getName() const override { return "BufferedShardByHashTransform"; }
 
@@ -51,10 +63,22 @@ private:
     /// input until the slow consumer drains it. Otherwise, we can have very high memory usage.
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
 
+    /// Queue bookkeeping that maintains the shared buffered-bytes counter.
+    void enqueue(size_t shard, Chunk chunk);
+    Chunk dequeue(size_t shard);
+    void clearQueue(size_t shard);
+
     size_t num_shards;
     ColumnNumbers key_columns;
-    /// 0 means unbounded (never stall on a full queue).
+    /// 0 means no per-queue back-pressure (never stall on a full queue).
     size_t max_queue_length;
+    /// Total-bytes cap for max_queue_length == 0 mode; 0 means no cap.
+    size_t max_buffered_bytes;
+    /// Bytes currently queued across all transforms sharing this counter (never null).
+    std::shared_ptr<std::atomic<Int64>> total_buffered_bytes;
+
+    /// Set in prepare() when the next pull would exceed max_buffered_bytes; work() throws.
+    bool budget_exceeded = false;
 
     /// Input chunk that was pulled in prepare() and will be split in work().
     bool has_pending_input_chunk = false;
