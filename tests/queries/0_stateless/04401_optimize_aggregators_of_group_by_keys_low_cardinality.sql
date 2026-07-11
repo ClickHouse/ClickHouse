@@ -62,6 +62,17 @@ SELECT '-- pruning is still preserved for that mixed projection+HAVING query: 8/
 SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT min(s) AS m, count() FROM t_lc_group_key GROUP BY s HAVING min(s) = 'rare token')
 WHERE explain ILIKE '%Granules: %/128%' AND explain ILIKE '%/128%' AND explain NOT ILIKE '%128/128%';
 
+SELECT '-- QUALIFY is a filter section like HAVING (own clause plumbing, runs after window processing):';
+SELECT '-- a type-insensitive predicate on the key must push down to the skip index just like HAVING';
+-- Regression for https://github.com/ClickHouse/ClickHouse/pull/110059: the pass must track the
+-- QUALIFY root as a filter root exactly like HAVING/WHERE/PREWHERE.
+SELECT s, count() FROM t_lc_group_key GROUP BY s QUALIFY s = 'rare token';
+SELECT s, count() FROM t_lc_group_key GROUP BY s QUALIFY min(s) = 'rare token';
+SELECT s, count() FROM t_lc_group_key GROUP BY s QUALIFY anyLast(s) = 'rare token';
+SELECT '-- skip-index pruning fires for QUALIFY min(s) = ... just like HAVING: 8/128';
+SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT s, count() FROM t_lc_group_key GROUP BY s QUALIFY min(s) = 'rare token')
+WHERE explain ILIKE '%Granules: %/128%' AND explain ILIKE '%/128%' AND explain NOT ILIKE '%128/128%';
+
 DROP TABLE t_lc_group_key;
 
 SELECT '-- LowCardinality wrapper matrix: result must be identical with the optimization on and off';
@@ -212,3 +223,20 @@ SELECT id FROM t_lc_union WHERE s IN (SELECT min(s) FROM t_lc_union GROUP BY s U
 SELECT id FROM t_lc_union WHERE s = (SELECT min(s) FROM t_lc_union GROUP BY s LIMIT 1) ORDER BY id;
 SELECT count() FROM t_lc_union WHERE s IN (SELECT max(s) FROM t_lc_union GROUP BY s UNION ALL SELECT anyLast(s) FROM t_lc_union GROUP BY s);
 DROP TABLE t_lc_union;
+
+SELECT '-- type-sensitive QUALIFY toTypeName(min(key)) must observe the analyzed type across the LC matrix';
+DROP TABLE IF EXISTS t_lc_qualify_type;
+CREATE TABLE t_lc_qualify_type (s LowCardinality(String), sn LowCardinality(Nullable(String)), u LowCardinality(UInt8))
+ENGINE = Memory
+SETTINGS allow_suspicious_low_cardinality_types = 1;
+INSERT INTO t_lc_qualify_type VALUES ('x', 'x', 1), ('y', NULL, 2);
+SET allow_suspicious_low_cardinality_types = 1;
+SELECT count() FROM t_lc_qualify_type GROUP BY s QUALIFY toTypeName(min(s)) = 'String';
+SELECT count() FROM t_lc_qualify_type GROUP BY s
+    QUALIFY toTypeName(max(s)) = 'String' AND toTypeName(any(s)) = 'String'
+        AND toTypeName(anyLast(s)) = 'String' AND toTypeName(anyHeavy(s)) = 'String';
+SELECT count() FROM t_lc_qualify_type GROUP BY sn QUALIFY toTypeName(min(sn)) = 'Nullable(String)';
+SELECT count() FROM t_lc_qualify_type GROUP BY u QUALIFY toTypeName(min(u)) = 'UInt8';
+SELECT '-- type-insensitive and type-sensitive parents together in the same QUALIFY';
+SELECT s, count() FROM t_lc_qualify_type GROUP BY s QUALIFY min(s) = 'x' AND toTypeName(min(s)) = 'String' ORDER BY s;
+DROP TABLE t_lc_qualify_type;
