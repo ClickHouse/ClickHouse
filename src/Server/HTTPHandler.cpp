@@ -34,6 +34,7 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Processors/Formats/Framing/FramingFormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
 
@@ -547,7 +548,12 @@ void HTTPHandler::processQuery(
                                                  const ContextPtr & context_,
                                                  const std::optional<FormatSettings> & format_settings)
     {
-        if (settings[Setting::http_write_exception_in_output_format] && current_output_format.supportsWritingException())
+        const auto & framing = current_output_format.getFraming();
+
+        /// With a framing format, the exception is always written as a separate packet, because the
+        /// client parses the response as a stream of packets. Otherwise the exception is written into
+        /// the output format if the format supports it and the corresponding setting is enabled.
+        if (framing || (settings[Setting::http_write_exception_in_output_format] && current_output_format.supportsWritingException()))
         {
             /// If wait_end_of_query=true in case of an exception all data written to output format during query execution will be
             /// ignored, so we cannot write exception message in current output format as it will be also ignored.
@@ -556,7 +562,8 @@ void HTTPHandler::processQuery(
             if (wait_end_of_query)
             {
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
-                used_output.exception_writer = [&, format_name, header, context_, format_settings, session_id, close_session](WriteBuffer & buf, int code, const String & message)
+                String framing_name = framing ? framing->getName() : "";
+                used_output.exception_writer = [&, format_name, framing_name, header, context_, format_settings, session_id, close_session](WriteBuffer & buf, int code, const String & message)
                 {
                     if (used_output.out_holder->isCanceled())
                     {
@@ -567,9 +574,21 @@ void HTTPHandler::processQuery(
                     drainRequestIfNeeded(request, response);
                     used_output.out_holder->setExceptionCode(code);
 
-                    auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
-                    output_format->setException(message);
-                    output_format->finalize();
+                    if (!framing_name.empty())
+                    {
+                        /// All the output buffered so far is discarded, so the framing format is created
+                        /// anew, and the response consists of a single exception packet.
+                        auto framing_for_exception = createFramingFormat(
+                            framing_name, buf, format_settings ? *format_settings : getFormatSettings(context_), {.is_http = true});
+                        framing_for_exception->setException(message);
+                        framing_for_exception->finalize();
+                    }
+                    else
+                    {
+                        auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
+                        output_format->setException(message);
+                        output_format->finalize();
+                    }
                     releaseOrCloseSession(session_id, close_session);
                     used_output.finalize();
                     used_output.exception_is_written = true;
@@ -585,7 +604,10 @@ void HTTPHandler::processQuery(
 
                 drainRequestIfNeeded(request, response);
                 used_output.out_holder->setExceptionCode(status.code);
-                current_output_format.setException(status.message);
+                if (framing)
+                    framing->setException(status.message);
+                else
+                    current_output_format.setException(status.message);
                 current_output_format.finalize();
                 releaseOrCloseSession(session_id, close_session);
                 used_output.finalize();

@@ -1,0 +1,9 @@
+--- profile events packets
+profile_events packets: OK
+"packet":"profile_events","profile_events":[{"host_name":
+"type":"increment"
+--- log packets
+log packets: OK
+"packet":"log","log":{"event_time":
+--- log packets in EventStream
+log events: OK

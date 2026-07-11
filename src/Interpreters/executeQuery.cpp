@@ -81,9 +81,11 @@
 #endif
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/CompressionMethod.h>
 
+#include <Processors/Formats/Framing/FramingFormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
@@ -94,7 +96,12 @@
 
 #include <Common/QueryFuzzer.h>
 #include <Common/randomSeed.h>
+#include <base/getFQDNOrHostName.h>
 
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProfileEventsExt.h>
+
+#include <Poco/Logger.h>
 #include <Poco/Net/SocketAddress.h>
 
 #include <exception>
@@ -151,6 +158,7 @@ namespace Setting
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsString framing_output_format;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool implicit_transaction;
     extern const SettingsUInt64 interactive_delay;
@@ -188,6 +196,9 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsString send_logs_source_regexp;
+    extern const SettingsBool send_profile_events;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -2437,6 +2448,54 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     return std::make_pair(std::move(ast), std::move(res));
 }
 
+namespace
+{
+
+/// Framing formats (see IFramingFormat.h) multiplex data, totals, extremes, progress, logs,
+/// and profile events packets in a single output stream. They are currently implemented
+/// for the HTTP protocol only and are ignored for other interfaces.
+FramingFormatPtr createFramingFormatIfApplicable(
+    const ContextMutablePtr & context,
+    WriteBuffer & ostr,
+    const std::optional<FormatSettings> & output_format_settings)
+{
+    if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
+        return nullptr;
+
+    const String & framing_name = context->getSettingsRef()[Setting::framing_output_format].value;
+    if (boost::iequals(framing_name, "None"))
+        return nullptr;
+
+    FormatSettings format_settings = output_format_settings ? *output_format_settings : getFormatSettings(context);
+    return createFramingFormat(framing_name, ostr, format_settings, {.is_http = true});
+}
+
+/// Attach the queues for server logs and profile events to the current thread
+/// (the thread group of the query inherits them), so the framing format can send them as packets.
+void attachLogsAndProfileEventsForFraming(IFramingFormat & framing, const ContextMutablePtr & context)
+{
+    const Settings & settings = context->getSettingsRef();
+
+    const auto client_logs_level = settings[Setting::send_logs_level];
+    if (client_logs_level != LogsLevel::none)
+    {
+        auto logs_queue = std::make_shared<InternalTextLogsQueue>();
+        logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+        logs_queue->setSourceRegexp(settings[Setting::send_logs_source_regexp]);
+        CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
+        framing.setLogsQueue(logs_queue);
+    }
+
+    if (settings[Setting::send_profile_events])
+    {
+        auto profile_events_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+        CurrentThread::attachInternalProfileEventsQueue(profile_events_queue);
+        framing.setProfileEventsQueue(profile_events_queue, getFQDNOrHostName(), settings[Setting::interactive_delay]);
+    }
+}
+
+}
+
 void executeQuery(
     ReadBuffer & istr,
     WriteBuffer & ostr,
@@ -2556,11 +2615,25 @@ void executeQuery(
                     ? getIdentifierName(ast_query_with_output->format_ast)
                     : context->getDefaultFormat();
 
-                output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
-                if (output_format && output_format->supportsWritingException())
+                auto framing = createFramingFormatIfApplicable(context, ostr, output_format_settings);
+                if (framing)
+                {
+                    output_format = FormatFactory::instance().getOutputFormat(format_name, framing->getPayloadBuffer(), {}, context, output_format_settings);
+                    output_format->setFraming(framing);
+                }
+                else
+                {
+                    output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
+                }
+
+                /// With a framing format, the exception is written as a packet regardless of
+                /// whether the output format supports writing exceptions.
+                if (output_format && (framing || output_format->supportsWritingException()))
                 {
                     /// Force an update of the headers before we start writing
-                    result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
+                    result_details.content_type = framing
+                        ? framing->getContentType()
+                        : FormatFactory::instance().getContentType(format_name, output_format_settings);
                     result_details.format = format_name;
 
                     fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
@@ -2660,12 +2733,29 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->out_file)
                 throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
-            output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
-                format_name,
-                *out_buf,
-                materializeBlock(pipeline.getHeader()),
-                context,
-                output_format_settings);
+            if (auto framing = createFramingFormatIfApplicable(context, *out_buf, output_format_settings))
+            {
+                /// The framing format needs to know the boundaries between the formatted packets,
+                /// so parallel formatting is not applicable.
+                output_format = FormatFactory::instance().getOutputFormat(
+                    format_name,
+                    framing->getPayloadBuffer(),
+                    materializeBlock(pipeline.getHeader()),
+                    context,
+                    output_format_settings);
+
+                output_format->setFraming(framing);
+                attachLogsAndProfileEventsForFraming(*framing, context);
+            }
+            else
+            {
+                output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+                    format_name,
+                    *out_buf,
+                    materializeBlock(pipeline.getHeader()),
+                    context,
+                    output_format_settings);
+            }
 
             output_format->setAutoFlush();
 
@@ -2680,7 +2770,9 @@ void executeQuery(
                 output_format->onProgress(progress);
             });
 
-            result_details.content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
+            result_details.content_type = output_format->getFraming()
+                ? output_format->getFraming()->getContentType()
+                : FormatFactory::instance().getContentType(format_name, output_format_settings);
             result_details.format = format_name;
 
             pipeline.complete(output_format);

@@ -2,6 +2,7 @@
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferDecorator.h>
+#include <Processors/Formats/Framing/IFramingFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
 #include <Common/FailPoint.h>
@@ -74,15 +75,24 @@ static Chunk prepareTotals(Chunk chunk)
     return chunk;
 }
 
+void IOutputFormat::writeProgressIfNeededUnlocked()
+{
+    if (!has_progress_update_to_write)
+        return;
+
+    if (framing)
+        framing->onProgress(statistics.progress);
+    else
+        writeProgress(statistics.progress);
+
+    has_progress_update_to_write = false;
+}
+
 void IOutputFormat::work()
 {
     std::lock_guard lock(writing_mutex);
 
-    if (has_progress_update_to_write)
-    {
-        writeProgress(statistics.progress);
-        has_progress_update_to_write = false;
-    }
+    writeProgressIfNeededUnlocked();
 
     writePrefixIfNeeded();
 
@@ -103,18 +113,28 @@ void IOutputFormat::work()
             result_rows += current_chunk.getNumRows();
             result_bytes += current_chunk.allocatedBytes();
             consume(std::move(current_chunk));
+            if (framing)
+                framing->onPayload(FramedPacketKind::Data);
             break;
         case Totals:
             writeSuffixIfNeeded();
+            if (framing)
+                framing->onPayload(FramedPacketKind::Data);
             if (auto totals = prepareTotals(std::move(current_chunk)))
             {
                 consumeTotals(std::move(totals));
                 are_totals_written = true;
+                if (framing)
+                    framing->onPayload(FramedPacketKind::Totals);
             }
             break;
         case Extremes:
             writeSuffixIfNeeded();
+            if (framing)
+                framing->onPayload(FramedPacketKind::Data);
             consumeExtremes(std::move(current_chunk));
+            if (framing)
+                framing->onPayload(FramedPacketKind::Extremes);
             break;
     }
 
@@ -143,14 +163,13 @@ void IOutputFormat::write(const Block & block)
 {
     std::lock_guard lock(writing_mutex);
 
-    if (has_progress_update_to_write)
-    {
-        writeProgress(statistics.progress);
-        has_progress_update_to_write = false;
-    }
+    writeProgressIfNeededUnlocked();
 
     writePrefixIfNeeded();
     consume(Chunk(block.getColumns(), block.rows()));
+
+    if (framing)
+        framing->onPayload(FramedPacketKind::Data);
 
     if (auto_flush)
         flushImpl();
@@ -162,11 +181,7 @@ void IOutputFormat::finalizeUnlocked()
         return;
     writePrefixIfNeeded();
 
-    if (has_progress_update_to_write)
-    {
-        writeProgress(statistics.progress);
-        has_progress_update_to_write = false;
-    }
+    writeProgressIfNeededUnlocked();
 
     writeSuffixIfNeeded();
     finalizeImpl();
@@ -175,6 +190,10 @@ void IOutputFormat::finalizeUnlocked()
         flushImpl();
 
     finalizeBuffers();
+
+    if (framing)
+        framing->finalize();
+
     finalized = true;
 }
 
@@ -188,15 +207,23 @@ void IOutputFormat::setTotals(const Block & totals)
 {
     std::lock_guard lock(writing_mutex);
     writeSuffixIfNeeded();
+    if (framing)
+        framing->onPayload(FramedPacketKind::Data);
     consumeTotals(Chunk(totals.getColumns(), totals.rows()));
     are_totals_written = true;
+    if (framing)
+        framing->onPayload(FramedPacketKind::Totals);
 }
 
 void IOutputFormat::setExtremes(const Block & extremes)
 {
     std::lock_guard lock(writing_mutex);
     writeSuffixIfNeeded();
+    if (framing)
+        framing->onPayload(FramedPacketKind::Data);
     consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
+    if (framing)
+        framing->onPayload(FramedPacketKind::Extremes);
 }
 
 void IOutputFormat::onProgress(const Progress & progress)
@@ -210,7 +237,7 @@ void IOutputFormat::onProgress(const Progress & progress)
     statistics.progress.incrementPiecewiseAtomically(progress);
     UInt64 elapsed_ns = statistics.watch.elapsedNanoseconds();
     statistics.progress.elapsed_ns = elapsed_ns;
-    if (writesProgressConcurrently())
+    if (framing || writesProgressConcurrently())
     {
         has_progress_update_to_write = true;
 
@@ -221,8 +248,15 @@ void IOutputFormat::onProgress(const Progress & progress)
 
             if (lock && has_progress_update_to_write && !finalized)
             {
-                writeProgress(statistics.progress);
-                flushImpl();
+                if (framing)
+                {
+                    framing->onProgress(statistics.progress);
+                }
+                else
+                {
+                    writeProgress(statistics.progress);
+                    flushImpl();
+                }
                 prev_progress_write_ns = elapsed_ns;
                 has_progress_update_to_write = false;
             }

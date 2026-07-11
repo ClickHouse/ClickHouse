@@ -1,0 +1,45 @@
+--- JSONEachPacketString, data packets follow block boundaries
+{"packet":"data","data":"{\"number\":0}\n{\"number\":1}\n"}
+{"packet":"data","data":"{\"number\":2}\n"}
+--- JSONEachPacketString, totals and extremes
+{"packet":"data","data":"0\t2\n1\t2\n"}
+{"packet":"totals","data":"\n0\t4\n"}
+{"packet":"extremes","data":"\n0\t2\n1\t2\n"}
+--- the concatenation of the payloads is exactly the output of the format
+0	2
+1	2
+
+0	4
+
+0	2
+1	2
+--- JSONEachPacketBase64, payload decodes to the JSONEachRow output
+{"number":0}
+{"number":1}
+{"number":2}
+--- EventStream
+data | 0	2
+data | 1	2
+totals | 
+totals | 0	4
+extremes | 
+extremes | 0	2
+extremes | 1	2
+--- EventStream content type
+text/event-stream; charset=UTF-8
+--- JSONEachPacket content type
+application/x-ndjson; charset=UTF-8
+--- progress packets are sent
+progress packets: OK
+--- None framing format works as if no framing is used
+{"number":0}
+{"number":1}
+{"number":2}
+--- unknown framing format
+Unknown framing format Unknown
+--- exception is written as a packet (streaming)
+1
+--- exception is written as a packet (wait_end_of_query)
+1
+--- exception is written as a packet (parse error)
+1

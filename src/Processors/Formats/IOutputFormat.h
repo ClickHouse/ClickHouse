@@ -12,6 +12,7 @@ namespace DB
 
 class Block;
 class WriteBuffer;
+class IFramingFormat;
 
 /** Output format have three inputs and no outputs. It writes data from WriteBuffer.
   *
@@ -71,6 +72,14 @@ public:
 
     virtual bool supportsWritingException() const { return false; }
     virtual void setException(const String & /*exception_message*/) {}
+
+    /// A framing format (see IFramingFormat.h) multiplexes the formatted data along with auxiliary
+    /// packets (progress, logs, profile events, exceptions) in the output stream. The format must
+    /// have been created over the framing format's payload buffer. When set, the format notifies
+    /// the framing format on packet boundaries, and progress is routed to the framing format
+    /// instead of the `writeProgress` method. Not compatible with parallel formatting.
+    void setFraming(const std::shared_ptr<IFramingFormat> & framing_) { framing = framing_; }
+    const std::shared_ptr<IFramingFormat> & getFraming() const { return framing; }
 
     size_t getResultRows() const { return result_rows; }
     size_t getResultBytes() const { return result_bytes; }
@@ -211,7 +220,12 @@ protected:
     /// To serialize the calls to writeProgress (which could be called from another thread) and other writing methods.
     std::mutex writing_mutex;
 
+    std::shared_ptr<IFramingFormat> framing;
+
 private:
+    /// Write the postponed progress update (to the framing format if it is set), under the writing mutex.
+    void writeProgressIfNeededUnlocked();
+
     size_t rows_read_before = 0;
     bool are_totals_written = false;
 

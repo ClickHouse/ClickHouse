@@ -2487,6 +2487,36 @@ Write exception in output format to produce valid output. Works with JSON and XM
     DECLARE(UInt64, http_response_buffer_size, 0, R"(
 The number of bytes to buffer in the server memory before sending a HTTP response to the client or flushing to disk (when http_wait_end_of_query is enabled).
 )", 0) \
+    DECLARE(String, framing_output_format, "None", R"(
+Allows to multiplex different parts of the query response in a single stream: chunks of data, totals and extremes, progress packets, profile events (metrics), and server logs - everything that the native protocol supports.
+
+Framing formats are independent of output formats: they encapsulate bytes produced by any output format, by separating and potentially encoding these chunks of bytes. The concatenation of the payloads of all `data`, `totals` and `extremes` packets is exactly what the output format would have produced without framing. Auxiliary packets (progress, logs, profile events, exceptions) are represented as JSON.
+
+Server logs are included if the `send_logs_level` setting is set, and profile events are included if the `send_profile_events` setting is enabled (they are sent at most once in `interactive_delay` microseconds, and progress packets are also throttled by `interactive_delay`).
+
+The setting currently applies to the HTTP protocol and is ignored for other interfaces.
+
+Possible values:
+
+- `None` - transparently routes everything applicable (data, totals, extremes, progress) to the output format, and ignores everything that is not applicable (metrics, logs), so everything works as it is by default.
+- `EventStream` - frames packets as HTTP server-sent events (`text/event-stream`). Every packet is sent as an event with the corresponding name: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. The formatted data becomes the `data` fields of the event, and progress and other auxiliary packets are sent as JSON. Suitable only for text output formats.
+- `JSONEachPacketBase64` - every packet is a JSON object on a separate line, and the formatted data is base64-encoded, e.g. `{"packet":"data","data":"eyJ4IjoxfQo="}`. Suitable for binary output formats.
+- `JSONEachPacketString` - every packet is a JSON object on a separate line, and the formatted data is put into a string, e.g. `{"packet":"data","data":"{\"x\":1}\n"}`.
+
+Example:
+
+```bash
+curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
+```
+
+Result:
+
+```text
+{"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
+{"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+```
+)", BETA) \
     \
     DECLARE(Bool, fsync_metadata, true, R"(
 Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.

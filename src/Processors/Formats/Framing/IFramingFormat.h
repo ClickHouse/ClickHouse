@@ -1,0 +1,125 @@
+#pragma once
+
+#include <Core/Types.h>
+#include <Formats/FormatSettings.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <Common/Stopwatch.h>
+
+#include <memory>
+
+namespace DB
+{
+
+class Block;
+struct Progress;
+class InternalTextLogsQueue;
+
+/// Which part of the query result a formatted payload belongs to.
+enum class FramedPacketKind : uint8_t
+{
+    Data,
+    Totals,
+    Extremes,
+};
+
+/** A framing format multiplexes different parts of the query response in a single stream:
+  * chunks of data, totals and extremes, progress packets, profile events (metrics), server logs,
+  * and exceptions - everything that the native protocol supports. This allows rich data exchange
+  * in the HTTP protocol.
+  *
+  * Framing formats are independent of output formats: they encapsulate bytes produced by any
+  * output format, by separating and potentially encoding these chunks of bytes. The framing format
+  * works as a multiplexor: the output format writes into the buffer returned by `getPayloadBuffer`,
+  * and `IOutputFormat` notifies the framing format on packet boundaries (`onPayload`), which wraps
+  * everything accumulated since the previous boundary into a packet of the corresponding kind.
+  * The concatenation of the payloads of all `data`, `totals` and `extremes` packets is exactly
+  * what the output format would have written without framing.
+  *
+  * Auxiliary packets (progress, logs, profile events, exceptions) are represented as JSON.
+  *
+  * The framing format is selected by the query setting `framing_output_format`. It applies to the
+  * HTTP protocol, but may apply in other protocols as well in the future.
+  *
+  * Processing of multiple queries at once is out of scope of the first implementation, but the
+  * design allows it: every packet can be extended with the information about the query index
+  * along multiple queries.
+  *
+  * The methods are not thread-safe: `IOutputFormat` serializes the calls under its writing mutex.
+  */
+class IFramingFormat
+{
+public:
+    IFramingFormat(WriteBuffer & out_, const FormatSettings & format_settings_);
+    virtual ~IFramingFormat();
+
+    virtual String getName() const = 0;
+
+    /// The content type for the HTTP response.
+    virtual String getContentType() const = 0;
+
+    /// The buffer where the output format writes formatted data.
+    WriteBuffer & getPayloadBuffer() { return payload; }
+
+    /// Called after the output format has written a portion of the given kind into the payload
+    /// buffer. Wraps everything accumulated since the previous call into a packet
+    /// (does nothing if the payload buffer is empty). Also pumps pending logs and profile events.
+    void onPayload(FramedPacketKind kind);
+
+    /// Called on query progress, possibly from another thread than `onPayload`
+    /// (but the calls are serialized by IOutputFormat). Also pumps pending logs and profile events.
+    void onProgress(const Progress & progress);
+
+    /// Remember an exception to be written as the last packet on `finalize`.
+    void setException(const String & message) { exception_message = message; }
+
+    /// Write the remaining payload, pending logs and profile events, and the exception if any,
+    /// then flush the output. No more packets can be written after this call.
+    void finalize();
+
+    /// Server logs (as selected by the `send_logs_level` setting) will be written as packets.
+    void setLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue_) { logs_queue = logs_queue_; }
+
+    /// Profile events of the query will be written as packets, at most once in `period_us` microseconds.
+    void setProfileEventsQueue(const InternalProfileEventsQueuePtr & queue, const String & host_name_, UInt64 period_us);
+
+protected:
+    virtual void writePayloadPacket(FramedPacketKind kind, std::string_view data) = 0;
+    virtual void writeProgressPacket(const Progress & progress) = 0;
+    /// The block has the structure of `InternalTextLogsQueue::getSampleBlock`.
+    virtual void writeLogsPacket(const Block & block) = 0;
+    /// The block has the structure of `ProfileEvents::getSampleBlock` (see ProfileEventsExt.h).
+    virtual void writeProfileEventsPacket(const Block & block) = 0;
+    virtual void writeExceptionPacket(const String & message) = 0;
+    virtual void finalizeImpl() {}
+
+    static std::string_view getPacketKindName(FramedPacketKind kind);
+
+    /// Helpers to represent single entries of auxiliary packets as JSON objects.
+    void writeLogRowJSON(const Block & block, size_t row_num, WriteBuffer & buf) const;
+    void writeProfileEventRowJSON(const Block & block, size_t row_num, WriteBuffer & buf) const;
+
+    WriteBuffer & out;
+    const FormatSettings format_settings;
+
+private:
+    void extractAndWritePayload(FramedPacketKind kind);
+    void pumpLogs();
+    void pumpProfileEvents(bool force);
+
+    WriteBufferFromOwnString payload;
+
+    std::shared_ptr<InternalTextLogsQueue> logs_queue;
+    InternalProfileEventsQueuePtr profile_events_queue;
+    String host_name;
+    UInt64 profile_events_period_us = 0;
+    Stopwatch profile_events_watch;
+    ProfileEvents::ThreadIdToCountersSnapshot profile_events_snapshots;
+
+    String exception_message;
+    bool finalized = false;
+};
+
+using FramingFormatPtr = std::shared_ptr<IFramingFormat>;
+
+}
