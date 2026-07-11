@@ -190,18 +190,25 @@ static Plan getPlan(
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
                     data_file, persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key), 0);
+                /// Key the plan by the DATA FILE's own path, not by the manifest path.
+                /// A single manifest routinely packs many data files (Spark/Flink/Trino
+                /// output, and our own MultipleFileWriter partition splits). Keying by
+                /// manifest path collapses them onto the first file's plan, so compaction
+                /// would rewrite only the first data file and silently drop every other
+                /// live data file in the manifest.
+                const auto & data_file_key = data_file->parsed_entry->file_path_key;
                 std::shared_ptr<DataFilePlan> data_file_ptr;
-                if (!plan.path_to_data_file.contains(manifest_file.manifest_file_path))
+                if (auto it = plan.path_to_data_file.find(data_file_key); it == plan.path_to_data_file.end())
                 {
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
                         .patched_path = plan.generator.generateDataFileName()});
-                    plan.path_to_data_file[manifest_file.manifest_file_path] = data_file_ptr;
+                    plan.path_to_data_file[data_file_key] = data_file_ptr;
                 }
                 else
                 {
-                    data_file_ptr = plan.path_to_data_file[manifest_file.manifest_file_path];
+                    data_file_ptr = it->second;
                 }
                 plan.partitions[partition_index].push_back(data_file_ptr);
                 plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(plan.partitions[partition_index].back());
