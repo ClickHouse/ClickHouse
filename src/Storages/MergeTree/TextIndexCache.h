@@ -6,6 +6,7 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include <functional>
 #include <memory>
 #include <string_view>
 #include <utility>
@@ -72,10 +73,13 @@ public:
 
     void removeByIndexPrefix(std::string_view index_prefix)
     {
-        remove([&](const Key &, const MappedPtr & info)
+        /// An explicit std::function disambiguates from remove(const Key &): UInt128 has
+        /// a templated constructor that makes a lambda argument ambiguous between the two.
+        std::function<bool(const Key &, const MappedPtr &)> predicate = [&](const Key &, const MappedPtr & info)
         {
             return info->cache_label && info->cache_label->starts_with(index_prefix);
-        });
+        };
+        remove(predicate);
     }
 };
 
@@ -116,10 +120,13 @@ public:
 
     void removeByIndexPrefix(std::string_view index_prefix)
     {
-        remove([&](const Key &, const MappedPtr & header)
+        /// An explicit std::function disambiguates from remove(const Key &): UInt128 has
+        /// a templated constructor that makes a lambda argument ambiguous between the two.
+        std::function<bool(const Key &, const MappedPtr &)> predicate = [&](const Key &, const MappedPtr & header)
         {
             return header->cache_label && header->cache_label->starts_with(index_prefix);
-        });
+        };
+        remove(predicate);
     }
 };
 
@@ -211,10 +218,13 @@ public:
 
     void removeByIndexPrefix(std::string_view index_prefix)
     {
-        remove([&](const Key &, const MappedPtr & cell)
+        /// An explicit std::function disambiguates from remove(const Key &): UInt128 has
+        /// a templated constructor that makes a lambda argument ambiguous between the two.
+        std::function<bool(const Key &, const MappedPtr &)> predicate = [&](const Key &, const MappedPtr & cell)
         {
             return cell->cache_label && cell->cache_label->starts_with(index_prefix);
-        });
+        };
+        remove(predicate);
     }
 };
 
