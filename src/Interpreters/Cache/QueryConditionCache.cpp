@@ -166,10 +166,13 @@ void QueryConditionCache::clear()
 
 void QueryConditionCache::clearTable(const UUID & table_id)
 {
-    cache.remove([&](const Key &, const Cache::MappedPtr & entry)
+    /// An explicit std::function disambiguates from remove(const Key &): UInt128 has
+    /// a templated constructor that makes a lambda argument ambiguous between the two.
+    std::function<bool(const Key &, const Cache::MappedPtr &)> predicate = [&](const Key &, const Cache::MappedPtr & entry)
     {
         return entry->table_id == table_id;
-    });
+    };
+    cache.remove(predicate);
 }
 
 void QueryConditionCache::setMaxSizeInBytes(size_t max_size_in_bytes)
