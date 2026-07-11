@@ -3230,8 +3230,28 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// (e.g. `toStartOfDay(ts)`) still hold their pre-SET values. Recompute the sort-key
         /// expression from the updated columns and re-sort, so the written part is consistent
         /// with its primary index. Gated so it is a no-op for every other merge.
-        if (groupByTTLAssignsSortKeyColumn(global_ctx->metadata_snapshot))
+        const auto & merge_context = global_ctx->data->getContext();
+        if (groupByTTLAssignsSortKeyColumn(global_ctx->metadata_snapshot, merge_context))
         {
+            /// If a MATERIALIZED sort-key column's source was rewritten by the `SET` (e.g.
+            /// `d MATERIALIZED toDate(ts)`, `ORDER BY d`, `... SET ts = ...`), the stored `d` in the
+            /// stream is stale. Recompute such columns from their default expression first, so the
+            /// sorting-key recompute and re-sort below key on the post-SET value.
+            auto materialized_sort_key_columns
+                = getGroupByTTLSetAffectedMaterializedSortKeyColumns(global_ctx->metadata_snapshot, merge_context);
+            if (!materialized_sort_key_columns.empty())
+            {
+                auto recompute_materialized_step = std::make_unique<ExpressionStep>(
+                    merge_parts_query_plan.getCurrentHeader(),
+                    buildRecomputeMaterializedColumnsDAG(
+                        *merge_parts_query_plan.getCurrentHeader(),
+                        materialized_sort_key_columns,
+                        global_ctx->metadata_snapshot->getColumns(),
+                        merge_context));
+                recompute_materialized_step->setStepDescription("Recompute materialized sorting key columns after TTL GROUP BY SET");
+                merge_parts_query_plan.addStep(std::move(recompute_materialized_step));
+            }
+
             /// Recompute the sorting-key expression columns from the post-SET values, overwriting
             /// the now-stale ones already present in the stream.
             const auto & sorting_key_expression = global_ctx->metadata_snapshot->getSortingKey().expression;

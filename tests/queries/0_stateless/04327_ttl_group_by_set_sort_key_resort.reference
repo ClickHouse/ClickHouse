@@ -21,3 +21,7 @@ mut idx matches	1
 nonkey data	3	2000-06-10 10:00:00	200
 nonkey data	5	2000-06-09 10:00:00	100
 nonkey sorted	1
+mat key consistent	1
+mat key sorted	1
+mat key mut consistent	1
+mat key mut sorted	1

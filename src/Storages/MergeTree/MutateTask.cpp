@@ -2343,7 +2343,7 @@ private:
         const bool group_by_ttl_runs
             = ctx->execute_ttl_type == ExecuteTTLType::NORMAL && ctx->metadata_snapshot->hasAnyGroupByTTL();
         const bool resort_after_group_by_ttl
-            = group_by_ttl_runs && groupByTTLAssignsSortKeyColumn(ctx->metadata_snapshot);
+            = group_by_ttl_runs && groupByTTLAssignsSortKeyColumn(ctx->metadata_snapshot, ctx->context);
 
         if (group_by_ttl_runs)
             add_primary_key_expression();

@@ -162,3 +162,41 @@ SELECT 'nonkey data', k, ts, v FROM t_nonkey ORDER BY ALL;
 SELECT 'nonkey sorted', (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_nonkey SETTINGS optimize_read_in_order = 0))
                       = (SELECT groupArray((k, toStartOfDay(ts))) FROM (SELECT k, ts FROM t_nonkey ORDER BY k, toStartOfDay(ts)));
 DROP TABLE t_nonkey;
+
+-- Merge path, MATERIALIZED sort-key column whose SOURCE is rewritten by the SET. The sorting key
+-- is the MATERIALIZED column `d = toDate(ts)`, and the SET rewrites its source `ts` (not `d`
+-- directly). The aggregation updates `ts` but leaves the stored `d` on its pre-SET value, so `d`
+-- must be recomputed from its default expression before re-sorting. The SET aggregate reverses the
+-- day order, so a correct re-sort is observable. `optimize_sorting_by_input_stream_properties = 1`
+-- is kept on to cover the optimizer path.
+DROP TABLE IF EXISTS t_mat_key;
+CREATE TABLE t_mat_key (ts DateTime, d Date MATERIALIZED toDate(ts))
+ENGINE = MergeTree ORDER BY d
+TTL ts + toIntervalDay(1) GROUP BY d SET ts = toDateTime('2100-01-01') - (max(ts) - toDateTime('2000-01-01'))
+SETTINGS min_bytes_for_full_part_storage = 128, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP MERGES t_mat_key;
+INSERT INTO t_mat_key SELECT toDateTime('2020-01-01') + number * 86400 FROM numbers(5);
+INSERT INTO t_mat_key SELECT toDateTime('2020-02-01') + number * 86400 FROM numbers(5);
+SYSTEM START MERGES t_mat_key;
+OPTIMIZE TABLE t_mat_key FINAL SETTINGS optimize_sorting_by_input_stream_properties = 1;
+-- Stored `d` must equal the recomputed `toDate(ts)` for every row (not the stale pre-SET value).
+SELECT 'mat key consistent', countIf(d = toDate(ts)) = count() FROM t_mat_key;
+-- Part must be physically sorted by the recomputed `d`.
+SELECT 'mat key sorted', (SELECT groupArray(d) FROM (SELECT d FROM t_mat_key SETTINGS optimize_read_in_order = 0))
+                       = (SELECT groupArray(d) FROM (SELECT d FROM t_mat_key ORDER BY d));
+DROP TABLE t_mat_key;
+
+-- Mutation path (MATERIALIZE TTL), MATERIALIZED sort-key column whose source is SET. Same shape as
+-- above but the TTL is applied by a mutation instead of a merge.
+DROP TABLE IF EXISTS t_mat_key_mut;
+CREATE TABLE t_mat_key_mut (ts DateTime, d Date MATERIALIZED toDate(ts))
+ENGINE = MergeTree ORDER BY d
+TTL ts + toIntervalDay(1) GROUP BY d SET ts = toDateTime('2100-01-01') - (max(ts) - toDateTime('2000-01-01'))
+SETTINGS min_bytes_for_full_part_storage = 128, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_mat_key_mut;
+INSERT INTO t_mat_key_mut SELECT toDateTime('2020-01-01') + number * 86400 FROM numbers(10);
+ALTER TABLE t_mat_key_mut MATERIALIZE TTL SETTINGS mutations_sync = 2;
+SELECT 'mat key mut consistent', countIf(d = toDate(ts)) = count() FROM t_mat_key_mut;
+SELECT 'mat key mut sorted', (SELECT groupArray(d) FROM (SELECT d FROM t_mat_key_mut SETTINGS optimize_read_in_order = 0))
+                           = (SELECT groupArray(d) FROM (SELECT d FROM t_mat_key_mut ORDER BY d));
+DROP TABLE t_mat_key_mut;

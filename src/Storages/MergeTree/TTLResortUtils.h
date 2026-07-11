@@ -8,6 +8,8 @@ namespace DB
 {
 
 class QueryPipelineBuilder;
+class ActionsDAG;
+class Block;
 
 /// A `TTL ... GROUP BY ... SET col = agg(...)` clause can assign a column that the table's
 /// sorting key depends on (directly, or through an expression such as `toStartOfDay(ts)`).
@@ -23,7 +25,31 @@ class QueryPipelineBuilder;
 /// subcolumn (e.g. `ORDER BY t.a` requires `t.a`, whose storage column is `t`). Each dependency
 /// is mapped to its storage column before comparing, the same way `extractMergingAndGatheringColumns`
 /// does via `getColumnNameInStorage`.
-bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot);
+///
+/// The `SET` can also rewrite a column that a MATERIALIZED sort-key column is computed from
+/// (e.g. `d Date MATERIALIZED toDate(ts)`, `ORDER BY d`, `... GROUP BY d SET ts = ...`): the
+/// aggregation updates `ts` but leaves the stored `d` on its pre-`SET` value, so the part is
+/// written with stale sort-key data. Such MATERIALIZED sort-key columns must be recomputed from
+/// their default expression before re-sorting; this function returns true for that case too.
+bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
+
+/// The MATERIALIZED sort-key storage columns whose source columns are rewritten by a
+/// `TTL ... GROUP BY ... SET` (e.g. `d` for `d MATERIALIZED toDate(ts)` when `ts` is SET). These
+/// hold stale values in the post-TTL stream and must be recomputed from their default expression
+/// before the sorting key is recomputed and the stream re-sorted. Empty when the `SET` only
+/// rewrites sort-key columns directly.
+NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
+
+/// Build an `ActionsDAG` over `header` that drops the stale values of `columns_to_recompute` and
+/// recomputes them from their MATERIALIZED default expressions (reading the post-`SET` source
+/// columns already present in the stream). All other columns pass through unchanged. Used by both
+/// the merge and mutation paths to recompute stale MATERIALIZED sort-key columns before re-sorting.
+ActionsDAG buildRecomputeMaterializedColumnsDAG(
+    const Block & header,
+    const NamesAndTypesList & columns_to_recompute,
+    const ColumnsDescription & columns_desc,
+    const ContextPtr & context);
 
 /// Recompute the sorting-key expression columns from the post-`SET` values and re-sort the
 /// pipeline by the sorting key. Used by the mutation path (e.g. `MATERIALIZE TTL`) after a
