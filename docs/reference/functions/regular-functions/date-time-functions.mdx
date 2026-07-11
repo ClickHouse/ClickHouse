@@ -44,9 +44,9 @@ Returns the current date and time at the moment of query analysis. The function 
 This function gives the same result that `now('UTC')` would. It was added only for MySQL support. [`now`](#now) is the preferred usage.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -382,9 +382,9 @@ Introduced in: v22.11.0
 
 Adds an interval to another interval or tuple of intervals.
 
-:::note
+<Note>
 Intervals of the same type will be combined into a single interval. For instance if `toIntervalDay(1)` and `toIntervalDay(2)` are passed then the result will be `(3)` rather than `(1,1)`.
-:::
+</Note>
     
 
 **Syntax**
@@ -1916,9 +1916,9 @@ Returns the current time of day in the server (or session) time zone, at the mom
 The function is a constant expression. It is the SQL-standard / PostgreSQL `LOCALTIME`, and is equivalent to `CAST(now() AS Time)`.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2181,9 +2181,9 @@ Introduced in: v1.1.0
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2246,9 +2246,9 @@ Introduced in: v20.1.0
 Returns the current date and time with sub-second precision at the moment of query analysis. The function is a constant expression.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2288,9 +2288,9 @@ Returns the current date and time at the moment of processing of each block of d
 It makes sense to use this function to generate the current time in long-running `INSERT SELECT` queries.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2337,9 +2337,9 @@ Returns the current date and time at the moment of processing of each block of d
 It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2386,9 +2386,9 @@ Returns the timezone of the server, i.e. the value of the [`timezone`](/referenc
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -3212,10 +3212,10 @@ Introduced in: v1.1.0
 
 Round the time to the start of a half-an-hour length interval.
 
-:::note
+<Note>
 Although this function can take values of the extended types `Date32` and `DateTime64` as an argument,
 passing it a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
-:::
+</Note>
     
 
 **Syntax**
@@ -3353,9 +3353,9 @@ Returns the time zone name of the current session or converts a time zone
 offset or name to a canonical time zone name.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -3805,9 +3805,9 @@ Introduced in: v1.1.0
 
 Rounds up a date or date with time to the last day of the month.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -3846,9 +3846,9 @@ Introduced in: v23.5.0
 
 Rounds a date or date with time up to the nearest Saturday or Sunday.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -4080,9 +4080,9 @@ Introduced in: v1.1.0
 
 Rounds down a date or date with time to the Monday of the same week. Returns the date.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -4597,9 +4597,9 @@ Introduced in: v1.1.0
 
 Rounds down a date with time to the start of the day.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -4636,9 +4636,9 @@ Introduced in: v1.1.0
 
 Rounds down the date with time to the start of the fifteen-minute interval.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -4681,9 +4681,9 @@ Introduced in: v22.6.0
 
 Rounds down a date with time to the start of the nearest five-minute interval.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -4728,9 +4728,9 @@ Introduced in: v1.1.0
 
 Rounds down a date with time to the start of the hour.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -4768,9 +4768,9 @@ Introduced in: v1.1.0
 
 Rounds down a date or date with time to the first day of the ISO year, which can be different than a regular year. See [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date).
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -4986,9 +4986,9 @@ Introduced in: v1.1.0
 
 Rounds down a date with time to the start of the minute.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -5029,9 +5029,9 @@ Introduced in: v1.1.0
 
 Rounds down a date or date with time to the first day of the month.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -5118,9 +5118,9 @@ Introduced in: v1.1.0
 
 Rounds down a date or date with time to the first day of the quarter. The first day of the quarter is either 1 January, 1 April, 1 July, or 1 October.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -5207,9 +5207,9 @@ Introduced in: v20.1.0
 
 Rounds down a date with time to the start of the nearest ten-minute interval.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -5252,9 +5252,9 @@ Introduced in: v20.1.0
 
 Rounds a date or date with time down to the nearest Sunday or Monday.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -5301,9 +5301,9 @@ Introduced in: v1.1.0
 
 Rounds down a date or date with time to the first day of the year. Returns the date as a `Date` object.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     
 
 **Syntax**
@@ -5818,9 +5818,9 @@ Introduced in: v1.1.0
 
 Returns the current date at moment of query analysis. Same as `toDate(now())`.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -5875,9 +5875,9 @@ Introduced in: v1.1.0
 Accepts zero arguments and returns yesterday's date at one of the moments of query analysis.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
