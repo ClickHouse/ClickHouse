@@ -1,8 +1,12 @@
 #include <Storages/MergeTree/TTLResortUtils.h>
 
 #include <optional>
+#include <ranges>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
+#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
@@ -44,11 +48,41 @@ NameSet getGroupByTTLSetTargets(const StorageMetadataPtr & metadata_snapshot)
     return set_targets;
 }
 
+/// The INPUT (leaf) column names of the sub-DAG rooted at the output node named `output_name`.
+/// Used to obtain the source columns of ONE specific primary-key expression key (e.g. only
+/// `toStartOfDay(ts)`), rather than of the whole primary-key expression. Returns nullopt when the
+/// output node is absent (the caller then falls back to the whole-expression sources).
+std::optional<NameSet> getExpressionOutputInputColumns(const ActionsDAG & dag, const String & output_name)
+{
+    const auto * root = dag.tryFindInOutputs(output_name);
+    if (!root)
+        return std::nullopt;
+
+    NameSet inputs;
+    std::vector<const ActionsDAG::Node *> stack{root};
+    std::unordered_set<const ActionsDAG::Node *> seen;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!seen.insert(node).second)
+            continue;
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            inputs.insert(node->result_name);
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return inputs;
+}
+
 /// Map one `GROUP BY` key (a primary-key column NAME, which may be a computed expression such as
 /// `toStartOfDay(ts)`, a subcolumn such as `t.a`, or a physical/MATERIALIZED column) to the physical
 /// storage columns whose value it depends on. A physical column maps to itself; a MATERIALIZED
 /// column additionally pulls in the (transitive) sources of its default expression; a computed key
-/// pulls in the storage columns its primary-key expression reads.
+/// pulls in the storage columns THAT KEY's primary-key expression node reads -- scoped to the
+/// specific key node, so an unrelated `SET` on another sort-key column (e.g. `user_id` under
+/// `ORDER BY (toStartOfDay(ts), user_id)` while grouping only by `toStartOfDay(ts)`) does not pull
+/// that column into this key's dependencies.
 NameSet getGroupByKeyStorageDependencies(
     const String & key,
     const StorageMetadataPtr & metadata_snapshot,
@@ -78,6 +112,14 @@ NameSet getGroupByKeyStorageDependencies(
         }
     };
 
+    auto expand_source = [&](const String & source, NameSet & out)
+    {
+        if (storage_names.contains(source))
+            expand_physical(source, out);
+        else if (auto source_in_storage = Nested::tryGetColumnNameInStorage(source, storage_names))
+            expand_physical(*source_in_storage, out);
+    };
+
     NameSet deps;
     if (storage_names.contains(key))
     {
@@ -90,14 +132,22 @@ NameSet getGroupByKeyStorageDependencies(
     }
     else if (metadata_snapshot->hasPrimaryKey())
     {
-        /// Computed key such as `toStartOfDay(ts)`: pull the storage columns the primary-key
-        /// expression reads (mapped through storage for subcolumn reads).
-        for (const auto & source : metadata_snapshot->getPrimaryKey().expression->getRequiredColumns())
+        /// Computed key such as `toStartOfDay(ts)`: pull only the storage columns THIS key's
+        /// primary-key expression node reads (mapped through storage for subcolumn reads). Scoping to
+        /// the specific output node avoids flipping the fast path off for an unrelated `SET` on a
+        /// sibling sort-key column.
+        const auto & pk_dag = metadata_snapshot->getPrimaryKey().expression->getActionsDAG();
+        if (auto key_sources = getExpressionOutputInputColumns(pk_dag, key))
         {
-            if (storage_names.contains(source))
-                expand_physical(source, deps);
-            else if (auto source_in_storage = Nested::tryGetColumnNameInStorage(source, storage_names))
-                expand_physical(*source_in_storage, deps);
+            for (const auto & source : *key_sources)
+                expand_source(source, deps);
+        }
+        else
+        {
+            /// The key is not an output of the primary-key expression: fall back to the whole
+            /// expression's sources (conservative -- correctness over the fast-path optimization).
+            for (const auto & source : metadata_snapshot->getPrimaryKey().expression->getRequiredColumns())
+                expand_source(source, deps);
         }
     }
     return deps;
@@ -228,6 +278,65 @@ NameSet getMaterializedColumnsAffectedBySet(
 
 }
 
+Names getStaleEphemeralMaterializedColumnsAffectedBySet(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
+{
+    Names stale;
+
+    if (metadata_snapshot->getGroupByTTLs().empty())
+        return stale;
+
+    const auto & columns_desc = metadata_snapshot->getColumns();
+    const auto set_targets = getGroupByTTLSetTargets(metadata_snapshot);
+    const auto storage_columns = columns_desc.getAllPhysical().getNameSet();
+
+    NamesAndTypesList all_columns_with_ephemeral = columns_desc.getAllPhysical();
+    NameSet ephemeral_columns;
+    for (const auto & column : columns_desc.getEphemeral())
+    {
+        ephemeral_columns.insert(column.name);
+        all_columns_with_ephemeral.push_back(column);
+    }
+
+    /// A MATERIALIZED column whose default expression reads an EPHEMERAL column cannot be recomputed
+    /// here (ephemeral columns exist only during INSERT, never on disk). If such a column ALSO reads a
+    /// column rewritten by the `GROUP BY` TTL `SET`, its stored value goes stale and there is no way to
+    /// refresh it -- mirror `MutationsInterpreter::prepare`'s handling for `UPDATE` and warn (fail loud)
+    /// instead of silently treating it as unaffected.
+    for (const auto & column : columns_desc.getAllPhysical())
+    {
+        if (!columns_desc.has(column.name))
+            continue;
+        const auto & column_desc = columns_desc.get(column.name);
+        if (column_desc.default_desc.kind != ColumnDefaultKind::Materialized || !column_desc.default_desc.expression)
+            continue;
+
+        auto query = column_desc.default_desc.expression->clone();
+        replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
+        auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
+        const auto required = syntax_result->requiredSourceColumns();
+
+        const bool reads_ephemeral
+            = std::ranges::any_of(required, [&](const auto & dep) { return ephemeral_columns.contains(dep); });
+        if (!reads_ephemeral)
+            continue;
+
+        const bool reads_set_target = std::ranges::any_of(required, [&](const auto & dep)
+        {
+            if (ephemeral_columns.contains(dep))
+                return false;
+            if (set_targets.contains(dep))
+                return true;
+            if (auto in_storage = Nested::tryGetColumnNameInStorage(dep, storage_columns))
+                return set_targets.contains(*in_storage);
+            return false;
+        });
+        if (reads_set_target)
+            stale.push_back(column.name);
+    }
+    return stale;
+}
+
 NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
@@ -351,26 +460,35 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
     /// forms whose in-stream value goes stale after an earlier `SET`:
     ///  - `expression_keys`: computed or subcolumn keys such as `toStartOfDay(ts)` or `t.a` -- not a
     ///    physical column, recomputed from the primary-key expression.
-    ///  - `materialized_keys`: a physical MATERIALIZED column used as a key (e.g. `ORDER BY d` with
+    ///  - a physical MATERIALIZED column used as a key (e.g. `ORDER BY d` with
     ///    `d MATERIALIZED toDate(ts)`, `SET ts = ...`) -- recomputed from its default expression.
     /// A plain physical key (including the `SET` target itself, which the earlier aggregation already
     /// rewrote in the block) needs no refresh.
+    ///
+    /// `needs_materialized_refresh` must also be set when a computed/subcolumn key merely READS an
+    /// affected MATERIALIZED column (e.g. `ORDER BY toStartOfMonth(d)`, `d MATERIALIZED toDate(ts)`,
+    /// `SET ts = ...`): recomputing `toStartOfMonth(d)` from the stale stored `d` would still group by
+    /// the pre-`SET` month, so the affected MATERIALIZED sources must be refreshed FIRST, then the
+    /// expression key rebuilt from the fresh values.
     NameSet expression_keys;
-    bool has_materialized_key = false;
+    bool needs_materialized_refresh = false;
     for (const auto & key : group_by_keys)
     {
         if (storage_names.contains(key))
         {
             if (affected_materialized.contains(key))
-                has_materialized_key = true;
+                needs_materialized_refresh = true;
         }
         else
         {
             expression_keys.insert(key);
+            for (const auto & dep : getGroupByKeyStorageDependencies(key, metadata_snapshot, materialized_sources))
+                if (affected_materialized.contains(dep))
+                    needs_materialized_refresh = true;
         }
     }
 
-    if (expression_keys.empty() && !has_materialized_key)
+    if (expression_keys.empty() && !needs_materialized_refresh)
         return std::nullopt;
 
     std::optional<ActionsDAG> result;
@@ -378,7 +496,7 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
     /// Refresh affected MATERIALIZED columns first (the full transitive set, so a materialized key
     /// computed from another materialized column is fed fresh inputs), then recompute the
     /// expression keys from them and the post-`SET` physical columns.
-    if (has_materialized_key)
+    if (needs_materialized_refresh)
     {
         auto affected_materialized_columns = getGroupByTTLSetAffectedMaterializedColumns(metadata_snapshot, context);
         if (!affected_materialized_columns.empty())

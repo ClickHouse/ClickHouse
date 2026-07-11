@@ -132,3 +132,67 @@ OPTIMIZE TABLE ttl_multi_group_by FINAL;
 SELECT count() FROM ttl_multi_group_by WHERE d >= toDate('2025-01-01') SETTINGS force_data_skipping_indices = 'd_idx';
 
 DROP TABLE ttl_multi_group_by;
+
+-- F1: computed key over a MATERIALIZED source. The group_by key is toStartOfMonth(d) and
+-- d MATERIALIZED toDate(ts). An earlier SET rewrites ts, so the stored d is stale; the key
+-- toStartOfMonth(d) must be rebuilt from the FRESH d (recompute the materialized source FIRST),
+-- otherwise the later GROUP BY groups by the pre-SET month and fragments. Run via MATERIALIZE TTL
+-- (mutation path) which exposes the aggregation grouping directly. tgt maps the 4 source months to
+-- 2 post-SET months, so the 2nd GROUP BY must collapse the part to exactly 2 rows.
+CREATE TABLE ttl_multi_group_by (ts DateTime, d Date MATERIALIZED toDate(ts), payload UInt64, tgt UInt8)
+ENGINE = MergeTree ORDER BY toStartOfMonth(d)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 2;
+
+INSERT INTO ttl_multi_group_by (ts, payload, tgt) VALUES
+    ('2020-01-15 00:00:00', 1, 0), ('2020-02-15 00:00:00', 10, 1),
+    ('2020-03-15 00:00:00', 100, 0), ('2020-04-15 00:00:00', 1000, 1);
+
+ALTER TABLE ttl_multi_group_by MODIFY TTL
+    ts + toIntervalDay(1) GROUP BY toStartOfMonth(d) SET ts = toDateTime('2021-06-15 00:00:00') + toIntervalMonth(any(tgt)), payload = sum(payload),
+    ts + toIntervalDay(1) GROUP BY toStartOfMonth(d) SET payload = sum(payload)
+SETTINGS materialize_ttl_after_modify = 0;
+ALTER TABLE ttl_multi_group_by MATERIALIZE TTL SETTINGS mutations_sync = 2;
+
+-- Exactly 2 physical rows (June/July 2021), each with the summed payload. 4 rows would mean the
+-- 2nd GROUP BY grouped by the stale month.
+SELECT ts, payload FROM ttl_multi_group_by ORDER BY ts;
+SELECT count() FROM ttl_multi_group_by;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
+-- F3: the affected-by-SET check must be scoped to the SPECIFIC group_by key, not the whole primary
+-- key. ORDER BY (toStartOfDay(ts), user_id); the 2nd TTL groups only by toStartOfDay(ts), and an
+-- earlier SET rewrites user_id (a sibling sort-key column the 2nd key does NOT depend on). The 2nd
+-- TTL's input is still ordered by toStartOfDay(ts), so grouping must remain correct: 2 groups by day.
+CREATE TABLE ttl_multi_group_by (ts DateTime, user_id UInt32, payload UInt64, nu UInt32)
+ENGINE = MergeTree ORDER BY (toStartOfDay(ts), user_id)
+TTL ts + toIntervalDay(1) GROUP BY toStartOfDay(ts), user_id SET user_id = max(nu), payload = sum(payload),
+    ts + toIntervalDay(1) GROUP BY toStartOfDay(ts) SET payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 2;
+
+INSERT INTO ttl_multi_group_by VALUES
+    ('2020-03-01 01:00:00', 1, 1, 9), ('2020-03-01 02:00:00', 2, 10, 9),
+    ('2020-03-02 01:00:00', 3, 100, 8), ('2020-03-02 02:00:00', 4, 1000, 8);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+SELECT toStartOfDay(ts) AS day, count(), sum(payload) FROM ttl_multi_group_by GROUP BY day ORDER BY day;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
+-- F2: a MATERIALIZED column that reads both an EPHEMERAL column and a SET target cannot be recomputed
+-- (ephemeral columns are not on disk). This must not crash or reject the merge; the merge completes and
+-- the aggregated columns are still correct (the stale materialized value is a documented limitation, a
+-- warning is logged). x = max(x) = 9, payload = sum = 30.
+CREATE TABLE ttl_multi_group_by (k UInt32, ts DateTime, x UInt32, eph String EPHEMERAL 'E', m String MATERIALIZED concat(toString(x), eph), payload UInt64)
+ENGINE = MergeTree ORDER BY k
+TTL ts + toIntervalDay(1) GROUP BY k SET x = max(x), payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO ttl_multi_group_by (k, ts, x, eph, payload) VALUES (1, '2020-01-01', 5, 'A', 10), (1, '2020-01-02', 9, 'B', 20);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+SELECT k, x, payload FROM ttl_multi_group_by ORDER BY k;
+
+DROP TABLE ttl_multi_group_by;

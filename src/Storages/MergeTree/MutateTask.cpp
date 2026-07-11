@@ -2368,6 +2368,19 @@ private:
 
             if (group_by_ttl_runs)
             {
+                /// A MATERIALIZED column reading both an EPHEMERAL column and a `SET` target cannot be
+                /// recomputed here (ephemeral columns are not on disk), so its stored value goes stale.
+                /// Warn (mirroring `MutationsInterpreter::prepare` for UPDATE) instead of silently
+                /// writing a stale value.
+                for (const auto & stale_column :
+                     getStaleEphemeralMaterializedColumnsAffectedBySet(ctx->metadata_snapshot, ctx->context))
+                    LOG_WARNING(ctx->log,
+                        "MATERIALIZED column '{}' depends on both an EPHEMERAL column and a column rewritten "
+                        "by a GROUP BY TTL SET. It cannot be recomputed during mutation (ephemeral columns "
+                        "are not stored), so its on-disk value may become stale. To fix this, re-INSERT the "
+                        "affected rows.",
+                        stale_column);
+
                 /// The `SET` may have rewritten a sort-key column, leaving the stream unordered and
                 /// the primary-key columns stale; re-sort and recompute them so the rebuilt primary
                 /// index matches the written row order. Then compute the skip-index expressions from

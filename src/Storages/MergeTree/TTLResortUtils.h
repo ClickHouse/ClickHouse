@@ -79,6 +79,14 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
 NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
 
+/// The MATERIALIZED columns whose default expression reads BOTH an EPHEMERAL column and a column
+/// rewritten by a `TTL ... GROUP BY ... SET`. Such a column cannot be recomputed during merge/mutation
+/// (ephemeral columns are only available at INSERT, never read from disk), so its stored value goes
+/// stale with no way to refresh it. Callers warn about each (mirroring `MutationsInterpreter::prepare`
+/// for `UPDATE`) rather than silently writing a stale value. Empty when no such column exists.
+Names getStaleEphemeralMaterializedColumnsAffectedBySet(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
+
 /// Build an `ActionsDAG` over `header` that drops the stale values of `columns_to_recompute` and
 /// recomputes them from their MATERIALIZED default expressions (reading the post-`SET` source
 /// columns already present in the stream). All other columns pass through unchanged. Used by both

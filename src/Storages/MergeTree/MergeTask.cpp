@@ -3237,6 +3237,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         ///      consistent with its primary index.
         const auto & merge_context = global_ctx->data->getContext();
 
+        /// A MATERIALIZED column that reads both an EPHEMERAL column and a `SET` target cannot be
+        /// recomputed here (ephemeral columns are not on disk), so its stored value goes stale and
+        /// there is no way to refresh it. Warn (mirroring `MutationsInterpreter::prepare` for UPDATE)
+        /// instead of silently writing a stale value.
+        for (const auto & stale_column :
+             getStaleEphemeralMaterializedColumnsAffectedBySet(global_ctx->metadata_snapshot, merge_context))
+            LOG_WARNING(ctx->log,
+                "MATERIALIZED column '{}' depends on both an EPHEMERAL column and a column rewritten by a "
+                "GROUP BY TTL SET. It cannot be recomputed during merge (ephemeral columns are not stored), "
+                "so its on-disk value may become stale. To fix this, re-INSERT the affected rows.",
+                stale_column);
+
         /// (1) Recompute affected MATERIALIZED columns. Must precede the sort-key recompute below so
         /// a MATERIALIZED sort-key column feeds the recomputation with its post-`SET` value.
         auto affected_materialized_columns
