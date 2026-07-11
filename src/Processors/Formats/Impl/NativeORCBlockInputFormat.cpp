@@ -1007,6 +1007,17 @@ updateIncludeTypeIds(DataTypePtr type, const orc::Type * orc_type, bool ignore_c
             }
             return;
         }
+        case orc::UNION: {
+            /// ORC union maps to the ClickHouse Variant type, and readColumnFromORCColumn reads
+            /// every branch of the union (there is no per-branch pruning, because Variant reorders
+            /// its branch types). Including the union's own column id makes the ORC reader select
+            /// the union together with all of its descendant columns (see
+            /// ColumnSelector::selectChildren), which is exactly the set that is read back. Without
+            /// this, none of the union's tag stream or branch columns would be decoded and every
+            /// value would be read as NULL.
+            include_typeids.insert(orc_type->getColumnId());
+            return;
+        }
         default:
             return;
     }
