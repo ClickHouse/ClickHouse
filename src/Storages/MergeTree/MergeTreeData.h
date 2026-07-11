@@ -476,7 +476,9 @@ public:
         bool allow_tuple_element_aggregation = false;
 
         /// Check that needed columns are present and have correct types.
-        void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
+        /// `sanity_checks` is true only when the table is being created (not attached/loaded); some
+        /// checks that would break the loading of already-existing tables are gated on it.
+        void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata, bool sanity_checks) const;
 
         String getModeName() const;
 
@@ -639,6 +641,27 @@ public:
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
 
+    enum class ColumnDefaultnessStatsUnavailableReason : uint8_t
+    {
+        None,
+        ActiveTransaction,
+        PatchParts,
+        DataMutations,
+        AlterMutations,
+        MaskingPolicy,
+    };
+
+    static ColumnDefaultnessStatsUnavailableReason
+    getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context, const MutationsSnapshotPtr & mutations_snapshot);
+    ColumnDefaultnessStatsUnavailableReason getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const;
+    static const char * columnDefaultnessStatsUnavailableReasonToString(ColumnDefaultnessStatsUnavailableReason reason);
+
+    /// True if an enabled masking policy applies to this table for the current user. Masking is
+    /// applied at read time as synthetic AlterConversions (see getAlterConversionsForPart) that
+    /// rewrite values but leave the on-disk defaultness stats untouched, so those stats can no
+    /// longer be trusted by the sparsity optimizations. Always false outside the Cloud build.
+    bool hasEnabledMaskingPolicies(const ContextPtr & query_context) const;
+
     /// Snapshot for MergeTree contains the current set of data parts
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
@@ -782,6 +805,18 @@ public:
     size_t getTotalActiveSizeInBytes() const;
     size_t getTotalActiveSizeInRows() const;
     size_t getTotalUncompressedBytesInPatches() const;
+
+    /// All-or-nothing aggregate of per-part `SerializationInfo::Data` for `column_name`:
+    /// returns nullopt unless every visible part has exact stats (see `SparsityFilter.h`).
+    std::optional<ColumnDefaultnessStats>
+    getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const override;
+
+protected:
+    /// Active parts to consult when aggregating whole-table column statistics. The base
+    /// returns `getVisibleDataPartsVector`; `StorageReplicatedMergeTree` overrides this
+    /// to honor `select_sequential_consistency` the same way `totalRows` does.
+    virtual DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const;
+public:
 
     size_t getAllPartsCount() const;
     size_t getActivePartsCount() const;
@@ -1263,7 +1298,11 @@ public:
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
         const MutationsSnapshotPtr & mutations,
-        const ContextPtr & query_context);
+        const ContextPtr & query_context
+#if CLICKHOUSE_CLOUD
+        , const EnabledMaskingPoliciesPtr & enabled_masking_policies
+#endif
+        );
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
@@ -1700,6 +1739,8 @@ protected:
         const StorageInMemoryMetadata & old_metadata,
         bool attach = false,
         ContextPtr local_context = nullptr);
+
+    void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
 

@@ -330,6 +330,11 @@ void MergeTreeSink::finishDelayedChunk()
 
             partition.temp_part = writeNewTempPart(partition.block_with_partition);
 
+            /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition
+            /// could become empty after merge and then no part is created.
+            if (!partition.temp_part->part)
+                break;
+
             ++retry_times;
         }
     }

@@ -2590,8 +2590,12 @@ void ClientBase::processParsedSingleQuery(
     {
         if (const auto * set_query = parsed_query->as<ASTSetQuery>())
         {
+            /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
+            SettingsChanges changes = set_query->changes;
+            replaceQueryParametersInSettingsChanges(changes, client_context->getQueryParameters());
+
             /// Save all changes in settings to avoid losing them if the connection is lost.
-            for (const auto & change : set_query->changes)
+            for (const auto & change : changes)
             {
                 if (change.name != "profile")
                     client_context->applySettingChange(change);

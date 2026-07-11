@@ -11,8 +11,7 @@ doc_type: 'guide'
 If you don't need to install ClickHouse for production, you can run an install script using curl. The script will determine a suitable binary for your OS.
 
 <Steps>
-<Step>
-## Install ClickHouse using curl {#install-clickhouse-using-curl}
+<Step title="Install ClickHouse using curl" id="install-clickhouse-using-curl">
 
 Run the following command to download a single binary for your operating system.
 
@@ -35,8 +34,7 @@ curl https://clickhouse.com/ | CLICKHOUSE_ONLY=1 sh
 For Mac users: If you're getting errors that the developer of the binary can't be verified, please see [here](/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos).
 </Note>
 </Step>
-<Step>
-## Start clickhouse-local {#start-clickhouse-local}
+<Step title="Start clickhouse-local" id="start-clickhouse-local">
 
 `clickhouse-local` allows you to process local and remote files using ClickHouse's 
 powerful SQL syntax and without the need for configuration. Table data is stored
@@ -49,8 +47,7 @@ Run the following command to start [clickhouse-local](/concepts/features/tools-a
 ./clickhouse
 ```
 </Step>
-<Step>
-## Start clickhouse-server {#start-clickhouse-server}
+<Step title="Start clickhouse-server" id="start-clickhouse-server">
 
 Should you wish to persist data, you'll want to run `clickhouse-server`. You can
 start the ClickHouse server using the following command:
@@ -59,8 +56,7 @@ start the ClickHouse server using the following command:
 ./clickhouse server
 ```
 </Step>
-<Step>
-## Start clickhouse-client {#start-clickhouse-client}
+<Step title="Start clickhouse-client" id="start-clickhouse-client">
 
 With the server up and running, open a new terminal window and run the following command
 to launch `clickhouse-client`:
