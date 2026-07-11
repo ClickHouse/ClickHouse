@@ -71,11 +71,16 @@ SELECT count() FROM tab_map WHERE mapContainsKeyLike(m, '') SETTINGS use_skip_in
 SELECT count() FROM tab_map WHERE mapContainsKeyLike(m, '') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab_map WHERE mapContainsValueLike(m, '') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 SELECT count() FROM tab_map WHERE mapContainsValueLike(m, '') SETTINGS use_skip_indexes = 0;
+-- has(m, needle) over a Map also uses the mapKeys index exact-read path (function_name == "has" branch).
+SELECT count() FROM tab_map WHERE has(m, '') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT count() FROM tab_map WHERE has(m, '') SETTINGS use_skip_indexes = 0;
 
 SELECT '-- mapContainsKey/Value with present/absent needle (index)';
 SELECT count() FROM tab_map WHERE mapContainsKey(m, 'k1') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 SELECT count() FROM tab_map WHERE mapContainsKey(m, 'nope') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 SELECT count() FROM tab_map WHERE mapContainsValue(m, 'v1') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 SELECT count() FROM tab_map WHERE mapContainsValue(m, 'nope') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT count() FROM tab_map WHERE has(m, 'k1') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT count() FROM tab_map WHERE has(m, 'nope') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE tab_map;
