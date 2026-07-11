@@ -1,0 +1,60 @@
+#include <Analyzer/Passes/RemoveRedundantIfNullCoalescePass.h>
+
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+
+#include <DataTypes/DataTypeNullable.h>
+
+namespace DB
+{
+
+namespace
+{
+
+class RemoveRedundantIfNullCoalesceVisitor : public InDepthQueryTreeVisitorWithContext<RemoveRedundantIfNullCoalesceVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<RemoveRedundantIfNullCoalesceVisitor>;
+    using Base::Base;
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return;
+
+        const auto & function_name = function_node->getFunctionName();
+        if (function_name != "ifNull" && function_name != "coalesce")
+            return;
+
+        const auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.empty())
+            return;
+
+        auto & first_argument = arguments[0];
+        const auto & first_argument_type = first_argument->getResultType();
+
+        /// When the first argument cannot be NULL, ifNull/coalesce return it unchanged: the
+        /// fallback arguments are never reached. The wrapper is then a pure identity and can be
+        /// dropped so that key-expression matching sees the bare argument even when nested inside
+        /// a larger expression (e.g. sipHash64(ifNull(p, 0))).
+        if (canContainNull(*first_argument_type))
+            return;
+
+        /// The result type must match the argument type for a safe in-place replacement.
+        if (!node->getResultType()->equals(*first_argument_type))
+            return;
+
+        node = first_argument;
+    }
+};
+
+}
+
+void RemoveRedundantIfNullCoalescePass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+{
+    RemoveRedundantIfNullCoalesceVisitor visitor(std::move(context));
+    visitor.visit(query_tree_node);
+}
+
+}

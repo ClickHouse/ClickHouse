@@ -41,6 +41,7 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
+#include <Analyzer/Passes/RemoveRedundantIfNullCoalescePass.h>
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 #include <Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h>
@@ -320,6 +321,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     /// The order here is important as we want to keep collapsing in order
     manager.addPass(std::make_unique<MultiIfToIfPass>());
     manager.addPass(std::make_unique<IfConstantConditionPass>());
+    manager.addPass(std::make_unique<RemoveRedundantIfNullCoalescePass>());
     manager.addPass(std::make_unique<IfChainToMultiIfPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
     manager.addPass(std::make_unique<SumIfToCountIfPass>());
