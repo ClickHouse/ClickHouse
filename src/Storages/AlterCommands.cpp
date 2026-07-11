@@ -558,6 +558,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
     if (type == ADD_COLUMN)
     {
+        /// IF NOT EXISTS is resolved in prepare() against the prepare-time snapshot, but apply() runs
+        /// on a fresher one (checkAlterIsPossible re-applies commands), and two IF NOT EXISTS adds of
+        /// the same column in one statement are both left un-ignored by prepare(). Skip here too,
+        /// matching ColumnsDescription::add's own existence check, so IF NOT EXISTS never throws
+        /// ILLEGAL_COLUMN when the column already exists.
+        if (if_not_exists && metadata.columns.has(column_name))
+            return;
+
         ColumnDescription column(column_name, data_type);
         if (default_expression)
         {
