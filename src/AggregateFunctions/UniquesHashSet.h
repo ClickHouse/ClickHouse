@@ -113,8 +113,6 @@ private:
     /// The value is divided by 2 ^ skip_degree
     bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
 
-    HashValue hash(Value key) const { return static_cast<HashValue>(Hash()(key)); }
-
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
     void rehash()
     {
@@ -323,9 +321,19 @@ public:
         free();
     }
 
-    void ALWAYS_INLINE insert(Value x)
+    /// The hash of the value that is stored in the set.
+    static HashValue hash(Value key)
     {
-        const HashValue hash_value = hash(x);
+        return static_cast<HashValue>(Hash()(key));
+    }
+
+    void ALWAYS_INLINE insertValue(Value x)
+    {
+        insertHash(hash(x));
+    }
+
+    void ALWAYS_INLINE insertHash(HashValue hash_value)
+    {
         if (!good(hash_value))
             return;
 
@@ -338,9 +346,8 @@ public:
     /// We choose a value that is big enough to provide sufficient instruction level parallelism but not too big to bloat the code size.
     static constexpr size_t insert_many_batch_size = 8;
 
-    template <typename SourceType, auto Transform>
-    requires std::is_invocable_r_v<Value, decltype(Transform), const SourceType &>
-    void insertMany(const SourceType * data, size_t size)
+    /// Inserts a batch of hash values precomputed with `hash`.
+    void insertManyHashes(const HashValue * hashes, size_t size)
     {
         size_t i = 0;
         while (i < size)
@@ -349,25 +356,17 @@ public:
             /// allows us to check the shrink condition after each insert and avoid inserting too many values before shrinking.
             if ((max_fill() - m_size) >= insert_many_batch_size && ((size - i) >= insert_many_batch_size))
             {
-                /// We read and transform multiple values at once which allows both the compiler and the CPU to better optimize the code.
                 /// We calculate place() even for !good() hashes to maximize data independence and enable better out-of-order execution.
                 /// The extra work is negligible compared to the instruction level parallelization benefits.
-                std::array<HashValue, insert_many_batch_size> hash_value; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
-                for (size_t j = 0; j < insert_many_batch_size; ++j)
-                {
-                    hash_value[j] = hash(Transform(data[i + j]));
-                }
-                i += insert_many_batch_size;
-
                 std::array<size_t, insert_many_batch_size> place_value_batch; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
-                    place_value_batch[j] = place(hash_value[j]);
+                    place_value_batch[j] = place(hashes[i + j]);
                 }
 
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
-                    const HashValue & x = hash_value[j];
+                    const HashValue x = hashes[i + j];
                     if (!good(x))
                         continue;
 
@@ -395,10 +394,12 @@ public:
                     buf[place_value] = x;
                     ++m_size;
                 }
+
+                i += insert_many_batch_size;
             }
             else
             {
-                const HashValue hash_value = hash(Transform(data[i]));
+                const HashValue hash_value = hashes[i];
                 i++;
                 if (!good(hash_value))
                     continue;

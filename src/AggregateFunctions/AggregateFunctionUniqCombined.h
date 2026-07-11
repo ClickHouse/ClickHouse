@@ -4,6 +4,7 @@
 #include <AggregateFunctions/Helpers.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/HashTable/HashTable.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -203,17 +204,6 @@ private:
             /// This specialization exists also for compatibility with the initial implementation.
             return static_cast<Key>(intHash64(value));
         }
-    }
-
-    /// Compares values the same way hashOne distinguishes them. Floats are compared
-    /// as bit patterns: e.g. -0.0 == +0.0, but their hashes differ.
-    template <typename U>
-    static ALWAYS_INLINE bool bitEquals(const U & lhs, const U & rhs)
-    {
-        if constexpr (is_floating_point<U>)
-            return bit_cast<UInt64>(lhs) == bit_cast<UInt64>(rhs);
-        else
-            return lhs == rhs;
     }
 
     void addBatchImpl(

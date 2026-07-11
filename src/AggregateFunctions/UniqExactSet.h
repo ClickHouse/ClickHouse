@@ -77,6 +77,14 @@ public:
         }
     }
 
+    /// Equivalent to calling insert for each value with the same hint.
+    template <SetLevelHint hint>
+    void ALWAYS_INLINE insertMany(const value_type * values, size_t n)
+    {
+        for (size_t i = 0; i < n; ++i)
+            insert<const value_type &, hint>(values[i]);
+    }
+
     /// In merge, if one of the lhs and rhs is twolevelset and the other is singlelevelset, then the singlelevelset will need to convertToTwoLevel().
     /// It's not in parallel and will cost extra large time if the thread_num is large.
     /// This method will convert all the SingleLevelSet to TwoLevelSet in parallel if the hashsets are not all singlelevel or not all twolevel.
