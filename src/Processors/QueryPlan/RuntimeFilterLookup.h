@@ -27,6 +27,11 @@ using UniqueRuntimeFilterPtr = std::unique_ptr<IRuntimeFilter>;
 using SharedRuntimeFilterPtr = std::shared_ptr<IRuntimeFilter>;
 using RuntimeFilterConstPtr = std::shared_ptr<const IRuntimeFilter>;
 
+/// Runtime filter exact-set single-value shortcuts must not use SQL equality for types where JOIN/Set
+/// membership uses key semantics that differ from ordinary comparison, most importantly floating-point
+/// NaN values. Tuple types are checked recursively.
+bool runtimeFilterTypeContainsFloat(const DataTypePtr & type);
+
 struct RuntimeFilterStats
 {
     std::atomic<Int64> rows_checked = 0;
@@ -55,7 +60,12 @@ public:
     /// Usage statistics
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
+    UInt64 getBuildRows() const { return build_rows.load(); }
     void setFullyDisabled() { is_fully_disabled = true; }
+    bool isFullyDisabled() const { return is_fully_disabled.load(); }
+
+    virtual String getModeForLogs() const { return "unknown"; }
+    virtual String getExtraInfoForLogs() const { return {}; }
 
     Float64 getPassRatioThresholdForDisabling() const { return pass_ratio_threshold_for_disabling; }
     UInt64 getBlocksToSkipBeforeReenabling() const { return blocks_to_skip_before_reenabling; }
@@ -84,6 +94,7 @@ protected:
     size_t filters_to_merge;
     const DataTypePtr filter_column_target_type;
 
+    std::atomic<UInt64> build_rows = 0;
     std::atomic<bool> inserts_are_finished = false;
 
     const Float64 pass_ratio_threshold_for_disabling = 0.7;
@@ -125,6 +136,8 @@ public:
         if (inserts_are_finished)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
 
+        build_rows += values->size();
+
         if (is_full)
             return;
 
@@ -143,9 +156,10 @@ public:
             return;
         }
 
-        /// If only 1 element in the set then use " == const" instead of set lookup
-        /// But if the argument is Nullable we cannot use "==" so fallback to Set because it can handle NULLs
-        if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls)
+        /// If only 1 element in the set then use " == const" instead of set lookup.
+        /// But if the argument is Nullable or contains Float, fall back to Set: it handles NULLs and
+        /// uses the same NaN membership semantics as JOIN keys.
+        if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls && !runtimeFilterTypeContainsFloat(filter_column_target_type))
         {
             values_count = ValuesCount::ONE;
             single_element_column = exact_values->getSetElements().front();
@@ -218,6 +232,8 @@ public:
     void merge(const IRuntimeFilter * source) override;
 
     void finishInsertImpl() override;
+
+    String getModeForLogs() const override { return "exact"; }
 };
 
 class ExactNotContainsRuntimeFilter : public RuntimeFilterBase<true>
@@ -241,6 +257,8 @@ public:
     }
 
     void merge(const IRuntimeFilter * source) override;
+
+    String getModeForLogs() const override { return "exact_not_contains"; }
 };
 
 /// As long as the number of unique values is small they are stored in a Set but when it grows beyond the limit
@@ -274,6 +292,9 @@ public:
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     void merge(const IRuntimeFilter * source) override;
 
+    String getModeForLogs() const override;
+    String getExtraInfoForLogs() const override;
+
 protected:
     virtual void insertIntoApproximateSet(ColumnPtr values, size_t row);
 
@@ -284,6 +305,8 @@ protected:
     bool lookupInBloomFilter(ColumnPtr values, size_t row) const;
 
     void switchToApproximateSet();
+
+    bool isBloomFilterWorthwhile() const;
 
 private:
     void insertIntoBloomFilter(ColumnPtr values);
@@ -299,11 +322,9 @@ private:
     BloomFilterPtr bloom_filter;
 };
 
-/// Runtime filter that can switch to bloom filter and minmax range
-/// when the number of unique values exceeds the limit.
-/// It is used for numeric columns only.
-/// The minmax range allows to quickly filter out values that are outside of the observed min and max values,
-/// which can be beneficial for avoiding unnecessary bloom filter lookups.
+/// Runtime filter that can switch to a bloom filter guarded by a minmax range when the number
+/// of unique values exceeds the exact-set limit. If the bloom filter becomes saturated, the
+/// range is kept as a standalone safe over-approximation. It is used for numeric columns only.
 template <typename T>
 class ApproximateNumericRuntimeFilter : public ApproximateGenericRuntimeFilter
 {
@@ -327,11 +348,19 @@ public:
 
     void merge(const IRuntimeFilter * source) override;
 
+    String getModeForLogs() const override;
+    String getExtraInfoForLogs() const override;
+
 private:
     void insertIntoApproximateSet(ColumnPtr values, size_t row) override;
 
+    bool mayContain(T value) const;
+
     T min_value;
     T max_value;
+    bool has_comparable_value = false;
+    bool has_nan = false;
+    bool use_range_only = false;
 };
 
 /// Factory function that dispatches on the data type to create the correct `ApproximateNumericRuntimeFilter` instantiation
@@ -365,6 +394,8 @@ public:
     /// All "build" entry points are no-ops: the data was built inside HashJoin already.
     void insert(ColumnPtr) override { }
     void merge(const IRuntimeFilter *) override { }
+
+    String getModeForLogs() const override { return "shared_fixed_hash"; }
 
 protected:
     void finishInsertImpl() override { }

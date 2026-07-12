@@ -1,14 +1,20 @@
 #include <algorithm>
+#include <bit>
 #include <cmath>
+#include <limits>
 #include <optional>
+#include <type_traits>
 #include <vector>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <fmt/format.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
@@ -32,6 +38,34 @@ namespace ErrorCodes
 {
 extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+bool typeContainsFloatImpl(const DataTypePtr & type)
+{
+    const auto nested_type = removeNullable(removeLowCardinality(type));
+    if (WhichDataType(nested_type).isNativeFloat())
+        return true;
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_type.get()))
+    {
+        for (const auto & element_type : tuple_type->getElements())
+        {
+            if (typeContainsFloatImpl(element_type))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+}
+
+bool runtimeFilterTypeContainsFloat(const DataTypePtr & type)
+{
+    return typeContainsFloatImpl(type);
 }
 
 void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
@@ -182,7 +216,7 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
 /// - (1 - 1/filter_bits)^(distinct_keys * hash_functions): probability that a given bit is not set after all inserts
 /// - e^(-distinct_keys * hash_functions / filter_bits) is used to approximate the above probability
 /// - 1 - e^(-distinct_keys * hash_functions / filter_bits): expected fraction of bits that end up set (= fill_rate)
-/// For more infomation check: https://www.eecs.harvard.edu/~michaelm/postscripts/im2005b.pdf
+/// For more information check: https://www.eecs.harvard.edu/~michaelm/postscripts/im2005b.pdf
 UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 default_bloom_filter_bytes, Float64 max_ratio_of_set_bits)
 {
     const Float64 target_fill_rate = std::min(RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE, max_ratio_of_set_bits);
@@ -241,9 +275,14 @@ ApproximateNumericRuntimeFilter<T>::ApproximateNumericRuntimeFilter(
 template <typename T>
 void ApproximateNumericRuntimeFilter<T>::finishInsertImpl()
 {
-    /// If the filter is approximate, there should be at least one value inserted.
-    /// This check ensures that a valid range [min_value, max_value] is built for the filter.
-    chassert(!isApproximate() || min_value <= max_value);
+    if (isApproximate())
+    {
+        /// If the Bloom filter is saturated, keep the min/max range as a safe over-approximation
+        /// instead of disabling the whole numeric runtime filter. This is still useful for highly
+        /// selective ranges and cannot introduce false negatives.
+        use_range_only = !isBloomFilterWorthwhile();
+        return;
+    }
 
     Base::finishInsertImpl();
 }
@@ -263,10 +302,17 @@ ColumnPtr ApproximateNumericRuntimeFilter<T>::findImpl(const ColumnWithTypeAndNa
         for (size_t row = 0; row < values.column->size(); ++row)
         {
             T value = getColumnValue<T>(*values.column, row);
-            /// The following condition is an optimization to avoid unnecessary bloom filter lookups for values outside of the observed min/max range.
-            /// It can be beneficial for low cardinality columns with small number of distinct values,
-            /// but it can cause false positives for high cardinality columns where min and max are far apart.
-            const bool found = min_value <= value && value <= max_value && lookupInBloomFilter(values.column, row);
+            /// The range check is a safe over-approximation of the build-side keys. For floating
+            /// point values, `mayContain` handles NaN separately because ordinary comparisons with
+            /// NaN are always false while JOIN key membership can still match NaN keys.
+            bool found = mayContain(value);
+            if (found && !use_range_only)
+            {
+                if constexpr (!std::is_floating_point_v<T>)
+                    found = lookupInBloomFilter(values.column, row);
+                else if (!std::isnan(value))
+                    found = lookupInBloomFilter(values.column, row);
+            }
             found_count += found ? 1 : 0;
             dst_data[row] = found;
         }
@@ -292,13 +338,19 @@ void ApproximateNumericRuntimeFilter<T>::merge(const IRuntimeFilter * source)
 
     auto merge_approximate_filters = [this](const ApproximateNumericRuntimeFilter<T> * other)
     {
-        /// Merge ranges
-        if (other->min_value < min_value)
-            min_value = other->min_value;
-        if (other->max_value > max_value)
-            max_value = other->max_value;
+        /// Merge ranges.
+        if (other->has_comparable_value)
+        {
+            if (!has_comparable_value || other->min_value < min_value)
+                min_value = other->min_value;
+            if (!has_comparable_value || other->max_value > max_value)
+                max_value = other->max_value;
+            has_comparable_value = true;
+        }
+        has_nan = has_nan || other->has_nan;
+        use_range_only = use_range_only || other->use_range_only;
 
-        /// Merge bloom filters
+        /// Merge bloom filters.
         Base::mergeImpl(other);
     };
 
@@ -338,12 +390,59 @@ template <typename T>
 void ApproximateNumericRuntimeFilter<T>::insertIntoApproximateSet(ColumnPtr values, size_t row)
 {
     T value = getColumnValue<T>(*values, row);
-    if (value < min_value)
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        if (std::isnan(value))
+        {
+            has_nan = true;
+            Base::insertIntoApproximateSet(values, row);
+            return;
+        }
+    }
+
+    if (!has_comparable_value || value < min_value)
         min_value = value;
-    if (value > max_value)
+    if (!has_comparable_value || value > max_value)
         max_value = value;
+    has_comparable_value = true;
 
     Base::insertIntoApproximateSet(values, row);
+}
+
+template <typename T>
+bool ApproximateNumericRuntimeFilter<T>::mayContain(T value) const
+{
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        if (std::isnan(value))
+            return has_nan;
+    }
+
+    return has_comparable_value && min_value <= value && value <= max_value;
+}
+
+template <typename T>
+String ApproximateNumericRuntimeFilter<T>::getModeForLogs() const
+{
+    if (!isApproximate())
+        return "exact";
+    return use_range_only ? "minmax" : "bloom_minmax";
+}
+
+template <typename T>
+String ApproximateNumericRuntimeFilter<T>::getExtraInfoForLogs() const
+{
+    if (!isApproximate())
+        return {};
+
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        return fmt::format("min={} max={} has_comparable_value={} has_nan={}", min_value, max_value, has_comparable_value, has_nan);
+    }
+    else
+    {
+        return fmt::format("min={} max={} has_comparable_value={}", min_value, max_value, has_comparable_value);
+    }
 }
 
 void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
@@ -425,6 +524,7 @@ void ApproximateGenericRuntimeFilter::insert(ColumnPtr values)
 
     if (bloom_filter)
     {
+        build_rows += values->size();
         insertIntoBloomFilter(values);
     }
     else
@@ -588,16 +688,39 @@ void ApproximateGenericRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
     }
 }
 
-void ApproximateGenericRuntimeFilter::checkBloomFilterWorthiness()
+bool ApproximateGenericRuntimeFilter::isBloomFilterWorthwhile() const
 {
     const auto & raw_filter_words = bloom_filter->getFilter();
     const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;
     size_t set_bits = 0;
     for (auto word : raw_filter_words)
         set_bits += std::popcount(word);
-    /// If too many bits are set then it is likely that the filter will not filter out much
-    if (static_cast<double>(set_bits) > max_ratio_of_set_bits_in_bloom_filter * static_cast<double>(total_bits))
+
+    /// If too many bits are set then it is likely that the filter will not filter out much.
+    return static_cast<double>(set_bits) <= max_ratio_of_set_bits_in_bloom_filter * static_cast<double>(total_bits);
+}
+
+void ApproximateGenericRuntimeFilter::checkBloomFilterWorthiness()
+{
+    if (!isBloomFilterWorthwhile())
         setFullyDisabled();
+}
+
+String ApproximateGenericRuntimeFilter::getModeForLogs() const
+{
+    return bloom_filter ? "bloom" : "exact";
+}
+
+String ApproximateGenericRuntimeFilter::getExtraInfoForLogs() const
+{
+    if (!bloom_filter)
+        return {};
+
+    const auto & raw_filter_words = bloom_filter->getFilter();
+    return fmt::format(
+        "bloom_filter_bytes={} bloom_filter_hash_functions={}",
+        raw_filter_words.size() * sizeof(raw_filter_words.front()),
+        bloom_filter_hash_functions);
 }
 
 SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
@@ -670,15 +793,22 @@ public:
             /// `filter_key` is the opaque random rendezvous key; prefer the readable structural name.
             auto name_it = display_names.find(filter_key);
             const String & name = (name_it != display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
+            const String extra_info = filter->getExtraInfoForLogs();
             LOG_TRACE(
                 getLogger("RuntimeFilter"),
-                "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
+                "Stats for '{}': mode {}, target_type {}, build_rows {}, rows skipped {}, rows checked {}, rows passed {}, blocks skipped "
+                "{}, blocks processed {}, fully_disabled {}, details: {}",
                 name,
+                filter->getModeForLogs(),
+                filter->getFilterColumnTargetType()->getName(),
+                filter->getBuildRows(),
                 stats.rows_skipped.load(),
                 stats.rows_checked.load(),
                 stats.rows_passed.load(),
                 stats.blocks_skipped.load(),
-                stats.blocks_processed.load());
+                stats.blocks_processed.load(),
+                filter->isFullyDisabled(),
+                extra_info.empty() ? "-" : extra_info);
         }
     }
 

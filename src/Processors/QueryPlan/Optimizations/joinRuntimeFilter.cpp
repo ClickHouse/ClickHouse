@@ -1,9 +1,11 @@
+#include <cmath>
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
@@ -17,6 +19,8 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
@@ -193,6 +197,36 @@ getBuildSideDistinctKeys(const JoinStepLogical & join_step, const QueryPlanOptim
     return hint->ht_size;
 }
 
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+
+static Float64 estimateBloomFilterSetBitsRatio(UInt64 distinct_keys, UInt64 bloom_filter_bytes, UInt64 hash_functions)
+{
+    static constexpr UInt64 default_runtime_bloom_filter_bytes = 512 * 1024;
+    static constexpr UInt64 default_runtime_bloom_filter_hash_functions = 3;
+
+    const UInt64 effective_bytes = bloom_filter_bytes ? bloom_filter_bytes : default_runtime_bloom_filter_bytes;
+    const UInt64 effective_hash_functions = hash_functions ? hash_functions : default_runtime_bloom_filter_hash_functions;
+    const double filter_bits = static_cast<double>(effective_bytes) * 8.0;
+    if (filter_bits <= 0.0)
+        return 1.0;
+
+    return 1.0 - std::exp(-static_cast<double>(effective_hash_functions) * static_cast<double>(distinct_keys) / filter_bits);
+}
+
+static bool subtreeContainsFilterStep(const QueryPlan::Node & node)
+{
+    if (typeid_cast<const FilterStep *>(node.step.get()))
+        return true;
+
+    for (const auto * child : node.children)
+    {
+        if (subtreeContainsFilterStep(*child))
+            return true;
+    }
+
+    return false;
+}
+
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a join step?
@@ -362,6 +396,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     }
 
     const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
+    const RelationStats build_side_stats = estimateReadRowsCount(*build_filter_node);
+    const bool build_side_has_filter_steps = subtreeContainsFilterStep(*build_filter_node);
 
     /// For LEFT ANTI JOIN with multiple keys, per-column NOT IN filters combined with AND are incorrect:
     /// NOT_IN(a, set_a) AND NOT_IN(b, set_b) would incorrectly drop rows where one key is in its per-column set
@@ -398,6 +434,25 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 getLogger("joinRuntimeFilter"),
                 "Runtime filter '{}' will be built from tuple of right keys and applied to tuple of left keys",
                 filter_name);
+            LOG_TRACE(
+                getLogger("joinRuntimeFilter"),
+                "Runtime filter decision: id='{}' build_key='{}' probe_key='{}' build_type='{}' probe_type='{}' common_type='{}' "
+                "estimated_distinct_keys='{}' selected_mode='exact' reason='left_anti_tuple_requires_exact_membership' "
+                "thresholds='exact_values_limit={}, bloom_bytes={}, bloom_hash_functions={}, pass_ratio_disable={}, blocks_to_skip={}, "
+                "max_bloom_set_bits={}'",
+                filter_name,
+                "tuple(right_keys)",
+                "tuple(left_keys)",
+                tuple_type->getName(),
+                tuple_type->getName(),
+                tuple_type->getName(),
+                distinct_keys_hint ? std::to_string(*distinct_keys_hint) : "unknown",
+                optimization_settings.join_runtime_filter_exact_values_limit,
+                optimization_settings.join_runtime_bloom_filter_bytes,
+                optimization_settings.join_runtime_bloom_filter_hash_functions,
+                optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
+                optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
+                optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits);
 
             QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
             new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
@@ -462,6 +517,90 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 join_key_build_side.name,
                 join_key_probe_side.name);
 
+            const bool allow_to_use_not_exact_filter = !check_left_does_not_contain;
+            const bool common_type_supports_minmax = isNativeNumber(common_type);
+            const bool can_use_minmax_filter
+                = allow_to_use_not_exact_filter && optimization_settings.join_runtime_filter_use_minmax && common_type_supports_minmax;
+            const bool shared_fixed_hash_candidate
+                = join_step->getJoinSettings().join_runtime_filter_from_fixed_hash_table && allow_to_use_not_exact_filter;
+            const bool approximate_path_supported = ApproximateGenericRuntimeFilter::isDataTypeSupported(common_type);
+
+            std::optional<UInt64> estimated_distinct_keys_for_planning = build_side_stats.estimated_rows;
+            bool has_key_ndv_stats = false;
+            if (auto key_stats = build_side_stats.column_stats.find(join_key_build_side.name);
+                key_stats != build_side_stats.column_stats.end() && key_stats->second.num_distinct_values > 0)
+            {
+                has_key_ndv_stats = true;
+                estimated_distinct_keys_for_planning = std::min(
+                    estimated_distinct_keys_for_planning.value_or(key_stats->second.num_distinct_values),
+                    key_stats->second.num_distinct_values);
+            }
+
+            const bool exact_path_expected = estimated_distinct_keys_for_planning
+                && *estimated_distinct_keys_for_planning <= optimization_settings.join_runtime_filter_exact_values_limit;
+            const Float64 estimated_bloom_set_bits_ratio = estimated_distinct_keys_for_planning
+                ? estimateBloomFilterSetBitsRatio(
+                      *estimated_distinct_keys_for_planning,
+                      optimization_settings.join_runtime_bloom_filter_bytes,
+                      optimization_settings.join_runtime_bloom_filter_hash_functions)
+                : 0.0;
+            const bool planner_bloom_saturation_check_enabled
+                = optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits < 1.0;
+            const bool planner_should_skip = allow_to_use_not_exact_filter && approximate_path_supported && !exact_path_expected
+                && planner_bloom_saturation_check_enabled && has_key_ndv_stats && !build_side_has_filter_steps
+                && estimated_bloom_set_bits_ratio > optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits;
+
+            const String selected_mode = planner_should_skip
+                ? "planner_skipped"
+                : (!allow_to_use_not_exact_filter
+                       ? "exact"
+                       : (shared_fixed_hash_candidate ? "shared_fixed_hash_candidate"
+                                                      : (can_use_minmax_filter ? "exact_or_bloom_minmax" : "exact_or_bloom")));
+            const String decision_reason = planner_should_skip
+                ? "estimated_bloom_saturation"
+                : (!allow_to_use_not_exact_filter
+                       ? "exact_required"
+                       : (exact_path_expected
+                              ? "estimated_exact_path"
+                              : (!estimated_distinct_keys_for_planning
+                                     ? "missing_build_stats"
+                                     : (!has_key_ndv_stats && planner_bloom_saturation_check_enabled
+                                            ? "missing_key_ndv_stats"
+                                            : (build_side_has_filter_steps && planner_bloom_saturation_check_enabled
+                                                   ? "build_side_filter_present"
+                                                   : (can_use_minmax_filter
+                                                          ? "numeric_common_type_and_setting_enabled"
+                                                          : (common_type_supports_minmax ? "minmax_setting_disabled"
+                                                                                         : "common_type_without_native_minmax")))))));
+
+            LOG_TRACE(
+                getLogger("joinRuntimeFilter"),
+                "Runtime filter decision: id='{}' build_key='{}' probe_key='{}' build_type='{}' probe_type='{}' common_type='{}' "
+                "estimated_build_rows='{}' estimated_distinct_keys='{}' estimated_bloom_set_bits_ratio='{}' selected_mode='{}' reason='{}' "
+                "thresholds='exact_values_limit={}, bloom_bytes={}, bloom_hash_functions={}, max_estimated_bloom_set_bits={}, "
+                "pass_ratio_disable={}, blocks_to_skip={}, max_bloom_set_bits={}'",
+                filter_name,
+                join_key_build_side.name,
+                join_key_probe_side.name,
+                join_key_build_side.type->getName(),
+                join_key_probe_side.type->getName(),
+                common_type->getName(),
+                build_side_stats.estimated_rows ? std::to_string(*build_side_stats.estimated_rows) : "unknown",
+                estimated_distinct_keys_for_planning ? std::to_string(*estimated_distinct_keys_for_planning) : "unknown",
+                estimated_distinct_keys_for_planning ? std::to_string(estimated_bloom_set_bits_ratio) : "unknown",
+                selected_mode,
+                decision_reason,
+                optimization_settings.join_runtime_filter_exact_values_limit,
+                optimization_settings.join_runtime_bloom_filter_bytes,
+                optimization_settings.join_runtime_bloom_filter_hash_functions,
+                optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits,
+                optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
+                optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
+                optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits);
+
+            if (planner_should_skip)
+                continue;
+
             /// Add filter lookup to the probe subtree
             const auto & filter_condition = createRuntimeFilterCondition(filter_dag, id, join_key_probe_side, common_type);
             all_filter_conditions.push_back(
@@ -483,8 +622,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
                     optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                     optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
-                    optimization_settings.join_runtime_filter_use_minmax,
+                    allow_to_use_not_exact_filter,
+                    can_use_minmax_filter,
                     distinct_keys_hint);
                 new_build_filter_node->step->setStepDescription(
                     fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
@@ -519,6 +658,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             filter_column_name = combined_filter_condition.result_name;
         }
     }
+
+    if (filter_column_name.empty())
+        return false;
 
     QueryPlan::Node * new_apply_filter_node = &nodes.emplace_back();
     new_apply_filter_node->step
