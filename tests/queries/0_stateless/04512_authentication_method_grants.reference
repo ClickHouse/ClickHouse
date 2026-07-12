@@ -36,3 +36,7 @@ CREATE USER user2 IDENTIFIED WITH plaintext_password, plaintext_password GRANTS 
 1
 -- The deny-all token cannot read t1 even though the user can
 ACCESS_DENIED
+-- A filtered source grant in the GRANTS clause is rejected (CREATE USER)
+NOT_IMPLEMENTED
+-- A filtered source grant in the GRANTS clause is rejected (ALTER USER)
+NOT_IMPLEMENTED

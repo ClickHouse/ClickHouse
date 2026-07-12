@@ -218,6 +218,8 @@ Examples:
 
 Note that the limit is a property of the authentication method, captured at the moment of the login: changing the clause with `ALTER USER` affects new sessions, not the already established ones.
 
+Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported in the clause yet: the intersection compares a source filter as an opaque string and cannot narrow one filter to another, so such a grant is rejected rather than silently granting no access.
+
 ## GRANTEES Clause {#grantees-clause}
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#granting-privilege-syntax). Options of the `GRANTEES` clause:

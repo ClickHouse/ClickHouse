@@ -100,3 +100,11 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user2}&password=full2" -d "SELE
 
 echo "-- The deny-all token cannot read t1 even though the user can"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user2}&password=denyall" -d "SELECT x FROM t1" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
+
+# Filtered source grants (e.g. READ ON S3('...')) cannot be narrowed by the intersection, because the source
+# filter is intersected as an opaque string. They are rejected explicitly instead of silently granting nothing.
+echo "-- A filtered source grant in the GRANTS clause is rejected (CREATE USER)"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user}_bad IDENTIFIED WITH plaintext_password BY '1' GRANTS (READ ON S3('s3://bucket/private/.*'))" 2>&1 | grep -m1 -o "NOT_IMPLEMENTED" | head -n 1
+
+echo "-- A filtered source grant in the GRANTS clause is rejected (ALTER USER)"
+${CLICKHOUSE_CLIENT} -q "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password BY 'filtered_token' GRANTS (READ ON S3('s3://bucket/private/.*'))" 2>&1 | grep -m1 -o "NOT_IMPLEMENTED" | head -n 1

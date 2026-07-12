@@ -501,6 +501,21 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         if (validate)
         {
+            /// Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported here yet.
+            /// The session limit is applied as `AccessRights::makeIntersection`, which treats a source filter
+            /// as an opaque string, so it cannot represent the semantic intersection of two different filters.
+            /// A narrowing token like user `READ ON S3('s3://bucket/.*')` limited to `READ ON S3('s3://bucket/private/.*')`
+            /// would silently collapse to no access unless the two filter strings were byte-identical. Reject such
+            /// grants explicitly (fail-close) instead of granting nothing surprisingly.
+            for (const auto & element : grants)
+            {
+                if (element.hasFilter())
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Filtered source grants are not supported in the GRANTS clause of an authentication method yet: {}",
+                        element.toStringWithoutOptions());
+            }
+
             /// Check that the elements can form access rights (throws otherwise).
             [[maybe_unused]] AccessRights access_rights_for_validation{grants};
         }
