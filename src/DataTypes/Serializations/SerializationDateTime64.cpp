@@ -166,7 +166,7 @@ static void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & is
         throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric value is out of range for DateTime64");
 }
 
-static bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
+bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & istr)
 {
     Decimal128 tmp;
     UInt32 unread_scale = scale;

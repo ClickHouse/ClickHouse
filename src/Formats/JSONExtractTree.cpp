@@ -46,6 +46,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/Serializations/SerializationDateTime64.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationObject.h>
@@ -953,8 +954,20 @@ public:
             switch (element.type())
             {
                 case ElementType::DOUBLE:
-                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DateTime64>>(element.getDouble(), scale);
+                {
+                    /// Convert through decimal text rather than `Float64` arithmetic so that sub-second precision
+                    /// is preserved: `convertToDecimal` computes `0.58 * 100 = 57.999...` and truncates to 57 ticks,
+                    /// while parsing the shortest round-trip text `0.58` at the column scale gives the exact 58,
+                    /// the same value as the row input serializer, `CAST` and `toDateTime64` produce.
+                    String str_value = jsonElementToString<JSONParser>(element, format_settings);
+                    ReadBufferFromMemory buf(str_value);
+                    if (!tryReadDateTime64AsNumber(value, scale, buf) || !buf.eof())
+                    {
+                        error = fmt::format("cannot read DateTime64 value from JSON element: {}", str_value);
+                        return false;
+                    }
                     break;
+                }
                 case ElementType::UINT64:
                     if (format_settings.read_datetime_number_as_raw_value)
                         value.value = element.getUInt64();
