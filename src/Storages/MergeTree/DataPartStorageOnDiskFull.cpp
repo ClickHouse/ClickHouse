@@ -97,6 +97,14 @@ size_t DataPartStorageOnDiskFull::getFileSizeImpl(const String & file_name) cons
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
 }
 
+std::optional<UInt64> DataPartStorageOnDiskFull::getPackedFileUncompressedSize(const std::string & file_name) const
+{
+    if (looksLikePackedSkipIndexFile(file_name))
+        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
+            return reader->getFileUncompressedSize(file_name);
+    return {};
+}
+
 UInt32 DataPartStorageOnDiskFull::getRefCount(const String & file_name) const
 {
     return volume->getDisk()->getRefCount(fs::path(root_path) / part_dir / file_name);
