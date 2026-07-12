@@ -27,3 +27,18 @@ SELECT toTypeName(kolmogorovSmirnovTestState('two-sided')(x, y))
 FROM (SELECT 1. AS x, 0. AS y);
 SELECT toTypeName(mannWhitneyUTestState('two-sided', 1)(x, y))
 FROM (SELECT 1. AS x, 0. AS y);
+
+-- Backward compatibility: the parameters only affect finalization, not the serialized state,
+-- so a legacy parameterless state column (written before this patch) must stay Merge-/CAST-
+-- compatible with the parameterized function. getNormalizedStateType() normalizes both to the
+-- same representation.
+SELECT '-- legacy parameterless state compatibility --';
+DROP TABLE IF EXISTS legacy_moving;
+CREATE TABLE legacy_moving (s AggregateFunction(groupArrayMovingSum, UInt8)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO legacy_moving SELECT groupArrayMovingSumState(x) FROM (SELECT arrayJoin([1, 2, 3]) AS x);
+-- parameterized -Merge over a legacy parameterless column (was ILLEGAL_TYPE_OF_ARGUMENT before the fix)
+SELECT groupArrayMovingSumMerge(2)(s) FROM legacy_moving;
+-- insert a new parameterized state into the legacy parameterless column, then merge everything
+INSERT INTO legacy_moving SELECT groupArrayMovingSumState(2)(x) FROM (SELECT arrayJoin([10, 20, 30]) AS x);
+SELECT groupArrayMovingSumMerge(s) FROM legacy_moving;
+DROP TABLE legacy_moving;

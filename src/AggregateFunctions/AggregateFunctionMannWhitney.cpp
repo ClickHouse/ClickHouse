@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <limits>
 
 #include <boost/math/distributions/normal.hpp>
@@ -180,6 +181,18 @@ public:
     String getName() const override
     {
         return "mannWhitneyUTest";
+    }
+
+    /// The parameters (alternative, continuity_correction) only affect finalization, not the
+    /// serialized state. Normalize to an empty parameter list so a new parameterized state and a
+    /// legacy parameterless state stay Merge-/CAST-compatible.
+    DataTypePtr getNormalizedStateType() const override
+    {
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(this->argument_types.size());
+        for (const auto & arg : this->argument_types)
+            normalized_argument_types.emplace_back(arg->getNormalizedType());
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
     }
 
     bool allocatesMemoryInArena() const override { return true; }

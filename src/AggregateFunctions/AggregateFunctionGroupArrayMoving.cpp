@@ -3,6 +3,7 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 
@@ -100,6 +101,20 @@ public:
         , window_size(window_size_) {}
 
     String getName() const override { return Data::name; }
+
+    /// The window-size parameter only affects finalization (insertResultInto), not the serialized
+    /// state (serialize/deserialize store just the accumulated values). Normalize to an empty
+    /// parameter list so a new parameterized state and a legacy parameterless state
+    /// (AggregateFunction(groupArrayMovingSum, ...)) share one representation and stay
+    /// Merge-/CAST-compatible.
+    DataTypePtr getNormalizedStateType() const override
+    {
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(this->argument_types.size());
+        for (const auto & arg : this->argument_types)
+            normalized_argument_types.emplace_back(arg->getNormalizedType());
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
+    }
 
     static DataTypePtr createResultType(const DataTypePtr & argument)
     {
