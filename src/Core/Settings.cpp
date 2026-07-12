@@ -5,7 +5,9 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
+#if ENABLE_DISTRIBUTED_CACHE
 #include <Core/DistributedCacheDefines.h>
+#endif
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsChangesHistory.h>
@@ -30,20 +32,11 @@ namespace
 {
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
-constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
-constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
-constexpr UInt64 default_distributed_cache_write_request_max_tries = 10lu;
-constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
-constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
-constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
-constexpr UInt64 default_distributed_cache_connect_timeout_ms = 50;
-constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
-constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
-constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
+#endif
+
+#if ENABLE_DISTRIBUTED_CACHE
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_write_request_max_tries = DistributedCache::DEFAULT_WRITE_REQUEST_MAX_TRIES;
@@ -56,6 +49,23 @@ constexpr UInt64 default_distributed_cache_receive_timeout_ms = DistributedCache
 constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = DistributedCache::DEFAULT_TCP_KEEP_ALIVE_TIMEOUT_MS;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_READ;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_WRITE;
+constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS;
+constexpr UInt64 default_distributed_cache_data_packet_ack_window = DistributedCache::ACK_DATA_PACKET_WINDOW;
+#else
+constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
+constexpr UInt64 default_distributed_cache_write_request_max_tries = 10lu;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
+constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
+constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
+constexpr UInt64 default_distributed_cache_connect_timeout_ms = 50;
+constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
+constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
+constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
+constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = 10lu;
+constexpr UInt64 default_distributed_cache_data_packet_ack_window = 5lu;
 #endif
 }
 
@@ -7092,10 +7102,10 @@ Only has an effect in ClickHouse Cloud. Identifies behaviour of distributed cach
     DECLARE(UInt64, distributed_cache_alignment, 0, R"(
 Only has an effect in ClickHouse Cloud. A setting for testing purposes, do not change it
 )", 0) \
-    DECLARE(UInt64, distributed_cache_max_unacked_inflight_packets, DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS, R"(
+    DECLARE(UInt64, distributed_cache_max_unacked_inflight_packets, default_distributed_cache_max_unacked_inflight_packets, R"(
 Only has an effect in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets in a single distributed cache read request
 )", 0) \
-    DECLARE(UInt64, distributed_cache_data_packet_ack_window, DistributedCache::ACK_DATA_PACKET_WINDOW, R"(
+    DECLARE(UInt64, distributed_cache_data_packet_ack_window, default_distributed_cache_data_packet_ack_window, R"(
 Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a single distributed cache read request
 )", 0) \
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(

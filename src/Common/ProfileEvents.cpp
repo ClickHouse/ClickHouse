@@ -883,7 +883,9 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheGetMicroseconds, "Filesystem cache get() time", ValueType::Microseconds) \
     M(FilesystemCacheBackgroundEvictedFileSegments, "Number of file segments evicted by background thread", ValueType::Number) \
     M(FilesystemCacheBackgroundEvictedBytes, "Number of bytes evicted by background thread", ValueType::Number) \
+    M(FilesystemCacheIdleClientEvictions, "Number of times all cache entries of an idle distributed-cache client (`user_id`) were purged because no access happened within `idle_client_ttl_sec`.", ValueType::Number) \
     M(FilesystemCacheBackgroundRemovedInvalidatedEntries, "Number of invalidated (lazily-removed) priority queue entries purged by the background cleanup thread", ValueType::Number) \
+    M(FilesystemCacheClientsMapLockWaitMicroseconds, "Time spent waiting on a contended per-client (`user_id`) usage map shard lock in the overcommit cache policy", ValueType::Microseconds) \
     M(FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds, "Time for which the background thread executed the invalidated priority queue entries cleanup job", ValueType::Milliseconds) \
     M(FilesystemCacheCheckCorrectness, "Number of times FileCache::assertCacheCorrectness was called", ValueType::Number) \
     M(FilesystemCacheCheckCorrectnessMicroseconds, "How much time does FileCache::assertCacheCorrectness takes", ValueType::Microseconds) \
@@ -1437,6 +1439,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
     M(SharedDatabaseCatalogStateApplicationMicroseconds, "Total time spend on application of new state in SharedDatabaseCatalog", ValueType::Microseconds) \
+    M(SharedCatalogStateFetchFullFallback, "Number of times the incremental fetch of the Shared Catalog state failed too many times in a row and a full state fetch was performed instead", ValueType::Number) \
     \
     M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background", ValueType::Number) \
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
