@@ -33,6 +33,9 @@
 
 #include <Client/JWTProvider.h>
 #include <Client/ClientBaseHelpers.h>
+#include <Client/PortsProbe.h>
+#include <Common/NetException.h>
+#include <Core/Defines.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/FormatFactory.h>
@@ -70,6 +73,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int NETWORK_ERROR;
+    extern const int SOCKET_TIMEOUT;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int AUTHENTICATION_FAILED;
     extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
@@ -529,7 +534,11 @@ void Client::connect()
     if (hosts_and_ports.empty())
     {
         String host = config().getString("host", "localhost");
-        UInt16 port = ConnectionParameters::getPortFromConfig(config(), host);
+        /// Keep the port unset when the configuration does not specify it: this enables the automatic
+        /// choice between the plain and the secure port below.
+        std::optional<UInt16> port;
+        if (config().has("port"))
+            port = static_cast<UInt16>(config().getInt("port"));
         hosts_and_ports.emplace_back(HostAndPort{host, port});
     }
 
@@ -547,31 +556,143 @@ void Client::connect()
             connection_parameters.jwt_provider = jwt_provider;
 #endif
 
-            if (is_interactive)
-                output_stream << "Connecting to "
-                          << (!connection_parameters.default_database.empty()
-                                  ? "database " + connection_parameters.default_database + " at "
-                                  : "")
-                          << connection_parameters.host << ":" << connection_parameters.port
-                          << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
+            /// Candidate ports for the connection, in the order of preference. Normally there is a single
+            /// candidate, resolved by `ConnectionParameters`. But when neither the port nor the TLS mode is
+            /// specified explicitly, both the plain and the secure default ports are probed concurrently,
+            /// and TLS is enabled automatically when only the secure port answers (for example,
+            /// play.clickhouse.com serves TLS on 9440 while the plain port is silently firewalled;
+            /// waiting for the plain connection attempt to time out first would take too long).
+            std::vector<std::pair<UInt16, Protocol::Secure>> candidates;
+            candidates.emplace_back(connection_parameters.port, connection_parameters.security);
 
-            connection = Connection::createConnection(connection_parameters, client_context);
+            const bool port_unspecified = !hosts_and_ports[attempted_address_index].port.has_value() && !config().has("port");
+            const bool secure_unspecified
+                = !config().has("secure") && !config().has("no-secure") && !isCloudEndpoint(host.toUnderType());
 
-            if (max_client_network_bandwidth)
+            if (port_unspecified && secure_unspecified)
             {
-                ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
-                connection->setThrottler(throttler);
+                const auto secure_port = static_cast<UInt16>(config().getInt("tcp_port_secure", DBMS_DEFAULT_SECURE_PORT));
+
+                /// The plain port wins if it answers at most this much later than the secure port,
+                /// so that servers listening on both ports keep being connected without TLS as before.
+                static const Poco::Timespan plain_preference_window(0, 100000);
+
+                auto probe = probePlainAndSecurePorts(
+                    connection_parameters.host,
+                    connection_parameters.bind_host,
+                    connection_parameters.port,
+                    secure_port,
+                    connection_parameters.timeouts.connection_timeout,
+                    plain_preference_window);
+
+                switch (probe.choice)
+                {
+                    case PortsProbeResult::Choice::PreferPlain:
+#if USE_SSL
+                        candidates.emplace_back(secure_port, Protocol::Secure::Enable);
+#endif
+                        break;
+                    case PortsProbeResult::Choice::SecureOnly:
+                        candidates.front() = {secure_port, Protocol::Secure::Enable};
+                        break;
+                    case PortsProbeResult::Choice::Neither:
+                        throw NetException(
+                            probe.timed_out ? ErrorCodes::SOCKET_TIMEOUT : ErrorCodes::NETWORK_ERROR,
+                            "Cannot connect to {} on port {} or on the secure port {}: {}",
+                            connection_parameters.host,
+                            connection_parameters.port,
+                            secure_port,
+                            probe.failure_reason);
+                }
             }
 
-            connection->getServerVersion(
-                connection_parameters.timeouts,
-                server_name,
-                server_version_major,
-                server_version_minor,
-                server_version_patch,
-                server_revision);
+            std::exception_ptr plain_connection_error;
+
+            for (size_t candidate_index = 0; candidate_index < candidates.size(); ++candidate_index)
+            {
+                connection_parameters.port = candidates[candidate_index].first;
+                connection_parameters.security = candidates[candidate_index].second;
+
+                const bool secure_auto_detected = secure_unspecified && connection_parameters.security == Protocol::Secure::Enable;
+
+                if (is_interactive)
+                    output_stream << "Connecting to "
+                              << (!connection_parameters.default_database.empty()
+                                      ? "database " + connection_parameters.default_database + " at "
+                                      : "")
+                              << connection_parameters.host << ":" << connection_parameters.port
+                              << (secure_auto_detected ? " (secure)" : "")
+                              << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
+
+                try
+                {
+                    connection = Connection::createConnection(connection_parameters, client_context);
+
+                    if (max_client_network_bandwidth)
+                    {
+                        ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
+                        connection->setThrottler(throttler);
+                    }
+
+                    connection->getServerVersion(
+                        connection_parameters.timeouts,
+                        server_name,
+                        server_version_major,
+                        server_version_minor,
+                        server_version_patch,
+                        server_revision);
+
+                    break;
+                }
+                catch (Exception & e)
+                {
+                    /// The plain port accepted the TCP connection, but the connection itself failed
+                    /// (e.g. a proxy in front of the server accepts TCP on the plain port but only
+                    /// serves TLS there). Retry with TLS on the secure port before giving up,
+                    /// but only for connection-level failures.
+                    const bool is_connection_error = e.code() == ErrorCodes::NETWORK_ERROR
+                        || e.code() == ErrorCodes::SOCKET_TIMEOUT
+                        || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
+                        || e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER;
+
+                    if (candidate_index + 1 < candidates.size() && is_connection_error)
+                    {
+                        plain_connection_error = std::current_exception();
+                        if (is_interactive)
+                            std::cerr << "Connection to " << connection_parameters.host << ":" << connection_parameters.port
+                                      << " failed, trying the secure port " << candidates[candidate_index + 1].first
+                                      << " with TLS." << std::endl;
+                        continue;
+                    }
+
+                    if (plain_connection_error && is_connection_error)
+                    {
+                        /// Both the plain and the secure connection attempts failed at the connection level.
+                        /// Report the failure of the plain connection as the primary error: that is the port
+                        /// the client would have used if there were no automatic detection.
+                        const auto secure_error = e.message();
+                        const auto secure_port = connection_parameters.port;
+                        connection_parameters.port = candidates.front().first;
+                        connection_parameters.security = candidates.front().second;
+                        try
+                        {
+                            std::rethrow_exception(plain_connection_error);
+                        }
+                        catch (Exception & plain_e)
+                        {
+                            plain_e.addMessage("(also failed to connect with TLS to the secure port {}: {})", secure_port, secure_error);
+                            throw;
+                        }
+                    }
+
+                    throw;
+                }
+            }
+
             config().setString("host", connection_parameters.host);
             config().setInt("port", connection_parameters.port);
+            if (connection_parameters.security == Protocol::Secure::Enable)
+                config().setBool("secure", true);
 
             settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
 
