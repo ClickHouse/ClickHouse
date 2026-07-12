@@ -30,7 +30,11 @@ namespace
             /// would produce an empty and unparseable `GRANTS ()`, so emit the canonical no-privileges form.
             ostr << "USAGE ON *.*";
         else
-            grants.formatElementsWithoutOptions(ostr);
+            /// Render precisely: auth-method grants must never be widened by the backward-compatibility
+            /// rewrites, otherwise a narrow token grant such as `ALTER USER ON alice` would round-trip as
+            /// `ALTER USER ON *.*` through `SHOW CREATE USER`, backup, restart, or `ATTACH USER` and become
+            /// broader. Older replicas cannot parse this clause anyway, so there is no compatibility to keep.
+            grants.formatElementsWithoutOptions(ostr, /*precise=*/true);
         ostr << ")";
     }
 }

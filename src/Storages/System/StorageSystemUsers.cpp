@@ -22,6 +22,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -385,7 +386,15 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             column_valid_until.insertValue(static_cast<UInt32>(auth_data.getValidUntil()));
 
             const auto & grants = auth_data.getGrants();
-            const auto grants_str = grants.structurallyEmpty() ? "" : grants.toStringWithoutOptions();
+            String grants_str;
+            if (!grants.structurallyEmpty())
+            {
+                /// Render precisely, matching `SHOW CREATE USER` (see `ASTAuthenticationData::formatImpl`):
+                /// the backward-compatibility widening must never apply to auth-method grants.
+                WriteBufferFromOwnString buffer;
+                grants.formatElementsWithoutOptions(buffer, /*precise=*/true);
+                grants_str = buffer.str();
+            }
             column_auth_grants.insertData(grants_str.data(), grants_str.size());
         }
 

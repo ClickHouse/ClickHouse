@@ -109,7 +109,13 @@ struct AccessRightsElement
 
     void formatColumnNames(WriteBuffer & buffer) const;
     void formatFilter(WriteBuffer & buffer) const;
-    void formatONClause(WriteBuffer & buffer) const;
+
+    /// When `precise` is set, the backward-compatibility rewrites that widen a grant for the benefit of
+    /// older replicas (`USER_NAME` scopes collapsed to `*.*`, `READ`/`WRITE` sources folded into `SOURCES`)
+    /// are bypassed, so the element is rendered exactly. This is required for per-authentication-method
+    /// `GRANTS` clauses, where widening would break the fail-close contract, and where the rewrites bring no
+    /// compatibility benefit anyway because older replicas do not understand the clause at all.
+    void formatONClause(WriteBuffer & buffer, bool precise = false) const;
 };
 
 
@@ -145,7 +151,10 @@ public:
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
     String toStringWithoutOptions() const;
-    void formatElementsWithoutOptions(WriteBuffer & buffer) const;
+
+    /// See `AccessRightsElement::formatONClause`: `precise` bypasses the backward-compatibility widening,
+    /// which is mandatory for per-authentication-method `GRANTS` clauses.
+    void formatElementsWithoutOptions(WriteBuffer & buffer, bool precise = false) const;
 };
 
 }
