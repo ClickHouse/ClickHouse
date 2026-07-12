@@ -267,12 +267,42 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
 void BufferedShardByHashTransform::work()
 {
     if (budget_exceeded)
-        throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
-            "Shuffled aggregation-in-order buffered more than {} bytes while repartitioning the input: "
-            "the data distribution requires reading too far ahead (e.g. long runs of a single set of GROUP BY keys). "
-            "Increase the setting `aggregation_in_order_shuffle_max_buffered_bytes` or disable the setting "
-            "`aggregation_in_order_shuffle`",
-            max_buffered_bytes);
+    {
+        /// Between the prepare() that set `budget_exceeded` and this work(), a downstream can finish every
+        /// output of this processor - a `LimitTransform` closes all of its upstream inputs the moment it
+        /// reaches its limit, and so does a cancellation. Once every output is finished the buffered data is
+        /// needed by nobody, so raising TOO_MANY_ROWS_OR_BYTES here would fail a query (e.g. an outer
+        /// `LIMIT 1`) that is actually completing normally. In that case drop the pending chunk, releasing its
+        /// budget charge, and return; the next prepare() observes the finished outputs and finishes this
+        /// processor cleanly. When at least one output is still open the buffered data is genuinely needed, so
+        /// the over-budget error stands.
+        bool all_outputs_finished = true;
+        for (const auto & output : outputs)
+        {
+            if (!output.isFinished())
+            {
+                all_outputs_finished = false;
+                break;
+            }
+        }
+
+        if (!all_outputs_finished)
+            throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
+                "Shuffled aggregation-in-order buffered more than {} bytes while repartitioning the input: "
+                "the data distribution requires reading too far ahead (e.g. long runs of a single set of GROUP BY keys). "
+                "Increase the setting `aggregation_in_order_shuffle_max_buffered_bytes` or disable the setting "
+                "`aggregation_in_order_shuffle`",
+                max_buffered_bytes);
+
+        if (has_pending_input_chunk)
+        {
+            dischargePendingInput();
+            pending_input_chunk = {};
+            has_pending_input_chunk = false;
+        }
+        budget_exceeded = false;
+        return;
+    }
 
     if (has_pending_input_chunk)
     {
