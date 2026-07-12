@@ -89,6 +89,12 @@ public:
         String query_str;
         std::optional<UUID> user_id;
         std::vector<UUID> current_roles;
+        /// External (pushed) roles of the originating session. Re-applied via `setUser` on the flush
+        /// context so a role that exists only as an external role is not lost or rejected with
+        /// `SET_NON_GRANTED_ROLE`. It is not part of the batching key: `current_roles` above holds the
+        /// session's *effective* roles (which already include these), so inserts whose effective role
+        /// set differs are already never coalesced, and equal effective sets carry identical privileges.
+        std::vector<UUID> external_roles;
         /// Credential grant limit of the originating session (null if the session is not limited).
         /// Replayed on the flush context so the deferred insert keeps the token intersection instead of
         /// regaining the full user's rights. Part of the batching key (folded into `hash`) so inserts
@@ -111,6 +117,7 @@ public:
             const ASTPtr & query_,
             const std::optional<UUID> & user_id_,
             const std::vector<UUID> & current_roles_,
+            const std::vector<UUID> & external_roles_,
             const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
             const String & current_user_,
             const String & initial_user_,

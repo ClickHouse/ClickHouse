@@ -2242,6 +2242,14 @@ std::vector<UUID> Context::getCurrentRoles() const
     return getRolesInfo()->getCurrentRoles();
 }
 
+std::vector<UUID> Context::getExternalRoles() const
+{
+    SharedLockGuard lock(mutex);
+    if (external_roles)
+        return *external_roles;
+    return {};
+}
+
 std::vector<UUID> Context::getEnabledRoles() const
 {
     return getRolesInfo()->getEnabledRoles();

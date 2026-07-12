@@ -39,10 +39,10 @@ TEST(AsyncInsertKey, SettingsChanges)
 
     auto kind = AsynchronousInsertQueueDataKind::Parsed;
 
-    AsynchronousInsertQueue::InsertQuery key1(query, {}, {}, {}, {}, {}, {}, settings1, kind);
-    AsynchronousInsertQueue::InsertQuery key2(query, {}, {}, {}, {}, {}, {}, settings2, kind);
-    AsynchronousInsertQueue::InsertQuery key3(query, {}, {}, {}, {}, {}, {}, settings3, kind);
-    AsynchronousInsertQueue::InsertQuery key4(query, {}, {}, {}, {}, {}, {}, settings4, kind);
+    AsynchronousInsertQueue::InsertQuery key1(query, {}, {}, {}, {}, {}, {}, {}, settings1, kind);
+    AsynchronousInsertQueue::InsertQuery key2(query, {}, {}, {}, {}, {}, {}, {}, settings2, kind);
+    AsynchronousInsertQueue::InsertQuery key3(query, {}, {}, {}, {}, {}, {}, {}, settings3, kind);
+    AsynchronousInsertQueue::InsertQuery key4(query, {}, {}, {}, {}, {}, {}, {}, settings4, kind);
 
     EXPECT_EQ(key1, key2);
     EXPECT_NE(key1, key3);
@@ -64,7 +64,7 @@ TEST(AsyncInsertKey, IdentityHashIsNotAmbiguous)
     auto make_key = [&](const String & current_user, const String & initial_user, const String & authenticated_user)
     {
         return AsynchronousInsertQueue::InsertQuery(
-            query, {}, {}, {}, current_user, initial_user, authenticated_user, settings, kind);
+            query, {}, {}, {}, {}, current_user, initial_user, authenticated_user, settings, kind);
     };
 
     /// The three identity fields are variable-length strings folded into the queue key hash,
@@ -118,7 +118,7 @@ TEST(AsyncInsertKey, AuthenticationGrantsAreDistinguished)
 
     auto make_key = [&](const std::shared_ptr<const AccessRightsElements> & grants)
     {
-        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, grants, {}, {}, {}, settings, kind);
+        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, {}, grants, {}, {}, {}, settings, kind);
     };
 
     /// The credential grant limit (from the GRANTS clause of an authentication method) is part of the

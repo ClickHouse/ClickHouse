@@ -119,6 +119,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const ASTPtr & query_,
     const std::optional<UUID> & user_id_,
     const std::vector<UUID> & current_roles_,
+    const std::vector<UUID> & external_roles_,
     const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
     const String & current_user_,
     const String & initial_user_,
@@ -129,6 +130,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , query_str(query->formatWithSecretsOneLine())
     , user_id(user_id_)
     , current_roles(current_roles_)
+    , external_roles(external_roles_)
     , authentication_grants(authentication_grants_)
     , current_user(current_user_)
     , initial_user(initial_user_)
@@ -194,6 +196,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     query_str = other.query_str;
     user_id = other.user_id;
     current_roles = other.current_roles;
+    external_roles = other.external_roles;
     authentication_grants = other.authentication_grants;
     current_user = other.current_user;
     initial_user = other.initial_user;
@@ -213,6 +216,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         query_str = other.query_str;
         user_id = other.user_id;
         current_roles = other.current_roles;
+        external_roles = other.external_roles;
         authentication_grants = other.authentication_grants;
         current_user = other.current_user;
         initial_user = other.initial_user;
@@ -579,6 +583,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         query,
         query_context->getUserID(),
         query_context->getCurrentRoles(),
+        query_context->getExternalRoles(),
         query_context->getAuthenticationGrants(),
         client_info.current_user,
         client_info.initial_user,
@@ -1027,11 +1032,15 @@ try
     /// Access rights must be checked for the user who executed the initial INSERT query.
     if (key.user_id)
     {
-        insert_context->setUser(*key.user_id);
-        insert_context->setCurrentRoles(key.current_roles);
-        /// `setUser` resets the credential grant limit, so replay it here to preserve the token
-        /// intersection of the originating session instead of running under the full user's rights.
-        insert_context->setAuthenticationGrants(key.authentication_grants);
+        /// Replay the whole originating identity in one call: the external (pushed) roles and the
+        /// credential grant limit are restored together with the user, so a limited credential does not
+        /// regain the full user's rights and a pushed-role session does not fail role revalidation.
+        insert_context->setUser(*key.user_id, key.external_roles, key.authentication_grants);
+        /// `current_roles` are the session's *effective* current roles, which already include the
+        /// external roles restored above. Re-apply them without the grant check: external roles are not
+        /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
+        /// granted current roles are kept and the external ones come from `setUser`.
+        insert_context->setCurrentRoles(key.current_roles, /*check_grants=*/ false);
     }
 
     /// Context::setUser only restores the access-control identity, not the ClientInfo user

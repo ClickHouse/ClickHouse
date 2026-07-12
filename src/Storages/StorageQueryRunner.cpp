@@ -125,6 +125,11 @@ struct QueryRunnerJobOrigin
 {
     std::optional<UUID> user_id;
     std::optional<std::vector<UUID>> roles;
+    /// External (pushed) roles of the originating session. Carried over and re-applied via `setUser`
+    /// so a role that exists only as an external role is not lost or rejected with
+    /// `SET_NON_GRANTED_ROLE` when the deferred job rebuilds the context. Empty in the DEFINER/NONE
+    /// cases, which intentionally run as a different (or no) principal.
+    std::vector<UUID> external_roles;
     /// Credential grant limit of the originating session (null if the session is not limited).
     /// Carried over so a limited credential does not regain full rights when the deferred job runs
     /// under a freshly-built context. Only meaningful in the INVOKER case; the DEFINER/NONE cases
@@ -430,16 +435,21 @@ private:
         if (job.origin->user_id)
         {
             chassert(cluster_name.empty());
-            job_context->setUser(*job.origin->user_id);
+            /// Replay the whole originating identity in one call: the external (pushed) roles and the
+            /// credential grant limit are restored together with the user, so a limited credential does
+            /// not regain full rights and a pushed-role session does not fail role revalidation when the
+            /// deferred job runs. `authentication_grants` is null in the DEFINER/NONE cases (a no-op).
+            job_context->setUser(*job.origin->user_id, job.origin->external_roles, job.origin->authentication_grants);
         }
         if (job.origin->roles)
         {
             chassert(cluster_name.empty());
-            job_context->setCurrentRoles(*job.origin->roles);
+            /// These are the session's *effective* current roles, which already include the external
+            /// roles restored above. Re-apply them without the grant check: external roles are not
+            /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
+            /// granted current roles are kept and the external ones come from `setUser`.
+            job_context->setCurrentRoles(*job.origin->roles, /*check_grants=*/ false);
         }
-        /// `setUser` above resets the credential grant limit, so replay it here to preserve the token
-        /// intersection of the originating session (null in the DEFINER/NONE cases, which is a no-op).
-        job_context->setAuthenticationGrants(job.origin->authentication_grants);
 
         job_context->setCurrentUserName(job.origin->current_user);
         job_context->setInitialUserName(job.origin->initial_user);
@@ -812,6 +822,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
         origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
             .user_id = {},
             .roles = {},
+            .external_roles = {},
             .authentication_grants = {},
             .current_user = {},
             .initial_user = {},
@@ -826,6 +837,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = local_context->getUserID(),
                     .roles = local_context->getCurrentRoles(),
+                    .external_roles = local_context->getExternalRoles(),
                     .authentication_grants = local_context->getAuthenticationGrants(),
                     .current_user = inserter.current_user,
                     .initial_user = inserter.initial_user,
@@ -836,6 +848,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = metadata_snapshot->getDefinerID(local_context),
                     .roles = {},
+                    .external_roles = {},
                     .authentication_grants = {},
                     .current_user = *metadata_snapshot->definer,
                     .initial_user = *metadata_snapshot->definer,
@@ -846,6 +859,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = {},
                     .roles = {},
+                    .external_roles = {},
                     .authentication_grants = {},
                     .current_user = {},
                     .initial_user = {},
