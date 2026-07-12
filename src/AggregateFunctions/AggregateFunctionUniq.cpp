@@ -202,7 +202,7 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
         if (which.isTuple())
         {
             if (use_exact_hash_function)
-                return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<true, true, is_able_to_parallelize_merge>>>( argument_types);
+                return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<true, true, is_able_to_parallelize_merge>>>(argument_types);
 
             return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, true, is_able_to_parallelize_merge>>>(argument_types);
         }
