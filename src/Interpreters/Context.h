@@ -122,6 +122,7 @@ struct FileProgress;
 class Clusters;
 class QueryResultCache;
 class QueryConditionCache;
+class EncryptionHeaderCache;
 class ISystemLog;
 class QueryLog;
 class QueryMetricLog;
@@ -1558,6 +1559,11 @@ public:
     std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
     void clearQueryConditionCache() const;
 
+    void setEncryptionHeaderCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    void updateEncryptionHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<EncryptionHeaderCache> getEncryptionHeaderCache() const;
+    void clearEncryptionHeaderCache() const;
+
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
       *  - since caches are linked to file names, and become incorrect.
@@ -1584,12 +1590,14 @@ public:
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
+    BackgroundTaskSchedulingSettings getBackgroundStreamingTaskSchedulingSettings() const;
 
     BackgroundSchedulePool & getBufferFlushSchedulePool() const;
     BackgroundSchedulePool & getSchedulePool() const;
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
     BackgroundSchedulePool & getIcebergSchedulePool() const;
+    BackgroundSchedulePool & getStreamingSchedulePool() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
