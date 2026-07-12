@@ -437,7 +437,7 @@ private:
     size_t scheduleLookaheadReach(size_t phys_off) const;
 
     /// The physical reach a long connection opened at `phys_off` actually gets (before any
-    /// extent floor): `predictedForwardLength` clamped to the file end, then clamped DOWN at the next
+    /// extent floor): `predictedEnd` clamped to the file end, then clamped DOWN at the next
     /// wide cached run the plan shows. The single reach source shared by `shouldOpenLongConnection` and
     /// `longConnectionBound` so the open trigger and the channel bound never disagree.
     size_t boundedReach(size_t phys_off) const;
@@ -452,7 +452,7 @@ private:
     /// The long-connection bound (object-local) for an open at physical `phys_offset`:
     /// the forward reach, floored at the current read extent and capped at the object end,
     /// so a forward run extends the channel past the current right boundary. The reach is the
-    /// `predictedForwardLength` estimate clamped at the next wide cached run the plan shows. See the
+    /// `predictedEnd` estimate clamped at the next wide cached run the plan shows. See the
     /// definition.
     size_t longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const;
 
@@ -859,7 +859,7 @@ private:
     /// Continuous-read pattern estimator, fed each plan's predicted source reads
     /// and every seek. Constructed with `bridgeable_gap == min_bytes_for_seek` so a
     /// bridged gap counts identically whether modeled as a read-through or a seek.
-    /// `predictedForwardLength` sizes the long source connection (see `longConnectionBound`).
+    /// `predictedEnd` sizes the long source connection (see `longConnectionBound`).
     ReadContinuityTracker continuity_tracker;
     /// Highest physical offset already fed to `continuity_tracker` from a plan, so
     /// overlapping re-plans never double-feed. Reset to the target on seek.

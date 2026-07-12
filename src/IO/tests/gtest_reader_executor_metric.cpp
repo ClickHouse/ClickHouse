@@ -641,11 +641,11 @@ TEST_F(ReaderExecutorMetric, SmallCachedGaps)
         warm.emplace_back(off, hole);
     auto [live, stateless] = runMatrix("small_gaps", warm, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 16u) << "live: above-bound holes are not bridged; a reopen per cold run plus the over-reach reopens";
-    /// Accepted pending the deferred long-connection re-tuning: the continuity prediction
-    /// can over-predict at a cold run's end, so the long connection over-reaches into the
-    /// next above-bound hole and is abandoned -> incomplete > 0 on the live arm.
-    EXPECT_EQ(live.incomplete, 7u) << "live: the over-reaching connection is abandoned at the next above-bound hole (accepted, re-tuned in a follow-up)";
+    EXPECT_EQ(live.requests, 9u) << "live: above-bound holes are not bridged - one reopen per cold run, no over-reach reopens";
+    /// The run-anchored prediction no longer over-predicts at a cold run's end, so the
+    /// long connection stops at its bound instead of over-reaching into the next
+    /// above-bound hole and being abandoned there.
+    EXPECT_EQ(live.incomplete, 0u) << "live: every connection drains at its bound; nothing is abandoned";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window";
 }
 

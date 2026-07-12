@@ -1387,11 +1387,12 @@ size_t ReaderExecutor::scheduleLookaheadReach(size_t phys_off) const
     return geom->streamReach(phys_off, min_bytes_for_seek);
 }
 
-size_t ReaderExecutor::clampReach(size_t reach, size_t phys_off) const
+size_t ReaderExecutor::clampReach(size_t predicted_end, size_t phys_off) const
 {
-    /// The estimator's reach is unclamped; bound it to the physical file end when the
-    /// size is known (an unknown-size object has no end to clamp against).
-    size_t end = phys_off + reach;
+    /// The estimator's predicted run end is run-anchored and unclamped; bound it to
+    /// the physical file end when the size is known, and never below `phys_off` (a
+    /// prediction behind the ask means no reach there, not a negative one).
+    size_t end = std::max(predicted_end, phys_off);
     if (!hasUnknownSize())
         end = std::min(end, toPhys(totalSize()));
     return end;
@@ -1400,7 +1401,7 @@ size_t ReaderExecutor::clampReach(size_t reach, size_t phys_off) const
 size_t ReaderExecutor::boundedReach(size_t phys_off) const
 {
     /// The physical reach a long connection opened at `phys_off` actually gets, BEFORE any
-    /// extent floor: the estimator's `predictedForwardLength` clamped to the file end, then clamped
+    /// extent floor: the estimator's `predictedEnd` clamped to the file end, then clamped
     /// DOWN at the next WIDE cached run the plan shows - a resident run at/above
     /// `min_bytes_for_seek` before `plan_end`, where the channel must stop (that region is
     /// served from cache / filled down, not over-read; holes strictly below the bound are
@@ -1409,7 +1410,7 @@ size_t ReaderExecutor::boundedReach(size_t phys_off) const
     /// extend past the look-ahead. This is the SINGLE reach source shared by the open trigger
     /// (`shouldOpenLongConnection`) and the channel bound (`longConnectionBound`), so the two can never
     /// disagree on how far the channel reaches. Reads only the tracker scalar + plan geometry.
-    size_t reach = clampReach(continuity_tracker.predictedForwardLength(), phys_off);
+    size_t reach = clampReach(continuity_tracker.predictedEnd(), phys_off);
     const auto & geom = read_plan.geometry();
     if (geom)
     {
@@ -1458,7 +1459,7 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
     /// stranding the channel before its real end. The object end caps a GET to the single
     /// object it streams.
     ///
-    /// The reach (`boundedReach`: `predictedForwardLength` clamped at the next wide cached run) is the
+    /// The reach (`boundedReach`: `predictedEnd` clamped at the next wide cached run) is the
     /// read's forward trajectory, which extrapolates past the current extent. It is the same
     /// value `shouldOpenLongConnection` triggers on, so the GET drains cleanly at a wide cached run
     /// instead of being abandoned mid-run, and the trigger never opens a channel this bound
@@ -1471,7 +1472,10 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
     const size_t extent = read_extent_end
         ? std::min<size_t>(toPhys(*read_extent_end), object_end)
         : object_end;
-    const size_t reach = boundedReach(phys_offset);
+    /// A transient's extent IS its request: the reach (plan-fed, cell-aligned) may
+    /// predict past it, but a one-shot `readBigAt` must never stream beyond what was
+    /// asked - same rule as `fetchAllowance`.
+    const size_t reach = is_transient ? extent : boundedReach(phys_offset);
     size_t phys_bound = std::max(extent, reach);
     /// A warranted long connection opens with at least `long_connection_open_range`
     /// and never streams past `long_connection_max_bound`: it bounds an over-predicted
@@ -1819,7 +1823,7 @@ bool ReaderExecutor::launchMachineForWindow(size_t ri, ByteRange window, IFetchM
     /// The foreground is the sole opener; the aligned window's first physical range gives the
     /// object and its object-local offset. A no-op when not warranted / at capacity / a usable
     /// connection is already held. The channel bound comes from the runtime reach
-    /// (`longConnectionBound`: `predictedForwardLength` clamped at the next wide cached run), the same on
+    /// (`longConnectionBound`: `predictedEnd` clamped at the next wide cached run), the same on
     /// the prefetch and foreground paths - the schedule no longer hands down a span.
     auto prefetch_ranges = offset_map.map(window);
     if (!prefetch_ranges.empty())
@@ -2989,7 +2993,7 @@ size_t ReaderExecutor::fetchAllowance(size_t phys_from) const
     if (read_extent_end)
     {
         const size_t extent_phys = toPhys(*read_extent_end);
-        const size_t consumed_reach = clampReach(consume_tracker.predictedForwardLength(), toPhys(position));
+        const size_t consumed_reach = clampReach(consume_tracker.predictedEnd(), toPhys(position));
         bound = std::min(bound, is_transient ? extent_phys : std::max(extent_phys, consumed_reach));
     }
     return bound > phys_from ? bound - phys_from : 0;

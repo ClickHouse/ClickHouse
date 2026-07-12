@@ -2663,9 +2663,9 @@ TEST(ReaderExecutor, ReadBigAtBoundsLongConnectionToObjectEndAcrossBoundary)
     ASSERT_TRUE(log.read_until[0].has_value());
     EXPECT_EQ(*log.read_until[0], s0) << "o0 connection bounded to its own end, not past it to the extent end";
     ASSERT_TRUE(log.read_until[1].has_value());
-    EXPECT_EQ(*log.read_until[1], want)
-        << "o1 connection bounded to the predicted reach (object-local), which the boundary-based open "
-           "lets run past o1's piece of the extent";
+    EXPECT_EQ(*log.read_until[1], want - (s0 - offset))
+        << "o1 connection bounded to exactly its piece of the request (object-local): a "
+           "transient never streams past what was asked, on any object piece";
 }
 
 TEST(ReaderExecutor, UnknownSizeStatelessReaderBoundsOneShotToExtent)
@@ -4108,7 +4108,8 @@ TEST(ReaderExecutor, PrefetchRunsPastTheAdvancingExtent)
 
     /// Window 1 [0, 2000): the cold inline read; its finishWindow launches the machine at
     /// the frontier. No consumed run is confirmed yet, so the first launch stays
-    /// extent-bounded: [2000, 6000), not past it.
+    /// extent-bounded: [2000, 6000), not past it - the declared extent is a BOUND,
+    /// not a consumption commitment; beyond-extent reach must be earned.
     auto w1 = executor.readNextWindow();
     ASSERT_EQ(w1.range().offset, 0u);
     ASSERT_EQ(w1.range().size, 2000u);
@@ -4117,9 +4118,9 @@ TEST(ReaderExecutor, PrefetchRunsPastTheAdvancingExtent)
     EXPECT_EQ(inspect(executor).inflightPrefetchOffset() + inspect(executor).inflightPrefetchSize(), 6000u)
         << "no consumed run yet - the first launch must stop at the extent";
 
-    /// Window 2 [2000, 4000): the consumed run (4000) now predicts consumption past the
-    /// extent, so the top-up CROSSES it: [6000, 8000). The crossing is EARNED by observed
-    /// consumption, not granted by the plan.
+    /// Window 2 [2000, 4000): the checkpointed run (est 0.7*4000 = 2800; end
+    /// 4000 + 0.7*(4000+2800) = 8760, clamped to the 8000 file end) passes the
+    /// extent, so its finishWindow launches the crossing top-up [6000, 8000).
     for (int i = 0; i < 5000 && !inspect(executor).inflightPrefetchReleased(); ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     ASSERT_TRUE(inspect(executor).inflightPrefetchReleased());
@@ -4131,20 +4132,18 @@ TEST(ReaderExecutor, PrefetchRunsPastTheAdvancingExtent)
     EXPECT_EQ(inspect(executor).inflightPrefetchOffset() + inspect(executor).inflightPrefetchSize(), 8000u)
         << "the crossing machine covers the tail past the extent";
 
-    /// Window 3 [4000, 6000): its finishWindow collects the released crossing machine,
-    /// folding the worker's stats in. Everything the file needs from the source has now
-    /// been requested.
-    for (int i = 0; i < 5000 && !inspect(executor).inflightPrefetchReleased(); ++i)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    ASSERT_TRUE(inspect(executor).inflightPrefetchReleased());
+    /// Window 3 [4000, 6000) serves from committed cells; let the crossing machine
+    /// finish - the at-extent serve below collects it, folding the worker's stats in.
     auto w3 = executor.readNextWindow();
     ASSERT_EQ(w3.range().offset, 4000u);
     ASSERT_EQ(w3.range().size, 2000u);
-    ASSERT_FALSE(inspect(executor).hasInflightPrefetch());
-    const size_t requests_before_advance = inspect(executor).sourceRequests();
+    for (int i = 0; i < 5000 && !inspect(executor).inflightPrefetchReleased(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_TRUE(inspect(executor).inflightPrefetchReleased());
 
     /// The cursor sits at the extent; the serve EOFs there (empty window) - the consumer
-    /// bound is untouched by the producer's crossing.
+    /// bound is untouched by the producer's crossing. This read also collects the
+    /// released crossing machine, folding the worker's stats in.
     String result;
     for (const auto & node : w1.getNodes())
         result.append(node.data(), node.size);
@@ -4155,6 +4154,8 @@ TEST(ReaderExecutor, PrefetchRunsPastTheAdvancingExtent)
     ASSERT_EQ(executor.getPosition(), 6000u);
     auto at_extent = executor.readNextWindow();
     EXPECT_TRUE(at_extent.empty()) << "the consumer still EOFs at the extent";
+    ASSERT_FALSE(inspect(executor).hasInflightPrefetch()) << "the at-extent serve collects the machine";
+    const size_t requests_before_advance = inspect(executor).sourceRequests();
 
     /// The next mark range advances the extent; the tail was already fetched by the
     /// crossing machine, so it serves with ZERO new source requests.
@@ -5974,17 +5975,35 @@ TEST(ReaderExecutor, ReadContinuityTrackerCapturesFullSequentialRead)
             result.append(node.data(), node.size);
         ++n;
         if (n == 1)
-            reach_after_1 = inspect(executor).predictedForwardLength();
+            reach_after_1 = inspect(executor).predictedEnd();
         if (n == 3)
-            reach_after_3 = inspect(executor).predictedForwardLength();
+            reach_after_3 = inspect(executor).predictedEnd();
     }
 
     EXPECT_EQ(result, content);                          /// full read, no corruption
-    EXPECT_EQ(reach_after_1, seg) << "first plan fed exactly one segment";
-    EXPECT_EQ(reach_after_3, 3 * seg)
-        << "with a one-segment plan the reach tracks the consumed run exactly, so after "
+    /// Replicate the tracker's arithmetic over k contiguous one-segment plan feeds:
+    /// the first feed starts the run, each later feed is an exact continuation that
+    /// checkpoints the grown run into the estimate. The run length inside these
+    /// values is what detects a double-feed/gap.
+    const double alpha = ReadContinuityTracker::Options{}.ewma_alpha;
+    const auto predicted = [&](size_t feeds)
+    {
+        double est = 0;
+        size_t frontier = 0;
+        for (size_t k = 1; k <= feeds; ++k)
+        {
+            frontier += seg;
+            if (k > 1)
+                est = alpha * static_cast<double>(frontier) + (1 - alpha) * est;
+        }
+        return frontier + std::max<size_t>(
+            static_cast<size_t>(alpha * (static_cast<double>(frontier) + est)), static_cast<size_t>(est));
+    };
+    EXPECT_EQ(reach_after_1, predicted(1)) << "first plan fed exactly one segment";
+    EXPECT_EQ(reach_after_3, predicted(3))
+        << "with a one-segment plan the run tracks the consumed span exactly, so after "
            "three windows it spans three segments, no double-feed/gap";
-    EXPECT_EQ(inspect(executor).predictedForwardLength(), file)
+    EXPECT_EQ(inspect(executor).predictedEnd(), predicted(file / seg))
         << "the estimator captured the full contiguous read across all plans";
 }
 
@@ -6396,8 +6415,9 @@ TEST(ReaderExecutor, LongConnectionClampReachAndShouldOpen)
     LongConnRig rig(size, 4096, 4096, 1024);
     auto & ex = *rig.executor;
 
-    EXPECT_EQ(inspect(ex).clampReach(/*reach=*/size * 4, /*phys_off=*/1000), size); /// clamped to file end
-    EXPECT_EQ(inspect(ex).clampReach(/*reach=*/2000, /*phys_off=*/1000), 3000u);    /// within file, unchanged
+    EXPECT_EQ(inspect(ex).clampReach(/*predicted_end=*/size * 4, /*phys_off=*/1000), size); /// clamped to file end
+    EXPECT_EQ(inspect(ex).clampReach(/*predicted_end=*/3000, /*phys_off=*/1000), 3000u);    /// within file, unchanged
+    EXPECT_EQ(inspect(ex).clampReach(/*predicted_end=*/500, /*phys_off=*/1000), 1000u);     /// behind the ask: floored, no reach
     EXPECT_FALSE(inspect(ex).shouldOpenLongConnection(0));            /// no continuity feed yet -> predicted reach 0, not "long"
 }
 

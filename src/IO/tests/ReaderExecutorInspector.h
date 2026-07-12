@@ -47,7 +47,7 @@ public:
     }
 
     /// The continuity estimator's predicted reach after the last plan feed.
-    size_t predictedForwardLength() const { return ex.continuity_tracker.predictedForwardLength(); }
+    size_t predictedEnd() const { return ex.continuity_tracker.predictedEnd(); }
 
     /// Bank injection / inspection (the display's overflow cell). `bankBytes` constructs the
     /// state the wait-bank and overflow-bank paths produce - including a HOLEY bank, whose
