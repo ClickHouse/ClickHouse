@@ -4,42 +4,82 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   const assetBase = (typeof window !== 'undefined' && window.location.pathname.startsWith('/docs')) ? '/docs' : '';
   const withBase = (p) => p && p.startsWith('/') ? assetBase + p : p;
 
-  // Safely read a persisted string array from localStorage. A corrupted or
-  // hand-edited value must never throw out of a useState initializer, which
-  // would crash the whole page render — fall back to the default instead.
-  const readStoredList = (key, fallback) => {
-    if (typeof window === 'undefined') return fallback;
+  // Filter options. `value` is a stable slug matched against the tag slugs in
+  // quickstarts-data.jsx (the generator emits the same slug form), so
+  // filtering keeps working when the translation pipeline localizes the
+  // labels. Only `label` is display text.
+  const useCaseOptions = [
+    { value: 'real-time-analytics', label: 'Real-time analytics' },
+    { value: 'data-warehousing', label: 'Data warehousing' },
+    { value: 'observability', label: 'Observability' },
+    { value: 'ai-ml', label: 'AI/ML' },
+  ];
+  const productOptions = [
+    { value: 'self-managed', label: 'ClickHouse (Open-Source)' },
+    { value: 'cloud', label: 'ClickHouse Cloud' },
+    { value: 'clickpipes', label: 'ClickPipes' },
+    { value: 'language-clients', label: 'Language clients' },
+    { value: 'clickstack', label: 'ClickStack' },
+    { value: 'chdb', label: 'chDB' },
+  ];
+
+  // Only offer categories that at least one explorable quickstart belongs to
+  // (an "all"-tagged quickstart belongs to every use case).
+  const explorable = data.filter(qs => !featuredIds.includes(qs.id));
+  const visibleUseCaseOptions = useCaseOptions.filter(o =>
+    explorable.some(qs => { const u = qs.useCases || []; return u.includes('all') || u.includes(o.value); }));
+  const visibleProductOptions = productOptions.filter(o =>
+    explorable.some(qs => (qs.products || []).includes(o.value)));
+
+  // All localStorage access goes through these guards. Storage may be absent
+  // (SSR) or throw SecurityError (storage-restricted browsers or enterprise
+  // policies); persistence is optional, so a failure means "not persisted"
+  // rather than a render or effect exception that would take down the page.
+  const readStored = (key) => {
+    if (typeof window === 'undefined') return null;
     try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return fallback;
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : fallback;
+      return localStorage.getItem(key);
     } catch {
-      return fallback;
+      return null;
+    }
+  };
+  const writeStored = (key, value) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Storage unavailable — persistence is best-effort, so drop it.
+    }
+  };
+
+  // Read a persisted selection. A corrupted or hand-edited value must never
+  // throw out of a useState initializer, which would crash the whole page
+  // render — fall back to the default instead. Values not present in the
+  // options (e.g. display strings persisted by an older version of this
+  // component) are dropped. An empty selection means no filter.
+  const readStoredSelection = (key, options) => {
+    const raw = readStored(key);
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(v => options.some(o => o.value === v));
+    } catch {
+      return [];
     }
   };
 
   // State management with localStorage
-  const [searchTerm, setSearchTerm] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('quickstarts-search') || '';
-    }
-    return '';
-  });
+  const [searchTerm, setSearchTerm] = useState(() => readStored('quickstarts-search') || '');
 
-  const [selectedUseCases, setSelectedUseCases] = useState(() => readStoredList('quickstarts-usecases', ['All']));
+  const [selectedUseCases, setSelectedUseCases] = useState(() => readStoredSelection('quickstarts-usecases', visibleUseCaseOptions));
 
-  const [selectedProducts, setSelectedProducts] = useState(() => readStoredList('quickstarts-products', ['All']));
+  const [selectedProducts, setSelectedProducts] = useState(() => readStoredSelection('quickstarts-products', visibleProductOptions));
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
-  const [showFilters, setShowFilters] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('quickstarts-show-filters') !== 'false';
-    }
-    return true;
-  });
+  const [showFilters, setShowFilters] = useState(() => readStored('quickstarts-show-filters') !== 'false');
 
   // Track the lg breakpoint so the drawer can collapse left (desktop) or up
   // (mobile). Inline styles can't be responsive, so we branch on this in JS.
@@ -55,19 +95,19 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
 
   // Persist to localStorage
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-search', searchTerm);
+    writeStored('quickstarts-search', searchTerm);
   }, [searchTerm]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-usecases', JSON.stringify(selectedUseCases));
+    writeStored('quickstarts-usecases', JSON.stringify(selectedUseCases));
   }, [selectedUseCases]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-products', JSON.stringify(selectedProducts));
+    writeStored('quickstarts-products', JSON.stringify(selectedProducts));
   }, [selectedProducts]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-show-filters', String(showFilters));
+    writeStored('quickstarts-show-filters', String(showFilters));
   }, [showFilters]);
 
   // Reset page when filters change
@@ -75,33 +115,23 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
     setCurrentPage(1);
   }, [searchTerm, selectedUseCases, selectedProducts]);
 
-  // Generic multi-select toggle: clicking "All" clears others; empty -> ['All'].
+  // Generic multi-select toggle; an empty selection means no filter.
   const makeToggle = (setter) => (value) => {
-    setter(prev => {
-      if (value === 'All') return ['All'];
-      const withoutAll = prev.filter(v => v !== 'All');
-      const result = withoutAll.includes(value)
-        ? withoutAll.filter(v => v !== value)
-        : [...withoutAll, value];
-      return result.length === 0 ? ['All'] : result;
-    });
+    setter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
   };
 
   const toggleUseCase = makeToggle(setSelectedUseCases);
   const toggleProduct = makeToggle(setSelectedProducts);
 
-  const useCaseOptions = ['All', 'Real-time analytics', 'Data warehousing', 'Observability', 'AI/ML'];
-  const productOptions = ['All', 'Self-managed', 'Cloud', 'ClickPipes', 'Language clients', 'ClickStack', 'chDB'];
-
   const resetFilters = () => {
     setSearchTerm('');
-    setSelectedUseCases(['All']);
-    setSelectedProducts(['All']);
+    setSelectedUseCases([]);
+    setSelectedProducts([]);
   };
 
   const hasActiveFilters = searchTerm !== '' ||
-    !selectedUseCases.includes('All') ||
-    !selectedProducts.includes('All');
+    selectedUseCases.length > 0 ||
+    selectedProducts.length > 0;
 
   // Filtering logic
   const filteredQuickStarts = useMemo(() => {
@@ -114,17 +144,18 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
         quickStart.title.toLowerCase().includes(term) ||
         (quickStart.description || '').toLowerCase().includes(term);
 
-      // "All" in the selection means no filter. Otherwise a quickstart matches
-      // only if every one of its tags is within the selection — so selecting
-      // "Data warehousing" excludes quickstarts also tagged with other use
-      // cases (and generic "All"-tagged ones).
+      // An empty selection means no filter. Otherwise a quickstart matches a
+      // group if any of its tags is selected (groups combine with AND). A
+      // quickstart tagged "all" applies to every use case, so it matches any
+      // use-case selection.
       const useCases = quickStart.useCases || [];
-      const matchesUseCases = selectedUseCases.includes('All') ||
-        (useCases.length > 0 && useCases.every(uc => selectedUseCases.includes(uc)));
+      const matchesUseCases = selectedUseCases.length === 0 ||
+        useCases.includes('all') ||
+        useCases.some(uc => selectedUseCases.includes(uc));
 
       const products = quickStart.products || [];
-      const matchesProducts = selectedProducts.includes('All') ||
-        (products.length > 0 && products.every(p => selectedProducts.includes(p)));
+      const matchesProducts = selectedProducts.length === 0 ||
+        products.some(p => selectedProducts.includes(p));
 
       return matchesSearch && matchesUseCases && matchesProducts;
     });
@@ -157,7 +188,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
 
   // Always-visible filter group (not collapsible)
   const FilterGroup = ({ label, options, selectedOptions, onToggle }) => {
-    const activeCount = selectedOptions.filter(o => o !== 'All').length;
+    const activeCount = selectedOptions.length;
     const displayLabel = activeCount > 0 ? `${label} (${activeCount})` : label;
 
     return (
@@ -168,24 +199,24 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
         <div className="mt-1">
           {options.map(option => (
             <label
-              key={option}
+              key={option.value}
               className="flex items-center gap-2 py-1.5 cursor-pointer transition-colors"
-              onClick={(e) => { e.preventDefault(); onToggle(option); }}
+              onClick={(e) => { e.preventDefault(); onToggle(option.value); }}
             >
               <span
                 className="flex items-center justify-center w-4 h-4 rounded border flex-shrink-0"
                 style={{
-                  borderColor: selectedOptions.includes(option) ? '#FAFF69' : 'rgba(156, 163, 175, 0.6)',
-                  backgroundColor: selectedOptions.includes(option) ? '#FAFF69' : 'transparent',
+                  borderColor: selectedOptions.includes(option.value) ? '#FAFF69' : 'rgba(156, 163, 175, 0.6)',
+                  backgroundColor: selectedOptions.includes(option.value) ? '#FAFF69' : 'transparent',
                 }}
               >
-                {selectedOptions.includes(option) && (
+                {selectedOptions.includes(option.value) && (
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M2 5L4 7L8 3" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
               </span>
-              <span className="text-sm text-black dark:text-white">{option}</span>
+              <span className="text-sm text-black dark:text-white">{option.label}</span>
             </label>
           ))}
         </div>
@@ -201,7 +232,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
           {featuredQuickStarts.length > 0 && (
             <div className="mb-12">
               <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">Featured quickstarts</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 {featuredQuickStarts.map(quickStart => (
                   <a
                     key={quickStart.id}
@@ -211,7 +242,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                   >
                     {/* Banner art is drawn in code from the title so it
                         translates automatically — no per-locale PNG needed. */}
-                    <div className="relative w-full aspect-[16/9] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 transition-transform duration-200 group-hover:scale-[1.02]">
+                    <div className="relative w-full aspect-[3/1] lg:aspect-[16/9] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 transition-transform duration-200 group-hover:scale-[1.02]">
                       {/* Decorative bar-chart motif, purely visual. */}
                       <div className="pointer-events-none absolute inset-y-0 right-6 flex items-center gap-2.5" aria-hidden="true">
                         <span className="w-3 rounded-sm bg-[#C4CB54]" style={{ height: '42%', transform: 'translateY(-12%)' }} />
@@ -219,11 +250,10 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                         <span className="w-3 rounded-sm bg-[#C4CB54]" style={{ height: '64%', transform: 'translateY(-14%)' }} />
                         <span className="w-3 rounded-sm bg-[#C4CB54]" style={{ height: '46%', transform: 'translateY(20%)' }} />
                       </div>
-                      <span className="relative z-10 pr-24 text-base md:text-lg font-bold leading-snug text-black line-clamp-4">
+                      <span className="relative z-10 pr-24 text-[15px] lg:text-lg font-bold leading-snug text-black line-clamp-4">
                         {quickStart.title}
                       </span>
-                      {/* ClickHouse wordmark, inlined so it inherits currentColor. */}
-                      <svg viewBox="0 0 161 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="absolute bottom-5 left-6 h-5 w-auto text-black">
+                      <svg viewBox="0 0 161 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="hidden">
                         <rect width="3.77758" height="33.9982" rx="0.918881" fill="currentColor" />
                         <rect x="7.55554" width="3.77758" height="33.9982" rx="0.918881" fill="currentColor" />
                         <rect x="15.1112" width="3.77758" height="33.9982" rx="0.918881" fill="currentColor" />
@@ -315,13 +345,13 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                   <div className="space-y-5">
                     <FilterGroup
                       label="Use cases"
-                      options={useCaseOptions}
+                      options={visibleUseCaseOptions}
                       selectedOptions={selectedUseCases}
                       onToggle={toggleUseCase}
                     />
                     <FilterGroup
                       label="Product area"
-                      options={productOptions}
+                      options={visibleProductOptions}
                       selectedOptions={selectedProducts}
                       onToggle={toggleProduct}
                     />

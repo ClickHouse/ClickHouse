@@ -6,6 +6,7 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/MergeSelectorAlgorithm.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -61,6 +62,7 @@
 #include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -82,6 +84,7 @@ namespace FailPoints
     extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
+    extern const char mt_skip_scheduling_merge_once[];
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
@@ -120,6 +123,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
+    extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
@@ -212,7 +216,7 @@ StorageMergeTree::StorageMergeTree(
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
-    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
+    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isTableReadonly())
         throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Data directory for table already containing data parts - probably "
                         "it was unclean DROP table or manual intervention. "
@@ -229,8 +233,8 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
-    /// Do not schedule any background jobs if current storage has static data files.
-    if (isStaticStorage())
+    /// Do not schedule any background jobs if the table is read-only.
+    if (isTableReadonly())
         return;
 
     clearEmptyParts();
@@ -446,6 +450,8 @@ void StorageMergeTree::alter(
     ContextPtr local_context,
     AlterLockHolder & table_lock_holder)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::alter");
+
     /// Allow MODIFY_SETTING/RESET_SETTING through even when the table is readonly,
     /// so that the `table_readonly` flag can be toggled back.
     bool only_setting_changes = std::all_of(commands.begin(), commands.end(), [](const auto & c)
@@ -921,6 +927,8 @@ void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startMutation");
+
     /// File I/O (`writeFile` + `sync` + `moveFile`) happens in `prepareMutationEntry`
     /// outside the mutex; only the in-memory registration is locked. Holding the
     /// mutex across the file I/O would block merge selection for its full duration.
@@ -1039,6 +1047,8 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & mutation_id
 
 void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::setMutationCSN");
+
     LOG_INFO(log, "Writing CSN {} for mutation {}", csn, mutation_id);
     UInt64 version = MergeTreeMutationEntry::parseFileName(mutation_id);
 
@@ -1374,6 +1384,8 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
 CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::killMutation");
+
     assertNotReadonly();
 
     LOG_TRACE(log, "Killing mutation {}", mutation_id);
@@ -1440,6 +1452,8 @@ void StorageMergeTree::loadDeduplicationLog()
 
 void StorageMergeTree::loadMutations()
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::loadMutations");
+
     /// Called only from the constructor, before this storage is published to any
     /// database, so no other thread holds a reference and the lock is unnecessary.
     /// Avoiding it also breaks a TSan lock-order edge between `DatabaseAtomic::mutex`
@@ -1501,8 +1515,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     TableLockHolder & /* table_lock_holder */,
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
-    bool optimize_skip_merged_partitions,
-    bool readonly)
+    bool optimize_skip_merged_partitions)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -1588,8 +1601,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                 /*aggressive=*/aggressive,
                 /*range_filter_=*/nullptr,
-                /*storage_id_=*/getStorageID(),
-                /*readonly_=*/readonly
+                /*storage_id_=*/getStorageID()
             ),
             /*partitions_hint=*/std::nullopt);
 
@@ -1995,7 +2007,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (shutdown_called)
         return false;
 
-    chassert(!isStaticStorage());
+    if (isTableReadonly())
+        return false;
 
     FailPointInjection::pauseFailPoint(FailPoints::mt_merge_selecting_task_pause_when_scheduled);
 
@@ -2029,29 +2042,14 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
 
-        /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
-        /// performs no modifications on disk and wastes no background CPU: no merges (regular, recompression,
-        /// or TTL), mutations, or part moves run on it. Tables with a TTL are never marked read-only (see
-        /// `SystemLog::prepareTable`), so skipping TTL merges here cannot strand expired data.
-        ///
-        /// Sample the setting here, under `currently_processing_in_background_mutex` and immediately before
-        /// selecting background work, so the window against a concurrent `ALTER ... MODIFY SETTING
-        /// table_readonly = 1` is as small as possible. Suppressing already in-flight background work is
-        /// best-effort: an operation whose selection started just before the setting was published may still
-        /// complete once. That is harmless - the table is abandoned after rotation, the result is correct,
-        /// and explicit user modifications are always rejected synchronously (`assertNotReadonly` for
-        /// writes/mutations/OPTIMIZE, and the `table_readonly` gate in `MergeTreeData::alterPartition` for
-        /// partition commands).
-        const bool table_is_readonly = (*getSettings())[MergeTreeSetting::table_readonly];
-
         {
-            if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn, /*optimize_skip_merged_partitions=*/false, /*readonly=*/table_is_readonly))
+            if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn))
                 merge_entry = std::move(merge_select_result.value());
             else
                 LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't start merge: {}", merge_select_result.error().explanation.text);
         }
 
-        if (!merge_entry && !table_is_readonly && !current_mutations_by_version.empty())
+        if (!merge_entry && !current_mutations_by_version.empty())
         {
             PreformattedMessage out_reason;
             mutate_entry = selectPartsToMutate(metadata_snapshot, out_reason, shared_lock, lock);
@@ -2084,6 +2082,18 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
+
+        /// Test hook: pretend the background pool is full for a manually scheduled merge and drop
+        /// the selected merge without scheduling it. The merge must be retried (its queue entry in
+        /// ManualMergeSelector must not be lost), otherwise SYSTEM SYNC MERGES would hang.
+        if ((*getSettings())[MergeTreeSetting::merge_selector_algorithm] == MergeSelectorAlgorithm::MANUAL)
+        {
+            fiu_do_on(FailPoints::mt_skip_scheduling_merge_once,
+            {
+                return false;
+            });
+        }
+
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
         /// in MergePlainMergeTreeTask. So, this slot will never be freed.
@@ -2139,6 +2149,8 @@ UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique
 
 size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::clearOldMutations");
+
     size_t finished_mutations_to_keep = (*getSettings())[MergeTreeSetting::finished_mutations_to_keep];
     if (!truncate && !finished_mutations_to_keep)
         return 0;
@@ -3361,6 +3373,7 @@ IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
 
 std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::checkDataNext");
     auto * data_validation_tasks = assert_cast<DataValidationTasks *>(check_task_list.get());
     auto local_context = data_validation_tasks->context;
     if (auto part = data_validation_tasks->next())
@@ -3583,11 +3596,14 @@ PreparedSetsCachePtr StorageMergeTree::getPreparedSetsCache(Int64 mutation_id)
     return cache;
 }
 
+bool StorageMergeTree::isTableReadonly() const
+{
+    return isStaticStorage() || (*getSettings())[MergeTreeSetting::table_readonly];
+}
+
 void StorageMergeTree::assertNotReadonly() const
 {
-    if (isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
-    if ((*getSettings())[MergeTreeSetting::table_readonly])
+    if (isTableReadonly())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode");
 }
 

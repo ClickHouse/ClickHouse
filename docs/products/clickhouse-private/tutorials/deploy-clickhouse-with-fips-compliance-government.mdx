@@ -40,9 +40,7 @@ Use the following FIPS-specific image tags when copying artifacts:
 
 <Steps>
 
-<Step>
-
-## Phase 1: Create FIPS Certificates
+<Step title="Phase 1: Create FIPS Certificates" id="phase-1-create-fips-certificates">
 
 FIPS compliance requires TLS certificates generated using FIPS-approved algorithms in a FIPS-enabled environment. You need three sets of certificates:
 
@@ -62,9 +60,7 @@ For the full certificate generation procedure using a Red Hat UBI8 container wit
 
 </Step>
 
-<Step>
-
-## Phase 2: Install Kubernetes Prerequisites
+<Step title="Phase 2: Install Kubernetes Prerequisites" id="phase-2-install-kubernetes-prerequisites">
 
 ### Install VolumeSnapshot CRDs
 
@@ -95,9 +91,7 @@ helm install clickhouse-prerequisites \
 
 </Step>
 
-<Step>
-
-## Phase 3: Install Operator
+<Step title="Phase 3: Install Operator" id="phase-3-install-operator">
 
 Note the FIPS ECR endpoint format: `0000000000.dkr-ecr-fips.us-west-2.on.aws` (not the standard `.amazonaws.com` endpoint).
 
@@ -131,9 +125,7 @@ helm install clickhouse-operator \
 
 </Step>
 
-<Step>
-
-## Phase 4: Create Certificate Secrets
+<Step title="Phase 4: Create Certificate Secrets" id="phase-4-create-certificate-secrets">
 
 Secrets must be installed in the same Kubernetes namespace where the ClickHouse cluster will run. If your cluster name is `default-xx-01`, the namespace will be `ns-default-xx-01`.
 
@@ -162,9 +154,7 @@ kubectl create secret generic -n ns-${CLUSTER_NAME} ${CLUSTER_NAME}-keeper-cert-
 
 </Step>
 
-<Step>
-
-## Phase 5: Deploy ClickHouse Cluster
+<Step title="Phase 5: Deploy ClickHouse Cluster" id="phase-5-deploy-clickhouse-cluster">
 
 Use the correct FIPS version of the endpoints for ECR and S3. FIPS endpoints can be found at [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/).
 
@@ -269,9 +259,7 @@ helm install $CLUSTER_NAME \
 
 </Step>
 
-<Step>
-
-## Phase 6: Verify Installation
+<Step title="Phase 6: Verify Installation" id="phase-6-verify-installation">
 
 ### Port-forward on TLS Port
 
