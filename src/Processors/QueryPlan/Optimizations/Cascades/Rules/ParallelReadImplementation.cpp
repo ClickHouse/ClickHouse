@@ -97,11 +97,17 @@ protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
-bool ReplicatedReadImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
+bool ReplicatedReadImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const
 {
-    return typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep()) != nullptr &&
-        required_properties.distribution.node_count > 1 &&
-        required_properties.distribution.is_replicated;
+    const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep());
+    if (!read_step
+        || required_properties.distribution.node_count <= 1
+        || !required_properties.distribution.is_replicated)
+        return false;
+
+    /// Correct only where every worker reads the same data: shared storage, or local execution
+    /// (one process). Otherwise a BroadcastExchange satisfies the replicated requirement.
+    return read_step->getMergeTreeData().isSharedStorage() || memo.getEnvironment().distributed_plan_execute_locally;
 }
 
 std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
