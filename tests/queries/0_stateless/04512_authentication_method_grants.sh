@@ -9,6 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 user="u_04512_${CLICKHOUSE_DATABASE}"
 user2="u2_04512_${CLICKHOUSE_DATABASE}"
+user3="u3_04512_${CLICKHOUSE_DATABASE}"
 role="r_04512_${CLICKHOUSE_DATABASE}"
 
 function login()
@@ -28,11 +29,11 @@ function login_expect_error()
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP ROLE IF EXISTS ${role}"
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP ROLE IF EXISTS ${role}"
 }
 trap cleanup EXIT
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP ROLE IF EXISTS ${role}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP ROLE IF EXISTS ${role}"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t1 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "CREATE TABLE t2 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "INSERT INTO t1 VALUES (1)" -q "INSERT INTO t2 VALUES (2)"
 
 # The second authentication method is a 'token': it limits the access rights to a subset of the grants.
@@ -117,3 +118,13 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${user}_bad IDENTIFIED WITH plaintext_passw
 
 echo "-- A filtered source grant in the GRANTS clause is rejected (ALTER USER)"
 ${CLICKHOUSE_CLIENT} -q "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password BY 'filtered_token' GRANTS (READ ON S3('s3://bucket/private/.*'))" 2>&1 | grep -m1 -o "NOT_IMPLEMENTED" | head -n 1
+
+# The GRANTS clause must be serialized precisely. The backward-compatibility rewrites that widen a grant for the
+# benefit of older replicas must not apply here: they would broaden a narrow token. With the default
+# `enable_read_write_grants = 0`, a plain `GRANT READ ON S3` is dumped as the full `S3` source access, but an
+# auth-method token limited to `READ ON S3` must keep its exact, read-only scope (older replicas cannot parse the
+# clause at all, so there is nothing to stay compatible with).
+echo "-- A source-level grant keeps its exact access type in the GRANTS clause (not widened to the full source)"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user3} IDENTIFIED WITH plaintext_password BY 'full3' GRANTS (READ ON S3)"
+${CLICKHOUSE_CLIENT} -q "SHOW CREATE USER ${user3}" | sed "s/${user3}/user3/g"
+${CLICKHOUSE_CLIENT} -q "SELECT auth_grants FROM system.users WHERE name = '${user3}'"

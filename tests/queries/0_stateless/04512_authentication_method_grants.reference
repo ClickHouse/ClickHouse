@@ -43,3 +43,6 @@ ACCESS_DENIED
 NOT_IMPLEMENTED
 -- A filtered source grant in the GRANTS clause is rejected (ALTER USER)
 NOT_IMPLEMENTED
+-- A source-level grant keeps its exact access type in the GRANTS clause (not widened to the full source)
+CREATE USER user3 IDENTIFIED WITH plaintext_password GRANTS (READ ON S3)
+['READ ON S3']
