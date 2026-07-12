@@ -4084,37 +4084,44 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
         }
     }
 
-    ReplicatedMergeTreeLogEntryData dummy_alter;
-    dummy_alter.type = LogEntry::ALTER_METADATA;
+    auto dummy_alter = std::make_shared<LogEntry>();
+    dummy_alter->type = LogEntry::ALTER_METADATA;
     /// Locally injected repair entry, not replicated from another replica. Leave source_replica empty (the
     /// local-entry marker) so a filtered SYSTEM SYNC REPLICA FROM <replica> always waits for it: addSubscriber
     /// treats empty-source entries as required, but would skip a self-sourced entry unless the caller names us.
-    dummy_alter.source_replica = "";
-    dummy_alter.metadata_str = zk_metadata;
-    dummy_alter.columns_str = zk_columns;
+    dummy_alter->source_replica = "";
+    dummy_alter->metadata_str = zk_metadata;
+    dummy_alter->columns_str = zk_columns;
     /// alter_version is the table's metadata-version counter, which is exactly the /metadata znode stat.version:
     /// each ALTER does a versioned set on /metadata and alter_entry->alter_version = getMetadataVersion() + 1
     /// tracks that count. Use the stat.version of the consistent snapshot we just took so the version matches the
     /// metadata_str/columns_str this entry carries and is >= every version already in the alters sequence (never
     /// inserted ahead of an in-flight lower alter, so finishMetadataAlter's head invariant holds).
-    dummy_alter.alter_version = snapshot_metadata_version;
-    dummy_alter.create_time = time(nullptr);
+    dummy_alter->alter_version = snapshot_metadata_version;
+    dummy_alter->create_time = time(nullptr);
 
     /// Create the entry in our replication queue, exactly like cloneMetadataIfNeeded().
-    String path_created = zookeeper->create(replica_path + "/queue/queue-", dummy_alter.toString(), zkutil::CreateMode::PersistentSequential);
+    String path_created = zookeeper->create(replica_path + "/queue/queue-", dummy_alter->toString(), zkutil::CreateMode::PersistentSequential);
+    dummy_alter->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
     LOG_INFO(log, "Created an ALTER_METADATA entry {} to force metadata update after recovery. Entry: {}",
-             path_created, dummy_alter.toString());
+             path_created, dummy_alter->toString());
 
     /// cloneMetadataIfNeeded() can rely on the queue.load() that ReplicatedMergeTreeRestartingThread::tryStartup()
     /// runs right after it, in the same startup, to pull the new /queue entry into RAM. This recovery path has no
     /// such following load: recoverLostReplica() runs from the DDL worker after the table already started and loaded
     /// its queue (DatabaseReplicated::startupDatabaseAsync -> initDDLWorker runs only after all table startup tasks
-    /// complete), so the entry would otherwise sit in Keeper and never reach the in-memory queue. Load it now.
-    /// load() is idempotent (it skips znode names already in the queue) and takes pull_logs_to_queue_mutex, so it
-    /// cannot race the live queue updater; it rebuilds the alters sequence only for the new entry. This is safe (no
-    /// ordering corruption) because dummy_alter.alter_version is the authoritative metadata version from ZooKeeper,
-    /// which is >= every version already in the sequence, so it is never inserted ahead of an in-flight lower alter.
-    queue.load(zookeeper);
+    /// complete), so the entry would otherwise sit in Keeper and never reach the in-memory queue. Materialize it now.
+    /// Insert ONLY this newly created entry (we already know its znode_name), never re-enumerate the whole /queue:
+    /// recoverLostReplica() explicitly waited for all table startup tasks, so background queue workers are already
+    /// active. A full queue.load() rebuilds already_loaded_paths from RAM and re-reads every znode still under
+    /// /replicas/<me>/queue, but removeProcessedEntry erases an entry from RAM before removing its znode and without
+    /// pull_logs_to_queue_mutex; a load() racing that gap would see a stale znode as "not loaded" and re-push an
+    /// already-completed entry (e.g. reinsert a finished ALTER_METADATA into alter_sequence). queue.insert() only
+    /// adds this one known entry under state_mutex, exactly like the runtime broken-part fetch path does with
+    /// active workers, so it cannot re-push anything. Safe for the alters sequence too: dummy_alter->alter_version
+    /// is the authoritative metadata version from ZooKeeper, >= every version already in the sequence.
+    LogEntryPtr dummy_alter_entry = dummy_alter;
+    queue.insert(zookeeper, dummy_alter_entry);
     return true;
 }
 
