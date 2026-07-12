@@ -838,8 +838,23 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         && settings[Setting::deduplicate_blocks_in_dependent_materialized_views]
         && InsertDependenciesBuilder::forwardedInsertReachesDependentView(table);
 
+    // A `Buffer` flushes its accumulated data to the destination through a nested `INSERT` built from the
+    // buffer's *own* context (`StorageBuffer::writeBlockToDestination` copies `getContext()`, not this
+    // query's context), so this query's `deduplicate_insert` / `insert_deduplicate` /
+    // `deduplicate_blocks_in_dependent_materialized_views` settings never reach that write. Disabling
+    // deduplication for this `INSERT` therefore does not make the write fan-out safe: the buffer's
+    // background (or threshold-triggered) flush can still deduplicate on its destination while each parallel
+    // branch restarts the source block numbering from zero, so identical blocks on different branches
+    // collide and rows are silently dropped. Fail closed and keep such inserts single-stream regardless of
+    // the deduplication settings on this query. (Unlike an `Alias`, whose `AliasSink` runs its nested
+    // `INSERT` in this query's context and so does observe a `deduplicate_insert = disable` here.)
+    const bool forwards_to_separate_context =
+        InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(table);
+
     const bool dedup_single_stream = !async_insert
-        && ((per_branch_dedup_ids && source_deduplicates) || forwarded_dependent_mv_dedup_hazard);
+        && ((per_branch_dedup_ids && source_deduplicates)
+            || forwarded_dependent_mv_dedup_hazard
+            || forwards_to_separate_context);
     const size_t insert_threads = (async_insert || dedup_single_stream) ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,

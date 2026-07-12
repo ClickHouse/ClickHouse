@@ -148,6 +148,21 @@ public:
     /// ultimate target is not cheaply known here (`Distributed`, `Buffer`, unresolvable, or too deep).
     static bool forwardedInsertReachesDependentView(const StoragePtr & storage, size_t depth = 0);
 
+    /// Whether inserting into `storage` reaches a `Buffer`, which flushes its accumulated data to the
+    /// destination through a nested `INSERT` that runs in the buffer's *own* context
+    /// (`StorageBuffer::writeBlockToDestination` copies the buffer's context, not this query's), so this
+    /// query's deduplication settings (`deduplicate_insert` / `insert_deduplicate` /
+    /// `deduplicate_blocks_in_dependent_materialized_views`) never reach that write. Disabling
+    /// deduplication for this `INSERT` therefore does not make a parallel write fan-out safe: the
+    /// buffer's background (or threshold-triggered) flush can still deduplicate on its destination with
+    /// the source block numbering restarted per branch. The forwarding chain (`Alias`, `MaterializedView`,
+    /// proxies) is followed - those sinks keep running in this query's context, so it is only the `Buffer`
+    /// at the end of the chain that switches context; it fails closed (returns true) when a forwarded-to
+    /// target cannot be resolved or the chain is too deep. (`Distributed` forwards the query together with
+    /// its settings to the shard, so this query's deduplication settings do reach the remote write and it
+    /// does not need this treatment.)
+    static bool storageForwardsInsertToSeparateContext(const StoragePtr & storage, size_t depth = 0);
+
     size_t getViewProcessingNumThreads() const;
 
 

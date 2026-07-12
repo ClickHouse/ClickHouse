@@ -884,6 +884,42 @@ bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const Storag
 }
 
 
+bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const StoragePtr & storage, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// `Buffer` flushes its accumulated data to the destination through a nested `INSERT` built from the
+    /// buffer's *own* context (`StorageBuffer::writeBlockToDestination` copies `getContext()`, not this
+    /// query's context), so this query's deduplication settings never reach that write. Disabling
+    /// deduplication for this `INSERT` therefore does not make the write fan-out safe.
+    if (dynamic_cast<const StorageBuffer *>(storage.get()))
+        return true;
+
+    /// `Alias` / `MaterializedView` / proxies run their nested `INSERT` in this query's context (the
+    /// `AliasSink` copies the context passed to `StorageAlias::write`), so this query's deduplication
+    /// settings do reach their write - the separate-context switch only happens if the chain ends in a
+    /// `Buffer`. Follow the chain, failing closed when a forwarded-to target cannot be resolved.
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || storageForwardsInsertToSeparateContext(target, depth + 1);
+    }
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || storageForwardsInsertToSeparateContext(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return storageForwardsInsertToSeparateContext(proxy->getNested(), depth + 1);
+
+    /// `Distributed` forwards the query together with its settings to the shard, so this query's
+    /// deduplication settings reach the remote write; no separate-context treatment is needed. Every other
+    /// engine writes in this query's context.
+    return false;
+}
+
+
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
