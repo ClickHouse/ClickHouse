@@ -1,0 +1,68 @@
+---
+sidebarTitle: 'Prompts'
+slug: /cloud/features/ai-ml/agents/prompts
+title: 'Prompts'
+description: 'Biblioteca de prompts salvos para o ClickHouse Agents'
+keywords: ['IA', 'ClickHouse Cloud', 'agents', 'prompts', 'templates']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge />
+
+A biblioteca de Prompts é onde você salva e reutiliza prompts em linguagem natural que digita com frequência. Pense nela como snippets para o composer do chat — úteis quando a mesma pergunta analítica ou instrução de formatação aparece em várias conversas.
+
+<div id="create-a-prompt">
+  ## Criar um prompt
+</div>
+
+Abra o painel Prompts pelo ícone **Prompts** na navegação à esquerda e clique no botão **+** para abrir o formulário **Criar prompt**. Preencha os campos:
+
+* **Nome do prompt** (obrigatório) - o que aparece no seletor. Seja descritivo: *&quot;Usuários ativos semanalmente por região&quot;* é melhor do que *&quot;WAU&quot;*.
+* **Texto** (obrigatório) - o texto em si que será inserido no composer.
+* **Variáveis especiais** - clique no botão **Variáveis especiais** para inserir placeholders ou digite diretamente marcadores no formato `{{name}}`. O seletor solicita os valores antes de inserir.
+* **Categoria**, **Descrição**, **Comando** (opcional) - para organizar a biblioteca, o texto de visualização no seletor e um atalho de execução rápida.
+
+Em seguida, clique em **Criar prompt** no canto inferior direito.
+
+<Image img="/images/cloud/agent-builder/prompts/create-prompt.webp" alt="Painel Prompts com o botão + destacado à esquerda e o formulário Criar prompt aberto à direita, mostrando os campos Nome do prompt, Texto, Categoria, Variáveis especiais, Descrição e Comando, com um botão Criar prompt" size="lg" />
+
+<div id="use-a-prompt">
+  ## Use um prompt
+</div>
+
+No painel Prompts, abra o menu **...** no card de um prompt e escolha **Preview**:
+
+<Image img="/images/cloud/agent-builder/prompts/preview.webp" alt="Painel Prompts com um prompt selecionado, seus detalhes visíveis à direita e um menu de contexto mostrando as opções Preview e Edit" size="lg" />
+
+A visualização mostra o texto do prompt, além do autor e da data. Clique em **Use Prompt** para inserir o conteúdo no composer. Se o prompt tiver variáveis, preencha-as primeiro.
+
+<Image img="/images/cloud/agent-builder/prompts/use-prompt-modal.webp" alt="Modal de visualização do prompt mostrando o título, o autor, a data, o texto e o botão Use Prompt" size="md" />
+
+<div id="share-prompts">
+  ## Compartilhar prompts
+</div>
+
+Por padrão, um prompt é privado e visível apenas para a pessoa que o criou. O proprietário pode alterar a visibilidade de um prompt para:
+
+* **Usuários ou grupos específicos** - qualquer pessoa que você indicar pode encontrar e usar o prompt.
+* **Toda a organização** - todos da sua organização do ClickHouse Cloud podem encontrá-lo e usá-lo.
+
+Os prompts usam o mesmo modelo de permissões que os agentes. Para ver a matriz completa de funções e o que cada uma pode fazer, consulte [Compartilhamento e
+acesso](/pt-BR/products/cloud/features/ai-ml/agents/sharing-and-access).
+
+<div id="prompts-vs-skills-vs-instructions">
+  ## Prompts vs. skills vs. instruções
+</div>
+
+Prompts, skills e instruções do agente adicionam texto ao modelo, mas diferem em quem os aciona e no quanto persistem.
+
+* **Prompts** - texto que você mesmo insere no composer, editado a cada interação.
+* **[Skills](/pt-BR/products/cloud/features/ai-ml/agents/builder/skills)** - conjuntos de instruções que o agente carrega por conta própria quando considera que são relevantes para a tarefa.
+* **Instruções do agente** - o system prompt persistente do agente, aplicado a toda conversa.
+
+Use um prompt quando quiser reutilizar uma formulação, mas manter o controle da redação a cada vez. Use uma skill quando quiser que o agente aplique
+a mesma orientação de forma consistente em um tipo de tarefa sem que você precise digitá-la. Use instruções do agente quando esse comportamento precisar valer por toda a
+vida útil do agente.

@@ -1,0 +1,37 @@
+---
+sidebarTitle: 'القوالب'
+slug: /integrations/google-dataflow/templates
+description: 'يمكنك إدخال البيانات إلى ClickHouse باستخدام قوالب Google Dataflow'
+title: 'قوالب Google Dataflow'
+doc_type: 'guide'
+keywords: ['google dataflow', 'gcp', 'خط أنابيب البيانات', 'قوالب', 'المعالجة الدفعية']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+توفّر قوالب Google Dataflow طريقة ملائمة لتشغيل خطوط أنابيب بيانات مُعدّة مسبقًا وجاهزة للاستخدام، من دون الحاجة إلى كتابة تعليمات برمجية مخصّصة. وقد صُممت هذه القوالب لتبسيط مهام معالجة البيانات الشائعة، وهي مبنية باستخدام [Apache Beam](https://beam.apache.org/) مع الاستفادة من موصلات مثل `ClickHouseIO` لتحقيق تكامل سلس مع قواعد بيانات ClickHouse. ومن خلال تشغيل هذه القوالب على Google Dataflow، يمكنك تنفيذ معالجة بيانات موزعة وقابلة للتوسع بدرجة كبيرة بأقل قدر من الجهد.
+
+<div id="why-use-dataflow-templates">
+  ## لماذا تستخدم قوالب Dataflow؟
+</div>
+
+* **سهولة الاستخدام**: تُغني القوالب عن كتابة التعليمات البرمجية من خلال توفير خطوط أنابيب بيانات مُعدّة مسبقًا ومصممة لحالات استخدام محددة.
+* **قابلية التوسع**: تضمن Dataflow توسّع خط أنابيب بيانات بكفاءة للتعامل مع كميات كبيرة من البيانات باستخدام المعالجة الموزعة.
+* **الكفاءة من حيث التكلفة**: ادفع فقط مقابل الموارد التي تستهلكها، مع إمكانية تحسين تكاليف تشغيل خط أنابيب بيانات.
+
+<div id="how-to-run-dataflow-templates">
+  ## كيفية تشغيل قوالب Dataflow
+</div>
+
+في الوقت الحالي، يتوفر القالب الرسمي من ClickHouse عبر Google Cloud Console، أو CLI، أو واجهة برمجة تطبيقات REST الخاصة بـ Dataflow.
+للحصول على إرشادات تفصيلية خطوة بخطوة، راجع [دليل Google Dataflow لتشغيل pipeline من قالب](https://cloud.google.com/dataflow/docs/templates/provided-templates).
+
+<div id="list-of-clickhouse-templates">
+  ## قائمة قوالب ClickHouse
+</div>
+
+* [BigQuery إلى ClickHouse](/ar/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse)
+* [Pub/Sub إلى ClickHouse](/ar/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse)
+* [GCS إلى ClickHouse](https://github.com/ClickHouse/DataflowTemplates/issues/3) (قريبًا!)
