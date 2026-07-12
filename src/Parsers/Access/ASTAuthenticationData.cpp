@@ -24,7 +24,13 @@ namespace
     void formatGrants(const AccessRightsElements & grants, WriteBuffer & ostr)
     {
         ostr << " GRANTS (";
-        grants.formatElementsWithoutOptions(ostr);
+        if (grants.empty())
+            /// The clause is present (checked by the caller with structurallyEmpty()) but grants nothing,
+            /// e.g. `GRANTS (USAGE ON *.*)`. `formatElementsWithoutOptions` skips zero-flag elements, which
+            /// would produce an empty and unparseable `GRANTS ()`, so emit the canonical no-privileges form.
+            ostr << "USAGE ON *.*";
+        else
+            grants.formatElementsWithoutOptions(ostr);
         ostr << ")";
     }
 }
@@ -67,7 +73,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             formatValidUntil(*valid_until, ostr, settings);
         }
 
-        if (!grants.empty())
+        if (!grants.structurallyEmpty())
         {
             formatGrants(grants, ostr);
         }
@@ -249,7 +255,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
         formatValidUntil(*valid_until, ostr, settings);
     }
 
-    if (!grants.empty())
+    if (!grants.structurallyEmpty())
     {
         formatGrants(grants, ostr);
     }

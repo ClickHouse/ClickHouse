@@ -385,7 +385,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             column_valid_until.insertValue(static_cast<UInt32>(auth_data.getValidUntil()));
 
             const auto & grants = auth_data.getGrants();
-            const auto grants_str = grants.empty() ? "" : grants.toStringWithoutOptions();
+            const auto grants_str = grants.structurallyEmpty() ? "" : grants.toStringWithoutOptions();
             column_auth_grants.insertData(grants_str.data(), grants_str.size());
         }
 

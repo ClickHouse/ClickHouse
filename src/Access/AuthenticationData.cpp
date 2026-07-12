@@ -487,7 +487,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 {
     auto auth_data = fromASTImpl(query, context, validate);
 
-    if (!query.grants.empty())
+    if (!query.grants.structurallyEmpty())
     {
         AccessRightsElements grants = query.grants;
         grants.replaceDeprecated();

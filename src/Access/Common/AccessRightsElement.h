@@ -121,6 +121,11 @@ public:
     using Base::Base;
 
     bool empty() const;
+
+    /// Whether the list literally contains no elements. This differs from empty(), which is semantic
+    /// and also returns true when the elements grant no access (e.g. a single `USAGE ON *.*`). Use this
+    /// to tell "no clause was written" apart from "the clause was written but grants nothing".
+    bool structurallyEmpty() const { return Base::empty(); }
     bool sameDatabaseAndTableAndParameter() const;
     bool sameDatabaseAndTable() const;
     bool sameOptions() const;

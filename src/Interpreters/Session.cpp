@@ -424,7 +424,7 @@ void Session::checkIfUserIsStillValid()
 std::shared_ptr<const AccessRightsElements> Session::getAuthenticationGrants() const
 {
     const auto & grants = user_authenticated_with.getGrants();
-    if (grants.empty())
+    if (grants.structurallyEmpty())
         return nullptr;
     return std::make_shared<const AccessRightsElements>(grants);
 }

@@ -79,7 +79,7 @@ String ContextAccessParams::toString() const
         }
         out << "]";
     }
-    if (authentication_grants && !authentication_grants->empty())
+    if (authentication_grants && !authentication_grants->structurallyEmpty())
         out << separator() << "authentication_grants = [" << authentication_grants->toStringWithoutOptions() << "]";
     if (readonly)
         out << separator() << "readonly = " << readonly;
