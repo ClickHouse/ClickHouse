@@ -3611,7 +3611,7 @@ let ping_request_num = 0;
 /// credentials to the server.
 let connection_generation = 0;
 /// `probe_credentials` additionally checks the credentials against the server once the ping succeeds.
-/// It is set for the initial load and for the connection-block commit (see `onConnectionFocusOut`),
+/// It is set for the initial load and for the connection commit (see `commitConnection`),
 /// but NOT for intermediate `url` keystrokes: `getServerStatus` puts the password in the request, so
 /// probing on every edit would send it to a half-typed or still-old endpoint before the connection
 /// tuple is committed.
@@ -4397,45 +4397,60 @@ function resetCredentialsStatus() {
 /// login attempts with partial — and, for the password, secret — values (`?password=s`,
 /// `?password=se`, ...), polluting access logs and possibly tripping auth rate limits.
 ///
-/// Instead the whole connection block `#inputs` (url + user + password) is treated as one edit
-/// session and the check runs once, when focus leaves the block, using only the final, complete
-/// tuple. This is the single commit point, so it fires no matter which field was edited or focused
-/// last — including `url` (a natural order is to type the credentials for a new server, then point
-/// `url` at it). Probing earlier would misfire while the connection is still being assembled: moving
-/// between `user` and `password` sends a mismatched half-typed pair; moving on to `url` would send
-/// the full final password to the *previous* server via `getServerStatus(old_url, ...)`, disclosing
-/// it there and logging a spurious failed login; and a `url` keystroke that happens to hit a
-/// reachable intermediate endpoint would send the credentials there. `focusout` bubbles, so one
-/// listener on `#inputs` catches focus leaving any field, and `relatedTarget` (the element gaining
-/// focus) usually tells a move within the block from a move out of it. But `relatedTarget` is `null`
-/// both when focus truly leaves (off the page, or a keyboard move to nothing) and when a pointer
-/// press lands on a non-focusable spot *inside* the block — the status dot, or any gap in `#inputs` —
-/// which blurs the field without moving focus anywhere. Treating that as a commit would probe the
-/// still-old server mid-edit, disclosing the password there; so `pointer_down_inside_inputs` (below)
-/// distinguishes the two, and only a real exit commits. The commit runs `checkURL(true)`, which pings
-/// the url and only then probes the credentials, so an unreachable server leaves the fields neutral
-/// rather than blaming them. The `connection_edited` guard means merely tabbing through the fields,
-/// without changing anything, emits no request. This subsumes the old paste handlers: a pasted value
-/// is committed by the following focus change just like typed input.
+/// Instead the whole connection editing surface is treated as one edit session and the check runs
+/// once, when focus leaves that surface, using only the final, complete tuple. The surface is the
+/// `#inputs` block (url + user + password) when the inputs sit inline in the tool bar; but once a
+/// second query tab appears they are relocated behind the 🔑 button into the connection drop-down,
+/// and the surface becomes the whole `#connection-menu` (the 🔑 button plus the drop-down that now
+/// holds `#inputs`). Focus moving anywhere within that surface — between the fields, or out to the
+/// 🔑 button when the drop-down is toggled or closed with `Escape` (both hand focus back to it) — is
+/// still editing, not a commit; `connectionSurface` resolves the current surface so the boundary
+/// follows the inputs into and out of the drop-down.
 ///
-/// A pointer press on a non-focusable element inside `#inputs` blurs the active field with
-/// `relatedTarget === null`, indistinguishable by target alone from focus genuinely leaving the block.
-/// Track whether the current press landed inside `#inputs` so the commit below can tell the two apart.
-/// It is scoped to an active press (reset on release/cancel), so a later keyboard move to nothing —
-/// which has no active press — is unaffected and still commits.
+/// Committing only on a real exit is what keeps the probe honest: probing earlier would misfire while
+/// the connection is still being assembled — moving between `user` and `password` sends a mismatched
+/// half-typed pair; moving on to `url`, or leaving focus in the drop-down chrome, would send the full
+/// final password to the *previous* server via `getServerStatus(old_url, ...)`, disclosing it there
+/// and logging a spurious failed login; and a `url` keystroke that happens to hit a reachable
+/// intermediate endpoint would send the credentials there. The commit runs `checkURL(true)`, which
+/// pings the url and only then probes the credentials, so an unreachable server leaves the fields
+/// neutral rather than blaming them. The `connection_edited` guard means merely tabbing through the
+/// fields, without changing anything, emits no request. This subsumes the old paste handlers: a pasted
+/// value is committed by the following focus change just like typed input.
 ///
-/// Suppressing that internal-click blur is not enough by itself: the field has already lost focus, so
-/// when the user later leaves the block (e.g. clicks the query editor or the `Run` button) no second
-/// `focusout` fires and the commit would never run, leaving the fields neutral forever. So when such a
-/// blur is suppressed while the block was edited, remember it in `commit_deferred` and commit on the
-/// first later press outside `#inputs`. A credential field regaining focus (`focusin` inside the block)
-/// means editing resumed and the normal `focusout` will commit, so the deferred flag is dropped then.
+/// `focusout` bubbles, so a single document-level listener catches focus leaving any element of the
+/// surface (including the 🔑 button, which is not inside `#inputs`). Where focus lands cannot be read
+/// from this event's `relatedTarget`: closing the drop-down first blurs the focused field to `<body>`
+/// and only then hands focus to the 🔑 button, so `relatedTarget` here is a transient intermediate
+/// value. The decision is therefore deferred to the next microtask, once focus has come to rest, and
+/// made from the settled `document.activeElement` — if it is back inside the surface the session
+/// continues, otherwise the edit is committed.
+///
+/// One case still needs care: a pointer press on a non-focusable spot inside the surface — the status
+/// dot, or any gap — blurs the active field to `<body>` without leaving the connection UI, so the
+/// settled `activeElement` is `<body>` just as it would be for a genuine keyboard exit to nothing.
+/// `pointer_down_inside_inputs` records whether the active press landed inside the surface (captured
+/// at `focusout` time, before the `pointerup` that clears it), which tells the two apart. An
+/// internal-click blur is not a commit; but the field has already lost focus, so leaving the surface
+/// later raises no `focusout` for it. Remember it in `commit_deferred` and commit on the first later
+/// transition that really leaves the surface — a `pointerdown` outside it, a `focusin` outside it (a
+/// keyboard `Tab` away), or the drop-down closing without returning focus inside (see the `Escape`
+/// handler). A field regaining focus (`focusin` inside the surface) means editing resumed and the
+/// normal exit will commit, so the deferred flag is dropped then.
+function connectionSurface() {
+    /// Resolved live via `getElementById` (not the `const`s declared later in the file), so it is
+    /// safe to call from the handlers registered just below, which run before those declarations.
+    /// The 🔑 button is hidden in the single-tab inline layout; there the surface is `#inputs`.
+    return document.getElementById('connection-key').hidden
+        ? document.getElementById('inputs')
+        : document.getElementById('connection-menu');
+}
 let pointer_down_inside_inputs = false;
 let commit_deferred = false;
 document.addEventListener('pointerdown', (event) => {
-    pointer_down_inside_inputs = document.getElementById('inputs').contains(event.target);
-    /// A press outside the block after a suppressed internal-click blur: the user has finished editing
-    /// the connection, but the field lost focus earlier so no `focusout` is coming — commit now.
+    pointer_down_inside_inputs = connectionSurface().contains(event.target);
+    /// A press outside the surface after a suppressed internal-click blur: the user has finished
+    /// editing the connection, but the field lost focus earlier so no `focusout` is coming — commit now.
     if (!pointer_down_inside_inputs && commit_deferred) { commitConnection(); }
 });
 document.addEventListener('pointerup', () => { pointer_down_inside_inputs = false; });
@@ -4452,26 +4467,42 @@ function commitConnection() {
     commit_deferred = false;
     checkURL(true);
 }
-function onConnectionFocusOut(event) {
-    /// Focus moved to another field in the block — still editing, not a commit.
-    if (document.getElementById('inputs').contains(event.relatedTarget)) { return; }
-    /// Blur with no new focus target caused by a pointer press inside the block (e.g. the status dot):
-    /// the interaction stayed in `#inputs`, so this is not a commit. But the field has now lost focus,
-    /// so leaving the block later raises no second `focusout`; defer the commit to the next press
-    /// outside `#inputs` instead (see the `pointerdown` handler above).
-    if (event.relatedTarget === null && pointer_down_inside_inputs) {
-        if (connection_edited) { commit_deferred = true; }
-        return;
+document.addEventListener('focusout', (event) => {
+    const surface = connectionSurface();
+    /// Only concerned with focus leaving the connection surface itself.
+    if (!surface.contains(event.target)) { return; }
+    /// Capture whether the active pointer press landed inside the surface now, before the `pointerup`
+    /// that clears the flag runs (it fires before the deferred check below).
+    const pointer_was_inside = pointer_down_inside_inputs;
+    queueMicrotask(() => {
+        /// Focus settled back inside the surface — another field, or the 🔑 button after the drop-down
+        /// closed. Still editing the connection, so no probe.
+        if (connectionSurface().contains(document.activeElement)) { return; }
+        /// Blur to `<body>` caused by a pointer press on a non-focusable spot inside the surface: the
+        /// interaction stayed in the connection UI, so this is not a commit. Defer it to the next
+        /// transition that really leaves the surface.
+        if (pointer_was_inside) {
+            if (connection_edited) { commit_deferred = true; }
+            return;
+        }
+        if (!connection_edited) { return; }
+        commitConnection();
+    });
+});
+document.addEventListener('focusin', (event) => {
+    if (connectionSurface().contains(event.target)) {
+        /// A field (or the 🔑 button) regaining focus means editing resumed; the normal exit will
+        /// commit, so drop any deferred commit left over from an internal-click blur.
+        commit_deferred = false;
+    } else if (commit_deferred) {
+        /// Focus moved to an element outside the connection UI (a keyboard `Tab` away after an
+        /// internal-click blur left focus on `<body>`) — the deferred commit's real "finished editing"
+        /// transition, which the pointer path would otherwise miss.
+        commitConnection();
     }
-    if (!connection_edited) { return; }
-    commitConnection();
-}
+});
 user_elem.addEventListener('input', onCredentialInput);
 password_elem.addEventListener('input', onCredentialInput);
-document.getElementById('inputs').addEventListener('focusout', onConnectionFocusOut);
-/// A credential field regaining focus means editing resumed; the normal `focusout` will commit, so drop
-/// any deferred commit left over from an earlier suppressed internal-click blur.
-document.getElementById('inputs').addEventListener('focusin', () => { commit_deferred = false; });
 
 /// A `url` edit may point at a different server, so an in-flight `checkCredentials` against the
 /// previous URL must not paint the fields. `checkURL` (registered on `url` `input` earlier) clears
@@ -5371,7 +5402,15 @@ document.addEventListener('keydown', (e) => {
         /// visible focus target and the next Tab continues from the tab bar, not the page top.
         const refocus = connection_dropdown_elem.contains(document.activeElement);
         closeConnectionDropdown();
-        if (refocus) connection_key_elem.focus();
+        if (refocus) {
+            connection_key_elem.focus();
+        } else if (commit_deferred) {
+            /// Focus was already on `<body>` — an earlier internal-click blur inside the connection UI
+            /// deferred a commit. Closing the drop-down is the "finished editing" transition, so flush
+            /// that deferred commit here rather than waiting for a later pointer press a keyboard user
+            /// never makes.
+            commitConnection();
+        }
     }
 });
 
