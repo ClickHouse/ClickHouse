@@ -1810,14 +1810,14 @@ void MergeTreeIndexAggregatorBloomSliced::update(const Block & block, size_t * p
     auto [preprocessed_column, offset] = preprocessor->processColumn(block.getByPosition(0), *pos, rows_read);
 
     // Expand `LowCardinality` wrappers before tokenizing so the index stores full string values, not dictionary keys.
-    const auto column = preprocessed_column->convertToFullIfNeeded();
+    const auto column = preprocessed_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
     /// Under a lossy preprocessor, also walk the raw column value of every row to find the raw
     /// tokens the preprocessor destroyed (see `collectTombstoneTokensForRow`); the distinct lost
     /// tokens of a chunk go into the chunk's tombstone Bloom filter.
     ColumnPtr raw_column;
     if (params.has_lossy_preprocessor)
-        raw_column = block.getByPosition(0).column->convertToFullIfNeeded();
+        raw_column = block.getByPosition(0).column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
     if (!variable_hash_buffering)
     {
