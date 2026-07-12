@@ -281,13 +281,19 @@ NameSet getMaterializedColumnsAffectedBySet(
 Names getStaleEphemeralMaterializedColumnsAffectedBySet(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
+    return getStaleEphemeralMaterializedColumnsAffectedBySet(
+        metadata_snapshot, context, getGroupByTTLSetTargets(metadata_snapshot));
+}
+
+Names getStaleEphemeralMaterializedColumnsAffectedBySet(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets)
+{
     Names stale;
 
-    if (metadata_snapshot->getGroupByTTLs().empty())
+    if (metadata_snapshot->getGroupByTTLs().empty() || set_targets.empty())
         return stale;
 
     const auto & columns_desc = metadata_snapshot->getColumns();
-    const auto set_targets = getGroupByTTLSetTargets(metadata_snapshot);
     const auto storage_columns = columns_desc.getAllPhysical().getNameSet();
 
     NamesAndTypesList all_columns_with_ephemeral = columns_desc.getAllPhysical();
@@ -374,13 +380,19 @@ Names getStaleEphemeralMaterializedColumnsAffectedBySet(
 NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
+    return getGroupByTTLSetAffectedMaterializedColumns(
+        metadata_snapshot, context, getGroupByTTLSetTargets(metadata_snapshot));
+}
+
+NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets)
+{
     NamesAndTypesList affected;
 
-    if (metadata_snapshot->getGroupByTTLs().empty())
+    if (metadata_snapshot->getGroupByTTLs().empty() || set_targets.empty())
         return affected;
 
     const auto & columns_desc = metadata_snapshot->getColumns();
-    const auto set_targets = getGroupByTTLSetTargets(metadata_snapshot);
     const auto materialized_sources = getMaterializedColumnSourcesMap(metadata_snapshot, context);
 
     /// Every MATERIALIZED column (transitively) reading a `SET` target holds a stale stored value:
@@ -400,13 +412,19 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
 NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
+    return getGroupByTTLSetAffectedMaterializedSortKeyColumns(
+        metadata_snapshot, context, getGroupByTTLSetTargets(metadata_snapshot));
+}
+
+NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets)
+{
     NamesAndTypesList affected;
 
-    if (!metadata_snapshot->hasSortingKey() || metadata_snapshot->getGroupByTTLs().empty())
+    if (!metadata_snapshot->hasSortingKey() || metadata_snapshot->getGroupByTTLs().empty() || set_targets.empty())
         return affected;
 
     const auto & columns_desc = metadata_snapshot->getColumns();
-    const auto set_targets = getGroupByTTLSetTargets(metadata_snapshot);
     const auto materialized_sources = getMaterializedColumnSourcesMap(metadata_snapshot, context);
 
     /// Every MATERIALIZED column (transitively) reading a `SET` target holds a stale stored value:
@@ -560,13 +578,18 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
 
 bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
+    return groupByTTLAssignsSortKeyColumn(
+        metadata_snapshot, context, getGroupByTTLSetTargets(metadata_snapshot));
+}
+
+bool groupByTTLAssignsSortKeyColumn(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets)
+{
     if (!metadata_snapshot->hasSortingKey())
         return false;
 
-    if (metadata_snapshot->getGroupByTTLs().empty())
+    if (metadata_snapshot->getGroupByTTLs().empty() || set_targets.empty())
         return false;
-
-    const auto set_targets = getGroupByTTLSetTargets(metadata_snapshot);
 
     /// Direct case: a `SET` target is itself a sort-key dependency storage column.
     for (const auto & dependency : getSortKeyStorageDependencies(metadata_snapshot))
@@ -574,28 +597,30 @@ bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot
             return true;
 
     /// Materialized case: a `SET` target is a source of a MATERIALIZED sort-key column.
-    return !getGroupByTTLSetAffectedMaterializedSortKeyColumns(metadata_snapshot, context).empty();
+    return !getGroupByTTLSetAffectedMaterializedSortKeyColumns(metadata_snapshot, context, set_targets).empty();
 }
 
-bool anyGroupByTTLFires(
+NameSet getFiringGroupByTTLSetTargets(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartTTLInfos & ttl_infos,
     time_t current_time,
     bool force)
 {
-    if (force)
-        return true;
-
+    NameSet targets;
     for (const auto & group_by_ttl : metadata_snapshot->getGroupByTTLs())
     {
-        auto it = ttl_infos.group_by_ttl.find(group_by_ttl.result_column);
-        if (it == ttl_infos.group_by_ttl.end())
-            return true;  /// No info -> conservatively assume it may fire.
-        const auto min_ttl = it->second.min;
-        if (min_ttl == 0 || min_ttl <= current_time)
-            return true;
+        bool fires = force;
+        if (!fires)
+        {
+            auto it = ttl_infos.group_by_ttl.find(group_by_ttl.result_column);
+            /// Missing info or uninitialized `min` -> conservatively assume it may fire.
+            fires = it == ttl_infos.group_by_ttl.end() || it->second.min == 0 || it->second.min <= current_time;
+        }
+        if (fires)
+            for (const auto & set_part : group_by_ttl.set_parts)
+                targets.insert(set_part.column_name);
     }
-    return false;
+    return targets;
 }
 
 ActionsDAG buildRecomputeMaterializedColumnsDAG(
@@ -608,6 +633,25 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
     for (const auto & column : columns_to_recompute)
         recompute_names.insert(column.name);
 
+    /// A MATERIALIZED default expression may read a subcolumn (e.g. `d MATERIALIZED toDate(tup.ts)`
+    /// requires `tup.ts`). That subcolumn can already be materialized in the stream: for
+    /// `ORDER BY tup.ts`, `add_primary_key_expression` extracts `tup.ts` before the TTL step. After
+    /// an earlier `SET tup = ...` that pre-extracted `tup.ts` is STALE -- the physical parent `tup`
+    /// was rewritten but the derived subcolumn still holds its pre-`SET` value.
+    /// `createSubcolumnsExtractionActions` returns early when the required subcolumn is already in the
+    /// stream, so it would reuse the stale copy and recompute the MATERIALIZED column from the
+    /// pre-`SET` subcolumn. Drop every re-extractable derived subcolumn (a subcolumn whose physical
+    /// parent is also in the stream) alongside the stale MATERIALIZED values, so it is rebuilt fresh
+    /// from the post-`SET` physical column below -- exactly as `buildRecomputeSortKeyExpressionDAG`
+    /// hides the stale computed sort-key columns.
+    const auto storage_names = columns_desc.getAllPhysical().getNameSet();
+    NameSet drop_names = recompute_names;
+    for (const auto & column : header)
+        if (!storage_names.contains(column.name))
+            if (auto parent = Nested::tryGetColumnNameInStorage(column.name, storage_names);
+                parent && header.has(*parent))
+                drop_names.insert(column.name);
+
     /// Drop the stale values from the stream so `evaluateMissingDefaults` treats the columns as
     /// missing and recomputes them from their default expression (reading the post-`SET` sources
     /// that remain in the stream). Otherwise it would keep the stale value already present.
@@ -615,7 +659,7 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
     ActionsDAG::NodeRawConstPtrs kept_outputs;
     kept_outputs.reserve(drop_stale_dag.getOutputs().size());
     for (const auto * output : drop_stale_dag.getOutputs())
-        if (!recompute_names.contains(output->result_name))
+        if (!drop_names.contains(output->result_name))
             kept_outputs.push_back(output);
     drop_stale_dag.getOutputs() = std::move(kept_outputs);
 
@@ -633,11 +677,11 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
     if (!recompute_dag)
         return drop_stale_dag;
 
-    /// A default expression may read a subcolumn (e.g. `d MATERIALIZED toDate(tup.ts)` requires
-    /// `tup.ts`), but the stream only carries the physical column `tup`. Prepend a subcolumn
-    /// extraction DAG so `tup.ts` is available, exactly as `AddingDefaultsTransform` does before
-    /// executing `evaluateMissingDefaults`; otherwise recomputation fails with
-    /// NOT_FOUND_COLUMN_IN_BLOCK.
+    /// Prepend a subcolumn extraction DAG so a required subcolumn (`tup.ts`) is available, exactly as
+    /// `AddingDefaultsTransform` does before executing `evaluateMissingDefaults`; otherwise
+    /// recomputation fails with NOT_FOUND_COLUMN_IN_BLOCK. The stale copies were dropped above, so a
+    /// re-extractable subcolumn is now missing from `header_after_drop` and is rebuilt fresh from its
+    /// post-`SET` physical parent.
     auto extracting_subcolumns_dag
         = createSubcolumnsExtractionActions(header_after_drop, recompute_dag->getRequiredColumnsNames(), context);
 

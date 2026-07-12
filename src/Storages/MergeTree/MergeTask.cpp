@@ -3237,33 +3237,33 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         ///      consistent with its primary index.
         const auto & merge_context = global_ctx->data->getContext();
 
-        /// All three repairs below matter only when a `GROUP BY ... SET` TTL ACTUALLY fires in this
-        /// merge: only then does its `SET` run and rewrite / reorder columns. Deciding this from the
-        /// metadata alone (the clause exists) would, for a part that merely has some OTHER expired TTL
-        /// plus a not-yet-expired `GROUP BY ... SET`, run a whole-part `O(n log n)` sort-key re-sort for
-        /// nothing. Gate on the per-`group_by` TTL runtime state instead. Forced merges keep the safe
-        /// (repair) path.
-        const bool group_by_set_may_fire = anyGroupByTTLFires(
+        /// All three repairs below matter only for the columns that a `GROUP BY ... SET` TTL ACTUALLY
+        /// rewrites in THIS merge: only a firing TTL runs its `SET`. Deciding this from the metadata
+        /// alone (the clause exists) would, for a part that merely has some firing TTL plus a
+        /// not-yet-expired `GROUP BY ... SET` that is the only clause touching the sort key / a
+        /// MATERIALIZED column, run a whole-part `O(n log n)` sort-key re-sort (and the materialized
+        /// recompute / warning) for a `SET` that never ran. Gate each repair on the `SET` targets of
+        /// only the FIRING `GROUP BY` TTLs. Forced merges (empty part-level infos) keep the safe
+        /// (repair) path via `force`.
+        const auto firing_set_targets = getFiringGroupByTTLSetTargets(
             global_ctx->metadata_snapshot, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge, ctx->force_ttl);
 
         /// A MATERIALIZED column that reads both an EPHEMERAL column and a `SET` target cannot be
         /// recomputed here (ephemeral columns are not on disk), so its stored value goes stale and
         /// there is no way to refresh it. Warn (mirroring `MutationsInterpreter::prepare` for UPDATE)
         /// instead of silently writing a stale value.
-        if (group_by_set_may_fire)
-            for (const auto & stale_column :
-                 getStaleEphemeralMaterializedColumnsAffectedBySet(global_ctx->metadata_snapshot, merge_context))
-                LOG_WARNING(ctx->log,
-                    "MATERIALIZED column '{}' depends on both an EPHEMERAL column and a column rewritten by a "
-                    "GROUP BY TTL SET. It cannot be recomputed during merge (ephemeral columns are not stored), "
-                    "so its on-disk value may become stale. To fix this, re-INSERT the affected rows.",
-                    stale_column);
+        for (const auto & stale_column :
+             getStaleEphemeralMaterializedColumnsAffectedBySet(global_ctx->metadata_snapshot, merge_context, firing_set_targets))
+            LOG_WARNING(ctx->log,
+                "MATERIALIZED column '{}' depends on both an EPHEMERAL column and a column rewritten by a "
+                "GROUP BY TTL SET. It cannot be recomputed during merge (ephemeral columns are not stored), "
+                "so its on-disk value may become stale. To fix this, re-INSERT the affected rows.",
+                stale_column);
 
         /// (1) Recompute affected MATERIALIZED columns. Must precede the sort-key recompute below so
         /// a MATERIALIZED sort-key column feeds the recomputation with its post-`SET` value.
-        auto affected_materialized_columns = group_by_set_may_fire
-            ? getGroupByTTLSetAffectedMaterializedColumns(global_ctx->metadata_snapshot, merge_context)
-            : NamesAndTypesList{};
+        auto affected_materialized_columns
+            = getGroupByTTLSetAffectedMaterializedColumns(global_ctx->metadata_snapshot, merge_context, firing_set_targets);
         if (!affected_materialized_columns.empty())
         {
             auto recompute_materialized_step = std::make_unique<ExpressionStep>(
@@ -3279,7 +3279,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
         /// (2) Sort-key recompute + re-sort, only when a `GROUP BY ... SET` that touches the sort key
         /// actually fires in this merge.
-        if (group_by_set_may_fire && groupByTTLAssignsSortKeyColumn(global_ctx->metadata_snapshot, merge_context))
+        if (groupByTTLAssignsSortKeyColumn(global_ctx->metadata_snapshot, merge_context, firing_set_targets))
         {
             /// Recompute the sorting-key expression columns from the post-SET values, overwriting
             /// the now-stale ones already present in the stream.

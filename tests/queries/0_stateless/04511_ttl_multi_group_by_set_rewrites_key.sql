@@ -303,3 +303,46 @@ SELECT count() AS rows, min(payload) AS min_payload, sum(payload) AS total FROM 
 SELECT toStartOfDay(ts) AS day, count() FROM ttl_multi_group_by GROUP BY day ORDER BY day;
 
 DROP TABLE ttl_multi_group_by;
+
+SELECT '--- I1';
+
+-- I1: a MATERIALIZED column computed from a tuple subcolumn that the SET rewrites must be recomputed
+-- from the POST-SET physical column, not from the stale subcolumn already extracted before the TTL step.
+-- ORDER BY tup.ts pre-materializes tup.ts; SET tup = (max(tup.ts)+50y, 9) rewrites the parent tuple, so
+-- the stale tup.ts (and d MATERIALIZED toDate(tup.ts) recomputed from it) would keep the pre-SET value.
+-- After the fix d must equal toDate(tup.ts) of the post-SET tuple (d_fresh = 1).
+CREATE TABLE ttl_i1 (tup Tuple(ts DateTime, x UInt32), d Date MATERIALIZED toDate(tup.ts), payload UInt64)
+ENGINE = MergeTree ORDER BY tup.ts
+TTL tup.ts + toIntervalDay(1) GROUP BY tup.ts SET tup = tuple(max(tup.ts) + toIntervalYear(50), 9), payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO ttl_i1 (tup, payload) VALUES ((toDateTime('2020-01-01 00:00:00'), 5), 10), ((toDateTime('2020-01-01 00:00:00'), 6), 20);
+OPTIMIZE TABLE ttl_i1 FINAL;
+
+SELECT toDate(tup.ts) AS post_set_day, (d = toDate(tup.ts)) AS d_fresh, payload FROM ttl_i1 ORDER BY payload;
+
+DROP TABLE ttl_i1;
+
+SELECT '--- I2';
+
+-- I2: a not-yet-expired GROUP BY ... SET on the sort key must NOT trigger the whole-part sort-key repair
+-- when only an unrelated GROUP BY TTL actually fires. TTL1 GROUP BY (toStartOfDay(ts), k) SET payload
+-- fires now (does not touch the sort key); TTL2 GROUP BY toStartOfDay(ts) SET ts (touches the sort key)
+-- expires 40 years out and does NOT fire. The repair is gated on the FIRING TTLs' SET targets, so no
+-- needless re-sort runs; result must be one group per (day, k) with the summed payload. STOP/START TTL
+-- MERGES + OPTIMIZE forces the TTL onto the merge path (MergeTask), which is where the gate lives.
+CREATE TABLE ttl_i2 (ts DateTime, k UInt32, payload UInt64)
+ENGINE = MergeTree ORDER BY (toStartOfDay(ts), k)
+TTL ts + toIntervalDay(1) GROUP BY toStartOfDay(ts), k SET payload = sum(payload),
+    ts + toIntervalYear(40) GROUP BY toStartOfDay(ts) SET ts = max(ts)
+SETTINGS min_bytes_for_wide_part = 0;
+
+SYSTEM STOP TTL MERGES ttl_i2;
+INSERT INTO ttl_i2 VALUES ('2020-01-01 00:00:00', 1, 10);
+INSERT INTO ttl_i2 VALUES ('2020-01-01 01:00:00', 1, 20), ('2020-01-02 00:00:00', 2, 5);
+SYSTEM START TTL MERGES ttl_i2;
+OPTIMIZE TABLE ttl_i2 FINAL;
+
+SELECT toStartOfDay(ts) AS day, k, payload FROM ttl_i2 ORDER BY day, k;
+
+DROP TABLE ttl_i2;

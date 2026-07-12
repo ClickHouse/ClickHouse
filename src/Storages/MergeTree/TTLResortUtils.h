@@ -63,14 +63,22 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
 /// their default expression before re-sorting; this function returns true for that case too.
 bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
 
-/// True when at least one `GROUP BY` TTL can actually aggregate rows in a part with these TTL infos
-/// at `current_time` (i.e. some row is expired for it, so its `SET` runs and the stream can be
-/// rewritten / reordered). `force` (used by `MATERIALIZE TTL` and forced merges) always returns true.
-/// The sort-key-repair / re-sort in the merge and mutation paths is only needed when a `GROUP BY ...
-/// SET` TTL that touches the sort key actually fires; without this a part with an unrelated expired
-/// TTL and a not-yet-expired `GROUP BY ... SET` would pay a whole-part `O(n log n)` re-sort for
-/// nothing. `min == 0` means the info is uninitialized -- treated conservatively as "may fire".
-bool anyGroupByTTLFires(
+/// As above, but restricted to the given `set_targets` (typically the `SET` targets of only the
+/// `GROUP BY` TTLs that actually fire in this merge, from `getFiringGroupByTTLSetTargets`). Returns
+/// false when `set_targets` is empty, so a not-yet-expired `GROUP BY ... SET` on the sort key does
+/// not force a whole-part re-sort.
+bool groupByTTLAssignsSortKeyColumn(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets);
+
+/// The physical `SET` target columns of ONLY the `GROUP BY` TTLs that can actually fire in a part
+/// with these TTL infos at `current_time` (a not-yet-expired `GROUP BY ... SET` contributes nothing).
+/// Used by the merge path to gate each repair (materialized recompute, sort-key re-sort, ephemeral
+/// warning) on the columns a FIRING `SET` rewrites, rather than "some GROUP BY TTL fired somewhere":
+/// otherwise a part with a firing `TTL1 GROUP BY k SET payload` and a not-yet-expired
+/// `TTL2 GROUP BY ... SET ts` (the only clause touching the sort key) would pay a whole-part re-sort
+/// for a `SET` that never ran. `force` (MATERIALIZE TTL / forced merge) returns all `SET` targets.
+/// `min == 0` (uninitialized info) or a missing info is treated conservatively as "may fire".
+NameSet getFiringGroupByTTLSetTargets(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartTTLInfos & ttl_infos,
     time_t current_time,
@@ -84,6 +92,10 @@ bool anyGroupByTTLFires(
 NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
 
+/// As above, restricted to the given `set_targets` (the firing `GROUP BY` TTLs' `SET` targets).
+NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets);
+
 /// EVERY MATERIALIZED storage column whose default expression (transitively) reads a column
 /// rewritten by a `TTL ... GROUP BY ... SET` -- not only the sort-key subset. `TTLAggregationAlgorithm`
 /// keeps such a column as `any(col)` from the pre-`SET` rows, so its stored value, and any rebuilt
@@ -93,6 +105,11 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
 NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
 
+/// As above, restricted to the given `set_targets` (the firing `GROUP BY` TTLs' `SET` targets), so a
+/// MATERIALIZED column affected only by a not-yet-expired `GROUP BY ... SET` is not recomputed.
+NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets);
+
 /// The MATERIALIZED columns whose default expression reads BOTH an EPHEMERAL column and a column
 /// rewritten by a `TTL ... GROUP BY ... SET`. Such a column cannot be recomputed during merge/mutation
 /// (ephemeral columns are only available at INSERT, never read from disk), so its stored value goes
@@ -100,6 +117,11 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
 /// for `UPDATE`) rather than silently writing a stale value. Empty when no such column exists.
 Names getStaleEphemeralMaterializedColumnsAffectedBySet(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
+
+/// As above, restricted to the given `set_targets` (the firing `GROUP BY` TTLs' `SET` targets), so a
+/// not-yet-expired `GROUP BY ... SET` does not trigger a spurious warning.
+Names getStaleEphemeralMaterializedColumnsAffectedBySet(
+    const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets);
 
 /// Build an `ActionsDAG` over `header` that drops the stale values of `columns_to_recompute` and
 /// recomputes them from their MATERIALIZED default expressions (reading the post-`SET` source
