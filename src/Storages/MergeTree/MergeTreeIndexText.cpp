@@ -1791,7 +1791,9 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
     const ColumnArray * column_array = assert_cast<const ColumnArray *>(column.get());
     const IColumn & column_data = column_array->getData();
     const IColumn::Offsets & column_offsets = column_array->getOffsets();
-    const bool data_is_nullable = column_data.isNullable();
+    /// isNullable() is false for LowCardinality(Nullable), so use the helper that also
+    /// covers it, otherwise getDataAt() below throws on NULL array elements.
+    const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(column_data);
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
