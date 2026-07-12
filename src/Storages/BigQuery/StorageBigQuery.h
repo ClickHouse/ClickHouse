@@ -1,0 +1,64 @@
+#pragma once
+
+#include <Storages/BigQuery/BigQueryConfiguration.h>
+#include <Storages/BigQuery/BigQuerySchema.h>
+#include <Storages/IStorage.h>
+#include <Common/logger_useful.h>
+
+#include <mutex>
+#include <optional>
+
+namespace DB
+{
+
+/// Reads from and writes to a Google BigQuery table over the BigQuery v2 REST API.
+/// Reading uses `tabledata.list` (works for native tables, not for views),
+/// writing uses `tabledata.insertAll` (streaming inserts).
+class StorageBigQuery final : public IStorage
+{
+public:
+    StorageBigQuery(
+        const StorageID & table_id_,
+        BigQueryConfiguration configuration_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment,
+        ContextPtr context_);
+
+    std::string getName() const override { return "BigQuery"; }
+    bool isRemote() const override { return true; }
+
+    Pipe read(
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override;
+
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override;
+
+    static BigQueryConfiguration getConfiguration(ASTs & engine_args, ContextPtr context);
+
+    /// Fetches the table schema from BigQuery (`tables.get`).
+    static BigQueryFields fetchTableSchema(const BigQueryConfiguration & configuration, ContextPtr context);
+
+private:
+    /// The BigQuery schema is fetched lazily on the first read or write (not at server startup),
+    /// and the declared columns are validated against it.
+    const BigQueryFields & getFields(ContextPtr query_context) const;
+
+    BigQueryConfiguration configuration;
+
+    mutable std::mutex fields_mutex;
+    mutable std::optional<BigQueryFields> fields;
+
+    LoggerPtr log;
+};
+
+}

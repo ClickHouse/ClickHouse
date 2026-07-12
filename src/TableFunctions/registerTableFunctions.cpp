@@ -28,6 +28,7 @@ void registerTableFunctions()
     registerTableFunctionMongoDB(factory);
 #endif
     registerTableFunctionRedis(factory);
+    registerTableFunctionBigQuery(factory);
 
 #if USE_ARROWFLIGHT
     registerTableFunctionArrowFlight(factory);

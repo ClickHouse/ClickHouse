@@ -1,0 +1,78 @@
+#pragma once
+
+#include <Interpreters/Context_fwd.h>
+#include <Storages/BigQuery/BigQueryConfiguration.h>
+#include <Common/logger_useful.h>
+
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/URI.h>
+
+#include <chrono>
+#include <mutex>
+
+namespace DB
+{
+
+/// Produces OAuth 2.0 bearer tokens for the configured credential method, with caching until expiry.
+class BigQueryTokenProvider
+{
+public:
+    BigQueryTokenProvider(const BigQueryConfiguration & configuration_, ContextPtr context_);
+
+    String getToken(bool force_refresh);
+    /// Whether requesting a fresh token can produce a different one (false for a static access token).
+    bool canRefresh() const { return configuration.credentials_kind != BigQueryConfiguration::CredentialsKind::AccessToken; }
+
+private:
+    std::pair<String, Int64> fetchTokenWithExpiration() const;
+
+    const BigQueryConfiguration & configuration;
+    ContextPtr context;
+
+    std::mutex mutex;
+    String cached_token;
+    std::chrono::system_clock::time_point expires_at{};
+};
+
+/// A thin client for the BigQuery v2 REST API (https://cloud.google.com/bigquery/docs/reference/rest).
+class BigQueryClient
+{
+public:
+    BigQueryClient(const BigQueryConfiguration & configuration_, ContextPtr context_);
+
+    /// tables.get: the full table resource (schema, numRows, type).
+    Poco::JSON::Object::Ptr getTable() const;
+
+    struct TableDataPage
+    {
+        Poco::JSON::Array::Ptr rows;    /// null for an empty table
+        String next_page_token;         /// empty when this is the last page
+        UInt64 total_rows = 0;
+    };
+
+    /// tabledata.list. Timestamps are requested as int64 microseconds (formatOptions.useInt64Timestamp).
+    /// `selected_fields` is a comma-separated list of columns, empty means all columns.
+    TableDataPage listTableData(const String & page_token, const String & selected_fields, UInt64 max_results) const;
+
+    /// tabledata.insertAll (streaming insert). Throws if any row is rejected.
+    void insertAll(const Poco::JSON::Array::Ptr & rows) const;
+
+private:
+    Poco::JSON::Object::Ptr requestJSON(
+        const String & method,
+        const String & path,
+        const Poco::URI::QueryParameters & params,
+        const String & request_body) const;
+
+    String tablePath() const;
+
+    BigQueryConfiguration configuration;
+    ContextPtr context;
+    mutable BigQueryTokenProvider token_provider;
+    Poco::Net::HTTPBasicCredentials credentials;    /// empty, required by the HTTP buffer API
+    LoggerPtr log;
+};
+
+}

@@ -255,6 +255,7 @@ The hierarchy of privileges in ClickHouse is shown below:
   - `SHOW FILESYSTEM CACHES`
   - [`SOURCES`](#sources)
     - `AZURE`
+    - `BIGQUERY`
     - `FILE`
     - `HDFS`
     - `HIVE`
@@ -630,6 +631,7 @@ Allows using external data sources. Applies to [table engines](../../engines/tab
 
 Possible parameters:
 - `AZURE`
+- `BIGQUERY`
 - `FILE`
 - `HDFS`
 - `HIVE`

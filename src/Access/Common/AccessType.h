@@ -44,6 +44,7 @@ enum class Source : uint8_t
     M(RABBITMQ, "RabbitMQ") \
     M(YTSAURUS, "YTsaurus") \
     M(ARROW_FLIGHT, "ArrowFlight") \
+    M(BIGQUERY, "BigQuery") \
 
 #define DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST(name, aliases) name,
 
@@ -429,6 +430,7 @@ enum class AccessType : uint8_t
     M(RABBITMQ, "", GLOBAL, ALL) \
     M(YTSAURUS, "", GLOBAL, ALL) \
     M(ARROW_FLIGHT, "", GLOBAL, ALL) \
+    M(BIGQUERY, "", GLOBAL, ALL) \
     M(SOURCES, "", GLOBAL, ALL) \
     \
     /* Consts */ \

@@ -165,6 +165,10 @@ protected:
         {
             findYTsaurusStorageTableEngineSecretArguments();
         }
+        else if (function->name() == "bigquery")
+        {
+            findBigQuerySecretArguments();
+        }
         else if ((function->name() == "arrowFlight") || (function->name() == "arrowflight"))
         {
             findArrowFlightSecretArguments();
@@ -678,6 +682,10 @@ protected:
         {
             findYTsaurusStorageTableEngineSecretArguments();
         }
+        else if (engine_name == "BigQuery")
+        {
+            findBigQuerySecretArguments();
+        }
         else if (engine_name == "ArrowFlight")
         {
             findArrowFlightSecretArguments();
@@ -789,6 +797,29 @@ protected:
     {
         // YTsaurus('base_uri', 'yt_path', 'auth_token')
         markSecretArgument(2);
+    }
+
+    void findBigQuerySecretArguments()
+    {
+        size_t start = 0;
+        if (isNamedCollectionName(0))
+        {
+            /// bigquery(named_collection, ..., access_token = '...', ...)
+            start = 1;
+        }
+        else
+        {
+            /// bigquery('project', 'dataset', 'table', 'access_token', ...)
+            String value;
+            if (function->arguments->size() >= 4 && tryGetStringFromArgument(3, &value, /* allow_identifier= */ false))
+                markSecretArgument(3);
+        }
+
+        /// The key = value form of the credential arguments.
+        findSecretNamedArgument("access_token", start);
+        findSecretNamedArgument("service_account_key", start);
+        findSecretNamedArgument("client_secret", start);
+        findSecretNamedArgument("refresh_token", start);
     }
 
     void findDatabaseEngineSecretArguments()
