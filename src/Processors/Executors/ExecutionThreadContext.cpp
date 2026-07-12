@@ -109,7 +109,11 @@ bool ExecutionThreadContext::executeTask()
                 cached_clock.wall_clock_ptr = step_to_wall_clock_registry->find(step, group);
 
             clock = cached_clock.wall_clock_ptr;
-            chassert(clock);
+            /// A processor can carry a query plan step that is not part of the plan walked by
+            /// `populateFromPlan`, so `find` legitimately returns null. This happens for processors
+            /// added at run time by `expandPipeline` (lazy reads, streaming reads, external sort, ...):
+            /// such a processor may be built from a transient nested query plan and keep that plan's
+            /// step even after the nested plan is destroyed. We simply do not time these processors.
             if (clock)
                 clock->onEnter();
         }
