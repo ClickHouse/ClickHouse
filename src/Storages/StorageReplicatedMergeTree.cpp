@@ -4051,7 +4051,12 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
     /// the drain it is either now in /queue (so we suppress the repair) or was already GC'd from /log. In the GC'd
     /// case the drain has moved log_pointer to head, so no later pullLogsToQueue can re-copy that version (all future
     /// /log entries carry a strictly greater alter_version), which makes the synthetic entry safe from duplication.
-    queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::SYNC);
+    /// Use FIX_METADATA_VERSION: this runs from recoverLostReplica during DatabaseReplicated startup, before
+    /// ReplicatedMergeTreeRestartingThread has cleared is_readonly, so any reason other than LOAD/FIX_METADATA_VERSION
+    /// trips the readonly guard in pullLogsToQueue and throws LOGICAL_ERROR. FIX_METADATA_VERSION is the reason the
+    /// sibling startup-time metadata drain (fixReplicaMetadataVersionIfNeeded) already uses for the same situation;
+    /// reason only gates that readonly check and does not change the drain itself.
+    queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::FIX_METADATA_VERSION);
 
     {
         Strings queue_znodes = zookeeper->getChildren(replica_path + "/queue");
