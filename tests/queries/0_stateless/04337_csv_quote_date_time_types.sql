@@ -139,6 +139,19 @@ SETTINGS
     format_custom_field_delimiter = '|',
     format_custom_row_after_delimiter = '\n';
 
+SELECT 'CustomSeparated temporal tuple fallback is auto-detected on input' FORMAT TSVRaw;
+SELECT *
+FROM format(
+    CustomSeparated,
+    't Tuple(DateTime(\'UTC\'), DateTime(\'UTC\')), n UInt8',
+    '"(\'2024-01-17 08:30:00\',\'2024-01-18 09:45:01\')"|42\n')
+FORMAT TSVRaw
+SETTINGS
+    format_csv_delimiter = ':',
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '|',
+    format_custom_row_after_delimiter = '\n';
+
 SELECT 'Template keeps a divergent tuple delimiter in one CSV field' FORMAT TSVRaw;
 SELECT
     tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), toDateTime('2024-01-18 09:45:01', 'UTC')) AS t,
