@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
+from ci.jobs.scripts.dataset_download import download_and_extract_datasets
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -1183,16 +1184,16 @@ def main():
                 "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
-            cmds = []
-            for dataset_path in dataset_paths.values():
-                cmds.append(
-                    f'wget -nv -nd -c "{dataset_path}" -O- | tar --extract --verbose -C {db_path}'
-                )
-            res = Shell.check_parallel(cmds, verbose=True)
+            stop_watch = Utils.Stopwatch()
+            errors = download_and_extract_datasets(dataset_paths.values(), db_path)
+            res = not errors
             results.append(
                 Result(
                     name="Download datasets",
                     status=Result.Status.OK if res else Result.Status.ERROR,
+                    start_time=stop_watch.start_time,
+                    duration=stop_watch.duration,
+                    info="\n".join(errors),
                 )
             )
             if res:

@@ -150,7 +150,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
-                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
             joined_pipeline->resize(max_streams);
         }
         else
@@ -164,7 +164,6 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 min_block_size_rows,
                 min_block_size_bytes,
                 max_streams,
-                this,
                 keep_left_read_in_order,
                 &processors);
         }
@@ -174,7 +173,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShapedByShards(
-                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
         }
         else
         {
@@ -184,7 +183,6 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 join,
                 join_algorithm_header,
                 max_block_size,
-                this,
                 &processors);
         }
     }
@@ -192,19 +190,12 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (!use_new_analyzer)
         return joined_pipeline;
 
-    const auto tail_stage = join->pipelineType() == JoinPipelineType::YShaped ? JoinStage::Default : JoinStage::Probe;
-    auto tag_tail = [this, tail_stage](ProcessorPtr processor)
-    {
-        processor->setQueryPlanStep(this, static_cast<size_t>(tail_stage));
-        return processor;
-    };
-
     auto column_permutation = getPermutationForBlock(joined_pipeline->getHeader(), lhs_header, rhs_header, required_output);
     if (!column_permutation.empty())
     {
-        joined_pipeline->addSimpleTransform([&](const SharedHeader & header)
+        joined_pipeline->addSimpleTransform([&column_permutation](const SharedHeader & header)
         {
-            return tag_tail(std::make_shared<ColumnPermuteTransform>(header, column_permutation));
+            return std::make_shared<ColumnPermuteTransform>(header, column_permutation);
         });
     }
 
@@ -212,7 +203,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     {
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
-            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes)); });
+            { return std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes); });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
@@ -240,26 +231,6 @@ void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
     }
     keep_left_read_in_order = true;
     join->keepLeftPipelineInOrder();
-}
-
-std::vector<size_t> JoinStep::getStepGroups() const
-{
-    return {
-        static_cast<size_t>(JoinStage::Default),
-        static_cast<size_t>(JoinStage::Probe),
-        static_cast<size_t>(JoinStage::Build)
-    };
-}
-
-String JoinStep::getStepGroupName(size_t group) const
-{
-    switch (static_cast<JoinStage>(group))
-    {
-        case JoinStage::Default: return {};
-        case JoinStage::Probe: return "probe";
-        case JoinStage::Build: return "build";
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JoinStageA group {}", group);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
