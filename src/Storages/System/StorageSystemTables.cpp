@@ -490,7 +490,8 @@ protected:
                             // skipping_indices_types
                             else if (src_index == 20 && columns_mask[src_index])
                             {
-                                fillSkippingIndicesTypes(res_columns, table.second->getInMemoryMetadataPtr(context, false), res_index);
+                                const auto metadata_snapshot = table.second->getInMemoryMetadataPtr(context, false);
+                                fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
                             }
                             else if (src_index == 22 && columns_mask[src_index])
                             {
