@@ -11,6 +11,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 #include <Core/UUID.h>
 
 #include "config.h"
@@ -67,6 +68,13 @@ bool ExternalDictionariesLoader::doesConfigChangeRequiresReloadingObject(const P
     }
 
     return !isSameConfiguration(old_config, old_key_in_config, new_config, new_key_in_config, ignore_keys);
+}
+
+std::optional<bool> ExternalDictionariesLoader::isObjectLazy(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
+{
+    SettingFieldBoolAuto lazy_load;
+    lazy_load.parseFromString(config.getString(key_in_config + ".settings.dictionary_lazy_load", SettingFieldBoolAuto::keyword));
+    return lazy_load.valueOrNullopt();
 }
 
 void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const

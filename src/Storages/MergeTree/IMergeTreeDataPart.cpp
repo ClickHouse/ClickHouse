@@ -121,6 +121,7 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
+    extern const SettingsBool use_streaming_marks_compression;
 }
 
 namespace ErrorCodes
@@ -276,11 +277,17 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
     {
         FieldRef min_value;
         FieldRef max_value;
-        const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_name);
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
-            column_nullable->getExtremesNullLast(min_value, max_value, 0, column.column->size());
+        const ColumnWithTypeAndName & column_and_type = block.getColumnOrSubcolumnByName(column_name);
+        const auto & src_column = column_and_type.column;
+        /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
+        /// columns are untouched. LC(Nullable(T)) then takes getExtremesNullLast (keeps the +inf NULL
+        /// sentinel; otherwise mixed NULL/non-NULL parts lose it and IS NULL wrongly prunes). getExtremes
+        /// on LC materializes internally too, so this adds no extra work.
+        const auto column = src_column->lowCardinality() ? src_column->convertToFullColumnIfLowCardinality() : src_column;
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+            column_nullable->getExtremesNullLast(min_value, max_value, 0, column->size());
         else
-            column.column->getExtremes(min_value, max_value, 0, column.column->size());
+            column->getExtremes(min_value, max_value, 0, column->size());
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
@@ -843,7 +850,8 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
                 /*save_marks_in_cache=*/ true,
                 read_settings,
                 /*load_marks_threadpool=*/ nullptr,
-                /*num_columns_in_mark=*/ 1));
+                /*num_columns_in_mark=*/ 1,
+                storage.getContext()->getSettingsRef()[Setting::use_streaming_marks_compression]));
 
             loaders.back()->startAsyncLoad();
         }
@@ -2734,11 +2742,15 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
             }
             else if (size_t size = getFileSizeOrZeroResolved(index_stream_name, index_substream.extension))
             {
+                /// Substreams bundled in skp_idx.packed have no standalone checksums entry. The
+                /// uncompressed size is recorded in the archive index (v1+); fall back to the
+                /// compressed size for uncompressed substreams and for v0 archives.
                 substream_size.data_compressed = size;
-                /// Only the compressed size is recorded for substreams bundled in skp_idx.packed,
-                /// so approximate data_uncompressed with it. This only feeds telemetry and the
-                /// distributed_index_analysis size gate (which falls back to the normal plan).
-                substream_size.data_uncompressed = size;
+                if (MergeTreeIndexSubstream::isCompressed(index_substream.type))
+                    substream_size.data_uncompressed
+                        = getDataPartStorage().getPackedFileUncompressedSize(index_stream_name + index_substream.extension).value_or(size);
+                else
+                    substream_size.data_uncompressed = size;
             }
 
             substream_size.marks = getFileSizeOrZeroResolved(index_stream_name, getMarksFileExtension());
