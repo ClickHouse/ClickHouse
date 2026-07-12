@@ -32,45 +32,47 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(
     chassert(num_shards > 0);
 }
 
-/// The budget uses `Chunk::bytes()` (i.e. `IColumn::byteSize`), NOT `allocatedBytes()`, because
-/// `scatter` can share one physical buffer across all shard chunks and `allocatedBytes()` charges that
-/// buffer once per chunk, which would inflate the counter by up to `num_shards` times the shared size and
-/// trip `aggregation_in_order_shuffle_max_buffered_bytes` on perfectly safe queries. The canonical case is
-/// `LowCardinality`: `ColumnLowCardinality::scatter` keeps a single shared dictionary across the shards, and
-/// `byteSize()` deliberately excludes a shared dictionary (see `ColumnLowCardinality::byteSize`) while
-/// `allocatedBytes()` still counts it on every shard chunk. `byteSize()` therefore charges the shared,
-/// stage-owned memory at most once and keeps the budget ownership-based.
-UInt64 BufferedShardByHashTransform::chunkBudgetBytes(const Chunk & chunk)
+void BufferedShardByHashTransform::enqueue(size_t shard, Chunk chunk, size_t block_id)
 {
-    return chunk.bytes();
-}
-
-void BufferedShardByHashTransform::enqueue(size_t shard, Chunk chunk)
-{
-    total_buffered_bytes->fetch_add(static_cast<Int64>(chunkBudgetBytes(chunk)), std::memory_order_relaxed);
-    output_queues[shard].push_back(std::move(chunk));
+    ++block_budgets[block_id].outstanding_chunks;
+    output_queues[shard].push_back(QueuedChunk{std::move(chunk), block_id});
 }
 
 Chunk BufferedShardByHashTransform::dequeue(size_t shard)
 {
-    Chunk chunk = std::move(output_queues[shard].front());
+    QueuedChunk queued = std::move(output_queues[shard].front());
     output_queues[shard].pop_front();
-    total_buffered_bytes->fetch_sub(static_cast<Int64>(chunkBudgetBytes(chunk)), std::memory_order_relaxed);
-    return chunk;
+    releaseQueuedChunk(queued.block_id);
+    return std::move(queued.chunk);
 }
 
 void BufferedShardByHashTransform::clearQueue(size_t shard)
 {
-    Int64 bytes = 0;
-    for (const auto & chunk : output_queues[shard])
-        bytes += static_cast<Int64>(chunkBudgetBytes(chunk));
-    total_buffered_bytes->fetch_sub(bytes, std::memory_order_relaxed);
+    for (const auto & queued : output_queues[shard])
+        releaseQueuedChunk(queued.block_id);
     output_queues[shard].clear();
+}
+
+void BufferedShardByHashTransform::releaseQueuedChunk(size_t block_id)
+{
+    auto it = block_budgets.find(block_id);
+    chassert(it != block_budgets.end());
+    /// The block's whole charge is released only when its last buffered shard chunk is gone, so a buffer
+    /// shared across the shards (e.g. a `LowCardinality` dictionary) stays charged for exactly as long as
+    /// the block keeps it alive.
+    if (--it->second.outstanding_chunks == 0)
+    {
+        total_buffered_bytes->fetch_sub(it->second.bytes, std::memory_order_relaxed);
+        block_budgets.erase(it);
+    }
 }
 
 void BufferedShardByHashTransform::chargePendingInput()
 {
-    pending_input_bytes = static_cast<Int64>(chunkBudgetBytes(pending_input_chunk));
+    /// Charge the whole pre-split block: `allocatedBytes()` counts every buffer (dictionary included) once,
+    /// whereas summing the shard chunks after the split would double-count or drop buffers that `scatter`
+    /// shares across the shards (see `BlockBudget`).
+    pending_input_bytes = static_cast<Int64>(pending_input_chunk.allocatedBytes());
     total_buffered_bytes->fetch_add(pending_input_bytes, std::memory_order_relaxed);
 }
 
@@ -257,11 +259,12 @@ void BufferedShardByHashTransform::work()
 void BufferedShardByHashTransform::generateOutputChunks()
 {
     const auto num_rows = pending_input_chunk.getNumRows();
+    /// The charge added when this chunk was pulled is carried over to the block's `BlockBudget` below (or
+    /// released if the block produces no buffered chunk), so the shared counter stays continuous across the
+    /// split. Nothing is discharged and re-charged here.
+    const Int64 block_bytes = pending_input_bytes;
+    pending_input_bytes = 0;
     auto columns = pending_input_chunk.detachColumns();
-
-    /// Release the input chunk's budget charge: its rows are re-charged per shard as they are enqueued below,
-    /// so the shared counter keeps tracking exactly the bytes currently buffered.
-    dischargePendingInput();
 
     chassert(!columns.empty());
 
@@ -285,6 +288,8 @@ void BufferedShardByHashTransform::generateOutputChunks()
             shard_columns[s].push_back(std::move(split[s]));
     }
 
+    const size_t block_id = next_block_id++;
+    size_t enqueued_chunks = 0;
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
@@ -295,8 +300,17 @@ void BufferedShardByHashTransform::generateOutputChunks()
         if (shard_rows == 0)
             continue;
 
-        enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows));
+        enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows), block_id);
+        ++enqueued_chunks;
     }
+
+    if (enqueued_chunks > 0)
+        /// The charge is already in the shared counter (added by chargePendingInput); record it against the
+        /// block so it is released when the block's last shard chunk leaves a queue.
+        block_budgets[block_id].bytes = block_bytes;
+    else
+        /// No shard chunk was buffered (every row went to an already-finished output), so release the charge.
+        total_buffered_bytes->fetch_sub(block_bytes, std::memory_order_relaxed);
 }
 
 }
