@@ -24,9 +24,27 @@ INSERT INTO t_explain_analyze_stream SELECT toString(number % 100), number FROM 
 INSERT INTO t_explain_analyze_stream SELECT toString(number % 100), number FROM numbers(5000);
 INSERT INTO t_explain_analyze_stream SELECT toString(number % 100), number FROM numbers(5000);
 
--- Must not abort; the actual EXPLAIN ANALYZE output is timing-dependent, so we only assert it produced
--- rows and the server survived.
+-- Must not abort; the actual EXPLAIN ANALYZE output is timing-dependent, so we assert structural
+-- invariants via string matching on the `explain` column (as in 04312_explain_analyze).
 SELECT count() > 0 FROM (EXPLAIN ANALYZE SELECT count() FROM (SELECT DISTINCT * FROM t_explain_analyze_stream STREAM LIMIT 50));
 SELECT count() > 0 FROM (EXPLAIN ANALYZE SELECT * FROM t_explain_analyze_stream STREAM LIMIT 50);
+
+-- The report is well-formed: the query summary block is present with all its fields.
+SELECT
+    countIf(explain LIKE '%Query summary:%') = 1,
+    countIf(explain LIKE '%Time:%') = 1,
+    countIf(explain LIKE '%Read:%') = 1,
+    countIf(explain LIKE '%Peak memory:%') = 1
+FROM (EXPLAIN ANALYZE SELECT * FROM t_explain_analyze_stream STREAM LIMIT 50);
+
+-- The steps of the walked (outer) plan are rendered and annotated, including the streaming read step:
+-- its own source processor is timed; only the processors spliced in at run time from the transient
+-- nested snapshot plan are skipped.
+SELECT
+    countIf(explain LIKE '%ReadFromMergeTree%') >= 1,
+    countIf(explain LIKE '%Limit%') >= 1,
+    countIf(explain LIKE '%time %') >= 1,
+    countIf(explain LIKE '%parallelism%') >= 1
+FROM (EXPLAIN ANALYZE SELECT * FROM t_explain_analyze_stream STREAM LIMIT 50);
 
 DROP TABLE t_explain_analyze_stream;
