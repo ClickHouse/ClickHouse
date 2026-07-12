@@ -119,9 +119,8 @@ int spliceLoop(SpliceDirection * d) noexcept
                     pipe_fd[0], -1, d->dst_fd, -1, static_cast<unsigned int>(remaining), SPLICE_F_MOVE, &out_bytes);
                 if (w != 0 || out_bytes == 0)
                 {
-                    remaining = 0;
                     in_bytes = 0;   // signal the outer loop to stop
-                    break;
+                    break;          // exits this inner loop; `remaining` is not read afterwards
                 }
                 remaining -= out_bytes;
             }
