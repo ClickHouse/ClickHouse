@@ -12,6 +12,7 @@
 
 class EventCounter;
 
+
 namespace DB
 {
 
@@ -31,11 +32,6 @@ using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>;
-
-class StepWallClock;
-
-
-using StepWallClockPtr = std::shared_ptr<StepWallClock>;
 
 /** Processor is an element (low level building block) of a query execution pipeline.
   * It has zero or more input ports and zero or more output ports.
@@ -129,7 +125,6 @@ protected:
     OutputPorts outputs;
 
 public:
-
     IProcessor();
 
     IProcessor(InputPorts inputs_, OutputPorts outputs_);
@@ -306,17 +301,10 @@ public:
     size_t getStream() const { return stream_number; }
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
-    /// Step of QueryPlan from which processor was created
-    void setQueryPlanStep(const IQueryPlanStep * step, size_t group = 0);
+    /// Step of QueryPlan from which processor was created.
+    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
 
-    void setQueryPlanStepGroup(size_t group) { query_plan_step_group = group; }
-
-    /// Copy the query step fields from parent processor to child processor
-    /// The group can be adjusted manually, since even though the processors can be
-    /// coming from the same step, they can belong to different groups (stages)
-    void inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group);
-
-    const IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
+    IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     const String & getStepUniqID() const { return step_uniq_id; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
     const String & getPlanStepName() const { return plan_step_name; }
@@ -325,17 +313,6 @@ public:
     uint64_t getElapsedNs() const { return elapsed_ns; }
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
     uint64_t getOutputWaitElapsedNs() const { return output_wait_elapsed_ns; }
-
-    struct PortDataCounters
-    {
-        size_t rows = 0;
-        size_t bytes = 0;
-    };
-
-    /// The getter can be used only after running the query, for counting
-    /// the exact number of rows/bytes per port
-    /// Should be used only on the pors belonging to the processor
-    PortDataCounters getPortDataCounters(const Port & port) const;
 
     struct ProcessorDataStats
     {
@@ -441,7 +418,7 @@ private:
 
     size_t stream_number = NO_STREAM;
 
-    const IQueryPlanStep * query_plan_step = nullptr;
+    IQueryPlanStep * query_plan_step = nullptr;
     String step_uniq_id;
     size_t query_plan_step_group = 0;
 
