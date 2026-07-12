@@ -1,6 +1,8 @@
 #include <Storages/System/StorageSystemUserQueryLog.h>
 
 #include <Common/quoteString.h>
+#include <Common/SettingsChanges.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -68,14 +70,28 @@ void StorageSystemUserQueryLog::read(
         return;
     }
 
-    /// The inner query runs with full access under a fresh context, so the user does not need access
-    /// to the query log table itself. The user's session settings are deliberately not propagated into
-    /// it: settings such as `additional_table_filters` inject expressions into the query, and inside
-    /// this query they would be evaluated on other users' rows before the filter below hides them.
+    /// The inner query runs with full access under a fresh context (a copy of the global context, which
+    /// has no bound user), so the user does not need access to the query log table itself. It is not a
+    /// bare global context, though: the caller's identity, normalized query hash, and execution settings
+    /// are replayed the same way `StorageInMemoryMetadata::getSQLSecurityOverriddenContext` does, so that
+    /// quotas keep bucketing per user and per `NORMALIZED_QUERY_HASH` (a fresh context starts with hash 0)
+    /// and the backing query log scan honors the caller's profile (e.g. `max_threads`) instead of the
+    /// server defaults.
     auto inner_context = Context::createCopy(context->getGlobalContext());
     inner_context->makeQueryContext();
+    inner_context->setClientInfo(context->getClientInfo());
     inner_context->setProgressCallback(context->getProgressCallback());
     inner_context->setProcessListElement(context->getProcessListElement());
+    inner_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
+
+    /// Replay the caller's settings, except the expression-injection ones: `additional_table_filters`
+    /// and `additional_result_filter` add expressions that would be evaluated on other users' rows before
+    /// the user filter below hides them, which could leak their contents. They keep their default (empty)
+    /// value from the global context because they are dropped from the applied changes rather than reset.
+    SettingsChanges settings_changes = context->getSettingsRef().changes();
+    settings_changes.removeSetting("additional_table_filters");
+    settings_changes.removeSetting("additional_result_filter");
+    inner_context->applySettingsChanges(settings_changes);
 
     String select_columns;
     for (const auto & name : column_names)
