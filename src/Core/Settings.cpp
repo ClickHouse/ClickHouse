@@ -5,7 +5,9 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
+#if ENABLE_DISTRIBUTED_CACHE
 #include <Core/DistributedCacheDefines.h>
+#endif
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsChangesHistory.h>
@@ -30,20 +32,11 @@ namespace
 {
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
-constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
-constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
-constexpr UInt64 default_distributed_cache_write_request_max_tries = 10lu;
-constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
-constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
-constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
-constexpr UInt64 default_distributed_cache_connect_timeout_ms = 50;
-constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
-constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
-constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
+#endif
+
+#if ENABLE_DISTRIBUTED_CACHE
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_write_request_max_tries = DistributedCache::DEFAULT_WRITE_REQUEST_MAX_TRIES;
@@ -56,6 +49,23 @@ constexpr UInt64 default_distributed_cache_receive_timeout_ms = DistributedCache
 constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = DistributedCache::DEFAULT_TCP_KEEP_ALIVE_TIMEOUT_MS;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_READ;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_WRITE;
+constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS;
+constexpr UInt64 default_distributed_cache_data_packet_ack_window = DistributedCache::ACK_DATA_PACKET_WINDOW;
+#else
+constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
+constexpr UInt64 default_distributed_cache_write_request_max_tries = 10lu;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
+constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
+constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
+constexpr UInt64 default_distributed_cache_connect_timeout_ms = 50;
+constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
+constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
+constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
+constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = 10lu;
+constexpr UInt64 default_distributed_cache_data_packet_ack_window = 5lu;
 #endif
 }
 
@@ -760,6 +770,12 @@ Possible values:
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
     DECLARE(Bool, use_reader_executor, false, R"(
 Experimental. Route reads through the new pipeline `ReaderExecutor` instead of the legacy matryoshka of read buffers. Falls back to the legacy path for configurations the executor does not yet support.)", EXPERIMENTAL) \
+    DECLARE(Bool, reader_executor_use_long_connections, false, R"(
+Reuse a bounded long source connection across windows in the experimental `ReaderExecutor`. A long connection is one whose range exceeds the current read window; when disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_min_bytes_for_seek, 2097152, R"(
+Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is skipped on the open source connection (bridged / read through) instead of issuing a separate source read or reopening. Set near the bandwidth/request cost breakeven so bridging stays cost-positive.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_max_tail_for_drain, 1048576, R"(
+Drain bound for the experimental `ReaderExecutor`: a long source connection dropped within this many bytes of its right bound is read out to the bound first, so it completes and returns to the connection pool reusable instead of counting as an incomplete connection.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -1124,6 +1140,10 @@ In CREATE TABLE statement allows creating columns of type FixedString(n) with n 
 )", 0) \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
 Reject primary/secondary indexes and sorting keys with identical expressions
+)", 0) \
+    DECLARE(Bool, allow_minmax_index_for_json, false, R"(
+Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
+index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
 )", 0) \
     DECLARE(Bool, allow_suspicious_ttl_expressions, false, R"(
 Reject TTL expressions that don't depend on any of table's columns. It indicates a user error most of the time.
@@ -1587,6 +1607,19 @@ Possible values:
 
 - Any positive even integer.
 )", 0) \
+    DECLARE(UInt64, merge_tree_generic_exclusion_search_max_steps, 0, R"(
+When a filter cannot be evaluated as a single continuous range of the primary key, for example when it uses key columns other than the first one, ClickHouse runs an iterative generic exclusion search algorithm over the index marks. This setting limits the number of steps (index checks) the algorithm spends on each data part.
+
+The budget is spent on the largest remaining mark ranges first. When it is exhausted, the ranges that were not fully analyzed are accepted as a whole, so the query stays correct but may read more granules than an unlimited search would select. A lower budget speeds up index analysis at the cost of reading more data. The limit is approximate rather than a strict cap on the analysis cost: the search can exceed it by roughly one round of splitting, and when the part is already divided into many ranges (for example, by the query condition cache), each of them is checked at least once regardless of the limit.
+
+The number of steps the search made for each data part is reported in the trace level log messages of the query, and the `IndexGenericExclusionSearchStepLimitReached` profile event counts how many times the budget was exhausted.
+
+The (default) value 0 means unlimited steps.
+
+Possible values:
+
+- 0 for unlimited steps, or any positive integer.
+)", 0) \
     DECLARE(UInt64, merge_tree_max_rows_to_use_cache, (128 * 8192), R"(
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks.
 
@@ -1744,6 +1777,22 @@ If `force_index_by_date=1`, ClickHouse checks whether the query has a date key c
 )", 0) \
     DECLARE(Bool, use_primary_key, true, R"(
 Use the primary key to prune granules during query execution for MergeTree tables.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_constant_folding_in_index_analysis, false, R"(
+Substitute partition-level constants into the filter predicate when analyzing per-part primary key and skip indexes.
+
+When the partition key appears in the filter together with primary-key or skip-index columns, this lets index analysis fold the partition value separately within each part. It is most useful for disjunctive filters whose branches target different partitions. For example, with `PARTITION BY a` and `ORDER BY b`:
+
+```sql
+SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b > 10)
+```
+
+For the part in partition `a = 1` the condition folds to `b >= 1`, while for partitions `a = 2` and `a = 3` it folds to `b > 10`, so each part is analyzed with the predicate that actually applies to it.
 
 Possible values:
 
@@ -2663,6 +2712,16 @@ SELECT * FROM test;
     \
     DECLARE(Bool, partial_result_on_first_cancel, false, R"(
 Allows query to return a partial result after cancel.
+)", 0) \
+    \
+    DECLARE(Bool, discard_query_data, false, R"(
+If enabled, the server skips sending query result rows to the client. The query is still executed and logged fully on the server, and the client still receives the remaining packets.
+
+Used for shadow traffic, benchmarks, and fuzzing.
+
+Has no effect for secondary queries.
+
+Affects only the native TCP protocol.
 )", 0) \
     \
     DECLARE(Bool, ignore_on_cluster_for_replicated_udf_queries, false, R"(
@@ -3964,6 +4023,9 @@ Allow '.' to match newline characters for a regexp_tree dictionary.
     DECLARE(Bool, dictionary_use_async_executor, false, R"(
 Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
 )", 0) \
+    DECLARE(BoolAuto, dictionary_lazy_load, Field("auto"), R"(
+Controls loading of a dictionary when specified in the `SETTINGS` clause of `CREATE DICTIONARY`: `1` defers loading until first use, `0` loads the dictionary at creation, `'auto'` follows the server setting `dictionaries_lazy_load`. Has no effect when set on a session or query level.
+)", 0) \
     DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
 Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \
@@ -4384,6 +4446,47 @@ Disabled by default.
 Allow using `from_zk` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
+Allow S3 access that originates from user SQL to use server-managed credentials.
+
+When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, `role_arn`-based STS assume-role, or the GCP OAuth metadata service. A request that asks for one of those server-managed sources (for example `use_environment_credentials = 1`, a `role_arn`, or `http_client = gcp_oauth`) without supplying usable explicit credentials is rejected with `ACCESS_DENIED`. A request that asks for none of them is sent unsigned (anonymous), the same as if `NOSIGN` had been given.
+
+Whether a credential-less request asks for environment credentials is decided by `use_environment_credentials`. Named collections default it to `0`, so a collection that only specifies a URL reads anonymously. The `s3`/`s3Cluster` table functions and `S3`/`S3Queue` engines use the built-in default (`1`) unless the server `<s3>` config sets it otherwise; set `<s3><use_environment_credentials>0</use_environment_credentials></s3>` to make their credential-less reads anonymous by default too (otherwise such a request is refused and must use `NOSIGN`). Disks defined in the server configuration are unaffected and keep using environment credentials by default; user-created dynamic `disk(type = s3, ...)` definitions are covered by the restriction (see above) and are rejected when they rely on default/environment credentials.
+
+This prevents an authenticated user from making the server access S3 with its own (ambient) credentials. Credentials supplied explicitly are not affected: keys passed in the query, static keys in a named collection (created via SQL or defined in config), and keys in the server `<s3>` config all keep working.
+
+The recommended way to give user queries S3 access is a named collection with explicit credentials (or `NOSIGN` for public buckets): the keys stay out of the query text, and use of each collection is controlled with RBAC (`GRANT NAMED COLLECTION ON <name> TO <user>`), so you grant specific users specific buckets instead of exposing the server's own identity.
+
+Scope (out of scope on purpose): this setting blocks only the server's ambient credential sources listed above. It does not block operator-provisioned static `access_key_id`/`secret_access_key` from the server `<s3>` config or from a config-defined named collection: those are treated as explicit credentials and keep working. Note, however, that config request material such as `access_header` or server-side-encryption keys is not by itself treated as a credential here: a request that carries only such material but no explicit key pair (and the default `use_environment_credentials = 1`) is still refused, because it would otherwise fall back to the server's ambient credentials. Such an endpoint must also provide explicit keys, `NOSIGN`, `use_environment_credentials = 0`, or the escape hatch below.
+
+A trusted administrative client may need server-managed credentials for legitimate operations (for example, attaching system tables on an `s3_plain_rewritable` disk via SQL). Enable this setting in that client's session or settings profile to permit it.
+
+For `BACKUP`/`RESTORE ... ON CLUSTER` the initiator's value of this setting is propagated to the other hosts and used there as-is. Those hosts run the per-host continuation of the operation through the distributed DDL queue, by default without the initiator's user, so they would otherwise evaluate the restriction against their own default profile; the initiator's value is preserved instead, because it has already opened the same backup destination under its own, constrained, settings. A `readonly` constraint on the initiator still applies (an untrusted initiator cannot enable the setting for its own on-cluster backup), so this does not weaken the restriction.
+
+Durability for persistent `S3` and `S3Queue` tables: enabling this only per session or profile is not durable across a restart. When the server reloads such a table from its stored definition (startup or `RESTORE`) it rebuilds the S3 client and re-applies the restriction with the startup context, so a table that relied on server-managed credentials and was created only under a session/profile `s3_allow_server_credentials_in_user_queries = 1` is created successfully but becomes inaccessible after a restart (the table is left in place; queries against it fail until its credentials resolve to a permitted source again). The server itself still starts. Give such tables explicit credentials for durable access; alternatively, enabling the setting server-wide keeps them loading across restarts, at the cost of relaxing the restriction for all reloads.
+
+To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0` and marking it `readonly`:
+
+```xml
+<profiles>
+    <untrusted>
+        <!-- The explicit value is required: a `readonly` constraint alone only blocks direct changes,
+             but `compatibility` with a version before this setting was introduced would otherwise
+             restore the old (allowing) default. Setting the value explicitly defeats `compatibility`. -->
+        <s3_allow_server_credentials_in_user_queries>0</s3_allow_server_credentials_in_user_queries>
+        <constraints>
+            <s3_allow_server_credentials_in_user_queries>
+                <readonly/>
+            </s3_allow_server_credentials_in_user_queries>
+        </constraints>
+    </untrusted>
+</profiles>
+```
+
+This setting has no effect in `clickhouse-local`, where the user is the operator.
+
+`DataLakeCatalog` databases (Glue, BigLake) are also covered, with one difference. A catalog object is created once and shared by every user of the database, so the value cannot be read per query; it is captured from the session that runs `CREATE DATABASE` (or a user `ATTACH DATABASE`). A database created while this setting is enabled (for example in a trusted session or profile) may use the server's ambient credentials for its catalog, and every user able to query that database then shares them; created under the default, the catalog is restricted for everyone regardless of who queries it. When the server loads an already-created database from its own metadata (startup, `RESTORE`) the restriction is re-applied with the startup context, the same as for persistent `S3`/`S3Queue` tables: a catalog that resolves server-managed credentials is left unavailable and the database becomes inaccessible after a restart (the server still starts; the database loads with an unavailable catalog per `s3_load_table_anonymously_if_credentials_restricted`, and queries report the restriction). A catalog given explicit credentials (Glue: `aws_access_key_id` and `aws_secret_access_key`; BigLake: a complete Google ADC triple) works regardless and is durable across restart.
+)", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
@@ -4614,9 +4717,50 @@ The optimization is suppressed when the user has explicitly set `group_by_overfl
 
 Possible values:
 
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+)", 0) \
+    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, false, R"(
+Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
+queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`
+exactly partitions rows into defaults and non-defaults of `col`. The count is then
+served from the per-column `num_defaults` / `num_rows` counters that MergeTree already
+keeps in `serialization.json`, with no data scan.
+
+Patterns recognised:
+
+- `col = default(col)` / `col != default(col)` for `Int*` / `UInt*`, `String` /
+  `FixedString`, `Date` / `DateTime` / `DateTime64`, `Decimal*`, `UUID`, `IPv4` / `IPv6`.
+- `IS NULL` / `IS NOT NULL` on `Nullable` columns.
+- `empty(col)` / `notEmpty(col)` on `String` columns.
+- `col = true` / `col != true` on `Bool` columns.
+- `col > 0`, `col >= 1`, `col < 1`, `col <= 0` on unsigned integer columns.
+- Bare `col` / `NOT col` on `Int*`, `UInt*`, `Bool` columns (truthy test).
+
+The equality patterns are not applied to `Float*`, `Enum*`, `Nullable`, `LowCardinality`,
+or composite types (`Tuple`, `Array`, `Map`, ...) — for these the count is served from the
+regular scan path.
+
+To take effect, the per-part `num_defaults` counter must be exact. Enable the MergeTree
+table setting `compute_exact_num_defaults_for_sparse_columns` on the target table before
+inserts and merges. Parts written without it are silently opted out of the rewrite, so
+enabling `optimize_trivial_count_with_sparsity_filter` alone is not enough.
+
+For the `IS NULL` / `IS NOT NULL` patterns on `Nullable` columns, the column must also
+have a `num_defaults` entry in `serialization.json`, which only happens when the MergeTree
+table setting `nullable_serialization_version` is set to `allow_sparse` at insert /
+merge time. With the default value `basic` `Nullable` columns get no per-column entry, so
+the optimization silently does not apply.
+
+Possible values:
+
    - 0 — Optimization disabled.
    - 1 — Optimization enabled.
-)", 0) \
+
+See also:
+
+- [optimize_trivial_count_query](#optimize_trivial_count_query)
+)", EXPERIMENTAL) \
     DECLARE(Bool, optimize_count_from_files, true, R"(
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
@@ -6235,6 +6379,9 @@ Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evalu
     DECLARE(Bool, query_plan_merge_filter_into_join_condition, true, R"(
 Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
 )", 0) \
+    DECLARE(Bool, query_plan_merge_expression_into_join, true, R"(
+Allow to merge expressions into JOIN step during join reordering optimization.
+)", 0) \
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0) \
@@ -6687,6 +6834,9 @@ Load MergeTree marks asynchronously
 
 Cloud default value: `1`.
 )", 0) \
+    DECLARE(Bool, use_streaming_marks_compression, false, R"(
+When loading marks for MergeTree parts, compress them into the in-memory representation one block at a time (streaming) instead of materializing the full plain marks array first. This significantly reduces peak memory usage during marks loading for compact parts with many substreams (e.g. tables with JSON columns and write_marks_for_substreams_in_compact_parts enabled).
+)", 0) \
     DECLARE(Bool, enable_filesystem_read_prefetches_log, false, R"(
 Log to system.filesystem prefetch_log during query. Should be used only for testing or debugging, not recommended to be turned on by default
 )", 0) \
@@ -6952,10 +7102,10 @@ Only has an effect in ClickHouse Cloud. Identifies behaviour of distributed cach
     DECLARE(UInt64, distributed_cache_alignment, 0, R"(
 Only has an effect in ClickHouse Cloud. A setting for testing purposes, do not change it
 )", 0) \
-    DECLARE(UInt64, distributed_cache_max_unacked_inflight_packets, DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS, R"(
+    DECLARE(UInt64, distributed_cache_max_unacked_inflight_packets, default_distributed_cache_max_unacked_inflight_packets, R"(
 Only has an effect in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets in a single distributed cache read request
 )", 0) \
-    DECLARE(UInt64, distributed_cache_data_packet_ack_window, DistributedCache::ACK_DATA_PACKET_WINDOW, R"(
+    DECLARE(UInt64, distributed_cache_data_packet_ack_window, default_distributed_cache_data_packet_ack_window, R"(
 Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a single distributed cache read request
 )", 0) \
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
@@ -7041,7 +7191,7 @@ For the replicated tables by default the only 100 of the most recent inserts for
 For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non_replicated_deduplication_window).
 
 :::note
-`insert_deduplication_token` is tracked per partition, so multiple partitions written by one insert can carry the same token. Without a token, the default content checksum (`insert_deduplication_version = new_unified_hash`) is computed over the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not when a single partition's rows happen to coincide with a different insert.
+`insert_deduplication_token` is tracked per partition, so multiple partitions written by one insert can carry the same token. Without a token, the default content checksum is computed over the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not when a single partition's rows happen to coincide with a different insert.
 :::
 
 Example:
@@ -8307,6 +8457,9 @@ If the number of set bits in a runtime bloom filter exceeds this ratio the filte
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0) \
+    DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
+Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
+)", 0) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL) \
@@ -8403,6 +8556,12 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
+)", EXPERIMENTAL) \
+    DECLARE(String, ai_function_text_default_credentials, "", R"(
+Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint and model differ from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
+)", EXPERIMENTAL) \
+    DECLARE(String, ai_function_embedding_default_credentials, "", R"(
+Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint and model differ from a chat one.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \

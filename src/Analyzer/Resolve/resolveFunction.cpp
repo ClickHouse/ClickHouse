@@ -23,6 +23,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/hasNullable.h>
@@ -1142,8 +1143,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Correlated subqueries are not supported as IN function arguments yet, but found in expression: {}",
                 node->formatASTForErrorMessage());
 
-        /// Edge case when the first argument of IN is scalar subquery.
+        /// Table expressions are only allowed as the second (right) argument of IN.
+        /// A table on the left side is not a value expression, so reject it with a clear
+        /// error instead of failing later when getResultType is called on the table node.
         auto first_argument_type = in_first_argument->getNodeType();
+        if (first_argument_type == QueryTreeNodeType::TABLE || first_argument_type == QueryTreeNodeType::TABLE_FUNCTION)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The first argument of function '{}' is a table expression '{}', but it must be a value expression. In scope {}",
+                function_name,
+                in_first_argument->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        /// Edge case when the first argument of IN is scalar subquery.
         if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
         {
             IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(in_first_argument, &scope /*parent_scope*/);
@@ -1216,11 +1227,36 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 }
             }
 
-            /// If the second argument of IN is a non-constant, non-table expression (e.g. a column reference
-            /// from `IN (col)` where the parentheses were stripped by the parser), wrap it in tuple()
-            /// so it can be handled by the tuple/array → has() rewrite below.
-            if (in_second_argument->as<ColumnNode>())
+            /// If the second argument of IN is a bare column reference (e.g. from `IN (col)` where the
+            /// parentheses were stripped by the parser), decide how to treat it by its type.
+            if (auto * in_second_argument_column = in_second_argument->as<ColumnNode>())
             {
+                const bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn" ||
+                                        function_name == "notNullIn" || function_name == "globalNotNullIn");
+                const bool transform_null_in = scope.context->getSettingsRef()[Setting::transform_null_in];
+
+                /// An Array-typed column on the right of IN is the set of its elements, exactly like an
+                /// array literal or an array-returning function, so rewrite `x IN arr` to `has(arr, x)` -
+                /// but only when the array is exactly one dimension deeper than the left argument, so that
+                /// the element type of `has` matches the left argument (e.g. a scalar and `Array(scalar)`,
+                /// or `Array(T)` and `Array(Array(T))`). When the depths are equal (e.g. `Array(T) IN
+                /// Array(T)`), the column is a single set element and must be handled as `x = col` below.
+                /// Without this, the column would be wrapped in tuple() and treated as a single set element,
+                /// giving a wrong (always-false) result for stringifiable elements or an error otherwise.
+                const auto * rhs_array_type = typeid_cast<const DataTypeArray *>(in_second_argument_column->getColumnType().get());
+                if (rhs_array_type && in_first_argument->getNodeType() != QueryTreeNodeType::LAMBDA)
+                {
+                    const auto & lhs_type = in_first_argument->getResultType();
+                    const auto * lhs_array_type = typeid_cast<const DataTypeArray *>(lhs_type.get());
+                    const size_t lhs_depth = lhs_array_type ? lhs_array_type->getNumberOfDimensions() : 0;
+
+                    if (rhs_array_type->getNumberOfDimensions() == lhs_depth + 1)
+                        return buildHasExpression(node, in_second_argument, in_first_argument, is_not_in, transform_null_in,
+                            arguments_projection_names, parameters_projection_names, scope);
+                }
+
+                /// Any other single column value is a one-element set; wrap it in tuple() so it can be
+                /// handled by the tuple → has() rewrite below.
                 auto tuple_function = std::make_shared<FunctionNode>("tuple");
                 tuple_function->getArguments().getNodes().push_back(std::move(in_second_argument));
                 in_second_argument = std::move(tuple_function);
