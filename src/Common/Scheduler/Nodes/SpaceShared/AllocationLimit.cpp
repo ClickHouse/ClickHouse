@@ -186,6 +186,10 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     // descending into `selectAllocationToSpill` (which locks that mutex) would self-deadlock. Those cases
     // are covered by `checkSoftLimit` in `approveIncrease`/`approveDecrease` instead.
     const bool reclaimable_changed = update.reclaimable_delta != 0;
+    // A drop in reported reclaimable is the acknowledgement that a spill victim reclaimed — or gave up
+    // without freeing (it lowered its reclaimable, possibly to 0, with no decrease). Capture the sign now,
+    // before `update` may be consumed by `propagate` below.
+    const bool reclaimable_dropped = update.reclaimable_delta < 0;
     bool reapply_constraint = false;
     if (update.attached)
         reapply_constraint = true;
@@ -229,7 +233,16 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
 
     // Only a reclaimable report can reach this point without a queue mutex held (see note above).
     if (reclaimable_changed)
+    {
+        // Reopen the one-at-a-time gate (D2) when the current victim reclaimed or declined (a drop in
+        // reported reclaimable), so `checkSoftLimit` re-targets the next reclaimable allocation. Otherwise
+        // an episode could stall above the soft limit until an unrelated decrease happens: no victim
+        // pointer is stored, so the signaled victim reporting `reclaimable == 0` without a decrease would
+        // never be superseded. Re-signals coalesce query-side (see `MemoryReservation::spillAllocation`).
+        if (reclaimable_dropped)
+            spill_requested = false;
         checkSoftLimit();
+    }
 }
 
 bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_constraint)

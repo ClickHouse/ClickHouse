@@ -815,8 +815,10 @@ TEST(SchedulerSpaceShared, SoftLimitDescendsFairSkippingUnreclaimable)
 }
 
 
-/// After a victim makes progress (a decrease), the one-at-a-time gate reopens and the scheduler re-signals
-/// while still over the soft limit; once back under it, no further spill is requested.
+/// While over the soft limit, each acknowledgement — a decrease OR a drop in reported reclaimable — reopens
+/// the one-at-a-time gate and the scheduler re-signals with the updated `need`; once back under the soft
+/// limit the episode ends and no further spill is requested. The exact number of (coalescing) re-signals is
+/// intentionally not asserted, only the requested amount and the terminal "no more spills" state.
 TEST(SchedulerSpaceShared, SpillReSignalsUntilUnderSoftLimit)
 {
     SpaceSharedTest t;
@@ -829,18 +831,92 @@ TEST(SchedulerSpaceShared, SpillReSignalsUntilUnderSoftLimit)
     SpillableAllocation a(queue, "a", 8000);
     a.reportReclaimable(8000);
     a.waitSpills(1);
-    EXPECT_EQ(a.lastSpillAtLeast(), 3000);
+    EXPECT_EQ(a.lastSpillAtLeast(), 3000); // need = allocated(8000) - soft(5000)
 
-    // Simulate a partial reaction: report less reclaimable and shrink, but stay above the soft limit.
-    a.reportReclaimable(4000);
+    // Partial reaction: shrink but stay above the soft limit. The gate reopens and the next signal carries
+    // the updated need for the smaller allocation.
+    size_t before = a.spillCount();
     a.setSize(6000); // decrease by 2000 -> allocated 6000 > soft 5000, still reclaimable
-    a.waitSpills(2);
-    EXPECT_EQ(a.lastSpillAtLeast(), 1000); // need = 6000 - 5000
+    r.sync();
+    EXPECT_GT(a.spillCount(), before);
+    EXPECT_EQ(a.lastSpillAtLeast(), 1000); // need = allocated(6000) - soft(5000)
 
-    // Now drop below the soft limit: the episode ends, no more spills are requested.
-    a.reportReclaimable(1000);
+    // Drop below the soft limit: the episode ends. After the scheduler fully settles, no new spill appears.
     a.setSize(4000); // allocated 4000 <= soft 5000
-    EXPECT_EQ(a.spillCount(), 2);
+    r.sync();
+    size_t settled = a.spillCount();
+    r.sync();
+    EXPECT_EQ(a.spillCount(), settled); // no further spill once under the soft limit
+}
+
+
+/// A non-removing shrink clamps the allocation's reported reclaimable down to the new `allocated`
+/// (invariant I3) and keeps the reclaimable aggregate consistent up the whole tree. Without the clamp a
+/// spill-signaled allocation that decreases before re-reporting would keep `reclaimable > allocated` and
+/// could be re-picked as a spill victim for memory it has already released.
+TEST(SchedulerSpaceShared, ReclaimableClampedOnShrink)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    // Read a node's `reclaimable` on the scheduler thread, where it may be safely accessed.
+    auto reclaimable_of = [&](ISpaceSharedNode * node) -> ResourceCost
+    {
+        std::promise<ResourceCost> p;
+        auto fut = p.get_future();
+        t.scheduler.event_queue.enqueue([&] { p.set_value(node->reclaimable); });
+        return fut.get();
+    };
+
+    SpillableAllocation a(queue, "a", 8000);
+    a.reportReclaimable(8000);
+    EXPECT_EQ(reclaimable_of(queue), 8000);
+    EXPECT_EQ(reclaimable_of(limit), 8000);
+    EXPECT_EQ(reclaimable_of(&t.scheduler), 8000);
+
+    // Shrink to 3000 without re-reporting: the stale reclaimable (8000) exceeds the new allocated (3000)
+    // and is clamped down; every ancestor aggregate follows.
+    a.setSize(3000);
+    r.sync();
+    EXPECT_EQ(reclaimable_of(queue), 3000);
+    EXPECT_EQ(reclaimable_of(limit), 3000);
+    EXPECT_EQ(reclaimable_of(&t.scheduler), 3000);
+}
+
+
+/// If the spill-signaled victim reports its reclaimable down to 0 WITHOUT decreasing (it declines or cannot
+/// spill), the episode must not stall: the scheduler reopens the one-at-a-time gate and re-targets the next
+/// reclaimable allocation while still over the soft limit. Without the fix `b` is never signaled and this
+/// test hangs on `waitSpills`.
+TEST(SchedulerSpaceShared, SpillReSelectsWhenVictimReportsZeroReclaimable)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+    r.setSoftLimit(limit, 10000);
+
+    SpillableAllocation a(queue, "a", 8000);
+    SpillableAllocation b(queue, "b", 6000);
+    a.reportReclaimable(8000);
+    b.reportReclaimable(6000);
+
+    // Over the soft limit (14000 > 10000): the largest reclaimable allocation (`a`) is asked to spill first.
+    a.waitSpills(1);
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(b.spillCount(), 0); // one spill at a time (D2)
+
+    // `a` declines: it reports nothing reclaimable and does NOT decrease. Still over the soft limit, with
+    // `b` reclaimable, the scheduler must now ask `b` to spill instead of stalling on `a`.
+    a.reportReclaimable(0);
+    b.waitSpills(1);
+    EXPECT_EQ(b.spillCount(), 1);
+    EXPECT_EQ(b.lastSpillAtLeast(), 4000); // need = allocated(14000) - soft(10000)
+    EXPECT_EQ(a.spillCount(), 1); // `a` is not re-signaled — it has nothing reclaimable
 }
 
 

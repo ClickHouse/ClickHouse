@@ -306,8 +306,7 @@ void AllocationQueue::approveDecrease()
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
     // Re-key the reclaimable set in lockstep (invariant I8). A removal has already zeroed `reclaimable`
     // and unlinked the allocation in `processActivation`, so `reclaimable_member` is false for removals.
-    // We do NOT re-clamp `reclaimable` to the smaller `allocated` here: leaving it keeps the per-subtree
-    // aggregate consistent (it is a plain sum), and the query re-reports the true value on its next sync.
+    // For a non-removing shrink we restore invariant I3 (`reclaimable <= allocated`) just below.
     bool reclaimable_member = allocation.reclaimable_hook.is_linked();
     if (reclaimable_member)
         reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
@@ -316,6 +315,23 @@ void AllocationQueue::approveDecrease()
     apply(*decrease);
     allocation.allocated -= decrease->size;
     allocation.fair_key -= decrease->size;
+
+    // Restore invariant I3 (`reclaimable <= allocated`) after a non-removing shrink. A spill-signaled
+    // allocation may decrease before it re-reports a lower reclaimable total; without this clamp it would
+    // linger in `reclaimable_allocations` with `reclaimable > allocated` (even `allocated == 0` for a full
+    // shrink) and could be re-picked as a spill victim for memory it has already released. We do not touch
+    // the `reclaimable` aggregate directly (that would double-count against `processActivation`): the
+    // negative delta is accumulated into `pending_reclaimable_delta` and drained/propagated to every
+    // ancestor on the next activation, exactly like `setReclaimable`. `reclaimable_member` is updated so
+    // an allocation that drops to zero reclaimable is not re-inserted below (invariant I7).
+    if (allocation.reclaimable > allocation.allocated)
+    {
+        pending_reclaimable_delta += allocation.allocated - allocation.reclaimable; // negative
+        allocation.reclaimable = allocation.allocated;
+        if (allocation.reclaimable == 0)
+            reclaimable_member = false;
+        scheduleActivation();
+    }
 
     // Reinsert into the appropriate data structures unless this is a removal
     if (!decrease->removing_allocation)
