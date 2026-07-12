@@ -106,6 +106,9 @@ struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
     bool is_size_known = true;
+    /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
+    /// False only for the skip_object_metadata placeholder.
+    bool is_fetched = true;
     Poco::Timestamp last_modified;
     /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
     /// whose HTTP response has no `Last-Modified` header) cannot report it; leaving `last_modified` at the
@@ -336,6 +339,11 @@ public:
     struct ApplyNewSettingsOptions
     {
         bool allow_client_change = true;
+
+        /// Force the client to be rebuilt even if the stored settings did not change. Used to re-resolve
+        /// credentials under a different accessing context (e.g. re-applying the server-credential opt-in to a
+        /// server-internal table whose client was built restricted at metadata load) without detaching the table.
+        bool force_client_rebuild = false;
     };
     virtual void applyNewSettings(
         const Poco::Util::AbstractConfiguration & /* config */,

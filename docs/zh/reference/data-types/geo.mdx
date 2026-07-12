@@ -1,0 +1,189 @@
+---
+description: 'ClickHouse 中用于表示地理对象和位置的几何数据类型文档'
+sidebarTitle: 'Geo'
+slug: /sql-reference/data-types/geo
+title: '几何'
+doc_type: 'reference'
+---
+
+ClickHouse 支持用于表示地理对象 (如位置、区域等) 的数据类型。
+
+**另请参阅**
+
+* [简单地理要素表示](https://en.wikipedia.org/wiki/GeoJSON)。
+
+<div id="point">
+  ## Point
+</div>
+
+`Point` 由其 X 和 Y 坐标表示，存储为 [Tuple](/zh/reference/data-types/tuple)([Float64](/zh/reference/data-types/float), [Float64](/zh/reference/data-types/float))。
+
+**示例**
+
+```sql title="Query"
+CREATE TABLE geo_point (p Point) ENGINE = Memory();
+INSERT INTO geo_point VALUES((10, 10));
+SELECT p, toTypeName(p) FROM geo_point;
+```
+
+```text title="Response"
+┌─p───────┬─toTypeName(p)─┐
+│ (10,10) │ Point         │
+└─────────┴───────────────┘
+```
+
+<div id="ring">
+  ## Ring
+</div>
+
+`Ring` 是一种不含孔的简单多边形，存储为点数组：[Array](/zh/reference/data-types/array)([Point](#point))。
+
+**示例**
+
+```sql title="Query"
+CREATE TABLE geo_ring (r Ring) ENGINE = Memory();
+INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
+SELECT r, toTypeName(r) FROM geo_ring;
+```
+
+```text title="Response"
+┌─r─────────────────────────────┬─toTypeName(r)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ Ring          │
+└───────────────────────────────┴───────────────┘
+```
+
+<div id="linestring">
+  ## LineString
+</div>
+
+`LineString` 是由点构成并以数组形式存储的线：[Array](/zh/reference/data-types/array)([Point](#point))。
+
+**示例**
+
+```sql title="Query"
+CREATE TABLE geo_linestring (l LineString) ENGINE = Memory();
+INSERT INTO geo_linestring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
+SELECT l, toTypeName(l) FROM geo_linestring;
+```
+
+```text title="Response"
+┌─r─────────────────────────────┬─toTypeName(r)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ LineString    │
+└───────────────────────────────┴───────────────┘
+```
+
+<div id="multilinestring">
+  ## MultiLineString
+</div>
+
+`MultiLineString` 表示由多个 `LineString` 组成，并以数组形式存储：[Array](/zh/reference/data-types/array)([LineString](#linestring))。
+
+**示例**
+
+```sql title="Query"
+CREATE TABLE geo_multilinestring (l MultiLineString) ENGINE = Memory();
+INSERT INTO geo_multilinestring VALUES([[(0, 0), (10, 0), (10, 10), (0, 10)], [(1, 1), (2, 2), (3, 3)]]);
+SELECT l, toTypeName(l) FROM geo_multilinestring;
+```
+
+```text title="Response"
+┌─l───────────────────────────────────────────────────┬─toTypeName(l)───┐
+│ [[(0,0),(10,0),(10,10),(0,10)],[(1,1),(2,2),(3,3)]] │ MultiLineString │
+└─────────────────────────────────────────────────────┴─────────────────┘
+```
+
+<div id="polygon">
+  ## Polygon
+</div>
+
+`Polygon` 是一种带孔的多边形，存储为由环组成的数组：[Array](/zh/reference/data-types/array)([Ring](#ring))。外层数组的第一个元素表示多边形的外边界，后续所有元素都是孔。
+
+**示例**
+
+这是一个带有一个孔的多边形：
+
+```sql title="Query"
+CREATE TABLE geo_polygon (pg Polygon) ENGINE = Memory();
+INSERT INTO geo_polygon VALUES([[(20, 20), (50, 20), (50, 50), (20, 50)], [(30, 30), (50, 50), (50, 30)]]);
+SELECT pg, toTypeName(pg) FROM geo_polygon;
+```
+
+```text title="Response"
+┌─pg────────────────────────────────────────────────────────────┬─toTypeName(pg)─┐
+│ [[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]] │ Polygon        │
+└───────────────────────────────────────────────────────────────┴────────────────┘
+```
+
+<div id="multipolygon">
+  ## MultiPolygon
+</div>
+
+`MultiPolygon` 由多个多边形组成，并以多边形数组的形式存储：[Array](/zh/reference/data-types/array)([Polygon](#polygon))。
+
+**示例**
+
+该 `MultiPolygon` 由两个彼此独立的多边形组成——第一个没有孔，第二个有一个孔：
+
+```sql title="Query"
+CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory();
+INSERT INTO geo_multipolygon VALUES([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]]);
+SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
+```
+
+```text title="Response"
+┌─mpg─────────────────────────────────────────────────────────────────────────────────────────────┬─toTypeName(mpg)─┐
+│ [[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]] │ MultiPolygon    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
+```
+
+<div id="geometry">
+  ## Geometry
+</div>
+
+`Geometry` 是适用于上述所有类型的通用类型，相当于这些类型构成的 Variant。
+
+**示例**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo (geom Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ((1, 2));
+SELECT * FROM geo;
+```
+
+```text title="Response"
+   ┌─geom──┐
+1. │ (1,2) │
+   └───────┘
+```
+
+{/* */}
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+
+CREATE TABLE IF NOT EXISTS geo (geom String, id Int) ENGINE = Memory();
+INSERT INTO geo VALUES ('POLYGON((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 1);
+INSERT INTO geo VALUES ('POINT(0 0)', 2);
+INSERT INTO geo VALUES ('MULTIPOLYGON(((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))', 3);
+INSERT INTO geo VALUES ('LINESTRING(1 0,10 0,10 10,0 10,1 0)', 4);
+INSERT INTO geo VALUES ('MULTILINESTRING((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 5);
+INSERT INTO geo_dst SELECT readWKT(geom) FROM geo ORDER BY id;
+
+SELECT * FROM geo_dst;
+```
+
+```text title="Response"
+   ┌─geom─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+2. │ (0,0)                                                                                                            │
+3. │ [[[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]] │
+4. │ [(1,0),(10,0),(10,10),(0,10),(1,0)]                                                                              │
+5. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+   └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* [探索海量真实数据集：ClickHouse 中 100 多年的天气记录](https://clickhouse.com/blog/real-world-data-noaa-climate-data)

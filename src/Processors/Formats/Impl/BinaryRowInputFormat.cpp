@@ -101,7 +101,7 @@ std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
         type_names.reserve(read_columns);
         for (size_t i = 0; i < read_columns; ++i)
         {
-            read_data_types.push_back(decodeDataType(*in));
+            read_data_types.push_back(decodeDataType(*in, format_settings.binary.max_binary_type_complexity));
             type_names.push_back(read_data_types.back()->getName());
         }
     }
@@ -1438,10 +1438,10 @@ More complex functions like `uniq`, `quantile`, or `groupArray` use implementati
 Syntax:
 
 ```text
-QBit(element_type, dimension)
+QBit(element_type, dimension[, stride])
 ```
 
-Where `element_type` is `Int8`, `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension.
+Where `element_type` is `Int8`, `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension. The optional `stride` only controls how the bit planes are grouped into storage streams server-side; it does not affect the RowBinary wire format, which is always the full array of `dimension` elements.
 
 Wire format: identical to `Array(element_type)`:
 

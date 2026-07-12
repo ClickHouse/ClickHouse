@@ -1,0 +1,52 @@
+---
+alias: []
+description: 'SQLInsert フォーマットのドキュメント'
+input_format: false
+keywords: ['SQLInsert']
+output_format: true
+slug: /interfaces/formats/SQLInsert
+title: 'SQLInsert'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✗  | ✔  |       |
+
+<div id="description">
+  ## 説明
+</div>
+
+データを、`INSERT INTO table (columns...) VALUES (...), (...) ...;`ステートメントの連続として出力します。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+例:
+
+```sql
+SELECT number AS x, number + 1 AS y, 'Hello' AS z FROM numbers(10) FORMAT SQLInsert SETTINGS output_format_sql_insert_max_batch_size = 2
+```
+
+```sql
+INSERT INTO table (x, y, z) VALUES (0, 1, 'Hello'), (1, 2, 'Hello');
+INSERT INTO table (x, y, z) VALUES (2, 3, 'Hello'), (3, 4, 'Hello');
+INSERT INTO table (x, y, z) VALUES (4, 5, 'Hello'), (5, 6, 'Hello');
+INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
+INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
+```
+
+このフォーマットで出力されたデータを読み込むには、[MySQLDump](/ja/reference/formats/MySQLDump) 入力フォーマットを使用できます。
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
+
+| Setting                                                                                                                      | Description                         | Default   |
+| ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | --------- |
+| [`output_format_sql_insert_max_batch_size`](/ja/reference/settings/formats#output_format_sql_insert_max_batch_size)             | 1 つの INSERT ステートメントに含められる最大行数。      | `65505`   |
+| [`output_format_sql_insert_table_name`](/ja/reference/settings/formats#output_format_sql_insert_table_name)                     | 出力される INSERT クエリ内のテーブル名。            | `'table'` |
+| [`output_format_sql_insert_include_column_names`](/ja/reference/settings/formats#output_format_sql_insert_include_column_names) | INSERT クエリにカラム名を含めます。               | `true`    |
+| [`output_format_sql_insert_use_replace`](/ja/reference/settings/formats#output_format_sql_insert_use_replace)                   | INSERT の代わりに REPLACE ステートメントを使用します。 | `false`   |
+| [`output_format_sql_insert_quote_names`](/ja/reference/settings/formats#output_format_sql_insert_quote_names)                   | カラム名を &quot;&#96;&quot; 文字で囲みます。    | `true`    |

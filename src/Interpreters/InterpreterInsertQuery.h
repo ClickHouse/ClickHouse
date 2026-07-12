@@ -3,6 +3,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -82,7 +83,7 @@ private:
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
 
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
-    std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
+    std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo>
     buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context);
 
     // if applicable, build pipeline for replicated MergeTree from cluster storage
