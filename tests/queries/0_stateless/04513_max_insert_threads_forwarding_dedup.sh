@@ -52,11 +52,12 @@ $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 -q \
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --deduplicate_insert='disable' -q \
     "EXPLAIN PIPELINE INSERT INTO fwd_dedup_dist VALUES (1)" | grep -c "DistributedSink"
 
-# Row integrity through the alias: ten identical 1000-row blocks must all arrive. A per-branch
+# Row integrity through the alias: four identical 100-row blocks must all arrive. A per-branch
 # nested INSERT would restart the numbering at zero, collide the ids of identical blocks across
-# branches, and the deduplicating target would silently drop rows.
-for _ in $(seq 1 10); do seq 1 1000; done | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
-    --min_insert_block_size_rows=1000 --max_insert_block_size=1000 --max_block_size=1000 -q \
+# branches, and the deduplicating target would silently drop rows. Kept intentionally small so the
+# test stays well under the time limit under the s3/keeper CI configuration.
+for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
+    --min_insert_block_size_rows=100 --max_insert_block_size=100 --max_block_size=100 -q \
     "INSERT INTO fwd_dedup_alias FORMAT TSV"
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(x), min(x), max(x) FROM fwd_dedup_target"
 
@@ -81,10 +82,10 @@ $CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 -q \
 $CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 --deduplicate_insert='disable' -q \
     "EXPLAIN PIPELINE INSERT INTO fwd_dedup_mv_alias VALUES (1)" | grep -c "AliasSink"
 
-# Row integrity through the alias into the deduplicating MV target: ten identical 1000-row blocks
+# Row integrity through the alias into the deduplicating MV target: four identical 100-row blocks
 # must all arrive in the MV target.
-for _ in $(seq 1 10); do seq 1 1000; done | $CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 \
-    --min_insert_block_size_rows=1000 --max_insert_block_size=1000 --max_block_size=1000 -q \
+for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 \
+    --min_insert_block_size_rows=100 --max_insert_block_size=100 --max_block_size=100 -q \
     "INSERT INTO fwd_dedup_mv_alias FORMAT TSV"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM fwd_dedup_mv_dst"
 

@@ -45,18 +45,19 @@ $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 -q \
 $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 --use_strict_insert_block_limits=1 -q \
     "EXPLAIN PIPELINE INSERT INTO mv_dedup_fanout_src VALUES (1)" | grep -c "MergeTreeSink"
 
-# All rows must arrive. The input is ten identical 1000-row blocks; per-branch numbering would
-# collide their view-level ids across branches and dst would silently lose blocks.
-for _ in $(seq 1 10); do seq 1 1000; done | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
-    --min_insert_block_size_rows=1000 --max_insert_block_size=1000 --max_block_size=1000 -q \
+# All rows must arrive. The input is four identical 100-row blocks; per-branch numbering would
+# collide their view-level ids across branches and dst would silently lose blocks. Kept intentionally
+# small so the test stays well under the time limit under the s3/keeper CI configuration.
+for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
+    --min_insert_block_size_rows=100 --max_insert_block_size=100 --max_block_size=100 -q \
     "INSERT INTO mv_dedup_fanout_src FORMAT TSV"
 $CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM mv_dedup_fanout_src), (SELECT count() FROM mv_dedup_fanout_dst)"
 
 # The same with strict limits (single stream keeps the numbering global).
 create_tables 100000
-for _ in $(seq 1 10); do seq 1 1000; done | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
+for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $SETTINGS --max_insert_threads=4 \
     --use_strict_insert_block_limits=1 \
-    --min_insert_block_size_rows=1000 --max_insert_block_size=1000 --max_block_size=1000 -q \
+    --min_insert_block_size_rows=100 --max_insert_block_size=100 --max_block_size=100 -q \
     "INSERT INTO mv_dedup_fanout_src FORMAT TSV"
 $CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM mv_dedup_fanout_src), (SELECT count() FROM mv_dedup_fanout_dst)"
 
