@@ -5,7 +5,7 @@ from ci.defs.job_configs import JobConfigs
 
 binary_build_job = Job.Config.get_job(
     JobConfigs.build_jobs, f"Build ({BuildTypes.ARM_BINARY})"
-).set_provides(ArtifactNames.CH_ARM_BINARY, reset=True)
+).set_provides(ArtifactNames.CH_ARM_BINARY_GH, reset=True)
 
 # Fault run: Mon / Wed / Fri
 workflow = Workflow.Config(
@@ -18,6 +18,7 @@ workflow = Workflow.Config(
     ],
     artifacts=[
         *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.clickhouse_binaries_gh,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,

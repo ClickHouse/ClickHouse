@@ -212,8 +212,8 @@ class Validator:
             if workflow.enable_cache:
                 for artifact in workflow.artifacts or []:
                     assert (
-                        artifact.is_s3_artifact()
-                    ), f"All artifacts must be of S3 type if enable_cache|enable_html=True, artifact [{artifact.name}], type [{artifact.type}], workflow [{workflow.name}]"
+                        artifact.is_s3_artifact() or artifact.type == Artifact.Type.GH
+                    ), f"Artifacts must be S3 or GH type if enable_cache|enable_html=True, artifact [{artifact.name}], type [{artifact.type}], workflow [{workflow.name}]"
 
             if workflow.dockers and not workflow.disable_dockers_build:
                 assert (

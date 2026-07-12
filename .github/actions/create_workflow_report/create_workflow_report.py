@@ -311,12 +311,15 @@ def _find_rebase_baseline(branch_ref: str, cwd: str | None) -> str | None:
             "git",
             "log",
             branch_ref,
-            "--reverse",
+            "--first-parent",
+            "-n",
+            "1",
             "-i",
             "-E",
             "--grep=^Rebase CICD",
             "--grep=Merge pull request .*rebase-cicd",
             "--grep=Merge pull request .*from Altinity/rebase/",
+            "--grep=Merge pull request .*from Altinity/bump/",
             "--format=%H",
         ],
         cwd=cwd,
@@ -339,7 +342,7 @@ def get_prs_in_release_dataframe(
 ) -> pd.DataFrame:
     f"""
     PRs merged into branch_ref that belong in the next release notes: after the latest GitHub
-    Release tag on this history, or after the oldest rebase bootstrap if no such tag exists.
+    Release tag on this history, or after the latest bootstrap merge if no such tag exists.
     Only merge commits whose subject has from <repo_owner>/ (e.g. from Altinity/) are included.
     Columns: pr_number, pr_name, labels. Omits PRs labeled cicd.
     """
@@ -356,9 +359,9 @@ def get_prs_in_release_dataframe(
         check=False,
     )
 
-    baseline_ref, baseline_sha = _find_release_baseline(branch_ref, repo, cwd)
+    _, baseline_sha = _find_release_baseline(branch_ref, repo, cwd)
     if not baseline_sha:
-        # If no release tag, try to find rebase commit 500 commits back.
+        # If no release tag, search recent history for the latest branch bootstrap merge.
         subprocess.run(
             ["git", "fetch", "--deepen=500", "origin", branch_ref],
             cwd=cwd,

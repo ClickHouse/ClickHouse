@@ -1,0 +1,145 @@
+---
+description: Standardize deep feature-audit output and defect reporting
+alwaysApply: true
+---
+
+# Feature Audit Reporting Standard
+
+Use this format when the user asks for a deep audit, fault injection, or review of any feature/change.
+
+## Required Output
+
+- Report **confirmed defects only** first.
+- Classify each finding as **High**, **Medium**, or **Low**.
+- For each finding include:
+  - short title,
+  - concrete impact,
+  - exact file/function reference,
+  - brief proof sketch tied to code path,
+  - at least one **code snippet** that demonstrates the defect condition.
+- Include an **Assumptions & Limits** section for static reasoning:
+  - what was not executed at runtime,
+  - what could not be proven without dynamic testing.
+- Include **audit confidence**:
+  - overall confidence (High/Medium/Low),
+  - what additional evidence would raise confidence.
+
+## Severity Rubric (Required)
+
+- Use consistent severity scoring with these dimensions:
+  - impact on correctness/security/availability,
+  - likelihood under realistic workloads,
+  - blast radius,
+  - exploitability (if security-relevant).
+- Default guidance:
+  - **High**: crash/UB/data corruption/auth bypass/deadlock with realistic trigger.
+  - **Medium**: incorrect behavior or reliability risk requiring narrower preconditions.
+  - **Low**: diagnostics/consistency/maintainability issues without direct correctness break.
+
+## Required Analysis Dimensions
+
+- For very large PRs, require **functional partitioning** before deep analysis:
+  - split review scope into functionality/workstream partitions,
+  - run the full audit loop per partition,
+  - produce per-partition findings and coverage,
+  - deduplicate cross-partition findings by root cause,
+  - end with cross-partition interaction risks and overall summary.
+- Compute and document a **call graph** for changed code before defect analysis:
+  - entrypoints,
+  - dispatch/validation chain,
+  - state/cache/storage interactions,
+  - integration boundaries (network/filesystem/external services),
+  - error/exception propagation paths.
+- Cover full transition flow when relevant:
+  - entrypoint -> processing -> state updates -> outputs/side effects.
+- Include **logical testing of all code paths**:
+  - enumerate reachable branches in changed logic,
+  - define expected outcome per branch (success, handled failure, fail-open/fail-closed, exception),
+  - include malformed input, timeout/integration failure, and concurrency/timing branches.
+- Include **fault category planning before injection**:
+  - define feature-specific logical fault categories from the reviewed code,
+  - list category scope and key transitions affected,
+  - then execute fault injection **category by category** and report findings per category.
+- Require a **full fault-category completion matrix** on every deep audit:
+  - include all generated categories,
+  - process categories one-by-one in explicit order,
+  - mark each category as Executed / Not Applicable / Deferred,
+  - record pass/fail outcome and defects found per category,
+  - provide justification for every Not Applicable or Deferred category.
+- Include **invariant-first analysis**:
+  - define key invariants that must always hold,
+  - map each critical transition to invariant preservation checks.
+- Include **interleaving analysis** for multithreaded paths:
+  - document at least several plausible thread interleavings for shared-state transitions.
+- Include a **transition mapping** from defect to state transition.
+- Include a **logical fault-injection mapping** that shows which injected condition triggers each defect.
+- Include integration impact checks:
+  - config/load-time behavior,
+  - protocol/API behavior,
+  - concurrency/timing behavior,
+  - observability/logging behavior.
+- Include **coverage accounting**:
+  - call-graph nodes covered vs not covered,
+  - transitions reviewed vs not reviewed,
+  - fault categories executed vs skipped (with reason).
+- Include an explicit **coverage stop condition**:
+  - coverage is complete only when each in-scope call-graph node/transition/category is either reviewed or marked skipped with justification.
+- Include **error-contract consistency checks**:
+  - equivalent faults should have equivalent outcomes where intended (reject/exception/error code).
+- Include **performance/resource failure checks**:
+  - high-cardinality input, memory pressure implications, retry storms, lock contention hotspots.
+- Include **rollback/partial-update checks**:
+  - for each mutation sequence, verify state remains consistent if exceptions/cancellation occur mid-path.
+- For C++ codebases, include **major C++ bug-type coverage**:
+  - memory lifetime/use-after-free/use-after-move,
+  - iterator/reference invalidation,
+  - data races and lock-order/deadlock risks,
+  - exception-safety/partial-update hazards,
+  - integer overflow/underflow and signedness errors,
+  - ownership/resource leaks (RAII violations),
+  - undefined behavior from invalid casts/aliasing/lifetime.
+
+## Guardrails
+
+- Do not mix confirmed defects with hypotheticals.
+- Mark uncertain items explicitly as “not confirmed”.
+- Use fail-open/fail-closed language for security-sensitive paths when applicable.
+- Keep summaries concise and actionable.
+- For each confirmed defect, include minimal evidence schema:
+  - trigger condition,
+  - affected transition,
+  - why this is a defect (not just a design preference).
+- For each confirmed defect, also include:
+  - smallest logical reproduction steps,
+  - likely fix direction (one line),
+  - regression test direction (one line),
+  - affected subsystem and blast radius,
+  - code evidence snippet(s) from the referenced file(s).
+- Deduplicate findings by root cause:
+  - one primary defect per root cause, with secondary manifestations listed under it.
+- If no defects are found, explicitly report residual risks and untested paths.
+
+## Canonical Report Order (Required)
+
+1. Scope and partitions (if large PR)
+2. Call graph
+3. Transition matrix
+4. Logical code-path testing summary
+5. Fault categories and category-by-category injection results
+6. Confirmed defects (High/Medium/Low)
+7. Coverage accounting + stop-condition status
+8. Assumptions & Limits
+9. Confidence rating and confidence-raising evidence
+10. Residual risks and untested paths
+
+## Multithreaded DB Priority
+
+For this repository, prioritize concurrency/locking defects early in review because they can cause correctness failures, hangs, and crashes under production load.
+
+- Always check for:
+  - unsynchronized shared-state access and data races,
+  - lock-order inversions and deadlock potential,
+  - iterator/reference invalidation across concurrent mutation,
+  - exception paths that leave shared state partially updated,
+  - shutdown/reload races and stale-pointer/lifetime hazards.
+- Escalate race/deadlock/crash findings with high severity by default unless strong evidence shows limited impact.
