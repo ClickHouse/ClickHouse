@@ -17,7 +17,8 @@ void registerAggregateFunctionNothing(AggregateFunctionFactory & factory)
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionNothing>(argument_types, parameters);
         },
-        {}
+        {},
+        AggregateFunctionProperties{ .support_variant_argument = true }
     });
 
     factory.registerFunction(NameAggregateFunctionNothingNull::name, {
@@ -26,7 +27,8 @@ void registerAggregateFunctionNothing(AggregateFunctionFactory & factory)
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionNothingNull>(argument_types, parameters);
         },
-        {}
+        {},
+        AggregateFunctionProperties{ .support_variant_argument = true }
     });
 
 
@@ -37,7 +39,7 @@ void registerAggregateFunctionNothing(AggregateFunctionFactory & factory)
             return std::make_shared<AggregateFunctionNothingUInt64>(argument_types, parameters);
         },
         {},
-        AggregateFunctionProperties{ .returns_default_when_only_null = true }
+        AggregateFunctionProperties{ .returns_default_when_only_null = true, .support_variant_argument = true }
     });
 }
 

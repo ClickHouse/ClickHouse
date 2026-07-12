@@ -118,40 +118,43 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
     auto types_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
-    /// If one of the arguments is a Variant, and the requested function does not support it natively,
+    /// If one of the arguments is a Variant, and the requested function does not accept it natively,
     /// we aggregate over the least common supertype of the variants (see AggregateFunctionVariantAdapter).
     if (std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return isVariant(type); }))
     {
-        /// Window functions must handle their argument types themselves, so don't adapt them.
         auto properties = tryGetProperties(name, action);
+        /// Window functions must handle their argument types themselves, so don't adapt them.
         bool is_window_function = properties.has_value() && properties->is_window_function;
         if (!is_window_function)
         {
-            std::exception_ptr native_error;
-            try
+            /// Whether the function accepts a Variant argument natively is declared by
+            /// AggregateFunctionProperties::support_variant_argument, so we do not need to attempt native
+            /// resolution and catch its failure to find out. A function that does not accept a Variant natively
+            /// goes straight to the adapter below; one that does is resolved natively first. argMin / argMax
+            /// accept a Variant only in the returned "arg" and reject it in the comparison key, so a function
+            /// that resolves natively for some Variant positions but not the given ones still falls through to
+            /// the adapter, which adapts only the rejected positions.
+            bool supports_variant_natively = properties.has_value() && properties->support_variant_argument;
+            if (supports_variant_natively)
             {
-                /// The Variant is present in the top-level arguments, so the adapter (if needed) is applied here as
-                /// the outermost wrapper via tryGetVariantAdapter below; do not let combinators apply it again inside.
-                return getWithoutVariantAdapter(
-                    name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
-                    /*apply_variant_adapter_to_nested=*/ false);
-            }
-            catch (const Exception & e)
-            {
-                /// A creator may reject the Variant argument with any of a few "unsupported type" error codes, not
-                /// only ILLEGAL_TYPE_OF_ARGUMENT (see isUnsupportedArgumentTypeError); all of them are worth retrying
-                /// through the adapter. Anything else is a genuine failure and must propagate.
-                if (!isUnsupportedArgumentTypeError(e.code()))
-                    throw;
-                native_error = std::current_exception();
+                /// The Variant is present in the top-level arguments, so the adapter (if needed) is applied here
+                /// as the outermost wrapper via tryGetVariantAdapter below; do not let combinators apply it again
+                /// inside. tryResolveNatively returns nullptr when the function rejects the given Variant
+                /// positions (e.g. argMin with a Variant comparison key), so we fall through to the adapter.
+                if (auto native = tryResolveNatively(
+                        name, action, types_without_low_cardinality, parameters, out_properties, state_variant))
+                    return native;
             }
 
             if (auto adapter = tryGetVariantAdapter(name, action, types_without_low_cardinality, parameters, out_properties, state_variant))
                 return adapter;
 
-            /// The Variant cannot be aggregated via its supertype either; report the original error.
-            std::rethrow_exception(native_error);
+            /// Neither native resolution nor the supertype adapter can handle the Variant argument. Resolve
+            /// natively once more so the function's original, specific error is reported unchanged.
+            return getWithoutVariantAdapter(
+                name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
+                /*apply_variant_adapter_to_nested=*/ false);
         }
     }
 
@@ -208,6 +211,32 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
     return with_original_arguments;
+}
+
+AggregateFunctionPtr AggregateFunctionFactory::tryResolveNatively(
+    const String & name,
+    NullsAction action,
+    const DataTypes & types_without_low_cardinality,
+    const Array & parameters,
+    AggregateFunctionProperties & out_properties,
+    AggregateFunctionStateVariant state_variant) const
+{
+    try
+    {
+        return getWithoutVariantAdapter(
+            name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
+            /*apply_variant_adapter_to_nested=*/ false);
+    }
+    catch (const Exception & e)
+    {
+        /// A creator may reject an unsupported argument type with any of a few error codes, not only
+        /// ILLEGAL_TYPE_OF_ARGUMENT (see isUnsupportedArgumentTypeError). For our purposes all of them mean "the
+        /// function does not accept these argument types", not a hard failure. Any other error is genuine and
+        /// must propagate.
+        if (isUnsupportedArgumentTypeError(e.code()))
+            return nullptr;
+        throw;
+    }
 }
 
 AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
@@ -346,20 +375,7 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     /// place is one the function accepts natively, so combinators need not (and must not) apply the adapter again.
     auto try_resolve = [&](const DataTypes & nested) -> AggregateFunctionPtr
     {
-        try
-        {
-            return getWithoutVariantAdapter(
-                name, action, nested, parameters, out_properties, state_variant,
-                /*apply_variant_adapter_to_nested=*/ false);
-        }
-        catch (const Exception & e)
-        {
-            /// Same set of "unsupported type" error codes as the top-level retry in getImpl: a creator that rejects
-            /// the (partially) adapted types with any of them means "these types do not resolve", not a hard error.
-            if (isUnsupportedArgumentTypeError(e.code()))
-                return nullptr;
-            throw;
-        }
+        return tryResolveNatively(name, action, nested, parameters, out_properties, state_variant);
     };
 
     /// Adapt every Variant argument by default. Most functions accept a Variant in none of their positions, so this is

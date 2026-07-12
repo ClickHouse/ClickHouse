@@ -458,7 +458,7 @@ SELECT groupArraySorted(5)(str) FROM (SELECT toString(number) AS str FROM number
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = false };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = false, .support_variant_argument = true };
 
     factory.registerFunction("groupArraySorted", { createAggregateFunctionGroupArray, documentation, properties });
 }

@@ -973,6 +973,17 @@ struct AggregateFunctionProperties
 
     /// Indicates if it's actually window function.
     bool is_window_function = false;
+
+    /** The function accepts a `Variant` argument natively, i.e. its creator resolves the function over a
+      * `Variant` argument type without the help of `AggregateFunctionVariantAdapter` (`count`, `any`, `uniq`,
+      * `groupArray`, and the returned "arg" of `argMin` / `argMax`, ...). This is a resolution-time property:
+      * the function may still reject the `Variant` later during execution, exactly as it did before.
+      *
+      * When this is false, `AggregateFunctionFactory::get()` sends a `Variant` argument straight to the
+      * adapter (which aggregates over the least common supertype of the variants) instead of first attempting
+      * native resolution and catching its failure. See `AggregateFunctionVariantAdapter`.
+      */
+    bool support_variant_argument = false;
 };
 
 

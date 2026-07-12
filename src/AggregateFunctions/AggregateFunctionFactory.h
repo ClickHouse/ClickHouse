@@ -137,6 +137,18 @@ private:
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant) const;
 
+    /// Resolve the function over `types_without_low_cardinality` without the Variant adapter, returning nullptr
+    /// if the creator rejects them with an "unsupported argument type" error (any other error propagates). This
+    /// encapsulates the "does the function accept these argument types" probe, so callers can branch on native
+    /// acceptance without a raw try/catch. `types_without_low_cardinality` must already have LowCardinality removed.
+    AggregateFunctionPtr tryResolveNatively(
+        const String & name,
+        NullsAction action,
+        const DataTypes & types_without_low_cardinality,
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionStateVariant state_variant) const;
+
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using ActionMap = NameToNameMap;
 
