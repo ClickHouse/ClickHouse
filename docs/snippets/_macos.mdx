@@ -9,12 +9,10 @@ We recommend using the [quick install](/get-started/setup/self-managed/quick-ins
 </Warning>
 
 <Steps>
-<Step>
-## Review recommendations {#review-recommendations}
+<Step title="Review recommendations" id="review-recommendations">
 <Recommendations />
 </Step>
-<Step>
-## Install using the community Homebrew formula {#install-using-community-homebrew-formula}
+<Step title="Install using the community Homebrew formula" id="install-using-community-homebrew-formula">
 To install ClickHouse on macOS using [Homebrew](https://brew.sh/), you can use
 the ClickHouse community [homebrew formula](https://formulae.brew.sh/cask/clickhouse).
 
@@ -22,8 +20,7 @@ the ClickHouse community [homebrew formula](https://formulae.brew.sh/cask/clickh
 brew install --cask clickhouse
 ```
 </Step>
-<Step>
-## Fix the developer verification error in macOS {#fix-developer-verification-error-macos}
+<Step title="Fix the developer verification error in macOS" id="fix-developer-verification-error-macos">
 If you install ClickHouse using `brew`, you may encounter an error from MacOS.
 By default, MacOS won't run applications or tools created by a developer who can't be verified.
 
@@ -87,8 +84,7 @@ clickhouse client [args]
 clickhouse benchmark [args]
 ```
 </Step>
-<Step>
-## Fix the issue by reinstalling ClickHouse {#fix-issue}
+<Step title="Fix the issue by reinstalling ClickHouse" id="fix-issue">
 Brew has a command-line option which avoids quarantining installed binaries in the first place.
 
 First, uninstall ClickHouse:

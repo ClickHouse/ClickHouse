@@ -2215,10 +2215,6 @@
                     }
                   ],
                   "root": "ar/products/cloud/guides/index"
-                },
-                {
-                  "group": "مرجع واجهة برمجة التطبيقات",
-                  "openapi": "https://api.clickhouse.cloud/v1"
                 }
               ]
             },

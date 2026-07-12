@@ -28,6 +28,8 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
 private:
     void updateOutputHeader() override;
 
