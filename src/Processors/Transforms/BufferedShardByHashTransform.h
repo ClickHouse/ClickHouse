@@ -96,8 +96,10 @@ private:
     /// finished output); release the block's charge once its last shard chunk is gone.
     void releaseQueuedChunk(size_t block_id);
     /// Release the charge for a chunk parked in an output port once the downstream merge has pulled it
-    /// (`OutputPort::hasData()` is false again) or the output finished and discarded it. A pushed chunk stays
-    /// resident in the port state until the merge pulls it, so its bytes must remain counted until then.
+    /// (`OutputPort::hasData()` is false again) or the downstream closed the port without pulling, making the
+    /// chunk unreachable. A pushed chunk stays resident in the port state until the merge pulls it, so its
+    /// bytes must remain counted until then; the transform never finishes a port that still holds a parked
+    /// chunk and never returns Finished while one remains (see the EOF drain in prepare()).
     void reclaimPortResidentChunks();
 
     /// Charge/release the just-pulled input chunk against the shared budget. Charging happens the moment

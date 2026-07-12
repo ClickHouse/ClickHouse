@@ -73,11 +73,18 @@ void BufferedShardByHashTransform::releaseQueuedChunk(size_t block_id)
 void BufferedShardByHashTransform::reclaimPortResidentChunks()
 {
     /// A chunk pushed to an output port stays buffered in the port state until the downstream merge pulls it
-    /// (`hasData()` flips back to false) or the output finishes and the chunk is discarded. Releasing its
-    /// charge any earlier (e.g. when it left the local queue) would let bytes still resident between the
-    /// scatter and the merge escape the shared budget: a block that hashes entirely to one shard could park a
-    /// full block in each of the `num_shards` ports while the counter reads zero, defeating
-    /// `aggregation_in_order_shuffle_max_buffered_bytes`.
+    /// (`hasData()` flips back to false). Releasing its charge any earlier (e.g. when it left the local
+    /// queue) would let bytes still resident between the scatter and the merge escape the shared budget: a
+    /// block that hashes entirely to one shard could park a full block in each of the `num_shards` ports
+    /// while the counter reads zero, defeating `aggregation_in_order_shuffle_max_buffered_bytes`.
+    ///
+    /// A parked chunk on a *finished* port can only mean the downstream closed the port without pulling
+    /// (cancellation, LIMIT): OutputPort::finish() and InputPort::close() both set the same IS_FINISHED
+    /// flag, but this transform never finishes a port that still holds a parked chunk (see the EOF drain in
+    /// prepare()) and never pushes to a finished port, so IS_FINISHED here is always the downstream's doing.
+    /// Such a chunk is unreachable - nothing can pull it, its memory is freed only at pipeline teardown - so
+    /// its charge is released rather than kept: keeping it could only make sibling scatters throw for bytes
+    /// nobody can reclaim, while that subtree of the pipeline is shutting down anyway.
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
@@ -167,20 +174,33 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     /// Input exhausted - drain remaining queues, then finish.
     if (input.isFinished())
     {
-        /// No more input will arrive, so finish every output whose queue is already drained. This is
+        /// No more input will arrive, so finish every output that has nothing left buffered. This is
         /// essential when a downstream *sorted* merge consumes the shards: a merge waits for EOF (or data)
         /// on every open input, and different shards drain at different times, so an already-empty output
         /// left open would make the merge wait forever while this scatter still holds data for other shards.
-        bool any_queue_non_empty = false;
+        ///
+        /// An output whose queue is empty but whose port still holds a parked chunk must NOT be finished
+        /// yet: OutputPort::finish() only marks the port finished, it does not discard the parked chunk
+        /// (the merge still sees the data and will pull it before observing EOF). Finishing now would make
+        /// reclaimPortResidentChunks - which must treat IS_FINISHED as "downstream closed the port, the
+        /// chunk is unreachable" - release the chunk's budget charge while its bytes are still resident
+        /// between the scatter and the merge, under-counting the shared budget. The merge is not stalled by
+        /// the delay: the parked chunk is data on that lane, and pulling it re-runs this prepare(), which
+        /// then finishes the emptied port.
+        bool fully_drained = true;
         auto drain_it = outputs.begin();
         for (size_t shard = 0; shard < num_shards; ++shard, ++drain_it)
         {
-            if (output_queues[shard].empty())
+            if (output_queues[shard].empty() && !port_resident_block[shard].has_value())
                 drain_it->finish();
             else
-                any_queue_non_empty = true;
+                fully_drained = false;
         }
-        if (!any_queue_non_empty)
+        /// Likewise, do not return Finished while a chunk is still parked in a port: this processor would
+        /// never run again, so the chunk's budget charge would stay in the shared counter forever and
+        /// sibling scatters would trip the budget spuriously. Wait for the merge to pull the parked chunks
+        /// (each pull re-runs prepare()); the last pass releases every charge and finishes every port.
+        if (fully_drained)
             return Status::Finished;
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
     }
