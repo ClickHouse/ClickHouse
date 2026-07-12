@@ -472,8 +472,13 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if ((which_type.isUUID() || which_type.isUUID2()) && src.getType() == Field::Types::UUID)
     {
-        /// Already in needed type. `UUID` and `UUID2` share the `Field` representation; the value is expected to
-        /// already be in the target type's encoding (e.g. parsed by the target type's serialization above).
+        /// `UUID` and `UUID2` share the `Field` representation (`Field::Types::UUID`), but they store the value in
+        /// different layouts that differ only by swapping the two 64-bit halves: `UUID` keeps the historical layout,
+        /// while `UUID2` keeps the big-endian, correctly-sorting one. When the source constant came from the other
+        /// type - which we can tell only from `from_type_hint` - swap the halves so the value matches the destination
+        /// encoding; otherwise (same type, or no hint) it is expected to be already in the needed layout.
+        if ((which_type.isUUID() && which_from_type.isUUID2()) || (which_type.isUUID2() && which_from_type.isUUID()))
+            return UUIDHelpers::swapHalves(src.safeGet<UUID>());
         return src;
     }
     else if (which_type.isIPv6())
