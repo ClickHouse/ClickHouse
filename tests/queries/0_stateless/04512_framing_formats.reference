@@ -52,8 +52,16 @@ Unknown framing format Unknown
 --- framing is rejected for formats that defer totals and extremes to finalize (Template)
 is not compatible with framing formats
 --- text framings are rejected for binary output formats (EventStream + Native)
-is not compatible with the binary output format Native
+is not compatible with the output format Native
 --- text framings are rejected for binary output formats (JSONEachPacketString + RowBinary)
-is not compatible with the binary output format RowBinary
+is not compatible with the output format RowBinary
+--- text framings are rejected for always-raw output formats (EventStream + RawBLOB)
+is not compatible with the output format RawBLOB
+--- text framings are rejected for text-labeled raw output formats (JSONEachPacketString + TSVRaw)
+is not compatible with the output format TSVRaw
+--- text framings are rejected for text-labeled raw output formats (EventStream + LineAsString)
+is not compatible with the output format LineAsString
 --- JSONEachPacketBase64 carries binary output formats (Native)
+1
+--- JSONEachPacketBase64 carries raw output formats (RawBLOB)
 1

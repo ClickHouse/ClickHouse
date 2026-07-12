@@ -2455,12 +2455,19 @@ namespace
 /// and profile events packets in a single output stream. They are currently implemented
 /// for the HTTP protocol only and are ignored for other interfaces.
 /// Whether the output format produces valid UTF-8 text. Text framings (see `requiresTextPayload`)
-/// embed the payload as text and can only be used with such formats. We rely on the content type:
-/// text formats declare a charset (e.g. `text/tab-separated-values; charset=UTF-8`,
-/// `application/json; charset=UTF-8`), while binary formats use types such as
-/// `application/octet-stream` without a charset.
+/// embed the payload as text and can only be used with such formats.
+///
+/// Binary formats (such as `Native` or `RowBinary`) are detected by their content type: text formats
+/// declare a charset (e.g. `text/tab-separated-values; charset=UTF-8`, `application/json; charset=UTF-8`),
+/// while binary formats use types such as `application/octet-stream` without a charset.
+///
+/// The content type alone is not sufficient: raw passthrough formats (`RawBLOB`, `TSVRaw`, `LineAsString`)
+/// advertise a textual content type but write the column bytes verbatim, which are not guaranteed to be
+/// valid UTF-8. They are marked with `markOutputFormatMayProduceRawBytes` and rejected explicitly.
 bool outputFormatProducesText(const String & format_name, const std::optional<FormatSettings> & output_format_settings)
 {
+    if (FormatFactory::instance().checkIfOutputFormatMayProduceRawBytes(format_name))
+        return false;
     const String content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
     return content_type.starts_with("text/") || content_type.find("charset=") != String::npos;
 }
@@ -2481,14 +2488,17 @@ FramingFormatPtr createFramingFormatIfApplicable(
     FormatSettings format_settings = output_format_settings ? *output_format_settings : getFormatSettings(context);
     auto framing = createFramingFormat(framing_name, ostr, format_settings, {.is_http = true});
 
-    /// A text framing embeds the raw output bytes as UTF-8 text, so a binary output format
-    /// (such as `Native` or `RowBinary`) would produce invalid output. Reject it instead and
-    /// point to `JSONEachPacketBase64`, which encodes arbitrary bytes safely.
+    /// A text framing embeds the output bytes as UTF-8 text, so an output format that can produce
+    /// non-textual output would corrupt the stream. This includes binary formats (such as `Native`
+    /// or `RowBinary`) as well as raw passthrough formats (`RawBLOB`, `TSVRaw`, `LineAsString`) that
+    /// write the column bytes verbatim. Reject it instead and point to `JSONEachPacketBase64`, which
+    /// encodes arbitrary bytes safely.
     if (framing->requiresTextPayload() && !outputFormatProducesText(format_name, output_format_settings))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The framing format {} embeds the output as text and is not compatible with the binary output format {}. "
-            "Use the JSONEachPacketBase64 framing format for binary output formats.",
+            "The framing format {} embeds the output as text and is not compatible with the output format {}, "
+            "which is not guaranteed to produce valid UTF-8 text. "
+            "Use the JSONEachPacketBase64 framing format, which encodes arbitrary bytes safely.",
             framing->getName(),
             format_name);
 

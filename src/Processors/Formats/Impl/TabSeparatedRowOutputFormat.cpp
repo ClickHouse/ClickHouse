@@ -97,6 +97,11 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             factory.markOutputFormatSupportsParallelFormatting(format_name);
             /// https://www.iana.org/assignments/media-types/text/tab-separated-values
             factory.setContentType(format_name, "text/tab-separated-values; charset=UTF-8");
+
+            /// The raw variants write the column values verbatim (`serializeTextRaw`, no escaping),
+            /// so the output is not guaranteed to be valid UTF-8 text despite the textual content type.
+            if (is_raw)
+                factory.markOutputFormatMayProduceRawBytes(format_name);
         };
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);

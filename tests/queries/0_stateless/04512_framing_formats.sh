@@ -92,14 +92,36 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
 echo '--- text framings are rejected for binary output formats (EventStream + Native)'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream" \
     -d "SELECT number FROM numbers(3) FORMAT Native" \
-    | grep -o -m1 'is not compatible with the binary output format Native'
+    | grep -o -m1 'is not compatible with the output format Native'
 
 echo '--- text framings are rejected for binary output formats (JSONEachPacketString + RowBinary)'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d "SELECT number FROM numbers(3) FORMAT RowBinary" \
-    | grep -o -m1 'is not compatible with the binary output format RowBinary'
+    | grep -o -m1 'is not compatible with the output format RowBinary'
+
+# Raw passthrough formats advertise a textual content type but write the column bytes verbatim, so the
+# output is not guaranteed to be valid UTF-8. They must be rejected for text framings just like binary formats.
+echo '--- text framings are rejected for always-raw output formats (EventStream + RawBLOB)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream" \
+    -d "SELECT toString(number) FROM numbers(3) FORMAT RawBLOB" \
+    | grep -o -m1 'is not compatible with the output format RawBLOB'
+
+echo '--- text framings are rejected for text-labeled raw output formats (JSONEachPacketString + TSVRaw)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT number FROM numbers(3) FORMAT TSVRaw" \
+    | grep -o -m1 'is not compatible with the output format TSVRaw'
+
+echo '--- text framings are rejected for text-labeled raw output formats (EventStream + LineAsString)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream" \
+    -d "SELECT toString(number) FROM numbers(3) FORMAT LineAsString" \
+    | grep -o -m1 'is not compatible with the output format LineAsString'
 
 echo '--- JSONEachPacketBase64 carries binary output formats (Native)'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketBase64${SINGLE_BLOCK}" \
     -d "SELECT number FROM numbers(3) FORMAT Native" \
+    | grep -c '"packet":"data"'
+
+echo '--- JSONEachPacketBase64 carries raw output formats (RawBLOB)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketBase64${SINGLE_BLOCK}" \
+    -d "SELECT toString(number) FROM numbers(3) FORMAT RawBLOB" \
     | grep -c '"packet":"data"'

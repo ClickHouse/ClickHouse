@@ -181,6 +181,11 @@ private:
         bool supports_parallel_formatting{false};
         bool prefers_large_blocks{false};
         bool is_tty_friendly{true}; /// If false, client will ask before output in the terminal.
+        /// If true, the output can contain arbitrary bytes that are not guaranteed to be valid UTF-8 text
+        /// (raw passthrough formats such as `RawBLOB`, `TSVRaw`, `LineAsString`). Such output cannot be
+        /// embedded into a text framing format (see `IFramingFormat::requiresTextPayload`), even though the
+        /// format advertises a textual content type. Binary formats are detected by their content type instead.
+        bool may_produce_raw_bytes{false};
         ContentTypeGetter content_type = [](const std::optional<FormatSettings> &){ return "text/plain; charset=UTF-8"; };
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
@@ -337,6 +342,7 @@ public:
     void markOutputFormatSupportsParallelFormatting(const String & name);
     void markOutputFormatPrefersLargeBlocks(const String & name);
     void markOutputFormatNotTTYFriendly(const String & name);
+    void markOutputFormatMayProduceRawBytes(const String & name);
 
     void setContentType(const String & name, const String & content_type);
     void setContentType(const String & name, ContentTypeGetter content_type);
@@ -353,6 +359,7 @@ public:
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
     bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
+    bool checkIfOutputFormatMayProduceRawBytes(const String & name) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
 
