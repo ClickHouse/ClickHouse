@@ -941,6 +941,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             String substrait_json = serializer.serializePlanToJSON(plan);
             buf.write(substrait_json.data(), substrait_json.size());
             single_line = true;
+            break;
+        }
         case ASTExplainQuery::WhatIf:
         {
             const auto & query_ast = ast.getExplainedQuery();
