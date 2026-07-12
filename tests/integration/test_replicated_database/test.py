@@ -1411,7 +1411,16 @@ def test_replicated_table_structure_alter(started_cluster):
 
     dummy_node.query("ATTACH DATABASE table_structure")
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
-    dummy_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
+    # Recovery converges the kept matching-UUID table structure by enqueueing a synthetic ALTER_METADATA
+    # with an empty source_replica. Drain it via SYSTEM SYNC REPLICA ... FROM '<other replica>' to also
+    # exercise the wait path: ReplicatedMergeTreeQueue::addSubscriber always waits for entries with an empty
+    # source_replica, so the query must not return before the missed metadata is applied. Had the synthetic
+    # entry carried our own replica name instead of an empty one, FROM would skip waiting for it and the
+    # structure could still be stale at the assert below.
+    src_replica = main_node.query(
+        "SELECT replica_name FROM system.replicas WHERE database='table_structure' AND table='rmt'"
+    ).strip()
+    dummy_node.query(f"SYSTEM SYNC REPLICA table_structure.rmt FROM '{src_replica}'")
     assert "1\t2\t3\n" == dummy_node.query("SELECT * FROM table_structure.rmt")
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
