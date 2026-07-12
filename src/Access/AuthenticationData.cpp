@@ -499,23 +499,28 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         if (context)
             grants.replaceEmptyDatabase(context->getCurrentDatabase());
 
+        /// Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported here yet.
+        /// The session limit is applied as `AccessRights::makeIntersection`, which treats a source filter
+        /// as an opaque string, so it cannot represent the semantic intersection of two different filters.
+        /// A narrowing token like user `READ ON S3('s3://bucket/.*')` limited to `READ ON S3('s3://bucket/private/.*')`
+        /// would silently collapse to no access unless the two filter strings were byte-identical. Reject such
+        /// grants explicitly (fail-close) instead of granting nothing surprisingly.
+        ///
+        /// This check runs regardless of `validate` (i.e. also on the `ATTACH USER` path). Unlike the generic
+        /// `AccessRights` validation below, it is not compatibility-sensitive: the GRANTS clause is a new feature,
+        /// so no older server could have stored a filtered grant that we would now have to accept. Keeping the
+        /// check unconditional prevents `ATTACH USER ... GRANTS (READ ON S3('...'))` from becoming a bypass.
+        for (const auto & element : grants)
+        {
+            if (element.hasFilter())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Filtered source grants are not supported in the GRANTS clause of an authentication method yet: {}",
+                    element.toStringWithoutOptions());
+        }
+
         if (validate)
         {
-            /// Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported here yet.
-            /// The session limit is applied as `AccessRights::makeIntersection`, which treats a source filter
-            /// as an opaque string, so it cannot represent the semantic intersection of two different filters.
-            /// A narrowing token like user `READ ON S3('s3://bucket/.*')` limited to `READ ON S3('s3://bucket/private/.*')`
-            /// would silently collapse to no access unless the two filter strings were byte-identical. Reject such
-            /// grants explicitly (fail-close) instead of granting nothing surprisingly.
-            for (const auto & element : grants)
-            {
-                if (element.hasFilter())
-                    throw Exception(
-                        ErrorCodes::NOT_IMPLEMENTED,
-                        "Filtered source grants are not supported in the GRANTS clause of an authentication method yet: {}",
-                        element.toStringWithoutOptions());
-            }
-
             /// Check that the elements can form access rights (throws otherwise).
             [[maybe_unused]] AccessRights access_rights_for_validation{grants};
         }
