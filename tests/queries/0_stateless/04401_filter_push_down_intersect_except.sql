@@ -153,3 +153,15 @@ DROP TABLE t_intex_reuse_r;
 -- relaxed contract. https://github.com/ClickHouse/ClickHouse/issues/110113
 SELECT 'block mismatch', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY NULL)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 1;
 SELECT 'block mismatch off', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY NULL)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0;
+
+-- A branch with WITH TOTALS emits a totals port. IntersectOrExceptTransform consumes only the main
+-- ports and uniformizes them to its output header, but the totals port bypasses the transform. When
+-- a branch constant-folds a set-key column (NULL AS x), pushing the top filter into that branch left
+-- the main port Const while the totals port stayed full, so a downstream Main-only transform (the
+-- outer DISTINCT) compared a Const main port against a full totals port and aborted with a "Block
+-- structure mismatch in QueryPipeline stream". The pushdown must be skipped when a branch emits
+-- totals. Both directions must agree. https://github.com/ClickHouse/ClickHouse/issues/110113
+SELECT 'totals except', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL EXCEPT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 1;
+SELECT 'totals except off', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL EXCEPT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0;
+SELECT 'totals intersect', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 1;
+SELECT 'totals intersect off', count() FROM (SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x GROUP BY 1, NULL INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY 'z', NULL WITH TOTALS)) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0;

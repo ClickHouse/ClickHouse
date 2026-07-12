@@ -127,6 +127,27 @@ static bool outputIsPassThroughInput(const ActionsDAG::Node * node)
     return node && node->type == ActionsDAG::ActionType::INPUT;
 }
 
+/// True if the subplan rooted at `node` contains a step that emits a totals port
+/// (WITH TOTALS / CUBE / ROLLUP). IntersectOrExceptTransform consumes only the main ports and
+/// uniformizes their structure to the output header, but the totals port bypasses the transform
+/// (unitePipes forwards a single branch totals port verbatim). Pushing a filter into a branch
+/// re-evaluates the predicate on that branch's ports and can leave the main port constant-folded
+/// (e.g. NULL AS x) while the totals port stays full, so a downstream Main-only transform
+/// (DISTINCT, ORDER BY) compares a Const main port against a full totals port and aborts with a
+/// "Block structure mismatch". Skip the pushdown for such branches.
+static bool subplanEmitsTotals(const QueryPlan::Node * node)
+{
+    if (!node || !node->step)
+        return false;
+    const auto & name = node->step->getName();
+    if (name == "TotalsHaving" || name == "Cube" || name == "Rollup")
+        return true;
+    for (const auto * child : node->children)
+        if (subplanEmitsTotals(child))
+            return true;
+    return false;
+}
+
 /// Assert that `node->children` has at least `child_num` elements
 static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
 {
@@ -1279,6 +1300,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Variant/Dynamic column that is only projected through to the output.
         if (filterMayThrow(*filter))
             return 0;
+
+        /// If any branch emits a totals port (WITH TOTALS / CUBE / ROLLUP), the pushed-down filter
+        /// can leave that branch's main port constant-folded while its totals port stays full; a
+        /// downstream Main-only transform then aborts with a "Block structure mismatch". Skip.
+        for (const auto * branch : child_node->children)
+            if (subplanEmitsTotals(branch))
+                return 0;
 
         /// IntersectOrExcept compares whole rows positionally: its entire header is the set key.
         /// The pushed filter's output header becomes the new branch/set-key header. Dropping any

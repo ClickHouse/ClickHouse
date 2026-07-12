@@ -22,3 +22,7 @@ reuse on	3
 reuse off	3
 block mismatch	0
 block mismatch off	0
+totals except	0
+totals except off	0
+totals intersect	0
+totals intersect off	0
