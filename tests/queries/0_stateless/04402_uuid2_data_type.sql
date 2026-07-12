@@ -109,6 +109,16 @@ SELECT
     mapAdd(map(s::UUID2, 1::UInt64), map(s::UUID2, 2::UInt64))[s::UUID2],
     mapSubtract(map(s::UUID2, 5::UInt64), map(s::UUID2, 2::UInt64))[s::UUID2];
 
+SELECT '-- -Map aggregate combinator on Map(UUID2, ...) keys';
+-- `uuid_type_version = 2` materializes nested `UUID` map keys to `UUID2`, so the `-Map` aggregate
+-- combinator must dispatch `UUID2` keys the same way as `UUID` and preserve the key type in the result.
+WITH '61f0c404-5cb3-11e7-907b-a6006ad3dba0' AS s1, '00000000-0000-0000-0000-000000000001' AS s2
+SELECT
+    toTypeName(sumMap(m)),
+    sumMap(m)[s1::UUID2],
+    sumMap(m)[s2::UUID2]
+FROM (SELECT map(s1::UUID2, 1::UInt64, s2::UUID2, 10::UInt64) AS m FROM numbers(3));
+
 SELECT '-- generateRandom produces UUID2';
 SELECT count() FROM (SELECT * FROM generateRandom('x UUID2', 1, 1, 1) LIMIT 5);
 

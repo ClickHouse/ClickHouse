@@ -56,6 +56,8 @@ e	Nullable(UUID2)
 1	1	1	1	1
 -- mapAdd / mapSubtract on Map(UUID2, ...) keys (nested UUID materialization parity)
 Map(UUID2, UInt64)	3	3
+-- -Map aggregate combinator on Map(UUID2, ...) keys
+Map(UUID2, UInt64)	3	30
 -- generateRandom produces UUID2
 5
 -- bloom_filter skip index on UUID2
