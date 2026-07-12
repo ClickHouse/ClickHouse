@@ -8,6 +8,8 @@ res INTERSECT DISTINCT	5
 res EXCEPT ALL	5
 variant except	1
 variant intersect	1
+proj variant except	2
+proj variant intersect	2
 intdiv except	1
 intdiv intersect	0
 count except	1

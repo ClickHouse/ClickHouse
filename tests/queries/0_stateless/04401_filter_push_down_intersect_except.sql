@@ -2,6 +2,12 @@
 -- branch, exactly as for UNION ALL, so each input prunes with its own index.
 -- https://github.com/ClickHouse/ClickHouse/issues/110113
 
+-- This targets the new-analyzer query-plan filter pushdown (query_plan_filter_push_down into
+-- IntersectOrExceptStep) and uses new-analyzer-only syntax such as (subquery)(c0). The old
+-- analyzer has its own AST-level predicate pushdown, so pin the analyzer on to keep the test
+-- stable under the old-analyzer CI runner.
+SET enable_analyzer = 1;
+
 -- Parallel replicas replace ReadFromMergeTree with a remote read step, changing the
 -- plan shape the EXPLAIN assertions below inspect; pin it off for a stable local plan.
 SET enable_parallel_replicas = 0;
@@ -63,6 +69,26 @@ SELECT 'variant except', count() FROM (SELECT c0 FROM t_intex_var_l EXCEPT ALL S
 SELECT 'variant intersect', count() FROM (SELECT c0 FROM t_intex_var_l INTERSECT ALL SELECT c0 FROM t_intex_var_r) WHERE variantElement(c0, 'UInt64') = 0;
 DROP TABLE t_intex_var_l;
 DROP TABLE t_intex_var_r;
+
+-- The guard rejects a Variant/Dynamic value only when it is CONSUMED by a filter function, not when
+-- it is merely projected through to the output. A Variant column carried past the set operation while
+-- the predicate filters on an ordinary key (a = 5) cannot raise an eliminated-row exception, so the
+-- key-condition pushdown must still reach both branches. https://github.com/ClickHouse/ClickHouse/issues/110113
+DROP TABLE IF EXISTS t_intex_pv_l;
+DROP TABLE IF EXISTS t_intex_pv_r;
+CREATE TABLE t_intex_pv_l (a UInt64, v Variant(String, UInt64)) ENGINE = MergeTree ORDER BY a SETTINGS allow_experimental_variant_type = 1;
+CREATE TABLE t_intex_pv_r (a UInt64, v Variant(String, UInt64)) ENGINE = MergeTree ORDER BY a SETTINGS allow_experimental_variant_type = 1;
+INSERT INTO t_intex_pv_l SELECT number, number::UInt64 FROM numbers(1000);
+INSERT INTO t_intex_pv_r SELECT number, number::UInt64 FROM numbers(1000);
+-- Variant only projected, predicate a = 5 (safe): pushdown fires on both branches (count = 2).
+SELECT 'proj variant except', count() FROM
+(EXPLAIN indexes = 1 SELECT a, v FROM (SELECT a, v FROM t_intex_pv_l EXCEPT ALL SELECT a, v FROM t_intex_pv_r) WHERE a = 5)
+WHERE explain ILIKE '%Condition:%a in [5, 5]%';
+SELECT 'proj variant intersect', count() FROM
+(EXPLAIN indexes = 1 SELECT a, v FROM (SELECT a, v FROM t_intex_pv_l INTERSECT ALL SELECT a, v FROM t_intex_pv_r) WHERE a = 5)
+WHERE explain ILIKE '%Condition:%a in [5, 5]%';
+DROP TABLE t_intex_pv_l;
+DROP TABLE t_intex_pv_r;
 
 -- A deterministic predicate can still throw on some values: intDiv(1, c0) throws on a c0 = 0 row.
 -- INTERSECT/EXCEPT remove that row before the top filter runs, so without the optimization the

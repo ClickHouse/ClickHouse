@@ -59,19 +59,6 @@ static bool typeIsOrContainsDynamic(const IDataType & type)
     return found;
 }
 
-/// True if any input column of the filter has a Variant/Dynamic type. Such a filter can throw
-/// at runtime depending on the concrete alternative a row carries, so pushing it below a
-/// row-eliminating step (INTERSECT/EXCEPT) may surface errors the unoptimized plan never does.
-static bool filterInputsHaveDynamicType(const FilterStep & filter)
-{
-    for (const auto & input : filter.getExpression().getInputs())
-    {
-        if (input->result_type && typeIsOrContainsDynamic(*input->result_type))
-            return true;
-    }
-    return false;
-}
-
 /// True if the filter predicate may throw at runtime for some argument values, so it is unsafe to
 /// clone below a row-eliminating step (INTERSECT/EXCEPT): the pushed filter would then be evaluated
 /// on branch rows the set operation removes, surfacing an error the unoptimized plan never produces
@@ -112,9 +99,17 @@ static bool filterMayThrow(const FilterStep & filter)
 
         /// Even whitelisted comparisons throw DECIMAL_OVERFLOW on decimal arguments with a scale
         /// mismatch (Core/DecimalComparison.h), so treat any Decimal argument as potentially throwing.
+        /// Likewise a Variant/Dynamic argument can throw depending on the concrete alternative a row
+        /// carries. We check function arguments, not every FilterStep input: a Variant/Dynamic column
+        /// merely projected through to the output (never fed to a function evaluated before the set op)
+        /// cannot raise an eliminated-row exception, so it must not block the pushdown.
         for (const auto & child : node.children)
         {
-            if (child->result_type && WhichDataType(removeNullable(child->result_type)).isDecimal())
+            if (!child->result_type)
+                continue;
+            if (WhichDataType(removeNullable(child->result_type)).isDecimal())
+                return true;
+            if (typeIsOrContainsDynamic(*child->result_type))
                 return true;
         }
     }
@@ -1279,9 +1274,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// throws on some values (e.g. intDiv(1, c0) on a c0 = 0 row, or decimal arithmetic
         /// overflowing) would then surface an error the unoptimized plan never produces, because
         /// that row is dropped before the top filter runs. Skip the pushdown when the filter may
-        /// throw. The Variant/Dynamic guard is kept as well: such a filter can throw depending on
-        /// the concrete alternative a row carries even when the function is otherwise total.
-        if (filterMayThrow(*filter) || filterInputsHaveDynamicType(*filter))
+        /// throw. filterMayThrow also rejects Variant/Dynamic values that are consumed by a function
+        /// (they can throw depending on the concrete alternative a row carries), while allowing a
+        /// Variant/Dynamic column that is only projected through to the output.
+        if (filterMayThrow(*filter))
             return 0;
 
         /// IntersectOrExcept compares whole rows positionally: its entire header is the set key.
