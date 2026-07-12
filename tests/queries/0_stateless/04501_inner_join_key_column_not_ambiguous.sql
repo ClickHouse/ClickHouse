@@ -36,5 +36,31 @@ SELECT id FROM t1 LEFT JOIN t2 ON t1.id = t2.id; -- { serverError AMBIGUOUS_IDEN
 -- Explicit qualification always works.
 SELECT t1.id FROM t1 INNER JOIN t2 ON t1.id = t2.id ORDER BY t1.id;
 
+-- Mixed-type equi-keys: the join compares the keys after coercion to a common type, but the
+-- unqualified reference resolves to the raw left column - the same value and type that the default
+-- single_join_prefer_left_table = 1 has always produced for a single join. It does not become
+-- a USING-like common-type projection.
+DROP TABLE IF EXISTS t_narrow;
+DROP TABLE IF EXISTS t_wide;
+
+CREATE TABLE t_narrow (id UInt8, v Int32) ENGINE = Memory;
+CREATE TABLE t_wide (id UInt16, v Int32) ENGINE = Memory;
+INSERT INTO t_narrow VALUES (1, 101), (2, 102), (3, 103);
+INSERT INTO t_wide VALUES (2, 202), (3, 203), (400, 204);
+
+SELECT id, toTypeName(id) FROM t_narrow INNER JOIN t_wide ON t_narrow.id = t_wide.id ORDER BY id;
+
+-- Identical to the pre-existing behavior with the default single_join_prefer_left_table = 1.
+SELECT id, toTypeName(id) FROM t_narrow INNER JOIN t_wide ON t_narrow.id = t_wide.id ORDER BY id SETTINGS single_join_prefer_left_table = 1;
+
+-- The same left-side semantics in a multi-way join, where single_join_prefer_left_table never applied.
+SELECT id, toTypeName(id) FROM t_narrow INNER JOIN t_wide ON t_narrow.id = t_wide.id INNER JOIN t1 ON t_narrow.id = t1.id ORDER BY id;
+
+-- USING exposes the common-type projection instead, unchanged by this relaxation.
+SELECT id, toTypeName(id) FROM t_narrow INNER JOIN t_wide USING (id) ORDER BY id;
+
+DROP TABLE t_narrow;
+DROP TABLE t_wide;
+
 DROP TABLE t1;
 DROP TABLE t2;
