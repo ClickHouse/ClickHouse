@@ -74,6 +74,15 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=full_password&se
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=token_password&session_id=${session}" -d "SELECT x FROM t2" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user}&password=full_password&session_id=${session}" -d "SELECT x FROM t2"
 
+echo "-- The query result cache must not serve a token the results cached under a broader credential of the same user"
+# The full credential populates the query cache for a SELECT on t2 (which the token cannot read).
+login "full_password" "SELECT x FROM t2 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0" > /dev/null
+# Re-running with the full credential is a cache hit and returns the row, proving the entry is in the cache.
+login "full_password" "SELECT x FROM t2 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0"
+# The token's GRANTS omit SELECT ON t2, so the same query must be a cache miss and get denied,
+# rather than being served the cached rows without an access check.
+login_expect_error "token_password" "ACCESS_DENIED" "SELECT x FROM t2 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0"
+
 echo "-- ALTER USER ADD IDENTIFIED with the GRANTS clause adds a new token"
 ${CLICKHOUSE_CLIENT} -q "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password BY 'second_token' GRANTS (SELECT(x) ON ${CLICKHOUSE_DATABASE}.t2)"
 ${CLICKHOUSE_CLIENT} -q "SHOW CREATE USER ${user}" | sed "s/${user}/user/g; s/${CLICKHOUSE_DATABASE}/db/g"
