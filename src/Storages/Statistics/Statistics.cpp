@@ -1,7 +1,10 @@
 #include <Storages/Statistics/Statistics.h>
 
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -120,6 +123,41 @@ std::optional<Float64> StatisticsUtils::interpolateLessLinear(
     if (!val_as_float || !min_as_float || !max_as_float)
         return std::nullopt;
     return interpolateLessLinearTyped<Float64>(Field(*val_as_float), Field(*min_as_float), Field(*max_as_float), row_count);
+}
+
+bool StatisticsUtils::columnHasNaN(const ColumnPtr & column)
+{
+    /// Materialize special representations (Const, Sparse, LowCardinality) so the nested float column
+    /// is visible; keep the top-level Nullable so its null map excludes NULL rows from the NaN scan.
+    auto full = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+    const IColumn * nested = full.get();
+    const NullMap * null_map = nullptr;
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(nested))
+    {
+        null_map = &nullable->getNullMapData();
+        nested = &nullable->getNestedColumn();
+    }
+
+    auto scan = [&](const auto & typed_column) -> bool
+    {
+        const auto & data = typed_column.getData();
+        for (size_t i = 0, n = data.size(); i < n; ++i)
+        {
+            if (null_map && (*null_map)[i])
+                continue;
+            if (isNaN(data[i]))
+                return true;
+        }
+        return false;
+    };
+
+    if (const auto * col_f64 = typeid_cast<const ColumnFloat64 *>(nested))
+        return scan(*col_f64);
+    if (const auto * col_f32 = typeid_cast<const ColumnFloat32 *>(nested))
+        return scan(*col_f32);
+    if (const auto * col_bf16 = typeid_cast<const ColumnBFloat16 *>(nested))
+        return scan(*col_bf16);
+    return false;
 }
 
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
@@ -384,6 +422,7 @@ Estimate ColumnStatistics::getEstimate() const
                 info.estimated_min = basic_stats.getMin();
             if (!basic_stats.getMax().isNull())
                 info.estimated_max = basic_stats.getMax();
+            info.has_nan = basic_stats.hasNaN();
         }
         if (basic_stats.hasNullCount())
             info.estimated_null_count = basic_stats.getNullCount();
@@ -395,6 +434,7 @@ Estimate ColumnStatistics::getEstimate() const
             info.estimated_min = minmax_stats.getMin();
         if (!minmax_stats.getMax().isNull())
             info.estimated_max = minmax_stats.getMax();
+        info.has_nan = minmax_stats.hasNaN();
     }
 
     return info;
@@ -402,16 +442,17 @@ Estimate ColumnStatistics::getEstimate() const
 
 void ColumnStatistics::serialize(WriteBuffer & buf) const
 {
-    /// Layout (V4):
-    ///   UInt16  version (= V4)
+    /// Layout (V5, same framing as V4):
+    ///   UInt16  version (= V5)
     ///   UInt64  stat_types_mask
     ///   String  stored_type_name   — column type at write time; deserialization returns nullptr on mismatch
     ///   UInt64  rows
     ///   For each set bit in mask (in ascending bit order):
     ///       UInt64  stat_size
     ///       <stat_size> bytes of per-statistics payload
-    /// The per-stat size prefix lets a reader skip statistics types it doesn't recognize.
-    writeIntBinary(StatisticsFileVersion::V4, buf);
+    /// The per-stat size prefix lets a reader skip statistics types it doesn't recognize, and also
+    /// lets a V4 reader silently skip the extra `has_nan` byte a V5 `MinMax` payload carries.
+    writeIntBinary(StatisticsFileVersion::V5, buf);
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
@@ -452,7 +493,8 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
 
     if (version != StatisticsFileVersion::V1
         && version != StatisticsFileVersion::V2
-        && version != StatisticsFileVersion::V4)
+        && version != StatisticsFileVersion::V4
+        && version != StatisticsFileVersion::V5)
         throw Exception(
             ErrorCodes::ILLEGAL_STATISTICS,
             "Tried to read statistics file with unsupported format version {}. "
@@ -466,9 +508,9 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     ColumnStatisticsDescription stats_desc;
     stats_desc.data_type = data_type;
 
-    if (version == StatisticsFileVersion::V4)
+    if (version == StatisticsFileVersion::V4 || version == StatisticsFileVersion::V5)
     {
-        /// V4 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
+        /// V4/V5 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
         /// column type differs from the current type — statistics built on a different type are
         /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
         String stored_type_name;

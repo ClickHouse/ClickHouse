@@ -24,12 +24,17 @@ public:
     const Field & getMin() const { return min; }
     const Field & getMax() const { return max; }
 
+    /// True if the part's float column holds a non-NULL NaN. `getExtremes` skips NaN, so [min, max]
+    /// hides it; part pruning uses this to keep the part under a negated float range (issue #106533).
+    bool hasNaN() const { return has_nan; }
+
     std::optional<Float64> estimateLess(const Field & val) const override;
     String getNameForLogs() const override;
 private:
     Field min; /// null Field means "not initialized"
     Field max; /// null Field means "not initialized"
     UInt64 row_count = 0;
+    bool has_nan = false;
 
     DataTypePtr data_type;
 };

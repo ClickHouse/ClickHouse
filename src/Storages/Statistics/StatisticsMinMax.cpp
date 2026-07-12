@@ -45,6 +45,11 @@ void StatisticsMinMax::build(const ColumnPtr & column)
             max = max_field;
     }
 
+    /// getExtremes skips NaN, so a NaN in this block would be invisible in [min, max]. Record it
+    /// separately so part pruning keeps the part under a negated float range (issue #106533).
+    if (!has_nan)
+        has_nan = StatisticsUtils::columnHasNaN(column);
+
     row_count += column->size();
 }
 
@@ -55,6 +60,7 @@ void StatisticsMinMax::merge(const StatisticsPtr & other_stats)
         min = other->min;
     if (!other->max.isNull() && (max.isNull() || other->max > max))
         max = other->max;
+    has_nan |= other->has_nan;
     row_count += other->row_count;
 }
 
@@ -64,6 +70,9 @@ void StatisticsMinMax::serialize(WriteBuffer & buf)
     writeStringBinary(data_type->getName(), buf);
     writeFieldBinary(min, buf);
     writeFieldBinary(max, buf);
+    /// Trailing V5 field. Older readers stop after `max`; the per-stat size prefix in the enclosing
+    /// ColumnStatistics framing makes them skip this byte, so the format stays backward compatible.
+    writeBinary(has_nan, buf);
 }
 
 void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
@@ -91,6 +100,12 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
     }
     min = readFieldBinary(buf);
     max = readFieldBinary(buf);
+
+    /// V5+ always appends `has_nan` right after `max`, so read exactly that one byte. Reading via
+    /// eof() would be wrong: `buf` is the shared file buffer that may still hold later stats. Older
+    /// files don't have the byte; leave the default (false), which matches their pre-fix behavior.
+    if (version >= StatisticsFileVersion::V5)
+        readBinary(has_nan, buf);
 }
 
 std::optional<Float64> StatisticsMinMax::estimateLess(const Field & val) const

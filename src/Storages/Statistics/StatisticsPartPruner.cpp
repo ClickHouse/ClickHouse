@@ -7,6 +7,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/defines.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -38,6 +40,17 @@ std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const Da
     /// Return whole-universe to avoid incorrect pruning.
     if (min_value > max_value)
         return make_whole_universe();
+
+    /// The stored [min, max] is computed by getExtremes, which skips NaN, so it hides a NaN in the
+    /// part. Widen the right bound to NaN (which sorts after every finite value and +inf) so that
+    /// KeyCondition::checkInHyperrectangle sees `key_range.right.isNaN()` and refuses to report the
+    /// range as fully contained. That keeps the part under a negated float range like
+    /// `NOT (val BETWEEN a AND b)`, whose NaN rows must not be pruned (issue #106533 / #106948).
+    /// This mirrors the NaN-widening the minmax skip index applies in getMinMaxIndexExtremes.
+    /// A nullable column already extends the right bound to +inf below, which likewise blocks
+    /// containment, so the NaN widening is only needed for the non-nullable case.
+    if (estimate.has_nan && !is_nullable)
+        return Range(min_value, true, std::numeric_limits<Float64>::quiet_NaN(), true);
 
     /// For nullable columns, extend the right bound to POSITIVE_INFINITY
     /// because statistics don't track whether NULL values exist in the part.

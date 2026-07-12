@@ -41,6 +41,8 @@ public:
 
     const Field & getMin() const { return min; }
     const Field & getMax() const { return max; }
+    /// True if a numeric-tracking column held a non-NULL NaN (see StatisticsMinMax::hasNaN).
+    bool hasNaN() const { return has_nan; }
     UInt64 getStringTotalBytes() const { return string_total_bytes; }
     /// Average byte length over non-NULL string rows, truncated to an integer. Returns `0` when
     /// no non-NULL string rows were processed; gate on `hasStringLengthAvg()` plus a non-zero
@@ -55,6 +57,8 @@ private:
     UInt64 string_total_bytes = 0;
     UInt64 null_count = 0;
     UInt64 row_count = 0;
+
+    bool has_nan = false; /// numeric-tracking column contained a non-NULL NaN
 
     DataTypePtr data_type; /// stored with LowCardinality and Nullable removed
     bool tracks_numeric = false;

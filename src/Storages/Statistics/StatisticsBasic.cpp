@@ -33,6 +33,7 @@ enum BasicFeatureMask : UInt8
     NumericMinMax = 1u << 0,
     StringLengthSum = 1u << 1,
     NullCount = 1u << 2,
+    NaNFlag = 1u << 3,
 };
 
 UInt64 countNullsInColumn(const ColumnPtr & column)
@@ -136,6 +137,10 @@ void StatisticsBasic::build(const ColumnPtr & column)
             min = min_field;
         if (!max_field.isNull() && (max.isNull() || max_field > max))
             max = max_field;
+
+        /// getExtremes skips NaN, so record it separately for part pruning (issue #106533).
+        if (!has_nan)
+            has_nan = StatisticsUtils::columnHasNaN(column);
     }
 
     if (tracks_string)
@@ -156,6 +161,7 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
             min = other->min;
         if (!other->max.isNull() && (max.isNull() || other->max > max))
             max = other->max;
+        has_nan |= other->has_nan;
     }
     if (tracks_string)
         string_total_bytes += other->string_total_bytes;
@@ -176,6 +182,10 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::StringLengthSum;
     if (tracks_null)
         mask |= BasicFeatureMask::NullCount;
+    /// Only emit the NaN block when a NaN was actually seen, so files stay identical to the pre-fix
+    /// layout for the common no-NaN case; a reader that lacks the bit skips it via the size prefix.
+    if (has_nan)
+        mask |= BasicFeatureMask::NaNFlag;
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
@@ -187,6 +197,7 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         writeIntBinary(string_total_bytes, buf);
     if (tracks_null)
         writeIntBinary(null_count, buf);
+    /// NaNFlag carries no payload: its presence in the mask is the value (has_nan == true).
 }
 
 void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
@@ -211,6 +222,8 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
     {
         readIntBinary(null_count, buf);
     }
+
+    has_nan = (mask & BasicFeatureMask::NaNFlag) != 0;
 }
 
 std::optional<Float64> StatisticsBasic::estimateLess(const Field & val) const

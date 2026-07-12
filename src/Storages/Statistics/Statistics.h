@@ -28,6 +28,11 @@ enum class StatisticsFileVersion : UInt16
             /// the version field; deserialization returns nullptr if the stored type differs from
             /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
             /// are never used.
+    V5 = 5, /// numeric minmax statistics (`MinMax` and `Basic`) now persist a `has_nan` flag so part
+            /// pruning can keep a part whose float column contains NaN under a negated range
+            /// (issue #106533 / #106948). `MinMax` appends a trailing `UInt8 has_nan`; `Basic` adds a
+            /// self-describing `NaNFlag` feature-mask bit. Older files read fine (has_nan defaults to
+            /// false, matching the pre-fix behavior); the per-stat size prefix skips the extra byte.
 };
 
 class Field;
@@ -46,6 +51,14 @@ struct StatisticsUtils
     /// a common numeric representation.
     static std::optional<Float64> interpolateLessLinear(
         const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type);
+
+    /// True if `column` holds at least one non-NULL NaN. Numeric minmax statistics compute their
+    /// bounds with `getExtremes`, which skips NaN, so a column mixing finite floats with NaN stores
+    /// a clean finite [min, max] that hides the NaN. Part pruning then wrongly drops such a part
+    /// under a negated float range (issue #106533 / #106948), the same hazard the minmax skip index
+    /// guards against. Callers persist the result so pruning can widen the range back over NaN.
+    /// Non-float columns can never contain NaN, so this returns false for them.
+    static bool columnHasNaN(const ColumnPtr & column);
 };
 
 class IStatistics;
@@ -94,6 +107,10 @@ struct Estimate
     std::optional<Field> estimated_min;
     std::optional<Field> estimated_max;
     std::optional<UInt64> estimated_null_count;
+    /// The float column of this part holds a non-NULL NaN that [estimated_min, estimated_max] hides
+    /// (getExtremes skips NaN). Part pruning widens the range over NaN so a negated float range does
+    /// not drop the part (issue #106533 / #106948).
+    bool has_nan = false;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
