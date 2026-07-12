@@ -32,9 +32,22 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(
     chassert(num_shards > 0);
 }
 
+/// The budget uses `Chunk::bytes()` (i.e. `IColumn::byteSize`), NOT `allocatedBytes()`, because
+/// `scatter` can share one physical buffer across all shard chunks and `allocatedBytes()` charges that
+/// buffer once per chunk, which would inflate the counter by up to `num_shards` times the shared size and
+/// trip `aggregation_in_order_shuffle_max_buffered_bytes` on perfectly safe queries. The canonical case is
+/// `LowCardinality`: `ColumnLowCardinality::scatter` keeps a single shared dictionary across the shards, and
+/// `byteSize()` deliberately excludes a shared dictionary (see `ColumnLowCardinality::byteSize`) while
+/// `allocatedBytes()` still counts it on every shard chunk. `byteSize()` therefore charges the shared,
+/// stage-owned memory at most once and keeps the budget ownership-based.
+UInt64 BufferedShardByHashTransform::chunkBudgetBytes(const Chunk & chunk)
+{
+    return chunk.bytes();
+}
+
 void BufferedShardByHashTransform::enqueue(size_t shard, Chunk chunk)
 {
-    total_buffered_bytes->fetch_add(static_cast<Int64>(chunk.allocatedBytes()), std::memory_order_relaxed);
+    total_buffered_bytes->fetch_add(static_cast<Int64>(chunkBudgetBytes(chunk)), std::memory_order_relaxed);
     output_queues[shard].push_back(std::move(chunk));
 }
 
@@ -42,7 +55,7 @@ Chunk BufferedShardByHashTransform::dequeue(size_t shard)
 {
     Chunk chunk = std::move(output_queues[shard].front());
     output_queues[shard].pop_front();
-    total_buffered_bytes->fetch_sub(static_cast<Int64>(chunk.allocatedBytes()), std::memory_order_relaxed);
+    total_buffered_bytes->fetch_sub(static_cast<Int64>(chunkBudgetBytes(chunk)), std::memory_order_relaxed);
     return chunk;
 }
 
@@ -50,14 +63,14 @@ void BufferedShardByHashTransform::clearQueue(size_t shard)
 {
     Int64 bytes = 0;
     for (const auto & chunk : output_queues[shard])
-        bytes += static_cast<Int64>(chunk.allocatedBytes());
+        bytes += static_cast<Int64>(chunkBudgetBytes(chunk));
     total_buffered_bytes->fetch_sub(bytes, std::memory_order_relaxed);
     output_queues[shard].clear();
 }
 
 void BufferedShardByHashTransform::chargePendingInput()
 {
-    pending_input_bytes = static_cast<Int64>(pending_input_chunk.allocatedBytes());
+    pending_input_bytes = static_cast<Int64>(chunkBudgetBytes(pending_input_chunk));
     total_buffered_bytes->fetch_add(pending_input_bytes, std::memory_order_relaxed);
 }
 

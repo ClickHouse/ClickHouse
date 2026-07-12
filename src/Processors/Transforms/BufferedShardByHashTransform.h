@@ -63,6 +63,10 @@ private:
     /// input until the slow consumer drains it. Otherwise, we can have very high memory usage.
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
 
+    /// Bytes a chunk contributes to the shared budget. Uses `Chunk::bytes()` (owned bytes) so shared
+    /// buffers such as a scattered `LowCardinality` dictionary are not double-counted across shards.
+    static UInt64 chunkBudgetBytes(const Chunk & chunk);
+
     /// Queue bookkeeping that maintains the shared buffered-bytes counter.
     void enqueue(size_t shard, Chunk chunk);
     Chunk dequeue(size_t shard);
