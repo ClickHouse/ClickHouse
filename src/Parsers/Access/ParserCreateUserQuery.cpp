@@ -51,16 +51,27 @@ namespace
         });
     }
 
-    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until)
+    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until, bool & is_interval)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
-                return false;
+            if (ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
+            {
+                is_interval = false;
+                ParserStringAndSubstitution until_p;
+                return until_p.parse(pos, valid_until, expected);
+            }
 
-            ParserStringAndSubstitution until_p;
+            /// VALID FOR <interval> is a shortcut: the deadline is computed as `now` plus the interval
+            /// at query execution time and stored in the VALID UNTIL form.
+            if (ParserKeyword{Keyword::VALID_FOR}.ignore(pos, expected))
+            {
+                is_interval = true;
+                ParserExpression interval_p;
+                return interval_p.parse(pos, valid_until, expected);
+            }
 
-            return until_p.parse(pos, valid_until, expected);
+            return false;
         });
     }
 
@@ -254,7 +265,7 @@ namespace
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
-            parseValidUntil(pos, expected, auth_data->valid_until);
+            parseValidUntil(pos, expected, auth_data->valid_until, auth_data->valid_until_is_interval);
 
             return true;
         });
@@ -316,7 +327,7 @@ namespace
                 authentication_methods.emplace_back(make_intrusive<ASTAuthenticationData>());
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
 
-                parseValidUntil(pos, expected, authentication_methods.back()->valid_until);
+                parseValidUntil(pos, expected, authentication_methods.back()->valid_until, authentication_methods.back()->valid_until_is_interval);
 
                 return true;
             }
@@ -594,6 +605,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
     boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
     ASTPtr global_valid_until;
+    bool global_valid_until_is_interval = false;
     String cluster;
     String storage_name;
     bool reset_authentication_methods_to_new = false;
@@ -704,7 +716,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (auth_data.empty() && !global_valid_until)
         {
-            if (parseValidUntil(pos, expected, global_valid_until))
+            if (parseValidUntil(pos, expected, global_valid_until, global_valid_until_is_interval))
             {
                 continue;
             }
@@ -749,6 +761,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->grantees = std::move(grantees);
     query->default_database = std::move(default_database);
     query->global_valid_until = std::move(global_valid_until);
+    query->global_valid_until_is_interval = global_valid_until_is_interval;
     query->storage_name = std::move(storage_name);
     query->reset_authentication_methods_to_new = reset_authentication_methods_to_new;
     query->add_identified_with = parsed_add_identified_with;

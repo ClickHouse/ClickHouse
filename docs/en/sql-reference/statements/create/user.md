@@ -13,10 +13,10 @@ Syntax:
 
 ```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime] 
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [{VALID UNTIL datetime | VALID FOR interval}]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-    [VALID UNTIL datetime]
+    [{VALID UNTIL datetime | VALID FOR interval}]
     [IN access_storage_type]
     [ROLE role [,...]]
     [DEFAULT ROLE role [,...]]
@@ -202,6 +202,17 @@ Examples:
 :::note
 The datetime string is parsed by `parseDateTimeBestEffort`, which only recognizes the timezone tokens `UTC`, `GMT`, `Z`, `MSK`, `MSD`, and numeric offsets such as `+09:00` or `-05:00`. Named IANA timezones like `Asia/Tokyo` or `Europe/London` are not supported, and a fixed offset is not equivalent to an IANA zone for regions that observe daylight saving time, so you must compute the correct offset for the specific date you are encoding.
 :::
+
+## VALID FOR Clause {#valid-for-clause}
+
+The `VALID FOR` clause is a convenience shorthand for `VALID UNTIL`. Instead of an absolute date and time, it accepts an [interval](../../data-types/special-data-types/interval.md), and the expiration deadline is computed as the current time plus that interval at the moment the query is executed. The result is then stored in the `VALID UNTIL` form, so `SHOW CREATE USER` always displays the resolved absolute deadline. It can be used everywhere `VALID UNTIL` can.
+
+Examples:
+
+- `CREATE USER name1 VALID FOR INTERVAL 1 DAY`
+- `CREATE USER name1 VALID FOR INTERVAL 3 MONTH`
+- `CREATE USER name1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR`
+- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY`
 
 ## GRANTEES Clause {#grantees-clause}
 

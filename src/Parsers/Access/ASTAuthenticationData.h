@@ -43,6 +43,9 @@ public:
     bool contains_hash = false;
     bool jwt_use_authenticator = false;
     ASTPtr valid_until;
+    /// If true, `valid_until` holds an interval expression coming from `VALID FOR <interval>`
+    /// (the deadline is `now` plus the interval); otherwise it holds a `VALID UNTIL` value.
+    bool valid_until_is_interval = false;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

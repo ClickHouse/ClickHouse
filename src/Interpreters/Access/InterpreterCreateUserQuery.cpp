@@ -229,7 +229,7 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     std::optional<time_t> global_valid_until;
     if (query.global_valid_until)
-        global_valid_until = getValidUntilFromAST(query.global_valid_until, getContext());
+        global_valid_until = getValidUntilFromAST(query.global_valid_until, getContext(), query.global_valid_until_is_interval);
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
@@ -364,7 +364,7 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
 
     std::optional<time_t> global_valid_until;
     if (query.global_valid_until)
-        global_valid_until = getValidUntilFromAST(query.global_valid_until, {});
+        global_valid_until = getValidUntilFromAST(query.global_valid_until, {}, query.global_valid_until_is_interval);
 
     updateUserFromQueryImpl(
         user,

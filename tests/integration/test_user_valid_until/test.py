@@ -139,6 +139,30 @@ def test_restart(started_cluster):
     node.query("DROP USER IF EXISTS user_restart")
 
 
+def test_valid_for_interval(started_cluster):
+    node.query("DROP USER IF EXISTS user_valid_for")
+
+    # VALID FOR is resolved to an absolute deadline and stored (and shown) in the VALID UNTIL form.
+    node.query("CREATE USER user_valid_for VALID FOR INTERVAL 50 YEAR")
+
+    show_create = node.query("SHOW CREATE USER user_valid_for")
+    assert "VALID UNTIL" in show_create
+    assert "VALID FOR" not in show_create
+    assert node.query("SELECT 1", user="user_valid_for") == "1\n"
+
+    # A deadline in the past (negative interval) expires the credential immediately.
+    node.query("ALTER USER user_valid_for VALID FOR INTERVAL -1 YEAR")
+
+    show_create = node.query("SHOW CREATE USER user_valid_for")
+    assert "VALID UNTIL" in show_create
+    assert "VALID FOR" not in show_create
+
+    error = "Authentication failed"
+    assert error in node.query_and_get_error("SELECT 1", user="user_valid_for")
+
+    node.query("DROP USER IF EXISTS user_valid_for")
+
+
 def test_multiple_authentication_methods(started_cluster):
     node.query("DROP USER IF EXISTS user_basic")
 

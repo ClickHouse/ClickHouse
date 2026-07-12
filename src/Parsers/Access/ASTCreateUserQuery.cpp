@@ -36,9 +36,9 @@ namespace
         }
     }
 
-    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " VALID UNTIL ";
+        ostr << (is_interval ? " VALID FOR " : " VALID UNTIL ");
         valid_until.format(ostr, settings);
     }
 
@@ -255,7 +255,7 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
     }
 
     if (global_valid_until)
-        formatValidUntil(*global_valid_until, ostr, format);
+        formatValidUntil(*global_valid_until, global_valid_until_is_interval, ostr, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, ostr, format);

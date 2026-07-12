@@ -15,9 +15,9 @@ namespace ErrorCodes
 
 namespace
 {
-    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " VALID UNTIL ";
+        ostr << (is_interval ? " VALID FOR " : " VALID UNTIL ");
         valid_until.format(ostr, settings);
     }
 }
@@ -57,7 +57,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
         if (valid_until)
         {
-            formatValidUntil(*valid_until, ostr, settings);
+            formatValidUntil(*valid_until, valid_until_is_interval, ostr, settings);
         }
 
         return;
@@ -234,7 +234,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
     if (valid_until)
     {
-        formatValidUntil(*valid_until, ostr, settings);
+        formatValidUntil(*valid_until, valid_until_is_interval, ostr, settings);
     }
 
 }

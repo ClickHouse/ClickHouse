@@ -485,7 +485,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
     if (query.valid_until)
     {
-        valid_until = getValidUntilFromAST(query.valid_until, context);
+        valid_until = getValidUntilFromAST(query.valid_until, context, query.valid_until_is_interval);
     }
 
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)

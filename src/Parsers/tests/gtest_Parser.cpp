@@ -486,6 +486,24 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         {
             "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' IDENTIFIED WITH plaintext_password BY 'def123'",
             "throws Only one identified with is permitted"
+        },
+        {
+            "CREATE USER user1 VALID UNTIL '2025-01-01'",
+            "CREATE USER user1 VALID UNTIL '2025-01-01'"
+        },
+        {
+            /// The expected output is matched as a regular expression, so the parentheses and the
+            /// plus sign of the interval functions are escaped below.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH",
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR",
+            "ALTER USER user1 VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
         }
 })));
 
