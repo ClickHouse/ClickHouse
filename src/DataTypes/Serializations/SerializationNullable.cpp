@@ -691,6 +691,14 @@ void SerializationNullable::serializeTextCSV(const IColumn & column, size_t row_
         nested->serializeTextCSV(col.getNestedColumn(), row_num, ostr, settings);
 }
 
+bool SerializationNullable::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    const auto & nullable_column = assert_cast<const ColumnNullable &>(column);
+    return !nullable_column.isNullAt(row_num)
+        && nested->textCSVNeedsQuotes(nullable_column.getNestedColumn(), row_num, settings);
+}
+
 void SerializationNullable::serializeNullCSV(DB::WriteBuffer & ostr, const DB::FormatSettings & settings)
 {
     writeString(settings.csv.null_representation, ostr);

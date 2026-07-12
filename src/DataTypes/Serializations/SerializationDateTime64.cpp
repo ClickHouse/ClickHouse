@@ -262,15 +262,7 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
 
 void SerializationDateTime64::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    const bool quote = settings.csv.quote_date_time_types
-        || settings.csv.force_quote_date_time_types
-        || csvDelimiterConflictsWithDateTime64(
-            settings.csv.delimiter,
-            settings.date_time_output_format,
-            scale,
-            value,
-            settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
+    const bool quote = textCSVNeedsQuotes(column, row_num, settings);
 
     if (quote)
         writeChar('"', ostr);
@@ -297,6 +289,20 @@ bool SerializationDateTime64::textCSVMayNeedQuotes(const FormatSettings & settin
         case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
             return scale > 0 || delimiter == '-';
     }
+}
+
+bool SerializationDateTime64::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    const auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    return settings.csv.quote_date_time_types
+        || settings.csv.force_quote_date_time_types
+        || csvDelimiterConflictsWithDateTime64(
+            settings.csv.delimiter,
+            settings.date_time_output_format,
+            scale,
+            value,
+            settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
 }
 
 void SerializationDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

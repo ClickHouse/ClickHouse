@@ -186,3 +186,23 @@ SETTINGS
     format_csv_delimiter = ':',
     format_template_row_format = '${t:CSV}|${n:CSV}\n',
     format_template_resultset_format = '${data}';
+
+SELECT 'Template DateTime64 tuple follows trimmed whole-second output' FORMAT TSVRaw;
+SELECT tuple(toDateTime64('2024-01-18 09:45:01', 3, 'UTC'), 42::UInt8) AS t
+FORMAT Template
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = '.',
+    date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 1,
+    format_template_row_format = '${t:CSV}\n',
+    format_template_resultset_format = '${data}';
+
+SELECT 'Template DateTime64 tuple keeps fractional delimiter safe' FORMAT TSVRaw;
+SELECT tuple(toDateTime64('2024-01-18 09:45:01.123', 3, 'UTC'), 42::UInt8) AS t
+FORMAT Template
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = '.',
+    date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 1,
+    format_template_row_format = '${t:CSV}\n',
+    format_template_resultset_format = '${data}';

@@ -74,6 +74,28 @@ static bool tupleMayUseWholeCSVField(
     return false;
 }
 
+static bool tupleNeedsWholeCSVField(
+    const FormatSettings & settings,
+    const SerializationTuple::ElementSerializations & elements,
+    const std::optional<FormatSettings> & interior_settings,
+    const IColumn & column,
+    size_t row_num)
+{
+    if (settings.csv.tuple_delimiter_matches_field_delimiter || !interior_settings)
+        return false;
+
+    FormatSettings quote_check_settings = *interior_settings;
+    quote_check_settings.csv.quote_date_time_types = false;
+    quote_check_settings.csv.force_quote_date_time_types = false;
+
+    for (size_t i = 0; i < elements.size(); ++i)
+    {
+        if (elements[i]->textCSVNeedsQuotes(extractElementColumn(column, i), row_num, quote_check_settings))
+            return true;
+    }
+    return false;
+}
+
 UInt128 SerializationTuple::getHash(const ElementSerializations & elems_, bool has_explicit_names_)
 {
     SipHash hash;
@@ -670,7 +692,8 @@ void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num
     const size_t size = elems.size();
     const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
     if (settings.csv.serialize_tuple_into_separate_columns
-        && (settings.csv.quote_date_time_types || !tupleMayUseWholeCSVField(settings, elems, interior_settings)))
+        && (settings.csv.quote_date_time_types
+            || !tupleNeedsWholeCSVField(settings, elems, interior_settings, column, row_num)))
     {
         for (size_t i = 0; i < size; ++i)
         {
@@ -814,7 +837,23 @@ bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
 
 bool SerializationTuple::textCSVMayNeedQuotes(const FormatSettings & settings) const
 {
-    return !elems.empty() && elems.front()->textCSVMayNeedQuotes(settings);
+    for (const auto & element : elems)
+    {
+        if (element->textCSVMayNeedQuotes(settings))
+            return true;
+    }
+    return false;
+}
+
+bool SerializationTuple::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        if (elems[i]->textCSVNeedsQuotes(extractElementColumn(column, i), row_num, settings))
+            return true;
+    }
+    return false;
 }
 
 struct SerializeBinaryBulkStateTuple : public ISerialization::SerializeBinaryBulkState
