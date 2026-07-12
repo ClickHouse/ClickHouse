@@ -4018,18 +4018,22 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
             metadata_snapshot->getMetadataVersion() >= zk_metadata_version)
             return false;
 
-        /// Drain the replication log to its head first. If the real ALTER_METADATA entry is still present in
-        /// zookeeper_path/log, pullLogsToQueue copies it into our queue and normal processing will converge
-        /// the structure - in that case we must NOT inject a synthetic entry, because a second ALTER_METADATA
-        /// with the same alter_version corrupts the alters sequence (ReplicatedMergeTreeAltersSequence keeps
-        /// a single slot per alter_version). Only if no metadata alter is pending after draining is the real
-        /// entry gone and a repair actually needed. This check also makes the whole operation idempotent
-        /// across recovery retries: the entry we enqueue below is itself counted here on the next call.
+        /// Drain the replication log to its head first. If a real ALTER_METADATA entry that reaches
+        /// zk_metadata_version is still present in zookeeper_path/log, pullLogsToQueue copies it into our
+        /// queue and normal processing will converge the structure - in that case we must NOT inject a
+        /// synthetic entry, because a second ALTER_METADATA with the same alter_version corrupts the alters
+        /// sequence (ReplicatedMergeTreeAltersSequence keeps a single slot per alter_version). A *stale*
+        /// queued ALTER_METADATA whose alter_version is still behind zk_metadata_version (e.g. one that was
+        /// persisted in our /queue before the detach while the newer entries were cleaned up from the log)
+        /// only advances the structure partway, so a repair is still needed - hence the comparison against
+        /// zk_metadata_version rather than a mere "any metadata alter pending" check. This also keeps the
+        /// operation idempotent across recovery retries: the entry we enqueue below carries
+        /// alter_version == zk_metadata_version and is itself detected here on the next call.
         queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::SYNC);
-        if (queue.getStatus().metadata_alters_in_queue != 0)
+        if (queue.getMaxMetadataAlterVersionInQueue() >= zk_metadata_version)
         {
-            LOG_DEBUG(log, "A metadata alter is already pending in the queue; it will converge the structure, "
-                           "not forcing a resync.");
+            LOG_DEBUG(log, "A metadata alter reaching version {} is already pending in the queue; "
+                           "it will converge the structure, not forcing a resync.", zk_metadata_version);
             return false;
         }
         if (auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
@@ -4043,7 +4047,14 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
         /// the next drain picks up that ALTER instead of us injecting a duplicate alter_version.
         auto entry = std::make_shared<LogEntry>();
         entry->type = LogEntry::ALTER_METADATA;
-        entry->source_replica = replica_name;
+        /// This repair entry is built from the ZooKeeper metadata snapshot, not fetched from any particular
+        /// replica, so leave source_replica empty. A non-empty source_replica pointing at ourselves would be
+        /// excluded from the wait set of SYSTEM SYNC REPLICA FROM '<other replica>'
+        /// (ReplicatedMergeTreeQueue::addSubscriber only waits for entries from the specified replicas or
+        /// from removed/unknown/empty ones), so such a query could return before this entry applies the
+        /// missed metadata. An empty source_replica is always waited for and matches how other
+        /// source-agnostic entries are handled.
+        entry->source_replica = "";
         entry->metadata_str = zk_metadata;
         entry->columns_str = zk_columns;
         entry->alter_version = zk_metadata_version;

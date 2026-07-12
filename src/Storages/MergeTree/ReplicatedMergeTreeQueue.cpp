@@ -2678,6 +2678,18 @@ void ReplicatedMergeTreeQueue::getEntries(LogEntriesData & res) const
 }
 
 
+int ReplicatedMergeTreeQueue::getMaxMetadataAlterVersionInQueue() const
+{
+    std::shared_lock lock(state_mutex);
+
+    int max_alter_version = -1;
+    for (const LogEntryPtr & entry : queue)
+        if (entry->type == LogEntry::ALTER_METADATA)
+            max_alter_version = std::max(max_alter_version, entry->alter_version);
+    return max_alter_version;
+}
+
+
 void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const
 {
     out_min_unprocessed_insert_time = min_unprocessed_insert_time.load(std::memory_order_relaxed);

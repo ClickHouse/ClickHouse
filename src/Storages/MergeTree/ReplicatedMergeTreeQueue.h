@@ -536,6 +536,11 @@ public:
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getEntries(LogEntriesData & res) const;
 
+    /// The maximum alter_version among ALTER_METADATA entries currently in the queue, or -1 if there are
+    /// none. Used on recovery to distinguish a stale queued metadata alter (which only advances the
+    /// structure partway) from one that already converges it to the ZooKeeper metadata version.
+    int getMaxMetadataAlterVersionInQueue() const;
+
     /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
 
