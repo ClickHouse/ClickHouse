@@ -38,6 +38,17 @@ ColumnsDescription StorageSystemUserQueryLog::getColumnsDescription()
         column.type = recursiveRemoveLowCardinality(column.type);
         res.add(std::move(column));
     }
+
+    /// Preserve the alias columns that `system.query_log` exposes (`ProfileEvents.Names`,
+    /// `ProfileEvents.Values`, `Settings.Names`, `Settings.Values`), so queries that use these
+    /// aliases keep working against `system.user_query_log` as well. Their types are de-LowCardinality-ed
+    /// the same way as the physical columns; the aliases are computed by the outer query plan on top of
+    /// the per-user-filtered read, so they cannot observe other users' rows.
+    NamesAndAliases aliases = QueryLogElement::getNamesAndAliases();
+    for (auto & alias : aliases)
+        alias.type = recursiveRemoveLowCardinality(alias.type);
+    res.setAliases(std::move(aliases));
+
     return res;
 }
 

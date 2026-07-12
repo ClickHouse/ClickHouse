@@ -43,6 +43,22 @@ ${CLICKHOUSE_CLIENT} --user "${user}" --query "
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "
     SELECT toTypeName(user) FROM system.user_query_log WHERE query_id = '${query_id}' LIMIT 1"
 
+# The alias columns exposed by `system.query_log` (`ProfileEvents.Names`, `ProfileEvents.Values`,
+# `Settings.Names`, `Settings.Values`) are preserved, with LowCardinality stripped from their types too.
+${CLICKHOUSE_CLIENT} --user "${user}" --query "
+    SELECT
+        toTypeName(\`ProfileEvents.Names\`),
+        toTypeName(\`ProfileEvents.Values\`),
+        toTypeName(\`Settings.Names\`),
+        toTypeName(\`Settings.Values\`)
+    FROM system.user_query_log WHERE query_id = '${query_id}' LIMIT 1"
+
+# The aliases still resolve to the corresponding map functions of the physical columns.
+${CLICKHOUSE_CLIENT} --user "${user}" --query "
+    SELECT countIf(\`ProfileEvents.Names\` != mapKeys(ProfileEvents) OR \`Settings.Values\` != mapValues(Settings))
+    FROM system.user_query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${query_id}'"
+
 # throwIf is a side channel: a predicate that observes another user's row throws. It must return
 # only the current user's own rows no matter how the predicate is injected into the query.
 for analyzer in 1 0
