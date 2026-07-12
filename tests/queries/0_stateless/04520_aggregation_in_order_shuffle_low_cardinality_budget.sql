@@ -15,35 +15,38 @@ SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t_aio_shuffle_lc;
 
--- A `LowCardinality(String)` column with a large per-block dictionary (many distinct long values). Parts that
--- each contain a single GROUP BY key are the worst case for buffering (see 04515): a scatter has to read its
--- whole part into one shard's queue while that shard's merge is blocked, so many scattered chunks - each
--- keeping the shared dictionary alive - are queued at once.
+-- A `LowCardinality(String)` column with a large per-block dictionary (10000 distinct long values, ~5 MiB).
+-- Parts that each contain a single GROUP BY key are the worst case for buffering (see 04515): a scatter has
+-- to read its whole part into one shard's queue while that shard's merge is blocked, so many scattered chunks
+-- - each keeping the shared dictionary alive - are queued at once. 16000 rows per part keep the whole
+-- dictionary present while inserting far less data than 04515's single-key runs (which kept the sanitizer
+-- flaky check under its per-run time limit).
 CREATE TABLE t_aio_shuffle_lc (k UInt8, s LowCardinality(String)) ENGINE = MergeTree ORDER BY k;
 
 SYSTEM STOP MERGES t_aio_shuffle_lc;
-INSERT INTO t_aio_shuffle_lc SELECT 1, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(500000);
-INSERT INTO t_aio_shuffle_lc SELECT 2, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(500000);
-INSERT INTO t_aio_shuffle_lc SELECT 3, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(500000);
-INSERT INTO t_aio_shuffle_lc SELECT 4, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(500000);
-INSERT INTO t_aio_shuffle_lc SELECT 5, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(500000);
-INSERT INTO t_aio_shuffle_lc SELECT 6, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(500000);
-INSERT INTO t_aio_shuffle_lc SELECT 7, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(500000);
-INSERT INTO t_aio_shuffle_lc SELECT 8, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(500000);
+INSERT INTO t_aio_shuffle_lc SELECT 1, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(16000);
+INSERT INTO t_aio_shuffle_lc SELECT 2, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(16000);
+INSERT INTO t_aio_shuffle_lc SELECT 3, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(16000);
+INSERT INTO t_aio_shuffle_lc SELECT 4, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(16000);
+INSERT INTO t_aio_shuffle_lc SELECT 5, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(16000);
+INSERT INTO t_aio_shuffle_lc SELECT 6, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(16000);
+INSERT INTO t_aio_shuffle_lc SELECT 7, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(16000);
+INSERT INTO t_aio_shuffle_lc SELECT 8, concat(repeat('x', 500), toString(number % 10000)) FROM numbers(16000);
 
 -- The shuffle path must actually be used with a `LowCardinality` aggregate argument in the stream.
 SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, max(s) FROM t_aio_shuffle_lc GROUP BY k
       SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
 
--- The dictionary IS charged against the budget. Each buffered block keeps a multi-MiB `LowCardinality`
--- dictionary alive, so with the dictionary counted once per block the buffered bytes far exceed a 64 MiB
--- budget and the query must throw. When the shared dictionary was dropped from the budget (counted as zero
--- owned bytes) only the ~16 MiB of index columns were charged and this 64 MiB budget wrongly passed.
+-- The dictionary IS charged against the budget. Each buffered block keeps the ~5 MiB `LowCardinality`
+-- dictionary alive, so with the dictionary counted once per block the buffered bytes reach ~40 MiB and far
+-- exceed a 16 MiB budget, so the query must throw. When the shared dictionary was dropped from the budget
+-- (counted as zero owned bytes) only the sub-megabyte index columns of these 128000 rows were charged and
+-- this 16 MiB budget wrongly passed.
 SELECT k, max(s) FROM t_aio_shuffle_lc GROUP BY k FORMAT Null
 SETTINGS max_threads = 8, max_block_size = 65536, optimize_aggregation_in_order = 1,
          aggregation_in_order_shuffle = 1,
-         aggregation_in_order_shuffle_max_buffered_bytes = 67108864; -- { serverError TOO_MANY_ROWS_OR_BYTES }
+         aggregation_in_order_shuffle_max_buffered_bytes = 16777216; -- { serverError TOO_MANY_ROWS_OR_BYTES }
 
 -- A tiny cap must fail as well.
 SELECT k, max(s) FROM t_aio_shuffle_lc GROUP BY k FORMAT Null
@@ -60,8 +63,8 @@ DROP TABLE t_aio_shuffle_lc;
 DROP TABLE IF EXISTS t_aio_shuffle_lc_wide;
 CREATE TABLE t_aio_shuffle_lc_wide (k UInt32, s LowCardinality(String)) ENGINE = MergeTree ORDER BY k;
 SYSTEM STOP MERGES t_aio_shuffle_lc_wide;
-INSERT INTO t_aio_shuffle_lc_wide SELECT number, concat(repeat('y', 100), toString(number % 1000)) FROM numbers(500000);
-INSERT INTO t_aio_shuffle_lc_wide SELECT number + 500000, concat(repeat('y', 100), toString(number % 1000)) FROM numbers(500000);
+INSERT INTO t_aio_shuffle_lc_wide SELECT number, concat(repeat('y', 100), toString(number % 1000)) FROM numbers(20000);
+INSERT INTO t_aio_shuffle_lc_wide SELECT number + 20000, concat(repeat('y', 100), toString(number % 1000)) FROM numbers(20000);
 
 SELECT
     (SELECT groupBitXor(cityHash64(k, m)) FROM (SELECT k, max(s) m FROM t_aio_shuffle_lc_wide GROUP BY k)
