@@ -670,7 +670,7 @@ void Client::connect()
                         /// Both the plain and the secure connection attempts failed at the connection level.
                         /// Report the failure of the plain connection as the primary error: that is the port
                         /// the client would have used if there were no automatic detection.
-                        const auto secure_error = e.message();
+                        const auto & secure_error = e.message();
                         const auto secure_port = connection_parameters.port;
                         connection_parameters.port = candidates.front().first;
                         connection_parameters.security = candidates.front().second;
