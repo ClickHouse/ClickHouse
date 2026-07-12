@@ -4069,6 +4069,25 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
     /// reason only gates that readonly check and does not change the drain itself.
     queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::FIX_METADATA_VERSION);
 
+    /// Hold pull_logs_to_queue_mutex for the whole classify-and-materialize region below (down to the
+    /// final return) so the ZooKeeper /queue listing, the in-memory queue snapshot, and the
+    /// queue.insert()/create that act on them form one atomic step with respect to pullLogsToQueue.
+    /// pullLogsToQueue creates a /replicas/<me>/queue/queue-* znode in ZooKeeper and only then
+    /// insertUnlocked()s the same entry into RAM, both under this mutex (ReplicatedMergeTreeQueue.cpp
+    /// pullLogsToQueue). Background queue workers are already active by the time recoverLostReplica runs,
+    /// so without holding it a concurrent UPDATE pull could be observed half-done -- its znode already
+    /// present in ZooKeeper but the entry not yet inserted into RAM -- and getChildren()/getEntries() taken
+    /// at different instants would then see the znode but not the RAM entry. A real ALTER_METADATA would be
+    /// misclassified as a synthetic orphan and inserted a second time (queue.insert() does not deduplicate
+    /// by znode), reopening the same alter_version in ReplicatedMergeTreeAltersSequence and tripping
+    /// finishMetadataAlter's head invariant. Holding the mutex makes the ZooKeeper-vs-RAM comparison and the
+    /// insert see either a fully-applied pull or none in between. Lock order matches pullLogsToQueue's own
+    /// (pull_logs_to_queue_mutex, then state_mutex via queue.getEntries()/insert()), so there is no
+    /// deadlock; the drain above stays outside this scope because the mutex is non-recursive. The case (b)
+    /// window below (removeProcessedEntry erases from RAM before deleting the znode, without this mutex) is
+    /// orthogonal and is still handled by the live-structure recheck, not by this lock.
+    std::lock_guard pull_logs_lock(queue.pull_logs_to_queue_mutex);
+
     {
         Strings queue_znodes = zookeeper->getChildren(replica_path + "/queue");
         Strings queue_entry_paths;
