@@ -1,15 +1,16 @@
 -- Regression test for the shuffle buffer budget with `LowCardinality` input. `ColumnLowCardinality::scatter`
--- keeps a single shared dictionary across all shard chunks, so the budget must charge that dictionary as the
--- stage-owned memory it is (once) rather than counting it on every scattered chunk. Accounting per-chunk
--- `allocatedBytes()` counted the shared dictionary on each queued chunk, which inflated the counter by many
--- times the real memory and made `aggregation_in_order_shuffle_max_buffered_bytes` throw
--- `TOO_MANY_ROWS_OR_BYTES` spuriously on safe queries. This uses `Chunk::bytes()` (`IColumn::byteSize`), which
--- excludes a shared dictionary, so the counter reflects the bytes the stage actually owns.
+-- keeps a single dictionary shared across all shard chunks, and `ColumnLowCardinality::byteSize` reports zero
+-- for a shared dictionary, so charging the budget per queued shard chunk with `Chunk::bytes()` dropped that
+-- dictionary from the counter entirely - every buffered block kept a multi-MiB dictionary alive that the
+-- budget did not see. The budget must instead account per input block, charging the whole pre-split block
+-- (via `Chunk::allocatedBytes()`) once and holding the charge until the block's last shard chunk drains, so a
+-- shared dictionary is counted exactly once per buffered block (neither dropped nor multiplied by `num_shards`).
 
 SET enable_parallel_replicas = 0;
 
 -- The shuffle is disabled when `max_rows_to_group_by` is set (see 04514). The stateless-test profile sets a
--- huge `max_rows_to_group_by` by default, which would disable the shuffle for the whole test, so reset it to 0.
+-- huge `max_rows_to_group_by` by default, which would disable the shuffle (and its buffer budget) for the
+-- whole test, so reset it to 0.
 SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t_aio_shuffle_lc;
@@ -17,7 +18,7 @@ DROP TABLE IF EXISTS t_aio_shuffle_lc;
 -- A `LowCardinality(String)` column with a large per-block dictionary (many distinct long values). Parts that
 -- each contain a single GROUP BY key are the worst case for buffering (see 04515): a scatter has to read its
 -- whole part into one shard's queue while that shard's merge is blocked, so many scattered chunks - each
--- referencing the shared dictionary - are queued at once.
+-- keeping the shared dictionary alive - are queued at once.
 CREATE TABLE t_aio_shuffle_lc (k UInt8, s LowCardinality(String)) ENGINE = MergeTree ORDER BY k;
 
 SYSTEM STOP MERGES t_aio_shuffle_lc;
@@ -35,25 +36,37 @@ SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, max(s) FROM t_aio_shuffle_lc GROUP BY k
       SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
 
--- The stage owns a single shared dictionary (~a few MiB) plus the per-shard index/key buffers (tens of MiB at
--- most, bounded by the whole input), so a 64 MiB budget is comfortable. It must NOT throw. When the shared
--- dictionary was counted per queued chunk the inflated counter exceeded even hundreds of MiB here and the
--- query threw `TOO_MANY_ROWS_OR_BYTES`.
+-- The dictionary IS charged against the budget. Each buffered block keeps a multi-MiB `LowCardinality`
+-- dictionary alive, so with the dictionary counted once per block the buffered bytes far exceed a 64 MiB
+-- budget and the query must throw. When the shared dictionary was dropped from the budget (counted as zero
+-- owned bytes) only the ~16 MiB of index columns were charged and this 64 MiB budget wrongly passed.
 SELECT k, max(s) FROM t_aio_shuffle_lc GROUP BY k FORMAT Null
-SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1,
-         aggregation_in_order_shuffle_max_buffered_bytes = 67108864;
+SETTINGS max_threads = 8, max_block_size = 65536, optimize_aggregation_in_order = 1,
+         aggregation_in_order_shuffle = 1,
+         aggregation_in_order_shuffle_max_buffered_bytes = 67108864; -- { serverError TOO_MANY_ROWS_OR_BYTES }
 
--- Result parity with ordinary aggregation-in-order under the same budget.
-SELECT
-    (SELECT groupBitXor(cityHash64(k, m)) FROM (SELECT k, max(s) m FROM t_aio_shuffle_lc GROUP BY k)
-        SETTINGS optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1, max_threads = 8,
-                 aggregation_in_order_shuffle_max_buffered_bytes = 67108864)
-  = (SELECT groupBitXor(cityHash64(k, m)) FROM (SELECT k, max(s) m FROM t_aio_shuffle_lc GROUP BY k)
-        SETTINGS optimize_aggregation_in_order = 0, max_threads = 8);
-
--- The budget still applies to `LowCardinality` input: a tiny cap must fail the query.
+-- A tiny cap must fail as well.
 SELECT k, max(s) FROM t_aio_shuffle_lc GROUP BY k FORMAT Null
-SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1,
+SETTINGS max_threads = 8, max_block_size = 65536, optimize_aggregation_in_order = 1,
+         aggregation_in_order_shuffle = 1,
          aggregation_in_order_shuffle_max_buffered_bytes = 1; -- { serverError TOO_MANY_ROWS_OR_BYTES }
 
 DROP TABLE t_aio_shuffle_lc;
+
+-- Correctness and no spurious trip on well-distributed `LowCardinality` input. Evenly spread keys keep every
+-- shard's merge fed, so the queues stay short and the (correctly accounted, one-dictionary-per-block) budget
+-- stays far below the default cap - counting the dictionary once per block must not trip it on safe queries.
+-- The shuffle result must match ordinary aggregation-in-order.
+DROP TABLE IF EXISTS t_aio_shuffle_lc_wide;
+CREATE TABLE t_aio_shuffle_lc_wide (k UInt32, s LowCardinality(String)) ENGINE = MergeTree ORDER BY k;
+SYSTEM STOP MERGES t_aio_shuffle_lc_wide;
+INSERT INTO t_aio_shuffle_lc_wide SELECT number, concat(repeat('y', 100), toString(number % 1000)) FROM numbers(500000);
+INSERT INTO t_aio_shuffle_lc_wide SELECT number + 500000, concat(repeat('y', 100), toString(number % 1000)) FROM numbers(500000);
+
+SELECT
+    (SELECT groupBitXor(cityHash64(k, m)) FROM (SELECT k, max(s) m FROM t_aio_shuffle_lc_wide GROUP BY k)
+        SETTINGS optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1, max_threads = 8)
+  = (SELECT groupBitXor(cityHash64(k, m)) FROM (SELECT k, max(s) m FROM t_aio_shuffle_lc_wide GROUP BY k)
+        SETTINGS optimize_aggregation_in_order = 0, max_threads = 8);
+
+DROP TABLE t_aio_shuffle_lc_wide;
