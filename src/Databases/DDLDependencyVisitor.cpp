@@ -9,6 +9,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
 #include <Storages/StorageMaterializedView.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -289,8 +290,28 @@ namespace
         }
 
         /// Distributed(cluster_name, database_name, table_name, ...)
+        /// or the table-function form Distributed(cluster_name, table_function()[, sharding_key[, policy_name]]).
         void visitDistributedTableEngine(const ASTFunction & table_engine)
         {
+            /// In the table-function form the second argument is the target and the following arguments are the
+            /// sharding key and the storage policy, which the engine ignores (see `has_sharding_key` in
+            /// `StorageDistributed`). A `dictGet` / `joinGet` inside the ignored sharding key must not become a
+            /// referential dependency: otherwise DROP / RENAME of an object the engine never uses would be
+            /// rejected under `check_referential_table_dependencies = 1`, contradicting the documented read-only
+            /// semantics of that form. Detect the table-function form the same way `registerStorageDistributed`
+            /// disambiguates the second argument, and skip the ignored key subtree so the generic walk does not
+            /// collect dependencies from it.
+            if (table_engine.arguments && table_engine.arguments->children.size() >= 2)
+            {
+                const auto * table_function = table_engine.arguments->children[1]->as<ASTFunction>();
+                if (table_function && TableFunctionFactory::instance().isTableFunctionName(table_function->name))
+                {
+                    for (size_t i = 2; i < table_engine.arguments->children.size(); ++i)
+                        skip_asts.emplace(table_engine.arguments->children[i].get());
+                    return;
+                }
+            }
+
             /// We consider only dependencies on local tables.
             bool has_local_replicas = false;
 

@@ -91,6 +91,40 @@ DROP TABLE dist_over_tf;
 DROP TABLE dist_over_tf_local;
 DROP DICTIONARY shard_dict;
 
+-- The same holds for referential dependencies: a `dictGet` in the ignored sharding key of the
+-- table-function form must not register a referential dependency, so the dictionary can be dropped even
+-- with `check_referential_table_dependencies = 1`. Otherwise DROP / RENAME of an object the engine never
+-- uses would be rejected, contradicting the documented read-only semantics of that form.
+DROP DICTIONARY IF EXISTS shard_dict;
+CREATE DICTIONARY shard_dict (key UInt64, val UInt64)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY 'SELECT 0 AS key, 0 AS val'))
+LAYOUT(FLAT())
+LIFETIME(0);
+CREATE TABLE dist_over_tf (number UInt64) ENGINE = Distributed(test_shard_localhost, numbers(10), dictGetUInt64('shard_dict', 'val', number));
+SET check_referential_table_dependencies = 1;
+DROP DICTIONARY shard_dict;
+SET check_referential_table_dependencies = 0;
+DROP TABLE dist_over_tf;
+
+-- On the classic named-table form the sharding key is real, so a `dictGet` in it still registers a
+-- referential dependency and blocks dropping the dictionary. This locks in that the skip above is specific
+-- to the table-function form.
+DROP DICTIONARY IF EXISTS shard_dict;
+CREATE DICTIONARY shard_dict (key UInt64, val UInt64)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY 'SELECT 0 AS key, 0 AS val'))
+LAYOUT(FLAT())
+LIFETIME(0);
+CREATE TABLE dist_over_tf_local (number UInt64) ENGINE = Memory;
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, currentDatabase(), dist_over_tf_local, dictGetUInt64('shard_dict', 'val', number));
+SET check_referential_table_dependencies = 1;
+DROP DICTIONARY shard_dict; -- { serverError HAVE_DEPENDENT_OBJECTS }
+SET check_referential_table_dependencies = 0;
+DROP TABLE dist_over_tf;
+DROP TABLE dist_over_tf_local;
+DROP DICTIONARY shard_dict;
+
 -- `additional_table_filters` matched against the Distributed table cannot be propagated to the shards
 -- when the target is a table function: the shard query reads from the table function, which has no named
 -- source table to re-key the filter onto (its shard-side expression is referenced only by an internally
