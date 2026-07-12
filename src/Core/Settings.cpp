@@ -5,7 +5,9 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
+#if ENABLE_DISTRIBUTED_CACHE
 #include <Core/DistributedCacheDefines.h>
+#endif
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsChangesHistory.h>
@@ -30,20 +32,11 @@ namespace
 {
 #if !CLICKHOUSE_CLOUD
 constexpr UInt64 default_max_size_to_drop = 50000000000lu;
-constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
-constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
-constexpr UInt64 default_distributed_cache_write_request_max_tries = 10lu;
-constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
-constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
-constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
-constexpr UInt64 default_distributed_cache_connect_timeout_ms = 50;
-constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
-constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
-constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
+#endif
+
+#if ENABLE_DISTRIBUTED_CACHE
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_write_request_max_tries = DistributedCache::DEFAULT_WRITE_REQUEST_MAX_TRIES;
@@ -56,6 +49,23 @@ constexpr UInt64 default_distributed_cache_receive_timeout_ms = DistributedCache
 constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = DistributedCache::DEFAULT_TCP_KEEP_ALIVE_TIMEOUT_MS;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_READ;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_WRITE;
+constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS;
+constexpr UInt64 default_distributed_cache_data_packet_ack_window = DistributedCache::ACK_DATA_PACKET_WINDOW;
+#else
+constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
+constexpr UInt64 default_distributed_cache_write_request_max_tries = 10lu;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
+constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
+constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
+constexpr UInt64 default_distributed_cache_connect_timeout_ms = 50;
+constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
+constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
+constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
+constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = 10lu;
+constexpr UInt64 default_distributed_cache_data_packet_ack_window = 5lu;
 #endif
 }
 
@@ -4013,6 +4023,9 @@ Allow '.' to match newline characters for a regexp_tree dictionary.
     DECLARE(Bool, dictionary_use_async_executor, false, R"(
 Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
 )", 0) \
+    DECLARE(BoolAuto, dictionary_lazy_load, Field("auto"), R"(
+Controls loading of a dictionary when specified in the `SETTINGS` clause of `CREATE DICTIONARY`: `1` defers loading until first use, `0` loads the dictionary at creation, `'auto'` follows the server setting `dictionaries_lazy_load`. Has no effect when set on a session or query level.
+)", 0) \
     DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
 Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \
@@ -4447,6 +4460,8 @@ The recommended way to give user queries S3 access is a named collection with ex
 Scope (out of scope on purpose): this setting blocks only the server's ambient credential sources listed above. It does not block operator-provisioned static `access_key_id`/`secret_access_key` from the server `<s3>` config or from a config-defined named collection: those are treated as explicit credentials and keep working. Note, however, that config request material such as `access_header` or server-side-encryption keys is not by itself treated as a credential here: a request that carries only such material but no explicit key pair (and the default `use_environment_credentials = 1`) is still refused, because it would otherwise fall back to the server's ambient credentials. Such an endpoint must also provide explicit keys, `NOSIGN`, `use_environment_credentials = 0`, or the escape hatch below.
 
 A trusted administrative client may need server-managed credentials for legitimate operations (for example, attaching system tables on an `s3_plain_rewritable` disk via SQL). Enable this setting in that client's session or settings profile to permit it.
+
+For `BACKUP`/`RESTORE ... ON CLUSTER` the initiator's value of this setting is propagated to the other hosts and used there as-is. Those hosts run the per-host continuation of the operation through the distributed DDL queue, by default without the initiator's user, so they would otherwise evaluate the restriction against their own default profile; the initiator's value is preserved instead, because it has already opened the same backup destination under its own, constrained, settings. A `readonly` constraint on the initiator still applies (an untrusted initiator cannot enable the setting for its own on-cluster backup), so this does not weaken the restriction.
 
 Durability for persistent `S3` and `S3Queue` tables: enabling this only per session or profile is not durable across a restart. When the server reloads such a table from its stored definition (startup or `RESTORE`) it rebuilds the S3 client and re-applies the restriction with the startup context, so a table that relied on server-managed credentials and was created only under a session/profile `s3_allow_server_credentials_in_user_queries = 1` is created successfully but becomes inaccessible after a restart (the table is left in place; queries against it fail until its credentials resolve to a permitted source again). The server itself still starts. Give such tables explicit credentials for durable access; alternatively, enabling the setting server-wide keeps them loading across restarts, at the cost of relaxing the restriction for all reloads.
 
@@ -7087,10 +7102,10 @@ Only has an effect in ClickHouse Cloud. Identifies behaviour of distributed cach
     DECLARE(UInt64, distributed_cache_alignment, 0, R"(
 Only has an effect in ClickHouse Cloud. A setting for testing purposes, do not change it
 )", 0) \
-    DECLARE(UInt64, distributed_cache_max_unacked_inflight_packets, DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS, R"(
+    DECLARE(UInt64, distributed_cache_max_unacked_inflight_packets, default_distributed_cache_max_unacked_inflight_packets, R"(
 Only has an effect in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets in a single distributed cache read request
 )", 0) \
-    DECLARE(UInt64, distributed_cache_data_packet_ack_window, DistributedCache::ACK_DATA_PACKET_WINDOW, R"(
+    DECLARE(UInt64, distributed_cache_data_packet_ack_window, default_distributed_cache_data_packet_ack_window, R"(
 Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a single distributed cache read request
 )", 0) \
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(

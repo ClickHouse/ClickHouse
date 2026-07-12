@@ -106,7 +106,6 @@
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
-#include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/Config/ConfigReloader.h>
@@ -368,6 +367,9 @@ namespace ServerSetting
     extern const ServerSettingsString query_condition_cache_policy;
     extern const ServerSettingsUInt64 query_condition_cache_size;
     extern const ServerSettingsDouble query_condition_cache_size_ratio;
+    extern const ServerSettingsString encryption_header_cache_policy;
+    extern const ServerSettingsUInt64 encryption_header_cache_size;
+    extern const ServerSettingsDouble encryption_header_cache_size_ratio;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
     extern const ServerSettingsBool user_profile_events_per_cpu;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
@@ -1342,7 +1344,8 @@ try
 
     // If the startup_console_log_level is set in the config, we override the console logger level.
     // Specific loggers can still override it.
-    std::string original_console_log_level_config = config().getString("logger.startup_console_log_level", "");
+    bool console_log_level_was_set = config().has("logger.console_log_level");
+    std::string original_console_log_level_config = config().getString("logger.console_log_level", "");
     bool should_restore_console_log_level = false;
     if (config().has("logger.startup_console_log_level") && !config().getString("logger.startup_console_log_level").empty())
     {
@@ -1409,7 +1412,6 @@ try
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
-    registerSchedulerNodes();
 
     QueryPlanStepRegistry::registerPlanSteps();
 
@@ -2351,6 +2353,16 @@ try
     }
     global_context->setQueryConditionCache(query_condition_cache_policy, query_condition_cache_size, query_condition_cache_size_ratio);
 
+    String encryption_header_cache_policy = server_settings[ServerSetting::encryption_header_cache_policy];
+    size_t encryption_header_cache_size = server_settings[ServerSetting::encryption_header_cache_size];
+    double encryption_header_cache_size_ratio = server_settings[ServerSetting::encryption_header_cache_size_ratio];
+    if (encryption_header_cache_size > max_cache_size)
+    {
+        encryption_header_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered encryption header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(encryption_header_cache_size));
+    }
+    global_context->setEncryptionHeaderCache(encryption_header_cache_policy, encryption_header_cache_size, encryption_header_cache_size_ratio);
+
     size_t query_result_cache_max_size_in_bytes = server_settings[ServerSetting::query_cache_max_size_in_bytes];
     size_t query_result_cache_max_entries = server_settings[ServerSetting::query_cache_max_entries];
     size_t query_result_cache_max_entry_size_in_bytes = server_settings[ServerSetting::query_cache_max_entry_size_in_bytes];
@@ -2745,9 +2757,12 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            if (config().has("resources"))
+            if (config().has("resources") || config().has("workload_classifiers"))
             {
-                global_context->getResourceManager()->updateConfiguration(config());
+                LOG_WARNING(
+                    &logger(),
+                    "Config-based resource scheduling ('resources' and 'workload_classifiers' configuration sections) "
+                    "has been removed and is ignored. Use 'CREATE RESOURCE' and 'CREATE WORKLOAD' queries instead.");
             }
 
             /// Load WORKLOADs and RESOURCEs.
@@ -2791,6 +2806,7 @@ try
                 global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
                 setPointInPolygonCacheMaxSizeInBytes(
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
@@ -3447,9 +3463,20 @@ try
 
             if (should_restore_console_log_level)
             {
-                config().setString("logger.console_log_level", original_console_log_level_config);
-                Loggers::updateLevels(config(), logger());
-                LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
+                /// If the level was unset just remove the override so the default can be set via
+                /// Loggers::updateLevels again; otherwise restore the configured value.
+                if (console_log_level_was_set)
+                {
+                    config().setString("logger.console_log_level", original_console_log_level_config);
+                    Loggers::updateLevels(config(), logger());
+                    LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
+                }
+                else
+                {
+                    config().remove("logger.console_log_level");
+                    Loggers::updateLevels(config(), logger());
+                    LOG_INFO(log, "Restored console logger level to logger.level");
+                }
             }
 
             for (auto & server : servers)
