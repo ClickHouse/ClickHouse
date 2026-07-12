@@ -25,3 +25,13 @@ SELECT count() FROM t_04490
 WHERE exists((SELECT dt)) OR dt IN (SELECT 1) OR (dt > 1 AND dt < 100 AND dt != 7);
 
 DROP TABLE t_04490;
+
+-- Reduced reproducer from issue #100422 (a correlated exists plus several OR branches, one an AND chain).
+DROP TABLE IF EXISTS m_04490;
+CREATE TABLE m_04490 (a UInt32) ENGINE = Memory;
+INSERT INTO m_04490 VALUES (0), (1), (2);
+SELECT * FROM m_04490
+WHERE exists((SELECT a <= 100)) OR (a >= 0 AND a <= 50 AND a > 10) OR (2 != a) OR (a = 99)
+ORDER BY a;
+
+DROP TABLE m_04490;
