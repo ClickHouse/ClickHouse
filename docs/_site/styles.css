@@ -3003,3 +3003,26 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
 .mdx-content [data-endpoint-badge] {
     display: none;
 }
+
+/* ============================================
+   Compact integration table logos
+   ============================================ */
+
+.integration-table-logo {
+    display: inline-block;
+    width: 1.5rem !important;
+    height: 1.5rem !important;
+    max-width: 1.5rem !important;
+    margin: 0 0.5rem 0 0 !important;
+    padding: 0.2rem;
+    vertical-align: middle;
+    object-fit: contain;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 0.375rem;
+    box-sizing: border-box;
+}
+
+td:has(> .integration-table-logo) {
+    white-space: nowrap;
+}
