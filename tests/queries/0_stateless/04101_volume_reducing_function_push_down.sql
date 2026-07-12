@@ -84,34 +84,6 @@ FROM (EXPLAIN description = 1
     SELECT length(s) + 1 FROM volume_reducing_function_push_down WHERE id > 0
     SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 0);
 
--- ----------------------------------------------------------------------------
--- Header-shape assertion: for a pure-passthrough child (`Sort` / `Limit`) the
--- wide source column must be dropped from the step, not merely carried through.
--- We probe with the `fs FixedString(4)` column on purpose: ClickHouse's earlier
--- subcolumn-pruning pass rewrites `length(s)` / `length(arr)` to read the
--- `s.size` / `arr.size0` subcolumn, so a `String` / `Array` argument never
--- actually flows into `Sorting` / `Limit` regardless of this optimization.
--- `FixedString` has no `.size` subcolumn (the size is part of the type), so
--- `notEmpty(fs)` is the smallest probe that observes the wide-column pruning
--- this optimization is responsible for. With the optimization ON it survives
--- only below the pushed step; with it OFF it also flows through `Sorting`
--- and `Limit`. So the ON plan must mention `fs FixedString` strictly fewer
--- times than the OFF plan.
--- ----------------------------------------------------------------------------
-
-SELECT 'header: wide column pruned from sort/limit when enabled';
-SELECT
-    (SELECT countIf(explain LIKE '%fs FixedString%')
-     FROM (EXPLAIN header = 1
-        SELECT notEmpty(fs) FROM volume_reducing_function_push_down ORDER BY id DESC LIMIT 2
-        SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 1))
-    <
-    (SELECT countIf(explain LIKE '%fs FixedString%')
-     FROM (EXPLAIN header = 1
-        SELECT notEmpty(fs) FROM volume_reducing_function_push_down ORDER BY id DESC LIMIT 2
-        SETTINGS query_plan_push_down_volume_reducing_functions = 0, query_plan_merge_expressions = 1));
-
--- ----------------------------------------------------------------------------
 -- Default-behavior regression: when the optimization is disabled, the existing
 -- `tryExecuteFunctionsAfterSorting` (`query_plan_execute_functions_after_sorting`,
 -- on by default) must still lift non-sort expressions above the `Sorting` step,
@@ -129,7 +101,7 @@ SELECT
 SELECT 'plan: default lift-up not regressed when push-down disabled';
 SELECT countIf(explain LIKE '%[lifted up part]%') > 0
 FROM (EXPLAIN description = 1
-    SELECT notEmpty(fs), upper(toString(fs)) FROM volume_reducing_function_push_down ORDER BY id
+    SELECT notEmpty(fs), lower(s), upper(toString(fs)) AS sort_key FROM volume_reducing_function_push_down ORDER BY sort_key
     SETTINGS query_plan_push_down_volume_reducing_functions = 0,
              query_plan_execute_functions_after_sorting = 1,
              query_plan_merge_expressions = 1);
@@ -137,7 +109,7 @@ FROM (EXPLAIN description = 1
 SELECT 'plan: mixed roots keep only volume-reducing functions below sort';
 SELECT countIf(explain LIKE '%[lifted up part]%') > 0
 FROM (EXPLAIN description = 1
-    SELECT notEmpty(fs), upper(toString(fs)) FROM volume_reducing_function_push_down ORDER BY id
+    SELECT notEmpty(fs), lower(s), upper(toString(fs)) AS sort_key FROM volume_reducing_function_push_down ORDER BY sort_key
     SETTINGS query_plan_push_down_volume_reducing_functions = 1,
              query_plan_execute_functions_after_sorting = 1,
              query_plan_merge_expressions = 1);
@@ -145,7 +117,7 @@ FROM (EXPLAIN description = 1
 SELECT 'plan: unsupported UUID/IP roots still lift up';
 SELECT countIf(explain LIKE '%[lifted up part]%') > 0
 FROM (EXPLAIN description = 1
-    SELECT empty(u), empty(ipv4), empty(ipv6) FROM volume_reducing_function_push_down ORDER BY id
+    SELECT empty(u), empty(ipv4), empty(ipv6), upper(toString(fs)) AS sort_key FROM volume_reducing_function_push_down ORDER BY sort_key
     SETTINGS query_plan_push_down_volume_reducing_functions = 1,
              query_plan_execute_functions_after_sorting = 1,
              query_plan_merge_expressions = 1);

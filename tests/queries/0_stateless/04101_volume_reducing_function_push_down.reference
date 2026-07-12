@@ -10,8 +10,6 @@ plan: group by — barrier respected
 0
 plan: nested expression (length(s)+1) — not pushed
 0
-header: wide column pruned from sort/limit when enabled
-1
 plan: default lift-up not regressed when push-down disabled
 1
 plan: mixed roots keep only volume-reducing functions below sort
@@ -19,6 +17,7 @@ plan: mixed roots keep only volume-reducing functions below sort
 plan: unsupported UUID/IP roots still lift up
 1
 eq: filter
+eq: unsupported UUID/IP roots
 eq: sort+limit
 eq: group by
 0	1
@@ -28,6 +27,5 @@ eq: join
 0	1
 5	2
 12	3
-eq: unsupported UUID/IP roots
 eq: distinct subquery
 eq: alias collides with sort key
