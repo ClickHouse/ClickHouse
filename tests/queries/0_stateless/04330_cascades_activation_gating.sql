@@ -59,4 +59,16 @@ SELECT '-- 7. A read without clone support is rejected (fail-close)';
 SELECT count() FROM (EXPLAIN PLAN SELECT 1)
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
 
+-- A distributed read is bucketed and cannot be served from a projection, so projections are
+-- turned off under `make_distributed_plan`; a forced projection is ignored and the query still works.
+SELECT '-- 8. A forced projection is ignored (still correct)';
+DROP TABLE IF EXISTS t_gating_proj;
+CREATE TABLE t_gating_proj (a UInt64, b UInt64, PROJECTION p_agg (SELECT b, sum(a) GROUP BY b))
+ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_gating_proj SELECT number, number % 5 FROM numbers(1000);
+SELECT b, sum(a) FROM t_gating_proj GROUP BY b ORDER BY b
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+    distributed_plan_execute_locally = 1, optimize_use_projections = 1, force_optimize_projection = 1;
+DROP TABLE t_gating_proj;
+
 DROP TABLE t_gating;
