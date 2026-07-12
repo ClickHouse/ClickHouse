@@ -121,6 +121,12 @@ CustomSeparatedFormatReader::CustomSeparatedFormatReader(
     PeekableReadBuffer & buf_, bool ignore_spaces_, const FormatSettings & format_settings_)
     : FormatWithNamesAndTypesReader(buf_, format_settings_), buf(&buf_), ignore_spaces(ignore_spaces_)
 {
+    if (format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV)
+    {
+        const bool tuple_delimiter_matches = format_settings.custom.field_delimiter.size() == 1
+            && format_settings.custom.field_delimiter.front() == format_settings.csv.tuple_delimiter;
+        format_settings.csv.deserialize_separate_columns_into_tuple &= tuple_delimiter_matches;
+    }
 }
 
 void CustomSeparatedFormatReader::skipPrefixBeforeHeader()

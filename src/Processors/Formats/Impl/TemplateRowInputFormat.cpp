@@ -26,7 +26,13 @@ namespace ErrorCodes
                            std::to_string(row_num));
 }
 
-static void updateFormatSettingsIfNeeded(FormatSettings::EscapingRule escaping_rule, FormatSettings & settings, const ParsedTemplateFormatString & row_format, char default_csv_delimiter, size_t file_column)
+static void updateFormatSettingsIfNeeded(
+    FormatSettings::EscapingRule escaping_rule,
+    FormatSettings & settings,
+    const ParsedTemplateFormatString & row_format,
+    char default_csv_delimiter,
+    bool default_deserialize_separate_columns_into_tuple,
+    size_t file_column)
 {
     if (escaping_rule != FormatSettings::EscapingRule::CSV)
         return;
@@ -45,6 +51,12 @@ static void updateFormatSettingsIfNeeded(FormatSettings::EscapingRule escaping_r
     /// but works properly.
     else
         settings.csv.custom_delimiter = row_format.delimiters[file_column + 1];
+
+    const auto & field_delimiter = row_format.delimiters[file_column + 1];
+    const bool tuple_delimiter_matches = field_delimiter.size() == 1
+        && field_delimiter.front() == settings.csv.tuple_delimiter;
+    settings.csv.deserialize_separate_columns_into_tuple =
+        default_deserialize_separate_columns_into_tuple && tuple_delimiter_matches;
 }
 
 TemplateRowInputFormat::TemplateRowInputFormat(
@@ -68,7 +80,9 @@ TemplateRowInputFormat::TemplateRowInputFormat(SharedHeader header_, std::unique
     : RowInputFormatWithDiagnosticInfo(header_, *buf_, params_), buf(std::move(buf_)), data_types(header_->getDataTypes()),
       settings(std::move(settings_)), ignore_spaces(ignore_spaces_),
       format(std::move(format_)), row_format(std::move(row_format_)),
-      default_csv_delimiter(settings.csv.delimiter), row_between_delimiter(row_between_delimiter_),
+      default_csv_delimiter(settings.csv.delimiter),
+      default_deserialize_separate_columns_into_tuple(settings.csv.deserialize_separate_columns_into_tuple),
+      row_between_delimiter(row_between_delimiter_),
       format_reader(std::make_unique<TemplateFormatReader>(*buf, ignore_spaces_, format, row_format, row_between_delimiter, settings))
 {
     /// Validate format string for rows
@@ -156,7 +170,13 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type,
     const SerializationPtr & serialization, IColumn & column, size_t file_column)
 {
     EscapingRule escaping_rule = row_format.escaping_rules[file_column];
-    updateFormatSettingsIfNeeded(escaping_rule, settings, row_format, default_csv_delimiter, file_column);
+    updateFormatSettingsIfNeeded(
+        escaping_rule,
+        settings,
+        row_format,
+        default_csv_delimiter,
+        default_deserialize_separate_columns_into_tuple,
+        file_column);
 
     try
     {
@@ -500,6 +520,7 @@ TemplateSchemaReader::TemplateSchemaReader(
     , row_format(row_format_)
     , format_reader(buf, ignore_spaces_, format, row_format, row_between_delimiter, format_settings)
     , default_csv_delimiter(format_settings_.csv.delimiter)
+    , default_deserialize_separate_columns_into_tuple(format_settings_.csv.deserialize_separate_columns_into_tuple)
 {
     setColumnNames(row_format.column_names);
 }
@@ -523,7 +544,13 @@ std::optional<DataTypes> TemplateSchemaReader::readRowAndGetDataTypes()
     for (size_t i = 0; i != row_format.columnsCount(); ++i)
     {
         format_reader.skipDelimiter(i);
-        updateFormatSettingsIfNeeded(row_format.escaping_rules[i], format_settings, row_format, default_csv_delimiter, i);
+        updateFormatSettingsIfNeeded(
+            row_format.escaping_rules[i],
+            format_settings,
+            row_format,
+            default_csv_delimiter,
+            default_deserialize_separate_columns_into_tuple,
+            i);
         field = readFieldByEscapingRule(buf, row_format.escaping_rules[i], format_settings);
         data_types.push_back(tryInferDataTypeByEscapingRule(field, format_settings, row_format.escaping_rules[i], &json_inference_info));
     }

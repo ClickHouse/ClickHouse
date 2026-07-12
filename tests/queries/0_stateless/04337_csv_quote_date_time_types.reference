@@ -34,7 +34,7 @@ Template CSV escaping uses its following delimiter
 "2024-01-15"-42
 Template CSV escaping keeps a boundary without a delimiter
 "1234567890"42
-CustomSeparated tuple leaves use the tuple delimiter
-"2024-01-17 08:30:00":2024-01-18 09:45:01|42
-Template tuple leaves use the tuple delimiter
-"2024-01-17 08:30:00":2024-01-18 09:45:01|42
+CustomSeparated keeps a divergent tuple delimiter in one CSV field
+"('2024-01-17 08:30:00','2024-01-18 09:45:01')"|42
+Template keeps a divergent tuple delimiter in one CSV field
+"('2024-01-17 08:30:00','2024-01-18 09:45:01')"|42

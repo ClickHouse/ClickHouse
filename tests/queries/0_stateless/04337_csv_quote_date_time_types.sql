@@ -125,12 +125,12 @@ SETTINGS
     format_template_row_format = '${dt:CSV}${n:CSV}\n',
     format_template_resultset_format = '${data}';
 
-SELECT 'CustomSeparated tuple leaves use the tuple delimiter' FORMAT TSVRaw;
+SELECT 'CustomSeparated keeps a divergent tuple delimiter in one CSV field' FORMAT TSVRaw;
 SELECT *
 FROM format(
     CustomSeparated,
     't Tuple(DateTime(\'UTC\'), DateTime(\'UTC\')), n UInt8',
-    '"2024-01-17 08:30:00":"2024-01-18 09:45:01"|42')
+    '"(\'2024-01-17 08:30:00\',\'2024-01-18 09:45:01\')"|42\n')
 FORMAT CustomSeparated
 SETTINGS
     output_format_csv_quote_date_time_types = 0,
@@ -139,7 +139,7 @@ SETTINGS
     format_custom_field_delimiter = '|',
     format_custom_row_after_delimiter = '\n';
 
-SELECT 'Template tuple leaves use the tuple delimiter' FORMAT TSVRaw;
+SELECT 'Template keeps a divergent tuple delimiter in one CSV field' FORMAT TSVRaw;
 SELECT
     tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), toDateTime('2024-01-18 09:45:01', 'UTC')) AS t,
     42 AS n

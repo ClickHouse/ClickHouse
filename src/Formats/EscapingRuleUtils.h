@@ -14,7 +14,8 @@ FormatSettings::EscapingRule stringToEscapingRule(const String & escaping_rule);
 
 String escapingRuleToString(FormatSettings::EscapingRule escaping_rule);
 
-FormatSettings getFormatSettingsForCSVFieldDelimiter(const FormatSettings & format_settings, const String & field_delimiter);
+FormatSettings getFormatSettingsForCSVFieldDelimiter(
+    const FormatSettings & format_settings, const String & field_delimiter, const String & tuple_field_delimiter);
 
 void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings);
 

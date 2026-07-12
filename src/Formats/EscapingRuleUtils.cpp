@@ -62,10 +62,16 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
     }
 }
 
-FormatSettings getFormatSettingsForCSVFieldDelimiter(const FormatSettings & format_settings, const String & field_delimiter)
+FormatSettings getFormatSettingsForCSVFieldDelimiter(
+    const FormatSettings & format_settings, const String & field_delimiter, const String & tuple_field_delimiter)
 {
     FormatSettings result = format_settings;
     result.csv.custom_delimiter.clear();
+
+    const bool tuple_delimiter_matches = tuple_field_delimiter.size() == 1
+        && tuple_field_delimiter.front() == result.csv.tuple_delimiter;
+    result.csv.serialize_tuple_into_separate_columns &= tuple_delimiter_matches;
+    result.csv.deserialize_separate_columns_into_tuple &= tuple_delimiter_matches;
 
     if (field_delimiter.empty())
     {

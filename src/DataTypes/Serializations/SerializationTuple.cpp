@@ -13,8 +13,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <optional>
-
 namespace DB
 {
 
@@ -36,17 +34,6 @@ static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
 {
     return assert_cast<const ColumnTuple &>(column).getColumn(idx);
-}
-
-static std::optional<FormatSettings> getInteriorTupleCSVSettings(const FormatSettings & settings, size_t elements)
-{
-    if (elements < 2 || (settings.csv.delimiter == settings.csv.tuple_delimiter && settings.csv.custom_delimiter.empty()))
-        return std::nullopt;
-
-    FormatSettings result = settings;
-    result.csv.delimiter = settings.csv.tuple_delimiter;
-    result.csv.custom_delimiter.clear();
-    return result;
 }
 
 UInt128 SerializationTuple::getHash(const ElementSerializations & elems_, bool has_explicit_names_)
@@ -644,15 +631,11 @@ void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num
 {
     if (settings.csv.serialize_tuple_into_separate_columns)
     {
-        const size_t size = elems.size();
-        const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < elems.size(); ++i)
         {
             if (i != 0)
                 writeChar(settings.csv.tuple_delimiter, ostr);
-
-            const auto & element_settings = interior_settings && i + 1 < size ? *interior_settings : settings;
-            elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, element_settings);
+            elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, settings);
         }
     }
     else
@@ -667,10 +650,9 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 {
     if (settings.csv.deserialize_separate_columns_into_tuple)
     {
-        const size_t size = elems.size();
-        const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
         addElementSafe<void>(elems.size(), column, [&]
         {
+            const size_t size = elems.size();
             for (size_t i = 0; i < size; ++i)
             {
                 if (i != 0)
@@ -679,13 +661,11 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
                     assertChar(settings.csv.tuple_delimiter, istr);
                     skipWhitespaceIfAny(istr);
                 }
-
                 auto & element_column = extractElementColumn(column, i);
-                const auto & element_settings = interior_settings && i + 1 < size ? *interior_settings : settings;
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
-                    SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(element_column, istr, element_settings, elems[i]);
+                    SerializationNullable::deserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]);
                 else
-                    elems[i]->deserializeTextCSV(element_column, istr, element_settings);
+                    elems[i]->deserializeTextCSV(element_column, istr, settings);
             }
             return true;
         });
@@ -703,10 +683,9 @@ bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
 {
     if (settings.csv.deserialize_separate_columns_into_tuple)
     {
-        const size_t size = elems.size();
-        const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
         return addElementSafe<bool>(elems.size(), column, [&]
         {
+            const size_t size = elems.size();
             for (size_t i = 0; i < size; ++i)
             {
                 if (i != 0)
@@ -716,17 +695,15 @@ bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
                     return false;
                 skipWhitespaceIfAny(istr);
                 }
-
                 auto & element_column = extractElementColumn(column, i);
-                const auto & element_settings = interior_settings && i + 1 < size ? *interior_settings : settings;
                 if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(element_column))
                 {
-                if (!SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(element_column, istr, element_settings, elems[i]))
+                if (!SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(element_column, istr, settings, elems[i]))
                     return false;
                 }
                 else
                 {
-                if (!elems[i]->tryDeserializeTextCSV(element_column, istr, element_settings))
+                if (!elems[i]->tryDeserializeTextCSV(element_column, istr, settings))
                     return false;
                 }
             }
