@@ -107,13 +107,14 @@ configure_opts=(
     # Let's enable S3 storage by default
     --s3-storage
 )
-# Forward the encrypted-storage mode to the previous-release clickhouse-test run below.
-# clickhouse-test disables --encrypted-storage unless --s3-storage (or --azure) is also
-# set (an encrypted disk is layered on object storage); the server is always on --s3-storage.
-encrypted_test_opts=""
+# The previous-release server is always started with --s3-storage (above), so forward --s3-storage to
+# clickhouse-test on every run: its no-s3-storage / no-object-storage skips key off --s3-storage, and
+# without it the non-encrypted half keeps running those tests against the object-storage server. clickhouse-test
+# also force-disables --encrypted-storage unless --s3-storage (or --azure) is set, so gate only the coin flip.
+test_opts="--s3-storage"
 if [ $((RANDOM % 2)) -eq 0 ]; then
     configure_opts+=(--encrypted-storage)
-    encrypted_test_opts="--s3-storage --encrypted-storage"
+    test_opts="$test_opts --encrypted-storage"
 fi
 
 # Start server from previous release
@@ -130,7 +131,7 @@ clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', versi
 
 mkdir tmp_stress_output
 
-stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" $encrypted_test_opts"  --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
+stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" $test_opts"  --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
@@ -440,22 +441,24 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       restart the engine probes the server while loading the persisted object and logs `<Error>` for the
 #       expected connection failure. Filtered to require the MySQL component AND the connection-failure
 #       symptom together, so real MySQL regressions (auth, protocol, query errors) are not masked.
-# `is encrypted in the backup, it can be restored only to an encrypted disk` is a benign leftover-state error
-#       from the `Backup` database engine. The `03277`/`03279` backup-database tests create a
-#       `CREATE DATABASE ... ENGINE = Backup(...)` database and drop it, but the upgrade check runs the client
-#       with `--fake-drop` (DROP queries are ignored), so the database survives into the upgrade restart. When the
-#       upgrade run randomly enables `--encrypted-storage`, the backed-up parts are encrypted; on restart the
-#       Backup engine reads them through `DiskBackup` (a non-encrypted virtual disk), and `BackupImpl::readFileImpl`
-#       rejects the encrypted files with `CANNOT_RESTORE_TO_NONENCRYPTED_DISK` (Code 697). This is expected: an
-#       encrypted backup stores already-encrypted bytes and no disk key, so it can only be read back on an
-#       encrypted disk. The message string is emitted only at the two Code 697 throw sites in `BackupImpl.cpp`, so
-#       anchoring on it alone does not mask genuine broken-part errors (which carry a different reason). This
-#       covers all Backup-engine restore variants regardless of the surviving database name (`03279` names it
-#       `..._inner_backup_database`; `03277` names it `..._restore`). The follow-up `Detaching broken part` +
-#       `backward incompatibility` cleanup line does not carry the Code 697 message, so it is matched by the
-#       sibling regex below, scoped to the `backup_database` database-name token (shared by the `03276`/`03277`/
-#       `03278`/`03279` backup-database tests) so unrelated backward-incompatibility broken-part errors are not
-#       masked.
+# `is broken and needs manual correction` / `while loading part` + Code 697 (CANNOT_RESTORE_TO_NONENCRYPTED_DISK)
+#       is a benign leftover-state error from the `Backup` database engine. The `03276`/`03277`/`03278`/`03279`
+#       backup-database tests `CREATE DATABASE ... ENGINE = Backup(...)` and drop it, but the upgrade check runs
+#       the client with `--fake-drop` (DROP queries are ignored), so the database survives into the upgrade
+#       restart. When the run randomly enables `--encrypted-storage`, the backed-up parts are encrypted; on
+#       restart the MergeTree part loader reads them through the Backup engine's `DiskBackup` (a non-encrypted
+#       virtual disk), so `BackupImpl::readFileImpl` rejects each encrypted part with Code 697 and the loader logs
+#       it as a broken part. This is expected: an encrypted backup stores already-encrypted bytes and no disk key,
+#       so it can only be read back on an encrypted disk; the Backup DB engine cannot serve it, no crash/data loss.
+#       Scoped to the part-loader wrapper (`is broken and needs manual correction` OR `while loading part`), which
+#       Code 697 only carries on this background Backup-engine read path (`BackupImpl.cpp` readFileImpl, ~912).
+#       The explicit RESTORE-to-disk path (`copyFileToDisk`, ~1038) throws the same message straight to the client
+#       without a part-loader wrapper, so a real regression restoring an encrypted backup to a non-encrypted
+#       destination still surfaces. The scope is database-name-independent, so it covers all four tests regardless
+#       of the surviving DB name (`03279` -> `..._inner_backup_database`; `03277` -> `..._restore`). The follow-up
+#       `Detaching broken part` + `backward incompatibility` cleanup line carries no Code 697 message, so it is
+#       matched by the sibling regex below, scoped to the backup-database DB-name tokens (`backup_database` for
+#       `03276`/`03278`/`03279`, `_restore` for `03277`) so unrelated broken-part errors are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -547,8 +550,10 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "mysqlxx::Pool.*Failed to connect to MySQL" \
     | grep -av -e "Application: Connection to mysql failed" \
     | grep -av -e "DatabaseMySQL.*Connections to mysql failed" \
-    | grep -av -e "is encrypted in the backup, it can be restored only to an encrypted disk" \
+    | grep -av -e "is broken and needs manual correction.*is encrypted in the backup, it can be restored only to an encrypted disk" \
+    | grep -av -e "while loading part.*is encrypted in the backup, it can be restored only to an encrypted disk" \
     | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "_restore.*Detaching broken part.*backward incompatibility" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
