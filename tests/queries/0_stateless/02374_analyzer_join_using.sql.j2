@@ -1,3 +1,7 @@
+-- Tags: long
+-- The template expands to ~180 queries, so under sanitizers with the flaky check's parallel reruns
+-- a single run can exceed the 180 second limit, same as the sibling 02372_analyzer_join.
+
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_table_join_1;
