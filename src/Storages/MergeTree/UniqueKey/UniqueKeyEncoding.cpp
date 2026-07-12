@@ -293,6 +293,11 @@ void dispatchNonNullableColumnWise(
             appendFixedStringColumn(static_cast<const ColumnFixedString &>(column), null_map, permutation, num_rows, out);
             return;
         case TypeIndex::UUID:
+            /// `UUID2` reuses `ColumnVector<UUID>` storage, so a `UUID2` column reports `TypeIndex::UUID`
+            /// here (`getDataType()` is the physical column type) and takes this branch. Encoding its
+            /// in-memory 128-bit value in big-endian is order-preserving for both types; for `UUID2` the
+            /// in-memory value is already the canonical big-endian integer, so the encoded bytes are the
+            /// canonical 16 bytes.
             appendVectorColumn(static_cast<const ColumnUUID &>(column), null_map, permutation, num_rows, out,
                 [](const UUID & v, String & dst) { appendBigEndian(v.toUnderType(), dst); });
             return;
