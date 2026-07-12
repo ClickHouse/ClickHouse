@@ -1,9 +1,13 @@
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/AccessType.h>
 #include <Core/Settings.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Common/tests/gtest_global_context.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -141,4 +145,61 @@ TEST(AsyncInsertKey, AuthenticationGrantsAreDistinguished)
     auto key_t1_again = make_key(make_grants("db", "t1"));
     EXPECT_EQ(key_t1.hash, key_t1_again.hash);
     EXPECT_EQ(key_t1, key_t1_again);
+}
+
+TEST(AsyncInsertKey, AuthenticationGrantsUsePreciseSerialization)
+{
+    /// Force the shared global context to exist so the (non-precise) `toString` serialization observes the
+    /// server toggles. `enable_read_write_grants` defaults to false, under which the backward-compatibility
+    /// widening drops the distinguishing source filter — exactly the collapse the key must avoid.
+    auto & access_control = getMutableContext().context->getAccessControl();
+    ASSERT_FALSE(access_control.isEnabledReadWriteGrants());
+
+    String query_str = "INSERT INTO test (a, b, c) VALUES (1, 2, 3)";
+    ParserInsertQuery parser(query_str.data() + query_str.size(), false);
+    ASTPtr query = parseQuery(parser, query_str, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    Settings settings;
+    settings.set("async_insert", 1);
+
+    auto kind = AsynchronousInsertQueueDataKind::Parsed;
+
+    auto make_source_grant = [](AccessType type, std::string_view source, std::string_view filter)
+    {
+        auto grants = std::make_shared<AccessRightsElements>();
+        AccessRightsElement element(AccessFlags(type), source);
+        element.filter = String(filter);
+        grants->emplace_back(std::move(element));
+        return std::shared_ptr<const AccessRightsElements>(std::move(grants));
+    };
+
+    auto make_key = [&](const std::shared_ptr<const AccessRightsElements> & grants)
+    {
+        return AsynchronousInsertQueue::InsertQuery(query, {}, {}, {}, grants, {}, {}, {}, settings, kind);
+    };
+
+    /// Two credentials that differ only by the source filter. Under the default `enable_read_write_grants=0`
+    /// the widening `toString` drops the filter, so both stringify identically — the credential-collapse a
+    /// `toString`-based key would suffer from. The precise serialization keeps them distinct.
+    auto read_a = make_source_grant(AccessType::READ, "S3", "bucket-a/.*");
+    auto read_b = make_source_grant(AccessType::READ, "S3", "bucket-b/.*");
+    EXPECT_EQ(read_a->toString(), read_b->toString());
+    EXPECT_NE(read_a->toStringPrecise(), read_b->toStringPrecise());
+
+    /// So the keys, which use the precise serialization, never coalesce the two limits into one flush.
+    auto key_a = make_key(read_a);
+    auto key_b = make_key(read_b);
+    EXPECT_NE(key_a.hash, key_b.hash);
+    EXPECT_NE(key_a, key_b);
+
+    /// Source read/write limits (`READ ON FILE` vs `WRITE ON FILE`) are likewise collapsed by the widening
+    /// list serialization but kept distinct by the precise form the key uses.
+    auto read_file = std::make_shared<AccessRightsElements>();
+    read_file->emplace_back(AccessFlags(AccessType::READ), "FILE");
+    auto write_file = std::make_shared<AccessRightsElements>();
+    write_file->emplace_back(AccessFlags(AccessType::WRITE), "FILE");
+    auto key_read_file = make_key(std::shared_ptr<const AccessRightsElements>(read_file));
+    auto key_write_file = make_key(std::shared_ptr<const AccessRightsElements>(write_file));
+    EXPECT_NE(key_read_file.hash, key_write_file.hash);
+    EXPECT_NE(key_read_file, key_write_file);
 }
