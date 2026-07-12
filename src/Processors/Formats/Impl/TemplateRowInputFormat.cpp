@@ -56,7 +56,8 @@ static void updateFormatSettingsIfNeeded(
     const bool tuple_delimiter_matches = field_delimiter.size() == 1
         && field_delimiter.front() == settings.csv.tuple_delimiter;
     settings.csv.deserialize_separate_columns_into_tuple =
-        default_deserialize_separate_columns_into_tuple && tuple_delimiter_matches;
+        default_deserialize_separate_columns_into_tuple
+        && (settings.csv.quote_date_time_types || tuple_delimiter_matches);
 }
 
 TemplateRowInputFormat::TemplateRowInputFormat(

@@ -70,8 +70,9 @@ FormatSettings getFormatSettingsForCSVFieldDelimiter(
 
     const bool tuple_delimiter_matches = tuple_field_delimiter.size() == 1
         && tuple_field_delimiter.front() == result.csv.tuple_delimiter;
-    result.csv.serialize_tuple_into_separate_columns &= tuple_delimiter_matches;
-    result.csv.deserialize_separate_columns_into_tuple &= tuple_delimiter_matches;
+    const bool keep_tuple_columns_separate = result.csv.quote_date_time_types || tuple_delimiter_matches;
+    result.csv.serialize_tuple_into_separate_columns &= keep_tuple_columns_separate;
+    result.csv.deserialize_separate_columns_into_tuple &= keep_tuple_columns_separate;
 
     if (field_delimiter.empty())
     {

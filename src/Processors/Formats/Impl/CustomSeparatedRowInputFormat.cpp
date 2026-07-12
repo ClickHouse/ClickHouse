@@ -125,7 +125,8 @@ CustomSeparatedFormatReader::CustomSeparatedFormatReader(
     {
         const bool tuple_delimiter_matches = format_settings.custom.field_delimiter.size() == 1
             && format_settings.custom.field_delimiter.front() == format_settings.csv.tuple_delimiter;
-        format_settings.csv.deserialize_separate_columns_into_tuple &= tuple_delimiter_matches;
+        if (!format_settings.csv.quote_date_time_types)
+            format_settings.csv.deserialize_separate_columns_into_tuple &= tuple_delimiter_matches;
     }
 }
 
