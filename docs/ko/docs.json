@@ -16,6 +16,7 @@
               "group": "시작하기",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
+                "ko/get-started/quickstarts/home",
                 {
                   "expandable": true,
                   "expanded": true,
@@ -37,8 +38,7 @@
                   ],
                   "root": "ko/get-started/use-cases/overview"
                 },
-                "ko/get-started/about/deployment-modes",
-                "ko/get-started/quickstarts/home"
+                "ko/get-started/about/deployment-modes"
               ],
               "root": "ko/get-started/index"
             },
@@ -2215,10 +2215,6 @@
                     }
                   ],
                   "root": "ko/products/cloud/guides/index"
-                },
-                {
-                  "group": "API 참조",
-                  "openapi": "https://api.clickhouse.cloud/v1"
                 }
               ]
             },
