@@ -44,6 +44,14 @@ ${CLICKHOUSE_LOCAL} --config-file "${config}" --log_queries 1 --query "
     SELECT count() >= 1, countIf(if(initial_user != '', initial_user, user) != currentUser()) FROM system.user_query_log;
 "
 
+# The implicit SELECT grant on `system.user_query_log` is computed in clickhouse-local as well
+# (it initializes the access control on its own path, separately from the server):
+# a user without any explicit grants can read the table.
+${CLICKHOUSE_LOCAL} --query "
+    CREATE USER user_04516;
+    SHOW GRANTS FOR user_04516 WITH IMPLICIT;
+" | grep -c "GRANT SELECT ON system.user_query_log TO user_04516"
+
 # The table can be disabled.
 make_config custom_query_log false
 if ${CLICKHOUSE_LOCAL} --config-file "${config}" --query "SELECT count() FROM system.user_query_log" >/dev/null 2>&1
@@ -52,6 +60,12 @@ then
 else
     echo "disabled"
 fi
+
+# And when it is disabled, there is no implicit grant on the name: it may back a regular table.
+${CLICKHOUSE_LOCAL} --config-file "${config}" --query "
+    CREATE USER user_04516;
+    SHOW GRANTS FOR user_04516 WITH IMPLICIT;
+" | grep -c "GRANT SELECT ON system.user_query_log" || true
 
 # The query log itself cannot be configured to flush into `system.user_query_log`.
 make_config user_query_log true
