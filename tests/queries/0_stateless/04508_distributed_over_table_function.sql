@@ -196,3 +196,15 @@ SELECT d.* FROM dist_over_tf AS d ORDER BY number SETTINGS enable_analyzer = 0;
 SELECT {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.* FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf ORDER BY number SETTINGS enable_analyzer = 0;
 SELECT {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.* FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf ORDER BY number SETTINGS enable_analyzer = 1;
 DROP TABLE dist_over_tf;
+
+-- A `sharding_key` passed to the table-function form is not a real shard map: every shard runs the same
+-- table function and returns the same rows, so the key must not drive read optimizations. With
+-- `optimize_skip_unused_shards`, `WHERE number = 1` must still query every shard (one matching row per shard,
+-- i.e. 2, not 1), and with `optimize_distributed_group_by_sharding_key` the final cross-shard merge must
+-- still run (a single `1 2` group, not a `1 1` finalized per shard). Covered for both analyzers.
+CREATE TABLE dist_over_tf (number UInt64) ENGINE = Distributed(test_cluster_two_shards_localhost, numbers(10), number);
+SELECT count() FROM dist_over_tf WHERE number = 1 SETTINGS optimize_skip_unused_shards = 1, enable_analyzer = 1;
+SELECT count() FROM dist_over_tf WHERE number = 1 SETTINGS optimize_skip_unused_shards = 1, enable_analyzer = 0;
+SELECT number, count() FROM dist_over_tf WHERE number = 1 GROUP BY number ORDER BY number SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1, enable_analyzer = 1;
+SELECT number, count() FROM dist_over_tf WHERE number = 1 GROUP BY number ORDER BY number SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1, enable_analyzer = 0;
+DROP TABLE dist_over_tf;
