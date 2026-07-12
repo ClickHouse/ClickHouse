@@ -99,7 +99,48 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
             result_type = GeoType::Mixed;
         }
 
-        geo_columns[column_name] = GeoColumnMetadata{.encoding = geo_encoding, .type = result_type};
+        GeoColumnMetadata meta;
+        meta.encoding = geo_encoding;
+        meta.type = result_type;
+
+        /// Parse optional covering.bbox.
+        /// GeoParquet 1.1.0 format: {"covering": {"bbox": {"xmin": ["col", "field"], ...}}}
+        /// Each value is an array of path components joined with '.' to form the primitive column name.
+        if (column_obj->has("covering"))
+        {
+            const auto covering_obj = column_obj->getObject("covering");
+            if (covering_obj && covering_obj->has("bbox"))
+            {
+                const auto bbox_obj = covering_obj->getObject("bbox");
+                if (bbox_obj
+                    && bbox_obj->has("xmin") && bbox_obj->has("ymin")
+                    && bbox_obj->has("xmax") && bbox_obj->has("ymax"))
+                {
+                    /// Convert path-component array ["col", "field"] → "col.field"
+                    auto get_col = [&](const std::string & bbox_key) -> String
+                    {
+                        const auto arr = bbox_obj->getArray(bbox_key);
+                        if (!arr || arr->size() == 0)
+                            return {};
+                        String path;
+                        for (unsigned j = 0; j < arr->size(); ++j)
+                        {
+                            if (j > 0) path += ".";
+                            path += arr->getElement<std::string>(j);
+                        }
+                        return path;
+                    };
+                    String xmin = get_col("xmin");
+                    String ymin = get_col("ymin");
+                    String xmax = get_col("xmax");
+                    String ymax = get_col("ymax");
+                    if (!xmin.empty() && !ymin.empty() && !xmax.empty() && !ymax.empty())
+                        meta.covering_bbox = GeoColumnMetadata::BboxCovering{xmin, ymin, xmax, ymax};
+                }
+            }
+        }
+
+        geo_columns[column_name] = std::move(meta);
     }
 
     return geo_columns;

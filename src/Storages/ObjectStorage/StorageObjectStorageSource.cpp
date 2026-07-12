@@ -991,14 +991,33 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 if (auto mapper = configuration->getColumnMapperForObject(object_info))
                 {
-                    if (format_supports_prewhere)
-                        return std::make_shared<FormatFilterInfo>(
-                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
-                            mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
-                    else
-                        return std::make_shared<FormatFilterInfo>(
-                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
-                            mapper, nullptr, nullptr);
+                    /// `row_level_filter` / `prewhere_info` reference query-side column names
+                    /// (e.g. a renamed column's current name), but in the schema-changed path
+                    /// the reader's sample block uses the file's OWN (possibly stale) names, so
+                    /// pushing these filters into the format reader for row-level evaluation
+                    /// would bind their inputs to nothing real (see `NOT_FOUND_COLUMN_IN_BLOCK`
+                    /// comment below). Always strip them here, regardless of
+                    /// `format_supports_prewhere`, and let them run as fallback
+                    /// `FilterTransform`s after the schema-rename transform instead.
+                    /// `filter_actions_dag` is unaffected: it is only used to build a
+                    /// `KeyCondition` for row-group pruning, which needs types/names but not
+                    /// real row data, so query-side names combined with the per-file mapper
+                    /// (via `current_schema_column_mapper`) are fine there.
+                    if (format_filter_info->row_level_filter)
+                        stripped_row_level_filter = format_filter_info->row_level_filter;
+                    if (format_filter_info->prewhere_info)
+                        stripped_prewhere_info = format_filter_info->prewhere_info;
+
+                    auto result = std::make_shared<FormatFilterInfo>(
+                        format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                        mapper, nullptr, nullptr);
+                    /// `mapper` is scoped to the schema this specific file was written under, so it
+                    /// maps field_id -> the column name *that file* used. Keep the current/query-side
+                    /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
+                    /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
+                    /// pruning) back to a field_id.
+                    result->current_schema_column_mapper = format_filter_info->column_mapper;
+                    return result;
                 }
             }
 

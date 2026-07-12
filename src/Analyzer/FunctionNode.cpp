@@ -143,7 +143,11 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", nulls_action : IGNORE_NULLS";
 
     if (function)
+    {
         buffer << ", result_type: " + getResultType()->getName();
+        if (!isAggregateFunction() && !isWindowFunction() && getFunction()->isSpatialPredicate())
+            buffer << ", is_spatial_predicate: true";
+    }
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
