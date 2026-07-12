@@ -1,7 +1,6 @@
 
 <Steps>
-<Step>
-## Clone and run the application {#clone-and-run-the-application}
+<Step title="Clone and run the application" id="clone-and-run-the-application">
 Clone the repository, install dependencies, and create your `.env` file:
 
 ```bash
@@ -23,8 +22,7 @@ Open [http://localhost:5001](http://localhost:5001). You will see a year selecto
 
 At this point the application is running but uninstrumented. ClickStack shows no data: it is waiting for telemetry. This is the "before" state.
 </Step>
-<Step>
-## Get the connection details {#get-connection-details}
+<Step title="Get the connection details" id="get-connection-details">
 The application needs two values to reach the collector:
 
 - `OTEL_EXPORTER_OTLP_ENDPOINT`: the OTLP endpoint your collector exposes (commonly port `4318` for OTLP over HTTP).
@@ -40,8 +38,7 @@ OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-ingestion-token>
 
 The SDK uses `OTEL_EXPORTER_OTLP_HEADERS` to set the authorization header for all three signals: traces, metrics, and logs. If your collector runs locally and doesn't enforce auth, you can leave the value empty (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), but the variable must be present; the SDK skips initialization entirely if it's unset or fully empty.
 </Step>
-<Step>
-## Instrument the application {#instrument-the-application}
+<Step title="Instrument the application" id="instrument-the-application">
 Instrumentation has three parts: install the SDKs, switch the launch command, and enable the browser SDK. None of it changes the application's business logic.
 
 ### Install the SDKs {#install-sdks}
@@ -90,8 +87,7 @@ No extra `.env` edits are required. `__OTLP_ENDPOINT__` and `__OTLP_AUTH_TOKEN__
 The ingestion token is baked into the public browser bundle and is readable by anyone inspecting the network tab.
 </Warning>
 </Step>
-<Step>
-## Generate traffic and view telemetry {#generate-traffic-and-view-telemetry}
+<Step title="Generate traffic and view telemetry" id="generate-traffic-and-view-telemetry">
 Restart the application so the new launch command and freshly built browser bundle take effect:
 
 ```bash

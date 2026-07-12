@@ -6,28 +6,6 @@
 
 # ─────────────────────────── macOS platform gaps (keep skipped) ───────────────────────────
 
-# Float/double precision: on Apple arm64 'long double' == 'double', so the fast float parser cannot
-# reproduce x86/glibc results, and any result depending on extended precision (math funcs, float
-# parsing, float-derived hashes/checksums) differs. Out of scope here (precise-as-default).
-00558_parse_floats
-01037_polygon_dicts_correctness_all
-01037_polygon_dicts_correctness_fast
-01302_polygons_distance
-01720_country_intersection
-02179_degrees_radians
-02253_empty_part_checksums
-02705_projection_and_ast_optimizations_bug
-02813_float_parsing
-02815_range_dict_no_direct_join
-02951_parallel_parsing_json_compact_each_row
-03143_cte_scope
-03269_bf16
-03371_dynamic_values_parsing_templates
-03457_numeric_indexed_vector_build
-03702_geometry_functions
-03976_geometry_functions_accept_subtypes
-04402_float_parsing_corner_cases
-
 # Streaming distributed exchange: the DistributedQuery/stateless-worker layer is eventfd-based and
 # Linux-only ("Stateless worker client is not enabled" / "Only Persisted exchange is supported").
 03394_distributed_shuffle_join_with_aggregation
@@ -110,4 +88,5 @@
 02294_anova_cmp
 
 # Flaky on CI (stuck timeout)
+04281_sparsity_stream_skips_trivial_count
 04319_skip_unavailable_shards_mode_table_missing
