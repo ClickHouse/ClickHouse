@@ -141,6 +141,7 @@
 #include <numeric>
 #include <future>
 #include <span>
+#include <unordered_set>
 #include <vector>
 
 
@@ -4075,6 +4076,23 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
         for (const String & znode : queue_znodes)
             queue_entry_paths.emplace_back(replica_path + "/queue/" + znode);
 
+        /// Snapshot the znode names currently materialized in the in-memory queue so we can tell an entry that
+        /// normal processing already knows about apart from one that only exists in ZooKeeper. This function's
+        /// only queue.load() ran before startupDatabaseAsync, and pullLogsToQueue (just run above) copies each
+        /// /log entry into ZooKeeper /queue AND the in-memory queue in one step, so the only way a /queue znode
+        /// can exist without a matching in-memory entry is a synthetic repair znode a previous recovery attempt
+        /// created before it managed to queue.insert() it (recoverLostReplica is retried by
+        /// DatabaseReplicatedDDLWorker::initializeReplication() without restarting the table, so nothing reloads
+        /// that orphan). Treating ZooKeeper presence alone as "already queued" would leave such an orphan
+        /// unprocessed forever and the structure stale.
+        std::unordered_set<String> in_memory_queue_znodes;
+        {
+            ReplicatedMergeTreeQueue::LogEntriesData in_memory_entries;
+            queue.getEntries(in_memory_entries);
+            for (const auto & in_memory_entry : in_memory_entries)
+                in_memory_queue_znodes.insert(in_memory_entry.znode_name);
+        }
+
         auto queue_entry_data = zookeeper->tryGet(queue_entry_paths);
         for (size_t i = 0; i < queue_entry_paths.size(); ++i)
         {
@@ -4084,12 +4102,33 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
             auto queued = ReplicatedMergeTreeLogEntry::parse(res.data, res.stat, format_version);
             if (queued->type == LogEntry::ALTER_METADATA && queued->alter_version >= snapshot_metadata_version)
             {
-                LOG_INFO(log, "Local metadata version ({}) is behind ZooKeeper ({}), but an ALTER_METADATA entry "
-                              "with alter_version {} is already queued in {} after draining the log; skipping the "
-                              "synthetic metadata resync.",
+                queued->znode_name = queue_znodes[i];
+                if (in_memory_queue_znodes.contains(queued->znode_name))
+                {
+                    /// The real (or a previously repaired) ALTER_METADATA is already in the in-memory queue and
+                    /// normal processing will apply it. No synthetic entry needed.
+                    LOG_INFO(log, "Local metadata version ({}) is behind ZooKeeper ({}), but an ALTER_METADATA entry "
+                                  "with alter_version {} is already queued in {} after draining the log; skipping the "
+                                  "synthetic metadata resync.",
+                             metadata_snapshot->getMetadataVersion(), snapshot_metadata_version, queued->alter_version,
+                             queue_entry_paths[i]);
+                    return false;
+                }
+
+                /// The entry exists in ZooKeeper /queue but not in RAM: it is an orphan left by an earlier
+                /// recovery attempt that created the znode and then failed before queue.insert() (the retry
+                /// path never reloads the queue). Materialize exactly this znode into the in-memory queue so
+                /// normal processing applies it, instead of creating a second same-alter_version entry (which
+                /// would corrupt the single-slot-per-alter_version alters sequence). This reuses the entry the
+                /// prior attempt already created, so the repair is idempotent across initializeReplication() retries.
+                LOG_INFO(log, "Local metadata version ({}) is behind ZooKeeper ({}); an ALTER_METADATA entry with "
+                              "alter_version {} already exists in {} but was not loaded into the in-memory queue "
+                              "(orphaned by an earlier recovery attempt). Materializing it instead of creating a new one.",
                          metadata_snapshot->getMetadataVersion(), snapshot_metadata_version, queued->alter_version,
                          queue_entry_paths[i]);
-                return false;
+                LogEntryPtr orphan_entry = queued;
+                queue.insert(zookeeper, orphan_entry);
+                return true;
             }
         }
     }
