@@ -125,6 +125,41 @@ DROP TABLE dist_over_tf;
 DROP TABLE dist_over_tf_local;
 DROP DICTIONARY shard_dict;
 
+-- The skip above must not hide a real dependency: a `dictGet` inside the target table function itself (not in
+-- the ignored sharding key) is a referential dependency, but only when this node hosts a local replica of the
+-- cluster and therefore runs the function locally. On a cluster with no local replicas the function runs only on
+-- remote shards, so the object it reads is not a dependency of this node and can be dropped even with
+-- `check_referential_table_dependencies = 1`. `test_cluster_multiple_nodes_all_unavailable` has no local replicas
+-- (its replicas use a port that does not match this server), so the `dictGet` inside `numbers(...)` must not
+-- become a dependency here.
+DROP DICTIONARY IF EXISTS shard_dict;
+CREATE DICTIONARY shard_dict (key UInt64, val UInt64)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY 'SELECT 0 AS key, 0 AS val'))
+LAYOUT(FLAT())
+LIFETIME(0);
+CREATE TABLE dist_over_tf (number UInt64) ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, numbers(dictGetUInt64('shard_dict', 'val', 0)));
+SET check_referential_table_dependencies = 1;
+DROP DICTIONARY shard_dict;
+SET check_referential_table_dependencies = 0;
+DROP TABLE dist_over_tf;
+
+-- On a cluster with a local replica the target table function runs locally, so the `dictGet` inside it is a real
+-- referential dependency and blocks dropping the dictionary. This locks in the local-vs-remote distinction above
+-- (and mirrors `cluster('c', ...)`, which also tracks a table-function target only for clusters with local replicas).
+DROP DICTIONARY IF EXISTS shard_dict;
+CREATE DICTIONARY shard_dict (key UInt64, val UInt64)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY 'SELECT 0 AS key, 0 AS val'))
+LAYOUT(FLAT())
+LIFETIME(0);
+CREATE TABLE dist_over_tf (number UInt64) ENGINE = Distributed(test_shard_localhost, numbers(dictGetUInt64('shard_dict', 'val', 0)));
+SET check_referential_table_dependencies = 1;
+DROP DICTIONARY shard_dict; -- { serverError HAVE_DEPENDENT_OBJECTS }
+SET check_referential_table_dependencies = 0;
+DROP TABLE dist_over_tf;
+DROP DICTIONARY shard_dict;
+
 -- `additional_table_filters` matched against the Distributed table cannot be propagated to the shards
 -- when the target is a table function: the shard query reads from the table function, which has no named
 -- source table to re-key the filter onto (its shard-side expression is referenced only by an internally

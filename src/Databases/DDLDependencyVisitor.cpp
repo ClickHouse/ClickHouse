@@ -293,6 +293,16 @@ namespace
         /// or the table-function form Distributed(cluster_name, table_function()[, sharding_key[, policy_name]]).
         void visitDistributedTableEngine(const ASTFunction & table_engine)
         {
+            /// We consider only dependencies on local tables: this node depends on an object of the cluster only
+            /// when it hosts a local replica and therefore runs the query (or the target table function) locally.
+            bool has_local_replicas = false;
+            if (auto cluster_name = tryGetClusterNameFromArgument(table_engine, 0))
+            {
+                auto cluster = global_context->tryGetCluster(*cluster_name);
+                if (cluster && cluster->getLocalShardCount())
+                    has_local_replicas = true;
+            }
+
             /// In the table-function form the second argument is the target and the following arguments are the
             /// sharding key and the storage policy, which the engine ignores (see `has_sharding_key` in
             /// `StorageDistributed`). A `dictGet` / `joinGet` inside the ignored sharding key must not become a
@@ -308,18 +318,19 @@ namespace
                 {
                     for (size_t i = 2; i < table_engine.arguments->children.size(); ++i)
                         skip_asts.emplace(table_engine.arguments->children[i].get());
+
+                    /// The target table function is executed on the shards of the named cluster. Only when this
+                    /// node hosts a local replica does it run the function locally and depend on the objects it
+                    /// reads; otherwise the function runs only on remote shards, so skip its subtree too. Without
+                    /// this, the generic walk would descend into the target (e.g. a `dictGet` in its arguments, or
+                    /// a nested `view(SELECT ... FROM src)`) and register a bogus referential dependency for a
+                    /// remote-only cluster, blocking DROP / RENAME of an object the engine never reads locally.
+                    /// This mirrors `visitRemoteFunction`.
+                    if (!has_local_replicas)
+                        skip_asts.emplace(table_function);
+
                     return;
                 }
-            }
-
-            /// We consider only dependencies on local tables.
-            bool has_local_replicas = false;
-
-            if (auto cluster_name = tryGetClusterNameFromArgument(table_engine, 0))
-            {
-                auto cluster = global_context->tryGetCluster(*cluster_name);
-                if (cluster && cluster->getLocalShardCount())
-                    has_local_replicas = true;
             }
 
             if (has_local_replicas)
