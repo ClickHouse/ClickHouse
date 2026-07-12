@@ -1,0 +1,46 @@
+---
+sidebarTitle: 'دمج Apache Spark مع ClickHouse'
+slug: /integrations/apache-spark
+description: 'مقدمة عن Apache Spark مع ClickHouse'
+keywords: ['ClickHouse', 'Apache Spark', 'الترحيل', 'البيانات']
+title: 'دمج Apache Spark مع ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+يُعد [Apache Spark](https://spark.apache.org/) محرّكًا متعدد اللغات لتنفيذ مهام هندسة البيانات وعلوم
+البيانات والتعلّم الآلي على أجهزة أحادية العقدة أو على المجموعات.
+
+توجد طريقتان رئيسيتان لربط Apache Spark بـ ClickHouse:
+
+1. [Spark Connector](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - يطبّق موصل Spark `DataSourceV2` ويملك إدارة `Catalog`
+   خاصة به. وحتى الآن، تُعد هذه الطريقة الموصى بها لدمج ClickHouse مع Spark.
+2. [Spark JDBC](/ar/integrations/connectors/data-ingestion/apache-spark/spark-jdbc) - ادمج Spark مع ClickHouse
+   باستخدام [مصدر بيانات JDBC](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html).
+
+<br />
+
+لقد اختُبر كلا الحلّين بنجاح، وهما متوافقان بالكامل مع واجهات برمجة تطبيقات متعددة، بما في ذلك Java وScala وPySpark وSpark SQL.
+
+<div id="spark-runtime-environment">
+  ### بيئات تشغيل Spark
+</div>
+
+<div id="standard-spark-runtime">
+  #### بيئات تشغيل Spark القياسية
+</div>
+
+يعمل Spark Connector مباشرةً دون إعداد إضافي في البيئات التي تتبع إلى حد كبير بيئة تشغيل Apache Spark الأساسية، مثل Amazon EMR أو عمليات نشر Spark المستندة إلى Kubernetes.
+
+<div id="managed-spark-platforms">
+  #### منصات Spark المُدارة
+</div>
+
+توفّر منصات مثل [AWS Glue](/ar/integrations/connectors/data-ingestion/AWS/glue) و[Databricks](/ar/integrations/connectors/data-ingestion/apache-spark/databricks) طبقات تجريد إضافية وسلوكًا خاصًا بكل بيئة.
+ورغم أن التكامل الأساسي يظل كما هو، فقد تتطلب إعدادات وخطوات تهيئة مخصّصة. راجع صفحات الوثائق الخاصة بكل منصة للحصول على التفاصيل.

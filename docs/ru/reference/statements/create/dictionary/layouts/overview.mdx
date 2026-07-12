@@ -1,0 +1,156 @@
+---
+description: 'Типы структур для хранения словарей в памяти'
+sidebarTitle: 'Обзор'
+slug: /sql-reference/statements/create/dictionary/layouts
+title: 'Структуры словарей'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/ru/_snippet_dictionary_in_cloud.mdx';
+
+<div id="storing-dictionaries-in-memory">
+  ## Типы структур словаря
+</div>
+
+Словари можно хранить в памяти разными способами, и каждый из них предполагает компромисс между использованием CPU и оперативной памяти.
+
+| Структура                                                                                                                     | Описание                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [flat](/ru/reference/statements/create/dictionary/layouts/flat)                                                                  | Хранит данные в плоских массивах с индексацией по ключу. Самая быстрая структура, но ключи должны иметь тип `UInt64` и быть ограничены `max_array_size`. |
+| [hashed](/ru/reference/statements/create/dictionary/layouts/hashed)                                                              | Хранит данные в хеш-таблице. Ограничений на размер ключа нет, поддерживается любое количество элементов.                                                 |
+| [sparse&#95;hashed](/ru/reference/statements/create/dictionary/layouts/hashed#sparse_hashed)                                     | Как `hashed`, но в обмен на меньшее использование памяти требует больше CPU.                                                                             |
+| [complex&#95;key&#95;hashed](/ru/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                       | Как `hashed`, но для составных ключей.                                                                                                                   |
+| [complex&#95;key&#95;sparse&#95;hashed](/ru/reference/statements/create/dictionary/layouts/hashed#complex_key_sparse_hashed)     | Как `sparse_hashed`, но для составных ключей.                                                                                                            |
+| [hashed&#95;array](/ru/reference/statements/create/dictionary/layouts/hashed-array)                                              | Атрибуты хранятся в массивах, а хеш-таблица сопоставляет ключи с индексами массивов. Эффективно использует память при большом количестве атрибутов.      |
+| [complex&#95;key&#95;hashed&#95;array](/ru/reference/statements/create/dictionary/layouts/hashed-array#complex_key_hashed_array) | Как `hashed_array`, но для составных ключей.                                                                                                             |
+| [range&#95;hashed](/ru/reference/statements/create/dictionary/layouts/range-hashed)                                              | Хеш-таблица с упорядоченными диапазонами. Поддерживает поиск по ключу и диапазону даты/времени.                                                          |
+| [complex&#95;key&#95;range&#95;hashed](/ru/reference/statements/create/dictionary/layouts/range-hashed#complex_key_range_hashed) | Как `range_hashed`, но для составных ключей.                                                                                                             |
+| [cache](/ru/reference/statements/create/dictionary/layouts/cache)                                                                | Кэш фиксированного размера в памяти. Хранятся только часто используемые ключи.                                                                           |
+| [complex&#95;key&#95;cache](/ru/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                        | Как `cache`, но для составных ключей.                                                                                                                    |
+| [ssd&#95;cache](/ru/reference/statements/create/dictionary/layouts/ssd-cache)                                                    | Как `cache`, но хранит данные на SSD и использует индекс в памяти.                                                                                       |
+| [complex&#95;key&#95;ssd&#95;cache](/ru/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache)          | Как `ssd_cache`, но для составных ключей.                                                                                                                |
+| [direct](/ru/reference/statements/create/dictionary/layouts/direct)                                                              | Без хранения в памяти — для каждого запроса обращается напрямую к источнику.                                                                             |
+| [complex&#95;key&#95;direct](/ru/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | Как `direct`, но для составных ключей.                                                                                                                   |
+| [ip&#95;trie](/ru/reference/statements/create/dictionary/layouts/ip-trie)                                                        | Структура префиксного дерева для быстрого поиска по IP-префиксам (на основе CIDR).                                                                       |
+
+<Tip>
+  **Рекомендуемые структуры**
+
+  [flat](/ru/reference/statements/create/dictionary/layouts/flat), [hashed](/ru/reference/statements/create/dictionary/layouts/hashed) и [complex&#95;key&#95;hashed](/ru/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed) обеспечивают лучшую производительность запросов.
+  Структуры с кэшированием не рекомендуются из-за потенциально низкой производительности и сложности подбора параметров — подробнее см. в разделе [cache](/ru/reference/statements/create/dictionary/layouts/cache).
+</Tip>
+
+<div id="specify-dictionary-layout">
+  ## Укажите структуру словаря
+</div>
+
+<CloudDetails />
+
+Вы можете настроить структуру словаря с помощью конструкции `LAYOUT` (для DDL) или параметра `layout` в определениях файла конфигурации.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY (...)
+    ...
+    LAYOUT(LAYOUT_TYPE(param value)) -- настройки структуры
+    ...
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <clickhouse>
+        <dictionary>
+            ...
+            <layout>
+                <layout_type>
+                    <!-- настройки структуры -->
+                </layout_type>
+            </layout>
+            ...
+        </dictionary>
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+См. также [CREATE DICTIONARY](/ru/reference/statements/create/dictionary) для полного синтаксиса DDL.
+
+Словари, в структуре которых нет слова `complex-key*`, имеют ключ типа [UInt64](/ru/reference/data-types/int-uint), а словари `complex-key*` — составной ключ (сложный, с произвольными типами).
+
+**Пример числового ключа** (столбец key&#95;column имеет тип [UInt64](/ru/reference/data-types/int-uint)):
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        key_column UInt64,
+        ...
+    )
+    PRIMARY KEY key_column
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <structure>
+        <id>
+            <name>key_column</name>
+        </id>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+**Пример составного ключа** (ключ содержит один элемент типа [String](/ru/reference/data-types/string)):
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        country_code String,
+        ...
+    )
+    PRIMARY KEY country_code
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <structure>
+        <key>
+            <attribute>
+                <name>country_code</name>
+                <type>String</type>
+            </attribute>
+        </key>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="improve-performance">
+  ## Как повысить производительность словаря
+</div>
+
+Есть несколько способов повысить производительность словаря:
+
+* Вызывайте функцию для работы со словарём после `GROUP BY`.
+* Помечайте извлекаемые атрибуты как инъективные.
+  Атрибут называется инъективным, если разным ключам соответствуют разные значения атрибута.
+  Поэтому, если в `GROUP BY` используется функция, которая получает значение атрибута по ключу, эта функция автоматически выносится из `GROUP BY`.
+
+ClickHouse генерирует исключение при ошибках, связанных со словарями.
+Примеры таких ошибок:
+
+* Не удалось загрузить словарь, к которому выполняется обращение.
+* Ошибка при выполнении запроса к словарю `cached`.
+
+Вы можете просмотреть список словарей и их статусы в таблице [system.dictionaries](/ru/reference/system-tables/dictionaries).

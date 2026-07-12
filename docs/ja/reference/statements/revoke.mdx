@@ -1,0 +1,57 @@
+---
+description: 'REVOKE ステートメントのドキュメント'
+sidebarTitle: 'REVOKE'
+slug: /sql-reference/statements/revoke
+title: 'REVOKE ステートメント'
+doc_type: 'reference'
+---
+
+ユーザーまたはロールから権限を取り消します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+**ユーザーの権限を取り消す**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+```
+
+**ユーザーからロールを取り消す**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
+```
+
+<div id="description">
+  ## 説明
+</div>
+
+一部の権限を取り消すには、取り消したい権限よりも広いスコープの権限を使用できます。たとえば、ユーザーが `SELECT (x,y)` 権限を持っている場合、管理者はこの権限を取り消すために、`REVOKE SELECT(x,y) ...`、`REVOKE SELECT * ...`、または `REVOKE ALL PRIVILEGES ...` クエリを実行できます。
+
+<div id="partial-revokes">
+  ### 権限の部分的な取り消し
+</div>
+
+権限の一部を取り消すことができます。たとえば、ユーザーが `SELECT *.*` 権限を持っている場合、その権限から、特定のテーブルまたはデータベースのデータを読み取る権限だけを取り消すことができます。
+
+<div id="examples">
+  ## 例
+</div>
+
+`john` ユーザーアカウントに、`accounts` を除くすべてのデータベースに対する SELECT 権限を付与します。
+
+```sql
+GRANT SELECT ON *.* TO john;
+REVOKE SELECT ON accounts.* FROM john;
+```
+
+`mira` のユーザーアカウントに、`accounts.staff` テーブルの `wage` を除くすべてのカラムに対する SELECT 権限を付与します。
+
+```sql
+GRANT SELECT ON accounts.staff TO mira;
+REVOKE SELECT(wage) ON accounts.staff FROM mira;
+```
+
+[原文](/ja/reference/settings/session-settings)

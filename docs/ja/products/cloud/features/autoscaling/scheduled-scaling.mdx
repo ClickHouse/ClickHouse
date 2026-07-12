@@ -1,0 +1,80 @@
+---
+sidebarTitle: 'スケジュールスケーリング'
+slug: /cloud/features/autoscaling/scheduled-scaling
+description: 'ClickHouse Cloud のスケジュールスケーリング機能を説明する記事'
+keywords: ['スケジュールスケーリング']
+title: 'スケジュールスケーリング'
+doc_type: 'guide'
+---
+
+import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+ClickHouse Cloud サービスは CPU とメモリの使用率に基づいて自動的にスケーリングされますが、多くのワークロードには予測しやすいパターンがあります。たとえば、日次のインジェスト量の急増、夜間に実行されるバッチジョブ、週末に大きく減少するトラフィックなどです。こうしたユースケースでは、スケジュールスケーリングを使うことで、リアルタイムのメトリクスとは関係なく、サービスをいつスケールアップまたはスケールダウンするかを正確に定義できます。
+
+スケジュールスケーリングでは、ClickHouse Cloud コンソールで時間ベースのルールセットを直接設定します。各ルールでは、時刻、繰り返し (毎日、毎週、またはカスタム) 、および目標サイズ (水平スケーリングの場合はレプリカ数、垂直スケーリングの場合はメモリティア) を指定します。指定した時刻になると、ClickHouse Cloud が自動的に変更を適用するため、需要が発生してから対応するのではなく、需要が高まる前に適切なサイズへ調整しておくことができます。
+
+これは、CPU やメモリの負荷に応じて動的に反応する、メトリクスベースのオートスケーリングとは異なります。スケジュールスケーリングは決定論的です。つまり、スケーリングがいつ実行され、どのサイズになるのかを正確に把握できます。この 2 つのアプローチは相互補完的です。サービスには基本となるスケーリングスケジュールを設定しつつ、その時間枠内でワークロードが予想外に変動した場合には、オートスケーリングの利点も引き続き活用できます。
+
+スケジュールスケーリングは現在 **プライベートプレビュー** で提供されています。組織で有効にするには、ClickHouse Support チームにお問い合わせください。
+
+<div id="setting-up-a-scaling-schedule">
+  ## スケーリングスケジュールの設定
+</div>
+
+スケジュールを設定するには、ClickHouse Cloudコンソールで対象のサービスに移動し、設定を開きます。そこで **Schedule Override** を選択し、新しいルールを追加します。
+
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="時間ベースのスケーリングルールが表示された、ClickHouse Cloudコンソールのスケーリングスケジュールのインターフェイス" border />
+
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="ClickHouse Cloudコンソールでスケジュールスケーリングルールを設定する画面" border />
+
+各ルールには、次の項目が必要です。
+
+* **Time:** スケーリングアクションを実行する時刻 (ローカルタイムゾーン)
+* **Recurrence:** ルールの繰り返し頻度 (例: 毎平日、毎週日曜日)
+* **Target size:** スケール先のレプリカ数またはメモリ割り当て量
+
+複数のルールを組み合わせることで、1 週間分の完全なスケジュールを作成できます。たとえば、毎平日の午前 6 時に 5 レプリカへスケールアウトし、午後 8 時に 2 レプリカへ戻すように設定できます。
+
+<div id="use-cases">
+  ## ユースケース
+</div>
+
+**バッチおよび ETL ワークロード:** 夜間の取り込みジョブの実行前にスケールアップし、完了後にスケールダウンすることで、負荷の低い日中に過剰なプロビジョニングを避けられます。
+
+**予測可能なトラフィックパターン:** 一定のピーク時間帯 (例: 営業時間中のクエリトラフィック) があるサービスでは、オートスケーリングの反応を待つのではなく、負荷が到来する前にあらかじめスケールして対応できます。
+
+**週末のスケールダウン:** 需要が低い週末にはレプリカ数やメモリティアを減らし、月曜朝の急増前に容量を戻します。
+
+**コスト管理:** ClickHouse Cloud のコストを管理するチームにとって、利用率が低いことが分かっている時間帯にスケジュールされたスケールダウンを行うことで、手動介入なしにリソース消費を大幅に抑えられます。
+
+<Note>
+  スケジュールスケーリングアクションと同時にオートスケーリングの推奨が発生する場合、トリガー時刻ではスケジュールが優先されます。
+</Note>
+
+<div id="handling-bursty-workloads">
+  ## ワークロードの急増への対処
+</div>
+
+ワークロードの急増が予想される場合は、
+[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) を使って、
+急増に対応できるよう事前にサービスをスケールアップし、需要が落ち着いたら
+スケールダウンできます。
+
+各レプリカで現在使用中の CPU コア数とメモリを
+確認するには、以下のクエリを実行します。
+
+```sql
+SELECT *
+FROM clusterAllReplicas('default', view(
+    SELECT
+        hostname() AS server,
+        anyIf(value, metric = 'CGroupMaxCPU') AS cpu_cores,
+        formatReadableSize(anyIf(value, metric = 'CGroupMemoryTotal')) AS memory
+    FROM system.asynchronous_metrics
+))
+ORDER BY server ASC
+SETTINGS skip_unavailable_shards = 1
+```

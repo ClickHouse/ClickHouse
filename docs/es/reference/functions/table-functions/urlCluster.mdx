@@ -1,0 +1,77 @@
+---
+description: 'Permite procesar archivos desde una URL en paralelo desde varios nodos de un clúster
+  especificado.'
+sidebarTitle: 'urlCluster'
+slug: /sql-reference/table-functions/urlCluster
+title: 'urlCluster'
+doc_type: 'reference'
+---
+
+Permite procesar archivos desde una URL en paralelo desde varios nodos de un clúster especificado. En el iniciador, crea una conexión con todos los nodos del clúster, expande el asterisco en la ruta del archivo de la URL y distribuye dinámicamente cada archivo. En el nodo worker, le pregunta al iniciador cuál es la siguiente tarea que debe procesar y la procesa. Esto se repite hasta que se hayan completado todas las tareas.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+urlCluster(cluster_name, URL, format, structure)
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+| Argumento      | Descripción                                                                                                                                                       |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name` | Nombre de un clúster que se utiliza para construir un conjunto de direcciones y parámetros de conexión para servidores remotos y locales.                         |
+| `URL`          | Dirección del servidor HTTP o HTTPS que puede aceptar solicitudes `GET`. Tipo: [String](/es/reference/data-types/string).                                            |
+| `format`       | [Formato](/es/reference/formats/index) de los datos. Tipo: [String](/es/reference/data-types/string).                                                                   |
+| `structure`    | Estructura de la tabla en el formato `'UserID UInt64, Name String'`. Determina los nombres y tipos de las columnas. Tipo: [String](/es/reference/data-types/string). |
+
+<div id="returned_value">
+  ## Valor devuelto
+</div>
+
+Una tabla con el formato y la estructura especificados, y con datos de la `URL` indicada.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Obtener las 3 primeras líneas de una tabla que contiene columnas de tipo `String` y [UInt32](/es/reference/data-types/int-uint) de un servidor HTTP que responde en formato [CSV](/es/reference/formats/CSV/CSV).
+
+1. Cree un servidor HTTP básico con las herramientas estándar de Python 3 e inícielo:
+
+```python
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```sql
+SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
+```
+
+<div id="globs-in-url">
+  ## Globs en la URL
+</div>
+
+Los patrones entre `{ }` se usan para generar un conjunto de segmentos o para especificar direcciones de failover. Para ver los tipos de patrones admitidos y ejemplos, consulte la descripción de la función [remote](/es/reference/functions/table-functions/remote#globs-in-addresses).
+El carácter `|` dentro de los patrones se usa para especificar direcciones de failover. Se recorren en el mismo orden en que aparecen en el patrón. El número de direcciones generadas está limitado por el ajuste [glob&#95;expansion&#95;max&#95;elements](/es/reference/settings/session-settings#glob_expansion_max_elements).
+
+<div id="related">
+  ## Relacionados
+</div>
+
+* [motor HDFS](/es/reference/engines/table-engines/integrations/hdfs)
+* [función de tabla URL](/es/reference/engines/table-engines/special/url)

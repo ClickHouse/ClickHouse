@@ -1,0 +1,89 @@
+---
+title: 'Standard onboarding'
+slug: /cloud/reference/byoc/onboarding/standard
+sidebarTitle: 'Standard process'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'onboarding']
+description: 'Deploy ClickHouse on your own cloud infrastructure'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+## What is standard onboarding? {#what-is-standard-onboarding}
+
+**Standard onboarding** is the default, guided workflow for deploying ClickHouse in your own cloud account using BYOC. In this approach, ClickHouse Cloud provisions all of the core cloud resources required for your deployment—such as the VPC/VNet, subnets, security groups, Kubernetes (EKS/GKE/AKS) cluster, and supporting IAM roles/service accounts/service principals—within your AWS account, GCP project, or Azure subscription. This ensures consistent, secure configuration, and minimizes the manual steps required from your team.
+
+With standard onboarding, you simply provide a dedicated AWS account, GCP project, or Azure subscription, and run an initial stack (via CloudFormation or Terraform) to create the minimum permissions and trust required for ClickHouse Cloud to orchestrate further setup. All subsequent steps—including infrastructure provisioning and service launch—are managed through the ClickHouse Cloud web console.
+
+Customers are strongly recommended to prepare a **dedicated** AWS account, GCP project, or Azure subscription for hosting the ClickHouse BYOC deployment to ensure better isolation in terms of permissions and resources. ClickHouse will deploy a dedicated set of cloud resources (VPC/VNet, Kubernetes cluster, IAM roles/service accounts/service principals, object storage buckets, etc.) in your account.
+
+If you need a more customized setup (for example, deploying into an existing VPC), refer to the [Customized Onboarding](/products/bring-your-own-cloud/onboarding/customization-aws) documentation.
+
+<Note>
+A standard BYOC onboarding takes approximately 45–90 minutes end-to-end, measured from the time the CloudFormation or Terraform steps are launched to the time the first ClickHouse service is reachable.
+</Note>
+
+## Request access {#request-access}
+
+To start the onboarding process, please [contact us](https://clickhouse.com/cloud/bring-your-own-cloud). Our team will guide you through the BYOC requirements, help you select the most suitable deployment options, and add your account to the allowlist.
+
+## Onboarding {#onboarding-process}
+
+### Prepare an AWS account/GCP project/Azure subscription {#prepare-an-aws-account}
+
+Prepare a fresh AWS account, GCP project, or Azure subscription under your organization.
+
+<Steps>
+<Step title="Choose a Cloud Provider" id="choose-cloud-provider">
+
+<Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background='black'/>
+</Step>
+<Step title="Account/project/subscription setup" id="account-setup">
+
+The initial BYOC setup can be performed using a [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), a [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp), or a [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). It creates a highly privileged identity (IAM role/service account/service principal), enabling BYOC controllers from ClickHouse Cloud to manage your infrastructure.
+
+<Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background='black'/>
+
+<Note>
+Storage buckets, VPC/VNet, Kubernetes cluster, and compute resources required for running ClickHouse aren't included in this initial setup. They will be provisioned in the next step.
+</Note>
+
+#### Alternative Terraform Module for AWS {#terraform-module-aws}
+
+If you prefer to use Terraform instead of CloudFormation for AWS deployments, we also provide a [Terraform module for AWS](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
+
+Usage:
+
+```hcl
+module "clickhouse_onboarding" {
+  source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
+  byoc_env = "production"
+}
+```
+</Step>
+<Step title="Set up BYOC infrastructure" id="setup-byoc-infrastructure">
+
+You will be prompted to set up the infrastructure, including object storage buckets, VPC/VNet, and the Kubernetes cluster, from the ClickHouse Cloud console. Certain configurations must be determined at this stage, as they can't be changed later. Specifically:
+
+- **Region**: All **public regions** listed in our [supported regions](/products/cloud/reference/supported-regions) documentation are available for BYOC deployments. Private regions aren't currently supported.
+
+- **VPC/VNet CIDR range**: By default, we use `10.0.0.0/16` for the BYOC VPC (AWS/GCP) or VNet (Azure) CIDR range. If you plan to use VPC/VNet peering with another account, ensure the CIDR ranges don't overlap. Allocate a proper CIDR range for BYOC, with a minimum size of `/23` to accommodate necessary workloads.
+
+- **Availability Zones**: If you plan to use VPC peering, aligning availability zones between the source and BYOC accounts can help reduce cross-AZ traffic costs. For example, in AWS, availability zone suffixes (`a`, `b`, `c`) may represent different physical zone IDs across accounts. See the [AWS guide](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) for details.
+
+<Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC set up infrastructure" background='black'/>
+</Step>
+</Steps>
+
+### Create Your First BYOC ClickHouse Service {#create-clickhouse-service}
+
+After your BYOC infrastructure has been provisioned, you're ready to launch your initial ClickHouse service. Open the ClickHouse Cloud console, select your BYOC environment, and follow the prompts to create a new service.
+
+<Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC create new service"/>
+
+During service creation, you’ll configure the following options:
+
+- **Service name**: Enter a clear, descriptive name for your ClickHouse service.
+- **BYOC infrastructure**: Select the BYOC environment, including the cloud account and region, where your service will run.
+- **Resource configuration**: Choose the amount of CPU and memory allocated to your ClickHouse replicas.
+- **Replica count**: Set the number of replicas for enhanced high availability.
