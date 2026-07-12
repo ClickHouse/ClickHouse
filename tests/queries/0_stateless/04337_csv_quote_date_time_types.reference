@@ -22,6 +22,8 @@ temporal values remain quoted with numeric CSV delimiter
 "2024-01-15"1"2024-01-16"1"1234567890"1"1234567890.123"1"12:30:00"1"12:30:00.456"142
 negative subsecond DateTime64 Unix timestamp remains quoted
 1
+DateTime64 dot quoting follows trimmed fractional output
+0	1
 CustomSeparated CSV escaping uses its field delimiter
 "2024-01-15"-42
 CustomSeparated CSV escaping uses its final row delimiter

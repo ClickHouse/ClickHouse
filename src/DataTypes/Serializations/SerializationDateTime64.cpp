@@ -22,7 +22,11 @@ namespace
 {
 
 bool csvDelimiterConflictsWithDateTime64(
-    char delimiter, FormatSettings::DateTimeOutputFormat output_format, UInt32 scale, DateTime64 value)
+    char delimiter,
+    FormatSettings::DateTimeOutputFormat output_format,
+    UInt32 scale,
+    DateTime64 value,
+    bool cut_trailing_zeros_align_to_groups_of_thousands)
 {
     if (isNumericASCII(delimiter))
         return true;
@@ -30,7 +34,12 @@ bool csvDelimiterConflictsWithDateTime64(
     switch (output_format)
     {
         case FormatSettings::DateTimeOutputFormat::Simple:
-            return delimiter == '-' || delimiter == ':' || delimiter == ' ' || (scale > 0 && delimiter == '.');
+        {
+            const bool writes_fractional_part = scale > 0
+                && (!cut_trailing_zeros_align_to_groups_of_thousands
+                    || value.value % DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale) != 0);
+            return delimiter == '-' || delimiter == ':' || delimiter == ' ' || (writes_fractional_part && delimiter == '.');
+        }
         case FormatSettings::DateTimeOutputFormat::ISO:
             return delimiter == '-' || delimiter == ':' || delimiter == 'T' || delimiter == 'Z' || (scale > 0 && delimiter == '.');
         case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
@@ -255,7 +264,12 @@ void SerializationDateTime64::serializeTextCSV(const IColumn & column, size_t ro
 {
     const auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
     const bool quote = settings.csv.quote_date_time_types
-        || csvDelimiterConflictsWithDateTime64(settings.csv.delimiter, settings.date_time_output_format, scale, value);
+        || csvDelimiterConflictsWithDateTime64(
+            settings.csv.delimiter,
+            settings.date_time_output_format,
+            scale,
+            value,
+            settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
 
     if (quote)
         writeChar('"', ostr);

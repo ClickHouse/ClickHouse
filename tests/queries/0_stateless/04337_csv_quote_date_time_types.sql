@@ -70,6 +70,16 @@ SELECT 'negative subsecond DateTime64 Unix timestamp remains quoted' FORMAT TSVR
 SELECT startsWith(formatRow('CSV', toDateTime64(-0.456, 3, 'UTC')), '"')
 SETTINGS output_format_csv_quote_date_time_types = 0, date_time_output_format = 'unix_timestamp';
 
+SELECT 'DateTime64 dot quoting follows trimmed fractional output' FORMAT TSVRaw;
+SELECT
+    startsWith(formatRow('CSV', toDateTime64('2024-01-18 09:45:01', 3, 'UTC')), '"'),
+    startsWith(formatRow('CSV', toDateTime64('2024-01-18 09:45:01.123', 3, 'UTC')), '"')
+FORMAT TSVRaw
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = '.',
+    date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 1;
+
 SELECT 'CustomSeparated CSV escaping uses its field delimiter' FORMAT TSVRaw;
 SELECT toDate('2024-01-15') AS d, 42 AS n
 FORMAT CustomSeparated
