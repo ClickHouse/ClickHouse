@@ -19,13 +19,16 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
 /** Estimate the amount of memory used by the input and output IO buffers of a merge:
   *   (number of input column streams over all source parts) * read IO buffer size
   * + (number of output column streams of the result part)   * write IO buffer size.
-  * Object storage (S3) write buffers are large and double-buffered, so they are accounted separately.
+  * Object storage (S3) write buffers are large and double-buffered, so they are accounted separately;
+  * since they only ever hold data that has already flown through them, their contribution is capped
+  * by the data volume of the merge (see the implementation for details).
   * A merge reserves this amount up front (see MergeMemoryReservation) so that many merges starting
   * at once - for example right after a mutation - do not all grow their buffers and oversubscribe memory.
   */
 UInt64 estimateNeededMemoryForMerge(
     const FutureMergedMutatedPart & future_part,
     const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
     const MergeTreeSettings & settings,
     bool output_on_remote_disk);
 

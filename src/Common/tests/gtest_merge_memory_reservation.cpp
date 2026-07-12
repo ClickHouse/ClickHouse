@@ -94,6 +94,23 @@ TEST_F(MergeMemoryReservationTest, UnlimitedWhenSoftLimitZero)
     ASSERT_EQ(getReservedMergeMemory(), 0);
 }
 
+TEST_F(MergeMemoryReservationTest, ReplacingReservationReleasesTheOldOne)
+{
+    background_memory_tracker.setSoftLimit(0);
+
+    {
+        /// The non-replicated path first reserves using a destination disk guessed from the source
+        /// parts, and redoes the reservation once the tagger has chosen the actual destination disk.
+        auto reservation = MergeMemoryReservation::reserve(100);
+        ASSERT_EQ(getReservedMergeMemory(), 100);
+
+        reservation = MergeMemoryReservation::reserve(5000);
+        ASSERT_EQ(getReservedMergeMemory(), 5000);
+    }
+
+    ASSERT_EQ(getReservedMergeMemory(), 0);
+}
+
 TEST_F(MergeMemoryReservationTest, MoveDoesNotDoubleRelease)
 {
     background_memory_tracker.setSoftLimit(0);

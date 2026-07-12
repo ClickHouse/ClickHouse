@@ -1515,7 +1515,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     TableLockHolder & /* table_lock_holder */,
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    bool user_initiated)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -1679,31 +1680,58 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// Reserve memory for the merge's input/output IO buffers up front, so that scheduling
             /// many merges at once (for example right after a mutation produces many parts) cannot
             /// oversubscribe memory once all of them start allocating buffers.
+            /// The destination disk is not chosen yet (CurrentlyMergingPartsTagger does that below),
+            /// so guess it from the source parts for the admission check and correct it afterwards.
             const bool output_on_remote_disk = std::any_of(
                 future_part->parts.begin(), future_part->parts.end(),
                 [](const auto & part) { return part->isStoredOnRemoteDisk(); });
             const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
-                *future_part, metadata_snapshot, *getSettings(), output_on_remote_disk);
+                *future_part, metadata_snapshot, getContext(), *getSettings(), output_on_remote_disk);
 
-            auto memory_reservation = MergeMemoryReservation::tryReserve(static_cast<Int64>(needed_memory));
-            if (!memory_reservation)
+            std::optional<MergeMemoryReservation> memory_reservation;
+            if (user_initiated)
             {
-                if (isTTLMergeType(future_part->merge_type))
-                    getContext()->getMergeList().cancelMergeWithTTL();
+                /// The user explicitly requested this merge (OPTIMIZE), so it must not be silently
+                /// skipped by the reservation gate: reserve unconditionally. The reservation still
+                /// throttles selection of background merges via canEnqueueBackgroundTask.
+                memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(needed_memory));
+            }
+            else
+            {
+                memory_reservation = MergeMemoryReservation::tryReserve(static_cast<Int64>(needed_memory));
+                if (!memory_reservation)
+                {
+                    if (isTTLMergeType(future_part->merge_type))
+                        getContext()->getMergeList().cancelMergeWithTTL();
 
-                ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
-                return std::unexpected(SelectMergeFailure{
-                    .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                    .explanation = PreformattedMessage::create(
-                        "Not enough memory to reserve for the merge (need {}, already reserved by running merges {}, limit {})",
-                        formatReadableSizeWithBinarySuffix(needed_memory),
-                        formatReadableSizeWithBinarySuffix(getReservedMergeMemory()),
-                        formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())),
-                });
+                    ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
+                    return std::unexpected(SelectMergeFailure{
+                        .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                        .explanation = PreformattedMessage::create(
+                            "Not enough memory to reserve for the merge (need {}, already reserved by running merges {}, limit {})",
+                            formatReadableSizeWithBinarySuffix(needed_memory),
+                            formatReadableSizeWithBinarySuffix(getReservedMergeMemory()),
+                            formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())),
+                    });
+                }
             }
 
             uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
             auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
+
+            /// The tagger has now chosen the actual destination disk, which may differ from the guess
+            /// above because of TTL move rules, JBOD balancing, or multi-volume storage policies. If the
+            /// guess was wrong, redo the reservation with the correct write buffer sizes. At this point
+            /// the merge is already committed to run, so reserve unconditionally (as the replicated path
+            /// does): the corrected reservation still throttles selection of further merges.
+            if (const bool actual_output_on_remote_disk = tagger->reserved_space->getDisk()->isRemote();
+                actual_output_on_remote_disk != output_on_remote_disk)
+            {
+                memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
+                    CompactionStatistics::estimateNeededMemoryForMerge(
+                        *future_part, metadata_snapshot, getContext(), *getSettings(), actual_output_on_remote_disk)));
+            }
+
             tagger->memory_reservation = std::move(*memory_reservation);
 
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
@@ -1759,7 +1787,8 @@ bool StorageMergeTree::merge(
             table_lock_holder,
             lock,
             txn,
-            optimize_skip_merged_partitions);
+            optimize_skip_merged_partitions,
+            /*user_initiated=*/true);
     }();
 
     if (merge_select_result.has_value())

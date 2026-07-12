@@ -346,7 +346,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// the reservation still throttles selection of further merges via canEnqueueBackgroundTask.
     memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
         CompactionStatistics::estimateNeededMemoryForMerge(
-            *future_merged_part, metadata_snapshot, *storage_settings_ptr, reserved_space->getDisk()->isRemote())));
+            *future_merged_part, metadata_snapshot, storage.getContext(), *storage_settings_ptr, reserved_space->getDisk()->isRemote())));
 
     /// Account TTL merge
     if (isTTLMergeType(future_merged_part->merge_type))

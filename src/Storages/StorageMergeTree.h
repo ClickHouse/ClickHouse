@@ -250,6 +250,8 @@ private:
     friend class MergeTreeMergePredicate;
     friend struct PlainCommittingBlockHolder;
 
+    /// `user_initiated` means the merge was explicitly requested by a user query (OPTIMIZE): such a merge
+    /// reserves its memory unconditionally instead of being rejected by the merge memory reservation gate.
     std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
@@ -258,7 +260,8 @@ private:
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
-        bool optimize_skip_merged_partitions = false);
+        bool optimize_skip_merged_partitions = false,
+        bool user_initiated = false);
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,

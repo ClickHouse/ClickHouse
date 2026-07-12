@@ -25,10 +25,12 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsNonZeroUInt64 adaptive_write_buffer_initial_size;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_min_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
     extern const MergeTreeSettingsUInt64 max_number_of_mutations_for_replica;
+    extern const MergeTreeSettingsUInt64 min_columns_to_activate_adaptive_write_buffer;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
 }
@@ -92,13 +94,16 @@ size_t countColumnStreams(const NamesAndTypesList & columns)
 UInt64 estimateNeededMemoryForMerge(
     const FutureMergedMutatedPart & future_part,
     const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
     const MergeTreeSettings & settings,
     bool output_on_remote_disk)
 {
-    /// Per-stream read buffer size. During a merge reads use the default read buffer size (which is later
-    /// shrunk to the granule size), smaller for the local filesystem than for remote (object storage).
-    static constexpr UInt64 local_read_buffer_size = 128 * 1024; /// max_read_buffer_size_local_fs default
-    static constexpr UInt64 remote_read_buffer_size = DBMS_DEFAULT_BUFFER_SIZE; /// max_read_buffer_size default (1 MiB)
+    /// Per-stream read buffer size, from the effective server settings (merges read through the global
+    /// context). A read buffer is later shrunk to the granule size, and it is smaller for the local
+    /// filesystem than for remote (object storage).
+    const auto read_settings = context->getReadSettings();
+    const UInt64 local_read_buffer_size = read_settings.local_fs_settings.buffer_size;
+    const UInt64 remote_read_buffer_size = read_settings.remote_fs_settings.buffer_size;
 
     /// Per-stream write buffer size on a local disk: a writer stream keeps the compressor block and the
     /// file buffer, both sized by max_compress_block_size.
@@ -111,8 +116,12 @@ UInt64 estimateNeededMemoryForMerge(
     /// there can be more than one part buffered per stream at a time due to background (double) buffering.
     const UInt64 remote_write_buffer_size = 2 * S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE;
 
-    /// Input side: one reader stream per column substream of every source part.
+    /// Input side: one reader stream per column substream of every source part. The reader buffers hold
+    /// a window of the compressed file plus the decompressed block, so they can never hold more than the
+    /// part's own data: cap the per-part estimate by the part size.
     UInt64 input_memory = 0;
+    UInt64 sum_input_bytes_compressed = 0;
+    UInt64 sum_input_bytes_uncompressed = 0;
     for (const auto & part : future_part.parts)
     {
         /// Compact and in-memory parts read all columns through a single shared stream.
@@ -120,15 +129,39 @@ UInt64 estimateNeededMemoryForMerge(
             ? countColumnStreams(part->getColumns())
             : 1;
         const UInt64 read_buffer_size = part->isStoredOnRemoteDisk() ? remote_read_buffer_size : local_read_buffer_size;
-        input_memory += streams * read_buffer_size;
+        const UInt64 part_bytes = part->getBytesOnDisk() + part->getBytesUncompressedOnDisk();
+        input_memory += std::min<UInt64>(streams * read_buffer_size, part_bytes);
+        sum_input_bytes_compressed += part->getBytesOnDisk();
+        sum_input_bytes_uncompressed += part->getBytesUncompressedOnDisk();
     }
 
     /// Output side: one writer stream per column substream of the result part.
+    const auto output_columns = metadata_snapshot->getColumns().getAllPhysical();
     const size_t output_streams = future_part.part_format.part_type == MergeTreeDataPartType::Wide
-        ? countColumnStreams(metadata_snapshot->getColumns().getAllPhysical())
+        ? countColumnStreams(output_columns)
         : 1;
+
+    /// Worst case: every stream allocates all of its buffers in full.
     const UInt64 write_buffer_size = output_on_remote_disk ? remote_write_buffer_size : local_write_buffer_size;
-    const UInt64 output_memory = output_streams * write_buffer_size;
+    const UInt64 output_worst_case = output_streams * write_buffer_size;
+
+    /// However, only the compressor block and the file buffer are allocated eagerly (and they start at
+    /// adaptive_write_buffer_initial_size when adaptive write buffers are active for this part). Object
+    /// storage upload buffers - and the growth of adaptive buffers - only ever hold data that has already
+    /// been written into them, so their total is bounded by the volume of data the merge writes, which
+    /// cannot exceed the input data volume: at most the compressed output in flight twice over (due to
+    /// double buffering of uploads) plus one uncompressed block per stream. Without this cap a merge of
+    /// tiny parts in a table with many columns on object storage would reserve gigabytes it can never
+    /// touch, and concurrent merges would saturate the soft limit and starve each other for no reason.
+    const UInt64 min_columns_for_adaptive = settings[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer];
+    const bool adaptive_write_buffer = min_columns_for_adaptive != 0 && output_columns.size() >= min_columns_for_adaptive;
+    const UInt64 eager_buffers_per_stream = adaptive_write_buffer
+        ? 2 * settings[MergeTreeSetting::adaptive_write_buffer_initial_size]
+        : local_write_buffer_size;
+    const UInt64 output_data_bound = output_streams * eager_buffers_per_stream
+        + 2 * sum_input_bytes_compressed + sum_input_bytes_uncompressed;
+
+    const UInt64 output_memory = std::min(output_worst_case, output_data_bound);
 
     return input_memory + output_memory;
 }
