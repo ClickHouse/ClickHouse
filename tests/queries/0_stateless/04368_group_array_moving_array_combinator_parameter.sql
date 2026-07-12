@@ -11,6 +11,10 @@ SELECT groupArrayMovingAvgArray(2)([1, 2, 3, 4]);
 SELECT groupArrayMovingSumArray([1, 2, 3]);
 SELECT toTypeName(groupArrayMovingSumState(42)(number)) FROM numbers(1);
 SELECT toTypeName(groupArrayMovingSumState(number)) FROM numbers(1);
+-- The window-size parameter accepts positive Int64 too. The printed state type name must keep
+-- the ::Int64 suffix so it round-trips losslessly (reparsing 42 alone would give UInt64).
+SELECT toTypeName(groupArrayMovingSumState(42::Int64)(number)) FROM numbers(1);
+SELECT toTypeName(groupArrayMovingAvgState(42::Int64)(number)) FROM numbers(1);
 SELECT finalizeAggregation(groupArrayMovingSumMergeState(2)(s))
 FROM
 (
