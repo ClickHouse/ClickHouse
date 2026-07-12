@@ -552,11 +552,11 @@ const std::type_info & checkArgumentTypeForID(std::string_view function_name, co
 
     const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type.get());
 
-    if (isUInt128(type) || isUUID(type) || (fixed_string_type && (fixed_string_type->getN() == 16)))
+    if (isUInt128(type) || isUUID(type) || isUUID2(type) || (fixed_string_type && (fixed_string_type->getN() == 16)))
         return is_nullable ? typeid(std::optional<UInt128>) : typeid(UInt128);
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument #{} of function {} has wrong type {}, it must be {}",
-                    argument_index + 1, function_name, type, "UInt64 or UInt128 or UUID");
+                    argument_index + 1, function_name, type, "UInt64 or UInt128 or UUID or UUID2");
 }
 
 

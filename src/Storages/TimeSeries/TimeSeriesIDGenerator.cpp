@@ -6,6 +6,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 
@@ -83,6 +84,15 @@ ASTPtr TimeSeriesIDGenerator::getDefault(
 
     if (id_which.isUUID())
         return makeASTFunction("reinterpretAsUUID", make_hash_function("sipHash128"));
+
+    if (id_which.isUUID2())
+    {
+        /// There is no `reinterpretAsUUID2`, and the generated identifier is an opaque deterministic hash,
+        /// so reinterpret the hash as a `UUID` and cast it to `UUID2` to match the column type.
+        return makeASTFunction("_CAST",
+            makeASTFunction("reinterpretAsUUID", make_hash_function("sipHash128")),
+            make_intrusive<ASTLiteral>(String{"UUID2"}));
+    }
 
     if (id_which.isUInt128())
         return makeASTFunction("reinterpretAsUInt128", make_hash_function("sipHash128"));

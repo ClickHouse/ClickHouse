@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <Interpreters/Context.h>
@@ -39,6 +40,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 uuid_type_version;
+}
+
 namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
@@ -62,6 +68,26 @@ namespace
     constexpr std::array<ViewTarget::Kind, 3> getTargetKinds()
     {
         return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics};
+    }
+
+    /// Materializes the `uuid_type_version` setting into the declared inner-column types: a bare `UUID` becomes
+    /// `UUID2` when the setting is 2 (mirroring how the main columns are materialized in
+    /// InterpreterCreateQuery). Rewriting the AST here - before the types are resolved and before the inner
+    /// tables are created - keeps the samples and tags inner tables consistent about the `id` type and makes
+    /// any later normalization pass read the already-materialized types.
+    void materializeUUIDTypeVersionInInnerColumns(ASTCreateQuery & create_query, ViewTarget::Kind kind, UInt64 uuid_type_version)
+    {
+        auto * inner_columns = create_query.getTargetInnerColumns(kind);
+        if (!inner_columns || !inner_columns->columns)
+            return;
+        for (auto & column : inner_columns->columns->children)
+        {
+            if (auto * decl = column->as<ASTColumnDeclaration>())
+            {
+                if (auto type = decl->getType())
+                    decl->setType(applyUUIDTypeVersion(type, uuid_type_version));
+            }
+        }
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -331,6 +357,7 @@ namespace
             bool id_ok = id_which.isUInt64()
                 || (id_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
                 || id_which.isUUID()
+                || id_which.isUUID2()
                 || id_which.isUInt128();
             if (!id_ok)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column",
@@ -1027,9 +1054,32 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         applyASClause(create_query, context);
     }
 
+    /// A primary, user-issued CREATE materializes session settings into concrete stored column types - never on
+    /// ATTACH, restore, or an already-normalized DDL-worker query. Mirrors the same gate in
+    /// `InterpreterCreateQuery::getColumnsDescription`.
+    const bool normalize_on_create = mode < LoadingStrictnessLevel::SECONDARY_CREATE
+        && !context->isDDLOrOnClusterInternal()
+        && !is_restore_from_backup;
+    const UInt64 uuid_type_version = normalize_on_create ? context->getSettingsRef()[Setting::uuid_type_version] : 1;
+
+    /// Bake the `uuid_type_version` setting into the declared inner columns before the types are resolved,
+    /// so a bare `UUID` id declared in `TAGS`/`SAMPLES INNER COLUMNS` becomes `UUID2` consistently.
+    if (uuid_type_version == 2)
+    {
+        for (auto kind : getTargetKinds())
+            materializeUUIDTypeVersionInInnerColumns(create_query, kind, uuid_type_version);
+    }
+
     /// Resolve types timestamp_type, scalar_type, id_type.
     /// External targets are checked only at CREATE time; on ATTACH they may not be loaded yet.
     ResolvedTimeSeriesTypes resolved_types = resolveTimeSeriesTypes(create_query, context, /*check_external_targets=*/ is_new_table);
+
+    /// Apply the same materialization to the default `id` type (the one used when no inner/outer/external column
+    /// determines it), so a `uuid_type_version = 2` table gets a `UUID2` id consistently. The inner-column
+    /// declarations were already materialized above; this handles the remaining case where the id type comes
+    /// from the built-in default.
+    if (uuid_type_version == 2 && WhichDataType(resolved_types.id_type).isUUID())
+        resolved_types.id_type = DataTypeFactory::instance().get("UUID2");
 
     /// For new tables: per-kind, check external tables or normalize the inner table's columns and assign its engine.
     if (is_new_table)
