@@ -6,6 +6,7 @@
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/MergeSelectorAlgorithm.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -83,6 +84,7 @@ namespace FailPoints
     extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
+    extern const char mt_skip_scheduling_merge_once[];
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
@@ -121,6 +123,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
+    extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
@@ -2079,6 +2082,18 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
+
+        /// Test hook: pretend the background pool is full for a manually scheduled merge and drop
+        /// the selected merge without scheduling it. The merge must be retried (its queue entry in
+        /// ManualMergeSelector must not be lost), otherwise SYSTEM SYNC MERGES would hang.
+        if ((*getSettings())[MergeTreeSetting::merge_selector_algorithm] == MergeSelectorAlgorithm::MANUAL)
+        {
+            fiu_do_on(FailPoints::mt_skip_scheduling_merge_once,
+            {
+                return false;
+            });
+        }
+
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
         /// in MergePlainMergeTreeTask. So, this slot will never be freed.
