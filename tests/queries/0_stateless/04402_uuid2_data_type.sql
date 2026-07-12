@@ -100,6 +100,15 @@ SELECT
     xxHash64(s::UUID2) = xxHash64(s::UUID),
     farmHash64(s::UUID2) = farmHash64(s::UUID);
 
+SELECT '-- mapAdd / mapSubtract on Map(UUID2, ...) keys (nested UUID materialization parity)';
+-- `uuid_type_version = 2` recursively rewrites nested `UUID` to `UUID2`, so `mapAdd` / `mapSubtract`
+-- must dispatch `UUID2` map keys the same way as `UUID`; the result key type is preserved verbatim.
+WITH '61f0c404-5cb3-11e7-907b-a6006ad3dba0' AS s
+SELECT
+    toTypeName(mapAdd(map(s::UUID2, 1::UInt64), map(s::UUID2, 2::UInt64))),
+    mapAdd(map(s::UUID2, 1::UInt64), map(s::UUID2, 2::UInt64))[s::UUID2],
+    mapSubtract(map(s::UUID2, 5::UInt64), map(s::UUID2, 2::UInt64))[s::UUID2];
+
 SELECT '-- generateRandom produces UUID2';
 SELECT count() FROM (SELECT * FROM generateRandom('x UUID2', 1, 1, 1) LIMIT 5);
 
