@@ -1587,7 +1587,11 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     commands.apply(new_metadata, local_context);
-    checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
+    /// Only validate the sharding key when it actually applies (`has_sharding_key`). For a persisted
+    /// `Distributed(...)` engine over a table function the key is ignored (see the constructor and the
+    /// documentation), so an `ALTER` of a column mentioned only in that ignored key must not be rejected.
+    if (has_sharding_key)
+        checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
 }
 
 void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)

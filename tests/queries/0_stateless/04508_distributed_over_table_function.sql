@@ -217,3 +217,22 @@ DROP TABLE dist_over_tf;
 -- shard and returns 1, not 2. Covered for both analyzers.
 SELECT count() FROM cluster('test_cluster_two_shards_localhost', numbers(10), number) WHERE number = 1 SETTINGS optimize_skip_unused_shards = 1, enable_analyzer = 1;
 SELECT count() FROM cluster('test_cluster_two_shards_localhost', numbers(10), number) WHERE number = 1 SETTINGS optimize_skip_unused_shards = 1, enable_analyzer = 0;
+
+-- Because the sharding key is ignored for the table-function form, `checkAlterIsPossible` must not enforce it:
+-- an `ALTER` of a column mentioned only in the ignored key (incompatible modify, rename, drop) is allowed. A
+-- second column keeps the table non-empty so `DROP COLUMN` exercises the sharding-key check and not the
+-- unrelated drop-all-columns guard.
+CREATE TABLE dist_over_tf (number UInt64, x String) ENGINE = Distributed(test_cluster_two_shards_localhost, numbers(10), number);
+ALTER TABLE dist_over_tf MODIFY COLUMN number String;
+ALTER TABLE dist_over_tf RENAME COLUMN number TO n;
+ALTER TABLE dist_over_tf DROP COLUMN n;
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 'dist_over_tf' ORDER BY name;
+DROP TABLE dist_over_tf;
+
+-- On the classic named-table form the sharding key is real, so the same `ALTER` on the key column is still
+-- rejected: this locks in that the validation is only skipped for the table-function form.
+CREATE TABLE dist_over_tf_local (number UInt64) ENGINE = Memory;
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, currentDatabase(), dist_over_tf_local, number);
+ALTER TABLE dist_over_tf RENAME COLUMN number TO n; -- { serverError UNKNOWN_IDENTIFIER }
+DROP TABLE dist_over_tf;
+DROP TABLE dist_over_tf_local;
