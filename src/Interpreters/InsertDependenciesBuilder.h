@@ -137,6 +137,17 @@ public:
     /// identical blocks regardless of `use_strict_insert_block_limits`.
     static bool storageRebuildsDeduplicationIdsOnInsert(const StoragePtr & storage, size_t depth = 0);
 
+    /// Whether inserting into a forwarding `storage` (one for which `storageRebuildsDeduplicationIdsOnInsert`
+    /// is true) reaches a table that has a dependent materialized view. The forwarded-to table's dependency
+    /// graph lives behind the nested `INSERT` the forwarding sink runs and is invisible to the outer
+    /// `InsertDependenciesBuilder` (which only expands the dependencies of the immediate target). When the
+    /// parallel write fan-out runs one such nested `INSERT` per branch, each restarts the deduplication
+    /// numbering from zero, so identical blocks on different branches collide on any deduplicating dependent
+    /// materialized view and rows are silently dropped. This resolves the forwarding chain to the concrete
+    /// local target and reports whether it has any dependent view; it fails closed (returns true) when the
+    /// ultimate target is not cheaply known here (`Distributed`, `Buffer`, unresolvable, or too deep).
+    static bool forwardedInsertReachesDependentView(const StoragePtr & storage, size_t depth = 0);
+
     size_t getViewProcessingNumThreads() const;
 
 

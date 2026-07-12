@@ -60,6 +60,38 @@ for _ in $(seq 1 10); do seq 1 1000; done | $CLICKHOUSE_CLIENT $SETTINGS --max_i
     "INSERT INTO fwd_dedup_alias FORMAT TSV"
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(x), min(x), max(x) FROM fwd_dedup_target"
 
+# A forwarding storage whose immediate target never deduplicates but which has a deduplicating
+# dependent materialized view (fwd_dedup_mv_src -> fwd_dedup_mv_mv -> fwd_dedup_mv_dst) must also stay
+# single-stream while dependent-MV deduplication is active. The outer INSERT into the alias only sees
+# the AliasSink; the src -> mv -> dst chain lives behind the AliasSink's nested INSERT and is not
+# visible to InsertDependenciesBuilder, so the fallback is decided by the outer guard. A per-branch
+# nested INSERT would restart the source block numbering, collide the view-level ids of identical
+# blocks across branches, and the deduplicating MV target would silently drop rows.
+MV_SETTINGS="--parallel_view_processing=1 --insert_deduplicate=1 --deduplicate_blocks_in_dependent_materialized_views=1"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE fwd_dedup_mv_src (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS non_replicated_deduplication_window = 0"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE fwd_dedup_mv_dst (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS non_replicated_deduplication_window = 100000"
+$CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW fwd_dedup_mv_mv TO fwd_dedup_mv_dst AS SELECT x FROM fwd_dedup_mv_src"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE fwd_dedup_mv_alias ENGINE = Alias('fwd_dedup_mv_src')"
+
+# Dependent-MV deduplication active: a single AliasSink even though the alias target never deduplicates.
+$CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 -q \
+    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_mv_alias VALUES (1)" | grep -c "AliasSink"
+
+# Deduplication disabled for the session: no target consults the ids, so the INSERT fans out.
+$CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 --deduplicate_insert='disable' -q \
+    "EXPLAIN PIPELINE INSERT INTO fwd_dedup_mv_alias VALUES (1)" | grep -c "AliasSink"
+
+# Row integrity through the alias into the deduplicating MV target: ten identical 1000-row blocks
+# must all arrive in the MV target.
+for _ in $(seq 1 10); do seq 1 1000; done | $CLICKHOUSE_CLIENT $SETTINGS $MV_SETTINGS --max_insert_threads=4 \
+    --min_insert_block_size_rows=1000 --max_insert_block_size=1000 --max_block_size=1000 -q \
+    "INSERT INTO fwd_dedup_mv_alias FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM fwd_dedup_mv_dst"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE fwd_dedup_mv_mv"
+$CLICKHOUSE_CLIENT -q "DROP TABLE fwd_dedup_mv_alias"
+$CLICKHOUSE_CLIENT -q "DROP TABLE fwd_dedup_mv_dst"
+$CLICKHOUSE_CLIENT -q "DROP TABLE fwd_dedup_mv_src"
 $CLICKHOUSE_CLIENT -q "DROP TABLE fwd_dedup_dist"
 $CLICKHOUSE_CLIENT -q "DROP TABLE fwd_dedup_alias_nodedup"
 $CLICKHOUSE_CLIENT -q "DROP TABLE fwd_dedup_alias"

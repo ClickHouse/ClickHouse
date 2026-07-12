@@ -852,6 +852,38 @@ bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const St
 }
 
 
+bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const StoragePtr & storage, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// Follow the forwarding chain to the concrete local target where it is known ...
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+    }
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return forwardedInsertReachesDependentView(proxy->getNested(), depth + 1);
+
+    /// ... and fail closed where the ultimate target is not cheaply known here: `Distributed` and `Buffer`
+    /// forward the write through a separate (remote or background) `INSERT` that may reach a dependent view.
+    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
+        return true;
+
+    /// A concrete local target: it is a hazard if it has any dependent materialized view. Whether that view
+    /// (or a further view down the chain) actually deduplicates is not verified here - the outer parallel
+    /// fan-out fails closed on the presence of a dependent view, keeping the write single-stream. A target
+    /// with no dependent view can never lose rows to the fan-out, so `max_insert_threads` keeps applying.
+    return !DatabaseCatalog::instance().getDependentViews(storage->getStorageID()).empty();
+}
+
+
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,

@@ -76,6 +76,7 @@ namespace Setting
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_strict_insert_block_limits;
+    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -813,13 +814,32 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // number folded into the view-level ids under strict limits, or a dependent target that forwards
     // the write through a nested `INSERT`) is handled inside `InsertDependenciesBuilder`, which keeps
     // its sink stream size at 1 in that case regardless of the value passed here.
+    const bool dedup_enabled_for_insert = isDeduplicationEnabledForInsert(async_insert, settings);
     const bool source_deduplicates = InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(table)
-        && isDeduplicationEnabledForInsert(async_insert, settings);
+        && dedup_enabled_for_insert;
+    const bool rebuilds_dedup_ids = InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(table);
     const bool per_branch_dedup_ids = settings[Setting::use_strict_insert_block_limits]
-        || InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(table);
+        || rebuilds_dedup_ids;
+
+    // A forwarding storage (`Alias`, `Distributed`, `Buffer`) runs a nested `INSERT` per sink branch, which
+    // restarts the source block numbering from zero on every branch. That nested `INSERT` can reach a
+    // deduplicating dependent materialized view even when the forwarded-to table itself never deduplicates
+    // (e.g. an `Alias` over a `MergeTree` with `non_replicated_deduplication_window = 0` whose materialized
+    // view targets a deduplicating table). Two identical source blocks landing on different branches then
+    // produce identical view-level deduplication ids and the later branch is skipped, silently dropping rows.
+    // The dependent-MV chain of the forwarded-to table lives behind the nested `INSERT` and is not visible to
+    // this pipeline (`InsertDependenciesBuilder` only expands the dependencies of the immediate target), so
+    // fail closed for such forwarding storages when dependent-MV deduplication is enabled and the forwarded-to
+    // target has a dependent view. (`Distributed` / `Buffer`, and an `Alias` of a deduplicating table, are
+    // already kept single-stream by `source_deduplicates` above; this additionally covers an `Alias` of a
+    // non-deduplicating table that has a deduplicating dependent materialized view.)
+    const bool forwarded_dependent_mv_dedup_hazard = rebuilds_dedup_ids
+        && dedup_enabled_for_insert
+        && settings[Setting::deduplicate_blocks_in_dependent_materialized_views]
+        && InsertDependenciesBuilder::forwardedInsertReachesDependentView(table);
+
     const bool dedup_single_stream = !async_insert
-        && per_branch_dedup_ids
-        && source_deduplicates;
+        && ((per_branch_dedup_ids && source_deduplicates) || forwarded_dependent_mv_dedup_hazard);
     const size_t insert_threads = (async_insert || dedup_single_stream) ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,
