@@ -4115,12 +4115,35 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
                     return false;
                 }
 
-                /// The entry exists in ZooKeeper /queue but not in RAM: it is an orphan left by an earlier
-                /// recovery attempt that created the znode and then failed before queue.insert() (the retry
-                /// path never reloads the queue). Materialize exactly this znode into the in-memory queue so
-                /// normal processing applies it, instead of creating a second same-alter_version entry (which
-                /// would corrupt the single-slot-per-alter_version alters sequence). This reuses the entry the
-                /// prior attempt already created, so the repair is idempotent across initializeReplication() retries.
+                /// The entry exists in ZooKeeper /queue but is not in the in-memory queue. There are two ways
+                /// that can happen, and only one of them needs repair:
+                ///  (a) a synthetic orphan left by an earlier recovery attempt that created the znode and then
+                ///      failed before queue.insert() (the retry path never reloads the queue), or
+                ///  (b) a real ALTER_METADATA that normal processing just finished: removeProcessedEntry erases
+                ///      the entry from RAM first and only then deletes its znode, without pull_logs_to_queue_mutex,
+                ///      so between those two steps the znode still exists while the entry is already gone from RAM.
+                /// In case (b) the alter has already been applied locally (executeMetadataAlter -> setTableStructure
+                /// runs before removeProcessedEntry), so re-inserting it would reopen the same alter_version in the
+                /// alters sequence and re-execute an already-applied entry. Distinguish the two by re-checking the
+                /// actual local structure against the ZooKeeper snapshot: if it now matches, a real alter just
+                /// finished (case b) and there is nothing to repair; only if the local structure still lags do we
+                /// materialize the entry (case a). checkTableStructureAttempt is non-strict, exactly like the guard
+                /// above.
+                Int32 recheck_metadata_version = 0;
+                if (checkTableStructureAttempt(zookeeper_path, metadata_snapshot, &recheck_metadata_version, /* strict_check */ false))
+                {
+                    LOG_INFO(log, "An ALTER_METADATA entry with alter_version {} exists in {} but not in the in-memory "
+                                  "queue; the local structure now matches ZooKeeper, so a real alter just finished "
+                                  "(removeProcessedEntry removes it from memory before ZooKeeper). Not materializing it.",
+                             queued->alter_version, queue_entry_paths[i]);
+                    return false;
+                }
+
+                /// The local structure still lags, so this is a genuine synthetic orphan from an earlier recovery
+                /// attempt. Materialize exactly this znode into the in-memory queue so normal processing applies it,
+                /// instead of creating a second same-alter_version entry (which would corrupt the
+                /// single-slot-per-alter_version alters sequence). This reuses the entry the prior attempt already
+                /// created, so the repair is idempotent across initializeReplication() retries.
                 LOG_INFO(log, "Local metadata version ({}) is behind ZooKeeper ({}); an ALTER_METADATA entry with "
                               "alter_version {} already exists in {} but was not loaded into the in-memory queue "
                               "(orphaned by an earlier recovery attempt). Materializing it instead of creating a new one.",
