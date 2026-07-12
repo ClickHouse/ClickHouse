@@ -321,7 +321,10 @@ struct AggregatedDataVariants : private boost::noncopyable
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
 
     /** Select the aggregation method based on the number and types of keys. */
-    static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);
+    /// When `avoid_prealloc_serialized` is set, the "prealloc serialized" methods are never chosen
+    /// (the plain "serialized" methods are used instead). This is required for aggregation-in-order,
+    /// which aggregates small sub-ranges of a block repeatedly - see Aggregator::Params::aggregation_in_order.
+    static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes, bool avoid_prealloc_serialized = false);
 };
 
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;

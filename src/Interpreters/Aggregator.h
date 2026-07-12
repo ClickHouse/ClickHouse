@@ -135,6 +135,14 @@ public:
 
         bool serialize_string_with_zero_byte = false;
 
+        /// True for aggregation-in-order (optimize_aggregation_in_order), where data arrives pre-sorted and
+        /// is aggregated in small consecutive sub-ranges of each block via Aggregator::executeOnBlockSmall.
+        /// In this mode the "prealloc serialized" method must not be chosen: it precomputes serialized keys
+        /// for the whole block on every sub-range call, which makes a block with N distinct sorting-key
+        /// prefixes cost O(N * block_rows) - quadratic - and effectively hangs on large inputs. The plain
+        /// "serialized" method serializes keys lazily per row, so the small-block path stays linear.
+        bool aggregation_in_order = false;
+
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
         Params(

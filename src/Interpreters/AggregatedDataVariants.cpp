@@ -223,7 +223,7 @@ HashMethodContextPtr AggregatedDataVariants::createCache(Type type, const HashMe
 }
 
 AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
-    const Block & header, const Names & keys, Sizes & out_key_sizes)
+    const Block & header, const Names & keys, Sizes & out_key_sizes, bool avoid_prealloc_serialized)
 {
     const size_t keys_size = keys.size();
 
@@ -347,7 +347,7 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
         }
 
         if (keys_size > 1 && all_keys_are_numbers_or_strings)
-            return Type::nullable_prealloc_serialized;
+            return avoid_prealloc_serialized ? Type::nullable_serialized : Type::nullable_prealloc_serialized;
 
         /// Fallback case.
         return Type::nullable_serialized;
@@ -431,7 +431,7 @@ AggregatedDataVariants::Type AggregatedDataVariants::chooseMethod(
     }
 
     if (keys_size > 1 && all_keys_are_numbers_or_strings)
-        return Type::prealloc_serialized;
+        return avoid_prealloc_serialized ? Type::serialized : Type::prealloc_serialized;
 
     return Type::serialized;
 }

@@ -688,7 +688,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             is_simple_count = true;
     }
 
-    method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
+    method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes, params.aggregation_in_order);
 
     /// TODO(ab): HashMethodSingleLowCardinalityColumn uses a hardcoded internal cache,
     /// which interferes with inline aggregation (e.g. for COUNT). This needs to be
