@@ -416,6 +416,25 @@ static Array BSONArrayAsArray(
                         arr.emplace_back(UUID(std::move(uuid_number)));
                         break;
                     }
+                    case TypeIndex::UUID2:
+                    {
+                        if (value.type() != bsoncxx::type::k_binary)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected uuid(binary subtype 4), got {} for column {}.",
+                                            bsoncxx::to_string(value.type()), name);
+                        if (value.get_binary().sub_type != bsoncxx::binary_sub_type::k_uuid || value.get_binary().size != 16)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Binary of type {} with size cannot be parsed to UUID2 for column {}.",
+                                bsoncxx::to_string(value.get_binary().sub_type), name);
+
+                        UInt128 uuid_number;
+                        auto valBuf = ReadBufferFromMemory(value.get_binary().bytes, value.get_binary().size);
+                        readBinaryBigEndian(uuid_number.items[0], valBuf);
+                        readBinaryBigEndian(uuid_number.items[1], valBuf);
+
+                        /// The bytes are the same 16 canonical big-endian bytes as for `UUID`; `UUID2` stores the two
+                        /// 64-bit halves swapped relative to `UUID`, so convert to the `UUID2` layout before inserting.
+                        arr.emplace_back(UUIDHelpers::swapHalves(UUID(std::move(uuid_number))));
+                        break;
+                    }
                     case TypeIndex::String:
                         arr.emplace_back(BSONElementAsString(value.get_value(), json_format_settings));
                         break;
