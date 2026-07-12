@@ -47,9 +47,10 @@ private:
     ResourceCost max_allocated = default_max_allocated;
     ResourceCost soft_limit = default_max_allocated; /// Spill threshold; `>= max_allocated` means disabled.
 
-    /// One spill at a time (decision D2): true after a signal is issued, cleared once `allocated` drops
-    /// back to/below `soft_limit`, on any decrease under this node, or when the subtree is detached. No
-    /// victim pointer is stored, avoiding the dangling-pointer hazards that `allocation_to_kill` guards.
+    /// At most one spill signal is outstanding at a time: set true when a signal is issued, and cleared
+    /// once `allocated` drops back to/below `soft_limit`, on any decrease under this node, on a decrease in
+    /// the subtree's reported reclaimable, or when the subtree is detached. No victim pointer is stored,
+    /// avoiding the dangling-pointer hazards that `allocation_to_kill` guards.
     bool spill_requested = false;
 
     /// Allocation that is being killed (if any)

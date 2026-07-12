@@ -763,8 +763,8 @@ TEST(SchedulerSpaceShared, SoftLimitFailCloseThenSpill)
 }
 
 
-/// Among several reclaimable allocations in one queue, the largest is asked to spill first (Progress /
-/// invariant I8), and only one spill is in flight at a time (decision D2).
+/// Among several reclaimable allocations in one queue, the largest is asked to spill first (the same order
+/// the kill path uses, invariant I8), and only one spill is in flight at a time.
 TEST(SchedulerSpaceShared, SoftLimitSpillsLargestInQueue)
 {
     SpaceSharedTest t;
@@ -908,7 +908,7 @@ TEST(SchedulerSpaceShared, SpillReSelectsWhenVictimReportsZeroReclaimable)
     // Over the soft limit (14000 > 10000): the largest reclaimable allocation (`a`) is asked to spill first.
     a.waitSpills(1);
     EXPECT_EQ(a.spillCount(), 1);
-    EXPECT_EQ(b.spillCount(), 0); // one spill at a time (D2)
+    EXPECT_EQ(b.spillCount(), 0); // only one spill is in flight at a time
 
     // `a` declines: it reports nothing reclaimable and does NOT decrease. Still over the soft limit, with
     // `b` reclaimable, the scheduler must now ask `b` to spill instead of stalling on `a`.

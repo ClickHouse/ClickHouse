@@ -130,8 +130,8 @@ public:
     /// subtree has nothing reclaimable. Selection descends the reclaimable-filtered ordering set at each
     /// node, using the SAME order as the kill path (see invariant I8), so it visits exactly one root-to-leaf
     /// path (invariant I5) and never touches idle/unreclaimable subtrees. Unlike `selectAllocationToKill`,
-    /// this carries no cross-child fairness logic: while the whole tree is one cooperative domain we spill
-    /// the largest reclaimable allocation first (the "Progress" strategy). Returns nullptr when nothing on
+    /// this carries no cross-child fairness logic: the largest reclaimable allocation is spilled first,
+    /// even if it is below its fair share. Returns nullptr when nothing on
     /// the chosen path is reclaimable, in which case no spill is issued and the hard limit governs
     /// (fail-close, invariant I6).
     virtual ResourceAllocation * selectAllocationToSpill(ResourceCost at_least, String & details) = 0;

@@ -390,8 +390,8 @@ ResourceAllocation * AllocationQueue::selectAllocationToSpill(ResourceCost at_le
         return nullptr; // Nothing reclaimable here — fail-close (invariant I6).
 
     // Spill the largest reclaimable allocation (the tail of the set, ordered by `fair_key`), matching the
-    // kill order (invariant I8). This is the "Progress" strategy: while the whole tree is one cooperative
-    // domain we penalize the biggest reclaimable allocation first.
+    // order the kill path uses (invariant I8): victim selection applies no cross-child fairness of its own,
+    // so the biggest reclaimable allocation is asked to spill first.
     ResourceAllocation & victim = *reclaimable_allocations.rbegin();
     details = fmt::format("Asking the largest reclaimable allocation of size {} (reclaimable {}) in workload '{}' to reclaim at least {}.",
         formatReadableCost(victim.allocated), formatReadableCost(victim.reclaimable), getWorkloadName(), formatReadableCost(at_least));

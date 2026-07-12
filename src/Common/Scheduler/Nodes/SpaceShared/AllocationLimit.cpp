@@ -113,7 +113,7 @@ void AllocationLimit::checkSoftLimit()
         return;
     }
     if (spill_requested)
-        return; // One spill at a time (D2) — wait for the current victim to make progress (a decrease).
+        return; // A spill is already outstanding; wait for the victim to make progress before signalling another one.
     if (reclaimable == 0)
         return; // Nothing reclaimable under this limit — fail-close (I6); the hard limit governs.
 
@@ -154,8 +154,8 @@ void AllocationLimit::approveDecrease()
     if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
         allocation_to_kill = nullptr;
 
-    // A decrease under this node is progress on any in-flight spill episode: reopen the one-at-a-time gate
-    // (D2) so the next `checkSoftLimit` can re-signal the same or the next victim if we are still over.
+    // A decrease under this node is progress on any outstanding spill: let the next `checkSoftLimit` signal
+    // again (the same or the next victim) if this node is still over the soft limit.
     spill_requested = false;
 
     decrease = nullptr;
@@ -186,16 +186,15 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     // descending into `selectAllocationToSpill` (which locks that mutex) would self-deadlock. Those cases
     // are covered by `checkSoftLimit` in `approveIncrease`/`approveDecrease` instead.
     const bool reclaimable_changed = update.reclaimable_delta != 0;
-    // A drop in reported reclaimable is the acknowledgement that a spill victim reclaimed — or gave up
-    // without freeing (it lowered its reclaimable, possibly to 0, with no decrease). Capture the sign now,
-    // before `update` may be consumed by `propagate` below.
+    // Capture the sign now, before `update` may be consumed by `propagate` below. A negative delta (a
+    // reported decrease in reclaimable) is handled specially at the end of this function.
     const bool reclaimable_dropped = update.reclaimable_delta < 0;
     bool reapply_constraint = false;
     if (update.attached)
         reapply_constraint = true;
     if (update.detached)
     {
-        // The reclaimable subtree may be (partly) gone; end any in-flight spill episode (D2).
+        // The reclaimable subtree may be (partly) gone; drop any outstanding spill request.
         spill_requested = false;
         // The victim referenced by `allocation_to_kill` might be anywhere inside the detached
         // subtree, and `purgeQueue` will fail its owner via `fail_reason` without driving a
@@ -234,11 +233,10 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     // Only a reclaimable report can reach this point without a queue mutex held (see note above).
     if (reclaimable_changed)
     {
-        // Reopen the one-at-a-time gate (D2) when the current victim reclaimed or declined (a drop in
-        // reported reclaimable), so `checkSoftLimit` re-targets the next reclaimable allocation. Otherwise
-        // an episode could stall above the soft limit until an unrelated decrease happens: no victim
-        // pointer is stored, so the signaled victim reporting `reclaimable == 0` without a decrease would
-        // never be superseded. Re-signals coalesce query-side (see `MemoryReservation::spillAllocation`).
+        // A decrease in reported reclaimable means the outstanding victim reclaimed or gave up, so allow
+        // `checkSoftLimit` to signal the next reclaimable allocation. Without this the node could stay above
+        // the soft limit indefinitely: no victim is remembered between calls, so a victim that lowers its
+        // reclaimable to zero without decreasing would never be superseded.
         if (reclaimable_dropped)
             spill_requested = false;
         checkSoftLimit();
