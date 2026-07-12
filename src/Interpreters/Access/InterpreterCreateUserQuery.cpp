@@ -261,7 +261,18 @@ BlockIO InterpreterCreateUserQuery::execute()
         getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
 
     if (!query.cluster.empty())
+    {
+        /// Bind bare-table grants of the authentication methods (e.g. `GRANTS (SELECT ON t1)`) to the current
+        /// database of the initiator before shipping the query, so that every node persists the same limit.
+        /// `AddDefaultDatabaseVisitor` does not rewrite `ASTAuthenticationData::grants` (they are stored outside
+        /// the AST children), and the current database of a DDL worker is not the initiator's, so otherwise each
+        /// node would rebind bare-table grants to a different database.
+        auto & mutable_query = updated_query_ptr->as<ASTCreateUserQuery &>();
+        for (auto & authentication_method_ast : mutable_query.authentication_methods)
+            authentication_method_ast->grants.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
+    }
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;
