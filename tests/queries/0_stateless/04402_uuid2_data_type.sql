@@ -46,6 +46,18 @@ DROP TABLE IF EXISTS t_mat1;
 CREATE TABLE t_mat1 (a UUID, d Array(UUID)) ENGINE = MergeTree ORDER BY tuple();
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_mat1' ORDER BY name;
 
+SELECT '-- ALTER ADD/MODIFY COLUMN materializes bare UUID as UUID2 (version 2), leaves UUID1/UUID2 explicit';
+SET uuid_type_version = 2;
+DROP TABLE IF EXISTS t_alter;
+CREATE TABLE t_alter (id UInt64) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE t_alter ADD COLUMN a UUID, ADD COLUMN b UUID1, ADD COLUMN c UUID2, ADD COLUMN d Array(UUID), ADD COLUMN e Nullable(UUID);
+ALTER TABLE t_alter MODIFY COLUMN b UUID;
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter' ORDER BY name;
+SELECT '-- ALTER version 1 (default) leaves UUID as UUID';
+SET uuid_type_version = 1;
+ALTER TABLE t_alter ADD COLUMN f UUID, ADD COLUMN g Array(UUID);
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter' AND name IN ('f', 'g') ORDER BY name;
+
 SELECT '-- function parity: hex/UUIDv7ToDateTime/reinterpret/empty match UUID for the same value';
 WITH '0192d2b8-7c3f-7e1a-b2c4-1234567890ab' AS s
 SELECT
@@ -69,4 +81,5 @@ SELECT count() FROM t_bf WHERE x = '00000000-0000-0000-0000-000000000000';
 DROP TABLE t_uuid2;
 DROP TABLE t_mat;
 DROP TABLE t_mat1;
+DROP TABLE t_alter;
 DROP TABLE t_bf;

@@ -23,6 +23,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -108,10 +109,42 @@ bool hasCommands(const CommandSegments & segments)
     return std::ranges::any_of(segments, [](const auto & segment) { return std::holds_alternative<CommandsType>(segment); });
 }
 
+/** Materialize the `uuid_type_version` setting into the `ADD/MODIFY COLUMN` command ASTs of an `ALTER` query.
+  *
+  * This is called once on the initiator (a primary, user-issued `ALTER`) so that a bare `UUID` column type is resolved
+  * to its concrete type (`UUID` or `UUID2`) using the initiator's session setting, and the resolved type is what gets
+  * forwarded to `ON CLUSTER` hosts and enqueued into a `Replicated` database DDL log. This mirrors how `CREATE` bakes
+  * the concrete column types into the query AST, and prevents a bare `UUID` from materializing as different types on
+  * nodes that disagree on `uuid_type_version`.
+  */
+void materializeUUIDTypeVersion(ASTAlterQuery & alter, UInt64 uuid_type_version)
+{
+    if (uuid_type_version != 2 || !alter.command_list)
+        return;
+
+    for (const auto & child : alter.command_list->children)
+    {
+        auto * command_ast = child->as<ASTAlterCommand>();
+        if (!command_ast || !command_ast->col_decl)
+            continue;
+        if (command_ast->type != ASTAlterCommand::ADD_COLUMN && command_ast->type != ASTAlterCommand::MODIFY_COLUMN)
+            continue;
+
+        auto & col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
+        if (auto type_ast = col_decl.getType())
+            col_decl.setType(applyUUIDTypeVersion(type_ast, uuid_type_version));
+    }
+}
+
 CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
 {
     SegmentsHolder segments_holder;
     const auto & settings = context->getSettingsRef();
+
+    /// On an initiator the query AST was already normalized (see `materializeUUIDTypeVersion`), so internal DDL - a
+    /// forwarded `ON CLUSTER` query or a `Replicated` database DDL replay - must keep the concrete type verbatim rather
+    /// than re-resolving a bare `UUID` with this node's own `uuid_type_version`, which could disagree with the initiator.
+    const UInt64 uuid_type_version = context->isDDLOrOnClusterInternal() ? 1 : settings[Setting::uuid_type_version];
 
     for (const auto & child : alter.command_list->children)
     {
@@ -120,7 +153,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         {
             segments_holder.take<ExecuteCommands>().push_back(command_ast);
         }
-        else if (auto alter_command = AlterCommand::parse(command_ast, settings[Setting::uuid_type_version]))
+        else if (auto alter_command = AlterCommand::parse(command_ast, uuid_type_version))
         {
             segments_holder.take<AlterCommands>().push_back(std::move(alter_command.value()));
         }
@@ -393,6 +426,12 @@ BlockIO InterpreterAlterQuery::execute()
 
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
+    /// Materialize the `uuid_type_version` setting into the query on the initiator (a primary, user-issued `ALTER`),
+    /// before it is forwarded to `ON CLUSTER` hosts or enqueued into a `Replicated` database DDL log. Internal DDL has
+    /// already been normalized by its initiator, so it must not be touched again here.
+    if (!getContext()->isDDLOrOnClusterInternal())
+        materializeUUIDTypeVersion(query_ptr->as<ASTAlterQuery &>(), getContext()->getSettingsRef()[Setting::uuid_type_version]);
+
     ASTSelectWithUnionQuery * modify_query = nullptr;
 
     for (auto & child : alter.command_list->children)

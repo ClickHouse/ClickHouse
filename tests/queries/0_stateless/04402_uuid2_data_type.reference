@@ -31,6 +31,16 @@ e	Nullable(UUID2)
 -- version 1 (default) leaves UUID as UUID
 a	UUID
 d	Array(UUID)
+-- ALTER ADD/MODIFY COLUMN materializes bare UUID as UUID2 (version 2), leaves UUID1/UUID2 explicit
+a	UUID2
+b	UUID2
+c	UUID2
+d	Array(UUID2)
+e	Nullable(UUID2)
+id	UInt64
+-- ALTER version 1 (default) leaves UUID as UUID
+f	UUID
+g	Array(UUID)
 -- function parity: hex/UUIDv7ToDateTime/reinterpret/empty match UUID for the same value
 1	1	1	1	1	1
 -- generateRandom produces UUID2
