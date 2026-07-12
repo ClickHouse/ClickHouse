@@ -369,11 +369,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     }
 
     /// `geo_meta` is keyed by raw parquet column names (the "geo" metadata is part of the file
-    /// itself), but `SpatialFilter::geometry_column_name` and the `covering.bbox` sub-column paths
-    /// inside `geo_meta` live in two different naming domains when
+    /// itself), but `SpatialFilter::geometry_column_name` lives in a different naming domain when
     /// `format_filter_info->column_mapper` has been swapped for a per-file mapper (data lake schema
-    /// evolution, e.g. after an Iceberg `RENAME COLUMN`): the former is the ClickHouse name as of
-    /// the CURRENT/query-side schema, the latter is always the raw name the file's OWN schema used.
+    /// evolution, e.g. after an Iceberg `RENAME COLUMN`): it is the ClickHouse name as of the
+    /// CURRENT/query-side schema, not the raw name the file's OWN schema used.
     ///
     /// Join `current_schema_column_mapper` (query-side ClickHouse name -> field_id) with the
     /// per-file `column_mapper` (field_id -> the name this file's OWN schema used) via
@@ -381,29 +380,26 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// crucially, never touches the Parquet footer's own `field_id` metadata - it works purely from
     /// Iceberg schema metadata, which our writer always has even though it currently omits
     /// per-column `field_id` from the footer.
+    ///
+    /// Note this is a one-way translation (query-side -> raw). `covering.bbox` sub-column paths
+    /// from `geo_meta` are already raw parquet-side names and need no translation: `SchemaConverter`
+    /// resolves `primitive_columns[i].name` via the same per-file `column_mapper`
+    /// (`useColumnMapperIfNeeded`), which returns each field's name as of the file's OWN schema -
+    /// i.e. the very same raw name `geo_meta` already carries. Translating them to the query-side
+    /// name (as an earlier version of this code did) breaks the match against
+    /// `primitive_columns[i].name` for any bbox sub-column that was itself renamed.
     std::unordered_map<String, String> clickhouse_to_parquet_name;
-    std::unordered_map<String, String> parquet_to_clickhouse_name;
     const auto * query_side_column_mapper = format_filter_info->current_schema_column_mapper
         ? format_filter_info->current_schema_column_mapper.get()
         : format_filter_info->column_mapper.get();
     if (query_side_column_mapper && format_filter_info->column_mapper)
-        std::tie(clickhouse_to_parquet_name, parquet_to_clickhouse_name) =
-            query_side_column_mapper->makeMapping(format_filter_info->column_mapper->getFieldIdToClickHouseName());
+        clickhouse_to_parquet_name =
+            query_side_column_mapper->makeMapping(format_filter_info->column_mapper->getFieldIdToClickHouseName()).first;
     auto resolve_geo_meta = [&](const String & ch_name) -> std::unordered_map<String, DB::GeoColumnMetadata>::const_iterator
     {
         if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
             return geo_meta->find(it->second);
         return geo_meta->find(ch_name);
-    };
-    /// `covering.bbox` sub-column paths from `geo_meta` are raw parquet-side names; translate them
-    /// to the query-side names `SchemaConverter` will actually use for `primitive_columns[i].name`
-    /// and `extended_sample_block`, so injection (Phase A) and primitive-column lookup (Phase B)
-    /// agree with what SchemaConverter produces.
-    auto resolve_bbox_column_name = [&](const String & parquet_name) -> String
-    {
-        if (auto it = parquet_to_clickhouse_name.find(parquet_name); it != parquet_to_clickhouse_name.end())
-            return it->second;
-        return parquet_name;
     };
 
     /// Phase A: inject covering.bbox sub-columns into extended_sample_block BEFORE
@@ -471,11 +467,11 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             if (!all_bbox_in_schema)
             { geostats_spatial_filters.push_back(sf); continue; }
 
-            /// Translate to the query-side names SchemaConverter will actually produce (identity
-            /// when no column_mapper is active) before touching extended_sample_block.
+            /// Raw parquet-side names, matching what SchemaConverter will produce for these
+            /// primitives (see comment above on the per-file column_mapper).
             const std::array<String, 4> bbox_cols = {
-                resolve_bbox_column_name(bbox_cov.xmin_column), resolve_bbox_column_name(bbox_cov.ymin_column),
-                resolve_bbox_column_name(bbox_cov.xmax_column), resolve_bbox_column_name(bbox_cov.ymax_column)};
+                bbox_cov.xmin_column, bbox_cov.ymin_column,
+                bbox_cov.xmax_column, bbox_cov.ymax_column};
 
             /// Skip injection if parent struct column (e.g. "location_bbox") is already in block.
             bool conflict = false;
@@ -568,12 +564,12 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                     continue; // already in geostats_spatial_filters
 
                 const auto & bbox_cov = *geo_it->second.covering_bbox;
-                /// Translate raw parquet-side bbox paths to the query-side names SchemaConverter
-                /// produced (identity when no column_mapper is active) - matches Phase A, and is
-                /// what extended_sample_block / primitive_columns[i].name actually use.
+                /// Raw parquet-side bbox paths - matches Phase A, and what extended_sample_block /
+                /// primitive_columns[i].name actually use (see comment above on the per-file
+                /// column_mapper).
                 const std::array<String, 4> bbox_cols = {
-                    resolve_bbox_column_name(bbox_cov.xmin_column), resolve_bbox_column_name(bbox_cov.ymin_column),
-                    resolve_bbox_column_name(bbox_cov.xmax_column), resolve_bbox_column_name(bbox_cov.ymax_column)};
+                    bbox_cov.xmin_column, bbox_cov.ymin_column,
+                    bbox_cov.xmax_column, bbox_cov.ymax_column};
                 auto sc = buildBboxKeyCondition(sf,
                     bbox_cols[0], bbox_cols[1],
                     bbox_cols[2], bbox_cols[3],
