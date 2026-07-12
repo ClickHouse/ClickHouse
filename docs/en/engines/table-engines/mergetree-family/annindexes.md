@@ -147,7 +147,7 @@ We therefore do not recommend customizing the HNSW-specific parameters.
 
 [ScaNN](https://github.com/google-research/google-research/tree/master/scann) is Google's Scalable Nearest Neighbors library.
 It uses an IVF (Inverted File Index) partitioning scheme combined with asymmetric hashing for fast approximate search and optional exact reranking.
-ScaNN is well-suited for large, high-dimensional datasets where HNSW's memory consumption becomes a bottleneck.
+ScaNN is designed for approximate nearest-neighbor search on large, high-dimensional datasets.
 
 :::note
 The ScaNN backend is experimental. To create a `vector_similarity('scann', ...)` index, first enable the experimental setting:

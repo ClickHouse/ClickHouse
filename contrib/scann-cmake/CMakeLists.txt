@@ -249,9 +249,9 @@ endif()
 # (asymmetric_hashing2::TrainSingleMachine); the full dataset is still quantized
 # point-by-point in BuildLeafSearchers (which re-residualizes each point via
 # ResidualizeToFloat), so subsampling only the training set has negligible
-# recall impact.  getSampleSize() returns 20% of the dataset, clamped to
+# recall impact.  getSampleSize() returns 50% of the dataset, clamped to
 # [100,000, 2,000,000].  The AH codebook is a set of 2-D, 16-center k-means whose
-# training-set requirement is essentially independent of the dataset size, so 20%
+# training-set requirement is essentially independent of the dataset size, so 50%
 # is ample; the floor keeps small datasets well-trained and the cap keeps build
 # time bounded for very large datasets.
 #
@@ -296,11 +296,11 @@ shared_ptr<DocidCollectionInterface> Dataset::ReleaseDocids() {]==]
 size_t getSampleSize(size_t data_size) {
   // The AH codebook is 384 independent 2-D, 16-center k-means (num_dims_per_block=2,
   // INT8_LUT16), whose training-set requirement is essentially independent of the
-  // dataset size, so a 20% sample is ample. Clamp it on both ends: a floor so small
+  // dataset size, so a 50% sample is ample. Clamp it on both ends: a floor so small
   // datasets are still trained on enough points (datasets below ~500k end up fully
   // sampled, which is cheap), and a cap so huge datasets do not blow up build time or
   // peak memory (2M samples already saturate the 2-D codebooks).
-  size_t sample_size = static_cast<size_t>(data_size / 5);  // 20%
+  size_t sample_size = static_cast<size_t>(data_size / 2);  // 50% sample for control benchmark
   sample_size = std::max(sample_size, static_cast<size_t>(100000));    // floor
   sample_size = std::min(sample_size, static_cast<size_t>(2000000));   // cap
   sample_size = std::min(sample_size, static_cast<size_t>(data_size));
