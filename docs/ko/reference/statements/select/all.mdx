@@ -1,0 +1,23 @@
+---
+description: 'ALL 절 문서'
+sidebarTitle: 'ALL'
+slug: /sql-reference/statements/select/all
+title: 'ALL 절'
+doc_type: 'reference'
+---
+
+테이블에 일치하는 행이 여러 개 있으면 `ALL`은 그 모든 행을 반환합니다. `SELECT ALL`은 `DISTINCT` 없이 사용하는 `SELECT`와 동일합니다. `ALL`과 `DISTINCT`를 모두 지정하면 예외가 발생합니다.
+
+`ALL`은 집계 함수 내부에 지정할 수 있지만, 쿼리 결과에는 실질적인 영향이 없습니다.
+
+예시:
+
+```sql
+SELECT sum(ALL number) FROM numbers(10);
+```
+
+다음과 동일합니다:
+
+```sql
+SELECT sum(number) FROM numbers(10);
+```

@@ -1,0 +1,630 @@
+---
+slug: /use-cases/observability/clickstack/integrations/host-logs/ec2
+title: 'مراقبة سجلات مضيف EC2 باستخدام ClickStack'
+sidebarTitle: 'سجلات مضيف EC2'
+description: 'مراقبة سجلات مضيف EC2 باستخدام ClickStack'
+doc_type: 'guide'
+keywords: ['EC2', 'AWS', 'سجلات المضيف', 'systemd', 'syslog', 'OTEL', 'ClickStack', 'مراقبة النظام', 'البيانات الوصفية السحابية']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **باختصار**
+
+  اجمع سجلات نظام EC2 واعرضها بصريًا في ClickStack باستخدام OpenTelemetry Collector مع إثراء تلقائي بالبيانات الوصفية لـ EC2 (معرّف المثيل، المنطقة، منطقة التوافر، نوع المثيل). يتضمن مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
+</Info>
+
+<div id="existing-ec2">
+  ## التكامل مع مثيل EC2 حالي
+</div>
+
+يغطي هذا القسم تثبيت OpenTelemetry Collector على مثيلات EC2 لديك لجمع سجلات النظام وإرسالها إلى ClickStack مع إثرائها تلقائيًا ببيانات EC2 الوصفية. هذه المعمارية الموزعة جاهزة لبيئات الإنتاج وقابلة للتوسع عبر مثيلات متعددة.
+
+<Info>
+  **هل يعمل ClickStack على مثيل EC2 نفسه؟**
+
+  إذا كان ClickStack يعمل على مثيل EC2 نفسه الذي تريد مراقبة سجلاته، فيمكنك استخدام النهج المتكامل المشابه لما هو موضح في [دليل سجلات المضيف العامة](/ar/clickstack/integration-examples/host-logs). اربط `/var/log` بحاوية ClickStack وأضف المعالج `resourcedetection` إلى التهيئة المخصصة لديك لالتقاط بيانات EC2 الوصفية تلقائيًا. يركّز هذا الدليل على المعمارية الموزعة الأكثر شيوعًا في عمليات النشر على بيئات الإنتاج.
+</Info>
+
+إذا كنت ترغب في اختبار تكامل سجلات مضيف EC2 قبل تهيئة مثيل الإنتاج لديك، فيمكنك استخدام إعدادنا المهيأ مسبقًا والبيانات النموذجية في قسم [&quot;مجموعة البيانات التجريبية&quot;](/ar/clickstack/integration-examples/host-logs/ec2#demo-dataset).
+
+<div id="prerequisites">
+  ##### المتطلبات الأساسية
+</div>
+
+* مثيل ClickStack قيد التشغيل (يمكن أن يكون داخل بنيتك التحتية، أو على السحابة، أو محليًا)
+* مثيل EC2 قيد التشغيل (Ubuntu أو Amazon Linux أو أي توزيعة Linux أخرى)
+* توفّر اتصال شبكي من مثيل EC2 إلى نقطة نهاية OTLP الخاصة بـ ClickStack (المنفذ 4318 لـ HTTP أو 4317 لـ gRPC)
+* إمكانية الوصول إلى خدمة البيانات الوصفية للمثيل EC2 (مُمكّنة افتراضيًا)
+
+<Steps>
+  <Step>
+    #### تحقّق من إمكانية الوصول إلى بيانات EC2 الوصفية
+
+    من مثيل EC2 لديك، تحقّق من إمكانية الوصول إلى خدمة البيانات الوصفية:
+
+    ```bash
+    # Get metadata token (IMDSv2)
+    TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+
+    # Verify instance metadata
+    curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
+    curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
+    curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
+    ```
+
+    يجب أن ترى معرّف المثيل والمنطقة ونوع المثيل. إذا لم تنجح هذه الأوامر، فتحقّق مما يلي:
+
+    * أن خدمة بيانات تعريف المثيل مفعّلة
+    * أن IMDSv2 غير محظور بواسطة مجموعات الأمان أو قوائم ACL للشبكة
+    * أنك تشغّل هذه الأوامر من مثيل EC2 نفسه
+
+    <Note>
+      تتوفر بيانات EC2 الوصفية على `http://169.254.169.254` من داخل المثيل. يستخدم معالج OpenTelemetry `resourcedetection` نقطة النهاية هذه لإثراء السجلات تلقائيًا بسياق السحابة.
+    </Note>
+  </Step>
+
+  <Step>
+    #### تحقّق من وجود ملفات syslog
+
+    تحقّق من أن مثيل EC2 لديك يُنشئ ملفات syslog:
+
+    ```bash
+    # Ubuntu instances
+    ls -la /var/log/syslog
+
+    # Amazon Linux / RHEL instances
+    ls -la /var/log/messages
+
+    # View recent entries
+    tail -20 /var/log/syslog
+    # or
+    tail -20 /var/log/messages
+    ```
+  </Step>
+
+  <Step>
+    #### تثبيت OpenTelemetry Collector
+
+    ثبّت توزيعة OpenTelemetry Collector Contrib على مثيل EC2 الخاص بك:
+
+    ```bash
+    # Download the latest release
+    wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
+
+    # Extract and install
+    tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
+    sudo mv otelcol-contrib /usr/local/bin/
+
+    # Verify installation
+    otelcol-contrib --version
+    ```
+  </Step>
+
+  <Step>
+    #### إنشاء تهيئة collector
+
+    أنشئ ملف تهيئة لـ OpenTelemetry Collector في المسار `/etc/otelcol-contrib/config.yaml`:
+
+    ```bash
+    sudo mkdir -p /etc/otelcol-contrib
+    ```
+
+    اختر الإعداد وفقًا لتوزيعة Linux لديك:
+
+    <Tabs>
+      <Tab title="إصدارات Linux الحديثة (Ubuntu 24.04+)">
+        ```yaml
+        sudo tee /etc/otelcol-contrib/config.yaml > /dev/null << 'EOF'
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/syslog
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout_type: gotime
+                layout: '2006-01-02T15:04:05.999999-07:00'
+              
+              - type: add
+                field: attributes.source
+                value: "ec2-host-logs"
+
+        processors:
+          resourcedetection:
+            detectors: [ec2, system]
+            timeout: 5s
+            override: false
+            ec2:
+              tags:
+                - ^Name
+                - ^Environment
+                - ^Team
+          
+          batch:
+            timeout: 10s
+            send_batch_size: 10000
+
+        exporters:
+          otlphttp:
+            endpoint: "http://YOUR_CLICKSTACK_HOST:4318"
+            headers:
+              authorization: "${env:CLICKSTACK_API_KEY}"
+
+        service:
+          pipelines:
+            logs:
+              receivers: [filelog/syslog]
+              processors: [resourcedetection, batch]
+              exporters: [otlphttp]
+        EOF
+        ```
+      </Tab>
+
+      <Tab title="إصدارات Linux القديمة (Amazon Linux 2 وRHEL وإصدارات Ubuntu الأقدم)">
+        ```yaml
+        sudo tee /etc/otelcol-contrib/config.yaml > /dev/null << 'EOF'
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/messages
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+ \d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout: '%b %d %H:%M:%S'
+              
+              - type: add
+                field: attributes.source
+                value: "ec2-host-logs"
+
+        processors:
+          resourcedetection:
+            detectors: [ec2, system]
+            timeout: 5s
+            override: false
+            ec2:
+              tags:
+                - ^Name
+                - ^Environment
+                - ^Team
+          
+          batch:
+            timeout: 10s
+            send_batch_size: 10000
+
+        exporters:
+          otlphttp:
+            endpoint: "http://YOUR_CLICKSTACK_HOST:4318"
+            headers:
+              authorization: "${env:CLICKSTACK_API_KEY}"
+
+        service:
+          pipelines:
+            logs:
+              receivers: [filelog/syslog]
+              processors: [resourcedetection, batch]
+              exporters: [otlphttp]
+        EOF
+        ```
+      </Tab>
+    </Tabs>
+
+    <br />
+
+    **استبدل ما يلي في التهيئة:**
+
+    * `YOUR_CLICKSTACK_HOST`: اسم المضيف أو عنوان IP الذي يستضيف ClickStack
+    * للاختبار المحلي، يمكنك استخدام نفق SSH (راجع [قسم استكشاف الأخطاء وإصلاحها](#troubleshooting))
+
+    هذا الإعداد:
+
+    * يقرأ ملفات سجلات النظام من المسارات القياسية (`/var/log/syslog` في Ubuntu، و`/var/log/messages` في Amazon Linux/RHEL)
+    * يحلّل تنسيق syslog لاستخراج الحقول المهيكلة (الطابع الزمني، واسم المضيف، والوحدة/الخدمة، وPID، والرسالة)
+    * **يكتشف تلقائيًا بيانات EC2 الوصفية ويضيفها** باستخدام المعالج `resourcedetection`
+    * يتضمن اختياريًا وسوم EC2 ‏(Name وEnvironment وTeam) إن وُجدت
+    * يرسل السجلات إلى ClickStack عبر OTLP HTTP
+
+    <Info>
+      **إثراء البيانات الوصفية لـ EC2**
+
+      يضيف المعالج `resourcedetection` هذه السمات تلقائيًا إلى كل سجل:
+
+      * `cloud.provider`: &quot;aws&quot;
+      * `cloud.platform`: &quot;aws&#95;ec2&quot;
+      * `cloud.region`: منطقة AWS (على سبيل المثال، &quot;us-east-1&quot;)
+      * `cloud.availability_zone`: نطاق التوفّر (على سبيل المثال، &quot;us-east-1a&quot;)
+      * `cloud.account.id`: معرّف حساب AWS
+      * `host.id`: معرّف مثيل EC2 (على سبيل المثال، &quot;i-1234567890abcdef0&quot;)
+      * `host.type`: نوع المثيل (على سبيل المثال، &quot;t3.medium&quot;)
+      * `host.name`: اسم مضيف المثيل
+    </Info>
+  </Step>
+
+  <Step>
+    #### عيّن مفتاح API لـ ClickStack
+
+    صدّر مفتاح API لـ ClickStack كمتغير بيئة:
+
+    ```bash
+    export CLICKSTACK_API_KEY="your-api-key-here"
+    ```
+
+    لجعل هذا مستمرًا بعد إعادة التشغيل، أضِفه إلى ملف إعدادات الصدفة:
+
+    ```bash
+    echo 'export CLICKSTACK_API_KEY="your-api-key-here"' >> ~/.bashrc
+    source ~/.bashrc
+    ```
+  </Step>
+
+  <Step>
+    #### شغّل الـ collector
+
+    ابدأ تشغيل OpenTelemetry Collector:
+
+    ```bash
+    CLICKSTACK_API_KEY="your-api-key-here" /usr/local/bin/otelcol-contrib --config /etc/otelcol-contrib/config.yaml
+    ```
+
+    <Info>
+      **للاستخدام في بيئة الإنتاج**
+
+      اضبط المُجمِّع ليعمل كخدمة ضمن systemd بحيث يبدأ تلقائيًا عند الإقلاع ويُعاد تشغيله عند حدوث فشل. راجع [وثائق OpenTelemetry Collector](https://opentelemetry.io/docs/collector/deployment/) لمزيد من التفاصيل.
+    </Info>
+  </Step>
+
+  <Step>
+    #### التحقق من السجلات في HyperDX
+
+    بمجرد تشغيل المجمّع، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تتدفّق مع بيانات EC2 الوصفية:
+
+    1. انتقل إلى عرض البحث
+    2. اضبط المصدر على `Logs`
+    3. صفِّ حسب `source:ec2-host-logs`
+    4. انقر على إدخال سجل لتوسيعه
+    5. تحقّق من ظهور بيانات EC2 الوصفية ضمن سمات المورد:
+       * `cloud.provider`
+       * `cloud.region`
+       * `host.id` (معرّف المثيل)
+       * `host.type` (نوع المثيل)
+       * `cloud.availability_zone`
+
+    <Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="عرض البحث لسجلات EC2" />
+
+    <Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="تفاصيل سجل EC2 التي تعرض البيانات الوصفية" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## مجموعة بيانات تجريبية
+</div>
+
+للمستخدمين الذين يريدون اختبار تكامل سجلات مضيف EC2 قبل تهيئة مثيلات الإنتاج لديهم، نوفّر مجموعة بيانات تجريبية تتضمن بيانات EC2 وصفية مُحاكاة.
+
+<Steps>
+  <Step>
+    #### نزّل مجموعة البيانات النموذجية
+
+    نزّل ملف السجل النموذجي:
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+    ```
+
+    تتضمن مجموعة البيانات ما يلي:
+
+    * تسلسل إقلاع النظام
+    * نشاط تسجيل الدخول عبر SSH (محاولات ناجحة وأخرى فاشلة)
+    * حادثة أمنية (هجوم قوة غاشمة مع استجابة fail2ban)
+    * صيانة مجدولة (مهام cron وanacron)
+    * إعادة تشغيل الخدمات (rsyslog)
+    * رسائل النواة ونشاط جدار الحماية
+    * مزيج من العمليات الطبيعية والأحداث البارزة
+  </Step>
+
+  <Step>
+    #### أنشئ تهيئة collector للاختبار
+
+    أنشئ ملفًا باسم `ec2-host-logs-demo.yaml` يتضمن التهيئة التالية:
+
+    ```yaml
+    cat > ec2-host-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/journal:
+        include:
+          - /tmp/host-demo/journal.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%Y-%m-%dT%H:%M:%S%z'
+          
+          - type: add
+            field: attributes.source
+            value: "ec2-demo"
+
+    processors:
+      # Simulate EC2 metadata for demo (no real EC2 instance required)
+      resource:
+        attributes:
+          - key: service.name
+            value: "ec2-demo"
+            action: insert
+          - key: cloud.provider
+            value: "aws"
+            action: insert
+          - key: cloud.platform
+            value: "aws_ec2"
+            action: insert
+          - key: cloud.region
+            value: "us-east-1"
+            action: insert
+          - key: cloud.availability_zone
+            value: "us-east-1a"
+            action: insert
+          - key: host.id
+            value: "i-0abc123def456789"
+            action: insert
+          - key: host.type
+            value: "t3.medium"
+            action: insert
+          - key: host.name
+            value: "prod-web-01"
+            action: insert
+
+    service:
+      pipelines:
+        logs/ec2-demo:
+          receivers: [filelog/journal]
+          processors:
+            - resource
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+
+    <Note>
+      لأغراض العرض التوضيحي، نضيف بيانات EC2 الوصفية يدويًا باستخدام المعالج `resource`. في بيئة الإنتاج مع مثيلات EC2 الفعلية، استخدم المعالج `resourcedetection`، الذي يستعلم تلقائيًا عن واجهة برمجة تطبيقات بيانات EC2 الوصفية.
+    </Note>
+  </Step>
+
+  <Step>
+    #### شغّل ClickStack بإعدادات العرض التوضيحي
+
+    شغّل ClickStack باستخدام السجلات وإعدادات العرض التوضيحي:
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/ec2-host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
+      docker.hyperdx.io/hyperdx/hyperdx-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### تحقّق من السجلات في HyperDX
+
+    بمجرد تشغيل الـ collector:
+
+    1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
+    2. انتقل إلى واجهة البحث واضبط المصدر على `Logs`
+    3. اضبط النطاق الزمني على **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
+    4. صفِّ النتائج باستخدام `source:ec2-demo`
+    5. وسّع إدخال سجل لعرض بيانات EC2 الوصفية ضمن سمات المورد
+
+    <Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="واجهة البحث لسجلات EC2" />
+
+    <Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="تفاصيل سجل EC2 مع البيانات الوصفية" />
+
+    <Info>
+      **عرض المنطقة الزمنية**
+
+      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+    </Info>
+
+    يُفترض أن ترى سجلات تتضمن سياق EC2 مُحاكى، بما في ذلك:
+
+    * معرّف المثيل: `i-0abc123def456789`
+    * المنطقة: `us-east-1`
+    * منطقة التوفّر: `us-east-1a`
+    * نوع المثيل: `t3.medium`
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## لوحات المعلومات والتصورات
+</div>
+
+لمساعدتك على بدء مراقبة سجلات مضيف EC2 باستخدام ClickStack، نوفر تصورات أساسية تتضمن سياق السحابة.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">تنزيل</TrackedLink> إعدادات لوحة المعلومات
+  </Step>
+
+  <Step>
+    #### استيراد لوحة المعلومات الجاهزة
+
+    1. افتح HyperDX وانتقل إلى قسم Dashboards
+    2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
+
+    3. ارفع ملف `host-logs-dashboard.json` وانقر على **Finish Import**
+
+    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="إنهاء الاستيراد" />
+  </Step>
+
+  <Step>
+    #### عرض لوحة المعلومات
+
+    ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا:
+
+    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="لوحة معلومات سجلات EC2" />
+
+    يمكنك تصفية تصورات لوحة المعلومات حسب سياق EC2:
+
+    * `cloud.region:us-east-1` - عرض السجلات من منطقة محددة
+    * `host.type:t3.medium` - التصفية حسب نوع المثيل
+    * `host.id:i-0abc123def456` - عرض السجلات من مثيل محدد
+
+    <Note>
+      بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** (مع تعديله حسب منطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا افتراضيًا.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="no-metadata">
+  ### عدم ظهور البيانات الوصفية لـ EC2 في السجلات
+</div>
+
+**تحقق من إمكانية الوصول إلى خدمة البيانات الوصفية لـ EC2:**
+
+```bash
+# Get metadata token
+TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+
+# Test metadata endpoint
+curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
+```
+
+إذا لم ينجح ذلك، فتحقّق مما يلي:
+
+* أن خدمة البيانات الوصفية للمثيل مُمكّنة
+* أن IMDSv2 غير محجوب بواسطة مجموعات الأمان
+* أنك تشغّل المجمّع على مثيل EC2 نفسه
+
+**تحقّق من سجلات المجمّع بحثًا عن أخطاء في البيانات الوصفية:**
+
+```bash
+# If running as systemd service
+sudo journalctl -u otelcol-contrib -f | grep -i "ec2\|metadata\|resourcedetection"
+
+# If running in foreground, check stdout
+```
+
+<div id="no-logs">
+  ### عدم ظهور أي سجلات في HyperDX
+</div>
+
+**تحقق من وجود ملفات السجل وأنه تتم الكتابة إليها:**
+
+```bash
+ls -la /var/log/syslog /var/log/messages
+tail -f /var/log/syslog
+```
+
+**تأكّد من أن المجمّع يستطيع قراءة ملفات السجل:**
+
+```bash
+cat /var/log/syslog | head -20
+```
+
+**تحقّق من اتصال الشبكة بـ ClickStack:**
+
+```bash
+# Test OTLP endpoint
+curl -v http://YOUR_CLICKSTACK_HOST:4318/v1/logs
+
+# Should get a response (even if error, means endpoint is reachable)
+```
+
+**تحقق من سجلات المُجمِّع بحثًا عن أخطاء:**
+
+```bash
+# If running in foreground
+# Look for error messages in stdout
+
+# If running as systemd service
+sudo journalctl -u otelcol-contrib -f | grep -i "error\|failed"
+```
+
+<div id="logs-not-parsing">
+  ### يتم تحليل السجلات بشكل غير صحيح
+</div>
+
+**تحقق من تنسيق syslog لديك:**
+
+بالنسبة إلى Ubuntu 24.04+:
+
+```bash
+# Should show ISO8601 format: 2025-11-17T20:55:44.826796+00:00
+tail -5 /var/log/syslog
+```
+
+لنظامَي Amazon Linux 2 / Ubuntu 20.04:
+
+```bash
+# Should show traditional format: Nov 17 14:16:16
+tail -5 /var/log/messages
+```
+
+إذا لم يكن التنسيق لديك مطابقًا، فاستخدم علامة تبويب التهيئة المناسبة في قسم [إنشاء تهيئة collector](#create-config) وفقًا للتوزيعة التي تستخدمها.
+
+<div id="systemd-issues">
+  ### تعذّر بدء تشغيل المُجمِّع كخدمة systemd
+</div>
+
+**تحقق من حالة الخدمة:**
+
+```bash
+sudo systemctl status otelcol-contrib
+```
+
+**عرض السجلات التفصيلية:**
+
+```bash
+sudo journalctl -u otelcol-contrib -n 50
+```
+
+**المشكلات الشائعة:**
+
+* لم يتم تعيين مفتاح API بشكل صحيح في البيئة
+* أخطاء في صياغة ملف الإعدادات
+* مشكلات في الأذونات عند قراءة ملفات السجل
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* قم بإعداد [التنبيهات](/ar/clickstack/features/alerts) لأحداث النظام الحرجة (تعطل الخدمة، إخفاقات المصادقة، تحذيرات القرص)
+* صفِّ حسب سمات بيانات EC2 الوصفية (المنطقة، نوع المثيل، معرّف المثيل) لمراقبة موارد محددة
+* اربط سجلات مضيف EC2 بسجلات التطبيق لاستكشاف الأخطاء وإصلاحها بشكل شامل
+* أنشئ لوحات معلومات مخصصة لمراقبة الأمان (محاولات SSH، استخدام sudo، عمليات حظر جدار الحماية)
+
+<div id="going-to-production">
+  ## الانتقال إلى بيئة الإنتاج
+</div>
+
+يثبّت هذا الدليل OpenTelemetry Collector مباشرةً على مثيلات EC2، وهو النمط الموصى به في بيئة الإنتاج للمراقبة على مستوى المضيف. ولإدارة مُجمِّعات OpenTelemetry عبر عدد كبير من المثيلات، فكّر في استخدام أدوات إدارة التهيئة (Ansible وChef وPuppet) أو OpenTelemetry Operator في بيئات Kubernetes. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

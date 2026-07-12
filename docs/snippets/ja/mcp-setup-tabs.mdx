@@ -1,0 +1,58 @@
+---
+title: Mcp セットアップタブ
+---
+
+<Tabs>
+  <Tab title="Claude Code" icon="/images/logo-claudecode-color.svg">
+    <p style={{ marginBottom: '8px', color: '#9ca3af', fontSize: '13px' }}>ターミナルで実行します：</p>
+
+    <CodeBlock language="bash">
+      {`claude mcp add clickhouse-docs -- npx -y mintlify-mcp --doc-url https://clickhouse.com/docs`}
+    </CodeBlock>
+  </Tab>
+
+  <Tab title="Claude Desktop" icon="/images/logo-claude.svg">
+    <p style={{ marginBottom: '8px', color: '#9ca3af', fontSize: '13px' }}><code>claude&#95;desktop&#95;config.json</code> に追加します：</p>
+
+    <CodeBlock language="json">
+      {`{
+              "mcpServers": {
+                "clickhouse-docs": {
+                  "command": "npx",
+                  "args": ["-y", "mintlify-mcp", "--doc-url", "https://clickhouse.com/docs"]
+                }
+              }
+              }`}
+    </CodeBlock>
+  </Tab>
+
+  <Tab title="Cursor" icon="/images/logo-cursor.webp">
+    <p style={{ marginBottom: '8px', color: '#9ca3af', fontSize: '13px' }}><code>.cursor/mcp.json</code> に追加します：</p>
+
+    <CodeBlock language="json">
+      {`{
+              "mcpServers": {
+                "clickhouse-docs": {
+                  "command": "npx",
+                  "args": ["-y", "mintlify-mcp", "--doc-url", "https://clickhouse.com/docs"]
+                }
+              }
+              }`}
+    </CodeBlock>
+  </Tab>
+
+  <Tab title="Windsurf" icon="/images/logo-windsurf.svg">
+    <p style={{ marginBottom: '8px', color: '#9ca3af', fontSize: '13px' }}><code>~/.codeium/windsurf/mcp&#95;config.json</code> に追加します：</p>
+
+    <CodeBlock language="json">
+      {`{
+              "mcpServers": {
+                "clickhouse-docs": {
+                  "command": "npx",
+                  "args": ["-y", "mintlify-mcp", "--doc-url", "https://clickhouse.com/docs"]
+                }
+              }
+              }`}
+    </CodeBlock>
+  </Tab>
+</Tabs>

@@ -27,6 +27,7 @@
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
 
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 
 #include <memory>
@@ -392,6 +393,8 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::prepare()
 
 void MergeTreeCommitOrderSequentialSource::work()
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeCommitOrderSequentialSource::work");
+
     chassert(!pending_snapshot.has_value());
 
     subscription->drain();

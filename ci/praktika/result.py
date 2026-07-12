@@ -11,7 +11,7 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
 from .event import Event
@@ -89,6 +89,7 @@ class Result(MetaClasses.Serializable):
         SETTING_VALUE = "setting"
         FLAKY = "flaky"
         REPRODUCIBLE = "reproducible"
+        LOG_CHECK = "log_check"
 
     # Default hints rendered as a hover tooltip in json.html.
     # Looked up automatically when set_label is called without an explicit hint.
@@ -103,6 +104,7 @@ class Result(MetaClasses.Serializable):
         Label.SETTING_VALUE: "Failure caused by a specific randomized setting value",
         Label.FLAKY: "Failure is reproducible in less than 100% of reruns",
         Label.REPRODUCIBLE: "Failure is reproducible in 100% of reruns",
+        Label.LOG_CHECK: "Server-log / runner health check, not a test case (excluded from bugfix-validation inversion)",
     }
 
     name: str
@@ -775,11 +777,30 @@ class Result(MetaClasses.Serializable):
             result.set_status(Result.Status.FAIL)
         if result.is_error():
             # gtest.json is missing — the binary was killed before it could write results
-            # (e.g. by a sanitizer or OOM). Note: gdb returns 0 even when the inferior
-            # exits with a non-zero code, so we can't rely on binary_failed here.
-            # Extract the first meaningful error line from the log file if available.
-            # Covers sanitizer reports ("SUMMARY:") and ClickHouse logical errors.
-            _ERROR_PREFIXES = ("SUMMARY:", "Logical error:", "Code: ", "Signal description:")
+            # (e.g. by a sanitizer, OOM, an uncaught exception, or a logical error). Note: gdb
+            # returns 0 even when the inferior exits with a non-zero code, so we can't rely on
+            # binary_failed here.
+            #
+            # gtest prints "[ RUN      ] Suite.Test" before each test and a closing
+            # "[       OK ]"/"[  FAILED  ]" line after it. When the binary dies mid-test, the last
+            # "[ RUN      ]" line has no closing line and names the test that was running at the
+            # moment of the crash. Recover that name so the report shows the real test (instead of
+            # the gtest filter expression, e.g. "-FunctionsStress"), and scan only the lines after
+            # it for the crash message, so an unrelated error logged earlier by a test that
+            # finished normally (e.g. a deliberately-thrown-and-caught exception) is not mistaken
+            # for the cause.
+            # Covers sanitizer reports ("SUMMARY:"), ClickHouse logical errors, uncaught
+            # exceptions ("libc++abi:"/"terminate called") and fatal signals.
+            _ERROR_PREFIXES = (
+                "SUMMARY:",
+                "Logical error:",
+                "Code: ",
+                "Signal description:",
+                "libc++abi:",
+                "terminate called",
+            )
+            _ERROR_SUBSTRINGS = ("received signal SIG",)
+            crashed_test = ""
             crash_info = ""
             # Some gtests (e.g. the function property fuzzer, gtest_functions_stress) log the
             # offending call as a runnable SQL query right before crashing, via
@@ -789,9 +810,26 @@ class Result(MetaClasses.Serializable):
             _REPRO_MAX_LEN = 8192
             if result.files:
                 log_content = Shell.get_output(f"cat {result.files[0]}", verbose=False)
-                for line in log_content.splitlines():
-                    if not crash_info and any(line.startswith(p) for p in _ERROR_PREFIXES):
-                        crash_info = line
+                log_lines = log_content.splitlines()
+                # Index of the last test that started running. Everything before it belongs to
+                # tests that already finished, so the crash output must come after it. If no
+                # "[ RUN      ]" marker exists (the binary failed before any test ran), -1 makes
+                # the scan below cover the whole log.
+                last_run_idx = -1
+                for idx, line in enumerate(log_lines):
+                    if not line.startswith("[ RUN"):
+                        continue
+                    bracket_end = line.find("]")
+                    if bracket_end == -1:
+                        continue
+                    last_run_idx = idx
+                    crashed_test = line[bracket_end + 1 :].strip()
+                for line in log_lines[last_run_idx + 1 :]:
+                    if not crash_info and (
+                        any(line.startswith(p) for p in _ERROR_PREFIXES)
+                        or any(s in line for s in _ERROR_SUBSTRINGS)
+                    ):
+                        crash_info = line.strip()
                     if not repro_info and line.startswith("(while ") and "SELECT " in line:
                         repro_info = line
                         if len(repro_info) > _REPRO_MAX_LEN:
@@ -800,8 +838,10 @@ class Result(MetaClasses.Serializable):
                         break
             crash_info = "\n".join(p for p in (crash_info, repro_info) if p)
             result.info = crash_info or info
-            # Synthesize a failed sub-result so the job summary is not empty.
-            crashed_test = gtest_filter.rstrip(".*") or "unknown"
+            # Synthesize a failed sub-result so the job summary is not empty. Prefer the test that
+            # was running when the binary died; fall back to the filter expression only when the
+            # log had no "[ RUN      ]" marker at all.
+            crashed_test = crashed_test or gtest_filter.rstrip(".*") or "unknown"
             result.set_results(
                 [Result(name=crashed_test, status=Result.Status.FAIL, info=crash_info or info)]
             )
@@ -920,14 +960,27 @@ class Result(MetaClasses.Serializable):
         # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
         truncated = False
         if len(info_lines) > MAX_LINES_IN_INFO:
-            # For clang-tidy and similar builds, find the first error/warning
-            # and show context around it instead of just the last lines
+            # For clang-tidy and similar builds, find the first error (or, if
+            # there is none, the first warning) and show context around it
+            # instead of just the last lines.
+            # Errors take priority over warnings: a build log often contains
+            # many unrelated warnings (e.g. deprecation warnings from contrib
+            # libraries) before the actual compile error that stopped the
+            # build. Centering the excerpt on the first warning would truncate
+            # away the real error, so scan for the first error first and only
+            # fall back to the first warning when no error is present.
             first_error_idx = None
+            first_warning_idx = None
             for idx, line in enumerate(info_lines):
                 # Match clang-tidy format: "file:line:col: error:" or "file:line:col: warning:"
-                if ": error:" in line or ": warning:" in line:
+                if ": error:" in line:
                     first_error_idx = idx
                     break
+                if first_warning_idx is None and ": warning:" in line:
+                    first_warning_idx = idx
+
+            if first_error_idx is None:
+                first_error_idx = first_warning_idx
 
             if first_error_idx is not None:
                 # Show context around the first error (lines before and after)

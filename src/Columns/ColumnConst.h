@@ -200,7 +200,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -241,6 +241,11 @@ public:
 #endif
     {
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
+    }
+
+    int compareAtWithCollation(size_t, size_t, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override
+    {
+        return data->compareAtWithCollation(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint, collator);
     }
 
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,

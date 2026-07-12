@@ -1,0 +1,73 @@
+---
+slug: /best-practices/minimize-optimize-joins
+sidebarTitle: 'Réduire et optimiser les JOIN'
+title: 'Réduire et optimiser les JOIN'
+description: 'Document décrivant les bonnes pratiques pour l’utilisation des JOIN dans ClickHouse'
+keywords: ['JOIN', 'Parallel Hash JOIN']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickHouse prend en charge un large éventail de types et d’algorithmes de JOIN, et les performances des JOIN se sont nettement améliorées dans les versions récentes. Cependant, les JOIN sont intrinsèquement plus coûteux qu’une requête sur une seule table dénormalisée. La dénormalisation déplace la charge de calcul du moment de la requête vers l’insertion ou le prétraitement, ce qui se traduit souvent par une latence nettement plus faible à l’exécution. Pour les requêtes analytiques en temps réel ou sensibles à la latence, **la dénormalisation est fortement recommandée**.
+
+En général, dénormalisez lorsque :
+
+* Les tables changent rarement ou lorsque des actualisations par lots sont acceptables.
+* Les relations ne sont pas de type plusieurs-à-plusieurs ou n’ont pas une cardinalité trop élevée.
+* Seul un sous-ensemble limité des colonnes sera interrogé, c.-à-d. que certaines colonnes peuvent être exclues de la dénormalisation.
+* Vous pouvez déplacer le traitement hors de ClickHouse vers des systèmes en amont comme [Flink](/fr/integrations/connectors/data-ingestion/apache-flink), où l’enrichissement ou l’aplatissement en temps réel peut être géré.
+
+Il n’est pas nécessaire de dénormaliser toutes les données — concentrez-vous sur les attributs fréquemment interrogés. Envisagez également les [vues matérialisées](/fr/concepts/best-practices/use-materialized-views) pour calculer les agrégats de manière incrémentielle au lieu de dupliquer des sous-tables entières. Lorsque les mises à jour du schéma sont rares et que la latence est critique, la dénormalisation offre le meilleur compromis en matière de performances.
+
+Pour un guide complet sur la dénormalisation des données dans ClickHouse, consultez [ce guide](/fr/guides/clickhouse/data-modelling/denormalization).
+
+<div id="when-joins-are-required">
+  ## Lorsque des JOIN sont nécessaires
+</div>
+
+Lorsque des JOIN sont nécessaires, veillez à utiliser **au minimum la version 24.12, et de préférence la plus récente**, car les performances des JOIN continuent de s&#39;améliorer à chaque nouvelle version. Depuis ClickHouse 24.12, le planificateur de requêtes place automatiquement la plus petite table à droite de la jointure pour des performances optimales — une opération qui devait auparavant être effectuée manuellement. D&#39;autres améliorations arriveront bientôt, notamment un pushdown des filtres plus agressif et le réordonnancement automatique de plusieurs jointures.
+
+Suivez ces bonnes pratiques pour améliorer les performances des JOIN :
+
+* **Évitez les produits cartésiens** : si une valeur du côté gauche correspond à plusieurs valeurs du côté droit, le JOIN renverra plusieurs lignes — c&#39;est ce qu&#39;on appelle un produit cartésien. Si votre cas d&#39;usage ne nécessite pas toutes les correspondances du côté droit, mais seulement une correspondance quelconque, vous pouvez utiliser des JOIN `ANY` (par ex. `LEFT ANY JOIN`). Ils sont plus rapides et consomment moins de mémoire que les JOIN classiques.
+* **Réduisez la taille des tables jointes** : le temps d&#39;exécution et la consommation mémoire des JOIN augmentent proportionnellement à la taille des tables de gauche et de droite. Pour réduire la quantité de données traitées par le JOIN, ajoutez des conditions de filtre supplémentaires dans les clauses `WHERE` ou `JOIN ON` de la requête. ClickHouse pousse les conditions de filtre aussi bas que possible dans le plan de requête, généralement avant les JOIN. Si les filtres ne sont pas automatiquement poussés vers le bas (pour une raison quelconque), réécrivez l&#39;un des côtés du JOIN sous forme de sous-requête pour forcer le pushdown.
+* **Utilisez des direct JOIN via des dictionnaires lorsque c&#39;est approprié** : les JOIN standard dans ClickHouse s&#39;exécutent en deux phases : une phase de build, qui parcourt le côté droit pour construire une table de hachage, suivie d&#39;une phase de probe, qui parcourt le côté gauche pour trouver les correspondances via des recherches dans la table de hachage. Si le côté droit est un [dictionnaire](/fr/concepts/features/dictionaries/index) ou un autre moteur de table présentant des caractéristiques clé-valeur (par ex. [EmbeddedRocksDB](/fr/reference/engines/table-engines/integrations/embedded-rocksdb) ou le [moteur de table Join](/fr/reference/engines/table-engines/special/join)), alors ClickHouse peut utiliser l&#39;algorithme de jointure « direct », ce qui élimine effectivement la nécessité de construire une table de hachage et accélère le traitement des requêtes. Cela fonctionne pour les JOIN `INNER` et `LEFT OUTER` et constitue l&#39;option privilégiée pour les workloads analytiques en temps réel.
+* **Exploitez le tri des tables pour les JOIN** : dans ClickHouse, chaque table est triée selon ses colonnes de clé primaire. Il est possible d&#39;exploiter ce tri en utilisant ce qu&#39;on appelle des algorithmes de sort-merge JOIN comme `full_sorting_merge` et `partial_merge`. Contrairement aux algorithmes de JOIN standard basés sur des tables de hachage (voir ci-dessous : `parallel_hash`, `hash`, `grace_hash`), les algorithmes de sort-merge JOIN trient d&#39;abord les deux tables, puis les fusionnent. Si la requête joint les deux tables sur leurs colonnes de clé primaire respectives, sort-merge dispose d&#39;une optimisation qui omet l&#39;étape de tri, ce qui permet d&#39;économiser du temps de traitement et de réduire le surcoût.
+* **Évitez les JOIN avec spill sur disque** : les états intermédiaires des JOIN (par ex. les tables de hachage) peuvent devenir si volumineux qu&#39;ils ne tiennent plus en mémoire principale. Dans ce cas, ClickHouse renvoie par défaut une erreur de mémoire insuffisante. Certains algorithmes de JOIN (voir ci-dessous), par exemple [`grace_hash`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2), [`partial_merge`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3) et [`full_sorting_merge`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3), peuvent écrire les états intermédiaires sur disque et poursuivre l&#39;exécution de la requête. Ces algorithmes de JOIN doivent néanmoins être utilisés avec prudence, car les accès disque peuvent ralentir considérablement le traitement des JOIN. Nous recommandons plutôt d&#39;optimiser la requête JOIN par d&#39;autres moyens afin de réduire la taille des états intermédiaires.
+* **Utilisez des valeurs par défaut comme marqueurs d&#39;absence de correspondance dans les JOIN externes** : les outer joins gauche/droite/complets incluent toutes les valeurs de la table gauche/droite/des deux tables. Si aucune correspondance n&#39;est trouvée dans l&#39;autre table pour une valeur donnée, ClickHouse remplace la ligne correspondante par un marqueur spécial. La norme SQL impose aux bases de données d&#39;utiliser NULL comme marqueur. Dans ClickHouse, cela nécessite d&#39;envelopper la colonne de résultat dans Nullable, ce qui entraîne un surcoût en mémoire et en performances. Vous pouvez aussi configurer le paramètre `join_use_nulls = 0` et utiliser comme marqueur la valeur par défaut du type de données de la colonne de résultat.
+
+<Info>
+  **Utilisez les dictionnaires avec précaution**
+
+  Lorsque vous utilisez des dictionnaires pour des JOIN dans ClickHouse, il est important de comprendre que, par conception, les dictionnaires n&#39;acceptent pas les clés en double. Lors du chargement des données, les clés en double sont dédupliquées silencieusement : seule la dernière valeur chargée pour une clé donnée est conservée. Ce comportement rend les dictionnaires idéaux pour les relations un-à-un ou plusieurs-à-un, lorsque seule la valeur la plus récente ou la valeur de référence est nécessaire. En revanche, utiliser un dictionnaire pour une relation un-à-plusieurs ou plusieurs-à-plusieurs (par exemple, joindre des rôles à des acteurs lorsqu&#39;un acteur peut avoir plusieurs rôles) entraînera une perte silencieuse de données, car toutes les lignes correspondantes sauf une seront écartées. Par conséquent, les dictionnaires ne conviennent pas aux scénarios qui exigent une intégrité relationnelle complète lorsqu&#39;il existe plusieurs correspondances. Pour en savoir plus sur les cas où les dictionnaires sont utiles (et ceux où ils ne le sont pas), consultez [Bonnes pratiques pour les dictionnaires](/fr/concepts/features/dictionaries/best-practices).
+</Info>
+
+<div id="choosing-the-right-join-algorithm">
+  ## Choisir le bon algorithme de JOIN
+</div>
+
+ClickHouse prend en charge plusieurs algorithmes de JOIN, chacun offrant un compromis entre vitesse et consommation mémoire :
+
+* **Parallel Hash JOIN (par défaut) :** rapide pour les tables de droite de petite à moyenne taille qui tiennent en mémoire.
+* **Direct JOIN :** idéal avec des dictionnaires (ou d’autres moteurs de table présentant des caractéristiques clé-valeur) avec `INNER` ou `LEFT ANY JOIN` — c’est la méthode la plus rapide pour les lookups ponctuels, car elle évite de devoir construire une table de hachage.
+* **Full Sorting Merge JOIN :** efficace lorsque les deux tables sont triées sur la clé de jointure.
+* **Partial Merge JOIN :** minimise la consommation mémoire, mais est plus lent — convient le mieux pour joindre de grandes tables lorsque la mémoire est limitée.
+* **Grace Hash JOIN :** flexible et ajustable en mémoire, bien adapté aux grands jeux de données avec des caractéristiques de performance modulables.
+
+<Image img="/images/bestpractices/joins-speed-memory.png" size="md" alt="Joins — vitesse vs mémoire" />
+
+<Note>
+  La prise en charge des types de JOIN varie selon l’algorithme. La liste complète des types de jointure pris en charge par chaque algorithme est disponible [ici](/fr/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+</Note>
+
+Vous pouvez laisser ClickHouse choisir le meilleur algorithme en définissant `join_algorithm = 'auto'` (par défaut), ou le contrôler explicitement selon votre charge de travail. Si vous devez sélectionner un algorithme de JOIN pour optimiser les performances ou réduire le surcoût mémoire, nous vous recommandons [ce guide](/fr/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+
+Pour des performances optimales :
+
+* Réduisez autant que possible le nombre de JOIN dans les charges de travail exigeant de hautes performances.
+* Évitez de dépasser 3 à 4 jointures par requête.
+* Comparez les différents algorithmes sur des données réelles — les performances varient selon la distribution des clés de jointure et le volume des données.
+
+Pour en savoir plus sur les stratégies d’optimisation des JOIN, les algorithmes de JOIN et leur réglage, consultez la [documentation ClickHouse](/fr/concepts/features/operations/select/joining-tables) ainsi que cette [série d’articles de blog](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1).

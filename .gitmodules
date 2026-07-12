@@ -27,7 +27,7 @@
 	url = https://github.com/ClickHouse/capnproto
 [submodule "contrib/re2"]
 	path = contrib/re2
-	url = https://github.com/google/re2
+	url = https://github.com/ClickHouse/re2
 [submodule "contrib/mariadb-connector-c"]
 	path = contrib/mariadb-connector-c
 	url = https://github.com/ClickHouse/mariadb-connector-c
@@ -85,9 +85,6 @@
 [submodule "contrib/grpc"]
 	path = contrib/grpc
 	url = https://github.com/ClickHouse/grpc
-[submodule "contrib/curl"]
-	path = contrib/curl
-	url = https://github.com/curl/curl
 [submodule "contrib/icudata"]
 	path = contrib/icudata
 	url = https://github.com/ClickHouse/icudata
@@ -357,6 +354,9 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/libpng"]
+	path = contrib/libpng
+	url = https://github.com/pnggroup/libpng.git
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
@@ -396,3 +396,12 @@
 [submodule "contrib/silk"]
 	path = contrib/silk
 	url = https://github.com/ClickHouse/silk.git
+[submodule "contrib/xsimd"]
+	path = contrib/xsimd
+	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/wagyu"]
+	path = contrib/wagyu
+	url = https://github.com/ClickHouse/wagyu
+[submodule "contrib/mapbox-geometry"]
+	path = contrib/mapbox-geometry
+	url = https://github.com/ClickHouse/geometry.hpp

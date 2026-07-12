@@ -92,12 +92,16 @@ void EvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
 
 void EvictionInfo::add(EvictionInfoPtr && info)
 {
+    /// Take the pins before moving the entries: if `addImpl` throws mid-loop,
+    /// already-moved entries must not outlive the pins they rely on.
+    takeKeptAliveCacheUsage(*info);
     for (auto && [queue_id, info_] : *info)
         addImpl(queue_id, std::move(info_), /* replace_if_exists */false);
 }
 
 void EvictionInfo::addOrUpdate(EvictionInfoPtr && info)
 {
+    takeKeptAliveCacheUsage(*info);
     for (auto && [queue_id, info_] : *info)
         addImpl(queue_id, std::move(info_), /* replace_if_exists */true);
 }
@@ -235,7 +239,7 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock 
             /// the SLRU_Protected/SLRU_Probationary type, not SplitCache_Data/System.
             original_queue_types[candidate.get()] = queue_iterator->getNestedOrThis()->getType();
 
-            queue_iterator->invalidate();
+            queue_iterator->invalidateBeforeRemove(lock);
 
             chassert(candidate->releasable());
             candidate->file_segment->markDelayedRemovalAndResetQueueIterator();
@@ -338,7 +342,7 @@ void EvictionCandidates::evict()
                 {
                     try
                     {
-                        on_evict_callback(*segment);
+                        on_evict_callback(*segment, key_candidates.key_metadata->origin->user_id);
                     }
                     catch (...)
                     {
@@ -372,11 +376,9 @@ void EvictionCandidates::evict()
 
 void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & lock)
 {
-    if (after_evict_write_func)
-    {
-        after_evict_write_func(lock);
-        after_evict_write_func = {};
-    }
+    for (auto & func : after_evict_write_callbacks)
+        func(lock);
+    after_evict_write_callbacks.clear();
 }
 
 void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
@@ -395,11 +397,9 @@ void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
         queue_entries_to_invalidate.pop_back();
     }
 
-    if (after_evict_state_func)
-    {
-        after_evict_state_func(lock);
-        after_evict_state_func = {};
-    }
+    for (auto & func : after_evict_state_callbacks)
+        func(lock);
+    after_evict_state_callbacks.clear();
 }
 
 }
