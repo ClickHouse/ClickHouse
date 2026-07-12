@@ -35,6 +35,18 @@ SELECT sum(k) FROM t_nested_ident WHERE sipHash64(p) = sipHash64(toUInt8(3));
 SELECT sum(k) FROM t_nested_ident WHERE sipHash64(ifNull(p, 0)) = sipHash64(toUInt8(3));
 SELECT sum(k) FROM t_nested_ident WHERE sipHash64(coalesce(p, 0)) = sipHash64(toUInt8(3));
 
+-- The simplification is gated on allow_key_condition_coalesce_rewrite (same compatibility knob
+-- as the top-level coalesce/ifNull key rewrite). With the setting off, ifNull/coalesce predicates
+-- stay opaque to the planner and the wrapper must NOT prune (full scan), while the bare column is
+-- unaffected and still prunes.
+SELECT count() > 0 AS ifnull_no_prune_when_off
+FROM (EXPLAIN indexes = 1 SELECT sum(k) FROM t_nested_ident WHERE sipHash64(ifNull(p, 0)) = sipHash64(toUInt8(3)) SETTINGS allow_key_condition_coalesce_rewrite = 0)
+WHERE explain ILIKE '%Parts: 8/8%';
+
+SELECT count() > 0 AS bare_still_prunes_when_off
+FROM (EXPLAIN indexes = 1 SELECT sum(k) FROM t_nested_ident WHERE sipHash64(p) = sipHash64(toUInt8(3)) SETTINGS allow_key_condition_coalesce_rewrite = 0)
+WHERE explain ILIKE '%Parts: 1/8%';
+
 DROP TABLE t_nested_ident;
 
 -- Safety: over a Nullable column the wrapper is NOT an identity (NULL -> fallback) and must

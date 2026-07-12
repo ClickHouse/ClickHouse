@@ -4,10 +4,16 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_key_condition_coalesce_rewrite;
+}
 
 namespace
 {
@@ -20,6 +26,14 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        /// This simplification exists to let KeyCondition / index analysis see the bare argument
+        /// nested inside a key expression (e.g. sipHash64(ifNull(p, 0))). It is gated on the same
+        /// compatibility knob as the top-level coalesce/ifNull key rewrite so that
+        /// allow_key_condition_coalesce_rewrite = 0 (the pre-rewrite default recorded in
+        /// SettingsChangesHistory) keeps ifNull/coalesce predicates opaque to the planner.
+        if (!getSettings()[Setting::allow_key_condition_coalesce_rewrite])
+            return;
+
         auto * function_node = node->as<FunctionNode>();
         if (!function_node)
             return;
