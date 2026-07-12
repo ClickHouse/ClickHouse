@@ -2,6 +2,7 @@ import glob
 import json as json_module
 import os
 import platform
+import re
 import signal
 import subprocess
 import sys
@@ -463,6 +464,17 @@ profiles:
             f"CLICKHOUSE_SERVER_PORTS not found in {ClickHouseProc._STRESS_TESTS_LIB}"
         )
 
+    def _replica_ports(self):
+        # Replicas 1 and 2 (database-replicated mode) do NOT listen on the base
+        # ports - they bind the shifted sets baked into replica_command_1/2
+        # (e.g. 19000/18123/19181..., 29000/28123/29181...). Derive those ports
+        # from the exact commands that launch them so the teardown covers a
+        # replica-1/2 leak too, without a second hard-coded copy that can drift.
+        ports = set()
+        for command in (self.replica_command_1, self.replica_command_2):
+            ports.update(int(p) for p in re.findall(r"--\S*port\S*\s+(\d+)", command))
+        return sorted(ports)
+
     def _ensure_server_ports_free(self, ports, timeout_s=45):
         """Best-effort: make sure no leftover clickhouse-server/keeper from a
         previous run holds the ports we are about to bind.
@@ -517,7 +529,14 @@ profiles:
             # collision into a silent wait_ready timeout). Done once, before any
             # of our replicas start, so it only ever targets stale processes.
             # Port set is single-sourced from stress_tests.lib (see _server_ports).
-            self._ensure_server_ports_free(self._server_ports())
+            # In database-replicated mode replicas 1/2 bind shifted port sets
+            # (19000/18123..., 29000/28123...), so probe those too - a leaked
+            # replica 1/2 leaves the base ports free and would otherwise slip
+            # past the check into the same listen_try-masked wait_ready timeout.
+            ports = self._server_ports()
+            if self.is_db_replicated:
+                ports = sorted(set(ports) | set(self._replica_ports()))
+            self._ensure_server_ports_free(ports)
 
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
