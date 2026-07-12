@@ -224,7 +224,8 @@ static DataTypePtr parseORCType(
     /// switch stays non-exhaustive (its default handles unsupported types). Variant sorts and
     /// de-duplicates its nested types, but ORC keeps a separate physical stream per branch, so two
     /// branches with identical types cannot be represented as a Variant; reject them explicitly
-    /// instead of silently squashing them.
+    /// instead of silently squashing them. A branch that is itself a union is rejected too: it
+    /// would map to a Variant, which Variant does not allow to nest.
     if (orc_type->getKind() == orc::TypeKind::UNION)
     {
         DataTypes nested_types;
@@ -232,8 +233,28 @@ static DataTypePtr parseORCType(
         nested_types.reserve(subtype_count);
         for (int i = 0; i < subtype_count; ++i)
         {
+            const auto * subtype = orc_type->getSubtype(i);
+
+            /// A union branch that is itself a union would map to a Variant, and Variant does not
+            /// allow a nested Variant. Reject it through the normal unsupported-type / skip path
+            /// here, before the outer DataTypeVariant is constructed - otherwise its constructor
+            /// throws a confusing BAD_ARGUMENTS ("Nested Variant types are not allowed") and the
+            /// skip setting is never consulted because the inner union has already been parsed.
+            if (subtype->getKind() == orc::TypeKind::UNION)
+            {
+                if (skip_columns_with_unsupported_types)
+                {
+                    skipped = true;
+                    return {};
+                }
+                throw Exception(
+                    ErrorCodes::UNKNOWN_TYPE,
+                    "ORC union type '{}' has a nested union branch, which is not supported",
+                    orc_type->toString());
+            }
+
             auto parsed_type = parseORCType(
-                orc_type->getSubtype(i), skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
+                subtype, skip_columns_with_unsupported_types, dictionary_as_low_cardinality, stripe_info, skipped, max_depth, depth + 1);
             if (skipped)
                 return {};
 
@@ -2116,6 +2137,16 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         branch_columns.reserve(num_children);
         for (size_t i = 0; i < num_children; ++i)
         {
+            /// A union branch that is itself a union would map to a nested Variant, which Variant
+            /// forbids; reject it explicitly (matching the schema-inference path) instead of letting
+            /// the DataTypeVariant below throw a confusing BAD_ARGUMENTS. Only reachable with an
+            /// explicit structure, since schema inference already rejects nested unions.
+            if (orc_type->getSubtype(i)->getKind() == orc::UNION)
+                throw Exception(
+                    ErrorCodes::UNKNOWN_TYPE,
+                    "ORC union type '{}' has a nested union branch, which is not supported, while reading column {}",
+                    orc_type->toString(), column_name);
+
             auto branch = readColumnFromORCColumn(
                 orc_union_column->children[i], orc_type->getSubtype(i), column_name, /*inside_nullable=*/true, branch_hints[i]);
 
