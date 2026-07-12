@@ -42,6 +42,8 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
     bool hasCorrelatedExpressions() const override { return false; }
 
     bool supportsDataflowStatisticsCollection() const override { return true; }

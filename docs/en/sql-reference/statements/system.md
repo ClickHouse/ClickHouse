@@ -97,6 +97,11 @@ For more convenient (automatic) cache management, see `disable_internal_dns_cach
 
 Clears the mark cache.
 
+## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE {#drop-primary-index-cache}
+
+Clears the primary index cache, which holds the primary keys of [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) tables in memory.
+Its size is configured with the server-level setting [`primary_index_cache_size`](../../operations/server-configuration-parameters/settings.md#primary_index_cache_size).
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Clears the iceberg metadata cache.
@@ -109,15 +114,91 @@ Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` 
 
 Clears the parquet metadata cache.
 
+## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE {#drop-point-in-polygon-cache}
+
+Clears the cache of preprocessed constant polygons used by the function [`pointInPolygon`](../functions/geo/coordinates.md#pointinpolygon). The configured size limit (the `point_in_polygon_cache_size` server setting) is left unchanged, so the cache keeps accepting entries afterwards. To disable the cache instead, set `point_in_polygon_cache_size` to `0`.
+
 ## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
-Clears the text index's header, dictionary and postings caches.
+Clears the text index's tokens, header and postings caches.
 
 If you like to drop one of these caches individually, you can run
 
-- `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
-- `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`, or
+- `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
+- `SYSTEM CLEAR TEXT INDEX HEADER CACHE`, or
 - `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+## SYSTEM CLEAR|DROP INDEX MARK CACHE {#drop-index-mark-cache}
+
+Clears the cache of marks for secondary (data-skipping) indexes.
+
+## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE {#drop-index-uncompressed-cache}
+
+Clears the cache of uncompressed blocks for secondary (data-skipping) indexes.
+
+## SYSTEM CLEAR|DROP MMAP CACHE {#drop-mmap-cache}
+
+Clears the cache of memory-mapped files.
+
+## SYSTEM CLEAR|DROP PAGE CACHE {#drop-page-cache}
+
+Clears the userspace page cache, ClickHouse's own in-memory cache of data read from the underlying storage.
+
+## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
+
+Clears the vector similarity index cache.
+
+## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
+
+Clears the cache of HTTP connection pools used for outgoing connections.
+
+## SYSTEM CLEAR|DROP S3 CLIENT CACHE {#drop-s3-client-cache}
+
+Clears the cache of S3 clients.
+
+## SYSTEM PREWARM MARK CACHE {#prewarm-mark-cache}
+
+Loads the marks of a table into the [mark cache](#drop-mark-cache). Secondary-index marks are also loaded into the [index mark cache](#drop-index-mark-cache).
+
+```sql
+SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+## SYSTEM PREWARM PRIMARY INDEX CACHE {#prewarm-primary-index-cache}
+
+Loads the primary indexes of a `MergeTree` table into the [primary index cache](#drop-primary-index-cache).
+
+```sql
+SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+## SYSTEM CLEAR|DROP DISK METADATA CACHE {#drop-disk-metadata-cache}
+
+Clears the metadata cache of the specified disk.
+
+```sql
+SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
+
+Reconciles ClickHouse's in-memory state of the filesystem cache with the cache files actually present on disk, and returns the `cache_name`, `path` and downloaded `size` of each cached file segment. An optional cache name limits the operation to a single cache.
+
+```sql
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
+```
+
+## SYSTEM CLEAR|DROP DISTRIBUTED CACHE {#drop-distributed-cache}
+
+:::note
+`SYSTEM CLEAR|DROP DISTRIBUTED CACHE` is available only in ClickHouse Cloud.
+:::
+
+Drops the distributed cache. Use `CONNECTIONS` to drop only the cached connections to the distributed cache servers, or pass a server identifier to target a single server.
+
+```sql
+SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
+```
 
 ## SYSTEM DROP REPLICA {#drop-replica}
 
@@ -163,6 +244,10 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
 
 Clears the query condition cache.
+
+## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
+
+Clears the encryption headers cache. This cache holds the encryption headers read from the front of encrypted files and is used by the experimental `use_reader_executor` read path to avoid re-reading them; its size is configured by the `encryption_header_cache_size` server setting.
 
 ## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 

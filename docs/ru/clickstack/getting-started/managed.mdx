@@ -1,0 +1,62 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/managed
+title: 'Начало работы с Управляемым ClickStack'
+sidebarTitle: 'Управляемый'
+description: 'Начало работы с Управляемым ClickStack'
+doc_type: 'guide'
+keywords: ['Управляемый ClickStack', 'начало работы', 'ClickHouse Cloud']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import SetupManagedIngestion from '/snippets/ru/clickstack/_setup_managed_ingestion.mdx';
+import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
+import NavigateClickStackUI from '/snippets/ru/clickstack/_navigate_managed.mdx';
+
+Самый простой способ начать работу — развернуть **Управляемый ClickStack** в **ClickHouse Cloud**, который предоставляет полностью управляемый и защищённый backend, сохраняя при этом полный контроль над ингестией, схемой и процессами обсервабилити. Это избавляет от необходимости самостоятельно управлять ClickHouse и даёт ряд преимуществ:
+
+* Автоматическое масштабирование вычислительных ресурсов независимо от хранилища
+* Недорогое и практически неограниченное хранение на базе объектного хранилища
+* Возможность независимо изолировать рабочие нагрузки чтения и записи с помощью хранилищ
+* Встроенная аутентификация
+* Автоматические резервные копии
+* Средства безопасности и соответствия требованиям
+* Бесшовные обновления
+
+<Steps>
+  <Step>
+    ## Регистрация в ClickHouse Cloud
+
+    Чтобы создать сервис Управляемого ClickStack в [ClickHouse Cloud](https://console.clickhouse.cloud), сначала выполните **первый шаг** из [краткого руководства по ClickHouse Cloud](/ru/get-started/setup/cloud).
+
+    <ProviderSelection />
+  </Step>
+
+  <Step>
+    ## Настройка ингестии
+
+    После создания сервиса убедитесь, что выбран нужный сервис, и нажмите &quot;ClickStack&quot; в левом меню.
+
+    <SetupManagedIngestion />
+  </Step>
+
+  <Step>
+    ## Переход в интерфейс ClickStack
+
+    <NavigateClickStackUI />
+  </Step>
+
+  <Step>
+    ## Следующие шаги
+
+    <Warning>
+      **Сохраните учетные данные по умолчанию**
+
+      Если вы не сохранили учетные данные по умолчанию во время выполнения описанных выше шагов, перейдите к сервису и выберите `Connect`, сохранив пароль и конечные точки HTTP/native. Храните эти учетные данные администратора в безопасном месте — их можно будет использовать в следующих руководствах.
+    </Warning>
+
+    <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Подключение к сервису" border />
+
+    Чтобы выполнять такие задачи, как создание новых пользователей или добавление дополнительных источников данных, см. [руководство по развертыванию Управляемого ClickStack](/ru/clickstack/deployment/managed#additional-tasks).
+  </Step>
+</Steps>

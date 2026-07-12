@@ -1,0 +1,29 @@
+---
+description: 'timeSeriesMetrics devuelve la tabla de métricas utilizada por la tabla `db_name.time_series_table`
+  cuyo motor de tabla es el motor TimeSeries.'
+sidebarTitle: 'timeSeriesMetrics'
+slug: /sql-reference/table-functions/timeSeriesMetrics
+title: 'timeSeriesMetrics'
+doc_type: 'reference'
+---
+
+`timeSeriesMetrics(db_name.time_series_table)` - Devuelve la [tabla de métricas](/es/reference/engines/table-engines/integrations/time-series#metrics-table)
+utilizada por la tabla `db_name.time_series_table` cuyo motor de tabla es el motor [TimeSeries](/es/reference/engines/table-engines/integrations/time-series):
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRICS metrics_table
+```
+
+La función también funciona si la tabla *metrics* es interna:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRICS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+Las siguientes consultas son equivalentes:
+
+```sql
+SELECT * FROM timeSeriesMetrics(db_name.time_series_table);
+SELECT * FROM timeSeriesMetrics('db_name.time_series_table');
+SELECT * FROM timeSeriesMetrics('db_name', 'time_series_table');
+```

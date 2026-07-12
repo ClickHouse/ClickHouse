@@ -92,14 +92,20 @@ ParallelReadingExtension::ParallelReadingExtension(
         std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
 }
 
-void ParallelReadingExtension::sendInitialRequest(
+std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(
     CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
 {
-    all_callback(InitialAllRangesAnnouncement{
+    return all_callback(InitialAllRangesAnnouncement{
         mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id});
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
+    CoordinationMode mode, size_t min_marks_per_request) const
+{
+    return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, {}, stream_id});
+}
+
+std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadInOrderRequest(
     CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const
 {
     return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, description, stream_id});
@@ -251,7 +257,9 @@ ChunkAndProgress
 MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const
 {
     if (!current_task.getReadersChain().isInitialized())
-        current_task.initializeReadersChain(prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows, read_steps_performance_counters);
+        current_task.initializeReadersChain(
+            prewhere_actions, merge_tree_index_build_context, lazy_materializing_rows,
+            read_steps_performance_counters, reader_settings.collect_predicate_statistics);
 
     auto res = task_algorithm.readFromTask(current_task);
 

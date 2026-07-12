@@ -1,0 +1,58 @@
+---
+description: '`EXISTS` 运算符文档'
+slug: /sql-reference/operators/exists
+title: 'EXISTS'
+doc_type: 'reference'
+---
+
+`EXISTS` 运算符用于检查子查询结果中是否有记录。如果结果为空，则返回 `0`；否则返回 `1`。
+
+`EXISTS` 也可用于 [WHERE](/zh/reference/statements/select/where) 子句。
+
+<Tip>
+  子查询不支持引用主查询中的表和列。
+</Tip>
+
+**语法**
+
+```sql
+EXISTS(subquery)
+```
+
+**示例**
+
+检查子查询中值是否存在的查询：
+
+```sql title="Query"
+SELECT EXISTS(SELECT * FROM numbers(10) WHERE number > 8), EXISTS(SELECT * FROM numbers(10) WHERE number > 11)
+```
+
+```text title="Response"
+┌─in(1, _subquery1)─┬─in(1, _subquery2)─┐
+│                 1 │                 0 │
+└───────────────────┴───────────────────┘
+```
+
+包含返回多行的子查询的查询：
+
+```sql title="Query"
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 8);
+```
+
+```text title="Response"
+┌─count()─┐
+│      10 │
+└─────────┘
+```
+
+带有返回空结果的子查询的查询：
+
+```sql title="Query"
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 11);
+```
+
+```text title="Response"
+┌─count()─┐
+│       0 │
+└─────────┘
+```
