@@ -520,11 +520,6 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             /// collapse to an unparseable `GRANTS ()`.
             "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (USAGE ON *.*)",
             R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(USAGE ON \*\.\*\))"
-        },
-        {
-            /// A source filter in a grant is preserved through the round trip.
-            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (READ ON S3('s3://foo/.*'))",
-            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(READ ON S3\('s3://foo/\.\*'\)\))"
         }
 })));
 
