@@ -24,7 +24,10 @@ static SharedHeader checkHeaders(const SharedHeaders & input_headers)
 
     SharedHeader res = input_headers.front();
     for (const auto & header : input_headers)
-        assertBlocksHaveEqualStructure(*header, *res, "IntersectOrExceptStep");
+        /// updatePipeline reconciles Const/Sparse serialization differences between branches at
+        /// runtime via makeConvertingActions, so match that relaxed contract here: names, types,
+        /// count and constant values must agree, but Const/Sparse wrappers may differ.
+        assertCompatibleHeader(*header, *res, "IntersectOrExceptStep");
 
     return res;
 }

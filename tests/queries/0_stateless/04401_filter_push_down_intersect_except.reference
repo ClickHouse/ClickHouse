@@ -7,7 +7,7 @@ res INTERSECT ALL	5
 res INTERSECT DISTINCT	5
 res EXCEPT ALL	5
 variant except	1
-variant intersect	0
+variant intersect	1
 intdiv except	1
 intdiv intersect	0
 count except	1
@@ -18,3 +18,5 @@ dec except on	1
 dec except off	1
 reuse on	3
 reuse off	3
+block mismatch	0
+block mismatch off	0
