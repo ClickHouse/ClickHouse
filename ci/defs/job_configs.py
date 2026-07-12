@@ -779,6 +779,15 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
     )
+    # amd_llvm_coverage jobs already force a 0 exit on any test failure (see
+    # is_llvm_coverage / force_ok_exit in ci/jobs/functional_tests.py), so they
+    # carry no blocking test signal. The only way one currently blocks a PR is a
+    # post-run runner hiccup (e.g. the docker daemon connection dropping during
+    # the long coverage collection phase, exit 125). Mark them allow_failure so
+    # that infra noise cannot spuriously block a PR, matching the declared intent.
+    for _job in functional_tests_jobs:
+        if "amd_llvm_coverage" in _job.name:
+            _job.allow_failure = True
     functional_tests_jobs_coverage = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
