@@ -2178,6 +2178,12 @@ void Context::setAuthenticationGrants(const std::shared_ptr<const AccessRightsEl
     setAuthenticationGrantsWithLock(authentication_grants_, lock);
 }
 
+std::shared_ptr<const AccessRightsElements> Context::getAuthenticationGrants() const
+{
+    SharedLockGuard lock(mutex);
+    return authentication_grants;
+}
+
 void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
 {
     if (skip_if_not_granted)

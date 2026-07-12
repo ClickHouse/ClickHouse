@@ -125,6 +125,11 @@ struct QueryRunnerJobOrigin
 {
     std::optional<UUID> user_id;
     std::optional<std::vector<UUID>> roles;
+    /// Credential grant limit of the originating session (null if the session is not limited).
+    /// Carried over so a limited credential does not regain full rights when the deferred job runs
+    /// under a freshly-built context. Only meaningful in the INVOKER case; the DEFINER/NONE cases
+    /// intentionally run as a different (or no) principal, so it stays null there.
+    std::shared_ptr<const AccessRightsElements> authentication_grants;
     String current_user;
     String initial_user;
     String authenticated_user;
@@ -432,6 +437,9 @@ private:
             chassert(cluster_name.empty());
             job_context->setCurrentRoles(*job.origin->roles);
         }
+        /// `setUser` above resets the credential grant limit, so replay it here to preserve the token
+        /// intersection of the originating session (null in the DEFINER/NONE cases, which is a no-op).
+        job_context->setAuthenticationGrants(job.origin->authentication_grants);
 
         job_context->setCurrentUserName(job.origin->current_user);
         job_context->setInitialUserName(job.origin->initial_user);
@@ -804,6 +812,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
         origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
             .user_id = {},
             .roles = {},
+            .authentication_grants = {},
             .current_user = {},
             .initial_user = {},
             .authenticated_user = inserter.authenticated_user,
@@ -817,6 +826,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = local_context->getUserID(),
                     .roles = local_context->getCurrentRoles(),
+                    .authentication_grants = local_context->getAuthenticationGrants(),
                     .current_user = inserter.current_user,
                     .initial_user = inserter.initial_user,
                     .authenticated_user = inserter.authenticated_user,
@@ -826,6 +836,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = metadata_snapshot->getDefinerID(local_context),
                     .roles = {},
+                    .authentication_grants = {},
                     .current_user = *metadata_snapshot->definer,
                     .initial_user = *metadata_snapshot->definer,
                     .authenticated_user = inserter.authenticated_user,
@@ -835,6 +846,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
                 origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
                     .user_id = {},
                     .roles = {},
+                    .authentication_grants = {},
                     .current_user = {},
                     .initial_user = {},
                     .authenticated_user = inserter.authenticated_user,

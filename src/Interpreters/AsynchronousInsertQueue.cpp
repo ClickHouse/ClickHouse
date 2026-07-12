@@ -4,6 +4,7 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/EnabledQuota.h>
 #include <Columns/IColumn.h>
 #include <Common/ThreadStatus.h>
@@ -118,6 +119,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const ASTPtr & query_,
     const std::optional<UUID> & user_id_,
     const std::vector<UUID> & current_roles_,
+    const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
     const String & current_user_,
     const String & initial_user_,
     const String & authenticated_user_,
@@ -127,6 +129,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , query_str(query->formatWithSecretsOneLine())
     , user_id(user_id_)
     , current_roles(current_roles_)
+    , authentication_grants(authentication_grants_)
     , current_user(current_user_)
     , initial_user(initial_user_)
     , authenticated_user(authenticated_user_)
@@ -145,6 +148,18 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         {
             siphash.update(current_role);
         }
+    }
+
+    /// Fold the credential grant limit into the key so inserts made under different limits are never
+    /// coalesced into one flush (the queue is keyed by `hash` alone). A null limit (the common,
+    /// unrestricted case) contributes nothing, so it does not change the hash of existing keys.
+    /// A non-null limit is hashed by its textual form even when it is semantically empty (a deny-all
+    /// token), so it never collides with the null case; the leading length prefix keeps it unambiguous.
+    if (authentication_grants)
+    {
+        const auto grants_str = authentication_grants->toString();
+        siphash.update(grants_str.size());
+        siphash.update(grants_str);
     }
 
     /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
@@ -179,6 +194,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     query_str = other.query_str;
     user_id = other.user_id;
     current_roles = other.current_roles;
+    authentication_grants = other.authentication_grants;
     current_user = other.current_user;
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
@@ -197,6 +213,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         query_str = other.query_str;
         user_id = other.user_id;
         current_roles = other.current_roles;
+        authentication_grants = other.authentication_grants;
         current_user = other.current_user;
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
@@ -211,7 +228,17 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
 
 bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other) const
 {
-    return toTupleCmp() == other.toTupleCmp();
+    if (toTupleCmp() != other.toTupleCmp())
+        return false;
+
+    /// Compare the credential grant limit by content, consistently with how it is folded into `hash`.
+    /// A shared_ptr comparison would test identity and wrongly split two equal limits from different sessions.
+    if (static_cast<bool>(authentication_grants) != static_cast<bool>(other.authentication_grants))
+        return false;
+    if (authentication_grants && authentication_grants->toString() != other.authentication_grants->toString())
+        return false;
+
+    return true;
 }
 
 StorageID AsynchronousInsertQueue::InsertQuery::getStorageID() const
@@ -552,6 +579,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         query,
         query_context->getUserID(),
         query_context->getCurrentRoles(),
+        query_context->getAuthenticationGrants(),
         client_info.current_user,
         client_info.initial_user,
         client_info.authenticated_user,
@@ -1001,6 +1029,9 @@ try
     {
         insert_context->setUser(*key.user_id);
         insert_context->setCurrentRoles(key.current_roles);
+        /// `setUser` resets the credential grant limit, so replay it here to preserve the token
+        /// intersection of the originating session instead of running under the full user's rights.
+        insert_context->setAuthenticationGrants(key.authentication_grants);
     }
 
     /// Context::setUser only restores the access-control identity, not the ClientInfo user

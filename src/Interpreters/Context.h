@@ -879,6 +879,12 @@ public:
     /// See the GRANTS clause of the authentication methods in CREATE USER.
     void setAuthenticationGrants(const std::shared_ptr<const AccessRightsElements> & authentication_grants_);
 
+    /// Returns the credential grant limit of the current session (null if the session is not limited).
+    /// Deferred executors that re-create a context for the same session (asynchronous insert flush,
+    /// the `QueryRunner` invoker) must carry this over, otherwise a limited credential would regain
+    /// full rights when its work is replayed under a freshly-built context.
+    std::shared_ptr<const AccessRightsElements> getAuthenticationGrants() const;
+
     std::optional<UUID> getUserID() const;
     String getUserName() const;
 
