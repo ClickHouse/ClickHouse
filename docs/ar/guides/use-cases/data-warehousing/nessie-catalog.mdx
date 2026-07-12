@@ -1,0 +1,300 @@
+---
+slug: /use-cases/data-lake/nessie-catalog
+sidebarTitle: 'كتالوج Nessie'
+title: 'كتالوج Nessie'
+description: 'في هذا الدليل، سنشرح لك خطوات الاستعلام عن
+ بياناتك باستخدام ClickHouse وكتالوج Nessie.'
+keywords: ['Nessie', 'REST', 'معاملاتي', 'بحيرة البيانات', 'Iceberg', 'شبيه بـ Git']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<Note>
+  يعمل التكامل مع كتالوج Nessie مع جداول Iceberg فقط.
+  يدعم هذا التكامل كلاً من AWS S3 وغيره من موفري التخزين السحابي.
+</Note>
+
+يدعم ClickHouse التكامل مع عدة كتالوجات ‏(Unity وGlue وREST وPolaris وغيرها). يوضح لك هذا الدليل خطوات الاستعلام عن بياناتك باستخدام ClickHouse وكتالوج [Nessie](https://projectnessie.org/).
+
+Nessie هو كتالوج معاملات مفتوح المصدر لبحيرات البيانات، ويوفر ما يلي:
+
+* **تحكم في إصدارات البيانات مستوحى من Git** باستخدام الفروع وعمليات commit
+* **معاملات عابرة للجداول** وضمانات الرؤية
+* **الامتثال لواجهة برمجة تطبيقات REST** وفق مواصفة كتالوج REST الخاصة بـ Iceberg
+* **نهج بحيرة بيانات مفتوحة** يدعم Hive وSpark وDremio وTrino وغير ذلك
+* **جاهز للإنتاج** للنشر على Docker أو Kubernetes
+
+<Note>
+  نظراً لأن هذه الميزة تجريبية، ستحتاج إلى تفعيلها باستخدام:
+  `SET allow_experimental_database_iceberg = 1;`
+</Note>
+
+<div id="local-development-setup">
+  ## إعداد بيئة التطوير المحلية
+</div>
+
+للتطوير والاختبار محليًا، يمكنك استخدام إعداد Nessie قائم على الحاويات. يُعد هذا النهج مثاليًا للتعلّم، وإنشاء النماذج الأولية، وبيئات التطوير.
+
+<div id="local-prerequisites">
+  ### المتطلبات المسبقة
+</div>
+
+1. **Docker وDocker Compose**: تأكد من أن Docker مُثبّت ويعمل.
+2. **إعداد نموذجي**: يمكنك استخدام إعداد docker-compose الرسمي لـ Nessie
+
+<div id="setting-up-local-nessie-catalog">
+  ### إعداد كتالوج Nessie محليًا
+</div>
+
+يمكنك استخدام [إعداد docker-compose الرسمي لـ Nessie](https://projectnessie.org/guides/setting-up/) الذي يوفّر بيئة متكاملة تضم Nessie، ومستودع إصدارات داخل الذاكرة، وMinIO لتخزين الكائنات.
+
+**الخطوة 1:** أنشئ مجلدًا جديدًا لتشغيل المثال فيه، ثم أنشئ ملفًا باسم `docker-compose.yml` بالتكوين التالي:
+
+```yaml
+version: '3.8'
+
+services:
+  nessie:
+    image: ghcr.io/projectnessie/nessie:latest
+    ports:
+      - "19120:19120"
+    environment:
+      - nessie.version.store.type=IN_MEMORY
+      - nessie.catalog.default-warehouse=warehouse
+      - nessie.catalog.warehouses.warehouse.location=s3://my-bucket/
+      - nessie.catalog.service.s3.default-options.endpoint=http://minio:9000/
+      - nessie.catalog.service.s3.default-options.access-key=urn:nessie-secret:quarkus:nessie.catalog.secrets.access-key
+      - nessie.catalog.service.s3.default-options.path-style-access=true
+      - nessie.catalog.service.s3.default-options.auth-type=STATIC
+      - nessie.catalog.secrets.access-key.name=admin
+      - nessie.catalog.secrets.access-key.secret=password
+      - nessie.catalog.service.s3.default-options.region=us-east-1
+      - nessie.server.authentication.enabled=false
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - iceberg_net
+
+  minio:
+    image: quay.io/minio/minio
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+      - MINIO_REGION=us-east-1
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    entrypoint: >
+      /bin/sh -c "
+      minio server /data --console-address ':9001' &
+      sleep 10;
+      mc alias set myminio http://localhost:9000 admin password;
+      mc mb myminio/my-bucket --ignore-existing;
+      tail -f /dev/null"
+    networks:
+      - iceberg_net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:head
+    container_name: nessie-clickhouse
+    user: '0:0'  # Ensures root permissions
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Mount dataset folder
+    networks:
+      - iceberg_net
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_DO_NOT_CHOWN=1
+      - CLICKHOUSE_PASSWORD=
+    depends_on:
+      nessie:
+        condition: service_started
+      minio:
+        condition: service_healthy
+
+volumes:
+  clickhouse_data:
+
+networks:
+  iceberg_net:
+    driver: bridge
+```
+
+**الخطوة 2:** شغّل الأمر التالي لتشغيل الخدمات:
+
+```bash
+docker compose up -d
+```
+
+**الخطوة 3:** انتظر حتى تصبح جميع الخدمات جاهزة. يمكنك التحقق من السجلات:
+
+```bash
+docker-compose logs -f
+```
+
+<Note>
+  يستخدم إعداد Nessie مخزن إصدارات في الذاكرة، ويتطلب تحميل البيانات التجريبية إلى جداول Iceberg أولًا. تأكد من أن البيئة قد أنشأت الجداول وعبّأتها بالبيانات قبل محاولة الاستعلام عنها من خلال ClickHouse.
+</Note>
+
+<div id="connecting-to-local-nessie-catalog">
+  ### الاتصال بـ كتالوج Nessie المحلي
+</div>
+
+اتصل بحاوية ClickHouse الخاصة بك:
+
+```bash
+docker exec -it nessie-clickhouse clickhouse-client
+```
+
+ثم أنشئ اتصال قاعدة البيانات إلى كتالوج Nessie:
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE demo
+ENGINE = DataLakeCatalog('http://nessie:19120/iceberg', 'admin', 'password')
+SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9002/my-bucket', warehouse = 'warehouse'
+```
+
+<div id="querying-nessie-catalog-tables-using-clickhouse">
+  ## الاستعلام عن جداول كتالوج Nessie باستخدام ClickHouse
+</div>
+
+الآن بعد إعداد الاتصال، يمكنك البدء في الاستعلام من خلال كتالوج Nessie. على سبيل المثال:
+
+```sql
+USE demo;
+
+SHOW TABLES;
+```
+
+إذا كان إعدادك يتضمن بيانات نموذجية (مثل مجموعة بيانات سيارات الأجرة)، فمن المفترض أن ترى جداول مثل:
+
+```response
+┌─name──────────┐
+│ default.taxis │
+└───────────────┘
+```
+
+<Note>
+  إذا لم تظهر أي جداول، فعادةً ما يعني ذلك أحد الأمور التالية:
+
+  1. لم تُنشئ البيئة الجداول التجريبية بعد
+  2. لم تتم تهيئة خدمة كتالوج Nessie بالكامل بعد
+  3. لم تكتمل عملية تحميل البيانات التجريبية بعد
+
+  يمكنك التحقق من سجلات Nessie لمعرفة نشاط الكتالوج:
+
+  ```bash
+  docker-compose logs nessie
+  ```
+</Note>
+
+لاستعلام أحد الجداول (إذا كان متاحًا):
+
+```sql
+SELECT count(*) FROM `default.taxis`;
+```
+
+```response
+┌─count()─┐
+│ 2171187 │
+└─────────┘
+```
+
+<Info>
+  **علامات الاقتباس المعكوسة مطلوبة**
+
+  علامات الاقتباس المعكوسة مطلوبة لأن ClickHouse لا يدعم أكثر من حيّز أسماء واحد.
+</Info>
+
+لفحص عبارة DDL الخاصة بالجدول:
+
+```sql
+SHOW CREATE TABLE `default.taxis`;
+```
+
+```response
+┌─statement─────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE demo.`default.taxis`                                                             │
+│ (                                                                                             │
+│     `VendorID` Nullable(Int64),                                                               │
+│     `tpep_pickup_datetime` Nullable(DateTime64(6)),                                           │
+│     `tpep_dropoff_datetime` Nullable(DateTime64(6)),                                          │
+│     `passenger_count` Nullable(Float64),                                                      │
+│     `trip_distance` Nullable(Float64),                                                        │
+│     `RatecodeID` Nullable(Float64),                                                           │
+│     `store_and_fwd_flag` Nullable(String),                                                    │
+│     `PULocationID` Nullable(Int64),                                                           │
+│     `DOLocationID` Nullable(Int64),                                                           │
+│     `payment_type` Nullable(Int64),                                                           │
+│     `fare_amount` Nullable(Float64),                                                          │
+│     `extra` Nullable(Float64),                                                                │
+│     `mta_tax` Nullable(Float64),                                                              │
+│     `tip_amount` Nullable(Float64),                                                           │
+│     `tolls_amount` Nullable(Float64),                                                         │
+│     `improvement_surcharge` Nullable(Float64),                                                │
+│     `total_amount` Nullable(Float64),                                                         │
+│     `congestion_surcharge` Nullable(Float64),                                                 │
+│     `airport_fee` Nullable(Float64)                                                           │
+│ )                                                                                             │
+│ ENGINE = Iceberg('http://localhost:9002/my-bucket/default/taxis/', 'admin', '[HIDDEN]')      │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## تحميل البيانات من بحيرة البيانات لديك إلى ClickHouse
+</div>
+
+إذا كنت بحاجة إلى تحميل بيانات من كتالوج Nessie إلى ClickHouse، فابدأ بإنشاء جدول ClickHouse محلي:
+
+```sql
+CREATE TABLE taxis
+(
+    `VendorID` Int64,
+    `tpep_pickup_datetime` DateTime64(6),
+    `tpep_dropoff_datetime` DateTime64(6),
+    `passenger_count` Float64,
+    `trip_distance` Float64,
+    `RatecodeID` Float64,
+    `store_and_fwd_flag` String,
+    `PULocationID` Int64,
+    `DOLocationID` Int64,
+    `payment_type` Int64,
+    `fare_amount` Float64,
+    `extra` Float64,
+    `mta_tax` Float64,
+    `tip_amount` Float64,
+    `tolls_amount` Float64,
+    `improvement_surcharge` Float64,
+    `total_amount` Float64,
+    `congestion_surcharge` Float64,
+    `airport_fee` Float64
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(tpep_pickup_datetime)
+ORDER BY (VendorID, tpep_pickup_datetime, PULocationID, DOLocationID);
+```
+
+ثم حمِّل البيانات من جدول كتالوج Nessie عبر `INSERT INTO SELECT`:
+
+```sql
+INSERT INTO taxis 
+SELECT * FROM demo.`default.taxis`;
+```

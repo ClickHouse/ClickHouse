@@ -1,0 +1,137 @@
+---
+description: 'توثيق دوال التجميع'
+sidebarTitle: 'دوال التجميع'
+slug: /sql-reference/aggregate-functions/
+title: 'دوال التجميع'
+doc_type: 'reference'
+---
+
+تعمل دوال التجميع بالطريقة [المعتادة](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial)، كما هو متوقع لدى خبراء قواعد البيانات.
+
+كما يدعم ClickHouse ما يلي:
+
+* [دوال التجميع المعلَّمية](/ar/reference/functions/aggregate-functions/parametric-functions)، التي تقبل معلمات أخرى بالإضافة إلى الأعمدة.
+* [المُركِّبات](/ar/reference/functions/aggregate-functions/combinators)، التي تغيّر سلوك دوال التجميع.
+
+<div id="null-processing">
+  ## معالجة NULL
+</div>
+
+أثناء التجميع، يتم تجاهل جميع الوسيطات `NULL`. وإذا كان للتجميع عدة وسيطات، فسيتجاهل أي صف تكون فيه واحدة أو أكثر منها NULL.
+
+هناك استثناء لهذه القاعدة، وهو الدالتان [`first_value`](/ar/reference/functions/aggregate-functions/first_value) و[`last_value`](/ar/reference/functions/aggregate-functions/last_value) وأسماؤهما المستعارة (`any` و`anyLast` على الترتيب) عند إلحاقهما بالمُعدِّل `RESPECT NULLS`. على سبيل المثال، `FIRST_VALUE(b) RESPECT NULLS`.
+
+**أمثلة:**
+
+لننظر إلى هذا الجدول:
+
+```text
+┌─x─┬────y─┐
+│ 1 │    2 │
+│ 2 │ ᴺᵁᴸᴸ │
+│ 3 │    2 │
+│ 3 │    3 │
+│ 3 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+لنفترض أنك تحتاج إلى حساب مجموع القيم في العمود `y`:
+
+```sql
+SELECT sum(y) FROM t_null_big
+```
+
+```text
+┌─sum(y)─┐
+│      7 │
+└────────┘
+```
+
+يمكنك الآن استخدام الدالة `groupArray` لإنشاء مصفوفة من العمود `y`:
+
+```sql
+SELECT groupArray(y) FROM t_null_big
+```
+
+```text
+┌─groupArray(y)─┐
+│ [2,2,3]       │
+└───────────────┘
+```
+
+`groupArray` لا يتضمن `NULL` في المصفوفة الناتجة.
+
+يمكنك استخدام [COALESCE](/ar/reference/functions/regular-functions/functions-for-nulls#coalesce) لتحويل NULL إلى قيمة مناسبة لحالة الاستخدام لديك. على سبيل المثال: سيستخدم `avg(COALESCE(column, 0))` قيمة العمود في التجميع، أو الصفر إذا كانت NULL:
+
+```sql
+SELECT
+    avg(y),
+    avg(coalesce(y, 0))
+FROM t_null_big
+```
+
+```text
+┌─────────────avg(y)─┬─avg(coalesce(y, 0))─┐
+│ 2.3333333333333335 │                 1.4 │
+└────────────────────┴─────────────────────┘
+```
+
+يمكنك أيضًا استخدام [Tuple](/ar/reference/data-types/tuple) لتجاوز سلوك تخطي `NULL`. إن `Tuple` الذي يحتوي فقط على قيمة `NULL` لا يُعد `NULL`، لذلك لن تتخطى دالة التجميع ذلك الصف بسبب قيمة `NULL` هذه.
+
+```sql
+SELECT
+    groupArray(y),
+    groupArray(tuple(y)).1
+FROM t_null_big;
+
+┌─groupArray(y)─┬─tupleElement(groupArray(tuple(y)), 1)─┐
+│ [2,2,3]       │ [2,NULL,2,3,NULL]                     │
+└───────────────┴───────────────────────────────────────┘
+```
+
+لاحظ أن عمليات التجميع يتم تجاهلها عندما تُستخدم الأعمدة كوسائط لدالة التجميع. على سبيل المثال، فإن [`count`](/ar/reference/functions/aggregate-functions/count) بدون وسائط (`count()`) أو مع وسائط ثابتة (`count(1)`) سيحسب جميع الصفوف في الكتلة (بغض النظر عن قيمة عمود GROUP BY لأنه ليس وسيطًا)، بينما `count(column)` لن يعيد إلا عدد الصفوف التي لا تكون فيها قيمة `column` هي NULL.
+
+```sql
+SELECT
+    v,
+    count(1),
+    count(v)
+FROM
+(
+    SELECT if(number < 10, NULL, number % 3) AS v
+    FROM numbers(15)
+)
+GROUP BY v
+
+┌────v─┬─count()─┬─count(v)─┐
+│ ᴺᵁᴸᴸ │      10 │        0 │
+│    0 │       1 │        1 │
+│    1 │       2 │        2 │
+│    2 │       2 │        2 │
+└──────┴─────────┴──────────┘
+```
+
+وهنا مثال على first&#95;value مع `RESPECT NULLS`، حيث نرى أن قيم الإدخال NULL تتم مراعاتها، وسيُرجع أول قيمة مقروءة، سواء كانت NULL أم لا:
+
+```sql
+SELECT
+    col || '_' || ((col + 1) * 5 - 1) AS range,
+    first_value(odd_or_null) AS first,
+    first_value(odd_or_null) IGNORE NULLS as first_ignore_null,
+    first_value(odd_or_null) RESPECT NULLS as first_respect_nulls
+FROM
+(
+    SELECT
+        intDiv(number, 5) AS col,
+        if(number % 2 == 0, NULL, number) AS odd_or_null
+    FROM numbers(15)
+)
+GROUP BY col
+ORDER BY col
+
+┌─range─┬─first─┬─first_ignore_null─┬─first_respect_nulls─┐
+│ 0_4   │     1 │                 1 │                ᴺᵁᴸᴸ │
+│ 1_9   │     5 │                 5 │                   5 │
+│ 2_14  │    11 │                11 │                ᴺᵁᴸᴸ │
+└───────┴───────┴───────────────────┴─────────────────────┘
+```

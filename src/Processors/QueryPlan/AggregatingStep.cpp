@@ -1061,7 +1061,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     }
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in);
+    deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
 
     UInt64 stats_key = 0;
     if (has_stats_key)

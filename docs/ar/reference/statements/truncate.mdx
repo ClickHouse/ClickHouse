@@ -1,0 +1,84 @@
+---
+description: 'توثيق عبارات TRUNCATE'
+sidebarTitle: 'TRUNCATE'
+slug: /sql-reference/statements/truncate
+title: 'عبارات TRUNCATE'
+doc_type: 'مرجع'
+---
+
+تُستخدم عبارة `TRUNCATE` في ClickHouse لإزالة جميع البيانات بسرعة من جدول أو قاعدة بيانات مع الحفاظ على بنيتهما.
+
+<div id="truncate-table">
+  ## TRUNCATE TABLE
+</div>
+
+```sql
+TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+```
+
+<br />
+
+| Parameter            | Description                                                                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `IF EXISTS`          | يمنع حدوث خطأ إذا لم يكن الجدول موجودًا. وإذا أُغفل، فسيُرجع الاستعلام خطأ.                                                               |
+| `db.name`            | اسم قاعدة البيانات اختياري.                                                                                                               |
+| `ON CLUSTER cluster` | يشغّل الأمر على عنقود محدد.                                                                                                               |
+| `SYNC`               | يجعل عملية الاقتطاع متزامنة عبر النسخ المتماثلة عند استخدام الجداول المتماثلة. وإذا أُغفل، تحدث عملية الاقتطاع بشكل غير متزامن افتراضيًا. |
+
+يمكنك استخدام إعداد [alter&#95;sync](/ar/reference/settings/session-settings#alter_sync) لتهيئة الانتظار حتى تُنفَّذ الإجراءات على النسخ المتماثلة.
+
+يمكنك تحديد مدة الانتظار (بالثواني) حتى تنفّذ النسخ المتماثلة غير النشطة استعلامات `TRUNCATE` باستخدام إعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
+
+<Note>
+  إذا كان `alter_sync` مضبوطًا على `2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد بواسطة إعداد `replication_wait_for_inactive_replica_timeout`، فسيُطرَح الاستثناء `UNFINISHED`.
+</Note>
+
+الاستعلام `TRUNCATE TABLE` **غير مدعوم** لمحركات الجداول التالية:
+
+* [`View`](/ar/reference/engines/table-engines/special/view)
+* [`File`](/ar/reference/engines/table-engines/special/file)
+* [`URL`](/ar/reference/engines/table-engines/special/url)
+* [`Buffer`](/ar/reference/engines/table-engines/special/buffer)
+* [`Null`](/ar/reference/engines/table-engines/special/null)
+
+<div id="truncate-all-tables">
+  ## TRUNCATE جميع الجداول
+</div>
+
+```sql
+TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
+```
+
+<br />
+
+| المعلمة                                 | الوصف                                            |
+| --------------------------------------- | ------------------------------------------------ |
+| `ALL`                                   | يزيل البيانات من جميع الجداول في قاعدة البيانات. |
+| `IF EXISTS`                             | يمنع حدوث خطأ إذا لم تكن قاعدة البيانات موجودة.  |
+| `db`                                    | اسم قاعدة البيانات.                              |
+| `LIKE \| ILIKE \| NOT LIKE '<pattern>'` | يُصفّي الجداول حسب النمط.                        |
+| `ON CLUSTER cluster`                    | ينفّذ الأمر على مستوى العنقود.                   |
+
+يزيل جميع البيانات من جميع الجداول في قاعدة بيانات.
+
+<div id="truncate-database">
+  ## TRUNCATE DATABASE
+</div>
+
+```sql
+TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
+```
+
+<br />
+
+| المعلمة              | الوصف                                             |
+| -------------------- | ------------------------------------------------- |
+| `IF EXISTS`          | يمنع ظهور خطأ إذا كانت قاعدة البيانات غير موجودة. |
+| `db`                 | اسم قاعدة البيانات.                               |
+| `ON CLUSTER cluster` | ينفّذ الأمر على مستوى عنقود محدد.                 |
+
+يزيل جميع الجداول من قاعدة بيانات مع الإبقاء على قاعدة البيانات نفسها. وعند حذف العبارة `IF EXISTS`، يعرض الاستعلام خطأ إذا كانت قاعدة البيانات غير موجودة.
+
+<Note>
+  `TRUNCATE DATABASE` غير مدعوم لقواعد البيانات `Replicated`. بدلًا من ذلك، ما عليك سوى تنفيذ `DROP` ثم `CREATE` لقاعدة البيانات.
+</Note>
