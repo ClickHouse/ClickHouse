@@ -222,6 +222,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
             "functions", /// Can contain user-defined functions
 
+            "user_query_log", /// Shows only the query log records of the current user
+
             /// The following tables hide some rows if the current user doesn't have corresponding SHOW privileges.
             "databases",
             "tables",

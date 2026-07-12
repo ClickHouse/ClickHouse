@@ -1342,6 +1342,8 @@ Queries are logged in the [system.query_log](/operations/system-tables/query_log
 
 <SystemLogParameters/>
 
+The `enable_user_query_log` parameter (enabled by default) creates [`system.user_query_log`](/operations/system-tables/user_query_log), which shows every user their own records of the configured query log table without requiring access to the table itself.
+
 If the table does not exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
 **Example**
@@ -1356,6 +1358,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
