@@ -323,6 +323,12 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
         }
         catch (Exception & e)
         {
+            /// covering.bbox columns exist only for this optimization (they're never part of the
+            /// query's own output or WHERE columns) - malformed helper stats must fail closed
+            /// (skip pruning for this row group) rather than aborting the whole read, and
+            /// "input_format_parquet_filter_push_down=0" would not even disable this path.
+            if (column_info.is_spatial_bbox_column)
+                continue;
             e.addMessage("in column chunk statistics for column '{}'; use input_format_parquet_filter_push_down=0 to ignore", column_info.name);
             throw;
         }
@@ -401,6 +407,18 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             return geo_meta->find(it->second);
         return geo_meta->find(ch_name);
     };
+    /// `rowGroupFailsSpatialFilters` (the `geospatial_statistics.bbox` fallback) matches
+    /// `filter.geometry_column_name` directly against `primitive_columns[i].name`, which - like
+    /// the `covering.bbox` sub-columns above - is a raw/file-side name in the per-file
+    /// `column_mapper` case. Translate it the same way `resolve_geo_meta` does, or a renamed
+    /// geometry column with only `geospatial_statistics.bbox` (no `covering.bbox`) silently loses
+    /// pruning.
+    auto to_raw_geometry_name = [&](const String & ch_name) -> String
+    {
+        if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
+            return it->second;
+        return ch_name;
+    };
 
     /// Phase A: inject covering.bbox sub-columns into extended_sample_block BEFORE
     /// SchemaConverter runs, so the bbox primitives get proper idx_in_output_block and stats support.
@@ -448,7 +466,12 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         {
             auto geo_it = resolve_geo_meta(sf.geometry_column_name);
             if (geo_it == geo_meta->end() || !geo_it->second.covering_bbox.has_value())
-            { geostats_spatial_filters.push_back(sf); continue; }
+            {
+                SpatialFilter raw_sf = sf;
+                raw_sf.geometry_column_name = to_raw_geometry_name(sf.geometry_column_name);
+                geostats_spatial_filters.push_back(std::move(raw_sf));
+                continue;
+            }
 
             const auto & bbox_cov = *geo_it->second.covering_bbox;
 
@@ -465,7 +488,12 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 if (!schema_leaf_paths.contains(*col))
                 { all_bbox_in_schema = false; break; }
             if (!all_bbox_in_schema)
-            { geostats_spatial_filters.push_back(sf); continue; }
+            {
+                SpatialFilter raw_sf = sf;
+                raw_sf.geometry_column_name = to_raw_geometry_name(sf.geometry_column_name);
+                geostats_spatial_filters.push_back(std::move(raw_sf));
+                continue;
+            }
 
             /// Raw parquet-side names, matching what SchemaConverter will produce for these
             /// primitives (see comment above on the per-file column_mapper).
@@ -482,7 +510,12 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 { conflict = true; break; }
             }
             if (conflict)
-            { geostats_spatial_filters.push_back(sf); continue; }
+            {
+                SpatialFilter raw_sf = sf;
+                raw_sf.geometry_column_name = to_raw_geometry_name(sf.geometry_column_name);
+                geostats_spatial_filters.push_back(std::move(raw_sf));
+                continue;
+            }
 
             for (const String & col : bbox_cols)
                 if (!extended_sample_block.has(col))
@@ -610,6 +643,11 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
         else
         {
+            /// Context expired: covering.bbox pruning is unavailable (buildBboxKeyCondition needs
+            /// it), so everything falls back to the geospatial_statistics.bbox path and needs the
+            /// same query-side -> raw-name translation as above.
+            for (auto & sf : all_spatial_filters)
+                sf.geometry_column_name = to_raw_geometry_name(sf.geometry_column_name);
             geostats_spatial_filters = std::move(all_spatial_filters);
         }
     }
