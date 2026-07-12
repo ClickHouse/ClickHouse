@@ -31,8 +31,10 @@ enum class StatisticsFileVersion : UInt16
     V5 = 5, /// numeric minmax statistics (`MinMax` and `Basic`) now persist a `has_nan` flag so part
             /// pruning can keep a part whose float column contains NaN under a negated range
             /// (issue #106533 / #106948). `MinMax` appends a trailing `UInt8 has_nan`; `Basic` adds a
-            /// self-describing `NaNFlag` feature-mask bit. Older files read fine (has_nan defaults to
-            /// false, matching the pre-fix behavior); the per-stat size prefix skips the extra byte.
+            /// self-describing `NaNFlag` feature-mask bit. Pre-V5 files carry no flag; they are read
+            /// conservatively — a pre-V5 float stat is assumed to possibly hold NaN, so an upgraded
+            /// cluster never wrongly prunes a NaN part before statistics are rematerialized. The
+            /// per-stat size prefix skips the extra V5 byte for older readers.
 };
 
 class Field;

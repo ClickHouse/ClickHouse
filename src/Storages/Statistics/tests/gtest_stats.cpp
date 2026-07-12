@@ -17,12 +17,18 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
+#include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Core/Field.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 using namespace DB;
 
@@ -593,3 +599,118 @@ TEST(Statistics, StructureEqualsConsidersDataType)
     EXPECT_FALSE(make_stat(uint8_type)->structureEquals(*make_stat(bool_type)));
 }
 
+
+namespace
+{
+
+/// Encode a single-stat V4 `ColumnStatistics` blob by hand (the current binary only ever writes
+/// V5, so a pre-fix on-disk layout can only be produced this way). `stat_payload` is the raw
+/// per-statistics bytes; `type` selects the mask bit. Framing mirrors ColumnStatistics::serialize.
+String encodeV4ColumnStatistics(StatisticsType type, const DataTypePtr & data_type, UInt64 rows, const String & stat_payload)
+{
+    String out;
+    WriteBufferFromString buf(out);
+    writeIntBinary(static_cast<UInt16>(StatisticsFileVersion::V4), buf);
+    writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(type)), buf);
+    writeStringBinary(data_type->getName(), buf);
+    writeIntBinary(rows, buf);
+    writeIntBinary(static_cast<UInt64>(stat_payload.size()), buf);
+    buf.write(stat_payload.data(), stat_payload.size());
+    buf.finalize();
+    return out;
+}
+
+/// Pre-fix (V4) MinMax payload: row_count, stored type name, finite min/max, and NO trailing has_nan.
+String encodeV4MinMaxPayload(const DataTypePtr & data_type, UInt64 row_count, const Field & min, const Field & max)
+{
+    String out;
+    WriteBufferFromString buf(out);
+    writeIntBinary(row_count, buf);
+    writeStringBinary(data_type->getName(), buf);
+    writeFieldBinary(min, buf);
+    writeFieldBinary(max, buf);
+    buf.finalize();
+    return out;
+}
+
+/// Pre-fix (V4) Basic payload: row_count, feature mask (numeric min/max only), finite min/max, and
+/// NO NaNFlag bit.
+String encodeV4BasicNumericPayload(UInt64 row_count, const Field & min, const Field & max)
+{
+    String out;
+    WriteBufferFromString buf(out);
+    writeIntBinary(row_count, buf);
+    writeIntBinary(static_cast<UInt8>(1u << 0), buf); /// BasicFeatureMask::NumericMinMax
+    writeFieldBinary(min, buf);
+    writeFieldBinary(max, buf);
+    buf.finalize();
+    return out;
+}
+
+}
+
+/// A pre-V5 numeric statistics blob carries no NaN flag, yet a part like [1.0, nan, 3.0] was stored
+/// with a finite [min, max] that hides the NaN. Reading such a float stat must be conservative:
+/// has_nan is forced true so statistics part pruning keeps the part under a negated float range,
+/// instead of wrongly dropping it after an upgrade (issue #106533 / #106948). Integer stats, which
+/// cannot hold a NaN, must stay has_nan = false so pruning is not needlessly disabled.
+TEST(Statistics, PreV5FloatStatisticsConservativeRead)
+{
+    auto float_type = std::make_shared<DataTypeFloat64>();
+    auto int_type = std::make_shared<DataTypeInt64>();
+
+    auto get_minmax = [](const ColumnStatisticsPtr & cs) -> const StatisticsMinMax &
+    {
+        const auto & stats = cs->getStats();
+        auto it = stats.find(StatisticsType::MinMax);
+        return dynamic_cast<const StatisticsMinMax &>(*it->second);
+    };
+    auto get_basic = [](const ColumnStatisticsPtr & cs) -> const StatisticsBasic &
+    {
+        const auto & stats = cs->getStats();
+        auto it = stats.find(StatisticsType::Basic);
+        return dynamic_cast<const StatisticsBasic &>(*it->second);
+    };
+
+    /// V4 float MinMax: finite [1, 3], no has_nan byte -> conservatively has_nan = true.
+    {
+        String payload = encodeV4MinMaxPayload(float_type, 3, Float64(1.0), Float64(3.0));
+        String blob = encodeV4ColumnStatistics(StatisticsType::MinMax, float_type, 3, payload);
+        ReadBufferFromString rb(blob);
+        auto cs = ColumnStatistics::deserialize(rb, float_type);
+        ASSERT_TRUE(cs != nullptr);
+        EXPECT_TRUE(get_minmax(cs).hasNaN()) << "pre-V5 float MinMax must be read as possibly-NaN";
+        EXPECT_EQ(get_minmax(cs).getMin(), Field(Float64(1.0)));
+        EXPECT_EQ(get_minmax(cs).getMax(), Field(Float64(3.0)));
+    }
+
+    /// V4 integer MinMax: cannot hold NaN -> has_nan stays false (pruning not disabled).
+    {
+        String payload = encodeV4MinMaxPayload(int_type, 3, Int64(1), Int64(3));
+        String blob = encodeV4ColumnStatistics(StatisticsType::MinMax, int_type, 3, payload);
+        ReadBufferFromString rb(blob);
+        auto cs = ColumnStatistics::deserialize(rb, int_type);
+        ASSERT_TRUE(cs != nullptr);
+        EXPECT_FALSE(get_minmax(cs).hasNaN()) << "pre-V5 integer MinMax cannot be NaN";
+    }
+
+    /// V4 float Basic: finite [1, 3], no NaNFlag bit -> conservatively has_nan = true.
+    {
+        String payload = encodeV4BasicNumericPayload(3, Float64(1.0), Float64(3.0));
+        String blob = encodeV4ColumnStatistics(StatisticsType::Basic, float_type, 3, payload);
+        ReadBufferFromString rb(blob);
+        auto cs = ColumnStatistics::deserialize(rb, float_type);
+        ASSERT_TRUE(cs != nullptr);
+        EXPECT_TRUE(get_basic(cs).hasNaN()) << "pre-V5 float Basic must be read as possibly-NaN";
+    }
+
+    /// V4 integer Basic: has_nan stays false.
+    {
+        String payload = encodeV4BasicNumericPayload(3, Int64(1), Int64(3));
+        String blob = encodeV4ColumnStatistics(StatisticsType::Basic, int_type, 3, payload);
+        ReadBufferFromString rb(blob);
+        auto cs = ColumnStatistics::deserialize(rb, int_type);
+        ASSERT_TRUE(cs != nullptr);
+        EXPECT_FALSE(get_basic(cs).hasNaN()) << "pre-V5 integer Basic cannot be NaN";
+    }
+}

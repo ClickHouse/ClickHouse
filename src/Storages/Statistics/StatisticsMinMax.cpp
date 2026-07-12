@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -102,10 +103,21 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
     max = readFieldBinary(buf);
 
     /// V5+ always appends `has_nan` right after `max`, so read exactly that one byte. Reading via
-    /// eof() would be wrong: `buf` is the shared file buffer that may still hold later stats. Older
-    /// files don't have the byte; leave the default (false), which matches their pre-fix behavior.
+    /// eof() would be wrong: `buf` is the shared file buffer that may still hold later stats.
     if (version >= StatisticsFileVersion::V5)
+    {
         readBinary(has_nan, buf);
+    }
+    else if (isFloat(removeLowCardinality(data_type)))
+    {
+        /// Pre-V5 files never stored `has_nan`. A part like `[1.0, nan, 3.0]` was written with a
+        /// finite [min, max] that hides the NaN, so trusting `has_nan = false` would let the pruner
+        /// wrongly drop the part under a negated float range after upgrade. Only floats can hold a
+        /// NaN, so conservatively assume a pre-V5 float part might contain one. This can only cause
+        /// conservative keeps, never a wrong skip; the flag clears once statistics are
+        /// rematerialized (V5).
+        has_nan = true;
+    }
 }
 
 std::optional<Float64> StatisticsMinMax::estimateLess(const Field & val) const

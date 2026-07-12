@@ -200,7 +200,7 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
     /// NaNFlag carries no payload: its presence in the mask is the value (has_nan == true).
 }
 
-void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
 {
     readIntBinary(row_count, buf);
 
@@ -223,7 +223,20 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
         readIntBinary(null_count, buf);
     }
 
-    has_nan = (mask & BasicFeatureMask::NaNFlag) != 0;
+    if (version >= StatisticsFileVersion::V5)
+    {
+        has_nan = (mask & BasicFeatureMask::NaNFlag) != 0;
+    }
+    else
+    {
+        /// Pre-V5 files never carried the NaNFlag bit. A float part like `[1.0, nan, 3.0]` stored a
+        /// finite [min, max] that hides the NaN, so `has_nan = false` would let the pruner wrongly
+        /// drop it under a negated float range after upgrade. Only floats can hold a NaN, so
+        /// conservatively assume a pre-V5 float column might contain one (conservative keep, never a
+        /// wrong skip); `data_type` here is already LowCardinality/Nullable-stripped. The flag clears
+        /// once statistics are rematerialized (V5).
+        has_nan = tracks_numeric && isFloat(data_type);
+    }
 }
 
 std::optional<Float64> StatisticsBasic::estimateLess(const Field & val) const
