@@ -50,6 +50,25 @@ public:
     ReservationPtr tryReserve(UInt64 bytes) const override;
     DiskPtr getDisk() const;
 
+    /// File reads resolve the per-part skp_idx.packed overlay first: a "skp_idx_..." name that is a
+    /// member of the archive is served from it, anything else (incl. all non-index files) falls
+    /// through to the storage's native access (existsFileImpl etc.). The overlay lives here, in the
+    /// base that owns the packed-index format, and is `final` so no storage can bypass it: a storage
+    /// only fills in native access via the *Impl hooks. Storage-agnostic -- a storage that keeps no
+    /// standalone skp_idx.packed (e.g. packed part storage) simply has no reader, so the *Impl path
+    /// serves the substreams instead. Keeps the archive out of the read pipeline and the callers.
+    bool existsFile(const std::string & name) const final;
+    size_t getFileSize(const std::string & file_name) const final;
+    void prepareRead(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const final;
+    std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint) const final;
+
     /// True iff @name resolves to a virtual file inside this part's skp_idx.packed archive (and
     /// not a standalone file on disk). Lets external callers distinguish per-file substreams
     /// from packed ones without touching the archive reader directly.
@@ -162,20 +181,33 @@ protected:
     DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
     virtual MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const = 0;
 
-    /// Lazily load the per-part skp_idx.packed archive (if any). Subsequent calls return the
-    /// cached reader (or nullptr if no archive exists). Used internally by the readFile /
-    /// existsFile / getFileSize overlays in the subclasses, and by the public helpers above
-    /// that operate on the archive.
-    ///
-    /// Virtual so storage subclasses where skp_idx.packed isn't a standalone file on disk can
-    /// override the probe path. The default implementation does a disk->existsFile against the
-    /// part-relative path and constructs a PackedFilesReader from there if it exists.
+    /// Lazily load the per-part skp_idx.packed archive (if any), reading it as a standalone disk
+    /// file. Subsequent calls return the cached reader, or nullptr when there is no such file --
+    /// including on storages that don't keep skp_idx.packed standalone (e.g. packed part storage,
+    /// where index substreams live in data.packed and are served by the *Impl hooks instead). Used
+    /// by the file-read overlay above and by the public archive helpers.
     ///
     /// Returns a shared owning handle, not a raw pointer: callers dereference the reader after the
     /// internal mutex is released, while a concurrent resetReader/seed can replace or drop the
     /// cached reader. Holding a shared_ptr for the duration of use keeps the object alive and
     /// avoids a use-after-free on the cached archive index.
-    virtual std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const;
+    std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const;
+
+    /// Cheap pre-filtered lookup for the file-read overlay: returns the archive reader only when
+    /// @name is a "skp_idx_..." substream that the archive actually contains, else nullptr. The
+    /// prefix gate keeps unrelated files (checksums.txt, count.txt, columns.txt, ...) from loading
+    /// or probing skp_idx.packed at all -- avoiding extra metadata I/O on remote/Keeper disks and
+    /// keeping a bad/future-version archive from blocking reads of unrelated files.
+    std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string & name) const;
+
+    /// Copy a single archive member into @target, reading it through this storage's readFile
+    /// overlay. Shared by copyPackedSkipIndicesFilesInto and filterPackedSkipIndicesArchiveTo.
+    void copyArchiveEntryTo(
+        const PackedFilesReader & source_archive,
+        const String & file_name,
+        PackedFilesWriter & target,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings) const;
 
 public:
     /// Pre-populate the cached PackedFilesReader from an in-memory index produced by the
@@ -228,6 +260,21 @@ private:
     /// Actual file name may be the same as expected
     /// or be the name of the file with packed data.
     virtual NameSet getActualFileNamesOnDisk(const NameSet & file_names) const = 0;
+
+    /// Native file access for the concrete storage (disk files for Full storage; data.packed
+    /// members for Packed storage), without the skp_idx.packed overlay. The `final`
+    /// existsFile/getFileSize/prepareRead/readFileIfExists add the overlay and delegate here.
+    virtual bool existsFileImpl(const std::string & name) const = 0;
+    virtual size_t getFileSizeImpl(const std::string & file_name) const = 0;
+    virtual void prepareReadImpl(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExistsImpl(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint) const = 0;
 
     /// Returns the destination path for the part directory while copying a detached part.
     String getPartDirForPrefix(const String & prefix, bool detached, int try_no) const;

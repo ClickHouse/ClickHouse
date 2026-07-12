@@ -1,0 +1,22 @@
+---
+title: Reúna seus detalhes de TCP nativo
+---
+
+Para se conectar ao ClickHouse com TCP nativo, você precisa destas informações:
+
+| Parâmetros              | Descrição                                                                                                       |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `HOST` e `PORT`         | Normalmente, a porta é 9440 ao usar TLS, ou 9000 quando não se usa TLS.                                         |
+| `DATABASE NAME`         | Por padrão, há um banco de dados chamado `default`; use o nome do banco de dados ao qual você quer se conectar. |
+| `USERNAME` e `PASSWORD` | Por padrão, o nome de usuário é `default`. Use o nome de usuário apropriado para o seu caso de uso.             |
+
+Os detalhes do seu serviço do ClickHouse Cloud estão disponíveis no console do ClickHouse Cloud.
+Selecione o serviço ao qual você vai se conectar e clique em **Connect**:
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="Botão Connect do serviço do ClickHouse Cloud" border />
+
+Escolha **Native**; os detalhes estarão disponíveis em um comando `clickhouse-client` de exemplo.
+
+<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="Detalhes da conexão TCP nativa do ClickHouse Cloud" border />
+
+Se você estiver usando ClickHouse autogerenciado, os detalhes da conexão serão definidos pelo administrador do ClickHouse.

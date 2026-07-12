@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Artie'
+keywords: ['clickhouse', 'Artie', 'connecter', 'intégrer', 'cdc', 'etl', 'intégration de données', 'temps réel', 'streaming']
+slug: /integrations/artie
+description: 'Envoyez des données vers ClickHouse à l’aide de la plateforme de streaming CDC Artie'
+title: 'Connecter Artie à ClickHouse'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
+<a href="https://www.artie.com/" target="_blank">Artie</a> est une plateforme de streaming de données en temps réel entièrement gérée qui réplique les données de production dans ClickHouse, afin de rendre possibles des analyses orientées client, des processus opérationnels et de l’IA agentique en production.
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+Artie est la couche d’infrastructure de données moderne à l’ère de l’IA — une plateforme de streaming de données en temps réel entièrement gérée qui maintient en continu vos données de production synchronisées avec votre entrepôt de données.
+
+À mesure que les entreprises exploitent leurs entrepôts de données pour des charges de travail d’IA en temps réel, l’analytique opérationnelle et des produits de données orientés client, elles standardisent leur infrastructure autour de solutions rapides, fiables et conçues pour passer à l’échelle.
+
+Nous offrons aux entreprises le type de pipelines de streaming et le niveau d’observability que Netflix, DoorDash et Instacart ont développés en interne, sans avoir à recruter plus de 10 ingénieurs ni à consacrer 1 à 2 ans au travail de plateforme. Artie automatise l’ensemble du cycle de vie de l’ingestion — capture des changements, fusions, rechargements historiques et observability — sans aucune maintenance côté ingénierie, et se déploie en quelques minutes.
+
+Des leaders comme ClickUp, Substack et Alloy utilisent Artie non seulement pour résoudre les problèmes de pipeline actuels, mais aussi pour pérenniser leur stack de données à mesure que leur stratégie IA s’accélère.
+
+<Steps>
+  <Step>
+    ## Créer un compte Artie
+
+    Rendez-vous sur <a href="https://www.artie.com/contact" target="_blank">artie.com/contact</a> et remplissez le formulaire pour demander l’accès.
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp" size="md" border alt="Page d’inscription Artie" />
+  </Step>
+
+  <Step>
+    ## Trouver vos identifiants ClickHouse
+
+    Après avoir créé un service dans ClickHouse Cloud, recherchez les paramètres requis suivants :
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step>
+    ## Créer un nouveau pipeline dans Artie
+
+    Rendez-vous sur Artie avec les informations recueillies aux étapes précédentes et créez un nouveau pipeline en suivant un processus en 3 étapes.
+
+    1. **Connectez votre source** - Configurez votre base de données source (Postgres, MySQL, Events API, etc.)
+    2. **Choisissez les tables que vous souhaitez répliquer** - Sélectionnez les tables à synchroniser vers ClickHouse
+    3. **Connectez votre destination** - Saisissez vos identifiants ClickHouse
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp" size="lg" border alt="Interface Edit Pipeline d’Artie" />
+  </Step>
+</Steps>
+
+<div id="contact-us">
+  ## Contactez-nous
+</div>
+
+Si vous avez des questions, veuillez consulter notre <a href="https://www.artie.com/docs/destinations/clickhouse" target="_blank">documentation ClickHouse</a> ou contacter l’équipe à l’adresse <a href="mailto:hi@artie.com">hi@artie.com</a>.
+
+<div id="product-screenshots">
+  ## Captures d’écran du produit
+</div>
+
+Portail d’analyse
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/analytics.webp" size="md" border alt="Portail d’analyse" />
+
+Supervision spécifique aux pipelines et aux tables
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/monitor.webp" size="md" border alt="Supervision intégrée" />
+
+Notifications quotidiennes de modification du schéma
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp" size="md" border alt="Notification de schéma" />

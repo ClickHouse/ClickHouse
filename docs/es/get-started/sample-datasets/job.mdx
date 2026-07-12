@@ -1,0 +1,130 @@
+---
+description: 'El conjunto de datos y las consultas de Join Order Benchmark (JOB).'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['conjunto de datos de ejemplo', 'job', 'join order benchmark', 'benchmark', 'pruebas de rendimiento', 'optimizador de consultas', 'orden de joins']
+---
+
+Join Order Benchmark (JOB) pone a prueba el optimizador de consultas con 113 consultas analíticas sobre un conjunto de datos real y altamente correlacionado (una instantánea de IMDb). Desde su introducción, el benchmark JOB se ha convertido en el estándar de facto para evaluar el rendimiento de los optimizadores de consultas de bases de datos relacionales, incluida la estimación de cardinalidad y la optimización del orden de los joins. A diferencia de los benchmarks sintéticos, que asumen datos uniformes e independientes, JOB utiliza datos reales con sesgos y correlaciones, lo que lo convierte en una prueba exigente para el orden de los joins y la estimación de cardinalidad.
+
+El conjunto de datos contiene alrededor de 74 millones de filas distribuidas en 21 tablas y ocupa aproximadamente 1.15 GiB comprimidos en ClickHouse.
+
+Las 113 consultas están organizadas en 33 familias (`1`–`33`). Las consultas dentro de una misma familia (`a`, `b`, `c`, ...) comparten el mismo grafo de joins, pero difieren en sus predicados de selección.
+
+**Referencias**
+
+* [How Good Are Query Optimizers, Really?](https://www.vldb.org/pvldb/vol9/p204-leis.pdf) (Leis et al., VLDB 2015)
+* Repositorio [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark)
+
+<div id="creating-tables">
+  ## Creación de las tablas
+</div>
+
+El conjunto de datos JOB es una instantánea de IMDb con 21 tablas. Las definiciones de las tablas están disponibles en [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) en el repositorio de ClickHouse.
+
+Cada tabla usa el motor [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), ordenado por su columna de clave primaria `id`, reflejando el esquema original de PostgreSQL, donde cada tabla declara `id integer NOT NULL PRIMARY KEY`. Las columnas anulables de PostgreSQL se asignan a tipos `Nullable(...)`.
+
+Cree las tablas:
+
+```bash
+curl -O https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/tests/benchmarks/job/init_cloud.sql
+clickhouse client --query "CREATE DATABASE IF NOT EXISTS job"
+clickhouse client --database job --queries-file init_cloud.sql
+```
+
+<div id="loading-the-data">
+  ## Carga de los datos
+</div>
+
+Los datos provienen de la instantánea original de IMDb utilizado por JOB, distribuido como un archivo CSV por tabla (`aka_name.csv`, `title.csv`, ...).
+Estos CSV usan la semántica de `COPY` de PostgreSQL con `ESCAPE '\'`: una barra invertida solo escapa el carácter de comillas dentro de un campo entrecomillado, mientras que fuera de las comillas la barra invertida es un carácter literal.
+ClickHouse espera archivos CSV conformes con RFC 4180 (comillas duplicadas, sin escapes con barra invertida), por lo que primero hay que volver a codificar los archivos.
+
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) realiza esa recodificación.
+Lee el CSV original desde stdin y escribe un CSV estándar en stdout, duplicando las comillas incrustadas y conservando los campos vacíos sin comillas (que ClickHouse asigna a `NULL` en las columnas `Nullable`).
+
+Para crear las tablas a partir de los CSV originales:
+
+* Cree las tablas (consulte más arriba).
+* Descargue el data set de IMDb como un archivo `imdb.tgz`, siguiendo las instrucciones del repositorio Join Order Benchmark.
+* Convierta e importe los datos:
+
+```bash
+set -euo pipefail
+
+for table in aka_name aka_title cast_info char_name comp_cast_type company_name \
+             company_type complete_cast info_type keyword kind_type link_type \
+             movie_companies movie_info movie_info_idx movie_keyword movie_link \
+             name person_info role_type title; do
+    echo "Loading ${table} ..."
+    python3 convert_csv.py < "${table}.csv" > "${table}.clean.csv"
+    clickhouse client --database job --query "INSERT INTO ${table} FORMAT CSV" < "${table}.clean.csv"
+done
+```
+
+Una vez pobladas las tablas, pueden exportarse a Parquet para volver a importarlas más rápidamente más adelante; p. ej.
+`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+
+Tamaños detallados de las tablas:
+
+| Tabla                  | tamaño (en filas) | tamaño (comprimido en ClickHouse) |
+| ---------------------- | ----------------- | --------------------------------- |
+| aka&#95;name           | 901,343           | 31.86 MiB                         |
+| aka&#95;title          | 361,472           | 14.32 MiB                         |
+| cast&#95;info          | 36,244,344        | 296.25 MiB                        |
+| char&#95;name          | 3,140,339         | 107.95 MiB                        |
+| comp&#95;cast&#95;type | 4                 | 132.00 B                          |
+| company&#95;name       | 234,997           | 8.38 MiB                          |
+| company&#95;type       | 4                 | 162.00 B                          |
+| complete&#95;cast      | 135,086           | 748.80 KiB                        |
+| info&#95;type          | 113               | 1.25 KiB                          |
+| keyword                | 134,170           | 1.88 MiB                          |
+| kind&#95;type          | 7                 | 177.00 B                          |
+| link&#95;type          | 18                | 284.00 B                          |
+| movie&#95;companies    | 2,609,129         | 21.20 MiB                         |
+| movie&#95;info         | 14,835,720        | 300.46 MiB                        |
+| movie&#95;info&#95;idx | 1,380,035         | 8.01 MiB                          |
+| movie&#95;keyword      | 4,523,930         | 21.06 MiB                         |
+| movie&#95;link         | 29,997            | 178.21 KiB                        |
+| name                   | 4,167,491         | 131.16 MiB                        |
+| person&#95;info        | 2,963,664         | 154.12 MiB                        |
+| role&#95;type          | 12                | 246.00 B                          |
+| title                  | 2,528,312         | 78.04 MiB                         |
+| **Total**              | **74,190,187**    | **1.15 GiB**                      |
+
+(Los tamaños comprimidos en ClickHouse se obtienen de `system.tables.total_bytes` y se basan en las definiciones de tabla anteriores.)
+
+<div id="queries">
+  ## Consultas
+</div>
+
+Las 113 consultas de JOB se pueden encontrar [aquí](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) en el repositorio de ClickHouse.
+Los ajustes utilizados para ejecutarlas están en [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json).
+Consulta el [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) para ver los problemas conocidos y las notas sobre consultas concretas.
+
+Las consultas hacen referencia a las tablas por su nombre, así que ejecútalas en la base de datos `job` (por ejemplo, con `clickhouse client --database job`).
+
+Una consulta de ejemplo (`1a`):
+
+```sql
+SELECT MIN(mc.note) AS production_note,
+       MIN(t.title) AS movie_title,
+       MIN(t.production_year) AS movie_year
+FROM company_type AS ct,
+     info_type AS it,
+     movie_companies AS mc,
+     movie_info_idx AS mi_idx,
+     title AS t
+WHERE ct.kind = 'production companies'
+  AND it.info = 'top 250 rank'
+  AND mc.note NOT LIKE '%(as Metro-Goldwyn-Mayer Pictures)%'
+  AND (mc.note LIKE '%(co-production)%'
+       OR mc.note LIKE '%(presents)%')
+  AND ct.id = mc.company_type_id
+  AND t.id = mc.movie_id
+  AND t.id = mi_idx.movie_id
+  AND mc.movie_id = mi_idx.movie_id
+  AND it.id = mi_idx.info_type_id;
+```

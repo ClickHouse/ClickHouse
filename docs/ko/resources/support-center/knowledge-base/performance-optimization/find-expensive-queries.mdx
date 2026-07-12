@@ -1,0 +1,224 @@
+---
+title: ClickHouse에서 리소스 사용량이 가장 큰 쿼리를 식별하는 방법
+description: ClickHouse의 `query_log` 테이블을 사용해 분산된 노드 전체에서 메모리와 CPU를 가장 많이 사용하는 쿼리를 식별하는 방법을 알아봅니다.
+date: 2023-03-26
+tags: ['성능 및 최적화']
+keywords: ['고비용 쿼리']
+---
+
+{frontMatter.description}
+
+{/* 생략 */}
+
+<div id="answer">
+  ## 답변
+</div>
+
+`system` 데이터베이스의 `query_log` 테이블은 다음을 포함해 모든 쿼리를 기록합니다.
+
+* 쿼리가 사용한 메모리 양
+* 쿼리에 필요했던 CPU 시간
+
+다음 쿼리는 상위 10개의 쿼리를 반환합니다. 여기서 &quot;상위&quot;는 메모리를 가장 많이 사용한 쿼리를 뜻합니다.
+
+```sql
+SELECT
+    type,
+    event_time,
+    initial_query_id,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    normalizedQueryHash(query) AS normalized_query_hash
+FROM clusterAllReplicas(default, system.query_log)
+ORDER BY memory_usage DESC
+LIMIT 10;
+```
+
+응답은 다음과 같습니다:
+
+```response
+┌─type────────┬──────────event_time─┬─initial_query_id─────────────────────┬─memory─────┬─────userCPU─┬──systemCPU─┬─normalized_query_hash─┐
+│ QueryFinish │ 2023-03-26 21:36:07 │ 7fc488a5-838f-410d-88ee-2f492825a26b │ 3.45 GiB   │ 28147128901 │ 8590897697 │    178963678599600243 │
+│ QueryFinish │ 2023-03-26 21:36:04 │ 7fc488a5-838f-410d-88ee-2f492825a26b │ 1.18 GiB   │ 10194162387 │ 1183376457 │   4121209451971717712 │
+│ QueryFinish │ 2023-03-26 21:36:06 │ 7fc488a5-838f-410d-88ee-2f492825a26b │ 1.16 GiB   │ 10516510952 │ 1484303318 │   4121209451971717712 │
+│ QueryFinish │ 2023-03-26 21:35:59 │ 7fc488a5-838f-410d-88ee-2f492825a26b │ 1.14 GiB   │ 11484580963 │ 1464145099 │   4121209451971717712 │
+│ QueryFinish │ 2023-03-26 21:47:01 │ 8119e682-a343-4847-96e7-d34ad8a748a1 │ 455.29 MiB │   123340498 │    8234304 │  10687606311941357470 │
+│ QueryFinish │ 2023-03-26 22:07:05 │ f2690e48-fe1e-4367-ae9d-435d962003a5 │ 377.94 MiB │  2358130001 │  668098391 │   5988812223780974416 │
+│ QueryFinish │ 2023-03-26 20:45:42 │ 04618222-40a1-4299-8c3d-9f050a82d849 │ 18.48 MiB  │       24676 │      16620 │   3205198713665290475 │
+│ QueryFinish │ 2023-03-26 22:14:37 │ badf1097-5f8f-4486-88e9-3a5ac2e4734c │ 17.41 MiB  │      186234 │     148739 │   1910846996890686559 │
+│ QueryFinish │ 2023-03-26 21:39:42 │ 8d373327-f566-4cd5-9f2c-cec75f534751 │ 16.19 MiB  │       23169 │      12365 │   3205198713665290475 │
+│ QueryFinish │ 2023-03-26 21:35:42 │ ea672dba-7c10-4dd4-b819-cad9dccbf5d0 │ 13.97 MiB  │       20696 │       8001 │   3205198713665290475 │
+└─────────────┴─────────────────────┴──────────────────────────────────────┴────────────┴─────────────┴────────────┴───────────────────────┘
+```
+
+<Note>
+  `initial_query_id`는 요청을 받은 노드에서 시작된 분산 쿼리 실행의 원본 쿼리 ID를 나타냅니다. `query_id`에는 다른 노드에서 실행된 자식 쿼리의 ID가 포함됩니다. 자세한 내용은 [이 문서](/ko/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries#initial_query_id-vs-query_id)를 참조하십시오.
+</Note>
+
+쿼리 ID를 사용하면 해당 쿼리의 세부 정보를 더 자세히 확인할 수 있습니다. 위에서 가장 오래 실행된 쿼리(첫 번째 쿼리)를 살펴보겠습니다:
+
+```sql
+SELECT query
+FROM clusterAllReplicas(default, system.query_log)
+WHERE initial_query_id = '7fc488a5-838f-410d-88ee-2f492825a26b'
+```
+
+알고 보니 이는 `youtube`라는 테이블에 수십억 개의 데이터 행을 삽입할 때 사용한 쿼리였습니다([YouTube dislikes 데이터셋](/ko/get-started/sample-datasets/youtube-dislikes) 참조):
+
+```sql
+INSERT INTO youtube
+SETTINGS input_format_null_as_default = 1
+SELECT
+    id,
+    parseDateTimeBestEffortUS(toString(fetch_date)) AS fetch_date,
+    upload_date,
+    ifNull(title, '') AS title,
+    uploader_id,
+    ifNull(uploader, '') AS uploader,
+    uploader_sub_count,
+    is_age_limit,
+    view_count,
+    like_count,
+    dislike_count,
+    is_crawlable,
+    has_subtitles,
+    is_ads_enabled,
+    is_comments_enabled,
+    ifNull(description, '') AS description,
+    rich_metadata,
+    super_titles,
+    ifNull(uploader_badges, '') AS uploader_badges,
+    ifNull(video_badges, '') AS video_badges
+FROM s3Cluster('default','https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst', 'JSONLines')
+```
+
+<div id="initial_query_id-vs-query_id">
+  ## initial_query_id VS query_id
+</div>
+
+클러스터 환경의 ClickHouse(예: ClickHouse Cloud)에서는 `initial_query_id`가 요청을 받은 노드에서 시작된 분산 쿼리 실행의 원본 쿼리 ID를 나타냅니다;
+반면 `query_id` 필드에는 다른 노드에서 실행된 자식 쿼리의 ID가 들어 있습니다.
+
+<Info>
+  **분산 실행만으로 `query_id` 값 차이가 발생하는 것은 아닙니다**
+
+  단일 쿼리도 자체 `query_id`와 `is_initial_query = 0`으로 기록되는 내부 하위 쿼리를 생성할 수 있습니다. 가장 흔한 예는 ClickHouse가 [뷰](/ko/reference/system-tables/query_views_log)를 평가하기 위해 실행하는 내부 쿼리입니다. 이러한 내부 식별자는 ClickHouse가 할당하므로, 클라이언트에 보고되는 형식과 같지 않을 수 있습니다. 뷰 관련 단계에서는 `queryView...` 같은 레이블이 포함된 `query_id` 값을 볼 수 있습니다. 제출한 쿼리 그대로를 확인하려면 `is_initial_query = 1`(또는 `query_id = initial_query_id`)로 필터링하십시오. 이는 `query_log`의 서버 측 동작이며, Cloud SQL 콘솔을 포함한 모든 클라이언트에서 동일합니다.
+</Info>
+
+위 쿼리에 `query_id`를 추가하면 `initial_query_id` = `a7262fa2-bd8b-4b51-a359-621ccf282417` 및 `hostname()`을 기준으로 검색 범위를 좁힐 수 있습니다:
+
+```sql
+SELECT
+    hostname(),
+    type,
+    event_time,
+    initial_query_id,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    normalizedQueryHash(query) AS normalized_query_hash
+FROM clusterAllReplicas(default, system.query_log)
+WHERE initial_query_id = 'a7262fa2-bd8b-4b51-a359-621ccf282417'
+ORDER BY memory_usage DESC
+LIMIT 10 FORMAT Pretty;
+```
+
+결과는 다음과 같습니다:
+
+```
+┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ hostname()             ┃ type        ┃          event_time ┃ initial_query_id                     ┃ query_id                             ┃ memory     ┃ userCPU ┃ systemCPU ┃ normalized_query_hash ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
+│ server-0 │ QueryFinish │ 2023-04-26 06:25:53 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 1f810b3c-b3cb-4a7b-bc6c-8c8cc1e52515 │ 125.13 MiB │ 1754290 │    133344 │  17604798521132779336 │
+├────────────────────────┼─────────────┼─────────────────────┼──────────────────────────────────────┼──────────────────────────────────────┼────────────┼─────────┼───────────┼───────────────────────┤
+│ server-2 │ QueryFinish │ 2023-04-26 06:25:53 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 123.08 MiB │ 1849115 │    123412 │   4258439895846105173 │
+└────────────────────────┴─────────────┴─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴────────────┴─────────┴───────────┴───────────────────────┘
+┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ hostname()             ┃ type        ┃          event_time ┃ initial_query_id                     ┃ query_id                             ┃ memory    ┃ userCPU ┃ systemCPU ┃ normalized_query_hash ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
+│ server-1 │ QueryFinish │ 2023-04-26 06:25:53 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 7dfd9297-5173-4be7-a866-d7cbe1e1abab │ 93.77 MiB │ 1890981 │    101724 │  17604798521132779336 │
+├────────────────────────┼─────────────┼─────────────────────┼──────────────────────────────────────┼──────────────────────────────────────┼───────────┼─────────┼───────────┼───────────────────────┤
+│ server-1 │ QueryStart  │ 2023-04-26 06:25:52 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 7dfd9297-5173-4be7-a866-d7cbe1e1abab │ 0.00 B    │       0 │         0 │  17604798521132779336 │
+└────────────────────────┴─────────────┴─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴───────────┴─────────┴───────────┴───────────────────────┘
+┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ hostname()             ┃ type       ┃          event_time ┃ initial_query_id                     ┃ query_id                             ┃ memory ┃ userCPU ┃ systemCPU ┃ normalized_query_hash ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
+│ server-0 │ QueryStart │ 2023-04-26 06:25:52 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 1f810b3c-b3cb-4a7b-bc6c-8c8cc1e52515 │ 0.00 B │       0 │         0 │  17604798521132779336 │
+├────────────────────────┼────────────┼─────────────────────┼──────────────────────────────────────┼──────────────────────────────────────┼────────┼─────────┼───────────┼───────────────────────┤
+│ server-2 │ QueryStart │ 2023-04-26 06:25:52 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 0.00 B │       0 │         0 │   4258439895846105173 │
+└────────────────────────┴────────────┴─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴────────┴─────────┴───────────┴───────────────────────┘
+```
+
+여러 호스트(서로 다른 클러스터 노드)에서 나온 결과가 여러 개 있다는 점에 유의하십시오.
+
+더 좁혀서 자식 쿼리만 보려면 WHERE 절에 `query_id != initial_query_id` 조건을 추가할 수도 있습니다:
+
+```sql
+SELECT
+    hostname(),
+    type,
+    event_time,
+    initial_query_id,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    normalizedQueryHash(query) AS normalized_query_hash
+FROM clusterAllReplicas(default, system.query_log)
+WHERE (query_id != initial_query_id) AND (initial_query_id = 'a7262fa2-bd8b-4b51-a359-621ccf282417')
+ORDER BY memory_usage DESC
+LIMIT 10 FORMAT Pretty;
+```
+
+쿼리가 처음 시작된 노드를 기준으로 원격 노드에서 실행된 모든 자식 쿼리를 반환합니다:
+
+```
+┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ hostname()             ┃ type        ┃          event_time ┃ initial_query_id                     ┃ query_id                             ┃ memory     ┃ userCPU ┃ systemCPU ┃ normalized_query_hash ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
+│ server-1 │ QueryFinish │ 2023-04-26 06:25:53 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 7dfd9297-5173-4be7-a866-d7cbe1e1abab │ 93.77 MiB  │ 1890981 │    101724 │  17604798521132779336 │
+├────────────────────────┼─────────────┼─────────────────────┼──────────────────────────────────────┼──────────────────────────────────────┼────────────┼─────────┼───────────┼───────────────────────┤
+│ server-0 │ QueryFinish │ 2023-04-26 06:25:53 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 1f810b3c-b3cb-4a7b-bc6c-8c8cc1e52515 │ 125.13 MiB │ 1754290 │    133344 │  17604798521132779336 │
+├────────────────────────┼─────────────┼─────────────────────┼──────────────────────────────────────┼──────────────────────────────────────┼────────────┼─────────┼───────────┼───────────────────────┤
+│ server-1 │ QueryStart  │ 2023-04-26 06:25:52 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 7dfd9297-5173-4be7-a866-d7cbe1e1abab │ 0.00 B     │       0 │         0 │  17604798521132779336 │
+├────────────────────────┼─────────────┼─────────────────────┼──────────────────────────────────────┼──────────────────────────────────────┼────────────┼─────────┼───────────┼───────────────────────┤
+│ server-0 │ QueryStart  │ 2023-04-26 06:25:52 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 1f810b3c-b3cb-4a7b-bc6c-8c8cc1e52515 │ 0.00 B     │       0 │         0 │  17604798521132779336 │
+└────────────────────────┴─────────────┴─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴────────────┴─────────┴───────────┴───────────────────────┘
+└────────────────────────┴─────────────┴─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴────────────┴─────────┴───────────┴───────────────────────┘
+```
+
+반대로, `query_id = initial_query_id`는 분산 쿼리가 처음 실행된 로컬 노드에서 실행된 쿼리만 반환합니다:
+
+```sql
+SELECT
+    hostname(),
+    type,
+    event_time,
+    initial_query_id,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    normalizedQueryHash(query) AS normalized_query_hash
+FROM clusterAllReplicas(default, system.query_log)
+WHERE (query_id = initial_query_id) AND (initial_query_id = 'a7262fa2-bd8b-4b51-a359-621ccf282417')
+ORDER BY memory_usage DESC
+LIMIT 10 FORMAT Pretty;
+```
+
+결과:
+
+```
+┏━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ hostname()             ┃ type        ┃          event_time ┃ initial_query_id                     ┃ query_id                             ┃ memory     ┃ userCPU ┃ systemCPU ┃ normalized_query_hash ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
+│ server-2 │ QueryFinish │ 2023-04-26 06:25:53 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 123.08 MiB │ 1849115 │    123412 │   4258439895846105173 │
+├────────────────────────┼─────────────┼─────────────────────┼──────────────────────────────────────┼──────────────────────────────────────┼────────────┼─────────┼───────────┼───────────────────────┤
+│ server-2 │ QueryStart  │ 2023-04-26 06:25:52 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ a7262fa2-bd8b-4b51-a359-621ccf282417 │ 0.00 B     │       0 │         0 │   4258439895846105173 │
+└────────────────────────┴─────────────┴─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴────────────┴─────────┴───────────┴───────────────────────┘
+```
+
+다른 시스템 테이블과 마찬가지로 각 필드가 의미하는 바에 대한 자세한 내용은 [문서](/ko/reference/system-tables/query_log)에서 확인할 수 있습니다.

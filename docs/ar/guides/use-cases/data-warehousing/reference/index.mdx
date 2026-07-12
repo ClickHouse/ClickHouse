@@ -1,0 +1,18 @@
+---
+description: 'أدلة مرجعية لربط ClickHouse بكتالوجات بحيرات البيانات، بما في ذلك AWS Glue وUnity وREST وLakekeeper وNessie وOneLake.'
+slug: /use-cases/data-lake/reference
+title: 'أدلة الكتالوجات'
+keywords: ['بحيرة بيانات', 'lakehouse', 'كتالوج', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'landing-page'
+---
+
+يتكامل ClickHouse مع مجموعة من كتالوجات بحيرات البيانات عبر محرّك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake). وتشرح الأدلة التالية كيفية ربط ClickHouse بكل كتالوج مدعوم، بما في ذلك الإعداد والمصادقة وأمثلة على الاستعلامات.
+
+| الكتالوج                                                                     | الوصف                                                                                           |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [AWS Glue](/ar/guides/use-cases/data-warehousing/glue-catalog)                  | الاستعلام عن جداول Iceberg المسجّلة في Glue Data Catalog على AWS والتي تُخزَّن بياناتها في S3.  |
+| [Databricks Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog) | الاتصال بـ Databricks Unity Catalog للوصول إلى جداول Delta Lake وIceberg.                       |
+| [Iceberg REST Catalog](/ar/guides/use-cases/data-warehousing/rest-catalog)      | استخدام أي كتالوج يطبّق مواصفة Iceberg REST، مثل Tabular.                                       |
+| [Lakekeeper](/ar/guides/use-cases/data-warehousing/lakekeeper-catalog)          | الاتصال بـ Lakekeeper Catalog لجداول Iceberg.                                                   |
+| [Project Nessie](/ar/guides/use-cases/data-warehousing/nessie-catalog)          | الاستعلام عن جداول Iceberg باستخدام Nessie Catalog مع التحكّم في إصدارات البيانات على غرار Git. |
+| [Microsoft OneLake](/ar/guides/use-cases/data-warehousing/onelake-catalog)      | الاستعلام عن جداول Iceberg في Microsoft Fabric OneLake.                                         |

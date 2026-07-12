@@ -1,0 +1,207 @@
+---
+slug: /intro
+sidebarTitle: '什么是 ClickHouse？'
+description: 'ClickHouse® 是一个用于联机分析处理（OLAP）的列式 SQL 数据库管理系统（DBMS）。它既提供开源软件版本，也提供 Cloud 服务。'
+title: '什么是 ClickHouse？'
+keywords: ['ClickHouse', '列式数据库', 'OLAP 数据库', '分析型数据库', '高性能数据库']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse® 是一款高性能列式 SQL 数据库管理系统 (DBMS) ，用于在线分析处理 (OLAP) 。它既有[开源软件](https://github.com/ClickHouse/ClickHouse)版本，也提供[云服务](https://clickhouse.com/cloud)。
+
+<div id="what-are-analytics">
+  ## 什么是分析？
+</div>
+
+分析 (也称为 OLAP，即 Online Analytical Processing) 是指针对海量数据集执行包含复杂计算 (例如聚合、字符串处理和算术运算) 的 SQL 查询。
+
+与事务型查询 (即 OLTP，Online Transaction Processing) 不同，后者每次查询只读写少量行，因此通常可在毫秒内完成；而分析查询通常要处理数十亿甚至数万亿行。
+
+在许多使用场景中，[分析查询必须是“实时”](https://clickhouse.com/engineering-resources/what-is-real-time-analytics)的，也就是在不到一秒内返回结果。
+
+<div id="row-oriented-vs-column-oriented-storage">
+  ## 行式存储与列式存储
+</div>
+
+只有采用正确的数据“组织方式”，才能实现这样的性能水平。
+
+数据库存储数据的方式要么是[行式，要么是列式](https://clickhouse.com/engineering-resources/what-is-columnar-database)。
+
+在行式数据库中，表中的连续行会按顺序逐行存储。这种布局可以快速检索行，因为同一行的各列值是存放在一起的。
+
+ClickHouse 是列式数据库。在这类系统中，表以列的集合形式存储，也就是说，每一列的值会按顺序连续存放。这种布局使还原单行数据变得更困难 (因为同一行的各个值之间现在存在空缺) ，但列操作 (如过滤或聚合) 的速度会比行式数据库快得多。
+
+下面通过一个在 1 亿行[真实匿名网站分析数据](/zh/get-started/sample-datasets/anon-web-analytics-metrica)上运行的示例查询，来更直观地说明这种差异：
+
+```sql
+SELECT MobilePhoneModel, COUNT() AS c
+FROM metrica.hits
+WHERE
+      RegionID = 229
+  AND EventDate >= '2013-07-01'
+  AND EventDate <= '2013-07-31'
+  AND MobilePhone != 0
+  AND MobilePhoneModel not in ['', 'iPad']
+GROUP BY MobilePhoneModel
+ORDER BY c DESC
+LIMIT 8;
+```
+
+你可以[在 ClickHouse SQL Playground 中运行此查询](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true)，它只会从现有的[100 多个列中](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true)选取并过滤少数几个，并在几毫秒内返回结果：
+
+<Image img="/images/column-oriented-example-query.webp" alt="列式数据库中的示例查询" size="lg" />
+
+如上图的统计信息所示，该查询在 92 毫秒内处理了 1 亿行，吞吐量约为每秒超过 10 亿行，或者说每秒传输略低于 7 GB 的数据。
+
+**行式 DBMS**
+
+在行式数据库中，尽管上面的查询只处理了现有列中的少数几个，系统仍然需要将其他列的数据从磁盘加载到内存中。原因在于，数据在磁盘上是以称为 [块](https://en.wikipedia.org/wiki/Block_\(data_storage\)) 的数据块形式存储的 (通常是固定大小，例如 4 KB 或 8 KB) 。块是从磁盘读入内存的最小数据单位。当应用程序或数据库请求数据时，操作系统的磁盘 I/O 子系统会从磁盘读取所需的块。即使只需要块中的一部分，整个块也会被读入内存 (这是由磁盘和文件系统的设计决定的) ：
+
+<Image img="/images/row-oriented.webp" alt="行式数据库结构" size="lg" />
+
+**列式 DBMS**
+
+由于每一列的值在磁盘上都是连续存储的，因此运行上述查询时不会加载任何不必要的数据。
+由于按块存储以及从磁盘到内存的传输方式都与分析查询的数据访问模式相契合，查询时只需从磁盘读取所需的列，从而避免对未使用数据进行不必要的 I/O。与行式存储相比，这种方式要[快得多](https://benchmark.clickhouse.com/)，因为行式存储会读取整行数据 (包括无关的列) ：
+
+<Image img="/images/column-oriented.webp" alt="列式数据库结构" size="lg" />
+
+<div id="data-replication-and-integrity">
+  ## 数据复制与完整性
+</div>
+
+ClickHouse 使用异步多主复制机制，确保数据以冗余方式存储在多个节点上。数据写入任意一个可用副本后，其余副本会在后台拉取各自的副本。系统会在不同副本之间保持数据一致。在大多数故障情况下，恢复过程会自动完成；在较复杂的情况下，则会半自动完成。
+
+<div id="role-based-access-control">
+  ## 基于角色的访问控制
+</div>
+
+ClickHouse 使用 SQL 查询来管理用户账户，并支持配置基于角色的访问控制，其方式与 ANSI SQL 标准及常见的关系型数据库管理系统类似。
+
+<div id="sql-support">
+  ## SQL 支持
+</div>
+
+ClickHouse 支持一种[基于 SQL 的声明式查询语言](/zh/reference/home)，在许多情况下与 ANSI SQL 标准相同。支持的查询子句包括 [GROUP BY](/zh/reference/statements/select/group-by)、[ORDER BY](/zh/reference/statements/select/order-by)、[FROM](/zh/reference/statements/select/from) 中的子查询、[JOIN](/zh/reference/statements/select/join) 子句、[IN](/zh/reference/statements/in) 运算符、[窗口函数](/zh/reference/functions/window-functions/index) 以及标量子查询。
+
+<div id="approximate-calculation">
+  ## 近似计算
+</div>
+
+ClickHouse 提供了以精度换取性能的多种方式。例如，某些聚合函数会以近似方式计算去重值计数、中位数和分位数。此外，还可以仅基于部分样本数据运行查询，以快速得到近似结果。最后，还可以只对有限数量的键进行聚合，而不是覆盖所有键。键的分布偏斜程度不同，这种方式在资源消耗远低于精确计算的情况下，仍能提供相当准确的结果。
+
+<div id="adaptive-join-algorithms">
+  ## 自适应 JOIN 算法
+</div>
+
+ClickHouse 会自适应地选择 JOIN 算法：先使用速度更快的哈希 JOIN；如果涉及多个大表，则切换到归并 JOIN。
+
+<div id="superior-query-performance">
+  ## 卓越的查询性能
+</div>
+
+ClickHouse 以极快的查询性能而闻名。
+要了解 ClickHouse 为何如此之快，请参阅[为什么 ClickHouse 如此之快？](/zh/get-started/about/why-clickhouse-is-so-fast)指南。
+
+{/*
+  ## 什么是 OLAP？{#what-is-olap}
+  OLAP 场景需要在大规模数据集上对复杂分析查询进行实时响应，具有以下特征：
+  - 数据集规模庞大——可达数十亿乃至数万亿行
+  - 数据以包含大量列的表来组织
+  - 每次查询只需选取少数几列
+  - 结果必须在毫秒或秒级内返回
+
+  ## 列式数据库与行式数据库 {#column-oriented-vs-row-oriented-databases}
+  在行式 DBMS 中，数据按行存储，同一行的所有值在物理上紧邻存放。
+
+  在列式 DBMS 中，数据按列存储，同一列的值集中存放在一起。
+
+  ## 为什么列式数据库在 OLAP 场景中表现更好 {#why-column-oriented-databases-work-better-in-the-olap-scenario}
+
+  列式数据库更适合 OLAP 场景：处理大多数查询时，速度至少快 100 倍。原因将在下文详细说明，但通过可视化方式更容易直观感受：
+
+  看出区别了吗？
+
+  本文其余部分将解释列式数据库为何适合这类场景，以及为何 ClickHouse 在同类产品中[性能尤为突出](/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-and-selects-are-isolated)。
+
+  ## 为什么 ClickHouse 如此之快？{#why-is-clickhouse-so-fast}
+
+  ClickHouse 充分利用所有可用的系统资源，以尽可能快的速度处理每一个分析查询。这得益于其独特的分析能力组合，以及对构建最快 OLAP 数据库所需底层细节的极致关注。
+
+  深入了解该主题的参考文章：
+  - [ClickHouse 性能](/get-started/about/why-clickhouse-is-so-fast)
+  - [ClickHouse 的独特功能](/get-started/about/distinctive-features)
+  - [FAQ：为什么 ClickHouse 如此之快？](/get-started/about/why-clickhouse-is-so-fast)
+
+  ## 实时处理分析查询 {#processing-analytical-queries-in-real-time}
+
+  在行式 DBMS 中，数据以如下顺序存储：
+
+  | Row | WatchID     | JavaEnable | Title              | GoodEvent | EventTime           |
+  |-----|-------------|------------|--------------------|-----------|---------------------|
+  | #0 | 89354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
+  | #1 | 90329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
+  | #2 | 89953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
+  | #N | ...           | ...          | ...                  | ...         | ...                   |
+
+  换言之，同一行的所有值在物理上紧邻存放。
+
+  行式 DBMS 的典型代表有 MySQL、Postgres 和 MS SQL Server。
+
+  在列式 DBMS 中，数据的存储方式如下：
+
+  | Row:        | #0                 | #1                 | #2                 | #N |
+  |-------------|---------------------|---------------------|---------------------|-----|
+  | WatchID:    | 89354350662         | 90329509958         | 89953706054         | ...   |
+  | JavaEnable: | 1                   | 0                   | 1                   | ...   |
+  | Title:      | Investor Relations  | Contact us          | Mission             | ...   |
+  | GoodEvent:  | 1                   | 1                   | 1                   | ...   |
+  | EventTime:  | 2016-05-18 05:19:20 | 2016-05-18 08:10:20 | 2016-05-18 07:38:00 | ...   |
+
+  以上示例仅展示数据的排列顺序。不同列的值分开存储，同一列的数据集中存放在一起。
+
+  列式 DBMS 的典型代表包括：Vertica、Paraccel（Actian Matrix 和 Amazon Redshift）、Sybase IQ、Exasol、Infobright、InfiniDB、MonetDB（VectorWise 和 Actian Vector）、LucidDB、SAP HANA、Google Dremel、Google PowerDrill、Druid 以及 kdb+。
+
+  不同的数据存储顺序适合不同的场景。数据访问场景涵盖以下因素：执行哪些查询、频率如何、各类查询的比例；每类查询读取的数据量——行数、列数和字节数；读取与更新数据之间的关系；数据的工作集大小及其局部性；是否使用事务及其隔离级别；数据复制和逻辑完整性的要求；各类查询对延迟和吞吐量的要求，等等。
+
+  系统负载越高，就越需要针对具体使用场景对系统进行定制化配置，且定制粒度也越细。没有任何系统能同等胜任差异显著的多种场景。如果一个系统试图兼顾多种场景，在高负载下，它要么对所有场景的处理效果都同样差，要么只能在一种或少数几种场景下表现良好。
+
+  ### OLAP 场景的关键特性 {#key-properties-of-olap-scenario}
+
+  - 表是"宽表"，即包含大量列。
+  - 数据集规模庞大，单个查询需要高吞吐量（每台服务器每秒可处理数十亿行）。
+  - 列值相对较小：数值和短字符串（例如，每个 URL 占 60 字节）。
+  - 查询会扫描大量行，但只涉及少数几列。
+  - 对于简单查询，50 毫秒左右的延迟是可以接受的。
+  - 每个查询只涉及一张大表；除该表外，其余表均较小。
+  - 查询结果远小于源数据。换言之，数据经过过滤或聚合后，结果可以装入单台服务器的内存中。
+  - 查询频率相对较低（通常每台服务器每秒不超过数百个查询）。
+  - 数据以较大批次插入（> 1000 行），而非逐行写入。
+  - 无需事务支持。
+
+  不难看出，OLAP 场景与其他常见场景（如 OLTP 或键值访问）存在很大差异。因此，若想获得良好性能，用 OLTP 或键值数据库来处理分析查询并不合适。例如，若使用 MongoDB 或 Redis 进行分析，与 OLAP 数据库相比，性能将大打折扣。
+
+  ### 输入/输出 {#inputoutput}
+
+  1.  对于分析查询，只需读取少量表列。在列式数据库中，可以只读取所需的数据。例如，若 100 列中只需要 5 列，I/O 量可减少约 20 倍。
+  2.  由于数据以数据块的形式读取，压缩更为高效。列式存储的数据也更易于压缩，这进一步降低了 I/O 量。
+  3.  I/O 减少后，系统缓存能够容纳更多数据。
+
+  例如，查询"统计每个广告平台的记录数"只需读取"广告平台 ID"这一列，该列未压缩时每条记录占 1 字节。如果大部分流量并非来自广告平台，该列至少可以达到 10 倍压缩比。使用快速压缩算法时，数据解压速度可达每秒数 GB（未压缩数据）。换言之，该查询在单台服务器上的处理速度约为每秒数十亿行，这一速度在实践中完全可以实现。
+
+  ### CPU {#cpu}
+
+  由于执行查询需要处理大量行，将所有操作以整个向量为单位进行分派（而非逐行处理），或将查询引擎实现为几乎零分派开销，都有助于提升性能。若不这样做，即便磁盘子系统性能尚可，查询解释器也不可避免地会造成 CPU 停顿。因此，将数据按列存储并尽可能按列处理是合理的做法。
+
+  实现这一目标有两种方式：
+
+  1.  向量引擎。所有操作针对向量编写，而非针对单个值。这意味着无需频繁调用操作，分派开销可忽略不计。操作代码包含经过优化的内部循环。
+
+  2.  代码生成。为查询生成的代码中包含所有间接调用。
+
+  行式数据库不采用这种方式，因为在执行简单查询时没有意义。但也存在例外。例如，MemSQL 使用代码生成来降低处理 SQL 查询时的延迟。（相比之下，分析型 DBMS 需要优化的是吞吐量，而非延迟。）
+
+  需要注意的是，为了提高 CPU 效率，查询语言必须是声明式的（如 SQL 或 MDX），或至少是向量式的（如 J、K）。查询应只包含隐式循环，以便进行优化。
+  */}
