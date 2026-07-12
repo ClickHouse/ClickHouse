@@ -1,3 +1,7 @@
+-- Tags: no-parallel
+-- ^ creates a globally-named user; the flaky check runs the same test concurrently, so a fixed user
+--   name would collide (ACCESS_ENTITY_ALREADY_EXISTS) between parallel repetitions.
+
 -- VALID FOR <interval> is a shortcut for VALID UNTIL now + interval, resolved at query execution time.
 
 DROP USER IF EXISTS user_04537_valid_for;
