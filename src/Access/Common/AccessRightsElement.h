@@ -155,6 +155,13 @@ public:
     /// See `AccessRightsElement::formatONClause`: `precise` bypasses the backward-compatibility widening,
     /// which is mandatory for per-authentication-method `GRANTS` clauses.
     void formatElementsWithoutOptions(WriteBuffer & buffer, bool precise = false) const;
+
+    /// Precise serialization without the backward-compatibility widening, matching `SHOW CREATE USER` and
+    /// `system.users.auth_grants`. Use this (never `toString`) to derive a stable identity for an
+    /// auth-method `GRANTS` limit — e.g. as part of the async-insert queue key or the query-result-cache
+    /// key — because the widening in `toString`/`toStringWithoutOptions` collapses distinct source-level
+    /// limits such as `READ ON FILE` and `WRITE ON FILE` into one under `enable_read_write_grants = 0`.
+    String toStringPrecise() const;
 };
 
 }

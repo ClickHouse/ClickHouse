@@ -73,7 +73,8 @@ public:
         /// The per-authentication-method GRANTS clause (see CREATE/ALTER USER) narrows a session's access rights to the intersection with
         /// these grants (token-style credentials). It is therefore part of the effective privilege identity and must isolate cache entries:
         /// the same user with the same roles but a more restrictive credential must not read results produced under a broader credential.
-        /// Stored as the serialized clause (empty when there is no clause), compared for equality on read like `user_id`/`current_user_roles`.
+        /// Stored as the precisely-serialized clause (`AccessRightsElements::toStringPrecise`, never the widening `toString`; empty when
+        /// there is no clause), compared for equality on read like `user_id`/`current_user_roles`.
         String authentication_grants;
 
         /// If the associated entry can be read by other users. In general, sharing is a bad idea: First, it is unlikely that different

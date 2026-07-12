@@ -513,7 +513,10 @@ QueryResultCache::Key::Key(
     : header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
-    , authentication_grants(authentication_grants_ ? authentication_grants_->toString() : String{})
+    /// Use the precise serialization (never `toString`): the backward-compatibility widening would let
+    /// distinct source-level limits (e.g. `READ ON FILE` vs `WRITE ON FILE`) collide in cache identity
+    /// under `enable_read_write_grants = 0`, so a write-only token could read another token's cached rows.
+    , authentication_grants(authentication_grants_ ? authentication_grants_->toStringPrecise() : String{})
     , is_shared(is_shared_)
     , created_at(created_at_)
     , expires_at(expires_at_)

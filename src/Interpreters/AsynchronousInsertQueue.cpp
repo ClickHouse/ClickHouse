@@ -159,7 +159,10 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     /// token), so it never collides with the null case; the leading length prefix keeps it unambiguous.
     if (authentication_grants)
     {
-        const auto grants_str = authentication_grants->toString();
+        /// Use the precise serialization (never `toString`): under `enable_read_write_grants = 0` the
+        /// backward-compatibility widening collapses distinct source limits such as `READ ON FILE` and
+        /// `WRITE ON FILE` into one, which would let a read-only token piggyback into a write token's bucket.
+        const auto grants_str = authentication_grants->toStringPrecise();
         siphash.update(grants_str.size());
         siphash.update(grants_str);
     }
@@ -239,7 +242,7 @@ bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other)
     /// A shared_ptr comparison would test identity and wrongly split two equal limits from different sessions.
     if (static_cast<bool>(authentication_grants) != static_cast<bool>(other.authentication_grants))
         return false;
-    if (authentication_grants && authentication_grants->toString() != other.authentication_grants->toString())
+    if (authentication_grants && authentication_grants->toStringPrecise() != other.authentication_grants->toStringPrecise())
         return false;
 
     return true;

@@ -507,4 +507,11 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bo
         buffer << "USAGE ON " << "*.*";
 }
 
+String AccessRightsElements::toStringPrecise() const
+{
+    WriteBufferFromOwnString buffer;
+    formatElementsWithoutOptions(buffer, /*precise=*/true);
+    return buffer.str();
+}
+
 }
