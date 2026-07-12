@@ -14,42 +14,39 @@ SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
-SET enable_join_runtime_filters = 0;
 SET max_rows_to_group_by = 0;
 SET param__internal_cascades_cluster_node_count = 4;
--- Force the two-level aggregation and the memory-efficient merge on small data, and keep
--- several threads so the partial flush runs in parallel.
+-- Force the two-level aggregation and the memory-efficient merge, and keep several threads so the
+-- partial flush runs in parallel.
 SET group_by_two_level_threshold = 1;
 SET distributed_aggregation_memory_efficient = 1;
 SET max_threads = 4;
 
-DROP TABLE IF EXISTS agg_bo_fact;
-DROP TABLE IF EXISTS agg_bo_dim;
-CREATE TABLE agg_bo_fact (k UInt64, s UInt64, g1 UInt16, g2 UInt16) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
-CREATE TABLE agg_bo_dim (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+DROP TABLE IF EXISTS agg_bo;
+CREATE TABLE agg_bo (k UInt64, s UInt64, g1 UInt16, g2 UInt16) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 
-SET param__internal_join_table_stat_hints = '{"agg_bo_fact": {"cardinality": 60000000, "avg_row_bytes": 24, "distinct_keys": {"k": 6000000}}, "agg_bo_dim": {"cardinality": 15000000, "avg_row_bytes": 8, "distinct_keys": {"k": 1500000}}}';
+-- A large table-size hint makes Cascades pick the distributed two-phase plan (partial aggregation
+-- per shard, gathered and merged) rather than reading and aggregating everything on one node.
+SET param__internal_join_table_stat_hints = '{"agg_bo": {"cardinality": 600000000, "avg_row_bytes": 24, "distinct_keys": {"g1": 200, "g2": 150}}}';
 
-INSERT INTO agg_bo_fact SELECT number, number % 500, number % 200, intDiv(number, 40) % 150 FROM numbers(3000000);
-INSERT INTO agg_bo_dim SELECT number * 2 FROM numbers(750000);
+INSERT INTO agg_bo SELECT number, number % 500, number % 200, intDiv(number, 40) % 150 FROM numbers(1000000);
 
 -- Every output row must be a distinct group; a duplicated group means partial states were
 -- not merged.  10 repetitions because a single run can pass by chance.
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2);
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
 
 -- The result must also match the non-distributed baseline.
-SELECT count(), uniqExact((g1, g2)), sum(u) FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2);
-SELECT count(), uniqExact((g1, g2)), sum(u) FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo_fact AS f JOIN agg_bo_dim AS d ON f.k = d.k GROUP BY g1, g2)
+SELECT count(), uniqExact((g1, g2)), sum(u) FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT count(), uniqExact((g1, g2)), sum(u) FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2)
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
-DROP TABLE agg_bo_fact;
-DROP TABLE agg_bo_dim;
+DROP TABLE agg_bo;
