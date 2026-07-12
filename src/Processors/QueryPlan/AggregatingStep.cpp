@@ -564,7 +564,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             && !skip_merging
             && transform_params->params.max_rows_to_group_by == 0
             && max_threads > 1
-            && pipeline.getNumStreams() > 1;
+            && pipeline.getNumStreams() > 1
+            /// The reshuffle wires an intermediate graph of `num_streams * num_shards`
+            /// (== getNumStreams() * max_threads) scatter->merge ports. On very wide pipelines this fan-out
+            /// makes pipeline construction itself a memory/time regression before aggregation begins, so bail
+            /// out to the ordinary in-order funnel above the same threshold `canUseShardedAggregation` uses.
+            && pipeline.getNumStreams() * max_threads < 100'000;
 
         if (use_shuffle_in_order)
         {
