@@ -10,7 +10,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="u_04512_${CLICKHOUSE_DATABASE}"
 user2="u2_04512_${CLICKHOUSE_DATABASE}"
 user3="u3_04512_${CLICKHOUSE_DATABASE}"
+user4="u4_04512_${CLICKHOUSE_DATABASE}"
 role="r_04512_${CLICKHOUSE_DATABASE}"
+role2="r2_04512_${CLICKHOUSE_DATABASE}"
 
 function login()
 {
@@ -29,11 +31,11 @@ function login_expect_error()
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP ROLE IF EXISTS ${role}"
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
 }
 trap cleanup EXIT
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP ROLE IF EXISTS ${role}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t1 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "CREATE TABLE t2 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "INSERT INTO t1 VALUES (1)" -q "INSERT INTO t2 VALUES (2)"
 
 # The second authentication method is a 'token': it limits the access rights to a subset of the grants.
@@ -128,3 +130,20 @@ echo "-- A source-level grant keeps its exact access type in the GRANTS clause (
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${user3} IDENTIFIED WITH plaintext_password BY 'full3' GRANTS (READ ON S3)"
 ${CLICKHOUSE_CLIENT} -q "SHOW CREATE USER ${user3}" | sed "s/${user3}/user3/g"
 ${CLICKHOUSE_CLIENT} -q "SELECT auth_grants FROM system.users WHERE name = '${user3}'"
+
+# Sessions limited by the GRANTS clause cannot administer roles at all (the clause cannot express
+# the admin option, so role administration is rejected wholesale, following the fail-close principle).
+# This must cover not only granting and revoking roles (the admin option checks) but also the role DDL
+# entrypoints, which are authorized with the plain CREATE ROLE / ALTER ROLE / DROP ROLE access types -
+# even when these access types are listed in the clause and granted to the user.
+echo "-- Role DDL is denied for a limited credential even when CREATE/ALTER/DROP ROLE are listed and granted"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user4} IDENTIFIED WITH plaintext_password BY 'full4', plaintext_password BY 'role_token' GRANTS (CREATE ROLE ON *.*, ALTER ROLE ON *.*, DROP ROLE ON *.*)"
+${CLICKHOUSE_CLIENT} -q "GRANT CREATE ROLE, ALTER ROLE, DROP ROLE ON *.* TO ${user4}"
+# The full credential of the same user can administer roles.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user4}&password=full4" -d "CREATE ROLE ${role2}"
+# The limited credential cannot create, alter or drop roles.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user4}&password=role_token" -d "CREATE ROLE ${role2}_x" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user4}&password=role_token" -d "ALTER ROLE ${role2} RENAME TO ${role2}_x" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user4}&password=role_token" -d "DROP ROLE ${role2}" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
+# The full credential can drop the role (which also proves the limited credential did not drop it).
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user4}&password=full4" -d "DROP ROLE ${role2}"

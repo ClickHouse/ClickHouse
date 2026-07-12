@@ -46,3 +46,7 @@ NOT_IMPLEMENTED
 -- A source-level grant keeps its exact access type in the GRANTS clause (not widened to the full source)
 CREATE USER user3 IDENTIFIED WITH plaintext_password GRANTS (READ ON S3)
 ['READ ON S3']
+-- Role DDL is denied for a limited credential even when CREATE/ALTER/DROP ROLE are listed and granted
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
