@@ -452,7 +452,7 @@ private:
             return;
 
         using Key = decltype(getKey(AggregateFunctionUniqTraits<T, ColumnType>::value(column, row_begin)));
-        std::array<Key, hash_chunk_size> keys{};
+        std::array<Key, hash_chunk_size> keys;
 
         size_t row = row_begin;
 
