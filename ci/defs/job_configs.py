@@ -1604,4 +1604,11 @@ class JobConfigs:
         ),
         timeout=3600,
         enable_gh_auth=True,
+        # The coverage shards feed this aggregation via *LLVM_ARTIFACTS_LIST, so a
+        # shard ERROR (e.g. exit 125 during coverage collection) makes the parser's
+        # needs edge report pipeline_status=failure and this job gets skipped, which
+        # native_jobs.py re-materializes as ERROR. allow_failure on the shards only
+        # affects merge accounting, not that skip, so the coverage leg must also be
+        # non-blocking. Coverage is advisory (no blocking test signal), like azure.
+        allow_failure=True,
     )
