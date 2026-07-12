@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -254,16 +255,6 @@ struct IsUniqExactSet<UniqExactSet<T1, T2>> : std::true_type
 {
 };
 
-template <typename T>
-struct IsUniquesHashSet : std::false_type
-{
-};
-
-template <typename Hash>
-struct IsUniquesHashSet<UniquesHashSet<Hash>> : std::true_type
-{
-};
-
 /** Hash function for uniq.
   */
 template <typename T, typename ColumnType>
@@ -343,8 +334,6 @@ struct Adder
         {
             if constexpr (IsUniqExactSet<typename Data::Set>::value)
                 data.set.template insert<T, hint>(UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num));
-            else if constexpr (IsUniquesHashSet<typename Data::Set>::value)
-                data.set.insertValue(T{UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num)});
             else
                 data.set.insert(T{UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num)});
         }
@@ -391,23 +380,18 @@ private:
     static constexpr size_t hash_chunk_size = 256;
 
     /// Returns the key inserted into the set:
-    /// for `uniq` the final UInt32 hash as it is stored in the set (so that inserts do not hash again),
-    /// for `uniqHLL12` a 64-bit hash of the value cast to the set's value type,
+    /// for `uniq` and `uniqHLL12` a 64-bit hash of the value cast to the set's value type,
     /// for `uniqExact` the value itself for native types, a 128-bit SipHash otherwise.
     static ALWAYS_INLINE auto getKey(T value)
     {
-        if constexpr (is_uniques_hash_set)
+        if constexpr (is_uniques_hash_set || is_hll)
         {
-            return Data::Set::hash(AggregateFunctionUniqTraits<T, ColumnType>::hash(value));
+            using ValueType = typename Data::Set::value_type;
+            return static_cast<ValueType>(AggregateFunctionUniqTraits<T, ColumnType>::hash(value));
         }
         else if constexpr (is_uniq_exact)
         {
             return AggregateFunctionUniqTraits<T, ColumnType>::hashExact(value);
-        }
-        else if constexpr (is_hll)
-        {
-            using ValueType = typename Data::Set::value_type;
-            return static_cast<ValueType>(AggregateFunctionUniqTraits<T, ColumnType>::hash(value));
         }
         else
         {
@@ -420,9 +404,7 @@ private:
     {
         if constexpr (is_uniq_exact)
             data.set.template insert<const Key &, hint>(key);
-        else if constexpr (is_uniques_hash_set)
-            data.set.insertHash(key);
-        else if constexpr (is_hll)
+        else if constexpr (is_uniques_hash_set || is_hll)
             data.set.insert(key);
         else
             static_assert(false, "Unsupported set type");
@@ -434,7 +416,7 @@ private:
         if constexpr (is_uniq_exact)
             data.set.template insertMany<hint>(keys, num_keys);
         else if constexpr (is_uniques_hash_set)
-            data.set.insertManyHashes(keys, num_keys);
+            data.set.template insertMany<Key, std::identity{}>(keys, num_keys);
         else if constexpr (is_hll)
             data.set.insertMany(keys, num_keys);
         else
@@ -450,6 +432,24 @@ private:
     {
         if (row_begin >= row_end)
             return;
+
+        /// Shortcut for numeric type for which hash function is cheap,
+        /// and it doesn't make sense to batch its calculation with last value cache.
+        if constexpr (!std::is_same_v<T, std::string_view> && !std::is_same_v<T, IPv6>)
+        {
+            const auto & column_data = assert_cast<const ColumnType &>(column).getData();
+
+            if constexpr (is_uniq_exact)
+            {
+                data.set.template insertMany<hint>(column_data.data() + row_begin, row_end - row_begin);
+                return;
+            }
+            else if constexpr (is_uniques_hash_set)
+            {
+                data.set.template insertMany<T, AggregateFunctionUniqTraits<T, ColumnType>::hash>(column_data.data() + row_begin, row_end - row_begin);
+                return;
+            }
+        }
 
         using Key = decltype(getKey(AggregateFunctionUniqTraits<T, ColumnType>::value(column, row_begin)));
         std::array<Key, hash_chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are written before read
