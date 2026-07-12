@@ -444,14 +444,22 @@ StorageDistributed::StorageDistributed(
     , log(getLogger("StorageDistributed (" + id_.table_name + ")"))
     , owned_cluster(std::move(owned_cluster_))
     , cluster_name(getContext()->getMacros()->expand(cluster_name_))
-    /// A table-function target (`Distributed(cluster, table_function(), sharding_key, ...)`) is not a real
-    /// shard map: every shard runs the same table function and returns the same data, so the sharding key
-    /// does not describe how rows are distributed across shards. Treating it as a real distribution key would
-    /// make the read optimizations gated by `has_sharding_key` (shard skipping via `optimize_skip_unused_shards`
-    /// and the group-by merge shortcut of `optimize_distributed_group_by_sharding_key`) return wrong results,
-    /// so mark such a target as having no usable sharding key. This matches the `cluster('c', table_function())`
-    /// table function, which never carries a sharding key, and the documented read-only contract for this form.
-    , has_sharding_key(sharding_key_ && !remote_table_function_ptr_)
+    /// A `Distributed` table engine created over a table function
+    /// (`CREATE TABLE ... ENGINE = Distributed(cluster, table_function(), sharding_key, ...)`) is not a real
+    /// shard map: every shard runs the same table function and returns the same data, so the sharding key does
+    /// not describe how rows are distributed across shards. Treating it as a real distribution key would make
+    /// the read optimizations gated by `has_sharding_key` (shard skipping via `optimize_skip_unused_shards` and
+    /// the group-by merge shortcut of `optimize_distributed_group_by_sharding_key`) return wrong results, so
+    /// mark such a target as having no usable sharding key.
+    ///
+    /// This is detected by `remote_table_function_ptr && !owned_cluster`: the `remote`/`cluster`/`clusterAllReplicas`
+    /// table functions also build a `StorageDistributed` over a table function, but they own their cluster
+    /// (`owned_cluster` is set) and have always accepted a sharding key for shard skipping - a long-standing,
+    /// tested feature (`01930_optimize_skip_unused_shards_rewrite_in`, `01940_custom_tld_sharding_key`,
+    /// `01952_optimize_distributed_group_by_sharding_key`) where ClickHouse trusts the user-provided key - so
+    /// those keep it. Only the persisted `Distributed(...)` engine form (which resolves its cluster by name,
+    /// so `owned_cluster` is empty) disables the sharding-key read optimizations.
+    , has_sharding_key(sharding_key_ && !(remote_table_function_ptr && !owned_cluster))
     , sharding_key(sharding_key_)
     , relative_data_path(relative_data_path_)
     , distributed_settings(std::make_unique<DistributedSettings>(distributed_settings_))
@@ -477,8 +485,9 @@ StorageDistributed::StorageDistributed(
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
-    /// `has_sharding_key` is already false for a table-function target (see above), so the sharding-key
-    /// expression is intentionally not built for it: it would not be used for any read optimization anyway.
+    /// `has_sharding_key` is already false for a persisted `Distributed(...)` engine over a table function
+    /// (see above), so the sharding-key expression is intentionally not built for it: it would not be used for
+    /// any read optimization anyway.
     if (has_sharding_key)
     {
         /// Check that sharding_key exists in the table and has numeric type.

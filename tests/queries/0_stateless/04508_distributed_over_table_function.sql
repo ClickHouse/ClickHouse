@@ -208,3 +208,12 @@ SELECT count() FROM dist_over_tf WHERE number = 1 SETTINGS optimize_skip_unused_
 SELECT number, count() FROM dist_over_tf WHERE number = 1 GROUP BY number ORDER BY number SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1, enable_analyzer = 1;
 SELECT number, count() FROM dist_over_tf WHERE number = 1 GROUP BY number ORDER BY number SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1, enable_analyzer = 0;
 DROP TABLE dist_over_tf;
+
+-- The disable above is scoped to the persisted `Distributed(...)` engine over a table function. The
+-- `remote`/`cluster`/`clusterAllReplicas` table functions also build a `Distributed` over a table function,
+-- but they own their cluster and have always used a sharding key for shard skipping - a long-standing feature
+-- (see `01930_optimize_skip_unused_shards_rewrite_in`, `01952_optimize_distributed_group_by_sharding_key`) -
+-- so that must keep working. Here `optimize_skip_unused_shards` still prunes `WHERE number = 1` to a single
+-- shard and returns 1, not 2. Covered for both analyzers.
+SELECT count() FROM cluster('test_cluster_two_shards_localhost', numbers(10), number) WHERE number = 1 SETTINGS optimize_skip_unused_shards = 1, enable_analyzer = 1;
+SELECT count() FROM cluster('test_cluster_two_shards_localhost', numbers(10), number) WHERE number = 1 SETTINGS optimize_skip_unused_shards = 1, enable_analyzer = 0;
