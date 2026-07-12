@@ -46,7 +46,12 @@ set -euo pipefail
 #   --worktree-base PATH  Base path for worker worktrees; worker i lives at
 #                         "<PATH>-<i>". Default: "<main-repo>-prworker".
 #   --timeout SECONDS     Total time budget per PR, shared across all
-#                         continuation turns (default: 3600).
+#                         continuation turns (default: 7200). Raised because a
+#                         verify-build after merging master can be slow.
+#   --ccache-dir PATH     Shared ccache directory for all workers (default:
+#                         existing $CCACHE_DIR, else ~/.cache/ccache). A warm
+#                         shared cache keeps post-merge rebuilds fast.
+#   --ccache-size SIZE    ccache max size via CCACHE_MAXSIZE (default: 200G).
 #   --max-continue N      Max `claude` turns per PR. The worker runs once and is
 #                         then resumed (same session) until it signals it is done
 #                         or this cap is hit (default: 4). The worker is told not
@@ -89,13 +94,15 @@ RESET=$'\033[0m'
 
 WORKERS=1
 WORKTREE_BASE=""
-TIMEOUT=3600
+TIMEOUT=7200
 MAX_CONTINUE=4
 RELATED_STALE_DAYS=7   # a "related" PR is processed only if nobody but me has acted within this many days
 ONCE=0
 SKIP_SUBMODULES=0
 COLOR_WHEN="auto"
 DRY_RUN=0
+CCACHE_DIR_OPT=""      # shared ccache dir for all workers (default: existing $CCACHE_DIR, else ~/.cache/ccache)
+CCACHE_SIZE="200G"     # ccache max size, applied via CCACHE_MAXSIZE env (not persisted to ccache.conf)
 
 # PR selection modes (combinable). If none are given, all are enabled.
 MODE_MINE=0       # PRs I authored
@@ -116,6 +123,8 @@ while [[ $# -gt 0 ]]; do
         --worktree-base)  WORKTREE_BASE="$2"; shift 2 ;;
         --timeout)        TIMEOUT="$2"; shift 2 ;;
         --max-continue)   MAX_CONTINUE="$2"; shift 2 ;;
+        --ccache-dir)     CCACHE_DIR_OPT="$2"; shift 2 ;;
+        --ccache-size)    CCACHE_SIZE="$2"; shift 2 ;;
         --once)           ONCE=1; shift ;;
         --skip-submodules) SKIP_SUBMODULES=1; shift ;;
         --color)          COLOR_WHEN="$2"; shift 2 ;;
@@ -140,6 +149,23 @@ MAIN_REPO="$(git rev-parse --show-toplevel)"
 if (( ! MODE_ANY )); then
     MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
 fi
+
+# ----------------------------------------------------------------------------
+# Shared ccache. Every worker builds against one warm cache so a rebuild after
+# merging master reuses cached objects instead of compiling cold (the main
+# reason verify-builds were blowing past the per-PR budget). ClickHouse's build
+# picks up ccache automatically; we only point all workers at the same dir and
+# raise the size via env (not persisted to ccache.conf).
+# ----------------------------------------------------------------------------
+if [[ -n "$CCACHE_DIR_OPT" ]]; then
+    export CCACHE_DIR="$CCACHE_DIR_OPT"
+elif [[ -n "${CCACHE_DIR:-}" ]]; then
+    export CCACHE_DIR
+else
+    export CCACHE_DIR="$HOME/.cache/ccache"
+fi
+export CCACHE_MAXSIZE="$CCACHE_SIZE"
+mkdir -p "$CCACHE_DIR" 2>/dev/null || true
 
 # ----------------------------------------------------------------------------
 # Color handling
@@ -406,10 +432,13 @@ run_continue_pr()
 {
     local wt="$1" number="$2" log="$3"
     local url="https://github.com/$REPO/pull/$number"
-    local sid deadline iter ec now remaining
+    local sid deadline iter ec now remaining build_steer
     sid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null \
         || uuidgen 2>/dev/null \
         || python3 -c 'import uuid; print(uuid.uuid4())')
+    # Steer the worker to a persistent, ccache-backed build directory in this
+    # worktree so rebuilds are incremental instead of cold each pass.
+    build_steer="A persistent, ccache-backed build directory for this worktree is at ${wt}/build. Reuse it for any build - do not delete it; let ninja rebuild incrementally - and build only the affected targets. ccache is shared and warm across all workers (CCACHE_DIR=${CCACHE_DIR}), so a rebuild after merging master should be far faster than a cold build; never run a full from-scratch rebuild when an incremental one suffices."
     deadline=$(( $(date +%s) + TIMEOUT ))
     : > "$log"
     iter=0
@@ -426,12 +455,12 @@ run_continue_pr()
         ec=0
         if (( iter == 1 )); then
             ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
-                --session-id "$sid" --append-system-prompt "$STEER_PROMPT" \
-                "/continue-pr-auto $url" </dev/null ) > "$log.last" 2>&1 || ec=$?
+                --session-id "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
+                "/continue-pr-auto $url"</dev/null ) > "$log.last" 2>&1 || ec=$?
         else
             ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
-                --resume "$sid" --append-system-prompt "$STEER_PROMPT" \
-                "$NUDGE_PROMPT" </dev/null ) > "$log.last" 2>&1 || ec=$?
+                --resume "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
+                "$NUDGE_PROMPT"</dev/null ) > "$log.last" 2>&1 || ec=$?
         fi
         cat "$log.last" >> "$log"
 
@@ -637,7 +666,8 @@ banner "Workers:         $WORKERS"
 banner "Worktree base:   ${WORKTREE_BASE}-{0..$((WORKERS - 1))}"
 [[ -n "$GH_USER" ]] && banner "GitHub user:     $GH_USER"
 banner "Selecting:       $MODES_DESC"
-banner "Per-PR timeout:  ${TIMEOUT}s"
+banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
+banner "ccache:          ${CCACHE_DIR} (max ${CCACHE_MAXSIZE})"
 (( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr-auto"
 echo ""
 
