@@ -43,3 +43,5 @@ Unknown framing format Unknown
 1
 --- exception is written as a packet (parse error)
 1
+--- framing is rejected for formats that defer totals and extremes to finalize (Template)
+is not compatible with framing formats
