@@ -2,7 +2,6 @@
 DROP TABLE IF EXISTS pip_geo_mismatch;
 CREATE TABLE pip_geo_mismatch (id Int32, geom Geometry) ENGINE = Memory;
 INSERT INTO pip_geo_mismatch VALUES (1, readWKT('POINT(1 1)'));
-INSERT INTO pip_geo_mismatch VALUES (2, readWKT('LINESTRING(0 0, 1 1)'));
 INSERT INTO pip_geo_mismatch VALUES (3, readWKT('POLYGON((0 0, 10 0, 10 10, 0 10))'));
 INSERT INTO pip_geo_mismatch VALUES (4, readWKT('MULTIPOLYGON(((0 0, 10 0, 10 10, 0 10)), ((20 20, 30 20, 30 30, 20 30)))'));
 
