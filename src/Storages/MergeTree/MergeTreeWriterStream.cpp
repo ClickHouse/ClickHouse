@@ -317,7 +317,10 @@ MergeTreeWriterStream::MergeTreeWriterStream(
     compressed_hashing(compressor),
     marks_file(openStreamFile(data_part_storage, packing.writer, packing.marks_name, marks_path_ + marks_file_extension, 4096, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
     marks_hashing(*marks_file),
-    marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size, /*out_buffer_is_exclusive=*/ true),
+    /// Unlike the data compressor above, the marks compressor must not take the zero-copy path:
+    /// marks_file has a small fixed-size buffer (4096 bytes), so the direct path would clamp
+    /// NONE-coded mark blocks to it instead of the configured marks_compress_block_size.
+    marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     marks_compressed_hashing(marks_compressor),
     compress_marks(MarkType(marks_file_extension).compressed)
 {
