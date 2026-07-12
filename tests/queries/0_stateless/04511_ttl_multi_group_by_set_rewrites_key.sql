@@ -366,3 +366,55 @@ OPTIMIZE TABLE ttl_i3 FINAL;
 SELECT toYear(d) AS post_set_year, t.a, payload FROM ttl_i3 ORDER BY t.a;
 
 DROP TABLE ttl_i3;
+
+SELECT '--- J1';
+
+-- J1 (round 8): the stale-subcolumn drop must be subcolumn-granular, not keyed on the physical parent.
+-- d MATERIALIZED toDate(t.b), ORDER BY (d, t.a). An earlier GROUP BY d SET rewrites the whole tuple t.
+-- Recomputing d needs the (now stale) t.b re-extracted from post-SET t, but the sibling pass-through
+-- sort-key subcolumn t.a (same parent t) is NOT read by the recompute and must be kept -- dropping it
+-- by parent name would make the later TTLAggregationAlgorithm throw NOT_FOUND_COLUMN_IN_BLOCK (t.a).
+-- Result: d stays consistent with toDate(t.b) for every row and no column is lost.
+CREATE TABLE ttl_j1 (ts DateTime, src UInt32, t Tuple(a UInt32, b DateTime), d Date MATERIALIZED toDate(t.b), payload UInt64)
+ENGINE = MergeTree ORDER BY (d, t.a)
+TTL ts + toIntervalDay(1) GROUP BY d SET t = (anyLast(src), toDateTime('2070-01-01') + toIntervalDay(anyLast(src))),
+    ts + toIntervalDay(2) GROUP BY d SET payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4;
+
+INSERT INTO ttl_j1 SELECT toDateTime('2020-01-01 00:00:00'), number, (number % 3, toDateTime('2020-01-01 00:00:00') + number * 40 * 86400), number FROM numbers(40);
+OPTIMIZE TABLE ttl_j1 FINAL;
+
+SELECT count() AS rows, countIf(d = toDate(t.b)) = count() AS all_d_fresh FROM ttl_j1;
+
+DROP TABLE ttl_j1;
+
+SELECT '--- J2';
+
+-- J2 (round 8): a later GROUP BY TTL's precomputed "won't fire" min is invalid once an EARLIER firing
+-- GROUP BY ... SET rewrites a column the later TTL's expiry expression reads. d MATERIALIZED toDate(ts),
+-- ORDER BY d. TTL1 (ts1 old, fires) GROUP BY d SET ts2 = min(ts2) - 20y moves TTL2's expiry base from
+-- future to past; TTL2 (ts2 + 1d) GROUP BY d SET ts = max(ts) + 50y then actually fires and rewrites ts.
+-- The merge repair gate must include TTL2's SET target (via the chained-firing expansion), recompute the
+-- MATERIALIZED sort-key d from post-SET ts, and re-sort -- otherwise d is written stale. A plain OPTIMIZE
+-- (not FINAL) keeps the merge non-forced so the precomputed min actually gates. Result: d matches toDate(ts).
+CREATE TABLE ttl_j2 (ts1 DateTime, ts2 DateTime, ts DateTime, d Date MATERIALIZED toDate(ts), payload UInt64)
+ENGINE = MergeTree ORDER BY d
+TTL ts1 + toIntervalDay(1) GROUP BY d SET ts2 = min(ts2) - toIntervalYear(20),
+    ts2 + toIntervalDay(1) GROUP BY d SET ts = max(ts) + toIntervalYear(50)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4;
+
+-- Two parts (merges only when calculated at insert -> non-forced merge) so a plain OPTIMIZE merges
+-- them; STOP/START MERGES keeps the two inserts separate until the merge.
+SYSTEM STOP MERGES ttl_j2;
+INSERT INTO ttl_j2 (ts1, ts2, ts, payload) SELECT toDateTime('2020-01-01 00:00:00'), toDateTime('2040-01-01 00:00:00'), toDateTime('2040-01-01 00:00:00'), 1 FROM numbers(20);
+INSERT INTO ttl_j2 (ts1, ts2, ts, payload) SELECT toDateTime('2020-01-01 00:00:00'), toDateTime('2040-01-01 00:00:00'), toDateTime('2040-01-01 00:00:00'), 1 FROM numbers(20);
+SYSTEM START MERGES ttl_j2;
+OPTIMIZE TABLE ttl_j2;
+
+-- Assert only the staleness invariant, not the aggregated row count: how far a non-forced merge
+-- aggregates the part varies with merge scheduling / randomized settings, but the MATERIALIZED sort
+-- key d must ALWAYS stay consistent with toDate(ts) after the chained SET. The bug writes d stale
+-- (d != toDate(ts)) for the rows TTL2 rewrote; the fix keeps it 0 on every merge path.
+SELECT countIf(d != toDate(ts)) AS stale_d FROM ttl_j2;
+
+DROP TABLE ttl_j2;

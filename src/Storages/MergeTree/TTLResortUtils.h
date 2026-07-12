@@ -29,6 +29,18 @@ bool groupByKeysAffectedByEarlierSet(
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context);
 
+/// True when this `GROUP BY` TTL's expiry (or WHERE) expression reads a physical storage column in
+/// `earlier_set_targets` (the `SET` targets of earlier FIRING `GROUP BY` TTLs in the same
+/// `TTLTransform`). The per-part precomputed `group_by_ttl.min` proves "won't fire" only for the
+/// UNMODIFIED part; once an earlier `SET` rewrites a column this TTL's expiry depends on, that proof
+/// is void and this TTL may now fire in the same run. Callers then treat it as firing (conservative),
+/// so it is not wrongly kept on the streaming fast path / excluded from the merge repairs. A `SET`
+/// target is always a physical column, so subcolumn reads are mapped to their storage parent.
+bool groupByTTLExpiryAffectedByEarlierSet(
+    const TTLDescription & group_by_ttl,
+    const NameSet & earlier_set_targets,
+    const StorageMetadataPtr & metadata_snapshot);
+
 /// Build an `ActionsDAG` over `header` that refreshes the derived `group_by_keys` columns whose
 /// in-stream value went stale after an earlier `GROUP BY` TTL `SET`: computed/subcolumn keys are
 /// recomputed from the primary-key expression, and a MATERIALIZED column used as a key is recomputed

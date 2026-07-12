@@ -134,7 +134,14 @@ TTLTransform::TTLTransform(
         /// run unsorted, otherwise its streaming flush-on-key-change would re-fragment the scrambled groups.
         const bool input_unsorted = affected_by_earlier_set || earlier_group_by_lost_order;
 
-        const bool this_ttl_fires = group_by_ttl_fires(group_by_ttl);
+        /// `group_by_ttl_fires` reads the precomputed per-part `min`, which proves "won't fire" only for
+        /// the UNMODIFIED part. If an earlier firing `GROUP BY ... SET` rewrote a column THIS TTL's expiry
+        /// expression reads, that proof is void -- the earlier `SET` can move this TTL from future to
+        /// expired in the same block, so it may aggregate/rewrite its own key here. Treat it as firing
+        /// (conservative) so it propagates its `SET` targets and lost-order state to the NEXT TTL, keeping
+        /// the streaming fast path off a stream a chained `SET` can scramble.
+        const bool this_ttl_fires = group_by_ttl_fires(group_by_ttl)
+            || groupByTTLExpiryAffectedByEarlierSet(group_by_ttl, earlier_group_by_set_targets, metadata_snapshot_);
 
         ExpressionActionsPtr key_refresh_actions;
         /// Only THIS TTL's own key being rewritten by an earlier SET makes its in-stream key value stale

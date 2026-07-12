@@ -153,6 +153,31 @@ NameSet getGroupByKeyStorageDependencies(
     return deps;
 }
 
+/// The physical storage columns a `GROUP BY` TTL's expiry (and WHERE) expression reads. Used to
+/// detect a chained interaction: a `TTLAggregationAlgorithm` decides which rows are expired from
+/// these columns, so once an EARLIER firing `GROUP BY ... SET` rewrites one of them, this TTL's
+/// precomputed `group_by_ttl.min` (computed over the UNMODIFIED part) is no longer a valid
+/// "won't fire" proof -- the earlier `SET` can move this TTL from future to expired in the same
+/// merge/mutation. A `SET` target is always a physical column, so subcolumn reads are mapped to
+/// their parent for the comparison.
+NameSet getGroupByTTLExpiryStorageColumns(const TTLDescription & ttl, const NameSet & storage_columns)
+{
+    NameSet result;
+    auto add = [&](const NamesAndTypesList & columns)
+    {
+        for (const auto & column : columns)
+        {
+            if (storage_columns.contains(column.name))
+                result.insert(column.name);
+            else if (auto in_storage = Nested::tryGetColumnNameInStorage(column.name, storage_columns))
+                result.insert(*in_storage);
+        }
+    };
+    add(ttl.expression_columns);
+    add(ttl.where_expression_columns);
+    return result;
+}
+
 /// Map each sorting-key dependency to its physical storage column (a dependency may be a
 /// subcolumn, e.g. `t.a` for `ORDER BY t.a`, whose storage column is `t`), so it can be compared
 /// with a `SET` target, which always names a physical column.
@@ -493,6 +518,21 @@ bool groupByKeysAffectedByEarlierSet(
     return false;
 }
 
+bool groupByTTLExpiryAffectedByEarlierSet(
+    const TTLDescription & group_by_ttl,
+    const NameSet & earlier_set_targets,
+    const StorageMetadataPtr & metadata_snapshot)
+{
+    if (earlier_set_targets.empty())
+        return false;
+
+    const auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
+    for (const auto & expiry_column : getGroupByTTLExpiryStorageColumns(group_by_ttl, storage_columns))
+        if (earlier_set_targets.contains(expiry_column))
+            return true;
+    return false;
+}
+
 std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
     const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
@@ -606,6 +646,11 @@ NameSet getFiringGroupByTTLSetTargets(
     time_t current_time,
     bool force)
 {
+    /// Forward pass in TTL order (the same order `TTLTransform` runs the algorithms). A later TTL's
+    /// precomputed `min` proves "won't fire" only for the UNMODIFIED part; once an earlier firing
+    /// `GROUP BY ... SET` rewrites a column this TTL's expiry expression reads, that proof is void and
+    /// the TTL may now fire in this merge. Treat such a later TTL as firing (conservative) so its `SET`
+    /// targets are included and the merge repairs below run for the columns it actually rewrites.
     NameSet targets;
     for (const auto & group_by_ttl : metadata_snapshot->getGroupByTTLs())
     {
@@ -616,6 +661,8 @@ NameSet getFiringGroupByTTLSetTargets(
             /// Missing info or uninitialized `min` -> conservatively assume it may fire.
             fires = it == ttl_infos.group_by_ttl.end() || it->second.min == 0 || it->second.min <= current_time;
         }
+        if (!fires)
+            fires = groupByTTLExpiryAffectedByEarlierSet(group_by_ttl, targets, metadata_snapshot);
         if (fires)
             for (const auto & set_part : group_by_ttl.set_parts)
                 targets.insert(set_part.column_name);
@@ -650,14 +697,19 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
     /// NOT_FOUND_COLUMN_IN_BLOCK.
     ///
     /// A re-extractable subcolumn is stale (and must be re-extracted from the post-`SET` physical
-    /// parent) only when its physical parent is a SOURCE of one of the recomputed MATERIALIZED columns:
-    /// e.g. `d MATERIALIZED toDate(tup.ts)` reads `tup.ts` whose parent `tup` is `d`'s source, so the
-    /// pre-extracted `tup.ts` is stale. A subcolumn whose parent is not a recompute source (`t.a`) is
-    /// unrelated and kept.
+    /// parent) only when the recompute actually READS that specific subcolumn from a rewritten
+    /// physical parent: e.g. `d MATERIALIZED toDate(tup.ts)` reads `tup.ts`, whose parent `tup` was
+    /// rewritten, so the pre-extracted `tup.ts` is stale. A DIFFERENT subcolumn of the same parent
+    /// that the recompute does NOT read (e.g. a pass-through sort-key column `t.a` with
+    /// `ORDER BY (d, t.a)`, `d MATERIALIZED toDate(t.b)`) is unrelated and must be kept -- dropping it
+    /// by physical-parent name would make the later `TTLAggregationAlgorithm` throw
+    /// NOT_FOUND_COLUMN_IN_BLOCK, since this DAG never restores it. Track the SPECIFIC stale
+    /// subcolumns the recompute needs (subcolumn-granular), not the physical parent.
     const auto storage_names = columns_desc.getAllPhysical().getNameSet();
 
-    /// The physical storage columns each recomputed MATERIALIZED column reads from (analyzed the same
-    /// way the mutation path does). Only a subcolumn of one of these parents can be a stale input.
+    /// The exact subcolumns each recomputed MATERIALIZED column's default expression reads (analyzed
+    /// the same way the mutation path does). Only such a subcolumn -- present in the stream and
+    /// re-extractable from its post-`SET` physical parent -- can be a stale input to re-extract.
     NamesAndTypesList all_columns_with_ephemeral = columns_desc.getAllPhysical();
     NameSet ephemeral_columns;
     for (const auto & column : columns_desc.getEphemeral())
@@ -665,7 +717,7 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
         ephemeral_columns.insert(column.name);
         all_columns_with_ephemeral.push_back(column);
     }
-    NameSet recompute_source_parents;
+    NameSet recompute_read_subcolumns;
     for (const auto & name : recompute_names)
     {
         if (!columns_desc.has(name))
@@ -673,16 +725,21 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
         const auto & column_desc = columns_desc.get(name);
         if (column_desc.default_desc.kind != ColumnDefaultKind::Materialized || !column_desc.default_desc.expression)
             continue;
-        if (auto sources = getMaterializedColumnSourceColumns(
-                column_desc, all_columns_with_ephemeral, storage_names, ephemeral_columns, context))
-            recompute_source_parents.insert(sources->begin(), sources->end());
+
+        auto query = column_desc.default_desc.expression->clone();
+        replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
+        auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
+        for (const auto & source : syntax_result->requiredSourceColumns())
+            /// A subcolumn source is one that is not itself a physical column but maps to one.
+            if (!storage_names.contains(source))
+                if (Nested::tryGetColumnNameInStorage(source, storage_names))
+                    recompute_read_subcolumns.insert(source);
     }
 
     NameSet drop_names = recompute_names;
     for (const auto & column : header)
-        if (!storage_names.contains(column.name))
-            if (auto parent = Nested::tryGetColumnNameInStorage(column.name, storage_names);
-                parent && header.has(*parent) && recompute_source_parents.contains(*parent))
+        if (recompute_read_subcolumns.contains(column.name))
+            if (auto parent = Nested::tryGetColumnNameInStorage(column.name, storage_names); parent && header.has(*parent))
                 drop_names.insert(column.name);
 
     /// Drop the stale values from the stream so `evaluateMissingDefaults` treats the columns as
