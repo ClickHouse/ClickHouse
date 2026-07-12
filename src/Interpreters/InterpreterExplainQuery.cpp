@@ -47,6 +47,12 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+#include <Analyzer/TableNode.h>
+#include <Planner/collectSelectedColumnsFromTable.h>
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
+#include <Storages/StorageDummy.h>
+#include <Storages/StorageSnapshot.h>
 
 
 namespace DB
@@ -67,6 +73,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
 }
 
 namespace
@@ -568,6 +575,74 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool 
     return settings;
 }
 
+/// `EXPLAIN QUERY TREE` (and `EXPLAIN SYNTAX` in the analyzer) resolve the query and dump table
+/// metadata such as column names and types. Unlike `EXPLAIN PLAN`, they do not build a query plan,
+/// so the access checks the planner performs in `prepareBuildQueryPlanForTableExpression` are skipped.
+/// Without an explicit check here the statement leaks metadata of tables the user is not allowed to
+/// read (https://github.com/ClickHouse/ClickHouse/issues/78938). Reproduce the planner's SELECT access
+/// check for every table referenced anywhere in the query tree.
+void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & query_context)
+{
+    /// Collect every table referenced anywhere in the query tree, including inside subqueries in
+    /// expressions (e.g. `WHERE x IN (SELECT ... FROM t)`), which `extractAllTableReferences` skips.
+    class CollectTablesVisitor : public InDepthQueryTreeVisitor<CollectTablesVisitor>
+    {
+    public:
+        void visitImpl(QueryTreeNodePtr & node)
+        {
+            if (auto * table_node = node->as<TableNode>())
+                tables.push_back(table_node);
+        }
+        std::vector<TableNode *> tables;
+    };
+
+    CollectTablesVisitor visitor;
+    visitor.visit(query_tree);
+
+    /// The same table may appear several times (e.g. a self-join); check each distinct table once.
+    NameSet checked_tables;
+    for (auto * table_node : visitor.tables)
+    {
+        /// StorageDummy is created on preliminary stages; ignore access check for it (as the planner does).
+        if (typeid_cast<const StorageDummy *>(table_node->getStorage().get()))
+            continue;
+
+        const auto & storage_id = table_node->getStorageID();
+
+        /// In case of cross-replication we don't know what database is used for the table on the initiator.
+        if (!storage_id.hasDatabase())
+            continue;
+
+        if (!checked_tables.emplace(storage_id.getFullTableName()).second)
+            continue;
+
+        auto column_names = collectSelectedColumnsFromTable(query_tree, storage_id, query_context);
+        if (!column_names.empty())
+        {
+            query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+            continue;
+        }
+
+        /// For trivial queries like "SELECT count() FROM table" access is granted if at least one column is accessible.
+        auto access = query_context->getAccess();
+        bool has_accessible_column = false;
+        for (const auto & column : table_node->getStorageSnapshot()->metadata->getColumns())
+        {
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+            {
+                has_accessible_column = true;
+                break;
+            }
+        }
+
+        if (!has_accessible_column)
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+                query_context->getUserName(),
+                storage_id.getFullTableName());
+    }
+}
+
 bool explainQueryTree(
     ASTPtr explained_query,
     ContextPtr query_context,
@@ -587,13 +662,13 @@ bool explainQueryTree(
         visitor.visit(query_tree);
     }
 
+    auto query_tree_pass_manager = QueryTreePassManager(query_context);
+    addQueryTreePasses(query_tree_pass_manager);
+
+    size_t pass_index = settings.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(settings.passes);
+
     if (settings.run_passes)
     {
-        auto query_tree_pass_manager = QueryTreePassManager(query_context);
-        addQueryTreePasses(query_tree_pass_manager);
-
-        size_t pass_index = settings.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(settings.passes);
-
         if (settings.dump_passes)
         {
             query_tree_pass_manager.dump(buf, pass_index);
@@ -601,6 +676,22 @@ bool explainQueryTree(
         }
 
         query_tree_pass_manager.run(query_tree, pass_index);
+    }
+
+    /// Check SELECT access on the referenced tables before dumping any resolved metadata about them.
+    /// `buildQueryTree` only builds the tree; table identifiers are bound to storages and columns/types
+    /// are resolved only by the query analysis pass. When the passes above already resolved `query_tree`
+    /// we check it directly; otherwise (e.g. `run_passes = 0`, which intentionally dumps the unresolved
+    /// tree) we resolve a throwaway copy just for the access check.
+    if (settings.run_passes && pass_index >= 1)
+    {
+        checkAccessRightsForQueryTree(query_tree, query_context);
+    }
+    else
+    {
+        auto resolved_query_tree = query_tree->clone();
+        query_tree_pass_manager.runOnlyResolve(resolved_query_tree);
+        checkAccessRightsForQueryTree(resolved_query_tree, query_context);
     }
 
     if (settings.dump_tree)
