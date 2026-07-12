@@ -437,15 +437,9 @@ private:
         /// and it doesn't make sense to batch its calculation with last value cache.
         if constexpr (!std::is_same_v<T, std::string_view> && !std::is_same_v<T, IPv6>)
         {
-            const auto & column_data = assert_cast<const ColumnType &>(column).getData();
-
-            if constexpr (is_uniq_exact)
+            if constexpr (is_uniques_hash_set)
             {
-                data.set.template insertMany<hint>(column_data.data() + row_begin, row_end - row_begin);
-                return;
-            }
-            else if constexpr (is_uniques_hash_set)
-            {
+                const auto & column_data = assert_cast<const ColumnType &>(column).getData();
                 data.set.template insertMany<T, AggregateFunctionUniqTraits<T, ColumnType>::hash>(column_data.data() + row_begin, row_end - row_begin);
                 return;
             }
