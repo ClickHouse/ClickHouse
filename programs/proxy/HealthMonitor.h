@@ -42,8 +42,10 @@ public:
     /// Block until the supervisor fiber has finished (call after stop()).
     void join();
 
-    /// Probe one backend once (connect + optional resource poll). Public so it can run on a fiber.
-    void checkBackend(Backend & backend);
+    /// Probe one backend once (a liveness connect and, when `poll_resources` is set, a resource poll).
+    /// The supervisor decides whether resources are due so that `resource_poll_interval_ms` is honored
+    /// independently of the liveness `interval_ms`. Public so it can run on a fiber.
+    void checkBackend(Backend & backend, bool poll_resources);
 
 private:
     const ProxyConfiguration & config;

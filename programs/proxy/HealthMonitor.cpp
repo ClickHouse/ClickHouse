@@ -33,13 +33,14 @@ struct CheckTask
 {
     HealthMonitor * monitor;
     Backend * backend;
+    bool poll_resources;
 };
 
 int runCheck(CheckTask * task) noexcept
 {
     try
     {
-        task->monitor->checkBackend(*task->backend);
+        task->monitor->checkBackend(*task->backend, task->poll_resources);
     }
     catch (...)  // NOLINT(bugprone-empty-catch)
     {
@@ -94,7 +95,7 @@ std::vector<BackendPtr> HealthMonitor::collectBackends() const
     return result;
 }
 
-void HealthMonitor::checkBackend(Backend & backend)
+void HealthMonitor::checkBackend(Backend & backend, bool poll_resources)
 {
     const UInt16 port = backend.config().tcp_port ? backend.config().tcp_port : 9000;
     const auto started = std::chrono::steady_clock::now();
@@ -115,7 +116,7 @@ void HealthMonitor::checkBackend(Backend & backend)
         return;
     }
 
-    if (!backend.config().monitor_user.empty())
+    if (poll_resources && !backend.config().monitor_user.empty())
         pollResources(backend);
 }
 
@@ -186,10 +187,28 @@ void HealthMonitor::superviseLoop()
     {
         std::vector<BackendPtr> backends = collectBackends();
 
+        /// Liveness is probed every `interval_ms`, but the more expensive resource poll is throttled to
+        /// `resource_poll_interval_ms`. The decision is made here, in the single supervisor fiber, so that
+        /// `last_resource_poll` is never touched concurrently by the per-backend check fibers.
+        const auto now = std::chrono::steady_clock::now();
+        const auto resource_poll_interval = std::chrono::milliseconds(config.health_check.resource_poll_interval_ms);
+
         std::vector<CheckTask> tasks;
         tasks.reserve(backends.size());
         for (auto & backend : backends)
-            tasks.push_back(CheckTask{this, backend.get()});
+        {
+            bool poll_resources = false;
+            if (!backend->config().monitor_user.empty())
+            {
+                auto & last = last_resource_poll[backend->name()];
+                if (last == std::chrono::steady_clock::time_point{} || now - last >= resource_poll_interval)
+                {
+                    poll_resources = true;
+                    last = now;
+                }
+            }
+            tasks.push_back(CheckTask{this, backend.get(), poll_resources});
+        }
 
         /// FiberFuture is neither copyable nor movable (it holds an atomic), so it cannot live in a
         /// vector that may reallocate; a deque constructs its elements in place and never moves them.
