@@ -37,10 +37,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"longitute_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"latitude_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"longitute_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
-            {"latitude_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"longitute_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
+            {"latitude_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
+            {"longitute_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
+            {"latitude_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
             {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "UInt8"}
         };
         validateFunctionArguments(*this, arguments, args);
@@ -166,7 +166,10 @@ public:
         const IColumn * precision = arguments[4].column.get();
         ColumnPtr res;
 
-        if (checkColumn<ColumnVector<Float32>>(lon_min))
+        // Dispatch on the declared argument type, not the runtime column class: a constant
+        // coordinate stays wrapped in ColumnConst when the call mixes const and non-const
+        // arguments, so checkColumn<ColumnVector<...>> on the raw column would misclassify it.
+        if (WhichDataType(arguments[0].type).isFloat32())
             execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
         else
             execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);

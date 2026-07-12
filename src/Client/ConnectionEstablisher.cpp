@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
     extern const int CANNOT_READ_FROM_SOCKET;
     extern const int CANNOT_WRITE_TO_SOCKET;
+    extern const int UNEXPECTED_PACKET_FROM_SERVER;
 }
 
 namespace FailPoints
@@ -124,9 +125,17 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     {
         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
+        /// All of these mean the connection taken from the pool turned out to be unusable, which is
+        /// expected: this is an optimistic path that does not ping a pooled connection before use
+        /// (see the comment on `run`'s `force_connected` argument). `UNEXPECTED_PACKET_FROM_SERVER`
+        /// covers a connection left out of sync by a previous query (e.g. a stale `ProfileInfo` read
+        /// instead of the `TablesStatusResponse` we requested). In all of these cases we disconnect
+        /// the entry and report a soft failure, so the caller can retry on a freshly established
+        /// connection instead of failing the whole distributed query.
         if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
             && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR
-            && e.code() != ErrorCodes::CANNOT_READ_FROM_SOCKET && e.code() != ErrorCodes::CANNOT_WRITE_TO_SOCKET)
+            && e.code() != ErrorCodes::CANNOT_READ_FROM_SOCKET && e.code() != ErrorCodes::CANNOT_WRITE_TO_SOCKET
+            && e.code() != ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER)
             throw;
 
         fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);

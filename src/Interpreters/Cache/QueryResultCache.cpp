@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -95,9 +96,14 @@ struct HasNonDeterministicFunctionsMatcher
             }
             if (const auto udf_sql = UserDefinedSQLFunctionFactory::instance().tryGet(function->name))
             {
-                /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
-                data.has_non_deterministic_functions = true;
-                return;
+                /// Driver-created executable functions are also persisted in the SQL-object storage,
+                /// but their determinism is described by the generated executable UDF configuration checked below.
+                if (!udf_sql->as<ASTCreateFunctionWithDriverQuery>())
+                {
+                    /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
+                    data.has_non_deterministic_functions = true;
+                    return;
+                }
             }
             if (const auto udf_executable = UserDefinedExecutableFunctionFactory::tryGet(function->name, data.context))
             {

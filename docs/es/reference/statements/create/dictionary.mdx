@@ -1,0 +1,103 @@
+---
+description: 'Documentación para crear y configurar diccionarios'
+sidebarTitle: 'Descripción general'
+slug: /sql-reference/statements/create/dictionary
+title: 'CREATE DICTIONARY'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudSupportedBadge from "/snippets/es/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+
+Un diccionario es una asignación (`key -> attributes`) útil para diversos tipos de listas de referencia.
+ClickHouse admite funciones especiales para trabajar con diccionarios que pueden usarse en consultas. Es más fácil y eficiente usar diccionarios con funciones que hacer un `JOIN` con tablas de referencia.
+
+Los diccionarios pueden crearse de dos formas:
+
+* [Con una consulta DDL](#creating-a-dictionary-with-a-ddl-query) (recomendado)
+* [Con un archivo de configuración](#creating-a-dictionary-with-a-configuration-file)
+
+<div id="creating-a-dictionary-with-a-ddl-query">
+  ## Creación de un diccionario con una consulta DDL
+</div>
+
+<CloudSupportedBadge />
+
+Los diccionarios pueden crearse con consultas DDL.
+Este es el método recomendado porque, con los diccionarios creados mediante DDL:
+
+* No se agregan registros adicionales a los archivos de configuración del servidor.
+* Los diccionarios pueden usarse como entidades de primera clase, como tablas o vistas.
+* Los datos pueden leerse directamente mediante la sintaxis habitual de `SELECT`, en lugar de funciones de tabla de diccionario. Tenga en cuenta que, al acceder directamente a un diccionario mediante una instrucción `SELECT`, un diccionario en caché devolverá solo los datos almacenados en caché, mientras que un diccionario sin caché devolverá todos los datos que almacena.
+* Los diccionarios pueden cambiarse de nombre fácilmente.
+
+<div id="syntax">
+  ### Sintaxis
+</div>
+
+```sql
+CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
+(
+    key1  type1  [DEFAULT | EXPRESSION expr1] [IS_OBJECT_ID],
+    key2  type2  [DEFAULT | EXPRESSION expr2],
+    attr1 type2  [DEFAULT | EXPRESSION expr3] [HIERARCHICAL|INJECTIVE],
+    attr2 type2  [DEFAULT | EXPRESSION expr4] [HIERARCHICAL|INJECTIVE]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME({MIN min_val MAX max_val | max_val})
+SETTINGS(setting_name = setting_value, setting_name = setting_value, ...)
+COMMENT 'Comment'
+```
+
+| Cláusula                                                             | Descripción                                                                                                                                                                                 |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Atributos](/es/reference/statements/create/dictionary/attributes)      | Los atributos del diccionario se especifican de forma similar a las columnas de una tabla. La única propiedad obligatoria es el tipo; todas las demás pueden tener valores predeterminados. |
+| PRIMARY KEY                                                          | Define la(s) columna(s) clave para las búsquedas en el diccionario. Según el layout, se pueden especificar uno o más atributos como claves.                                                 |
+| [`SOURCE`](/es/reference/statements/create/dictionary/sources/overview) | Define la fuente de datos del diccionario (p. ej., una tabla de ClickHouse, HTTP, PostgreSQL).                                                                                              |
+| [`LAYOUT`](/es/reference/statements/create/dictionary/layouts/overview) | Controla cómo se almacena el diccionario en memoria (p. ej., `FLAT`, `HASHED`, `CACHE`).                                                                                                    |
+| [`LIFETIME`](/es/reference/statements/create/dictionary/lifetime)       | Establece el intervalo de actualización del diccionario.                                                                                                                                    |
+| [`ON CLUSTER`](/es/reference/statements/distributed-ddl)                | Crea el diccionario en un clúster. Opcional.                                                                                                                                                |
+| `SETTINGS`                                                           | Ajustes adicionales del diccionario. Opcional.                                                                                                                                              |
+| `COMMENT`                                                            | Añade un comentario de texto al diccionario. Opcional.                                                                                                                                      |
+
+<div id="creating-a-dictionary-with-a-configuration-file">
+  ## Crear un diccionario con un archivo de configuración
+</div>
+
+<CloudNotSupportedBadge />
+
+<Note>
+  Crear un diccionario con un archivo de configuración no se aplica a ClickHouse Cloud. Use DDL (consulte más arriba) y cree el diccionario como el usuario `default`.
+</Note>
+
+El archivo de configuración del diccionario tiene el siguiente formato:
+
+```xml
+<clickhouse>
+    <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
+
+    <!--Elemento opcional. Nombre de archivo con sustituciones-->
+    <include_from>/etc/metrika.xml</include_from>
+
+    <dictionary>
+        <!-- Configuración del diccionario. -->
+        <!-- Se puede incluir cualquier número de secciones de diccionario en un archivo de configuración. -->
+    </dictionary>
+
+</clickhouse>
+```
+
+Puede configurar tantos diccionarios como quiera en el mismo archivo.
+
+<div id="related-content">
+  ## Contenido relacionado
+</div>
+
+* [Diseños](/es/reference/statements/create/dictionary/layouts/overview) — Cómo se almacenan los diccionarios en memoria
+* [Fuentes](/es/reference/statements/create/dictionary/sources/overview) — Conexión con fuentes de datos
+* [Tiempo de vida](/es/reference/statements/create/dictionary/lifetime) — Configuración de actualización automática
+* [Atributos](/es/reference/statements/create/dictionary/attributes) — Configuración de claves y atributos
+* [Diccionarios integrados](/es/reference/statements/create/dictionary/embedded) — Diccionarios geobase integrados
+* [system.dictionaries](/es/reference/system-tables/dictionaries) — Tabla del sistema con información sobre diccionarios

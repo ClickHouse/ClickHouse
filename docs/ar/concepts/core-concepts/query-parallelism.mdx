@@ -1,0 +1,294 @@
+---
+slug: /optimize/query-parallelism
+sidebarTitle: 'توازي الاستعلامات'
+description: 'ينفّذ ClickHouse الاستعلامات بالتوازي باستخدام مسارات المعالجة وإعداد max_threads.'
+title: 'كيف ينفّذ ClickHouse استعلامًا بالتوازي'
+doc_type: 'guide'
+keywords: ['المعالجة المتوازية', 'تحسين الاستعلامات', 'الأداء', 'تعدد الخيوط', 'أفضل الممارسات']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+صُمم ClickHouse [ليكون سريعًا](/ar/get-started/about/why-clickhouse-is-so-fast). فهو ينفّذ الاستعلامات بدرجة عالية من التوازي، مستخدمًا جميع أنوية CPU المتاحة، وموزّعًا البيانات عبر مسارات المعالجة، وغالبًا ما يدفع العتاد إلى الاقتراب من حدوده القصوى.
+
+يوضح هذا الدليل كيفية عمل توازي الاستعلامات في ClickHouse، وكيف يمكنك ضبطه أو مراقبته لتحسين الأداء في أعباء العمل الكبيرة.
+
+نستخدم استعلامًا تجميعيًا على مجموعة البيانات [uk&#95;price&#95;paid&#95;simple](/ar/concepts/core-concepts/parts) لتوضيح المفاهيم الأساسية.
+
+<div id="step-by-step-how-clickHouse-parallelizes-an-aggregation-query">
+  ## خطوة بخطوة: كيف ينفّذ ClickHouse استعلامًا تجميعيًا بالتوازي
+</div>
+
+عندما يُشغِّل ClickHouse ① استعلامًا تجميعيًا مع عامل تصفية على المفتاح الأساسي للجدول، فإنه ② يحمّل الفهرس الأساسي إلى الذاكرة من أجل ③ تحديد الحبيبات التي يجب معالجتها وتلك التي يمكن تخطيها بأمان:
+
+<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="تحليل الفهرس" />
+
+<div id="distributing-work-across-processing-lanes">
+  ### توزيع العمل عبر مسارات المعالجة
+</div>
+
+ثم تُوزَّع البيانات المحددة [ديناميكيًا](#load-balancing-across-processing-lanes) على `n` من [مسارات المعالجة](/ar/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) المتوازية، حيث تُمرَّر البيانات وتُعالَج فيها [كتلة](/ar/resources/develop-contribute/introduction/architecture#block) بعد أخرى حتى الوصول إلى النتيجة النهائية:
+
+<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 مسارات معالجة متوازية" />
+
+<br />
+
+<br />
+
+يخضع عدد `n` من مسارات المعالجة المتوازية لإعداد [`max_threads`](/ar/reference/settings/session-settings#max_threads)، والذي يساوي افتراضيًا عدد الأنوية (الخيوط) في CPU واحد المتاح لـ ClickHouse على الخادم. في المثال أعلاه، نفترض وجود `4` أنوية.
+
+على جهاز يحتوي على `8` أنوية، ستتضاعف تقريبًا إنتاجية معالجة الاستعلام (لكن استخدام الذاكرة سيزداد أيضًا تبعًا لذلك)، لأن عددًا أكبر من المسارات سيعالج البيانات بالتوازي:
+
+<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8 مسارات معالجة متوازية" />
+
+<br />
+
+<br />
+
+ويُعد التوزيع الفعّال للمسارات عاملًا أساسيًا لتحقيق أقصى استفادة من CPU وتقليل الزمن الإجمالي للاستعلام.
+
+<div id="processing-queries-on-sharded-tables">
+  ### معالجة الاستعلامات على الجداول المُجزأة
+</div>
+
+عندما تكون بيانات الجدول موزعة عبر عدة خوادم على شكل [shards](/ar/guides/oss/deployment-and-scaling/shards)، يعالج كل خادم الجزء الخاص به بالتوازي. وداخل كل خادم، تُعالَج البيانات المحلية باستخدام مسارات معالجة متوازية، تمامًا كما هو موضح أعلاه:
+
+<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="مسارات موزعة" />
+
+<br />
+
+<br />
+
+يجمع الخادم الذي يستقبل الاستعلام أولًا جميع النتائج الفرعية من الـ shards ويَدمجها في النتيجة النهائية العامة.
+
+يتيح توزيع حمل الاستعلامات عبر الـ shards التوسع الأفقي في التوازي، وخاصة في البيئات ذات الإنتاجية العالية.
+
+<Info>
+  **يستخدم ClickHouse Cloud النُسخ المتماثلة المتوازية بدلًا من الـ shards**
+
+  في ClickHouse Cloud، يتحقق هذا المستوى نفسه من التوازي من خلال [parallel replicas](/ar/products/cloud/features/infrastructure/parallel-replicas)، التي تعمل بصورة مشابهة للـ shards في العناقيد من نوع shared-nothing. وتعالج كل replica في ClickHouse Cloud — وهي عقدة compute عديمة الحالة — جزءًا من البيانات بالتوازي وتُسهم في النتيجة النهائية، تمامًا كما يفعل shard مستقل.
+</Info>
+
+<div id="monitoring-query-parallelism">
+  ## مراقبة توازي الاستعلامات
+</div>
+
+استخدم هذه الأدوات للتحقق من أن استعلامك يستفيد بالكامل من موارد CPU المتاحة، ولتشخيص الحالات التي لا يحدث فيها ذلك.
+
+نُشغّل هذا على خادم اختباري يحتوي على 59 نواة CPU، مما يتيح لـ ClickHouse أن يُظهر قدراته في توازي الاستعلامات بشكل كامل.
+
+لمعرفة كيفية تنفيذ الاستعلام التجريبي، يمكننا توجيه خادم ClickHouse لإرجاع جميع إدخالات السجل بمستوى `trace` أثناء استعلام التجميع. في هذا العرض التوضيحي، أزلنا الشرط من الاستعلام — وإلا فلن تُعالَج سوى 3 حبيبات، وهو ما لا يوفر بيانات كافية ليستفيد ClickHouse من أكثر من عدد قليل من مسارات المعالجة المتوازية:
+
+```sql
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+SETTINGS send_logs_level='trace';
+```
+
+```txt
+① <Debug> ...: 3609 marks to read from 3 ranges
+② <Trace> ...: Spreading mark ranges among streams
+② <Debug> ...: Reading approx. 29564928 rows with 59 streams
+```
+
+يمكننا أن نرى أن
+
+* ① يحتاج ClickHouse إلى قراءة 3,609 حبيبة (يُشار إليها على أنها علامات في سجلات التتبّع) عبر 3 نطاقات بيانات.
+* ② مع 59 نواة CPU، يوزّع هذا العمل على 59 تدفق معالجة متوازيًا—واحد لكل مسار.
+
+بدلًا من ذلك، يمكننا استخدام عبارة [EXPLAIN](/ar/reference/statements/explain#explain-pipeline) لفحص [المخطط الفعلي للمشغّلات](/ar/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)—المعروف أيضًا باسم &quot;مسار تنفيذ الاستعلام&quot;—لاستعلام التجميع:
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple;
+```
+
+```txt
+    ┌─explain───────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                      │
+ 2. │ ExpressionTransform × 59                                                          │
+ 3. │   (Aggregating)                                                                   │
+ 4. │   Resize 59 → 59                                                                  │
+ 5. │     AggregatingTransform × 59                                                     │
+ 6. │       StrictResize 59 → 59                                                        │
+ 7. │         (Expression)                                                              │
+ 8. │         ExpressionTransform × 59                                                  │
+ 9. │           (ReadFromMergeTree)                                                     │
+10. │           MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+    └───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+ملاحظة: اقرأ مخطط المشغّلات أعلاه من الأسفل إلى الأعلى. يمثّل كل سطر مرحلةً في خطة التنفيذ الفيزيائية، بدءًا من قراءة البيانات من التخزين في الأسفل وانتهاءً بخطوات المعالجة النهائية في الأعلى. تُنفَّذ المشغّلات المعلَّمة بـ `× 59` بالتوازي عبر مناطق بيانات غير متداخلة ضمن 59 مسار معالجة متوازيًا. يعكس ذلك قيمة `max_threads` ويوضح كيف تُنفَّذ كل مرحلة من مراحل الاستعلام بالتوازي عبر أنوية CPU.
+
+يمكن لـ [واجهة الويب المضمّنة](/ar/concepts/features/interfaces/http) في ClickHouse (المتاحة عند نقطة النهاية `/play`) عرض الخطة الفيزيائية أعلاه في شكل تصوّر بياني. في هذا المثال، نضبط `max_threads` على `4` للحفاظ على التصوّر مختصرًا، بحيث يعرض 4 مسارات معالجة متوازية فقط:
+
+<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="مسار تنفيذ الاستعلام" />
+
+ملاحظة: اقرأ التصوّر من اليسار إلى اليمين. يمثّل كل صف مسار معالجة متوازيًا يمرّر كتل البيانات كتلةً تلو الأخرى، مع تطبيق تحويلات مثل التصفية والتجميع ومراحل المعالجة النهائية. في هذا المثال، يمكنك رؤية أربعة مسارات متوازية تقابل الإعداد `max_threads = 4`.
+
+<div id="load-balancing-across-processing-lanes">
+  ### موازنة التحميل عبر مسارات المعالجة
+</div>
+
+لاحظ أن المشغّلات `Resize` في الخطة الفيزيائية أعلاه [تعيد التقسيم وإعادة التوزيع](/ar/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) لتدفقات كتل البيانات عبر مسارات المعالجة، بما يضمن استخدامها بصورة متوازنة. وتكتسب إعادة الموازنة هذه أهمية خاصة عندما تختلف نطاقات البيانات في عدد الصفوف التي تطابق شروط الاستعلام، وإلا فقد تُرهَق بعض المسارات بينما تبقى أخرى خاملة. ومن خلال إعادة توزيع العمل، تساعد المسارات الأسرع نظيراتها الأبطأ فعليًا، مما يحسّن زمن تنفيذ الاستعلام إجمالًا.
+
+<div id="why-max-threads-isnt-always-respected">
+  ## لماذا لا يُلتزم دائمًا بـ max_threads
+</div>
+
+كما ذُكر أعلاه، يُتحكَّم في عدد مسارات المعالجة المتوازية `n` بواسطة الإعداد `max_threads`، والذي يطابق افتراضيًا عدد أنوية CPU المتاحة لـ ClickHouse على الخادم:
+
+```sql
+SELECT getSetting('max_threads');
+```
+
+```txt
+   ┌─getSetting('max_threads')─┐
+1. │                        59 │
+   └───────────────────────────┘
+```
+
+ومع ذلك، قد يتم تجاهل قيمة `max_threads` اعتمادًا على كمية البيانات المختارة للمعالجة:
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+...   
+(ReadFromMergeTree)
+MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 30
+```
+
+كما يظهر في المقتطف أعلاه من مخطط المشغّل، على الرغم من ضبط `max_threads` على `59`، لا يستخدم ClickHouse سوى **30** تدفقًا متزامنًا لفحص البيانات.
+
+والآن لنشغّل الاستعلام:
+
+```sql
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+   ┌─max(price)─┐
+1. │  594300000 │ -- 594.30 million
+   └────────────┘
+   
+1 row in set. Elapsed: 0.013 sec. Processed 2.31 million rows, 13.66 MB (173.12 million rows/s., 1.02 GB/s.)
+Peak memory usage: 27.24 MiB.   
+```
+
+كما هو موضح في المخرجات أعلاه، عالج الاستعلام 2.31 مليون صف وقرأ 13.66MB من البيانات. ويعود ذلك إلى أنه خلال مرحلة تحليل الفهرس، اختار ClickHouse **282 حبيبة** للمعالجة، يحتوي كل منها على 8,192 صفًا، ليصل الإجمالي إلى نحو 2.31 مليون صف:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+    ┌─explain───────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))             │
+ 2. │   Aggregating                                         │
+ 3. │     Expression (Before GROUP BY)                      │
+ 4. │       Expression                                      │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)   │
+ 6. │         Indexes:                                      │
+ 7. │           PrimaryKey                                  │
+ 8. │             Keys:                                     │
+ 9. │               town                                    │
+10. │             Condition: (town in ['LONDON', 'LONDON']) │
+11. │             Parts: 3/3                                │
+12. │             Granules: 282/3609                        │
+    └───────────────────────────────────────────────────────┘  
+```
+
+بغضّ النظر عن قيمة `max_threads` المُعدّة، لا يخصّص ClickHouse مسارات معالجة متوازية إضافية إلا عندما تكون هناك بيانات كافية تبرّر ذلك. وتشير كلمة &quot;max&quot; في `max_threads` إلى حدٍّ أقصى، لا إلى عددٍ مضمون من خيوط التنفيذ المستخدمة.
+
+والمقصود بـ &quot;البيانات الكافية&quot; يتحدّد أساسًا من خلال إعدادين يحددان الحد الأدنى لعدد الصفوف (163,840 افتراضيًا) والحد الأدنى لعدد البايتات (2,097,152 افتراضيًا) التي ينبغي أن يعالجها كل مسار معالجة:
+
+بالنسبة إلى عناقيد shared-nothing:
+
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/ar/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/ar/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read)
+
+بالنسبة إلى العناقيد ذات التخزين المشترك (مثل ClickHouse Cloud):
+
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ar/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/ar/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
+
+بالإضافة إلى ذلك، هناك حدٌّ أدنى صارم لحجم مهمة القراءة، ويُتحكَّم فيه بواسطة:
+
+* [Merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/ar/reference/settings/session-settings#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/ar/reference/settings/session-settings#merge_tree_min_bytes_per_task_for_remote_reading)
+
+<Warning>
+  **لا تعدّل هذه الإعدادات**
+
+  لا نوصي بتعديل هذه الإعدادات في بيئات الإنتاج. وهي معروضة هنا فقط لتوضيح سبب عدم كون `max_threads` محدِّدًا دائمًا للمستوى الفعلي من التوازي.
+</Warning>
+
+لأغراض العرض التوضيحي، لنفحص الخطة الفعلية بعد تجاوز هذه الإعدادات لفرض أقصى درجة من التزامن:
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON'
+SETTINGS
+  max_threads = 59,
+  merge_tree_min_read_task_size = 0,
+  merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 0, 
+  merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 0;
+```
+
+```txt
+...   
+(ReadFromMergeTree)
+MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59
+```
+
+يستخدم ClickHouse الآن 59 تدفقًا متزامنًا لفحص البيانات، مع الالتزام الكامل بالقيمة المضبوطة لـ `max_threads`.
+
+يوضح هذا أنه عند تنفيذ استعلامات على مجموعات بيانات صغيرة، يحد ClickHouse التوازي عمدًا. استخدم تجاوزات الإعدادات للاختبار فقط—not in production—إذ قد تؤدي إلى تنفيذ غير فعّال أو إلى تنازع على الموارد.
+
+<div id="key-takeaways">
+  ## أهم النقاط
+</div>
+
+* يعالج ClickHouse الاستعلامات بالتوازي باستخدام مسارات معالجة مرتبطة بـ `max_threads`.
+* يعتمد العدد الفعلي للمسارات على حجم البيانات المختارة للمعالجة.
+* استخدم `EXPLAIN PIPELINE` وسجلات التتبّع لتحليل استخدام المسارات.
+
+<div id="where-to-find-more-information">
+  ## أين يمكن العثور على مزيد من المعلومات
+</div>
+
+إذا كنت ترغب في التعمق أكثر في كيفية تنفيذ ClickHouse للاستعلامات بالتوازي وكيف يحقق أداءً عاليًا على نطاق واسع، فاطّلع على الموارد التالية:
+
+* [طبقة معالجة الاستعلامات – ورقة VLDB 2024 (إصدار الويب)](/ar/concepts/core-concepts/academic-overview#4-query-processing-layer) - شرح مفصل لنموذج التنفيذ الداخلي في ClickHouse، بما في ذلك الجدولة، والمعالجة عبر خطوط الأنابيب، وتصميم المعاملات.
+
+* [شرح حالات التجميع الجزئية](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#-multi-core-parallelization) - عرض تقني متعمق لكيفية إتاحة حالات التجميع الجزئية تنفيذًا متوازيًا عالي الكفاءة عبر مسارات المعالجة.
+
+* فيديو تعليمي يشرح بالتفصيل جميع خطوات معالجة استعلامات ClickHouse:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/hP6G2Nlz_cA?si=Imd_i427J_kZOXHe" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

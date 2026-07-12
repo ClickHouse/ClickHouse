@@ -1,0 +1,53 @@
+---
+date: 2025-01-10
+title: 为什么 ClickHouse 默认日志会如此详细？
+description: "了解 ClickHouse 开发者为何默认采用如此详细的日志级别。"
+tags: ['设置']
+keywords: ['默认日志']
+---
+
+<div id="verbose-logging">
+  ## 详细日志
+</div>
+
+经常让新用户感到困惑的一点是，即使在负载很轻的情况下，ClickHouse 也会输出大量日志。
+
+这是因为受历史原因影响，默认日志级别是 `trace` (而其他数据库的默认值通常是 `warning`) 。
+
+ClickHouse 的开发者认为，一旦出现问题，`trace` 能提供大量有助于排查的信息。
+
+另一方面，日志量过大也意味着系统表 `system.text_log` 很快就会填满，并且需要在后台进行合并。
+
+如果数据库运行稳定，用户可以重新配置日志级别，下面会说明具体做法。
+
+<div id="change-the-log-level">
+  ## 更改日志级别
+</div>
+
+可用的各个日志级别记录在[这里](/zh/reference/settings/server-settings/settings#logger)。
+
+你需要编辑 ClickHouse 服务器配置文件 (`/etc/clickhouse-server/config.xml`) 来修改日志级别。
+
+默认值为 `trace`，但你可以将其更改为所需的级别。请参见下面的注释：
+
+```
+<clickhouse>
+    <logger>
+        {/* 可用级别 [1]：
+
+          - none（关闭日志）
+          - fatal
+          - critical
+          - error
+          - warning
+          - notice
+          - information
+          - debug
+          - trace
+          - test（不适用于生产环境）
+
+            [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114 */}
+        <level>trace</level>
+... 配置文件其余部分
+</clickhouse>
+```
