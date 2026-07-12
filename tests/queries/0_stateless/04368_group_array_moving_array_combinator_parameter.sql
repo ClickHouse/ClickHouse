@@ -66,3 +66,23 @@ SELECT groupArrayMovingSumMerge(2)(s) FROM legacy_moving;
 INSERT INTO legacy_moving SELECT groupArrayMovingSumState(2)(x) FROM (SELECT arrayJoin([10, 20, 30]) AS x);
 SELECT length(r), r[length(r)] FROM (SELECT groupArrayMovingSumMerge(s) AS r FROM legacy_moving);
 DROP TABLE legacy_moving;
+
+-- Same upgrade contract for kolmogorovSmirnovTest: a legacy parameterless
+-- AggregateFunction(kolmogorovSmirnovTest, ...) column must stay usable with the parameterized
+-- ...Merge(...) and accept aggregate-to-aggregate inserts of new parameterized states.
+DROP TABLE IF EXISTS legacy_ks;
+CREATE TABLE legacy_ks (s AggregateFunction(kolmogorovSmirnovTest, Float64, Float64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO legacy_ks SELECT kolmogorovSmirnovTestState(x, y) FROM (SELECT arrayJoin([1., 2, 3, 4]) AS x, arrayJoin([0., 0, 1, 1]) AS y);
+SELECT tupleElement(kolmogorovSmirnovTestMerge('two-sided')(s), 'd_statistic') BETWEEN 0 AND 1 FROM legacy_ks;
+INSERT INTO legacy_ks SELECT kolmogorovSmirnovTestState('two-sided')(x, y) FROM (SELECT arrayJoin([5., 6]) AS x, arrayJoin([2., 2]) AS y);
+SELECT tupleElement(kolmogorovSmirnovTestMerge('two-sided')(s), 'd_statistic') BETWEEN 0 AND 1 FROM legacy_ks;
+DROP TABLE legacy_ks;
+
+-- Same upgrade contract for mannWhitneyUTest.
+DROP TABLE IF EXISTS legacy_mwu;
+CREATE TABLE legacy_mwu (s AggregateFunction(mannWhitneyUTest, Float64, Float64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO legacy_mwu SELECT mannWhitneyUTestState(x, y) FROM (SELECT arrayJoin([1., 2, 3, 4]) AS x, arrayJoin([0., 0, 1, 1]) AS y);
+SELECT tupleElement(mannWhitneyUTestMerge('two-sided', 1)(s), 'u_statistic') >= 0 FROM legacy_mwu;
+INSERT INTO legacy_mwu SELECT mannWhitneyUTestState('two-sided', 1)(x, y) FROM (SELECT arrayJoin([5., 6]) AS x, arrayJoin([2., 2]) AS y);
+SELECT tupleElement(mannWhitneyUTestMerge('two-sided', 1)(s), 'u_statistic') >= 0 FROM legacy_mwu;
+DROP TABLE legacy_mwu;
