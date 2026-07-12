@@ -139,7 +139,7 @@ void insertLeafValue(IColumn & column, const DataTypePtr & type, const BigQueryF
         }
         case BigQueryField::Type::Float:
         {
-            Float64 float_value;
+            Float64 float_value = 0;
             if (text == "Infinity")
                 float_value = std::numeric_limits<Float64>::infinity();
             else if (text == "-Infinity")
