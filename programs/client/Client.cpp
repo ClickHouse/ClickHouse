@@ -72,6 +72,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
+    extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
@@ -650,10 +651,16 @@ void Client::connect()
                     /// (e.g. a proxy in front of the server accepts TCP on the plain port but only
                     /// serves TLS there). Retry with TLS on the secure port before giving up,
                     /// but only for connection-level failures.
+                    ///
+                    /// A TLS-only listener on the plain port answers the native `Hello` with a TLS
+                    /// alert record, whose first byte the client reads as an unexpected packet type,
+                    /// so `Connection::receiveHello` throws `UNEXPECTED_PACKET_FROM_SERVER`; that is
+                    /// the normal outcome of the "plain port serves TLS" case and must be retriable.
                     const bool is_connection_error = e.code() == ErrorCodes::NETWORK_ERROR
                         || e.code() == ErrorCodes::SOCKET_TIMEOUT
                         || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
-                        || e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER;
+                        || e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER
+                        || e.code() == ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER;
 
                     if (candidate_index + 1 < candidates.size() && is_connection_error)
                     {

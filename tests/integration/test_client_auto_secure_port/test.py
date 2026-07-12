@@ -78,6 +78,35 @@ def unfirewall_plain_port(action):
     )
 
 
+def redirect_plain_port_to_secure(add):
+    """Redirect connections from node_plain_only to the plain port (9000) of node_both_ports
+    to its secure port (9440). A native (non-TLS) connection to the plain port is then answered
+    by the TLS listener, simulating a proxy that accepts TCP on the plain port but only serves
+    TLS there. The TCP connection succeeds (so the probe prefers the plain port), but the native
+    handshake fails."""
+    node_both_ports.exec_in_container(
+        [
+            "iptables",
+            "--wait",
+            "-t",
+            "nat",
+            "-A" if add else "-D",
+            "PREROUTING",
+            "-p",
+            "tcp",
+            "--dport",
+            "9000",
+            "-s",
+            node_plain_only.ip_address,
+            "-j",
+            "REDIRECT",
+            "--to-ports",
+            "9440",
+        ],
+        user="root",
+    )
+
+
 def run_client(server, *args, from_node=None, nothrow=False):
     from_node = from_node or node_plain_only
     return from_node.exec_in_container(
@@ -141,6 +170,19 @@ def test_secure_port_chosen_when_plain_dropped():
         assert time.time() - start < 8
     finally:
         unfirewall_plain_port("DROP")
+
+
+def test_secure_port_chosen_when_plain_serves_tls():
+    # A proxy in front of the server accepts TCP on the plain port but only speaks TLS there.
+    # The probe sees the plain port accept the connection and prefers it, but the native handshake
+    # reads the TLS alert record as an unexpected packet (UNEXPECTED_PACKET_FROM_SERVER). The client
+    # must treat that as a connection-level failure and retry over TLS on the secure port instead of
+    # giving up, otherwise the "plain port accepts TCP but only serves TLS" case stays broken.
+    redirect_plain_port_to_secure(add=True)
+    try:
+        assert query_is_secure(node_both_ports) == 1
+    finally:
+        redirect_plain_port_to_secure(add=False)
 
 
 def test_explicit_port_is_not_upgraded():
