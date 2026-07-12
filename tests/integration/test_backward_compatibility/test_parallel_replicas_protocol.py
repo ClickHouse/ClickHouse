@@ -19,12 +19,11 @@ nodes = [
 ] + [
     cluster.add_instance(
         "node2",
-        # node2 runs the new build; pin compatible_double_hashes so its inserts still write the
-        # legacy per-part hash and deduplicate against the old (24.3) replicas of this shared
-        # ReplicatedMergeTree. With the default new_unified_hash the new node would write only the
-        # unified hash, fail to cross-deduplicate with the old replicas, and the table would end up
-        # with a second copy of the data (mixed-version migration uses compatible_double_hashes).
-        main_configs=["configs/clusters.xml", "configs/dedup_compatible.xml"],
+        # node2 runs the new build, which deduplicates inserts with the unified hash only — the old
+        # replicas of this shared ReplicatedMergeTree do not share that hash. The table is therefore
+        # populated from a single replica and propagated by replication (see the test body) instead
+        # of relying on cross-version insert deduplication.
+        main_configs=["configs/clusters.xml"],
         with_zookeeper=True,
         use_old_analyzer=False,
     )
@@ -85,8 +84,16 @@ def test_backward_compatability(start_cluster):
             order by (a)
         """
         )
-        node.query("insert into t select number % 100000 from numbers_mt(1000000) ORDER BY ALL")
-        node.query("optimize table t final")
+
+    # Populate from a single replica and let replication propagate the data to the others. Inserting
+    # the same data from every replica would rely on cross-version insert deduplication, which the
+    # new build (unified hash only) no longer shares with the old replicas.
+    nodes[0].query("insert into t select number % 100000 from numbers_mt(1000000) ORDER BY ALL")
+    # No OPTIMIZE FINAL: a single insert is one part, so FINAL is a no-op merge whose MERGE_PARTS entry
+    # the old replicas cannot reproduce byte-identically across versions and can hang for minutes. The
+    # assertions below do not depend on part layout.
+    for node in nodes:
+        node.query("system sync replica t")
 
     # all we want is the query to run without errors
     for node in nodes:

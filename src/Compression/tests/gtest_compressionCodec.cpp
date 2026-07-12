@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -12,6 +11,7 @@
 
 #include <Compression/ICompressionCodec.h>
 #include <Compression/LZ4_decompress_faster.h>
+#include <Compression/getCompressionCodecForFile.h>
 #include <IO/BufferWithOwnMemory.h>
 
 #include <random>
@@ -33,6 +33,11 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+extern const int CORRUPTED_DATA;
+extern const int TOO_LARGE_SIZE_COMPRESSED;
+}
 
 namespace
 {
@@ -933,8 +938,8 @@ INSTANTIATE_TEST_SUITE_P(SameValueFloat,
             Codec("ALP(RD), ZSTD")
         ),
         ::testing::Values(
-            generateSeq<Float32>(G(SameValueGenerator(M_E))),
-            generateSeq<Float64>(G(SameValueGenerator(M_E)))
+            generateSeq<Float32>(G(SameValueGenerator(std::numbers::e_v<Float32>))),
+            generateSeq<Float64>(G(SameValueGenerator(std::numbers::e_v<Float64>)))
         )
     )
 );
@@ -957,8 +962,8 @@ INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
             Codec("ALP(RD), ZSTD")
         ),
         ::testing::Values(
-            generateSeq<Float32>(G(SameValueGenerator(-1 * M_E))),
-            generateSeq<Float64>(G(SameValueGenerator(-1 * M_E)))
+            generateSeq<Float32>(G(SameValueGenerator(-std::numbers::e_v<Float32>))),
+            generateSeq<Float64>(G(SameValueGenerator(-std::numbers::e_v<Float64>)))
         )
     )
 );
@@ -1017,8 +1022,8 @@ INSTANTIATE_TEST_SUITE_P(SequentialFloat,
             Codec("ALP(RD), ZSTD")
         ),
         ::testing::Values(
-            generateSeq<Float32>(G(SequentialGenerator(M_E))),
-            generateSeq<Float64>(G(SequentialGenerator(M_E)))
+            generateSeq<Float32>(G(SequentialGenerator(std::numbers::e_v<Float32>))),
+            generateSeq<Float64>(G(SequentialGenerator(std::numbers::e_v<Float64>)))
         )
     )
 );
@@ -1041,8 +1046,8 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
             Codec("ALP(RD), ZSTD")
         ),
         ::testing::Values(
-            generateSeq<Float32>(G(SequentialGenerator(-1 * M_E))),
-            generateSeq<Float64>(G(SequentialGenerator(-1 * M_E)))
+            generateSeq<Float32>(G(SequentialGenerator(-std::numbers::e_v<Float32>))),
+            generateSeq<Float64>(G(SequentialGenerator(-std::numbers::e_v<Float64>)))
         )
     )
 );
@@ -1091,8 +1096,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicFloat,
             Codec("ALP(RD)")
         ),
         ::testing::Values(
-            generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(M_E), 5))),
-            generateSeq<Float64>(G(MonotonicGenerator<Float64>(M_E, 5)))
+            generateSeq<Float32>(G(MonotonicGenerator<Float32>(std::numbers::e_v<Float32>, 5))),
+            generateSeq<Float64>(G(MonotonicGenerator<Float64>(std::numbers::e_v<Float64>, 5)))
         )
     )
 );
@@ -1107,8 +1112,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicReverseFloat,
             Codec("ALP(RD)")
         ),
         ::testing::Values(
-            generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(-1 * M_E), 5))),
-            generateSeq<Float64>(G(MonotonicGenerator<Float64>(-1 * M_E, 5)))
+            generateSeq<Float32>(G(MonotonicGenerator<Float32>(-std::numbers::e_v<Float32>, 5))),
+            generateSeq<Float64>(G(MonotonicGenerator<Float64>(-std::numbers::e_v<Float64>, 5)))
         )
     )
 );
@@ -1570,6 +1575,112 @@ TEST(CompressionCodecMultipleTest, DecompressMalformedInputShortBlockHeader)
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
 }
 
+/// Expects getCompressionCodecForFile to reject the block with the given error code.
+void expectRejectedBlock(ReadBuffer & in, int expected_code, bool skip_to_next_block = true)
+{
+    UInt32 size_compressed = 0;
+    UInt32 size_decompressed = 0;
+    try
+    {
+        getCompressionCodecForFile(in, size_compressed, size_decompressed, skip_to_next_block);
+        FAIL() << "Expected exception with code " << expected_code;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), expected_code);
+    }
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeBelowHeader)
+{
+    /// size_compressed (5) is below the 9-byte block header: must throw CORRUPTED_DATA.
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x82, /// LZ4 method byte
+        0x05, 0x00, 0x00, 0x00, /// size_compressed = 5
+        0x01, 0x00, 0x00, 0x00, /// size_decompressed = 1
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA);
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnCorruptSizeEvenWithoutSkip)
+{
+    /// Pin that the size checks run regardless of the flag.
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x82, /// LZ4 method byte
+        0x05, 0x00, 0x00, 0x00, /// size_compressed = 5
+        0x01, 0x00, 0x00, 0x00, /// size_decompressed = 1
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA, /*skip_to_next_block=*/false);
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeAboveLimit)
+{
+    /// size_compressed (2 GiB) is above DBMS_MAX_COMPRESSED_SIZE (1 GiB): must throw TOO_LARGE_SIZE_COMPRESSED.
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x82, /// LZ4 method byte
+        0x00, 0x00, 0x00, 0x80, /// size_compressed = 2 GiB
+        0x01, 0x00, 0x00, 0x00, /// size_decompressed = 1
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnZeroDecompressedSize)
+{
+    /// Decompression rejects blocks with decompressed size 0, so identification must too.
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x82, /// LZ4 method byte
+        0x0D, 0x00, 0x00, 0x00, /// size_compressed = 13 (valid)
+        0x00, 0x00, 0x00, 0x00, /// size_decompressed = 0
+        0x01, 0x02, 0x03, 0x04, /// payload, so unguarded code would identify the codec successfully
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA);
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnMultipleSizeBelowConsumed)
+{
+    /// Multiple block whose declared size_compressed (10) is below the chain bytes consumed (9B header + 1B count + 2 method bytes).
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x91, /// Multiple method byte
+        0x0A, 0x00, 0x00, 0x00, /// size_compressed = 10
+        0x01, 0x00, 0x00, 0x00, /// size_decompressed = 1
+        0x02, /// 2 codecs
+        0x82, 0x82, /// two LZ4 method bytes (valid, so codec construction succeeds)
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA);
+}
+
+TEST(GetCompressionCodecForFileTest, DoesNotOverreadMultipleCountByteWhenSizeEqualsHeader)
+{
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x91, /// Multiple method byte
+        0x09, 0x00, 0x00, 0x00, /// size_compressed = 9 (== header size, so no payload follows)
+        0x01, 0x00, 0x00, 0x00, /// size_decompressed = 1
+        0x01, /// count byte: belongs to the next block, must NOT be read
+        0x82, /// padding, so an (incorrect) read of the count byte would find real data
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA);
+    /// The count byte at offset 25 must not have been consumed.
+    EXPECT_EQ(in.count(), 16u + ICompressionCodec::getHeaderSize());
+}
+
 auto ALPSequentialGenerator = []<typename T>(T base = T{0}, T exception = T{0}, double exception_probability = 0, int decimals = 2)
 {
     std::default_random_engine random_engine(17); /// NOLINT
@@ -1619,9 +1730,9 @@ INSTANTIATE_TEST_SUITE_P(ALPRDSequentialF64,
             Codec("ALP(AUTO)", 0.88) // AUTO will fall back to RD, STD would produce ratio slightly more than 1.0
         ),
         ::testing::Values(
-            generateSeq<Float64>(G(RandomGenerator<Float64>(42, M_E, 2 * M_E)), 0, 1024),
-            generateSeq<Float64>(G(RandomGenerator<Float64>(42, M_E, 2 * M_E)), 0, 2048),
-            generateSeq<Float64>(G(RandomGenerator<Float64>(42, M_E, 2 * M_E)), 0, 2816)
+            generateSeq<Float64>(G(RandomGenerator<Float64>(42, std::numbers::e_v<Float64>, 2 * std::numbers::e_v<Float64>)), 0, 1024),
+            generateSeq<Float64>(G(RandomGenerator<Float64>(42, std::numbers::e_v<Float64>, 2 * std::numbers::e_v<Float64>)), 0, 2048),
+            generateSeq<Float64>(G(RandomGenerator<Float64>(42, std::numbers::e_v<Float64>, 2 * std::numbers::e_v<Float64>)), 0, 2816)
         )
     )
 );
@@ -1652,9 +1763,9 @@ INSTANTIATE_TEST_SUITE_P(ALPRDSequentialF32,
             Codec("ALP(AUTO)", 0.87) // AUTO will fall back to RD, STD would produce ratio slightly more than 1.0
         ),
         ::testing::Values(
-            generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 1024),
-            generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 2048),
-            generateSeq<Float32>(G(RandomGenerator<Float32>(42, M_Ef32, 2 * M_Ef32)), 0, 2816)
+            generateSeq<Float32>(G(RandomGenerator<Float32>(42, std::numbers::e_v<Float32>, 2 * std::numbers::e_v<Float32>)), 0, 1024),
+            generateSeq<Float32>(G(RandomGenerator<Float32>(42, std::numbers::e_v<Float32>, 2 * std::numbers::e_v<Float32>)), 0, 2048),
+            generateSeq<Float32>(G(RandomGenerator<Float32>(42, std::numbers::e_v<Float32>, 2 * std::numbers::e_v<Float32>)), 0, 2816)
         )
     )
 );
@@ -1798,8 +1909,8 @@ INSTANTIATE_TEST_SUITE_P(ALPExceptionsOnly,
         ::testing::Values(
             generateSeq<Float64>(G([](auto) { return std::numeric_limits<Float64>::quiet_NaN(); })),
             generateSeq<Float32>(G([](auto) { return std::numeric_limits<Float32>::quiet_NaN(); })),
-            generateSeq<Float64>(G([](auto) { return std::numbers::pi_v<double>; })),
-            generateSeq<Float32>(G([](auto) { return std::numbers::pi_v<float>; }))
+            generateSeq<Float64>(G([](auto) { return std::numbers::pi_v<Float64>; })),
+            generateSeq<Float32>(G([](auto) { return std::numbers::pi_v<Float32>; }))
         )
     )
 );
@@ -1833,7 +1944,7 @@ INSTANTIATE_TEST_SUITE_P(ALPRDSameValuesF64,
     ::testing::Combine(
         ::testing::Values(Codec("ALP(RD)", 0.77)),
         ::testing::Values(
-            generateSeq<Float64>(G([](auto) { return M_PI; }))
+            generateSeq<Float64>(G([](auto) { return std::numbers::pi_v<Float64>; }))
         )
     )
 );
@@ -1843,7 +1954,7 @@ INSTANTIATE_TEST_SUITE_P(ALPRDSameValuesF32,
     ::testing::Combine(
         ::testing::Values(Codec("ALP(RD)", 0.52)),
         ::testing::Values(
-            generateSeq<Float32>(G([](auto) { return M_PIf32; }))
+            generateSeq<Float32>(G([](auto) { return std::numbers::pi_v<Float32>; }))
         )
     )
 );
@@ -1944,6 +2055,41 @@ TEST_F(ALPTest, CompressProducesCorrectHeader)
         ASSERT_EQ(compressed_memory[ICompressionCodec::getHeaderSize()], expected_meta_byte) << "for codec " << codec_name << " and data type " << data_type->getName();
         ASSERT_EQ(compressed_memory[ICompressionCodec::getHeaderSize() + 1], expected_float_width) << "for codec " << codec_name << " and data type " << data_type->getName();
     }
+}
+
+UInt8 alpAutoFloat64MetaByte(const std::vector<Float64> & values)
+{
+    auto codec = makeCodec("ALP(AUTO)", std::make_shared<DataTypeFloat64>());
+
+    const UInt32 source_size = static_cast<UInt32>(values.size() * sizeof(Float64));
+
+    Memory<> compressed_memory;
+    compressed_memory.resize(ICompressionCodec::getHeaderSize() + codec->getCompressedReserveSize(source_size));
+
+    codec->compress(reinterpret_cast<const char *>(values.data()), source_size, compressed_memory.data());
+
+    return static_cast<UInt8>(compressed_memory[ICompressionCodec::getHeaderSize()]);
+}
+
+TEST_F(ALPTest, AutoVariantGlobalSamplingCoversWholeStream)
+{
+    /// With 257-511 values the presampling windows used to cluster at the head of the stream.
+    /// The head is STD-hostile and the tail decimal-friendly, so STD wins only if the tail is sampled.
+    std::vector<Float64> values(300);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = i < 128 ? std::sin(static_cast<Float64>(i + 1)) * 1e6 : static_cast<Float64>(i) * 0.1;
+
+    ASSERT_EQ(alpAutoFloat64MetaByte(values), 0x01); // STD
+}
+
+TEST_F(ALPTest, AutoVariantThresholdIsSampleLengthIndependent)
+{
+    /// All values are STD-hostile, but the unscaled estimate of the 8-value tail sample used to stay below the full-sample threshold and forced STD.
+    std::vector<Float64> values(40);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = std::sin(static_cast<Float64>(i + 1)) * 1e6;
+
+    ASSERT_EQ(alpAutoFloat64MetaByte(values), 0x11); // RD
 }
 
 TEST_F(ALPTest, DecompressMalformedInputWithTruncatedHeader)

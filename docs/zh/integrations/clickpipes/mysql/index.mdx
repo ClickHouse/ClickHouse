@@ -1,0 +1,144 @@
+---
+sidebarTitle: '从 MySQL 向 ClickHouse 摄取数据'
+description: '将您的 MySQL 或 MariaDB 数据库中的数据无缝摄取到 ClickHouse Cloud。'
+slug: /integrations/clickpipes/mysql
+title: '从 MySQL 向 ClickHouse 摄取数据（使用 CDC）'
+doc_type: 'guide'
+keywords: ['MySQL', 'ClickPipes', 'CDC', '变更数据捕获', '数据库复制']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+<Info>
+  通过 ClickPipes 将数据从 MySQL 摄取到 ClickHouse Cloud 目前处于 Public Beta 阶段。
+</Info>
+
+MySQL ClickPipe 提供了一种全托管且可靠的方式，可将 MySQL 和 MariaDB 数据库中的数据摄取到 ClickHouse Cloud。它既支持用于一次性摄取的 **批量加载**，也支持用于持续摄取的 **CDC (变更数据捕获)&#x20;**。
+
+MySQL ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可通过 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+[//]: # "TODO 一次性摄取管道不需要配置 binlog 复制。这一点过去经常让人困惑，因此我们还应提供批量加载所需的最低要求，以免把用户吓跑。"
+
+开始之前，您首先需要确保 MySQL 数据库已正确配置为支持 binlog 复制。具体配置步骤取决于您部署 MySQL 的方式，因此请按照下方对应的指南进行操作：
+
+<div id="supported-data-sources">
+  ### 支持的数据源
+</div>
+
+| 名称                                                | 标志 | 详情                                                                                                            |
+| ------------------------------------------------- | -- | ------------------------------------------------------------------------------------------------------------- |
+| **Amazon RDS MySQL** <br /> *一次性加载，CDC*           |    | 请参阅 [Amazon RDS MySQL](/zh/integrations/clickpipes/mysql/source/rds) 配置指南。                                       |
+| **Amazon Aurora MySQL** <br /> *一次性加载，CDC*        |    | 请参阅 [Amazon Aurora MySQL](/zh/integrations/clickpipes/mysql/source/aurora) 配置指南。                                 |
+| **Cloud SQL for MySQL** <br /> *一次性加载，CDC*        |    | 请参阅 [Cloud SQL for MySQL](/zh/integrations/clickpipes/mysql/source/gcp) 配置指南。                                    |
+| **Azure Database for MySQL 灵活服务器** <br /> *一次性加载* |    | 请参阅 [Azure Database for MySQL 灵活服务器](/zh/integrations/clickpipes/mysql/source/azure-flexible-server-mysql) 配置指南。 |
+| **自托管 MySQL** <br /> *一次性加载，CDC*                  |    | 请参阅 [Generic MySQL](/zh/integrations/clickpipes/mysql/source/generic) 配置指南。                                      |
+| **Amazon RDS MariaDB** <br /> *一次性加载，CDC*         |    | 请参阅 [Amazon RDS MariaDB](/zh/integrations/clickpipes/mysql/source/rds-maria) 配置指南。                               |
+| **自托管 MariaDB** <br /> *一次性加载，CDC*                |    | 请参阅 [Generic MariaDB](/zh/integrations/clickpipes/mysql/source/generic-maria) 配置指南。                              |
+
+设置好源 MySQL 数据库后，您就可以继续创建 ClickPipe。
+
+<div id="create-your-clickpipe">
+  ## 创建你的 ClickPipe
+</div>
+
+请确保你已登录到 ClickHouse Cloud 账户。如果你还没有账户，可以在[这里](https://cloud.clickhouse.com/)注册。
+
+[//]: # "   TODO 在此更新图片"
+
+1. 在 ClickHouse Cloud 控制台中，前往你的 ClickHouse Cloud 服务。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 服务" size="lg" border />
+
+2. 在左侧菜单中选择 `Data Sources` 按钮，然后点击“Set up a ClickPipe”
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
+
+3. 选择 `MySQL CDC` 卡片
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="选择 MySQL" size="lg" border />
+
+<div id="add-your-source-mysql-database-connection">
+  ### 添加源 MySQL 数据库连接
+</div>
+
+4. 填写你在前置条件步骤中配置的源 MySQL 数据库连接信息。
+
+<Info>
+  在开始添加连接信息之前，请确保你已在防火墙规则中将 ClickPipes IP 地址加入白名单。你可以在以下页面查看 [ClickPipes IP 地址列表](/zh/integrations/clickpipes/home#list-of-static-ips)。
+  更多信息请参阅本页顶部链接的源 MySQL 设置指南 [本页顶部](#prerequisites)。
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="填写连接信息" size="lg" border />
+
+<div id="optional-set-up-ssh-tunneling">
+  #### &#x20;(可选) 设置 SSH 隧道
+</div>
+
+如果源 MySQL 数据库无法从公网访问，您可以指定 SSH 隧道连接信息。
+
+1. 启用“使用 SSH 隧道”开关。
+
+2. 填写 SSH 连接信息。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH 隧道" size="lg" border />
+
+3. 如需使用基于密钥的身份验证，请点击“撤销并生成密钥对”生成新的密钥对，并将生成的公钥复制到 SSH 服务器上的 `~/.ssh/authorized_keys`。
+
+4. 点击“验证连接”以检查连接是否可用。
+
+<Note>
+  请确保在 SSH 堡垒机主机的防火墙规则中将 [ClickPipes IP addresses](/zh/integrations/clickpipes/home#list-of-static-ips) 加入白名单，以便 ClickPipes 能够建立 SSH 隧道。
+</Note>
+
+填写完连接信息后，点击 `Next`。
+
+<div id="advanced-settings">
+  #### 配置高级设置
+</div>
+
+如有需要，您可以配置高级设置。以下是各项设置的简要说明：
+
+* **同步间隔**：指 ClickPipes 轮询源数据库变更的时间间隔。这会影响目标端 ClickHouse 服务；对于对成本较敏感的用户，建议将该值设高一些 (大于 `3600`) 。
+* **初始加载并行线程数**：指用于拉取初始快照的并行工作线程数。当您有大量表，并希望控制用于拉取初始快照的并行工作线程数时，此设置会很有用。此设置按表生效。
+* **拉取批次大小**：单个批次中拉取的行数。这是一个尽力而为的设置，因此在某些情况下可能不会严格生效。
+* **快照每个分区的行数**：指初始快照期间每个分区中将拉取的行数。当您的表中有大量行，并希望控制每个分区拉取的行数时，此设置会很有用。
+* **快照并行表数量**：指初始快照期间并行拉取的表数量。当您有大量表，并希望控制并行拉取的表数量时，此设置会很有用。
+
+<div id="configure-the-tables">
+  ### 配置表
+</div>
+
+5. 在此，您可以为 ClickPipe 选择目标数据库。您既可以选择现有数据库，也可以新建数据库。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp" alt="选择目标数据库" size="lg" border />
+
+6. 您可以选择要从源 MySQL 数据库复制的表。选择表时，您还可以重命名目标 ClickHouse 数据库中的表，并排除特定列。
+
+<div id="review-permissions-and-start-the-clickpipe">
+  ### 查看权限并启动 ClickPipe
+</div>
+
+7. 在权限下拉菜单中选择“完全访问”角色，然后点击“完成设置”。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="查看权限" size="lg" border />
+
+最后，请参阅 [&quot;ClickPipes for MySQL 常见问题&quot;](/zh/integrations/clickpipes/mysql/faq) 页面，了解常见问题及其解决方法的更多信息。
+
+<div id="whats-next">
+  ## 后续步骤？
+</div>
+
+[//]: # "TODO 编写一份 MySQL 专用迁移指南和最佳实践，类似于现有的 PostgreSQL 指南。当前迁移指南指向 MySQL 表引擎，这并不理想。"
+
+完成 ClickPipe 配置，将数据从 MySQL 复制到 ClickHouse Cloud 后，你就可以重点考虑如何查询和建模数据，以获得最佳性能。有关 MySQL CDC 和故障排查的常见问题，请参阅 [MySQL 常见问题页面](/zh/integrations/clickpipes/mysql/faq)。
