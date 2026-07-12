@@ -27,6 +27,9 @@ namespace
 
         size_t getNumberOfArguments() const override { return 1; }
 
+        /// Do not emit the log message during query analysis, and actually run the function for each block during execution.
+        bool isSuitableForConstantFolding() const override { return false; }
+
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -37,7 +40,18 @@ namespace
             return std::make_shared<DataTypeUInt8>();
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+        {
+            return execute(arguments, result_type, input_rows_count, /* dry_run= */ false);
+        }
+
+        /// Do not emit the log message during query analysis, e.g. while calculating the result header on an empty block.
+        ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+        {
+            return execute(arguments, result_type, input_rows_count, /* dry_run= */ true);
+        }
+
+        ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count, bool dry_run) const
         {
             String message;
             if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
@@ -46,8 +60,11 @@ namespace
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Constant string",
                     getName());
 
-            static auto log = getLogger("FunctionLogTrace");
-            LOG_TRACE(log, fmt::runtime(message));
+            if (!dry_run)
+            {
+                static auto log = getLogger("FunctionLogTrace");
+                LOG_TRACE(log, fmt::runtime(message));
+            }
 
             return DataTypeUInt8().createColumnConst(input_rows_count, 0);
         }
