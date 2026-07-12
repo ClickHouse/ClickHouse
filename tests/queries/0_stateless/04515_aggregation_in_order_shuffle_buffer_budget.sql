@@ -7,6 +7,11 @@
 
 SET enable_parallel_replicas = 0;
 
+-- The shuffle is disabled when `max_rows_to_group_by` is set (see 04514). The stateless-test profile sets a
+-- huge `max_rows_to_group_by` by default, which would disable the shuffle (and its buffer budget) for the
+-- whole test, so reset it to 0.
+SET max_rows_to_group_by = 0;
+
 DROP TABLE IF EXISTS t_aio_shuffle_budget;
 
 CREATE TABLE t_aio_shuffle_budget (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;

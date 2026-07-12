@@ -6,6 +6,10 @@
 -- so pin the plain single-replica plan to keep the EXPLAIN PIPELINE check below meaningful.
 SET enable_parallel_replicas = 0;
 
+-- The shuffle is disabled when `max_rows_to_group_by` is set (see 04514). The stateless-test profile sets a
+-- huge `max_rows_to_group_by` by default, which would disable the shuffle for the whole test, so reset it to 0.
+SET max_rows_to_group_by = 0;
+
 DROP TABLE IF EXISTS t_aio_shuffle;
 
 CREATE TABLE t_aio_shuffle (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128;
