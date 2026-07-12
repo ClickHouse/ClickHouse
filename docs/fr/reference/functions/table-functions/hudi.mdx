@@ -1,0 +1,53 @@
+---
+description: "Fournit une interface de type table en lecture seule pour les tables Apache Hudi dans Amazon S3."
+sidebarTitle: 'hudi'
+slug: /sql-reference/table-functions/hudi
+title: 'hudi'
+doc_type: 'reference'
+---
+
+Fournit une interface de type table en lecture seule pour les tables Apache [Hudi](https://hudi.apache.org/) dans Amazon S3.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+| Argument                                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                                        | URL du bucket contenant le chemin vers une table Hudi existante dans S3.                                                                                                                                                                                                                                                                                                                                                                      |
+| `aws_access_key_id`, `aws_secret_access_key` | Identifiants à long terme pour l&#39;utilisateur du compte [AWS](https://aws.amazon.com/). Vous pouvez les utiliser pour authentifier vos requêtes. Ces paramètres sont facultatifs. Si aucun identifiant n&#39;est spécifié, ceux de la configuration ClickHouse sont utilisés. Pour en savoir plus, voir [Utiliser S3 pour le stockage des données](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3). |
+| `format`                                     | Le [format](/fr/reference/formats/index) du fichier.                                                                                                                                                                                                                                                                                                                                                                                             |
+| `structure`                                  | Structure de la table. Format : `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                |
+| `compression`                                | Le paramètre est facultatif. Valeurs prises en charge : `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Par défaut, la compression est détectée automatiquement à partir de l&#39;extension du fichier.                                                                                                                                                                                                                                |
+| `extra_credentials`                          | Le paramètre est facultatif. Utilisé pour transmettre un `role_arn` pour le contrôle d&#39;accès basé sur les rôles dans ClickHouse Cloud. Voir [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour les étapes de configuration.                                                                                                                                                                                 |
+
+<div id="returned_value">
+  ## Valeur renvoyée
+</div>
+
+Une table ayant la structure spécifiée, permettant de lire les données dans la table Hudi spécifiée sur S3.
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
+* `_file` — Nom du fichier. Type : `LowCardinality(String)`.
+* `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille du fichier est inconnue, la valeur est `NULL`.
+* `_time` — Heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si l&#39;heure est inconnue, la valeur est `NULL`.
+* `_etag` — ETag du fichier. Type : `LowCardinality(String)`. Si l&#39;ETag est inconnu, la valeur est `NULL`.
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+* [Moteur Hudi](/fr/reference/engines/table-engines/integrations/hudi)
+* [Fonction de table cluster Hudi](/fr/reference/functions/table-functions/hudiCluster)

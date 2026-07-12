@@ -1,0 +1,61 @@
+---
+description: 'ClickHouse Playground 让用户无需搭建自己的 server 或 cluster，即可通过立即运行查询来体验 ClickHouse。'
+keywords: ['clickhouse', 'playground', '入门', '文档']
+sidebarTitle: 'ClickHouse Playground'
+slug: /getting-started/playground
+title: 'ClickHouse Playground'
+doc_type: 'guide'
+---
+
+[ClickHouse Playground](https://sql.clickhouse.com) 让用户无需搭建自己的 server 或 cluster，即可通过立即运行查询来体验 ClickHouse。
+Playground 中提供了多个示例数据集。
+
+你可以使用任何 HTTP 客户端向 Playground 发起查询，例如 [curl](https://curl.haxx.se) 或 [wget](https://www.gnu.org/software/wget/)，也可以使用 [JDBC](/zh/concepts/features/interfaces/jdbc) 或 [ODBC](/zh/concepts/features/interfaces/odbc) 驱动程序建立连接。有关支持 ClickHouse 的软件产品的更多信息，请参见[这里](/zh/integrations/home)。
+
+<div id="credentials">
+  ## 凭据
+</div>
+
+| 参数        | 值                                  |
+| :-------- | :--------------------------------- |
+| HTTPS 端点  | `https://play.clickhouse.com:443/` |
+| 原生 TCP 端点 | `play.clickhouse.com:9440`         |
+| 用户        | `explorer` 或 `play`                |
+| 密码        |  (空)                               |
+
+<div id="limitations">
+  ## 限制
+</div>
+
+这些 queries 以只读用户身份执行，因此会有一些限制：
+
+* 不允许执行 DDL queries
+* 不允许执行 INSERT queries
+
+该 service 的使用也受到 quotas 限制。
+
+<div id="examples">
+  ## 示例
+</div>
+
+通过 `curl` 访问 HTTPS 端点的示例：
+
+```bash
+curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
+```
+
+使用 [CLI](/zh/concepts/features/interfaces/cli) 的 TCP 端点示例：
+
+```bash
+clickhouse client --secure --host play.clickhouse.com --user explorer
+```
+
+<div id="specifications">
+  ## Playground 规格
+</div>
+
+我们的 ClickHouse Playground 采用以下配置运行：
+
+* 托管在美国中部区域 (US-Central-1) 的 Google Cloud (GCE) 上
+* 3 副本配置
+* 每个副本均配备 256 GiB 存储和 59 个虚拟 CPU。

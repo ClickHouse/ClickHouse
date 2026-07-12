@@ -1,0 +1,58 @@
+---
+alias: []
+description: 'Vertical フォーマットのドキュメント'
+input_format: false
+keywords: ['Vertical']
+output_format: true
+slug: /interfaces/formats/Vertical
+title: 'Vertical'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | 別名 |
+| -- | -- | -- |
+| ✗  | ✔  |    |
+
+<div id="description">
+  ## 説明
+</div>
+
+各値を、指定したカラム名とともに別々の行に出力します。このフォーマットは、各行が多数のカラムで構成されている場合に、1 行または数行だけを出力するのに便利です。
+
+文字列値 `NULL` と値が存在しない状態を区別しやすくするため、[`NULL`](/ja/reference/syntax) は `ᴺᵁᴸᴸ` として出力される点に注意してください。JSON カラムは整形して出力され、`NULL` は `null` として出力されます。これは、`null` が有効な JSON 値であり、`"null"` と容易に区別できるためです。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+例:
+
+```sql
+SELECT * FROM t_null FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+x: 1
+y: ᴺᵁᴸᴸ
+```
+
+Verticalフォーマットでは、行はエスケープされません：
+
+```sql
+SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+test: string with 'quotes' and      with some special
+ characters
+```
+
+このフォーマットはクエリ結果の出力にのみ適しており、パース (テーブルに挿入するデータを取得する処理) には適していません。
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>

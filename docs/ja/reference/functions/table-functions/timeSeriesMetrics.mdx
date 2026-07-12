@@ -1,0 +1,29 @@
+---
+description: '`timeSeriesMetrics` は、テーブルエンジンが TimeSeries エンジンであるテーブル `db_name.time_series_table`
+  が使用する Metrics テーブルを返します。'
+sidebarTitle: 'timeSeriesMetrics'
+slug: /sql-reference/table-functions/timeSeriesMetrics
+title: 'timeSeriesMetrics'
+doc_type: 'reference'
+---
+
+`timeSeriesMetrics(db_name.time_series_table)` - テーブルエンジンが [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) エンジンであるテーブル `db_name.time_series_table` が使用する
+[メトリクス](/ja/reference/engines/table-engines/integrations/time-series#metrics-table) テーブルを返します:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRICS metrics_table
+```
+
+この関数は、*メトリクス*テーブルが inner テーブルの場合でも動作します:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRICS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+以下のクエリは同等です。
+
+```sql
+SELECT * FROM timeSeriesMetrics(db_name.time_series_table);
+SELECT * FROM timeSeriesMetrics('db_name.time_series_table');
+SELECT * FROM timeSeriesMetrics('db_name', 'time_series_table');
+```
