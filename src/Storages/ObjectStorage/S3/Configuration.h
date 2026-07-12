@@ -164,8 +164,15 @@ private:
     void fromAST(
         ASTs & args,
         ContextPtr context,
-        bool with_structure,
-        const ObjectStorageInitializationContext * initialization_context) override;
+        bool with_structure) override;
+
+    void fromCatalog(
+        const DataLake::ICatalog & catalog,
+        ASTs & args,
+        ContextPtr context,
+        bool with_structure) override;
+
+    void parseFromAST(ASTs & args, ContextPtr context, bool with_structure);
 };
 }
 

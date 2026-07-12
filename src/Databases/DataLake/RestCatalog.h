@@ -215,7 +215,7 @@ public:
     }
 
     String getTenantId() const { return tenant_id; }
-    std::optional<ObjectStorageCatalogInitializationOptions> getObjectStorageInitializationOptions() const override;
+    bool getUseBlobEndpoint() const { return onelake_use_blob_endpoint; }
 
     String getBearerToken() const;
 
@@ -255,8 +255,6 @@ public:
     const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
     const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
     const std::string & getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
-
-    std::optional<ObjectStorageCatalogInitializationOptions> getObjectStorageInitializationOptions() const override;
 
 private:
     /// Parameters for Google Cloud OAuth2 (BigLake).

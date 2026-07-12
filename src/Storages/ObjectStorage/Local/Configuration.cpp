@@ -101,8 +101,7 @@ void StorageLocalConfiguration::initializeFromParsedArguments(const LocalStorage
 void StorageLocalConfiguration::fromAST(
     ASTs & args,
     ContextPtr context,
-    bool with_structure,
-    const ObjectStorageInitializationContext * /*initialization_context*/)
+    bool with_structure)
 {
     LocalStorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);

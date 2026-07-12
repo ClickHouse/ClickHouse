@@ -86,9 +86,8 @@ private:
     void setURL(const std::string & url_);
     void fromAST(
         ASTs & args,
-        ContextPtr,
-        bool /* with_structure */,
-        const ObjectStorageInitializationContext * initialization_context) override;
+        ContextPtr context,
+        bool with_structure) override;
 
     void fromNamedCollection(const NamedCollection &, ContextPtr context) override;
 

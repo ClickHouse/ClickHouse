@@ -31,11 +31,6 @@ struct IObjectIterator;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
 
-struct ObjectStorageInitializationContext
-{
-    std::shared_ptr<DataLake::ICatalog> catalog;
-};
-
 struct StorageParsedArguments;
 
 namespace ErrorCodes
@@ -96,8 +91,7 @@ public:
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        const StorageID * table_id = nullptr,
-        const ObjectStorageInitializationContext * initialization_context = nullptr);
+        const StorageID * table_id = nullptr);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -348,11 +342,19 @@ protected:
     virtual void fromAST(
         ASTs & args,
         ContextPtr context,
-        bool with_structure,
-        const ObjectStorageInitializationContext * initialization_context) = 0;
+        bool with_structure) = 0;
     virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method fromDisk is not implemented");
+    }
+    virtual void fromCatalog(
+        const DataLake::ICatalog & catalog,
+        ASTs & args,
+        ContextPtr context,
+        bool with_structure)
+    {
+        (void)catalog;
+        fromAST(args, context, with_structure);
     }
 
     void assertInitialized() const;

@@ -46,22 +46,12 @@ namespace
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
-ObjectStorageInitializationContext prepareInitializationContextForObjectStorage(
-    const StorageFactory::Arguments & args,
-    const StorageObjectStorageConfigurationPtr & configuration,
-    ContextPtr context)
-{
-    ObjectStorageInitializationContext initialization_context;
-    initialization_context.catalog = configuration->getCatalog(context, args.table_id);
-    return initialization_context;
-}
-
 std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
-    auto initialization_context = prepareInitializationContextForObjectStorage(args, configuration, context);
-    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id, &initialization_context);
+    auto catalog = configuration->getCatalog(context, args.table_id);
+    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -118,7 +108,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         configuration->createObjectStorage(
             context,
             /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE,
-            initialization_context.catalog ? initialization_context.catalog->getCredentialsConfigurationCallback(args.table_id) : std::nullopt),
+            catalog ? catalog->getCredentialsConfigurationCallback(args.table_id) : std::nullopt),
         context_copy, /// Use global context.
         args.table_id,
         args.columns,
@@ -126,7 +116,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.comment,
         format_settings,
         args.mode,
-        std::move(initialization_context.catalog),
+        std::move(catalog),
         args.query.if_not_exists,
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,
