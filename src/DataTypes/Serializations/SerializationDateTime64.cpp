@@ -264,6 +264,7 @@ void SerializationDateTime64::serializeTextCSV(const IColumn & column, size_t ro
 {
     const auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
     const bool quote = settings.csv.quote_date_time_types
+        || settings.csv.force_quote_date_time_types
         || csvDelimiterConflictsWithDateTime64(
             settings.csv.delimiter,
             settings.date_time_output_format,
@@ -276,6 +277,26 @@ void SerializationDateTime64::serializeTextCSV(const IColumn & column, size_t ro
     serializeText(column, row_num, ostr, settings);
     if (quote)
         writeChar('"', ostr);
+}
+
+bool SerializationDateTime64::textCSVMayNeedQuotes(const FormatSettings & settings) const
+{
+    if (settings.csv.quote_date_time_types || settings.csv.force_quote_date_time_types)
+        return true;
+
+    const char delimiter = settings.csv.delimiter;
+    if (isNumericASCII(delimiter))
+        return true;
+
+    switch (settings.date_time_output_format)
+    {
+        case FormatSettings::DateTimeOutputFormat::Simple:
+            return delimiter == '-' || delimiter == ':' || delimiter == ' ' || (scale > 0 && delimiter == '.');
+        case FormatSettings::DateTimeOutputFormat::ISO:
+            return delimiter == '-' || delimiter == ':' || delimiter == 'T' || delimiter == 'Z' || (scale > 0 && delimiter == '.');
+        case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
+            return scale > 0 || delimiter == '-';
+    }
 }
 
 void SerializationDateTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

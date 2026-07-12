@@ -19,13 +19,11 @@ CustomSeparatedRowOutputFormat::CustomSeparatedRowOutputFormat(
     , format_settings(format_settings_)
     , field_format_settings(
         format_settings_.custom.escaping_rule == FormatSettings::EscapingRule::CSV
-            ? getFormatSettingsForCSVFieldDelimiter(
-                format_settings_, format_settings_.custom.field_delimiter, format_settings_.custom.field_delimiter)
+            ? getFormatSettingsForCSVFieldDelimiter(format_settings_, format_settings_.custom.field_delimiter)
             : format_settings_)
     , last_field_format_settings(
         format_settings_.custom.escaping_rule == FormatSettings::EscapingRule::CSV
-            ? getFormatSettingsForCSVFieldDelimiter(
-                format_settings_, format_settings_.custom.row_after_delimiter, format_settings_.custom.field_delimiter)
+            ? getFormatSettingsForCSVFieldDelimiter(format_settings_, format_settings_.custom.row_after_delimiter)
             : format_settings_)
     , escaping_rule(format_settings.custom.escaping_rule)
 {

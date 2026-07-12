@@ -77,8 +77,7 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(SharedHeader header_, Write
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
         if (row_format.escaping_rules[i] == EscapingRule::CSV)
-            row_format_settings.push_back(
-                getFormatSettingsForCSVFieldDelimiter(settings, row_format.delimiters[i + 1], row_format.delimiters[i + 1]));
+            row_format_settings.push_back(getFormatSettingsForCSVFieldDelimiter(settings, row_format.delimiters[i + 1]));
         else
             row_format_settings.push_back(settings);
     }

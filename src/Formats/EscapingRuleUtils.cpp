@@ -62,21 +62,15 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
     }
 }
 
-FormatSettings getFormatSettingsForCSVFieldDelimiter(
-    const FormatSettings & format_settings, const String & field_delimiter, const String & tuple_field_delimiter)
+FormatSettings getFormatSettingsForCSVFieldDelimiter(const FormatSettings & format_settings, const String & field_delimiter)
 {
     FormatSettings result = format_settings;
     result.csv.custom_delimiter.clear();
-
-    const bool tuple_delimiter_matches = tuple_field_delimiter.size() == 1
-        && tuple_field_delimiter.front() == result.csv.tuple_delimiter;
-    const bool keep_tuple_columns_separate = result.csv.quote_date_time_types || tuple_delimiter_matches;
-    result.csv.serialize_tuple_into_separate_columns &= keep_tuple_columns_separate;
-    result.csv.deserialize_separate_columns_into_tuple &= keep_tuple_columns_separate;
+    result.csv.force_quote_date_time_types = false;
 
     if (field_delimiter.empty())
     {
-        result.csv.quote_date_time_types = true;
+        result.csv.force_quote_date_time_types = true;
         return result;
     }
 
@@ -85,7 +79,7 @@ FormatSettings getFormatSettingsForCSVFieldDelimiter(
     else
     {
         result.csv.custom_delimiter = field_delimiter;
-        result.csv.quote_date_time_types = true;
+        result.csv.force_quote_date_time_types = true;
     }
 
     return result;

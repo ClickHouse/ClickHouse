@@ -149,3 +149,12 @@ SETTINGS
     format_csv_delimiter = ':',
     format_template_row_format = '${t:CSV}|${n:CSV}\n',
     format_template_resultset_format = '${data}';
+
+SELECT 'Template keeps non-temporal tuple columns separate' FORMAT TSVRaw;
+SELECT tuple(1::UInt8, 2::UInt8) AS t, 42 AS n
+FORMAT Template
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_template_row_format = '${t:CSV}|${n:CSV}\n',
+    format_template_resultset_format = '${data}';

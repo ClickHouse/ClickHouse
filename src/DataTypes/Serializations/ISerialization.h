@@ -612,6 +612,7 @@ public:
     virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
     virtual bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    virtual bool textCSVMayNeedQuotes(const FormatSettings &) const { return false; }
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.

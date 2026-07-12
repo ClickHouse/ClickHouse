@@ -61,7 +61,6 @@ private:
     bool end_of_stream = false;
     std::vector<size_t> always_default_columns;
     const char default_csv_delimiter;
-    const bool default_deserialize_separate_columns_into_tuple;
 
     const std::string row_between_delimiter;
 
@@ -132,7 +131,6 @@ private:
     bool first_row = true;
     JSONInferenceInfo json_inference_info;
     const char default_csv_delimiter;
-    const bool default_deserialize_separate_columns_into_tuple;
 };
 
 bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out, ReadBuffer & buf, const String & delimiter, const String & description, bool skip_spaces);

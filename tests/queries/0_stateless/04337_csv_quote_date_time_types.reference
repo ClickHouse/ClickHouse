@@ -38,3 +38,5 @@ CustomSeparated keeps a divergent tuple delimiter in one CSV field
 "('2024-01-17 08:30:00','2024-01-18 09:45:01')"|42
 Template keeps a divergent tuple delimiter in one CSV field
 "('2024-01-17 08:30:00','2024-01-18 09:45:01')"|42
+Template keeps non-temporal tuple columns separate
+1:2|42
