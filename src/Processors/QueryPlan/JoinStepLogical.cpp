@@ -604,11 +604,6 @@ void JoinStepLogicalLookup::initializePipeline(QueryPipelineBuilder & pipeline_b
     pipeline_builder = std::move(*child_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /* do_optimize */ false));
 }
 
-QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans()
-{
-    return {&child_plan};
-}
-
 void JoinStepLogicalLookup::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (optimized)
