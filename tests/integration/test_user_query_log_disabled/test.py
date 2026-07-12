@@ -10,7 +10,6 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/query_log_disabled.xml"],
-    user_configs=["configs/users.xml"],
 )
 
 
