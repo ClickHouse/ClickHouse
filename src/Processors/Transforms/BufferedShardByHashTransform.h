@@ -68,6 +68,12 @@ private:
     Chunk dequeue(size_t shard);
     void clearQueue(size_t shard);
 
+    /// Charge/release the just-pulled input chunk against the shared budget. Charging happens the moment
+    /// the chunk is pulled (before it is split and re-charged per shard), so the budget accounts for the
+    /// in-flight read-ahead of every scatter and admission decisions cannot overshoot by a whole chunk.
+    void chargePendingInput();
+    void dischargePendingInput();
+
     size_t num_shards;
     ColumnNumbers key_columns;
     /// 0 means no per-queue back-pressure (never stall on a full queue).
@@ -83,6 +89,8 @@ private:
     /// Input chunk that was pulled in prepare() and will be split in work().
     bool has_pending_input_chunk = false;
     Chunk pending_input_chunk;
+    /// Bytes charged against the shared budget for `pending_input_chunk` (released when it is split).
+    Int64 pending_input_bytes = 0;
 
     /// Per-shard FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.
     std::vector<std::deque<Chunk>> output_queues;

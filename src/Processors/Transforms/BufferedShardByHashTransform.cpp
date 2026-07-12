@@ -55,6 +55,18 @@ void BufferedShardByHashTransform::clearQueue(size_t shard)
     output_queues[shard].clear();
 }
 
+void BufferedShardByHashTransform::chargePendingInput()
+{
+    pending_input_bytes = static_cast<Int64>(pending_input_chunk.allocatedBytes());
+    total_buffered_bytes->fetch_add(pending_input_bytes, std::memory_order_relaxed);
+}
+
+void BufferedShardByHashTransform::dischargePendingInput()
+{
+    total_buffered_bytes->fetch_sub(pending_input_bytes, std::memory_order_relaxed);
+    pending_input_bytes = 0;
+}
+
 IProcessor::Status BufferedShardByHashTransform::prepare()
 {
     auto & input = getInputs().front();
@@ -72,6 +84,14 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
 
     if (all_finished)
     {
+        /// Release the pending input's budget charge if we finish before splitting it, so a leftover charge
+        /// never makes sibling scatters (sharing the counter) trip the budget spuriously.
+        if (has_pending_input_chunk)
+        {
+            dischargePendingInput();
+            pending_input_chunk = {};
+            has_pending_input_chunk = false;
+        }
         input.close();
         return Status::Finished;
     }
@@ -156,6 +176,11 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         {
             pending_input_chunk = input.pull();
             has_pending_input_chunk = true;
+            /// Charge the pulled chunk against the shared budget right away, before it is split in work().
+            /// This closes the pre-admission gap the plain "check-then-pull, charge-on-enqueue" ordering left
+            /// open: without it, every scatter could pull one full chunk past the cap before any charge landed,
+            /// overshooting the budget by up to one chunk per scatter on wide pipelines.
+            chargePendingInput();
             return Status::Ready;
         }
         return Status::NeedData;
@@ -209,6 +234,10 @@ void BufferedShardByHashTransform::generateOutputChunks()
 {
     const auto num_rows = pending_input_chunk.getNumRows();
     auto columns = pending_input_chunk.detachColumns();
+
+    /// Release the input chunk's budget charge: its rows are re-charged per shard as they are enqueued below,
+    /// so the shared counter keeps tracking exactly the bytes currently buffered.
+    dischargePendingInput();
 
     chassert(!columns.empty());
 
