@@ -32,6 +32,7 @@ public:
 
     String getName() const override { return "EventStream"; }
     String getContentType() const override { return "text/event-stream; charset=UTF-8"; }
+    bool requiresTextPayload() const override { return true; }
 
 protected:
     void writePayloadPacket(FramedPacketKind kind, std::string_view data) override;

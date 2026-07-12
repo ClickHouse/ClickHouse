@@ -2454,9 +2454,21 @@ namespace
 /// Framing formats (see IFramingFormat.h) multiplex data, totals, extremes, progress, logs,
 /// and profile events packets in a single output stream. They are currently implemented
 /// for the HTTP protocol only and are ignored for other interfaces.
+/// Whether the output format produces valid UTF-8 text. Text framings (see `requiresTextPayload`)
+/// embed the payload as text and can only be used with such formats. We rely on the content type:
+/// text formats declare a charset (e.g. `text/tab-separated-values; charset=UTF-8`,
+/// `application/json; charset=UTF-8`), while binary formats use types such as
+/// `application/octet-stream` without a charset.
+bool outputFormatProducesText(const String & format_name, const std::optional<FormatSettings> & output_format_settings)
+{
+    const String content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
+    return content_type.starts_with("text/") || content_type.find("charset=") != String::npos;
+}
+
 FramingFormatPtr createFramingFormatIfApplicable(
     const ContextMutablePtr & context,
     WriteBuffer & ostr,
+    const String & format_name,
     const std::optional<FormatSettings> & output_format_settings)
 {
     if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
@@ -2467,7 +2479,20 @@ FramingFormatPtr createFramingFormatIfApplicable(
         return nullptr;
 
     FormatSettings format_settings = output_format_settings ? *output_format_settings : getFormatSettings(context);
-    return createFramingFormat(framing_name, ostr, format_settings, {.is_http = true});
+    auto framing = createFramingFormat(framing_name, ostr, format_settings, {.is_http = true});
+
+    /// A text framing embeds the raw output bytes as UTF-8 text, so a binary output format
+    /// (such as `Native` or `RowBinary`) would produce invalid output. Reject it instead and
+    /// point to `JSONEachPacketBase64`, which encodes arbitrary bytes safely.
+    if (framing->requiresTextPayload() && !outputFormatProducesText(format_name, output_format_settings))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The framing format {} embeds the output as text and is not compatible with the binary output format {}. "
+            "Use the JSONEachPacketBase64 framing format for binary output formats.",
+            framing->getName(),
+            format_name);
+
+    return framing;
 }
 
 /// Attach the queues for server logs and profile events to the current thread
@@ -2615,7 +2640,7 @@ void executeQuery(
                     ? getIdentifierName(ast_query_with_output->format_ast)
                     : context->getDefaultFormat();
 
-                auto framing = createFramingFormatIfApplicable(context, ostr, output_format_settings);
+                auto framing = createFramingFormatIfApplicable(context, ostr, format_name, output_format_settings);
                 if (framing)
                 {
                     output_format = FormatFactory::instance().getOutputFormat(format_name, framing->getPayloadBuffer(), {}, context, output_format_settings);
@@ -2733,7 +2758,7 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->out_file)
                 throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
-            if (auto framing = createFramingFormatIfApplicable(context, *out_buf, output_format_settings))
+            if (auto framing = createFramingFormatIfApplicable(context, *out_buf, format_name, output_format_settings))
             {
                 /// The framing format needs to know the boundaries between the formatted packets,
                 /// so parallel formatting is not applicable.

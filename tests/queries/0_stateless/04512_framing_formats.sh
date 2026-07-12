@@ -88,3 +88,18 @@ echo '--- framing is rejected for formats that defer totals and extremes to fina
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d "SELECT 1 AS k FORMAT Template SETTINGS format_template_row_format = '\${k:CSV}\n', format_template_resultset_format = '\${data}'" \
     | grep -o -m1 'is not compatible with framing formats'
+
+echo '--- text framings are rejected for binary output formats (EventStream + Native)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream" \
+    -d "SELECT number FROM numbers(3) FORMAT Native" \
+    | grep -o -m1 'is not compatible with the binary output format Native'
+
+echo '--- text framings are rejected for binary output formats (JSONEachPacketString + RowBinary)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT number FROM numbers(3) FORMAT RowBinary" \
+    | grep -o -m1 'is not compatible with the binary output format RowBinary'
+
+echo '--- JSONEachPacketBase64 carries binary output formats (Native)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketBase64${SINGLE_BLOCK}" \
+    -d "SELECT number FROM numbers(3) FORMAT Native" \
+    | grep -c '"packet":"data"'

@@ -28,6 +28,7 @@ public:
 
     String getName() const override { return base64 ? "JSONEachPacketBase64" : "JSONEachPacketString"; }
     String getContentType() const override { return "application/x-ndjson; charset=UTF-8"; }
+    bool requiresTextPayload() const override { return !base64; }
 
 protected:
     void writePayloadPacket(FramedPacketKind kind, std::string_view data) override;

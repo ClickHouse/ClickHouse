@@ -58,6 +58,12 @@ public:
     /// The content type for the HTTP response.
     virtual String getContentType() const = 0;
 
+    /// Whether this framing embeds the output payload as UTF-8 text (`EventStream`,
+    /// `JSONEachPacketString`) rather than in a binary-safe way (`JSONEachPacketBase64`).
+    /// Text framings can only be used with text output formats; binary output formats
+    /// (such as `Native` or `RowBinary`) require a binary-safe framing.
+    virtual bool requiresTextPayload() const = 0;
+
     /// The buffer where the output format writes formatted data.
     WriteBuffer & getPayloadBuffer() { return payload; }
 
