@@ -241,5 +241,65 @@ OPTIMIZE TABLE ttl_multi_group_by FINAL;
 
 SELECT count() AS rows, sum(payload) AS total FROM ttl_multi_group_by;
 SELECT k, payload FROM ttl_multi_group_by ORDER BY k;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
+-- H1: transitive EPHEMERAL fail-loud. m1 MATERIALIZED concat(toString(x), eph) reads the ephemeral eph
+-- and the SET target x; m2 MATERIALIZED lower(m1) reads neither directly but depends on m1, so it is
+-- both unrecomputable (ephemeral hop) and affected by the SET. The merge must complete and the
+-- aggregated columns must be correct; m1/m2 stay at their pre-SET any() values (documented limitation,
+-- both warned). Before the fix only m1 was warned; the fix propagates the warning through m2 as well.
+CREATE TABLE ttl_multi_group_by (k UInt32, ts DateTime, x UInt32, eph String EPHEMERAL 'E', m1 String MATERIALIZED concat(toString(x), eph), m2 String MATERIALIZED lower(m1), payload UInt64)
+ENGINE = MergeTree ORDER BY k
+TTL ts + toIntervalDay(1) GROUP BY k SET x = max(x), payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO ttl_multi_group_by (k, ts, x, eph, payload) VALUES (1, '2020-01-01', 5, 'a', 10), (1, '2020-01-02', 9, 'b', 20);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+SELECT k, x, payload FROM ttl_multi_group_by ORDER BY k;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
+-- H2: a not-yet-expired earlier GROUP BY TTL must NOT force a later one off the streaming fast path.
+-- TTL1 GROUP BY k SET ts (rewrites ts, a column TTL2's key could derive from) expires 40 years out, so
+-- it does NOT fire in this merge; TTL2 GROUP BY k SET payload fires now. Because TTL1 does not fire, its
+-- SET never runs and the stream stays ordered by k for TTL2. Correctness must hold: one group per k with
+-- the summed payload. (The optimization -- TTL2 keeping the sorted fast path -- is not directly
+-- observable from SQL, but a regression would corrupt/fragment the result, which this asserts.)
+CREATE TABLE ttl_multi_group_by (k UInt32, ts DateTime, payload UInt64)
+ENGINE = MergeTree ORDER BY k
+TTL ts + toIntervalYear(40) GROUP BY k SET ts = max(ts),
+    ts + toIntervalDay(1) GROUP BY k SET payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4;
+
+INSERT INTO ttl_multi_group_by SELECT number % 5, toDateTime('2020-01-01 00:00:00'), 1 FROM numbers(40);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+SELECT count() AS rows, sum(payload) AS total FROM ttl_multi_group_by;
+SELECT k, payload FROM ttl_multi_group_by ORDER BY k;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
+-- H3: an unrelated expired TTL must NOT trigger the GROUP BY SET sort-key repair when the GROUP BY ... SET
+-- TTL itself does not fire. A DELETE TTL (ts + 1 day) is expired and fires; the GROUP BY toStartOfDay(ts)
+-- SET ts TTL (touches the sort key) expires 40 years out and does NOT fire in this merge. The written part
+-- must be correct and consistent with its primary index (no needless re-sort, no corruption): the DELETE
+-- removes payload<5 rows and the remaining rows keep their original day ordering / values.
+CREATE TABLE ttl_multi_group_by (ts DateTime, payload UInt64)
+ENGINE = MergeTree ORDER BY toStartOfDay(ts)
+TTL ts + toIntervalDay(1) DELETE WHERE payload < 5,
+    ts + toIntervalYear(40) GROUP BY toStartOfDay(ts) SET ts = max(ts), payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO ttl_multi_group_by SELECT toDateTime('2020-01-01 00:00:00') + toIntervalDay(number % 3), number FROM numbers(30);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+-- Rows with payload < 5 (values 0..4) deleted -> 25 rows remain, none of them the GROUP-BY-SET result.
+SELECT count() AS rows, min(payload) AS min_payload, sum(payload) AS total FROM ttl_multi_group_by;
+SELECT toStartOfDay(ts) AS day, count() FROM ttl_multi_group_by GROUP BY day ORDER BY day;
 
 DROP TABLE ttl_multi_group_by;

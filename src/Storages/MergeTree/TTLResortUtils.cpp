@@ -298,11 +298,22 @@ Names getStaleEphemeralMaterializedColumnsAffectedBySet(
         all_columns_with_ephemeral.push_back(column);
     }
 
-    /// A MATERIALIZED column whose default expression reads an EPHEMERAL column cannot be recomputed
-    /// here (ephemeral columns exist only during INSERT, never on disk). If such a column ALSO reads a
-    /// column rewritten by the `GROUP BY` TTL `SET`, its stored value goes stale and there is no way to
-    /// refresh it -- mirror `MutationsInterpreter::prepare`'s handling for `UPDATE` and warn (fail loud)
-    /// instead of silently treating it as unaffected.
+    /// A MATERIALIZED column whose default expression (transitively) reads an EPHEMERAL column cannot be
+    /// recomputed here (ephemeral columns exist only during INSERT, never on disk). If such a column is
+    /// ALSO (transitively) affected by a column rewritten by the `GROUP BY` TTL `SET`, its stored value
+    /// goes stale and there is no way to refresh it -- mirror `MutationsInterpreter::prepare`'s handling
+    /// for `UPDATE` and warn (fail loud) instead of silently treating it as unaffected.
+    ///
+    /// The dependency is transitive on BOTH axes, so a one-hop check misses real cases. For
+    /// `m1 MATERIALIZED concat(toString(x), eph)`, `m2 MATERIALIZED lower(m1)`, `SET x = ...`:
+    ///  - `m1` reads the ephemeral `eph` and the `SET` target `x` directly.
+    ///  - `m2` reads neither directly, but it depends on `m1`, which is both unrecomputable (ephemeral)
+    ///    and affected by the `SET` -- so `m2`'s stored value is stale AND unrecomputable too.
+    /// Build the FULL materialized-dependency graph (unlike `getMaterializedColumnSourcesMap`, KEEP the
+    /// ephemeral-reading columns as nodes so the chain is not cut at the first ephemeral hop), then take
+    /// the two transitive closures and report their intersection.
+    std::unordered_map<String, NameSet> full_sources;  /// materialized col -> its physical/materialized source columns
+    NameSet reads_ephemeral_directly;                  /// materialized cols whose own expression reads an ephemeral column
     for (const auto & column : columns_desc.getAllPhysical())
     {
         if (!columns_desc.has(column.name))
@@ -314,26 +325,49 @@ Names getStaleEphemeralMaterializedColumnsAffectedBySet(
         auto query = column_desc.default_desc.expression->clone();
         replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
         auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
-        const auto required = syntax_result->requiredSourceColumns();
 
-        const bool reads_ephemeral
-            = std::ranges::any_of(required, [&](const auto & dep) { return ephemeral_columns.contains(dep); });
-        if (!reads_ephemeral)
-            continue;
-
-        const bool reads_set_target = std::ranges::any_of(required, [&](const auto & dep)
+        NameSet sources;
+        for (const auto & source : syntax_result->requiredSourceColumns())
         {
-            if (ephemeral_columns.contains(dep))
-                return false;
-            if (set_targets.contains(dep))
-                return true;
-            if (auto in_storage = Nested::tryGetColumnNameInStorage(dep, storage_columns))
-                return set_targets.contains(*in_storage);
-            return false;
-        });
-        if (reads_set_target)
-            stale.push_back(column.name);
+            if (ephemeral_columns.contains(source))
+                reads_ephemeral_directly.insert(column.name);
+            else if (storage_columns.contains(source))
+                sources.insert(source);
+            else if (auto source_in_storage = Nested::tryGetColumnNameInStorage(source, storage_columns))
+                sources.insert(*source_in_storage);
+        }
+        full_sources.emplace(column.name, std::move(sources));
     }
+
+    /// A materialized column is "unrecomputable" if it or any of its (transitive) materialized sources
+    /// reads an ephemeral column.
+    NameSet unrecomputable = reads_ephemeral_directly;
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        for (const auto & [name, sources] : full_sources)
+        {
+            if (unrecomputable.contains(name))
+                continue;
+            for (const auto & source : sources)
+                if (unrecomputable.contains(source))
+                {
+                    unrecomputable.insert(name);
+                    changed = true;
+                    break;
+                }
+        }
+    }
+
+    /// Materialized columns (transitively) reading a `SET` target hold a stale stored value. Reuse the
+    /// same fixpoint the recompute path uses, but over the FULL graph so it also propagates through the
+    /// ephemeral-reading nodes.
+    const auto affected = getMaterializedColumnsAffectedBySet(full_sources, set_targets);
+
+    for (const auto & column : columns_desc.getAllPhysical())
+        if (affected.contains(column.name) && unrecomputable.contains(column.name))
+            stale.push_back(column.name);
     return stale;
 }
 
@@ -541,6 +575,27 @@ bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot
 
     /// Materialized case: a `SET` target is a source of a MATERIALIZED sort-key column.
     return !getGroupByTTLSetAffectedMaterializedSortKeyColumns(metadata_snapshot, context).empty();
+}
+
+bool anyGroupByTTLFires(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeDataPartTTLInfos & ttl_infos,
+    time_t current_time,
+    bool force)
+{
+    if (force)
+        return true;
+
+    for (const auto & group_by_ttl : metadata_snapshot->getGroupByTTLs())
+    {
+        auto it = ttl_infos.group_by_ttl.find(group_by_ttl.result_column);
+        if (it == ttl_infos.group_by_ttl.end())
+            return true;  /// No info -> conservatively assume it may fire.
+        const auto min_ttl = it->second.min;
+        if (min_ttl == 0 || min_ttl <= current_time)
+            return true;
+    }
+    return false;
 }
 
 ActionsDAG buildRecomputeMaterializedColumnsDAG(

@@ -98,6 +98,27 @@ TTLTransform::TTLTransform(
     /// earlier SET targets (a raw name comparison misses computed/subcolumn keys): tell its algorithm
     /// the input is unsorted (defer finalization to end of stream) AND refresh the derived key columns
     /// in the block before it runs.
+    /// Whether a GROUP BY TTL can actually aggregate rows in THIS part, from its precomputed TTL info.
+    /// The pessimizations below (marking a later TTL unsorted, cascading the lost-order flag) are only
+    /// warranted when the earlier TTL that would rewrite/scramble the stream ACTUALLY fires: if no row
+    /// in the part is expired for that TTL, `TTLAggregationAlgorithm::execute` aggregates nothing, its
+    /// `SET` never runs, and the stream order and key values are left untouched. Deciding this from the
+    /// mere presence of the clause in metadata would force `executeUnsorted` (whole-part external
+    /// aggregation) even for a not-yet-expired earlier TTL. `group_by_ttl.min` is the minimum TTL value
+    /// over the part's rows, so `min > current_time` means no row is expired and the TTL cannot fire.
+    /// Conservative on the safe side: when forced, or when the info is missing/uninitialized, assume it
+    /// fires and keep the unsorted path -- we never take the streaming fast path on a scrambled stream.
+    auto group_by_ttl_fires = [&](const TTLDescription & ttl) -> bool
+    {
+        if (force_)
+            return true;
+        auto it = old_ttl_infos.group_by_ttl.find(ttl.result_column);
+        if (it == old_ttl_infos.group_by_ttl.end())
+            return true;
+        const auto min_ttl = it->second.min;
+        return min_ttl == 0 || min_ttl <= current_time_;
+    };
+
     NameSet earlier_group_by_set_targets;
     bool earlier_group_by_lost_order = false;
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
@@ -112,6 +133,8 @@ TTLTransform::TTLTransform(
         /// earlier `GROUP BY day, region ... SET region` went unsorted). The later TTL must therefore also
         /// run unsorted, otherwise its streaming flush-on-key-change would re-fragment the scrambled groups.
         const bool input_unsorted = affected_by_earlier_set || earlier_group_by_lost_order;
+
+        const bool this_ttl_fires = group_by_ttl_fires(group_by_ttl);
 
         ExpressionActionsPtr key_refresh_actions;
         /// Only THIS TTL's own key being rewritten by an earlier SET makes its in-stream key value stale
@@ -131,11 +154,19 @@ TTLTransform::TTLTransform(
         algorithm_key_refresh_actions.resize(algorithms.size());
         algorithm_key_refresh_actions.back() = std::move(key_refresh_actions);
 
-        if (input_unsorted)
+        /// The stream is only actually scrambled for later TTLs when THIS TTL both runs unsorted AND
+        /// fires (a firing unsorted TTL appends its aggregated groups in hash-table order at end of
+        /// stream). A not-yet-expired unsorted TTL passes every row through in order, so it does not
+        /// cost later TTLs their fast path.
+        if (input_unsorted && this_ttl_fires)
             earlier_group_by_lost_order = true;
 
-        for (const auto & set_part : group_by_ttl.set_parts)
-            earlier_group_by_set_targets.insert(set_part.column_name);
+        /// Likewise, this TTL's `SET` only rewrites a later TTL's key when this TTL fires. Record its
+        /// targets as "rewritten by an earlier SET" only then, so a future (not-yet-expired) earlier
+        /// TTL does not needlessly force a later one off the streaming fast path.
+        if (this_ttl_fires)
+            for (const auto & set_part : group_by_ttl.set_parts)
+                earlier_group_by_set_targets.insert(set_part.column_name);
     }
 
     const auto & storage_columns = metadata_snapshot_->getColumns();

@@ -6,6 +6,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
@@ -61,6 +62,19 @@ std::optional<ActionsDAG> buildRefreshGroupByKeysDAG(
 /// written with stale sort-key data. Such MATERIALIZED sort-key columns must be recomputed from
 /// their default expression before re-sorting; this function returns true for that case too.
 bool groupByTTLAssignsSortKeyColumn(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
+
+/// True when at least one `GROUP BY` TTL can actually aggregate rows in a part with these TTL infos
+/// at `current_time` (i.e. some row is expired for it, so its `SET` runs and the stream can be
+/// rewritten / reordered). `force` (used by `MATERIALIZE TTL` and forced merges) always returns true.
+/// The sort-key-repair / re-sort in the merge and mutation paths is only needed when a `GROUP BY ...
+/// SET` TTL that touches the sort key actually fires; without this a part with an unrelated expired
+/// TTL and a not-yet-expired `GROUP BY ... SET` would pay a whole-part `O(n log n)` re-sort for
+/// nothing. `min == 0` means the info is uninitialized -- treated conservatively as "may fire".
+bool anyGroupByTTLFires(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeDataPartTTLInfos & ttl_infos,
+    time_t current_time,
+    bool force);
 
 /// The MATERIALIZED sort-key storage columns whose source columns are rewritten by a
 /// `TTL ... GROUP BY ... SET` (e.g. `d` for `d MATERIALIZED toDate(ts)` when `ts` is SET). These
