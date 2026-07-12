@@ -222,8 +222,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
             "functions", /// Can contain user-defined functions
 
-            "user_query_log", /// Shows only the query log records of the current user
-
             /// The following tables hide some rows if the current user doesn't have corresponding SHOW privileges.
             "databases",
             "tables",
@@ -238,6 +236,13 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         for (const auto * table_name : always_accessible_tables)
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
+
+        /// `system.user_query_log` shows each user only their own query log records, so SELECT on it is
+        /// granted implicitly to everyone - but only while the feature is enabled and the name is actually
+        /// backed by `StorageSystemUserQueryLog`. When it is disabled, the name can back a regular table
+        /// (or the raw query log via `query_log.table = user_query_log`), which must not become world-readable.
+        if (access_control.isUserQueryLogEnabled())
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "user_query_log");
 
         if (max_flags.contains(AccessType::SHOW_USERS))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "users");
