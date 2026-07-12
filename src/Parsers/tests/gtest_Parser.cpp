@@ -514,6 +514,17 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         {
             "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS SELECT ON db.table",
             "throws Syntax error"
+        },
+        {
+            /// An explicit no-privileges clause is preserved (it makes a deny-all token) and does not
+            /// collapse to an unparseable `GRANTS ()`.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (USAGE ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(USAGE ON \*\.\*\))"
+        },
+        {
+            /// A source filter in a grant is preserved through the round trip.
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (READ ON S3('s3://foo/.*'))",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(READ ON S3\('s3://foo/\.\*'\)\))"
         }
 })));
 

@@ -28,3 +28,11 @@ ACCESS_DENIED
 -- The GRANTS clause requires a non-empty list of grants in parentheses
 SYNTAX_ERROR
 SYNTAX_ERROR
+-- SHOW CREATE USER keeps the no-privileges clause (it does not collapse to no limit or to unparseable empty parentheses)
+CREATE USER user2 IDENTIFIED WITH plaintext_password, plaintext_password GRANTS (USAGE ON *.*)
+-- system.users exposes USAGE ON *.* for the deny-all method
+['','USAGE ON *.*']
+-- The full credential can read t1
+1
+-- The deny-all token cannot read t1 even though the user can
+ACCESS_DENIED

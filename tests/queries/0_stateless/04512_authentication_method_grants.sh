@@ -8,6 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 user="u_04512_${CLICKHOUSE_DATABASE}"
+user2="u2_04512_${CLICKHOUSE_DATABASE}"
 role="r_04512_${CLICKHOUSE_DATABASE}"
 
 function login()
@@ -27,11 +28,11 @@ function login_expect_error()
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP ROLE IF EXISTS ${role}"
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP ROLE IF EXISTS ${role}"
 }
 trap cleanup EXIT
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP ROLE IF EXISTS ${role}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP ROLE IF EXISTS ${role}"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t1 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "CREATE TABLE t2 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "INSERT INTO t1 VALUES (1)" -q "INSERT INTO t2 VALUES (2)"
 
 # The second authentication method is a 'token': it limits the access rights to a subset of the grants.
@@ -82,3 +83,20 @@ login_expect_error "second_token" "ACCESS_DENIED" "SELECT x FROM t1"
 echo "-- The GRANTS clause requires a non-empty list of grants in parentheses"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${user}_bad IDENTIFIED WITH plaintext_password BY '1' GRANTS ()" 2>&1 | grep -m1 -o "SYNTAX_ERROR" | head -n 1
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${user}_bad IDENTIFIED WITH plaintext_password BY '1' GRANTS SELECT ON t1" 2>&1 | grep -m1 -o "SYNTAX_ERROR" | head -n 1
+
+# A GRANTS clause that grants no privileges (e.g. USAGE) is an explicit "deny everything" limit.
+# It must not be treated as "no clause" (which would silently give the credential the full user rights).
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user2} IDENTIFIED WITH plaintext_password BY 'full2', plaintext_password BY 'denyall' GRANTS (USAGE ON *.*)"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user2}"
+
+echo "-- SHOW CREATE USER keeps the no-privileges clause (it does not collapse to no limit or to unparseable empty parentheses)"
+${CLICKHOUSE_CLIENT} -q "SHOW CREATE USER ${user2}" | sed "s/${user2}/user2/g"
+
+echo "-- system.users exposes USAGE ON *.* for the deny-all method"
+${CLICKHOUSE_CLIENT} -q "SELECT auth_grants FROM system.users WHERE name = '${user2}'"
+
+echo "-- The full credential can read t1"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user2}&password=full2" -d "SELECT x FROM t1"
+
+echo "-- The deny-all token cannot read t1 even though the user can"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user2}&password=denyall" -d "SELECT x FROM t1" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
