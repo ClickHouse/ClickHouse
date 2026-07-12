@@ -30,6 +30,9 @@ public:
     bool noPushingToViewsOnInserts() const override { return getNested()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
     bool supportsSubcolumns() const override { return getNested()->supportsSubcolumns(); }
+    /// The IStorage default ties this to supportsSubcolumns(); forward it so a proxy around a
+    /// storage that opts out of the rewrite (e.g. Distributed) does not re-advertise true.
+    bool supportsOptimizationToSubcolumns() const override { return getNested()->supportsOptimizationToSubcolumns(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }

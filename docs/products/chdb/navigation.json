@@ -1,17 +1,14 @@
 {
-  "item": "chDB",
-  "icon": "/images/icons/icon-chdb.svg",
   "groups": [
     {
       "group": "Get started",
-      "root": "products/chdb/index",
       "pages": [
         "products/chdb/getting-started"
-      ]
+      ],
+      "root": "products/chdb/index"
     },
     {
       "group": "Language integrations",
-      "root": "products/chdb/install/index",
       "pages": [
         "products/chdb/install/python",
         "products/chdb/install/nodejs",
@@ -19,11 +16,11 @@
         "products/chdb/install/rust",
         "products/chdb/install/bun",
         "products/chdb/install/c"
-      ]
+      ],
+      "root": "products/chdb/install/index"
     },
     {
       "group": "DataStore",
-      "root": "products/chdb/datastore/index",
       "pages": [
         "products/chdb/datastore/quickstart",
         "products/chdb/datastore/factory-methods",
@@ -34,29 +31,29 @@
         "products/chdb/datastore/execution-model",
         "products/chdb/datastore/pandas-compat",
         "products/chdb/datastore/class-reference"
-      ]
+      ],
+      "root": "products/chdb/datastore/index"
     },
     {
       "group": "Configuration",
-      "root": "products/chdb/configuration/index",
       "pages": [
         "products/chdb/configuration/execution-engine",
         "products/chdb/configuration/function-config",
         "products/chdb/configuration/performance-mode"
-      ]
+      ],
+      "root": "products/chdb/configuration/index"
     },
     {
       "group": "Debugging",
-      "root": "products/chdb/debugging/index",
       "pages": [
         "products/chdb/debugging/explain",
         "products/chdb/debugging/logging",
         "products/chdb/debugging/profiling"
-      ]
+      ],
+      "root": "products/chdb/debugging/index"
     },
     {
       "group": "Developer guides",
-      "root": "products/chdb/guides/index",
       "pages": [
         "products/chdb/guides/jupysql",
         "products/chdb/guides/querying-pandas",
@@ -70,16 +67,19 @@
         "products/chdb/guides/pandas-differences",
         "products/chdb/guides/pandas-performance",
         "products/chdb/guides/pandas-to-sql"
-      ]
+      ],
+      "root": "products/chdb/guides/index"
     },
     {
       "group": "Technical reference",
-      "root": "products/chdb/reference/index",
       "pages": [
         "products/chdb/reference/data-formats",
         "products/chdb/reference/sql-reference",
         "products/chdb/api/python"
-      ]
+      ],
+      "root": "products/chdb/reference/index"
     }
-  ]
+  ],
+  "icon": "/images/icons/icon-chdb.svg",
+  "item": "chDB"
 }

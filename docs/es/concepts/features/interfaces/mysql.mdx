@@ -24,10 +24,10 @@ Si hay un driver nativo disponible (por ejemplo, [DBeaver](/es/integrations/conn
 
 Si tu caso de uso implica una herramienta concreta que no tiene un driver nativo de ClickHouse y te gustaría usarla a través de la interfaz MySQL, y has encontrado ciertas incompatibilidades, por favor [crea un issue](https://github.com/ClickHouse/ClickHouse/issues) en el repositorio de ClickHouse.
 
-::::note
+<Note>
 Para ofrecer una mejor compatibilidad con el dialecto SQL de las herramientas de BI anteriores, la interfaz MySQL de ClickHouse ejecuta implícitamente las consultas SELECT con el ajuste [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/es/reference/settings/session-settings#prefer_column_name_to_alias).
 Esto no se puede desactivar y, en casos excepcionales, puede dar lugar a un comportamiento distinto entre las consultas enviadas a las interfaces de consulta normal y MySQL de ClickHouse.
-::::
+</Note>
 
 <div id="enabling-the-mysql-interface-on-clickhouse-cloud">
   ## Habilitar la interfaz MySQL en ClickHouse Cloud
