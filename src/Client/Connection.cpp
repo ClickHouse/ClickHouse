@@ -1155,6 +1155,14 @@ void Connection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRang
     out->next();
 }
 
+void Connection::sendQueryCoordinationResponse(const QueryCoordinationResponse & response)
+{
+    writeVarUInt(Protocol::Client::QueryCoordinationResponse, *out);
+    response.serialize(*out);
+    out->finishChunk();
+    out->next();
+}
+
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
@@ -1468,6 +1476,10 @@ Packet Connection::receivePacket()
                 res.request = receiveParallelReadRequest();
                 return res;
 
+            case Protocol::Server::QueryCoordinationRequest:
+                res.query_coordination_request = receiveQueryCoordinationRequest();
+                return res;
+
             case Protocol::Server::ProfileEvents:
                 res.block = receiveProfileEvents();
                 return res;
@@ -1682,6 +1694,11 @@ InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement(
     auto announcement = InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
     announcement.replica_protocol_version = server_parallel_replicas_protocol_version;
     return announcement;
+}
+
+QueryCoordinationRequest Connection::receiveQueryCoordinationRequest() const
+{
+    return QueryCoordinationRequest::deserialize(*in, server_revision);
 }
 
 

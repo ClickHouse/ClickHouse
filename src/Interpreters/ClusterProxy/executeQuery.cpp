@@ -294,21 +294,11 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     if (context->canUseOffsetParallelReplicas())
         new_settings[Setting::serialize_query_plan] = false;
 
-    /// A shard receiving either a serialized plan fragment or a rewritten AST sub-query must execute
-    /// it as-is and never re-distribute it: `make_distributed_plan` on the initiator must not leak to
-    /// shards, otherwise the shard's local `MergeTree` read enters MPP conversion and throws
-    /// `SUPPORT_IS_DISABLED`. This mirrors `DistributedPlanExecutor` and `StatelessTaskExecutor`
-    /// forcing the same reset.
+    /// A shard must not redistribute a plan fragment received from the initiator.
     new_settings[Setting::make_distributed_plan] = false;
     new_settings[Setting::make_distributed_plan].changed = false;
 
-    /// When the initiator runs with `make_distributed_plan` but a query over a Distributed table
-    /// falls back to the AST path (e.g. it uses `shardNum`), local shards must be read over
-    /// connections like remote ones. Otherwise `prefer_localhost_replica` would inline regular
-    /// local reads into the initiator plan, the reads-from-remote check would not see that the
-    /// distributed split has already been decided, and the MPP conversion would wrongly try to
-    /// re-distribute the plan. The plan path behaves the same way: its finalized `ReadFromRemote`
-    /// reads every shard over a connection.
+    /// Keep AST fallback shards remote so MPP conversion cannot redistribute their local reads.
     if (settings[Setting::make_distributed_plan])
         new_settings[Setting::prefer_localhost_replica] = false;
 
@@ -1414,7 +1404,11 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
             Scalars{},
             Tables{},
             QueryProcessingStage::Complete,
-            RemoteQueryExecutor::Extension{.parallel_reading_coordinator = *coordinator, .replica_info = replica_info});
+            RemoteQueryExecutor::Extension{
+                .parallel_reading_coordinator = *coordinator,
+                .replica_info = replica_info,
+                .distributed_top_k_coordinator = nullptr,
+                .distributed_top_k_participant = std::nullopt});
         remote_query_executor->setLogger(logger);
         // TODO: check if source table is present on remote, similar to reading with PR
 

@@ -7,9 +7,15 @@
 #include <Core/SortDescription.h>
 #include <Columns/ColumnsNumber.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Common/ProfileEvents.h>
 #include <Common/RadixSort.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event LazyMaterializationRows;
+}
 
 namespace DB
 {
@@ -380,6 +386,8 @@ void LazyMaterializingTransform::prepareLazyChunk()
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "LazyMaterializingTransform: Number of rows in lazy chunk {} does not match number of offsets {}",
             chunk.getNumRows(), offsets.size());
+
+    ProfileEvents::increment(ProfileEvents::LazyMaterializationRows, chunk.getNumRows());
 
     IColumn::Permutation inverted_permutation;
 

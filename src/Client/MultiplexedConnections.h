@@ -44,6 +44,7 @@ public:
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
     void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
+    void sendQueryCoordinationResponse(const QueryCoordinationResponse & response) override;
 
     Packet receivePacket() override;
 

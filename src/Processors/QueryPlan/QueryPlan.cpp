@@ -224,9 +224,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     if (do_optimize)
         optimize(optimization_settings);
 
-    /// A plan reading from remote shards (`ReadFromRemote`, possibly produced from a
-    /// `ReadFromRemotePlanStep` placeholder) has already decided the distributed split
-    /// and must not go through the MPP conversion.
     if (optimization_settings.make_distributed_plan && !QueryPlanOptimizations::planReadsFromRemote(*root))
         convertToDistributed(optimization_settings);
 

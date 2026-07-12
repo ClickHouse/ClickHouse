@@ -231,6 +231,24 @@ void ReadFromRemote::enforceAggregationInOrder(const SortDescription & sort_desc
     DB::enforceAggregationInOrder(stage, &shards, sort_description, *context);
 }
 
+void ReadFromRemote::setDistributedTopKCoordination(UInt64 limit_, SortDescription sort_description)
+{
+    Block candidate_header;
+    std::unordered_set<String> candidate_names;
+    for (const auto & key : sort_description)
+    {
+        if (candidate_names.emplace(key.column_name).second)
+            candidate_header.insert(output_header->getByName(key.column_name));
+    }
+
+    distributed_top_k_settings = DistributedTopKCoordinator::Settings{
+        .logical_shards = 0,
+        .limit = limit_,
+        .sort_description = std::move(sort_description),
+        .candidate_header = std::move(candidate_header),
+    };
+}
+
 static ASTSelectQuery & getSelectQuery(ASTPtr ast)
 {
     if (const auto * explain = ast->as<ASTExplainQuery>())
@@ -549,12 +567,19 @@ static void addFilters(
 }
 
 void ReadFromRemote::addLazyPipe(
-    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
+    Pipes & pipes,
+    const ClusterProxy::SelectStreamFactory::Shard & shard,
+    const SharedHeader & out_header,
+    size_t parallel_marshalling_threads,
+    size_t participant)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    async_read = async_read || distributed_top_k_coordinator;
+#endif
     const bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
 
     if (stage == QueryProcessingStage::Complete)
@@ -611,7 +636,8 @@ void ReadFromRemote::addLazyPipe(
             my_stage = stage, my_storage = storage,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             query_tree = shard.query_tree, planner_context = shard.planner_context,
-            pushed_down_filters, parallel_marshalling_threads]() mutable
+            pushed_down_filters, parallel_marshalling_threads,
+            top_k_coordinator = distributed_top_k_coordinator, participant]() mutable
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
@@ -715,9 +741,19 @@ void ReadFromRemote::addLazyPipe(
 
         my_scalars["_shard_num"] = Block{
             {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
+        std::optional<RemoteQueryExecutor::Extension> extension;
+        if (top_k_coordinator)
+        {
+            extension = RemoteQueryExecutor::Extension{
+                .replica_selection_mode = IConnections::ReplicaSelectionMode::DistributedTopKCandidates,
+                .distributed_top_k_coordinator = top_k_coordinator,
+                .distributed_top_k_participant = participant,
+            };
+        }
+
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
-            my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
+            my_shard.query_plan, std::move(extension), my_shard.shard_info.pool);
         remote_query_executor->setLogger(my_log);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
         /// Attach the shared tracker so exception-based shard skips on the lazy path are also bounded by
@@ -736,12 +772,19 @@ void ReadFromRemote::addLazyPipe(
 }
 
 void ReadFromRemote::addPipe(
-    Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const SharedHeader & out_header, size_t parallel_marshalling_threads)
+    Pipes & pipes,
+    const ClusterProxy::SelectStreamFactory::Shard & shard,
+    const SharedHeader & out_header,
+    size_t parallel_marshalling_threads,
+    size_t participant)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    async_read = async_read || distributed_top_k_coordinator;
+#endif
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
     bool parallel_replicas_disabled = context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] == 0;
     if (stage == QueryProcessingStage::Complete)
@@ -777,6 +820,8 @@ void ReadFromRemote::addPipe(
     /// parallel replicas custom key case
     if (shard.shard_filter_generator)
     {
+        if (distributed_top_k_coordinator)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed Top-K coordination does not support per-replica shard filters");
         for (size_t i = 0; i < shard.shard_info.per_replica_pools.size(); ++i)
         {
             auto query = shard.query->clone();
@@ -834,6 +879,16 @@ void ReadFromRemote::addPipe(
         const String query_string = formattedAST(shard.query, enable_analyzer);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
 
+        std::optional<RemoteQueryExecutor::Extension> extension;
+        if (distributed_top_k_coordinator)
+        {
+            extension = RemoteQueryExecutor::Extension{
+                .replica_selection_mode = IConnections::ReplicaSelectionMode::DistributedTopKCandidates,
+                .distributed_top_k_coordinator = distributed_top_k_coordinator,
+                .distributed_top_k_participant = participant,
+            };
+        }
+
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             shard.shard_info.pool,
             query_string,
@@ -843,12 +898,13 @@ void ReadFromRemote::addPipe(
             scalars,
             external_tables,
             stage_to_use,
-            shard.query_plan);
+            shard.query_plan,
+            std::move(extension));
         remote_query_executor->setLogger(log);
         remote_query_executor->setDistributedFanout(shards.size());
         remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
-        if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
+        if (distributed_top_k_coordinator || context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
         {
             // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
             // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
@@ -876,14 +932,19 @@ Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards &
 {
     Pipes pipes;
 
-    for (const auto & shard : used_shards)
+    for (size_t participant = 0; participant < used_shards.size(); ++participant)
     {
+        const auto & shard = used_shards[participant];
         const size_t parallel_marshalling_threads
             = (context->getSettingsRef()[Setting::max_threads] + used_shards.size() - 1) / used_shards.size();
         if (shard.lazy)
-            addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads);
+        {
+            if (distributed_top_k_coordinator)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed Top-K coordination does not support delayed local shard fallback");
+            addLazyPipe(pipes, shard, out_header, parallel_marshalling_threads, participant);
+        }
         else
-            addPipe(pipes, shard, out_header, parallel_marshalling_threads);
+            addPipe(pipes, shard, out_header, parallel_marshalling_threads, participant);
     }
 
     return pipes;
@@ -891,6 +952,13 @@ Pipes ReadFromRemote::addPipes(const ClusterProxy::SelectStreamFactory::Shards &
 
 void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    if (distributed_top_k_settings)
+    {
+        auto coordinator_settings = *distributed_top_k_settings;
+        coordinator_settings.logical_shards = shards.size();
+        distributed_top_k_coordinator = std::make_shared<DistributedTopKCoordinator>(std::move(coordinator_settings));
+    }
+
     Pipes pipes = addPipes(shards, output_header);
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -1180,7 +1248,11 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
         scalars,
         external_tables,
         query_plan ? QueryProcessingStage::QueryPlan : stage,
-        RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},
+        RemoteQueryExecutor::Extension{
+            .parallel_reading_coordinator = coordinator,
+            .replica_info = std::move(replica_info),
+            .distributed_top_k_coordinator = nullptr,
+            .distributed_top_k_participant = std::nullopt},
         connection_pool_with_failover,
         query_plan);
 

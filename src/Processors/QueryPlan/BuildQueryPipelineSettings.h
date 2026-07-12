@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/QueryCoordination.h>
 #include <IO/Progress.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 
@@ -32,6 +33,7 @@ struct BuildQueryPipelineSettings
     ProgressCallback progress_callback;
     TemporaryFileLookupPtr temporary_file_lookup;
     BlockMarshallingCallback block_marshalling_callback;
+    QueryCoordinationCallback query_coordination_callback;
     ParameterLookupPtr parameter_lookup;
     ExchangeLookupPtr exchange_lookup;
 

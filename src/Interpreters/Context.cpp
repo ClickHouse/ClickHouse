@@ -1310,6 +1310,7 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),
     parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
     block_marshalling_callback(o.block_marshalling_callback),
+    query_coordination_callback(o.query_coordination_callback),
     is_under_restore(o.is_under_restore),
     client_protocol_version(o.client_protocol_version),
     partition_id_to_max_block(o.partition_id_to_max_block),
@@ -7883,6 +7884,23 @@ BlockMarshallingCallback Context::getBlockMarshallingCallback() const
 void Context::setBlockMarshallingCallback(BlockMarshallingCallback && callback)
 {
     block_marshalling_callback = std::move(callback);
+}
+
+bool Context::hasQueryCoordinationCallback() const
+{
+    return query_coordination_callback.has_value();
+}
+
+QueryCoordinationCallback Context::getQueryCoordinationCallback() const
+{
+    if (!query_coordination_callback)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query coordination callback is not set for query {}", getInitialQueryId());
+    return *query_coordination_callback;
+}
+
+void Context::setQueryCoordinationCallback(QueryCoordinationCallback callback)
+{
+    query_coordination_callback = std::move(callback);
 }
 
 void Context::setParallelReplicasGroupUUID(UUID uuid)

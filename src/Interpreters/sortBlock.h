@@ -4,6 +4,8 @@
 #include <base/types.h>
 #include <Common/PODArray_fwd.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -25,6 +27,8 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
 /** Quickly check whether the block is already sorted. If the block is not sorted - returns false as fast as possible.
   */
 bool isAlreadySorted(const Block & block, const SortDescription & description);
+bool isAlreadySorted(
+    const Block & block, const SortDescription & description, const std::function<void()> & cancellation_callback);
 
 /// Check if the permutation is identity (we can skip sorting).
 bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limit);

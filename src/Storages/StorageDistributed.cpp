@@ -515,11 +515,7 @@ StorageDistributed::StorageDistributed(
 namespace
 {
 
-/// `shardNum` and `shardCount` read the special scalars `_shard_num` / `_shard_count`, which exist
-/// only in the query context of a shard (they are delivered with the query, see `ReadFromRemote`).
-/// Until such expressions are pushed down to the shards, evaluating them on the initiator would
-/// silently return 0, so queries referencing them fall back to the existing read path.
-/// The `_shard_num` virtual column is covered too: the analyzer rewrites it to `shardNum()`.
+/// `shardNum` and `shardCount` return zero on the initiator, so evaluate them through the legacy path.
 bool queryTreeContainsShardDependentFunctions(const QueryTreeNodePtr & root)
 {
     if (!root)
@@ -554,25 +550,14 @@ bool StorageDistributed::useDistributedPlanForReading(
 {
     const auto & settings = local_context->getSettingsRef();
 
-    /// Where this gate allows, the placeholder path supersedes the eager per-shard plan building in
-    /// `SelectStreamFactory::createForShardImpl` (same `serialize_query_plan` intent, but the plan is
-    /// carved out of the initiator plan instead of being planned again per shard). Where the gate
-    /// falls back, the legacy read path takes over and `serialize_query_plan` re-engages the eager
-    /// plan building there, subject to that path's own guards.
     return settings[Setting::serialize_query_plan]
         && settings[Setting::allow_experimental_analyzer]
         && !settings[Setting::distributed_group_by_no_merge]
-        /// The plan path evaluates IN/JOIN subqueries over Distributed tables once on the initiator
-        /// (`GLOBAL IN`-like semantics). `distributed_product_mode = 'local'` instead demands
-        /// per-shard subquery rewriting to local tables, which the plan path does not implement, so
-        /// fall back to the legacy path. Coarse: applied regardless of whether the query has such
-        /// subqueries.
+        /// `distributed_product_mode = 'local'` requires per-shard subquery rewriting.
         && settings[Setting::distributed_product_mode] != DistributedProductMode::LOCAL
         && !local_context->canUseParallelReplicasCustomKeyForCluster(*cluster)
         && !local_context->canUseTaskBasedParallelReplicas()
-        /// Phase 1: plain remote tables only, no remote table functions.
         && !remote_table_function_ptr
-        /// Requires the analyzer, so the query tree must be present.
         && query_info.query_tree
         && !queryTreeContainsShardDependentFunctions(query_info.query_tree);
 }
@@ -638,20 +623,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         return std::max(to_stage, QueryProcessingStage::Complete);
     }
 
-    /// Plan-level distributed execution: `read` adds a `ReadFromRemotePlanStep` placeholder and the
-    /// Planner builds the complete single-node plan above it, so the storage advertises `FetchColumns`.
-    /// This also applies when `to_stage == WithMergeableState` (nested distributed) — `FetchColumns`
-    /// is a legal answer for any `to_stage`. The `nodes == 1` proxy optimization and the `nodes == 0`
-    /// branch below are kept (they are handled by the existing path).
-    ///
-    /// The plan path currently bypasses `optimize_distributed_group_by_sharding_key` (the per-shard-
-    /// complete aggregation applied by `getOptimizedQueryProcessingStageAnalyzer` below when the
-    /// `GROUP BY` covers the sharding key): returning `FetchColumns` here skips that stage decision.
-    /// On data not distributed according to the sharding key this changes results — the plan path
-    /// returns exact totals (correct) instead of the optimization's per-shard answer — and it gives
-    /// up the optimization's perf win. See
-    /// `01247_optimize_distributed_group_by_sharding_key_dist_on_dist`.
-    /// TODO: support it on the plan path (aggregation pushdown with a per-shard-complete stage).
+    /// This path currently bypasses `optimize_distributed_group_by_sharding_key` and returns exact totals.
+    /// TODO: add per-shard-complete aggregation pushdown.
     if (nodes > 1 && useDistributedPlanForReading(local_context, cluster, query_info))
         return QueryProcessingStage::FetchColumns;
 
@@ -1111,9 +1084,7 @@ void StorageDistributed::readWithDistributedPlan(
         local_context,
         settings,
         remote_storage,
-        /// In this mode the additional filter is already a `FilterStep` in the initiator plan and
-        /// travels as part of the serialized plan; forwarding it via the `additional_table_filters`
-        /// setting too would double-apply it when a shard re-plans a nested Distributed leaf.
+        /// The serialized `FilterStep` must not also be sent through `additional_table_filters`.
         /* additional_filter_ast= */ nullptr,
         log,
         distributed_settings.get());
@@ -1121,13 +1092,9 @@ void StorageDistributed::readWithDistributedPlan(
 
     ProfileEvents::increment(ProfileEvents::Shards, cluster->getShardCount());
 
-    /// The inner plan is seeded with a bare read from the remote table producing the same sample
-    /// block a logical plan would (see the `build_logical_plan` emission in `PlannerJoinTree`).
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 
-    /// When `remote_database` is empty (per-shard `default_database` clusters), a one-part
-    /// identifier resolves on the shard against the connection's database, which is
-    /// `ShardInfo::default_database`. So one shared inner plan serves all shards.
+    /// A bare table name resolves against each shard connection's default database.
     String remote_table_name;
     if (remote_database.empty())
         remote_table_name = backQuoteIfNeed(remote_table);
@@ -1149,7 +1116,6 @@ void StorageDistributed::readWithDistributedPlan(
     query_plan.addStep(std::make_unique<ReadFromRemotePlanStep>(
         std::move(inner_plan),
         cluster,
-        /// The name of the non-optimized cluster.
         query_info.cluster->getName(),
         remote_context,
         remote_storage,
@@ -1176,9 +1142,6 @@ void StorageDistributed::read(
 
     const auto & settings = local_context->getSettingsRef();
 
-    /// Plan-level distributed execution. Mirrors the `FetchColumns` decision of
-    /// `getQueryProcessingStage` (the stage check covers callers that ask for another stage,
-    /// e.g. `StorageMerge`; they take the existing path below).
     if (ClusterPtr query_cluster = query_info.getCluster();
         processed_stage == QueryProcessingStage::FetchColumns
         && getClusterQueriedNodes(settings, query_cluster) > 1
@@ -1562,7 +1525,11 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 Tables{},
                 QueryProcessingStage::Complete,
                 nullptr,
-                RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)},
+                RemoteQueryExecutor::Extension{
+                    .task_iterator = extension.task_iterator,
+                    .replica_info = std::move(replica_info),
+                    .distributed_top_k_coordinator = nullptr,
+                    .distributed_top_k_participant = std::nullopt},
                 replicas.pool);
 
             Pipe pipe{std::make_shared<RemoteSource>(

@@ -39,6 +39,8 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     enable_multiple_filters_transforms_for_and_chain = settings[Setting::query_plan_merge_filters];
 
     block_marshalling_callback = from->getBlockMarshallingCallback();
+    if (from->hasQueryCoordinationCallback())
+        query_coordination_callback = from->getQueryCoordinationCallback();
 }
 
 }

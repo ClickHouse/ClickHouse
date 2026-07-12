@@ -39,6 +39,17 @@ public:
 
     void markAsShardLimit() { is_shard_limit = true; }
 
+    void setDistributedTopKCandidateLimit(SortDescription sort_description)
+    {
+        distributed_top_k_candidate_sort_description = std::move(sort_description);
+        markAsShardLimit();
+    }
+
+    const std::optional<SortDescription> & getDistributedTopKCandidateSortDescription() const
+    {
+        return distributed_top_k_candidate_sort_description;
+    }
+
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -61,6 +72,7 @@ private:
     bool with_ties;
     const SortDescription description;
     bool is_shard_limit = false;
+    std::optional<SortDescription> distributed_top_k_candidate_sort_description;
 };
 
 }

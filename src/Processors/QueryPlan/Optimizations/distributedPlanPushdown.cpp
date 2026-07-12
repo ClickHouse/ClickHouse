@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ReadFromRemotePlanStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <QueryPipeline/UnavailableShardTracker.h>
 
 namespace DB
@@ -45,26 +46,20 @@ bool planReadsFromRemote(QueryPlan::Node & root)
         for (auto * child : node->children)
             stack.push_back(child);
 
-        /// Steps like `ReadFromMerge` hold whole child plans instead of plan children; a remote
-        /// read nested there decides the distributed split just the same (e.g. a `Merge` table
-        /// over a `Distributed` one), so the MPP conversion must be skipped for it too.
+        /// A remote read in a child plan also fixes the distributed split.
         for (auto * child_plan : step->getChildPlans())
             stack.push_back(child_plan->getRootNode());
     }
     return false;
 }
 
-/// Replace a `ReadFromRemotePlanStep` placeholder with a regular `ReadFromRemote` step whose shards
-/// carry the inner query plan (per-shard stage becomes `QueryProcessingStage::QueryPlan` automatically
-/// because `Shard::query_plan` is set).
 static void finalizeNode(QueryPlan::Node & node, ReadFromRemotePlanStep & placeholder)
 {
     auto remote_context = placeholder.getRemoteContext();
     const auto & cluster = placeholder.getCluster();
     const size_t shard_count = cluster->getShardCount();
 
-    /// Tracker is shared between all shards so that max_skip_unavailable_shards_num
-    /// and max_skip_unavailable_shards_ratio are enforced uniformly.
+    /// All shards must share one unavailable-shard budget.
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     {
         const auto & settings = remote_context->getSettingsRef();
@@ -82,9 +77,6 @@ static void finalizeNode(QueryPlan::Node & node, ReadFromRemotePlanStep & placeh
         "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
     auto external_tables = remote_context->getExternalTables();
 
-    /// One shared inner plan serves all shards: its leaf names the remote table either fully
-    /// qualified or as a bare identifier that each shard resolves against the connection's
-    /// database, which is `ShardInfo::default_database`.
     std::shared_ptr<QueryPlan> shared_plan = placeholder.extractInnerPlan();
     auto shard_header = shared_plan->getCurrentHeader();
 
@@ -121,66 +113,104 @@ static void finalizeNode(QueryPlan::Node & node, ReadFromRemotePlanStep & placeh
         placeholder.getClusterName(),
         std::move(unavailable_shard_tracker));
 
+    if (const auto & coordination = placeholder.getDistributedTopKCoordination())
+    {
+        read_from_remote->setDistributedTopKCoordination(
+            coordination->limit,
+            coordination->sort_description);
+    }
+
     read_from_remote->setStepDescription("Read from remote replica");
 
     node.step = std::move(read_from_remote);
     node.children.clear();
 }
 
-/// Copy an outer `LimitStep` down into the per-shard plan so each shard emits at most `limit + offset`
-/// rows, while the global (outer) `LimitStep` stays in place — a per-shard `LIMIT n` is not a global
-/// `LIMIT n`. Mirrors the per-branch LIMIT copy that `limitPushDown.cpp` performs for `UNION ALL`.
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+static void tryEnableDistributedLazyMaterialization(
+    LimitStep & limit,
+    SortingStep & sorting,
+    ReadFromRemotePlanStep & placeholder,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.optimize_distributed_lazy_materialization
+        || !optimization_settings.serialize_query_plan
+        || !optimization_settings.optimize_lazy_materialization
+        || !optimization_settings.distributed_push_down_limit
+        || optimization_settings.skip_unavailable_shards
+        || optimization_settings.parallel_replicas_enabled
+        || placeholder.isLimitCopied()
+        || limit.getLimit() == 0
+        || limit.withTies()
+        || limit.alwaysReadTillEnd())
+        return;
+
+    const size_t candidate_limit = limit.getLimitForSorting();
+    if (candidate_limit == 0
+        || (optimization_settings.max_limit_for_lazy_materialization != 0
+            && candidate_limit > optimization_settings.max_limit_for_lazy_materialization))
+        return;
+
+    if (sorting.getType() != SortingStep::Type::Full || sorting.hasPartitions())
+        return;
+
+    SortDescription sort_description = sorting.getSortDescription();
+    if (sort_description.empty())
+        return;
+    for (const auto & column : sort_description)
+        if (column.with_fill)
+            return;
+
+    placeholder.absorbStep(std::make_unique<SortingStep>(
+        placeholder.getOutputHeader(),
+        sort_description,
+        /* limit_= */ 0,
+        sorting.getSettings()));
+
+    auto shard_limit = std::make_unique<LimitStep>(
+        placeholder.getOutputHeader(),
+        candidate_limit,
+        /* offset_= */ 0,
+        /* always_read_till_end_= */ false,
+        /* with_ties_= */ false,
+        /* description_= */ SortDescription{});
+    shard_limit->setDistributedTopKCandidateLimit(sort_description);
+    placeholder.absorbStep(std::move(shard_limit));
+    placeholder.setDistributedTopKCoordination(candidate_limit, std::move(sort_description));
+}
+#endif
+
+/// Keep the outer limit because per-shard limits do not enforce a global limit.
 static void tryCopyLimitToRemotePlan(
     LimitStep & limit, ReadFromRemotePlanStep & placeholder, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    /// The user disabled per-shard LIMIT application (parity with the legacy path over Distributed).
     if (!optimization_settings.distributed_push_down_limit)
         return;
 
-    /// Copy the limit at most once. The bottom-up traversal visits each node once, so this only
-    /// guards against a hypothetical re-traversal; absorption is tracked in the placeholder.
     if (placeholder.isLimitCopied())
         return;
 
-    /// WITH TIES needs a global sort order to be meaningful: a per-shard tie set is not composable
-    /// into the global one, so the limit can only be applied on the initiator.
-    /// Defensive: a real WITH TIES always has a `SortingStep` between the limit and the placeholder,
-    /// so this pattern never matches in practice.
+    /// Per-shard tie sets cannot be combined into the global tie set.
     if (limit.withTies())
         return;
 
-    /// `always_read_till_end` means the step must consume all input regardless of the limit. It is set
-    /// for `exact_rows_before_limit` and for WITH TOTALS. In both cases a per-shard limit is either
-    /// pointless (the shard would still read everything) or breaks exact `rows_before_limit_at_least`
-    /// reporting — the same reason `DistributedCreateLocalPlan.cpp` avoids limit pushdown for the
-    /// `WithMergeableStateAfterAggregationAndLimit` stage. Leave the shard reading everything.
+    /// A shard limit would break exact rows-before-limit reporting when all input must be read.
     if (limit.alwaysReadTillEnd())
         return;
 
-    /// `getLimitForSorting` returns `limit + offset` with overflow protection, yielding 0 when the sum
-    /// would overflow `UInt64` or when the limit itself is 0. In either case a per-shard limit is
-    /// unrepresentable or useless, so leave the outer step alone and absorb nothing.
+    /// Zero also represents overflow of `limit + offset`.
     if (limit.getLimitForSorting() == 0)
         return;
 
     placeholder.absorbLimitCopy(limit);
 }
 
-/// A step may be executed on the shards only if every set referenced by its actions travels with
-/// the serialized plan. Literal `IN` sets (`FutureSetFromTuple`) are serialized with their values
-/// and are self-contained. A set from a subquery cannot go: the initiator builds it via
-/// `DelayedCreatingSetsStep` in the third optimization pass — after this rule — which consumes the
-/// subquery's source plan, so a later serialization of the shard plan would throw a logical error
-/// (`Cannot serialize FutureSetFromSubquery with no query plan`); and shipping the subquery plan
-/// instead would make every shard re-execute it, changing semantics. A set from a `Set` storage is
-/// serialized as a table name that the shard would resolve against its own catalog — also a
-/// semantics change. Keep steps referencing such sets on the initiator.
+/// Only literal `IN` sets are self-contained. Subquery sets would run once per shard, and `Set`
+/// storage names would resolve in the shard's catalog.
 static bool dagReferencesOnlyInlineSets(const ActionsDAG & dag)
 {
     for (const auto & dag_node : dag.getNodes())
     {
-        /// Scan any node carrying a column (matching what `ActionsDAG::serialize` serializes), not
-        /// just `COLUMN` nodes, unwrapping `ColumnConst` to reach the underlying column.
         if (!dag_node.column)
             continue;
 
@@ -201,28 +231,36 @@ static bool dagReferencesOnlyInlineSets(const ActionsDAG & dag)
 
 void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    /// Pattern: a step whose single child is a `ReadFromRemotePlanStep` placeholder. Depending on the
-    /// step type it is either moved into the serialized per-shard plan (Expression/Filter) or copied
-    /// there while staying on the initiator (Limit).
     auto * step = node.step.get();
 
     if (node.children.size() != 1)
         return;
 
     auto * child_node = node.children.front();
+
+    if (auto * limit = typeid_cast<LimitStep *>(step))
+    {
+        if (auto * sorting = typeid_cast<SortingStep *>(child_node->step.get());
+            sorting && child_node->children.size() == 1)
+        {
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+            if (auto * placeholder = typeid_cast<ReadFromRemotePlanStep *>(child_node->children.front()->step.get()))
+                tryEnableDistributedLazyMaterialization(*limit, *sorting, *placeholder, optimization_settings);
+#endif
+            return;
+        }
+    }
+
     auto * placeholder = typeid_cast<ReadFromRemotePlanStep *>(child_node->step.get());
     if (!placeholder)
         return;
 
-    /// A `LimitStep` is copied (not moved) down: the outer step stays as the global limit and the
-    /// traversal simply continues, so there is no node swap here.
     if (auto * limit = typeid_cast<LimitStep *>(step))
     {
         tryCopyLimitToRemotePlan(*limit, *placeholder, optimization_settings);
         return;
     }
 
-    /// Otherwise only an `ExpressionStep` or `FilterStep` can be evaluated on the shards.
     const ActionsDAG * dag = nullptr;
     if (const auto * expression = typeid_cast<ExpressionStep *>(step))
         dag = &expression->getExpression();
@@ -231,30 +269,18 @@ void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
     else
         return;
 
-    /// Graceful degradation: only move a step that can be serialized to the shard and that carries no
-    /// correlated expressions (`PLACEHOLDER` action nodes referencing outer-query columns absent on the
-    /// shard). Otherwise leave the step on the initiator.
+    /// Correlated expressions may reference columns absent on the shard.
     if (!step->isSerializable() || step->hasCorrelatedExpressions())
         return;
 
-    /// Sets from subqueries or `Set` storages cannot travel with the serialized shard plan.
     if (!dagReferencesOnlyInlineSets(*dag))
         return;
 
-    /// A shard plan that outputs zero columns cannot carry its row count across `ReadFromRemote`:
-    /// an empty block loses `num_rows` over the wire, which would make e.g. `count()` return 0. This
-    /// happens when the pushed step projects everything away (bare `count()` needs no columns). Keep
-    /// such a step on the initiator so the shard still emits at least one column and the initiator does
-    /// the empty projection itself.
+    /// Empty blocks lose their row count over the wire, so an empty projection must run locally.
     if (step->getOutputHeader()->columns() == 0)
         return;
 
-    /// Move the step into the inner (per-shard) plan, then reconnect. Mirrors the
-    /// `ReadFromLocalParallelReplicaStep` idiom in `filterPushDown.cpp`: after the swap the parent node
-    /// holds the placeholder (now carrying the absorbed step) with empty children, and the orphaned node
-    /// stays in the `QueryPlan::Nodes` list harmlessly. Repeated application chains naturally in the
-    /// bottom-up traversal: a `Filter` above an `Expression` above a placeholder absorbs both, one at a
-    /// time, because after each swap the parent's child points at the node now holding the placeholder.
+    /// The old node remains in `QueryPlan::Nodes`; the bottom-up traversal may absorb the next parent.
     placeholder->absorbStep(std::move(node.step));
     std::swap(node, *child_node);
 }
@@ -276,13 +302,7 @@ void finalizeReadFromRemotePlan(QueryPlan::Node & root, bool walk_child_plans)
         for (auto * child : node->children)
             stack.push_back(child);
 
-        /// Also finalize placeholders nested in child plans of steps like `ReadFromMerge`, mirroring
-        /// the `getChildPlans` walk in `planReadsFromRemote`. Invariant: such child plans are
-        /// independently optimized when they are created, so their placeholders normally finalize
-        /// there — this walk is defense in depth. It is off when the raw `serialize_query_plan`
-        /// setting is off, because `getChildPlans` may force lazy child-plan creation
-        /// (`ReadFromMerge`) and the unconditional call of this scan must then stay a cheap
-        /// zero-side-effect walk over `node->children` only.
+        /// Do not call `getChildPlans` when disabled because it may materialize lazy child plans.
         if (walk_child_plans)
         {
             for (auto * child_plan : node->step->getChildPlans())

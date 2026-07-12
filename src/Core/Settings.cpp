@@ -6439,6 +6439,9 @@ Enable multithreading after evaluating window functions to allow parallel stream
     DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
 Use query plan for lazy materialization optimization.
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_distributed_lazy_materialization, false, R"(
+Enable experimental lazy materialization across shards for eligible distributed `ORDER BY ... LIMIT` queries.
+)", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(

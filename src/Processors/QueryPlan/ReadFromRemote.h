@@ -8,6 +8,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Core/UUID.h>
+#include <QueryPipeline/DistributedTopKCoordinator.h>
 
 namespace DB
 {
@@ -54,6 +55,8 @@ public:
 
     bool hasSerializedPlan() const;
 
+    void setDistributedTopKCoordination(UInt64 limit_, SortDescription sort_description);
+
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
@@ -69,6 +72,8 @@ private:
     const String cluster_name;
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
+    std::optional<DistributedTopKCoordinator::Settings> distributed_top_k_settings;
+    DistributedTopKCoordinatorPtr distributed_top_k_coordinator;
 
     Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header);
 
@@ -76,13 +81,15 @@ private:
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
         const SharedHeader & out_header,
-        size_t parallel_marshalling_threads);
+        size_t parallel_marshalling_threads,
+        size_t participant);
 
     void addPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
         const SharedHeader & out_header,
-        size_t parallel_marshalling_threads);
+        size_t parallel_marshalling_threads,
+        size_t participant);
 };
 
 

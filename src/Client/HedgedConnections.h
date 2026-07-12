@@ -78,7 +78,8 @@ public:
         PoolMode pool_mode,
         std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr,
         AsyncCallback async_callback = {},
-        GetPriorityForLoadBalancing::Func priority_func = {});
+        GetPriorityForLoadBalancing::Func priority_func = {},
+        ReplicaSelectionMode replica_selection_mode_ = ReplicaSelectionMode::Default);
 
     void sendScalarsData(Scalars & data) override;
 
@@ -109,6 +110,8 @@ public:
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeAllRangesAnnouncementResponse is not supported with HedgedConnections");
     }
+
+    void sendQueryCoordinationResponse(const QueryCoordinationResponse & response) override;
 
     Packet receivePacket() override;
 
@@ -151,11 +154,15 @@ private:
         std::vector<std::function<void(ReplicaState &)>> pipeline;
     };
 
-    Packet receivePacketFromReplica(const ReplicaLocation & replica_location);
+    std::optional<Packet> receivePacketFromReplica(const ReplicaLocation & replica_location);
 
     ReplicaLocation getReadyReplicaLocation(AsyncCallback async_callback = {});
 
     bool resumePacketReceiver(const ReplicaLocation & replica_location);
+
+    bool expectsDistributedTopKCandidates(const ReplicaState & replica) const;
+
+    void replaceFailedReplica(const ReplicaLocation & replica_location);
 
     void disableChangingReplica(const ReplicaLocation & replica_location);
 
@@ -217,6 +224,9 @@ private:
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;
+
+    const ReplicaSelectionMode replica_selection_mode;
+    std::optional<ReplicaLocation> query_coordination_replica;
 
     ReplicaInfo replica_info;
 

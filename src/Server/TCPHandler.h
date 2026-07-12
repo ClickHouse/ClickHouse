@@ -206,6 +206,7 @@ private:
     UInt64 client_version_patch = 0;
     UInt32 client_tcp_protocol_version = 0;
     UInt32 client_parallel_replicas_protocol_version = 0;
+    UInt64 next_query_coordination_request_id = 1;
     String proto_send_chunked_cl = "notchunked";
     String proto_recv_chunked_cl = "notchunked";
     String quota_key;
@@ -287,6 +288,9 @@ private:
 
     InitialAllRangesAnnouncementResponse receiveAllRangesAnnouncementResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
+    QueryCoordinationResponse receiveQueryCoordinationResponse(
+        QueryState & state, UInt64 expected_request_id, size_t candidate_rows) TSA_REQUIRES(callback_mutex);
+
     void processCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
     void processQuery(std::shared_ptr<QueryState> & state);
     bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
@@ -327,6 +331,7 @@ private:
     void sendReadTaskRequest() TSA_REQUIRES(callback_mutex);
     void sendMergeTreeAllRangesAnnouncement(QueryState & state, InitialAllRangesAnnouncement announcement) TSA_REQUIRES(callback_mutex);
     void sendMergeTreeReadTaskRequest(ParallelReadRequest request) TSA_REQUIRES(callback_mutex);
+    void sendQueryCoordinationRequest(const QueryCoordinationRequest & request) TSA_REQUIRES(callback_mutex);
     void sendProfileInfo(QueryState & state, const ProfileInfo & info);
     void sendTotals(QueryState & state, const Block & totals);
     void sendExtremes(QueryState & state, const Block & extremes);

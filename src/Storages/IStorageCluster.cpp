@@ -196,7 +196,11 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             Tables(),
             processed_stage,
             nullptr,
-            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)},
+            RemoteQueryExecutor::Extension{
+                .task_iterator = extension->task_iterator,
+                .replica_info = std::move(replica_info),
+                .distributed_top_k_coordinator = nullptr,
+                .distributed_top_k_participant = std::nullopt},
             shard_info.pool);
 
         remote_query_executor->setLogger(log);

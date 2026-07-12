@@ -57,17 +57,29 @@ void ReadFromRemotePlanStep::absorbStep(QueryPlanStepPtr step)
     output_header = inner_plan->getCurrentHeader();
 }
 
+void ReadFromRemotePlanStep::setDistributedTopKCoordination(UInt64 limit, SortDescription sort_description)
+{
+    limit_copied = true;
+    distributed_top_k_coordination = DistributedTopKCoordination{
+        .limit = limit,
+        .sort_description = std::move(sort_description),
+    };
+}
+
 void ReadFromRemotePlanStep::absorbLimitCopy(const LimitStep & limit_step)
 {
-    /// Per-shard `LIMIT n` is not a global `LIMIT n`, so the outer step stays and the inner plan
-    /// gets `LIMIT limit + offset` with zero offset (the same semantics as `distributed_push_down_limit`).
-    /// `getLimitForSorting` computes `limit + offset` with overflow protection; the caller must have
-    /// already checked that it is non-zero (see `tryPushDownToRemotePlan`).
+    /// A zero shard limit means no limit or overflow.
     const size_t shard_limit = limit_step.getLimitForSorting();
     chassert(shard_limit != 0);
-    inner_plan->addStep(std::make_unique<LimitStep>(
-        inner_plan->getCurrentHeader(), shard_limit, /*offset_=*/0));
-    /// `LimitStep` does not change the header, no need to update `output_header`.
+    auto step = std::make_unique<LimitStep>(
+        inner_plan->getCurrentHeader(),
+        shard_limit,
+        /* offset_= */ 0,
+        /* always_read_till_end_= */ false,
+        /* with_ties_= */ false,
+        /* description_= */ SortDescription{});
+    step->markAsShardLimit();
+    inner_plan->addStep(std::move(step));
     limit_copied = true;
 }
 

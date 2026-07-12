@@ -254,10 +254,14 @@ void optimizeTreeSecondPass(
         });
     }
 
-    /// Compute aggregation hash-table preallocation keys before adding per-execution runtime-filter state.
+    /// Compute aggregation hash-table preallocation keys here, BEFORE join runtime filters are added
+    /// in the traversal below. A join runtime filter injects a per-execution-random constant into the
+    /// probe-side Filter (see `joinRuntimeFilter.cpp`); hashing a plan that contains it would make an
+    /// aggregation's key differ across executions of the same query and defeat the size-stats cache.
+    /// Join steps avoid this for exactly the same reason by computing their key before the filter is
+    /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
-    /// A plan with a remote read has already chosen its distributed boundary and must not also enter MPP conversion.
     const bool make_distributed_plan = optimization_settings.make_distributed_plan && !planReadsFromRemote(root);
 
     QueryPlanOptimizationSettings join_optimization_settings = optimization_settings;
@@ -342,9 +346,6 @@ void optimizeTreeSecondPass(
                 tryMakeDistributedRead(frame_node, nodes, optimization_settings);
             }
 
-            /// Push serializable Expression/Filter steps into the per-shard plan of a
-            /// `ReadFromRemotePlanStep` placeholder. Gated on `serialize_query_plan` — the setting
-            /// that plants the placeholders — and runs before finalize.
             if (optimization_settings.serialize_query_plan)
                 tryPushDownToRemotePlan(frame_node, nodes, optimization_settings);
         });
@@ -604,15 +605,8 @@ void optimizeTreeSecondPass(
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
-    /// Replace `ReadFromRemotePlanStep` placeholders with final `ReadFromRemote` steps carrying
-    /// the per-shard plans. Done in the optimizer (not in buildQueryPipeline), so that
-    /// `EXPLAIN PLAN` shows the final step and `EXPLAIN PLAN distributed=1` prints the inner plan.
-    /// Unconditional, like the `ReadFromLocalParallelReplicaStep` replacement above: a subquery or
-    /// a view planned with its own `serialize_query_plan = 1` (subquery-level SETTINGS) plants a
-    /// placeholder even when this merged plan is optimized with the setting off, and a placeholder
-    /// must never reach `initializePipeline` (skipping `tryPushDownToRemotePlan` above is fine —
-    /// that only loses pushdown — but finalize is mandatory). When the setting is off, this is a
-    /// cheap side-effect-free scan over plan children.
+    /// Finalize unconditionally because a subquery may have created a placeholder with different settings.
+    /// A placeholder must not reach pipeline initialization.
     finalizeReadFromRemotePlan(root, optimization_settings.serialize_query_plan);
 }
 

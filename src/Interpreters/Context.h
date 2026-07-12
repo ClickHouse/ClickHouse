@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/Block_fwd.h>
+#include <Core/QueryCoordination.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
@@ -419,6 +420,7 @@ protected:
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
 
     BlockMarshallingCallback block_marshalling_callback;
+    std::optional<QueryCoordinationCallback> query_coordination_callback;
 
     mutable RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
@@ -1850,6 +1852,10 @@ public:
 
     BlockMarshallingCallback getBlockMarshallingCallback() const;
     void setBlockMarshallingCallback(BlockMarshallingCallback && callback);
+
+    bool hasQueryCoordinationCallback() const;
+    QueryCoordinationCallback getQueryCoordinationCallback() const;
+    void setQueryCoordinationCallback(QueryCoordinationCallback callback);
 
     UUID getParallelReplicasGroupUUID() const;
     void setParallelReplicasGroupUUID(UUID uuid);

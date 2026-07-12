@@ -40,6 +40,8 @@ static struct InitFiu
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    ONCE(distributed_top_k_force_fallback) \
+    PAUSEABLE_ONCE(distributed_top_k_pause_before_candidate_submission) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \

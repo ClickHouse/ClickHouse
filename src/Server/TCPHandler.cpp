@@ -71,6 +71,7 @@
 #endif
 
 #include <Core/Protocol.h>
+#include <Core/QueryCoordination.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Interpreters/ClientInfo.h>
 
@@ -844,6 +845,33 @@ void TCPHandler::runImpl()
                         auto res = receivePartitionMergeTreeReadTaskResponse(*query_state);
                         ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
                         return res;
+                    }
+                    catch (...)
+                    {
+                        query_state->stop_query = true;
+                        throw;
+                    }
+                });
+
+            query_state->query_context->setQueryCoordinationCallback(
+                [this, &query_state](QueryCoordinationRequest request)
+                {
+                    std::lock_guard lock(*callback_mutex);
+
+                    checkIfQueryCanceled(*query_state);
+
+                    try
+                    {
+                        if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_COORDINATION)
+                            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Client does not support query coordination requests");
+
+                        request.request_id = next_query_coordination_request_id++;
+                        const UInt64 request_id = request.request_id;
+                        const size_t candidate_rows = request.mode == QueryCoordinationRequestMode::Candidates
+                            ? request.payload.rows()
+                            : 0;
+                        sendQueryCoordinationRequest(request);
+                        return receiveQueryCoordinationResponse(*query_state, request_id, candidate_rows);
                     }
                     catch (...)
                     {
@@ -1687,6 +1715,16 @@ void TCPHandler::sendMergeTreeReadTaskRequest(ParallelReadRequest request)
 }
 
 
+void TCPHandler::sendQueryCoordinationRequest(const QueryCoordinationRequest & request)
+{
+    writeVarUInt(Protocol::Server::QueryCoordinationRequest, *out);
+    request.serialize(*out, client_tcp_protocol_version);
+
+    out->finishChunk();
+    out->next();
+}
+
+
 void TCPHandler::sendProfileInfo(QueryState &, const ProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
@@ -2298,6 +2336,39 @@ InitialAllRangesAnnouncementResponse TCPHandler::receiveAllRangesAnnouncementRes
             throw Exception(
                 ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                 "Received {} packet after sending an initial parallel-replicas announcement",
+                Protocol::Client::toString(packet_type));
+    }
+}
+
+
+QueryCoordinationResponse TCPHandler::receiveQueryCoordinationResponse(
+    QueryState & state, UInt64 expected_request_id, size_t candidate_rows)
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+
+    switch (packet_type)
+    {
+        case Protocol::Client::Cancel:
+            processCancel(state);
+            throw Exception(ErrorCodes::ABORTED, "Query coordination request was cancelled");
+
+        case Protocol::Client::QueryCoordinationResponse:
+        {
+            auto response = QueryCoordinationResponse::deserialize(*in, candidate_rows);
+            if (response.request_id != expected_request_id)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Query coordination response ID {} does not match request ID {}",
+                    response.request_id,
+                    expected_request_id);
+            return response;
+        }
+
+        default:
+            throw Exception(
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "Received {} packet after sending a query coordination request",
                 Protocol::Client::toString(packet_type));
     }
 }

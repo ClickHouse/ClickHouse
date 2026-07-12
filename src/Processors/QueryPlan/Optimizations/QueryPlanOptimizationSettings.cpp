@@ -54,6 +54,7 @@ namespace Setting
     extern const SettingsBool query_plan_merge_expression_into_join;
     extern const SettingsBool query_plan_merge_filter_into_join_condition;
     extern const SettingsBool query_plan_merge_filters;
+    extern const SettingsBool query_plan_optimize_distributed_lazy_materialization;
     extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_prewhere;
@@ -71,6 +72,7 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool serialize_query_plan;
+    extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -219,6 +221,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     make_distributed_plan = from[Setting::make_distributed_plan];
 
+    serialize_query_plan = from[Setting::serialize_query_plan];
+
+    /// `distributed_push_down_limit` is historically a `UInt64`; any nonzero value enables it.
+    distributed_push_down_limit = from[Setting::distributed_push_down_limit] != 0;
+
     /// make_distributed_plan is incompatible with parallel replicas, including the automatic
     /// heuristic: its plan switching and statistics collection interfere with the distributed plan.
     if (make_distributed_plan
@@ -227,12 +234,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support parallel replicas, "
             "disable the `enable_parallel_replicas` and `automatic_parallel_replicas_mode` settings");
-
-    serialize_query_plan = from[Setting::serialize_query_plan];
-
-    /// `distributed_push_down_limit` is a `UInt64` for historical reasons; the legacy path also
-    /// treats any non-zero value as enabled.
-    distributed_push_down_limit = from[Setting::distributed_push_down_limit] != 0;
 
     /// The implicit count/minmax projection counts a whole part from metadata; a distributed read
     /// buckets the part, so the projection would be counted once per bucket and multiply the result.
@@ -263,6 +264,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
+    optimize_distributed_lazy_materialization
+        = from[Setting::query_plan_optimize_distributed_lazy_materialization] && from[Setting::allow_experimental_analyzer];
+    skip_unavailable_shards = from[Setting::skip_unavailable_shards];
+    parallel_replicas_enabled
+        = from[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        || from[Setting::automatic_parallel_replicas_mode] != 0;
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
     optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final] && from[Setting::allow_experimental_analyzer];

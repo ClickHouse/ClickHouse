@@ -979,7 +979,11 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
             Scalars{},
             Tables{},
             QueryProcessingStage::Complete,
-            RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
+            RemoteQueryExecutor::Extension{
+                .task_iterator = extension.task_iterator,
+                .replica_info = std::move(replica_info),
+                .distributed_top_k_coordinator = nullptr,
+                .distributed_top_k_participant = std::nullopt});
         remote_query_executor->setLogger(logger);
         /// check if destination table exists on nodes
         remote_query_executor->setMainTable(dst_storage->getStorageID());

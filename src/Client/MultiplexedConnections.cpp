@@ -245,6 +245,15 @@ void MultiplexedConnections::sendMergeTreeAllRangesAnnouncementResponse(const In
 }
 
 
+void MultiplexedConnections::sendQueryCoordinationResponse(const QueryCoordinationResponse & response)
+{
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
+    current_connection->sendQueryCoordinationResponse(response);
+}
+
+
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
@@ -303,6 +312,7 @@ Packet MultiplexedConnections::drain()
             case Protocol::Server::TimezoneUpdate:
             case Protocol::Server::MergeTreeAllRangesAnnouncement:
             case Protocol::Server::MergeTreeReadTaskRequest:
+            case Protocol::Server::QueryCoordinationRequest:
             case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
@@ -412,6 +422,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
         case Protocol::Server::TimezoneUpdate:
         case Protocol::Server::MergeTreeAllRangesAnnouncement:
         case Protocol::Server::MergeTreeReadTaskRequest:
+        case Protocol::Server::QueryCoordinationRequest:
         case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:
         case Protocol::Server::Data:

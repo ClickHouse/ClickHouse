@@ -292,6 +292,36 @@ bool isAlreadySortedImpl(size_t rows, Comparator compare)
     return true;
 }
 
+template <typename Comparator, typename CancellationCallback>
+bool isAlreadySortedImpl(size_t rows, Comparator compare, const CancellationCallback & cancellation_callback)
+{
+    static constexpr size_t num_rows_to_try = 10;
+    if (rows > num_rows_to_try * 5)
+    {
+        for (size_t i = 1; i < num_rows_to_try; ++i)
+        {
+            cancellation_callback();
+            size_t prev_position = rows * (i - 1) / num_rows_to_try;
+            size_t curr_position = rows * i / num_rows_to_try;
+
+            if (compare(curr_position, prev_position))
+                return false;
+        }
+    }
+
+    static constexpr size_t cancellation_check_interval = 1024;
+    for (size_t i = 1; i < rows; ++i)
+    {
+        if ((i - 1) % cancellation_check_interval == 0)
+            cancellation_callback();
+        if (compare(i, i - 1))
+            return false;
+    }
+    cancellation_callback();
+
+    return true;
+}
+
 #ifndef NDEBUG
 template <typename Comparator>
 void checkSortedWithPermutationImpl(size_t rows, Comparator compare, UInt64 limit, const IColumn::Permutation & permutation)
@@ -415,6 +445,37 @@ bool isAlreadySorted(const Block & block, const SortDescription & description)
 
     PartialSortingLess less(columns_with_sort_desc);
     return isAlreadySortedImpl(rows, less);
+}
+
+bool isAlreadySorted(
+    const Block & block, const SortDescription & description, const std::function<void()> & cancellation_callback)
+{
+    cancellation_callback();
+    if (block.empty())
+        return true;
+
+    ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
+    bool is_collation_required = false;
+
+    for (auto & column_with_sort_desc : columns_with_sort_desc)
+    {
+        if (isCollationRequired(column_with_sort_desc.description))
+        {
+            is_collation_required = true;
+            break;
+        }
+    }
+
+    size_t rows = block.rows();
+
+    if (is_collation_required)
+    {
+        PartialSortingLessWithCollation less(columns_with_sort_desc);
+        return isAlreadySortedImpl(rows, less, cancellation_callback);
+    }
+
+    PartialSortingLess less(columns_with_sort_desc);
+    return isAlreadySortedImpl(rows, less, cancellation_callback);
 }
 
 }

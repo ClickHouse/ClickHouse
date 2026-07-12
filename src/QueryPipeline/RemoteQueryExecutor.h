@@ -35,6 +35,8 @@ using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTa
 class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
+class DistributedTopKCoordinator;
+using DistributedTopKCoordinatorPtr = std::shared_ptr<DistributedTopKCoordinator>;
 
 using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
 
@@ -58,6 +60,9 @@ public:
         std::shared_ptr<TaskIterator> task_iterator = nullptr;
         std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
         std::optional<IConnections::ReplicaInfo> replica_info = {};
+        IConnections::ReplicaSelectionMode replica_selection_mode = IConnections::ReplicaSelectionMode::Default;
+        DistributedTopKCoordinatorPtr distributed_top_k_coordinator = nullptr;
+        std::optional<size_t> distributed_top_k_participant = std::nullopt;
     };
 
     /// Takes a connection pool for a node (not cluster)
@@ -136,7 +141,7 @@ public:
         enum class Type : uint8_t
         {
             Data,
-            ParallelReplicasToken,
+            AsyncControlPacket,
             FileDescriptor,
             Finished,
             Nothing
@@ -232,8 +237,7 @@ public:
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
-    /// return true if parallel replica packet was processed
-    bool processParallelReplicaPacketIfAny();
+    bool processAsyncControlPacketIfAny();
 
     bool isFinished() const { return finished; }
 
@@ -327,8 +331,9 @@ private:
     bool got_unknown_packet_from_replica = false;
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    bool packet_in_progress = false;
+    bool async_packet_in_progress = false;
 #endif
+    bool query_coordination_response_pending = false;
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
@@ -355,6 +360,9 @@ private:
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
+    ReadResult processQueryCoordinationRequest(QueryCoordinationRequest request, bool defer_response_send = false);
+    void sendPendingQueryCoordinationResponse();
+    void markDistributedTopKParticipantUnsupported();
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void cancelUnlocked();

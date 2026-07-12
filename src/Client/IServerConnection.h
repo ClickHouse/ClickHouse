@@ -5,6 +5,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
+#include <Core/QueryCoordination.h>
 
 #include <QueryPipeline/ProfileInfo.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -41,6 +42,7 @@ struct Packet
     /// The part of parallel replicas protocol
     std::optional<InitialAllRangesAnnouncement> announcement;
     std::optional<ParallelReadRequest> request;
+    std::optional<QueryCoordinationRequest> query_coordination_request;
 
     std::string server_timezone;
 };
@@ -121,6 +123,8 @@ public:
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
 
     virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
+
+    virtual void sendQueryCoordinationResponse(const QueryCoordinationResponse & response) = 0;
 
     /// Check, if has data to read.
     virtual bool poll(size_t timeout_microseconds) = 0;

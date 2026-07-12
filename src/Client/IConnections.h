@@ -12,6 +12,12 @@ struct ClusterFunctionReadTaskResponse;
 class IConnections : boost::noncopyable
 {
 public:
+    enum class ReplicaSelectionMode : uint8_t
+    {
+        Default,
+        DistributedTopKCandidates,
+    };
+
     /// Send all scalars to replicas.
     virtual void sendScalarsData(Scalars & data) = 0;
     /// Send all content of external tables to replicas.
@@ -32,6 +38,7 @@ public:
     virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
     virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
+    virtual void sendQueryCoordinationResponse(const QueryCoordinationResponse & response) = 0;
 
     /// Get packet from any replica.
     virtual Packet receivePacket() = 0;

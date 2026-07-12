@@ -49,7 +49,8 @@ HedgedConnections::HedgedConnections(
     PoolMode pool_mode,
     std::shared_ptr<QualifiedTableName> table_to_check_,
     AsyncCallback async_callback,
-    GetPriorityForLoadBalancing::Func priority_func)
+    GetPriorityForLoadBalancing::Func priority_func,
+    ReplicaSelectionMode replica_selection_mode_)
     : hedged_connections_factory(
           pool_,
           context_->getSettingsRef(),
@@ -63,6 +64,7 @@ HedgedConnections::HedgedConnections(
     , context(std::move(context_))
     , settings(context->getSettingsRef())
     , throttler(throttler_)
+    , replica_selection_mode(replica_selection_mode_)
 {
     std::vector<Connection *> connections = hedged_connections_factory.getManyConnections(pool_mode, std::move(async_callback));
 
@@ -133,6 +135,27 @@ void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
                 send_query_plan(replica);
 
     pipeline_for_new_replicas.add(send_query_plan);
+}
+
+void HedgedConnections::sendQueryCoordinationResponse(const QueryCoordinationResponse & response)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (cancelled)
+        return;
+
+    if (replica_selection_mode != ReplicaSelectionMode::DistributedTopKCandidates)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query coordination response is not enabled for hedged connections");
+
+    if (!query_coordination_replica)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query coordination response before selecting a replica");
+
+    const auto & location = *query_coordination_replica;
+    Connection * connection = offset_states[location.offset].replicas[location.index].connection;
+    if (!connection)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query coordination response to an inactive replica");
+
+    connection->sendQueryCoordinationResponse(response);
 }
 
 void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
@@ -320,10 +343,14 @@ Packet HedgedConnections::drain()
     while (!epoll.empty())
     {
         ReplicaLocation location = getReadyReplicaLocation();
-        Packet packet = receivePacketFromReplica(location);
-        switch (packet.type)
+        auto packet = receivePacketFromReplica(location);
+        if (!packet)
+            continue;
+
+        switch (packet->type)
         {
             case Protocol::Server::PartUUIDs:
+            case Protocol::Server::QueryCoordinationRequest:
             case Protocol::Server::Data:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
@@ -335,7 +362,7 @@ Packet HedgedConnections::drain()
             case Protocol::Server::Exception:
             default:
                 /// If we receive an exception or an unknown packet, we save it.
-                res = std::move(packet);
+                res = std::move(*packet);
                 break;
         }
     }
@@ -364,8 +391,12 @@ Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)
     if (epoll.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No pending events in epoll.");
 
-    ReplicaLocation location = getReadyReplicaLocation(std::move(async_callback));
-    return receivePacketFromReplica(location);
+    while (true)
+    {
+        ReplicaLocation location = getReadyReplicaLocation(async_callback);
+        if (auto packet = receivePacketFromReplica(location))
+            return std::move(*packet);
+    }
 }
 
 HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(AsyncCallback async_callback)
@@ -422,7 +453,17 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
     }
     if (replica_state.packet_receiver->isTimeoutExpired())
     {
-        const String & description = replica_state.connection->getDescription();
+        const String description = replica_state.connection->getDescription();
+        const auto timeout = replica_state.packet_receiver->getTimeout();
+
+        if (!cancelled
+            && replica_selection_mode == ReplicaSelectionMode::DistributedTopKCandidates
+            && offset_states[location.offset].can_change_replica)
+        {
+            replaceFailedReplica(location);
+            return false;
+        }
+
         finishProcessReplica(replica_state, true);
 
         /// Check if there is no more active connections with the same offset and there is no new replica in process.
@@ -431,15 +472,44 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
                 ErrorCodes::SOCKET_TIMEOUT,
                 "Timeout exceeded while reading from socket ({}, receive timeout {} ms)",
                 description,
-                replica_state.packet_receiver->getTimeout().totalMilliseconds());
+                timeout.totalMilliseconds());
     }
     else if (replica_state.packet_receiver->hasException())
     {
+        auto exception = replica_state.packet_receiver->getException();
+        if (!cancelled
+            && replica_selection_mode == ReplicaSelectionMode::DistributedTopKCandidates
+            && offset_states[location.offset].can_change_replica)
+        {
+            replaceFailedReplica(location);
+            return false;
+        }
+
         finishProcessReplica(replica_state, true);
-        std::rethrow_exception(replica_state.packet_receiver->getException());
+        std::rethrow_exception(exception);
     }
 
     return false;
+}
+
+bool HedgedConnections::expectsDistributedTopKCandidates(const ReplicaState & replica) const
+{
+    return replica_selection_mode == ReplicaSelectionMode::DistributedTopKCandidates
+        && replica.connection->getServerRevision(ConnectionTimeouts{}) >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_COORDINATION
+        && replica.connection->getServerQueryPlanSerializationVersion() >= DBMS_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SHARD_LIMIT;
+}
+
+void HedgedConnections::replaceFailedReplica(const ReplicaLocation & replica_location)
+{
+    OffsetState & offset_state = offset_states[replica_location.offset];
+    finishProcessReplica(offset_state.replicas[replica_location.index], true);
+
+    if (offset_state.active_connection_count == 0 && !offset_state.next_replica_in_process)
+    {
+        offset_state.next_replica_in_process = true;
+        offsets_queue.push(static_cast<int>(replica_location.offset));
+        startNewReplica();
+    }
 }
 
 int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
@@ -457,7 +527,7 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     return event.data.fd;
 }
 
-Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & replica_location)
+std::optional<Packet> HedgedConnections::receivePacketFromReplica(const ReplicaLocation & replica_location)
 {
     ReplicaState & replica = offset_states[replica_location.offset].replicas[replica_location.index];
     Packet packet = std::move(last_received_packet);
@@ -466,7 +536,9 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
         case Protocol::Server::Data:
             /// If we received the first not empty data packet and still can change replica,
             /// disable changing replica with this offset.
-            if (offset_states[replica_location.offset].can_change_replica && packet.block.rows() > 0)
+            if (!expectsDistributedTopKCandidates(replica)
+                && offset_states[replica_location.offset].can_change_replica
+                && packet.block.rows() > 0)
                 disableChangingReplica(replica_location);
             replica_with_last_received_packet = replica_location;
             break;
@@ -474,12 +546,39 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
             /// Check if we have made some progress and still can change replica.
             if (offset_states[replica_location.offset].can_change_replica && packet.progress.read_bytes > 0)
             {
+                /// Candidate mode selects a replica only after its coordination request arrives.
+                if (expectsDistributedTopKCandidates(replica))
+                {
+                    if (!replica.is_change_replica_timeout_expired)
+                        replica.change_replica_timeout.setRelative(hedged_connections_factory.getConnectionTimeouts().receive_data_timeout);
+                }
                 /// If we are allowed to change replica until the first data packet,
                 /// just restart timeout (if it hasn't expired yet). Otherwise disable changing replica with this offset.
-                if (settings[Setting::allow_changing_replica_until_first_data_packet] && !replica.is_change_replica_timeout_expired)
+                else if (settings[Setting::allow_changing_replica_until_first_data_packet] && !replica.is_change_replica_timeout_expired)
                     replica.change_replica_timeout.setRelative(hedged_connections_factory.getConnectionTimeouts().receive_data_timeout);
                 else
                     disableChangingReplica(replica_location);
+            }
+            replica_with_last_received_packet = replica_location;
+            break;
+        case Protocol::Server::QueryCoordinationRequest:
+            if (replica_selection_mode == ReplicaSelectionMode::DistributedTopKCandidates)
+            {
+                if (!packet.query_coordination_request
+                    || packet.query_coordination_request->kind != QueryCoordinationRequestKind::DistributedTopKCandidates)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a distributed top-K candidate coordination request");
+
+                if (offset_states[replica_location.offset].can_change_replica)
+                {
+                    disableChangingReplica(replica_location);
+                    query_coordination_replica = replica_location;
+                }
+                else if (!query_coordination_replica
+                    || query_coordination_replica->offset != replica_location.offset
+                    || query_coordination_replica->index != replica_location.index)
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Received a query coordination request from an unselected replica");
+                }
             }
             replica_with_last_received_packet = replica_location;
             break;
@@ -494,21 +593,42 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
             break;
 
         case Protocol::Server::EndOfStream:
+            if (!cancelled
+                && expectsDistributedTopKCandidates(replica)
+                && offset_states[replica_location.offset].can_change_replica)
+            {
+                replaceFailedReplica(replica_location);
+                return std::nullopt;
+            }
+
             /// Check case when we receive EndOfStream before first not empty data packet
             /// or positive progress. It may happen if max_parallel_replicas > 1 and
             /// there is no way to sample data in this query.
-            if (offset_states[replica_location.offset].can_change_replica)
+            if (!expectsDistributedTopKCandidates(replica)
+                && offset_states[replica_location.offset].can_change_replica)
                 disableChangingReplica(replica_location);
             finishProcessReplica(replica, false);
             break;
 
         case Protocol::Server::Exception:
-        default:
+            if (!cancelled
+                && replica_selection_mode == ReplicaSelectionMode::DistributedTopKCandidates
+                && offset_states[replica_location.offset].can_change_replica)
+            {
+                replaceFailedReplica(replica_location);
+                return std::nullopt;
+            }
+
             /// Check case when we receive Exception before first not empty data packet
             /// or positive progress. It may happen if max_parallel_replicas > 1 and
             /// there is no way to sample data in this query.
-            if (offset_states[replica_location.offset].can_change_replica)
+            if (!expectsDistributedTopKCandidates(replica)
+                && offset_states[replica_location.offset].can_change_replica)
                 disableChangingReplica(replica_location);
+            finishProcessReplica(replica, true);
+            break;
+
+        default:
             finishProcessReplica(replica, true);
             break;
     }
