@@ -55,10 +55,11 @@ static std::optional<FormatSettings> getInteriorTupleCSVSettings(const FormatSet
 }
 
 static bool tupleMayUseWholeCSVField(
+    const FormatSettings & settings,
     const SerializationTuple::ElementSerializations & elements,
     const std::optional<FormatSettings> & interior_settings)
 {
-    if (!interior_settings)
+    if (settings.csv.tuple_delimiter_matches_field_delimiter || !interior_settings)
         return false;
 
     FormatSettings quote_check_settings = *interior_settings;
@@ -669,7 +670,7 @@ void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num
     const size_t size = elems.size();
     const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
     if (settings.csv.serialize_tuple_into_separate_columns
-        && (settings.csv.quote_date_time_types || !tupleMayUseWholeCSVField(elems, interior_settings)))
+        && (settings.csv.quote_date_time_types || !tupleMayUseWholeCSVField(settings, elems, interior_settings)))
     {
         for (size_t i = 0; i < size; ++i)
         {
@@ -754,15 +755,51 @@ ReturnType SerializationTuple::deserializeTextCSVImpl(IColumn & column, ReadBuff
     const size_t size = elems.size();
     const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
     if (!settings.csv.deserialize_separate_columns_into_tuple
-        || !tupleMayUseWholeCSVField(elems, interior_settings))
+        || !tupleMayUseWholeCSVField(settings, elems, interior_settings))
         return deserialize(istr, false);
 
     PeekableReadBuffer peekable_buf(istr, true);
     peekable_buf.setCheckpoint();
-    const bool whole_tuple = checkChar('"', peekable_buf) && checkChar('(', peekable_buf);
+
+    String value;
+    bool whole_tuple = tryReadCSV(value, peekable_buf, settings.csv);
+    if (whole_tuple && !peekable_buf.eof()
+        && *peekable_buf.position() == settings.csv.tuple_delimiter
+        && !settings.csv.tuple_delimiter_matches_field_delimiter)
+    {
+        whole_tuple = false;
+    }
+
+    if (whole_tuple && !peekable_buf.eof() && !settings.csv.force_quote_date_time_types)
+    {
+        if (!settings.csv.custom_delimiter.empty())
+        {
+            peekable_buf.setCheckpoint();
+            whole_tuple = checkString(settings.csv.custom_delimiter, peekable_buf);
+            peekable_buf.rollbackToCheckpoint();
+            peekable_buf.dropCheckpoint();
+        }
+        else
+            whole_tuple = *peekable_buf.position() == settings.csv.delimiter
+                || *peekable_buf.position() == '\r'
+                || *peekable_buf.position() == '\n';
+    }
+
+    if (whole_tuple)
+    {
+        ReadBufferFromString value_buf(value);
+        whole_tuple = tryDeserializeText(column, value_buf, settings, true);
+    }
+
+    if (whole_tuple)
+    {
+        peekable_buf.dropCheckpoint();
+        return ReturnType(true);
+    }
+
     peekable_buf.rollbackToCheckpoint();
     peekable_buf.dropCheckpoint();
-    return deserialize(peekable_buf, whole_tuple);
+    return deserialize(peekable_buf, false);
 }
 
 void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

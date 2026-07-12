@@ -39,6 +39,9 @@ static void updateFormatSettingsIfNeeded(
     /// Clean custom_delimiter from previous column.
     settings.csv.custom_delimiter.clear();
     settings.csv.force_quote_date_time_types = false;
+    const auto & field_delimiter = row_format.delimiters[file_column + 1];
+    settings.csv.tuple_delimiter_matches_field_delimiter =
+        field_delimiter.size() == 1 && field_delimiter.front() == settings.csv.tuple_delimiter;
     /// If field delimiter is empty, we read until default csv delimiter.
     if (row_format.delimiters[file_column + 1].empty())
     {

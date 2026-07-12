@@ -247,6 +247,7 @@ struct FormatSettings
         bool arrays_as_nested_csv = false;
         String null_representation = "\\N";
         char tuple_delimiter = ',';
+        bool tuple_delimiter_matches_field_delimiter = true;
         bool use_best_effort_in_schema_inference = true;
         UInt64 skip_first_lines = 0;
         String custom_delimiter;

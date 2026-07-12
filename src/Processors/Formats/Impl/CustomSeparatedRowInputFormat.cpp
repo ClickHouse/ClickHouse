@@ -289,6 +289,9 @@ void CustomSeparatedFormatReader::updateFormatSettings(bool is_last_column)
     /// Clean custom delimiter from previous delimiter.
     format_settings.csv.custom_delimiter.clear();
     format_settings.csv.force_quote_date_time_types = false;
+    format_settings.csv.tuple_delimiter_matches_field_delimiter =
+        format_settings.custom.field_delimiter.size() == 1
+        && format_settings.custom.field_delimiter.front() == format_settings.csv.tuple_delimiter;
 
     /// If delimiter has length = 1, it will be more efficient to use csv.delimiter.
     /// If we have some complex delimiter, normal CSV reading will now work properly if we will

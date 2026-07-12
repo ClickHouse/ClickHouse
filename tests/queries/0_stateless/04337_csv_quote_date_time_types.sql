@@ -147,6 +147,21 @@ FROM format(
     '"(\'2024-01-17 08:30:00\',\'2024-01-18 09:45:01\')"|42\n')
 FORMAT TSVRaw
 SETTINGS
+    input_format_custom_detect_header = 0,
+    format_csv_delimiter = ':',
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '|',
+    format_custom_row_after_delimiter = '\n';
+
+SELECT 'CustomSeparated flattened tuple is not mistaken for whole tuple input' FORMAT TSVRaw;
+SELECT *
+FROM format(
+    CustomSeparated,
+    't Tuple(String, DateTime(\'UTC\')), n UInt8',
+    '"(value)":"2024-01-18 09:45:01"|42\n')
+FORMAT TSVRaw
+SETTINGS
+    input_format_custom_detect_header = 0,
     format_csv_delimiter = ':',
     format_custom_escaping_rule = 'CSV',
     format_custom_field_delimiter = '|',
