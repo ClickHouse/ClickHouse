@@ -38,6 +38,17 @@ FROM (SELECT 1. AS x, 0. AS y);
 SELECT intervalLengthSumArray('two-sided', 1)([0., 0, 1, 1], [0., 10, 1025, 3]); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
 SELECT intervalLengthSum('two-sided', 1)(0., 10.); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
 
+-- argMin / argMax (and aliases argAndMin / argAndMax / min_by / max_by) take no parameters
+-- either; they silently dropped them, so the -Array combinator later aborted on the
+-- wrapper-vs-nested parameter mismatch. They now reject parameters up front too.
+SELECT argMinArray('two-sided', 2147483647)([0., 0, 1, 1], [0., 10, 1025, 3]); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
+SELECT argMin('two-sided', 1)(number, number) FROM numbers(3); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
+SELECT argMaxArray(2)([1, 2, 3], [1, 2, 3]); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
+SELECT min_by('two-sided', 1)(number, number) FROM numbers(3); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
+-- parameterless argMin/argMax still work (bare and via -Array).
+SELECT argMin(number, number) FROM numbers(5);
+SELECT argMinArray([1, 2, 3], [3, 2, 1]);
+
 -- Backward compatibility: the parameters only affect finalization, not the serialized state,
 -- so a legacy parameterless state column (written before this patch) must stay Merge-/CAST-
 -- compatible with the parameterized function. getNormalizedStateType() normalizes both to the

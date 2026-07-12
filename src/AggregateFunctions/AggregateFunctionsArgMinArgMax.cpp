@@ -401,8 +401,9 @@ IAggregateFunction * createWithTwoTypes(const DataTypes & argument_types, const 
 
 template <bool isMin>
 AggregateFunctionPtr createAggregateFunctionArgMinMax(
-    const std::string & name, const DataTypes & argument_types, const Array &, const Settings *, const bool return_both)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *, const bool return_both)
 {
+    assertNoParameters(name, parameters);
     assertBinary(name, argument_types);
 
     AggregateFunctionPtr result = AggregateFunctionPtr(createWithTwoTypes<isMin>(argument_types, return_both));
