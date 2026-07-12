@@ -63,3 +63,20 @@ SELECT 'variant intersect', count() FROM (SELECT c0 FROM ((SELECT 'a') INTERSECT
 -- 0 row and throw ILLEGAL_DIVISION. The pushdown must be skipped for throwing predicates.
 SELECT 'intdiv except', count() FROM (SELECT c0 FROM ((SELECT 1) EXCEPT ALL SELECT 0)(c0)) WHERE intDiv(1, c0) = 1;
 SELECT 'intdiv intersect', count() FROM (SELECT c0 FROM ((SELECT 1) INTERSECT ALL SELECT 0)(c0)) WHERE intDiv(1, c0) = 1;
+
+-- INTERSECT/EXCEPT compare whole rows: the entire branch header is the set key. When the parent
+-- needs no branch column (count()) the pushed filter projects them all away, so the set would be
+-- computed over zero columns: a wrong result and a num_srcs > 0 abort. The pushdown must be skipped
+-- unless the set key is preserved. https://github.com/ClickHouse/ClickHouse/issues/110113
+SELECT 'count except', count() FROM (SELECT c0 FROM ((SELECT 'a') EXCEPT ALL (SELECT NULL))(c0)) AS t0 WHERE t0.c0 = t0.c0;
+SELECT 'count intersect', count() FROM (SELECT c0 FROM ((SELECT 'a') INTERSECT ALL (SELECT 'a'))(c0)) AS t0 WHERE t0.c0 = t0.c0;
+DROP TABLE IF EXISTS t_intex_cnt_l;
+DROP TABLE IF EXISTS t_intex_cnt_r;
+CREATE TABLE t_intex_cnt_l (a UInt64) ENGINE = Memory;
+CREATE TABLE t_intex_cnt_r (a UInt64) ENGINE = Memory;
+INSERT INTO t_intex_cnt_l VALUES (5),(5),(7);
+INSERT INTO t_intex_cnt_r VALUES (5);
+SELECT 'count except mt', count() FROM (SELECT a FROM t_intex_cnt_l EXCEPT ALL SELECT a FROM t_intex_cnt_r) WHERE a = 5;
+SELECT 'count intersect mt', count() FROM (SELECT a FROM t_intex_cnt_l INTERSECT ALL SELECT a FROM t_intex_cnt_r) WHERE a = 5;
+DROP TABLE t_intex_cnt_l;
+DROP TABLE t_intex_cnt_r;

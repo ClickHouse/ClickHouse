@@ -1251,8 +1251,24 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (filterCanThrow(*filter) || filterInputsHaveDynamicType(*filter))
             return 0;
 
-        auto input_headers = child->getInputHeaders();
+        /// IntersectOrExcept compares whole rows positionally: its entire header is the set key.
+        /// The pushed filter's output header becomes the new branch/set-key header. Dropping any
+        /// set-key column coarsens the comparison and changes the result; when the parent needs no
+        /// branch column (e.g. count()) the filter output projects them all away and becomes empty,
+        /// computing the set over zero columns and aborting (num_srcs > 0). Consistent renaming or
+        /// reordering across branches is harmless, so require only that the column count and
+        /// positional types are preserved. UNION is exempt because it never compares columns.
         auto expected_output = filter->getOutputHeader();
+        const auto & set_key_header = *intersect_or_except->getOutputHeader();
+        if (expected_output->columns() != set_key_header.columns())
+            return 0;
+        for (size_t i = 0; i < set_key_header.columns(); ++i)
+        {
+            if (!expected_output->getByPosition(i).type->equals(*set_key_header.getByPosition(i).type))
+                return 0;
+        }
+
+        auto input_headers = child->getInputHeaders();
 
         for (auto & input_header : input_headers)
             input_header = expected_output;
