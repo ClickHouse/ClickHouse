@@ -1767,7 +1767,7 @@ static BlockIO executeQueryImpl(
             {
                 if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
+                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), context->getAuthenticationGrants(), /* is_subquery = */ false);
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
 
                     if (reader.hasCacheEntryForKey())
@@ -1897,6 +1897,7 @@ static BlockIO executeQueryImpl(
                                 out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
                                 context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
+                                context->getAuthenticationGrants(),
                                 settings[Setting::query_cache_share_between_users],
                                 created_at, expires_at,
                                 settings[Setting::query_cache_compress_entries],

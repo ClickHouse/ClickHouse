@@ -17,6 +17,7 @@ namespace DB
 {
 
 struct Settings;
+class AccessRightsElements;
 
 /// Checks that query cache can be used for query.
 /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
@@ -69,6 +70,12 @@ public:
         std::optional<UUID> user_id;
         std::vector<UUID> current_user_roles;
 
+        /// The per-authentication-method GRANTS clause (see CREATE/ALTER USER) narrows a session's access rights to the intersection with
+        /// these grants (token-style credentials). It is therefore part of the effective privilege identity and must isolate cache entries:
+        /// the same user with the same roles but a more restrictive credential must not read results produced under a broader credential.
+        /// Stored as the serialized clause (empty when there is no clause), compared for equality on read like `user_id`/`current_user_roles`.
+        String authentication_grants;
+
         /// If the associated entry can be read by other users. In general, sharing is a bad idea: First, it is unlikely that different
         /// users pose the same queries. Second, sharing potentially breaches security. E.g. User A should not be able to bypass row
         /// policies on some table by running the same queries as user B for whom no row policies exist.
@@ -107,6 +114,7 @@ public:
             SharedHeader header_,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
@@ -119,6 +127,7 @@ public:
             const Settings & settings,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
             bool is_subquery_);
 
         bool operator==(const Key & other) const;

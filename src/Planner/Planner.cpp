@@ -2155,7 +2155,7 @@ void Planner::buildPlanForQueryNode()
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
     if (should_cache && settings[Setting::enable_reads_from_query_cache])
     {
-        QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
+        QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), query_context->getAuthenticationGrants(), /* is_subquery = */ true);
         auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(key));
         if (reader->hasCacheEntryForKey())
         {
@@ -2685,6 +2685,7 @@ void Planner::buildPlanForQueryNode()
         QueryResultCache::Key key(
             ast, query_context->getCurrentDatabase(), *settings_copy, query_plan.getRootNode()->step->getOutputHeader(),
             query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(),
+            query_context->getAuthenticationGrants(),
             settings[Setting::query_cache_share_between_users],
             created_at, expires_at,
             settings[Setting::query_cache_compress_entries],

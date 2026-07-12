@@ -1,5 +1,7 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
+#include <Access/Common/AccessRightsElement.h>
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -502,6 +504,7 @@ QueryResultCache::Key::Key(
     const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_,
+    const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> created_at_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
@@ -510,6 +513,7 @@ QueryResultCache::Key::Key(
     : header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
+    , authentication_grants(authentication_grants_ ? authentication_grants_->toString() : String{})
     , is_shared(is_shared_)
     , created_at(created_at_)
     , expires_at(expires_at_)
@@ -532,6 +536,7 @@ QueryResultCache::Key::Key(
     const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_,
+    const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
     bool is_subquery_)
     : QueryResultCache::Key(
             ast_,
@@ -541,6 +546,7 @@ QueryResultCache::Key::Key(
             query_id_,
             user_id_,
             current_user_roles_,
+            authentication_grants_,
             false,
             std::chrono::system_clock::from_time_t(1),
             std::chrono::system_clock::from_time_t(1),
@@ -824,7 +830,11 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
 
     const bool is_same_user_id = ((!entry_key.user_id.has_value() && !key.user_id.has_value()) || (entry_key.user_id.has_value() && key.user_id.has_value() && *entry_key.user_id == *key.user_id));
     const bool is_same_current_user_roles = (entry_key.current_user_roles == key.current_user_roles);
-    if (!entry_key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
+    /// A more restrictive per-authentication-method GRANTS clause must not read results produced under a broader credential of the same
+    /// user/roles (see the comment on Key::authentication_grants). Even a shared entry must match here, because sharing is only meant to
+    /// cross the user/roles boundary, not to bypass a token's access limit.
+    const bool is_same_authentication_grants = (entry_key.authentication_grants == key.authentication_grants);
+    if (!is_same_authentication_grants || (!entry_key.is_shared && (!is_same_user_id || !is_same_current_user_roles)))
     {
         LOG_TRACE(logger, "Inaccessible query result found for query {}", doubleQuoteString(key.query_string));
         return;
