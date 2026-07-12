@@ -5,6 +5,7 @@
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
+#include <IO/WriteBufferDecorator.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Common/CurrentThread.h>
@@ -52,7 +53,7 @@ void IFramingFormat::onPayload(FramedPacketKind kind)
     extractAndWritePayload(kind);
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
-    out.next();
+    flushOut();
 }
 
 void IFramingFormat::onProgress(const Progress & progress)
@@ -63,7 +64,7 @@ void IFramingFormat::onProgress(const Progress & progress)
     writeProgressPacket(progress);
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
-    out.next();
+    flushOut();
 }
 
 void IFramingFormat::finalize()
@@ -79,10 +80,20 @@ void IFramingFormat::finalize()
         writeExceptionPacket(exception_message);
 
     finalizeImpl();
-    out.next();
+    flushOut();
 
     payload.finalize();
     finalized = true;
+}
+
+void IFramingFormat::flushOut()
+{
+    out.next();
+
+    /// If the output is a compressed buffer, flush the compressed chunk to the underlying buffer
+    /// as well, so that packets are delivered interactively (mirrors `IOutputFormat::flushImpl`).
+    if (auto * out_with_nested = dynamic_cast<WriteBufferWithOwnMemoryDecorator *>(&out))
+        out_with_nested->getNestedBuffer()->next();
 }
 
 void IFramingFormat::extractAndWritePayload(FramedPacketKind kind)

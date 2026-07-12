@@ -106,6 +106,8 @@ private:
     void extractAndWritePayload(FramedPacketKind kind);
     void pumpLogs();
     void pumpProfileEvents(bool force);
+    /// Flush `out` down to the underlying buffer (including the nested compressed buffer, if any).
+    void flushOut();
 
     WriteBufferFromOwnString payload;
 
