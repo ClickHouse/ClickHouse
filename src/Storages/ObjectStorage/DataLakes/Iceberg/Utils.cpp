@@ -1,6 +1,5 @@
 
 #include <memory>
-#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <config.h>
@@ -49,7 +48,10 @@
 #include <filesystem>
 #include <regex>
 
+#include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
@@ -1048,9 +1050,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     sort_orders->add(sort_order);
     new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(new_metadata_file_content, oss, 4);
-    return {new_metadata_file_content, removeEscapedSlashes(oss.str())};
+    return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
 }
 
 /**
@@ -1271,6 +1271,61 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         return getLatestMetadataFileAndVersion(
             object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false, force_fetch_latest_metadata);
     }
+}
+
+MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
+    const ObjectStoragePtr & object_storage,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_identifier,
+    const String & table_path,
+    const DataLakeStorageSettings & data_lake_settings,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    Poco::Logger * log,
+    const std::optional<String> & table_uuid,
+    CompressionMethod known_compression_method,
+    bool ignore_explicit_metadata_file_path)
+{
+    if (!catalog)
+        return getLatestOrExplicitMetadataFileAndVersion(
+            object_storage,
+            table_path,
+            data_lake_settings,
+            metadata_cache,
+            local_context,
+            log,
+            table_uuid,
+            known_compression_method,
+            /* force_fetch_latest_metadata */ true,
+            ignore_explicit_metadata_file_path);
+
+    DataLake::TableMetadata table_metadata;
+    table_metadata.withDataLakeSpecificProperties().withLocation();
+    const auto & [namespace_name, table_name] = DataLake::parseTableName(table_identifier);
+    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
+
+    auto specific_properties = table_metadata.getDataLakeSpecificProperties();
+    if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Catalog did not return a metadata file location for table '{}.{}'",
+            namespace_name, table_name);
+
+    DataLakeStorageSettings effective_settings = data_lake_settings;
+    effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
+        = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
+
+    return getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        table_path,
+        effective_settings,
+        metadata_cache,
+        local_context,
+        log,
+        table_uuid,
+        known_compression_method,
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_explicit_metadata_file_path */ false);
 }
 
 

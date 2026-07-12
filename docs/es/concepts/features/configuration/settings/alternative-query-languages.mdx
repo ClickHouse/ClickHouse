@@ -1,0 +1,89 @@
+---
+slug: /guides/developer/alternative-query-languages
+sidebarTitle: 'Lenguajes de consulta alternativos'
+title: 'Lenguajes de consulta alternativos'
+description: 'Utiliza lenguajes de consulta alternativos en ClickHouse'
+keywords: ['lenguajes de consulta alternativos', 'dialectos de consulta', 'dialecto de MySQL', 'dialecto de PostgreSQL', 'guía para desarrolladores']
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+Además de SQL estándar, ClickHouse admite varios lenguajes de consulta alternativos para la consulta de datos.
+
+Los dialectos admitidos actualmente son:
+
+* `clickhouse`: El [dialecto SQL](/es/products/chdb/reference/sql-reference) predeterminado de ClickHouse
+* `prql`: [Pipelined Relational Query Language (PRQL)](https://prql-lang.org/)
+* `kusto`: [Kusto Query Language (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+
+El lenguaje de consulta utilizado se controla mediante la configuración `dialect`.
+
+<div id="standard-sql">
+  ## SQL estándar
+</div>
+
+SQL estándar es el lenguaje de consulta predeterminado de ClickHouse.
+
+```sql
+SET dialect = 'clickhouse'
+```
+
+<div id="pipelined-relational-query-language-prql">
+  ## Lenguaje de consulta relacional en canalización (PRQL)
+</div>
+
+<ExperimentalBadge />
+
+Para habilitar PRQL:
+
+```sql
+SET allow_experimental_prql_dialect = 1; -- esta sentencia SET solo es necesaria para versiones de ClickHouse >= v25.1
+SET dialect = 'prql'
+```
+
+Ejemplo de consulta PRQL:
+
+```prql
+from trips
+aggregate {
+    ct = count this
+    total_days = sum days
+}
+```
+
+Entre bastidores, ClickHouse utiliza la transpilación de PRQL a SQL para ejecutar consultas PRQL.
+
+<div id="kusto-query-language-kql">
+  ## Lenguaje de consulta Kusto (KQL)
+</div>
+
+<ExperimentalBadge />
+
+Para habilitar KQL:
+
+```sql
+SET allow_experimental_kusto_dialect = 1; -- esta sentencia SET solo es necesaria para versiones de ClickHouse >= 25.1
+SET dialect = 'kusto'
+```
+
+```kql title="Query"
+numbers(10) | project number
+```
+
+```response title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+Ten en cuenta que es posible que las consultas KQL no tengan acceso a todas las funciones definidas en ClickHouse.

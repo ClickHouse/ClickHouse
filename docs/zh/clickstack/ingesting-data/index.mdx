@@ -1,0 +1,19 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data
+description: 'ClickStack 的数据摄取 - ClickHouse 可观测性技术栈'
+title: '摄取数据'
+doc_type: 'landing-page'
+keywords: ['ClickStack 数据摄取', '可观测性数据摄取
+', 'ClickStack OpenTelemetry', 'ClickHouse 可观测性摄取', '遥测数据收集']
+---
+
+托管版和开源 ClickStack 提供了多种方式，可将可观测性数据摄取到你的 ClickHouse 实例中。无论你要收集的是日志、指标、链路追踪还是会话数据，都可以使用 OpenTelemetry (OTel) 收集器作为统一的摄取入口，也可以利用特定平台的集成来满足专门的使用场景。
+
+| Section                                                           | Description                                |
+| ----------------------------------------------------------------- | ------------------------------------------ |
+| [概览](/zh/clickstack/ingesting-data/overview)                         | 介绍数据摄取方法和整体架构                              |
+| [使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry) | 适用于使用 OpenTelemetry 并希望快速集成 ClickStack 的用户 |
+| [OpenTelemetry 收集器](/zh/clickstack/ingesting-data/collector)         | 关于 ClickStack OpenTelemetry 收集器的高级说明       |
+| [使用 Vector 摄取数据](/zh/clickstack/ingesting-data/vector)               | 适用于使用 Vector 并希望快速集成 ClickStack 的用户        |
+| [表和 schema](/zh/clickstack/ingesting-data/schemas)                   | ClickStack 使用的 ClickHouse 表及其 schema 概览    |
+| [语言 SDKs](/zh/clickstack/ingesting-data/sdks/index)                  | 用于为编程语言添加埋点并收集遥测数据的 ClickStack SDKs        |

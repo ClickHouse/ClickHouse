@@ -1,0 +1,138 @@
+---
+description: 'Documentação do tipo de dado DateTime64 no ClickHouse, que armazena
+  timestamps com precisão de frações de segundo'
+sidebarTitle: 'DateTime64'
+slug: /sql-reference/data-types/datetime64
+title: 'DateTime64'
+doc_type: 'reference'
+---
+
+Permite armazenar um instante, que pode ser expresso como uma data de calendário e uma hora do dia, com precisão de frações de segundo definida
+
+Tamanho do tick (precisão): 10<sup>-precision</sup> segundos. Intervalo válido: [ 0 : 9 ].
+Normalmente, usam-se 3 (milissegundos), 6 (microssegundos) e 9 (nanossegundos).
+
+Valor padrão: 3 (milissegundos).
+
+**Sintaxe:**
+
+```sql
+DateTime64(precision, [timezone])
+```
+
+Internamente, armazena os dados como uma quantidade de &#39;ticks&#39; desde o início da epoch (1970-01-01 00:00:00 UTC) como Int64. A resolução dos ticks é determinada pelo parâmetro de precisão. Além disso, o tipo `DateTime64` pode armazenar um fuso horário que é o mesmo para toda a coluna, o que afeta como os valores do tipo `DateTime64` são exibidos em formato de texto e como os valores especificados como strings são analisados (&#39;2020-01-01 05:00:01.000&#39;). O fuso horário não é armazenado nas linhas da tabela (ou no conjunto de resultados), mas nos metadados da coluna. Veja os detalhes em [DateTime](/pt-BR/reference/data-types/datetime).
+
+Intervalo de valores compatível: [1900-01-01 00:00:00, 2299-12-31 23:59:59.999999999]
+
+O número de dígitos após o separador decimal depende do parâmetro de precisão.
+
+Observação: a precisão do valor máximo é 8. Se a precisão máxima de 9 dígitos (nanossegundos) for usada, o valor máximo compatível será `2262-04-11 23:47:16` em UTC.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+1. Criando uma tabela com uma coluna do tipo `DateTime64` e inserindo dados nela:
+
+```sql
+CREATE TABLE dt64
+(
+    `timestamp` DateTime64(3, 'Asia/Istanbul'),
+    `event_id` UInt8
+)
+ENGINE = MergeTree;
+```
+
+```sql
+-- Analisar DateTime
+-- - a partir de um inteiro interpretado como o número de milissegundos (devido à precisão 3) desde 1970-01-01,
+-- - a partir de um decimal interpretado como o número de segundos antes da parte decimal, e com base na precisão após o separador decimal,
+-- - a partir de uma string.
+
+INSERT INTO dt64
+VALUES
+(1546300800123, 1),
+(1546300800.123, 2),
+('2019-01-01 00:00:00', 3);
+
+SELECT * FROM dt64;
+```
+
+```text
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.123 │        2 │
+│ 2019-01-01 00:00:00.000 │        3 │
+└─────────────────────────┴──────────┘
+```
+
+* Ao inserir um datetime como inteiro, ele é tratado como um Unix Timestamp (UTC) com a escala adequada. `1546300800000` (com precisão 3) representa `'2019-01-01 00:00:00'` UTC. No entanto, como a coluna `timestamp` tem o fuso horário `Asia/Istanbul` (UTC+3) especificado, ao ser exibido como string o valor será mostrado como `'2019-01-01 03:00:00'`. Ao inserir um datetime como decimal, ele é tratado de forma semelhante a um inteiro, exceto pelo fato de que o valor antes do separador decimal é o Unix Timestamp até os segundos, inclusive, e o valor após o separador decimal é tratado como a precisão.
+* Ao inserir um valor em string como datetime, ele é tratado como estando no fuso horário da coluna. `'2019-01-01 00:00:00'` será tratado como estando no fuso horário `Asia/Istanbul` e armazenado como `1546290000000`.
+
+2. Filtragem por valores `DateTime64`
+
+```sql
+SELECT * FROM dt64 WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul');
+```
+
+```text
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00.000 │        3 │
+└─────────────────────────┴──────────┘
+```
+
+Diferentemente de `DateTime`, os valores `DateTime64` não são convertidos automaticamente a partir de `String`.
+
+```sql
+SELECT * FROM dt64 WHERE timestamp = toDateTime64(1546300800.123, 3);
+```
+
+```text
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 03:00:00.123 │        2 │
+└─────────────────────────┴──────────┘
+```
+
+Diferentemente de `insert`, a função `toDateTime64` tratará todos os valores como a variante decimal, portanto a precisão deve ser informada após o separador decimal.
+
+3. Obtendo um fuso horário para um valor do tipo `DateTime64`:
+
+```sql
+SELECT toDateTime64(now(), 3, 'Asia/Istanbul') AS column, toTypeName(column) AS x;
+```
+
+```text
+┌──────────────────column─┬─x──────────────────────────────┐
+│ 2023-06-05 00:09:52.000 │ DateTime64(3, 'Asia/Istanbul') │
+└─────────────────────────┴────────────────────────────────┘
+```
+
+4. Conversão de fuso horário
+
+```sql
+SELECT
+toDateTime64(timestamp, 3, 'Europe/London') AS lon_time,
+toDateTime64(timestamp, 3, 'Asia/Istanbul') AS istanbul_time
+FROM dt64;
+```
+
+```text
+┌────────────────lon_time─┬───────────istanbul_time─┐
+│ 2019-01-01 00:00:00.123 │ 2019-01-01 03:00:00.123 │
+│ 2019-01-01 00:00:00.123 │ 2019-01-01 03:00:00.123 │
+│ 2018-12-31 21:00:00.000 │ 2019-01-01 00:00:00.000 │
+└─────────────────────────┴─────────────────────────┘
+```
+
+**Veja também**
+
+* [Funções de conversão de tipos](/pt-BR/reference/functions/regular-functions/type-conversion-functions)
+* [Funções para trabalhar com datas e horas](/pt-BR/reference/functions/regular-functions/date-time-functions)
+* [A configuração `date_time_input_format`](/pt-BR/reference/settings/formats#date_time_input_format)
+* [A configuração `date_time_output_format`](/pt-BR/reference/settings/formats#date_time_output_format)
+* [O parâmetro `timezone` da configuração do servidor](/pt-BR/reference/settings/server-settings/settings#timezone)
+* [A configuração `session_timezone`](/pt-BR/reference/settings/session-settings#session_timezone)
+* [Operadores para trabalhar com datas e horas](/pt-BR/reference/operators/index#operators-for-working-with-dates-and-times)
+* [Tipo de dado `Date`](/pt-BR/reference/data-types/date)
+* [Tipo de dado `DateTime`](/pt-BR/reference/data-types/datetime)

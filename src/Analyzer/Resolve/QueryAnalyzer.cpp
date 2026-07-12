@@ -2984,14 +2984,19 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
 
     /** Register lambda as being resolved, to prevent recursive lambdas resolution.
       * Example: WITH (x -> x + lambda_2(x)) AS lambda_1, (x -> x + lambda_1(x)) AS lambda_2 SELECT 1;
+      *
+      * A recursive reference resolves to a fresh clone of the alias node, so re-entry must be
+      * detected by structure (tree hash), not by pointer identity. Compute that hash once here and
+      * reuse it for the contains/insert/erase below, instead of letting each operation recompute the
+      * lambda body's full getTreeHash (this guard is on the hot path for queries with large lambdas).
       */
-    auto it = lambdas_in_resolve_process.find(lambda_node);
-    if (it != lambdas_in_resolve_process.end())
+    const QueryTreeNodePtrWithHash lambda_with_hash{lambda_node};
+    if (lambdas_in_resolve_process.contains(lambda_with_hash))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive lambda {}. In scope {}",
             lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
-    lambdas_in_resolve_process.emplace(lambda_node);
+    lambdas_in_resolve_process.insert(lambda_with_hash);
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
@@ -3044,7 +3049,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     /// Lambda body expression is resolved as standard query expression node.
     auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    lambdas_in_resolve_process.erase(lambda_node);
+    lambdas_in_resolve_process.erase(lambda_with_hash);
 
     return result_projection_names;
 }
@@ -3517,28 +3522,101 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             break;
     }
 
-    if (!in_aggregate_or_grouping_function_scope)
+    /// For correlated column references, the relevant `nullable_group_by_keys`
+    /// live in the ancestor scope where the column is actually defined.
+    /// During decorrelation a CROSS JOIN feeds those columns from the outer
+    /// scope, where they have already been wrapped to `Nullable` due to
+    /// `group_by_use_nulls` + ROLLUP/CUBE. If we stopped the lookup at the
+    /// inner QUERY scope (the standard behavior for non-correlated references),
+    /// the inner expression DAG, function bindings, and aggregate function
+    /// bindings would all be built with the pre-Nullable type and later fail
+    /// with a type mismatch at runtime.
+    ///
+    /// The `in_aggregate_or_grouping_function_scope` guard is also bypassed for correlated
+    /// columns: a `local` aggregate computes over pre-aggregation rows, but an
+    /// aggregate inside an inner correlated subquery operates on rows produced
+    /// by the outer post-aggregation step, where the correlated column has
+    /// already become `Nullable`.
+    bool is_correlated_column_node = false;
+    QueryTreeNodePtr correlated_column_source;
+    if (auto * column_node = node->as<ColumnNode>())
+    {
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (column_source)
+        {
+            auto source_type = column_source->getNodeType();
+            if (source_type != QueryTreeNodeType::LAMBDA && source_type != QueryTreeNodeType::INTERPOLATE)
+            {
+                for (const auto * sp = &scope; sp; sp = sp->parent_scope)
+                {
+                    if (sp->registered_table_expression_nodes.contains(column_source)
+                        || sp->table_expressions_in_resolve_process.contains(column_source.get()))
+                        break;
+                    if (isQueryOrUnionNode(sp->scope_node))
+                    {
+                        is_correlated_column_node = true;
+                        correlated_column_source = column_source;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!in_aggregate_or_grouping_function_scope || is_correlated_column_node)
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
-            if (!scope_ptr->nullable_group_by_keys.empty())
+            /// `nullable_group_by_keys` is keyed by query-tree structure
+            /// (`ColumnNode::isEqualImpl` compares column name and type only,
+            /// ignoring source identity), so a same-shaped key in an
+            /// intermediate ancestor scope can match a correlated column whose
+            /// real source lives further out. For correlated columns we
+            /// therefore consult `nullable_group_by_keys` only at the scope
+            /// that owns the column source: that is the only scope whose
+            /// `group_by_use_nulls` actually applied to this column.
+            const bool at_source_scope = is_correlated_column_node && correlated_column_source
+                && (scope_ptr->registered_table_expression_nodes.contains(correlated_column_source)
+                    || scope_ptr->table_expressions_in_resolve_process.contains(correlated_column_source.get()));
+
+            if ((!is_correlated_column_node || at_source_scope) && !scope_ptr->nullable_group_by_keys.empty())
             {
                 auto it = scope_ptr->nullable_group_by_keys.find(node);
                 if (it != scope_ptr->nullable_group_by_keys.end())
                 {
-                    /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
-                    /// matched node itself rather than the stored key `it->second`: two constants equal
-                    /// in value and type but with different source expressions share a single map entry,
-                    /// and the source expression determines the action node name (hence which aggregation
-                    /// key column the projection reads), so the matched node's own one must be preserved.
-                    node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
-                    node->convertToNullable();
+                    if (is_correlated_column_node)
+                    {
+                        /// Modify the correlated column in place so the same pointer
+                        /// stored in the outer `QueryNode::correlated_columns_list`
+                        /// (added by `checkCorrelatedColumn`) and the planner's
+                        /// `correlated_columns_set` (which hashes by column type)
+                        /// remains consistent with the inner expression's reference.
+                        /// Cloning here would yield a distinct ColumnNode that the
+                        /// planner would no longer recognize as correlated.
+                        /// A correlated column is always a `ColumnNode`, never a
+                        /// constant, so the constant special-casing below does not apply.
+                        node->convertToNullable();
+                    }
+                    else
+                    {
+                        /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
+                        /// matched node itself rather than the stored key `it->second`: two constants equal
+                        /// in value and type but with different source expressions share a single map entry,
+                        /// and the source expression determines the action node name (hence which aggregation
+                        /// key column the projection reads), so the matched node's own one must be preserved.
+                        node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
+                        node->convertToNullable();
+                    }
                     break;
                 }
             }
 
-            /// Check parent scopes until find current query scope.
-            if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+            /// For local references stop at the first surrounding QUERY scope.
+            if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY && !is_correlated_column_node)
+                break;
+
+            /// For correlated references stop once we reach the source-owning scope.
+            if (at_source_scope)
                 break;
         }
     }

@@ -1,0 +1,189 @@
+---
+title: 'BYOC ネットワークセキュリティ'
+slug: /cloud/reference/byoc/reference/network_security
+sidebarTitle: 'ネットワークセキュリティ'
+keywords: ['BYOC', 'クラウド', 'Bring Your Own Cloud', 'ネットワークセキュリティ']
+description: 'お客様のクラウドインフラストラクチャにClickHouseをデプロイ'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="connection-between-clickhouse-and-byoc">
+  ## ClickHouse コントロールプレーンとお客様の BYOC VPC 間の接続
+</div>
+
+ClickHouse Cloud のコントロールプレーンは、お客様の BYOC デプロイメントを運用・サポートするために、いくつかの種類の接続を維持します。
+
+| 用途                                    | 接続タイプ                                     | 注記                                                                                                               |
+| ------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **日常運用 — Kubernetes API サーバー**        | IP フィルタリング付きパブリック接続 (デフォルト) または Tailscale | 管理サービスは、IP 許可リストで制限されたパブリックネットワーク経由で EKS API サーバーと通信します。初回デプロイ後は、必要に応じてこれを Tailscale に切り替え、プライベートアクセスにすることもできます。 |
+| **日常運用 — AWS API**                    | ClickHouse VPC → AWS                      | 管理サービスは、ClickHouse Cloud 自身の VPC から AWS に対して AWS API (例: EKS、EC2) を呼び出します。これにお客様の VPC や Tailscale は関与しません。       |
+| **トラブルシューティング — ClickHouse サービス**     | Tailscale                                 | ClickHouse のエンジニアは、診断のために Tailscale 経由で ClickHouse サービス (例: システムテーブル) にアクセスします。                                  |
+| **トラブルシューティング — Kubernetes API サーバー** | Tailscale                                 | ClickHouse のエンジニアは、クラスター診断のために Tailscale 経由で EKS API サーバーにアクセスします。                                               |
+
+次のセクションでは、**Tailscale** のプライベートネットワークが、トラブルシューティングおよびオプションの管理アクセスにどのように使用されるかを説明します。
+
+<div id="tailscale-private-network">
+  ## Tailscale Private Network
+</div>
+
+Tailscale は、ClickHouse Cloud の管理サービスとお客様の BYOC デプロイメント間を結ぶ、ゼロトラストのプライベートネットワーク接続を提供します。このセキュアなチャネルにより、ClickHouse エンジニアは、パブリックインターネットへのアクセスや複雑な VPN 構成を必要とせずに、トラブルシューティングや管理作業を実施できます。
+
+<div id="tailscale-overview">
+  ### 概要
+</div>
+
+Tailscale は、ClickHouse のコントロールプレーン (ClickHouse の VPC 内) とお客様の BYOC データプレーン (お客様の VPC 内) の間に、暗号化されたプライベートネットワークトンネルを確立します。この接続は、以下の用途にのみ使用されます。
+
+* **管理操作**: ClickHouse の管理サービスがお客様の BYOC インフラストラクチャと連携するため
+* **トラブルシューティングアクセス**: ClickHouse のエンジニアが診断のために Kubernetes API サーバーおよび ClickHouse システムテーブルにアクセスするため
+* **メトリクスアクセス**: ClickHouse の集中管理された監視ダッシュボードが、お客様の BYOC VPC 内にデプロイされた Prometheus スタックのメトリクスにアクセスし、ClickHouse のエンジニアがその環境のオブザーバビリティを確保できるようにするため
+
+<Warning>
+  Tailscale は、**管理およびトラブルシューティング操作専用**です。**クエリトラフィック**や顧客データへのアクセスに使用されることは**決してありません**。すべての顧客データはお客様の VPC 内に保持され、Tailscale 接続を通じて送信されることは一切ありません。
+</Warning>
+
+<div id="how-tailscale-works">
+  ### BYOC における Tailscale の仕組み
+</div>
+
+<Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
+
+Tailscale 経由でアクセスする必要がある各サービスまたはエンドポイントごとに、ClickHouse BYOC は以下をデプロイします。
+
+1. **Tailnet アドレスの登録**: 各エンドポイントは一意の tailnet アドレスを登録します (例: Kubernetes API サーバーの場合は `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com`)
+
+2. **Tailscale エージェントコンテナー**: EKS クラスター内で Tailscale エージェントコンテナーが実行され、以下を担当します。
+   * Tailscale の協調サーバーへの接続
+   * サービスを登録して検出可能にすること
+   * Nginx ポッドとのネットワーク設定の調整
+
+3. **Nginx ポッド**: Nginx ポッドは以下を行います。
+   * Tailscale からの TLS トラフィックの終端
+   * EKS クラスター内の適切な IP へのトラフィックのルーティング
+
+<div id="tailscale-connection-process">
+  ### ネットワーク接続プロセス
+</div>
+
+Tailscale での接続確立は、次の手順で行われます。
+
+1. **初期接続**:
+   * 両端の Tailscale エージェント (ClickHouse エンジニアの環境とお使いの BYOC EKS クラスター) が Tailscale の協調サーバーに接続します
+   * EKS クラスター側のエージェントが Kubernetes サービスを登録し、検出できるようにします
+   * ClickHouse エンジニアがそのサービスを確認できるようにするには、社内でエスカレーションする必要があります
+
+2. **接続モード**:
+   * **ダイレクトモード**: エージェントは NAT トラバーサル トンネル経由で直接接続の確立を試みます
+   * **リレーモード**: ダイレクトモードで接続できない場合、通信は Tailscale DERP (Distributed Encrypted Relay Protocol) サーバー経由のリレーモードにフォールバックします
+
+3. **暗号化**:
+   * すべての通信はエンドツーエンドで暗号化されます
+   * 各 Tailscale エージェントはそれぞれ独自の公開鍵と秘密鍵のペアを生成します (PKI と同様)
+   * トラフィックは、ダイレクトモードとリレーモードのどちらを使用する場合でも暗号化されたままです
+
+<div id="tailscale-security">
+  ### セキュリティ機能
+</div>
+
+**アウトバウンド接続のみ**:
+
+* EKSクラスター内のTailscaleエージェントは、Tailscaleの協調/リレーサーバーに対してアウトバウンド接続を開始します
+* **インバウンド接続は不要です** — セキュリティグループのルールで、Tailscaleエージェントへのインバウンドトラフィックを許可する必要はありません
+* これにより、攻撃対象領域が縮小され、ネットワークセキュリティの設定が簡素化されます
+
+**アクセス制御**:
+
+* Tailscaleが顧客のエンドポイントへルーティングできるようになる前に、エンジニアは社内の承認ワークフローを通じてアクセスを申請する必要があります
+* アクセスには有効期限があり、自動的に失効します
+* すべてのアクセスは監査され、記録されます
+
+データアクセスに関する完全なポリシー — エンジニアが参照できる内容、証明書ベース認証、顧客側の監査 — については、[ClickHouse data access](/ja/products/bring-your-own-cloud/reference/clickhouse-data-access) を参照してください。
+
+<div id="management-services-access">
+  ### 管理サービスからのアクセス
+</div>
+
+デフォルトでは、ClickHouse の管理サービスは、ClickHouse の NAT ゲートウェイ IP アドレスからのアクセスのみに制限された EKS API サーバーのパブリック IP アドレス経由で、お使いの BYOC Kubernetes クラスターにアクセスします。
+
+**オプションのプライベート エンドポイント設定**:
+
+* EKS API サーバーがプライベート エンドポイントのみを使用するように設定できます
+* この場合、管理サービスは Tailscale 経由で API サーバーにアクセスします (人によるトラブルシューティングアクセスと同様です)
+* パブリックアクセスは、緊急時の調査やサポートに備えたバックアップ手段として維持されます
+
+<div id="tailscale-traffic-flow">
+  ### ネットワークトラフィックの流れ
+</div>
+
+**Tailscale の接続フロー**:
+
+1. EKS クラスター内の Tailscale エージェント → 協調サーバー (アウトバウンド)
+2. エンジニアのマシン上の Tailscale エージェント → 協調サーバー (アウトバウンド)
+3. エージェント間で直接またはリレーによる接続が確立されます
+4. 確立されたトンネルを通じて暗号化されたトラフィックが流れます
+5. EKS 内の Nginx ポッドが TLS を終端し、内部サービスにルーティングします
+
+**顧客データは送信されません**:
+
+* Tailscale 接続は、管理とトラブルシューティングにのみ使用されます
+* クエリトラフィックや顧客データが Tailscale を経由することはありません
+* すべての顧客データはお使いの VPC 内に保持されます
+
+BYOC で Tailscale がどのように実装されているかについて、さらに技術的な詳細は、[Building ClickHouse BYOC on AWS のブログ記事](https://clickhouse.com/blog/building-clickhouse-byoc-on-aws#tailscale-connection)を参照してください。接続後に ClickHouse のエンジニアが閲覧できる内容と、ClickHouse がそのアクセスをどのように監査するかについては、[ClickHouse data access](/ja/products/bring-your-own-cloud/reference/clickhouse-data-access)を参照してください。
+
+<div id="network-boundaries">
+  ## ネットワーク境界
+</div>
+
+このセクションでは、顧客の BYOC VPC に出入りするさまざまなネットワークトラフィックについて説明します。
+
+* **インバウンド**: 顧客の BYOC VPC に流入するトラフィック。
+* **アウトバウンド**: 顧客の BYOC VPC から発生し、外部の宛先へ送信されるトラフィック。
+* **パブリック**: パブリックインターネットからアクセスできるネットワークエンドポイント。
+* **プライベート**: VPC peering、VPC プライベートリンク、Tailscale などのプライベート接続経由でのみアクセスできるネットワークエンドポイント。
+
+**Istio イングレスは、ClickHouse クライアントのトラフィックを受け付けるため、AWS NLB の背後にデプロイされます。**
+
+*インバウンド、パブリック、または プライベート*
+
+Istio イングレスゲートウェイで TLS を終端します。Let&#39;s Encrypt を使用して CertManager がプロビジョニングした証明書は、EKS クラスター内の Secret に保存されます。Istio と ClickHouse は同じ VPC 内にあるため、それらの間のトラフィックは [AWS によって暗号化](https://docs.aws.amazon.com/whitepapers/latest/logical-separation/encrypting-data-at-rest-and--in-transit.html#:~:text=All%20network%20traffic%20between%20AWS,supported%20Amazon%20EC2%20instance%20types) されます。
+
+デフォルトでは、イングレスは IP 許可リストによるフィルタリングを有効にした状態で、パブリックにアクセスできます。顧客は VPC peering を設定することでプライベート化し、パブリック接続を無効にできます。アクセスを制限するため、[IP filter](/ja/products/cloud/guides/security/connectivity/setting-ip-filters) を設定することを強く推奨します。
+
+<div id="troubleshooting-access">
+  ### トラブルシューティングアクセス
+</div>
+
+*インバウンド、プライベート*
+
+ClickHouse Cloud のエンジニアには、Tailscale 経由のトラブルシューティングアクセスが必要です。BYOC デプロイメントでは、ジャストインタイムの証明書ベース認証が付与されます。アクセス ポリシーの詳細については、[ClickHouse data access](/ja/products/bring-your-own-cloud/reference/clickhouse-data-access)を参照してください。
+
+<div id="billing-scraper">
+  ### 課金スクレーパー
+</div>
+
+*アウトバウンド、プライベート*
+
+課金スクレーパーは ClickHouse から課金データを収集し、ClickHouse Cloud が所有する S3 バケットに送信します。
+
+これは ClickHouse server コンテナーのサイドカーとして実行され、CPU とメモリのメトリクスを定期的にスクレイピングします。同一リージョン内のリクエストは、VPC ゲートウェイサービスエンドポイント経由でルーティングされます。
+
+<div id="alerts">
+  ### アラート
+</div>
+
+*アウトバウンド、パブリック*
+
+AlertManager は、顧客の ClickHouse クラスターが正常でない場合に、ClickHouse Cloud にアラートを送信するよう設定されています。
+
+メトリクスとログは、顧客の BYOC VPC 内に保存されます。ログは現在、EBS にローカル保存されています。今後のアップデートでは、BYOC VPC 内の ClickHouse サービスである LogHouse に保存される予定です。メトリクスには Prometheus および Thanos のスタックが使用され、BYOC VPC 内にローカル保存されます。
+
+<div id="service-state">
+  ### サービスの状態
+</div>
+
+*アウトバウンド、パブリック*
+
+State Exporter は、ClickHouse Cloud が管理する SQS に ClickHouse サービスの状態情報を送信します。

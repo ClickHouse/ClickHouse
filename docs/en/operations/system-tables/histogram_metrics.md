@@ -58,6 +58,10 @@ FORMAT Prometheus
 | `keeper_read_process_time_milliseconds_bucket` | Time to process a read request in Keeper, in milliseconds. |
 | `keeper_batch_size_elements_bucket` | Batch size sent to Raft, in elements. |
 | `keeper_batch_size_bytes_bucket` | Batch size sent to Raft, in bytes. |
+| `filesystem_cache_evicted_segment_hits_bucket` | Distribution of cache-hit counts on file segments at the moment of their eviction, labelled by cache name. |
+| `filesystem_cache_evicted_segment_size_bytes_bucket` | Distribution of byte sizes of evicted file segments, labelled by cache name. |
+| `filesystem_cache_evicted_segment_hits_by_user_bucket` | Distribution of cache-hit counts on evicted file segments, labelled by cache name and user id. |
+| `filesystem_cache_evicted_segment_size_bytes_by_user_bucket` | Distribution of byte sizes of evicted file segments, labelled by cache name and user id. |
 
 ## See Also {#see-also}
 - [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
