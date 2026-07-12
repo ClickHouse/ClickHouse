@@ -4029,7 +4029,11 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
         /// zk_metadata_version rather than a mere "any metadata alter pending" check. This also keeps the
         /// operation idempotent across recovery retries: the entry we enqueue below carries
         /// alter_version == zk_metadata_version and is itself detected here on the next call.
-        queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::SYNC);
+        /// Recovery runs while the replica is still readonly (its RestartingThread has not finished startup),
+        /// so use the RECOVER_METADATA reason, which - like the FIX_METADATA_VERSION drain in
+        /// ReplicatedMergeTreeRestartingThread::fixReplicaMetadataVersionIfNeeded - is allowed to pull logs on
+        /// a not-completely-initialized readonly replica. Any other reason would throw "it's a bug".
+        queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::RECOVER_METADATA);
         if (queue.getMaxMetadataAlterVersionInQueue() >= zk_metadata_version)
         {
             LOG_DEBUG(log, "A metadata alter reaching version {} is already pending in the queue; "

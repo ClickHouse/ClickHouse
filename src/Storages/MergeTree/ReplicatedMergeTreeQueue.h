@@ -376,6 +376,10 @@ public:
         MERGE_PREDICATE,
         SYNC,
         FIX_METADATA_VERSION,
+        /// Called from DatabaseReplicated::recoverLostReplica while the replica is still readonly (its
+        /// RestartingThread has not finished startup yet), so - like LOAD and FIX_METADATA_VERSION - it must
+        /// be allowed to pull logs on a not-completely-initialized readonly replica.
+        RECOVER_METADATA,
         OTHER,
     };
 
