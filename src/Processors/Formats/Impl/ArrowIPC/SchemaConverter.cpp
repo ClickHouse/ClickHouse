@@ -674,6 +674,7 @@ buildField(
                 make_int(32, false);
                 break;
             case TypeIndex::UUID:
+            case TypeIndex::UUID2:
             case TypeIndex::IPv6:
             case TypeIndex::Int128:
             case TypeIndex::UInt128:
@@ -753,9 +754,11 @@ buildField(
         }
     }
 
-    /// UUID is an Arrow extension type over fixed_size_binary(16); flag it in the field metadata.
+    /// UUID (and the correctly-sorting UUID2) is an Arrow extension type over fixed_size_binary(16); flag it in
+    /// the field metadata. UUID2 is emitted with the same canonical bytes as UUID (see the encoder), so both use
+    /// the `arrow.uuid` extension name and read back as the historical UUID type.
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::KeyValue>>> custom_metadata_off = 0;
-    if (isUUID(t))
+    if (isUUID(t) || isUUID2(t))
     {
         VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:name"), b.CreateString("arrow.uuid")));
