@@ -3617,6 +3617,12 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
+    /// `index_analysis_had_filter` is set in `applyFilters`, which `optimizePrimaryKeyConditionAndLimit`
+    /// runs before `materializeQueryPlanReferences` clones a subplan. Since the clone is built by the
+    /// constructor (default `false`) and `applyFilters` is not run again on it, propagate the flag here
+    /// so the PK-selectivity guard in `requestReadingInOrder` keeps working for a cloned step instead of
+    /// silently treating it as an unfiltered full scan.
+    cloned_step->index_analysis_had_filter = index_analysis_had_filter;
     return cloned_step;
 }
 
