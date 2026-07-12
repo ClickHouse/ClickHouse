@@ -3,6 +3,7 @@
 #include <atomic>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 
 #include <Columns/IColumn.h>
@@ -65,7 +66,7 @@ private:
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
 
     /// A queued shard chunk, tagged with the id of the input block it was scattered from so the block's
-    /// budget charge can be released once its last shard chunk leaves a queue (see `block_budgets`).
+    /// budget charge can be released once its last shard chunk leaves the pipeline (see `block_budgets`).
     struct QueuedChunk
     {
         Chunk chunk;
@@ -84,16 +85,20 @@ private:
     struct BlockBudget
     {
         Int64 bytes = 0;             /// The whole block's `allocatedBytes()` at split time.
-        size_t outstanding_chunks = 0; /// Shard chunks from this block still sitting in a queue.
+        size_t outstanding_chunks = 0; /// Shard chunks from this block still buffered (in a queue or an output port).
     };
 
     /// Queue bookkeeping that maintains the shared buffered-bytes counter.
     void enqueue(size_t shard, Chunk chunk, size_t block_id);
-    Chunk dequeue(size_t shard);
+    QueuedChunk dequeue(size_t shard);
     void clearQueue(size_t shard);
-    /// Account for one shard chunk of `block_id` leaving a queue; release the block's charge once its last
-    /// shard chunk is gone.
+    /// Account for one shard chunk of `block_id` leaving the pipeline (consumed downstream or discarded on a
+    /// finished output); release the block's charge once its last shard chunk is gone.
     void releaseQueuedChunk(size_t block_id);
+    /// Release the charge for a chunk parked in an output port once the downstream merge has pulled it
+    /// (`OutputPort::hasData()` is false again) or the output finished and discarded it. A pushed chunk stays
+    /// resident in the port state until the merge pulls it, so its bytes must remain counted until then.
+    void reclaimPortResidentChunks();
 
     /// Charge/release the just-pulled input chunk against the shared budget. Charging happens the moment
     /// the chunk is pulled (before it is split), so the budget accounts for the in-flight read-ahead of
@@ -126,8 +131,13 @@ private:
     /// Per-shard FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.
     std::vector<std::deque<QueuedChunk>> output_queues;
 
+    /// For each shard, the block id of the chunk currently parked in its output port (empty if the port holds
+    /// no chunk we pushed). The chunk's budget charge stays held until the downstream merge pulls it out of the
+    /// port; only then is it truly gone from the pipeline (a port can hold at most one chunk at a time).
+    std::vector<std::optional<size_t>> port_resident_block;
+
     /// Per-block budget charges, keyed by the block id carried in each `QueuedChunk`. An entry lives from the
-    /// moment a block is split until its last shard chunk leaves a queue.
+    /// moment a block is split until its last shard chunk leaves the pipeline (a queue or an output port).
     std::unordered_map<size_t, BlockBudget> block_budgets;
     /// Monotonic id assigned to each input block when it is split.
     size_t next_block_id = 0;

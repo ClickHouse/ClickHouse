@@ -27,6 +27,7 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(
     , max_buffered_bytes(max_buffered_bytes_)
     , total_buffered_bytes(total_buffered_bytes_ ? std::move(total_buffered_bytes_) : std::make_shared<std::atomic<Int64>>(0))
     , output_queues(num_shards)
+    , port_resident_block(num_shards)
     , shard_columns(num_shards)
 {
     chassert(num_shards > 0);
@@ -38,12 +39,14 @@ void BufferedShardByHashTransform::enqueue(size_t shard, Chunk chunk, size_t blo
     output_queues[shard].push_back(QueuedChunk{std::move(chunk), block_id});
 }
 
-Chunk BufferedShardByHashTransform::dequeue(size_t shard)
+BufferedShardByHashTransform::QueuedChunk BufferedShardByHashTransform::dequeue(size_t shard)
 {
     QueuedChunk queued = std::move(output_queues[shard].front());
     output_queues[shard].pop_front();
-    releaseQueuedChunk(queued.block_id);
-    return std::move(queued.chunk);
+    /// The chunk is not released here: it moves from the queue into the output port and stays resident in the
+    /// port state (still consuming memory) until the downstream merge pulls it. `reclaimPortResidentChunks`
+    /// releases its charge once that happens; until then it is tracked via `port_resident_block`.
+    return queued;
 }
 
 void BufferedShardByHashTransform::clearQueue(size_t shard)
@@ -67,6 +70,25 @@ void BufferedShardByHashTransform::releaseQueuedChunk(size_t block_id)
     }
 }
 
+void BufferedShardByHashTransform::reclaimPortResidentChunks()
+{
+    /// A chunk pushed to an output port stays buffered in the port state until the downstream merge pulls it
+    /// (`hasData()` flips back to false) or the output finishes and the chunk is discarded. Releasing its
+    /// charge any earlier (e.g. when it left the local queue) would let bytes still resident between the
+    /// scatter and the merge escape the shared budget: a block that hashes entirely to one shard could park a
+    /// full block in each of the `num_shards` ports while the counter reads zero, defeating
+    /// `aggregation_in_order_shuffle_max_buffered_bytes`.
+    auto output_it = outputs.begin();
+    for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
+    {
+        if (port_resident_block[shard].has_value() && (output_it->isFinished() || !output_it->hasData()))
+        {
+            releaseQueuedChunk(*port_resident_block[shard]);
+            port_resident_block[shard].reset();
+        }
+    }
+}
+
 void BufferedShardByHashTransform::chargePendingInput()
 {
     /// Charge the whole pre-split block: `allocatedBytes()` counts every buffer (dictionary included) once,
@@ -85,6 +107,10 @@ void BufferedShardByHashTransform::dischargePendingInput()
 IProcessor::Status BufferedShardByHashTransform::prepare()
 {
     auto & input = getInputs().front();
+
+    /// Release the charge for any chunk the downstream merge has already pulled out of an output port (or that
+    /// a finished output discarded), so port-resident bytes are counted for exactly as long as they are held.
+    reclaimPortResidentChunks();
 
     /// Free queues for outputs closed by downstream
     bool all_finished = true;
@@ -242,6 +268,12 @@ void BufferedShardByHashTransform::work()
 
         if (output_it->isFinished())
         {
+            /// The output closed since prepare(): drop the chunk parked in its port (if any) and its queue.
+            if (port_resident_block[shard].has_value())
+            {
+                releaseQueuedChunk(*port_resident_block[shard]);
+                port_resident_block[shard].reset();
+            }
             clearQueue(shard);
             continue;
         }
@@ -252,7 +284,11 @@ void BufferedShardByHashTransform::work()
         if (!output_it->canPush())
             continue;
 
-        output_it->push(dequeue(shard));
+        /// canPush() implies the port holds no data, so any previously pushed chunk was already reclaimed in
+        /// prepare(); record this chunk as resident until the merge pulls it (see `reclaimPortResidentChunks`).
+        QueuedChunk queued = dequeue(shard);
+        port_resident_block[shard] = queued.block_id;
+        output_it->push(std::move(queued.chunk));
     }
 }
 
