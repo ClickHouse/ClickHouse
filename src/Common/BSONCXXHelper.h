@@ -6,6 +6,7 @@
 #include <Common/Base64.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/JSONBuilder.h>
+#include <Core/UUID.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -91,6 +92,24 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
             {
                 uuid_numbers[0] = field.safeGet<UUID>().toUnderType().items[0];
                 uuid_numbers[1] = field.safeGet<UUID>().toUnderType().items[1];
+            }
+            return bsoncxx::types::bson_value::value(reinterpret_cast<const uint8_t*>(&uuid_numbers[0]),
+                16, bsoncxx::binary_sub_type::k_uuid);
+        }
+        case TypeIndex::UUID2:
+        {
+            /// `UUID2` stores the two 64-bit halves swapped relative to `UUID`; convert to the `UUID`
+            /// layout so the emitted 16 canonical big-endian bytes match `UUID` for the same textual value.
+            const UUID value = UUIDHelpers::swapHalves(field.safeGet<UUID>());
+            uint64_t uuid_numbers[2];
+            if constexpr (std::endian::native == std::endian::little)
+            {
+                uuid_numbers[0] = std::byteswap(value.toUnderType().items[0]);
+                uuid_numbers[1] = std::byteswap(value.toUnderType().items[1]);
+            } else
+            {
+                uuid_numbers[0] = value.toUnderType().items[0];
+                uuid_numbers[1] = value.toUnderType().items[1];
             }
             return bsoncxx::types::bson_value::value(reinterpret_cast<const uint8_t*>(&uuid_numbers[0]),
                 16, bsoncxx::binary_sub_type::k_uuid);

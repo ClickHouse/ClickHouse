@@ -531,6 +531,9 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::String:
             return {"string", true};
         case TypeIndex::UUID:
+        case TypeIndex::UUID2:
+            /// Both map to the Iceberg `uuid` logical type; the 16 canonical big-endian bytes are
+            /// emitted by the Parquet/Arrow writer (which converts `UUID2` at the column boundary).
             return {"uuid", true};
         case TypeIndex::Tuple:
         {
@@ -624,6 +627,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             return "double";
         case TypeIndex::String:
         case TypeIndex::UUID:
+        case TypeIndex::UUID2:
             return "string";
         case TypeIndex::Nullable:
         {
