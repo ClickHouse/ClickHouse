@@ -1879,6 +1879,15 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const Str
     return {std::move(internal_column), internal_type, column_name};
 }
 
+/// Whether a DateTime/DateTime64 target carries an explicit UTC timezone - the type schema inference
+/// produces for the ORC `TIMESTAMP_INSTANT` ("timestamp with local timezone") kind. Used to tell the
+/// two ORC timestamp kinds apart when matching union branches (see `orcUnionBranchMatchesType`).
+static bool orcTimestampTargetIsUTCInstant(const DataTypePtr & type)
+{
+    const auto * timezone = dynamic_cast<const TimezoneMixin *>(type.get());
+    return timezone && timezone->hasExplicitTimeZone() && timezone->getTimeZone().getTimeZone() == "UTC";
+}
+
 /// Whether a ClickHouse type can serve as the per-branch type hint for an ORC union branch of the
 /// given ORC type. The correspondence is structural (up to Nullable and LowCardinality wrappers),
 /// extended with the explicit-schema conversions the reader supports: the integer targets the
@@ -1888,9 +1897,14 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const Str
 /// char -> big integers and Decimal256). Custom type names matter here: `Bool` is a custom-named
 /// `UInt8`, but the writer maps it to BOOLEAN while a plain `UInt8` goes to BYTE, so only BOOLEAN
 /// accepts `Bool` - otherwise `Variant(Bool, UInt8)` over `uniontype<boolean,tinyint>` would leave
-/// both branches ambiguous. Variant sorts its nested types, so the positional correspondence
-/// between ORC union branches and Variant alternatives is lost; this predicate is used to
-/// reconstruct it.
+/// both branches ambiguous. The two ORC timestamp kinds need the same care: both read back as plain
+/// `DateTime64(9)`, but `TIMESTAMP` is inferred as `DateTime64(9)` and `TIMESTAMP_INSTANT` as
+/// `DateTime64(9, 'UTC')`, so `TIMESTAMP_INSTANT` matches only a UTC-timezoned target while
+/// `TIMESTAMP` stays permissive - otherwise `uniontype<timestamp,timestamp with local timezone>`,
+/// inferred as `Variant(DateTime64(9), DateTime64(9, 'UTC'))`, would leave both branches ambiguous,
+/// collapse them to identical `DateTime64(9)`, and be rejected by the duplicate-branch check.
+/// Variant sorts its nested types, so the positional correspondence between ORC union branches and
+/// Variant alternatives is lost; this predicate is used to reconstruct it.
 static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const DataTypePtr & target_type)
 {
     checkStackSize();
@@ -1917,8 +1931,13 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
         case orc::TypeKind::DATE:
             return which.isDate32() || which.isDate();
         case orc::TypeKind::TIMESTAMP:
-        case orc::TypeKind::TIMESTAMP_INSTANT:
+            /// Permissive: matches any DateTime/DateTime64 alternative. The repair cast relabels the
+            /// branch to the alternative's timezone, which is value-preserving for DateTime64.
             return which.isDateTime64() || which.isDateTime();
+        case orc::TypeKind::TIMESTAMP_INSTANT:
+            /// Matches only a UTC-timezoned target so it stays distinct from a TIMESTAMP branch in
+            /// the same union (both read back as DateTime64(9)); see the comment above the function.
+            return (which.isDateTime64() || which.isDateTime()) && orcTimestampTargetIsUTCInstant(type);
         case orc::TypeKind::DECIMAL:
             return which.isDecimal();
         case orc::TypeKind::STRING:
