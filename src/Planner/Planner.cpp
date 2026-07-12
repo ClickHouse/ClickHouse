@@ -363,6 +363,11 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     QueryPlanOptimizationSettings optimization_settings(query_context);
     optimization_settings.build_sets = false; // no need to build sets to collect filters
     optimization_settings.materialize_ctes = false; // no need to materialize CTEs to collect filters
+    /// This dummy plan reads from `ReadFromDummy` steps, so the distributed-plan conversion is
+    /// pointless here and its unsupported-step check would throw spuriously (e.g. for WITH TOTALS
+    /// over a Distributed table, where the real plan reads from remote shards and skips the
+    /// conversion). The main planning pass applies `make_distributed_plan` to the real plan.
+    optimization_settings.make_distributed_plan = false;
     result_query_plan.optimize(optimization_settings);
 
     FiltersForTableExpressionMap res;

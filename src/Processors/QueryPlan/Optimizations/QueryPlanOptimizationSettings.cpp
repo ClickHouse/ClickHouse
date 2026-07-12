@@ -22,6 +22,7 @@ namespace Setting
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsUInt64 distributed_push_down_limit;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsBool enable_full_text_index;
@@ -69,6 +70,7 @@ namespace Setting
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
+    extern const SettingsBool serialize_query_plan;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -225,6 +227,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support parallel replicas, "
             "disable the `enable_parallel_replicas` and `automatic_parallel_replicas_mode` settings");
+
+    serialize_query_plan = from[Setting::serialize_query_plan];
+
+    /// `distributed_push_down_limit` is a `UInt64` for historical reasons; the legacy path also
+    /// treats any non-zero value as enabled.
+    distributed_push_down_limit = from[Setting::distributed_push_down_limit] != 0;
 
     /// The implicit count/minmax projection counts a whole part from metadata; a distributed read
     /// buckets the part, so the projection would be counted once per bucket and multiply the result.

@@ -103,6 +103,13 @@ struct QueryPlanOptimizationSettings
     bool query_plan_join_shard_by_pk_ranges;
 
     bool make_distributed_plan = false;
+    /// Gates the plan-level distributed read over `Distributed` tables: pushdown into and
+    /// finalization of `ReadFromRemotePlanStep` placeholders (mirrors the `serialize_query_plan`
+    /// setting that plants them in `StorageDistributed::read`).
+    bool serialize_query_plan = false;
+    /// Whether an outer `LimitStep` may be copied into the per-shard plan of a `ReadFromRemotePlanStep`
+    /// (parity with the legacy `distributed_push_down_limit` behavior over Distributed tables).
+    bool distributed_push_down_limit = true;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
