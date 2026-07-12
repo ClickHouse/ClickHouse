@@ -83,7 +83,8 @@ private:
     /// Bytes currently queued across all transforms sharing this counter (never null).
     std::shared_ptr<std::atomic<Int64>> total_buffered_bytes;
 
-    /// Set in prepare() when the next pull would exceed max_buffered_bytes; work() throws.
+    /// Set in prepare() when the shared budget is already exhausted, or when the just-pulled chunk pushes it
+    /// past max_buffered_bytes; work() then throws before the chunk is split, so nothing over-budget buffers.
     bool budget_exceeded = false;
 
     /// Input chunk that was pulled in prepare() and will be split in work().

@@ -164,8 +164,11 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     const bool may_pull = (max_queue_length == 0) ? has_starving_ready_output : !any_queue_at_capacity;
     if (may_pull)
     {
-        if (max_queue_length == 0 && max_buffered_bytes != 0
-            && total_buffered_bytes->load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes))
+        const bool budget_enabled = max_queue_length == 0 && max_buffered_bytes != 0;
+
+        /// Short-circuit: if the shared budget is already exhausted (e.g. a sibling scatter charged a chunk
+        /// that crossed the cap) do not pull anything more - throw straight away.
+        if (budget_enabled && total_buffered_bytes->load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes))
         {
             budget_exceeded = true;
             return Status::Ready;
@@ -177,10 +180,18 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
             pending_input_chunk = input.pull();
             has_pending_input_chunk = true;
             /// Charge the pulled chunk against the shared budget right away, before it is split in work().
-            /// This closes the pre-admission gap the plain "check-then-pull, charge-on-enqueue" ordering left
-            /// open: without it, every scatter could pull one full chunk past the cap before any charge landed,
-            /// overshooting the budget by up to one chunk per scatter on wide pipelines.
             chargePendingInput();
+
+            /// Re-check the budget *after* charging, so the counter now includes the chunk we just pulled (and
+            /// any in-flight charges from concurrent scatters). This rejects the chunk that itself crosses the
+            /// cap on the same admission path - the short-circuit above only sees charges that landed on earlier
+            /// cycles, so without this the very chunk that overshoots would still be admitted and split, and if
+            /// it were the last chunk (input then reaches EOF, budget never re-checked) or several scatters
+            /// admitted concurrently, the stage could exceed `max_buffered_bytes` and finish without ever
+            /// throwing. work() throws before splitting the chunk, so no over-budget data is buffered.
+            if (budget_enabled && total_buffered_bytes->load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes))
+                budget_exceeded = true;
+
             return Status::Ready;
         }
         return Status::NeedData;
