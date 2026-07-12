@@ -7,6 +7,7 @@
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 
@@ -27,6 +28,11 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
 }
 
 
@@ -79,6 +85,16 @@ bool authenticateUserByHTTP(
     /// Get the credentials created by the previous call of authenticateUserByHTTP() while handling the previous HTTP request.
     auto current_credentials = std::move(request_credentials);
     const auto & config_credentials = connection_config.credentials;
+
+    /// The user name assumed when the client passed an empty user name (or none at all):
+    /// the `default_session_user` server setting, possibly overridden for this handler
+    /// (composable protocols allow a per-endpoint default user). It can be explicitly
+    /// configured to be empty to prohibit requests without a user name. Interserver HTTP
+    /// connections do not pass through this function (see `InterserverIOHTTPHandler`),
+    /// so the default session user is never applied to them.
+    const String default_session_user = connection_config.default_session_user
+        ? *connection_config.default_session_user
+        : String(global_context->getServerSettings()[ServerSetting::default_session_user]);
 
     /// The user and password can be passed by headers (similar to X-Auth-*),
     /// which is used by load balancers to pass authentication information.
@@ -144,6 +160,9 @@ bool authenticateUserByHTTP(
     {
 #if USE_SSL
         /// For SSL certificate authentication we extract the user name from the "X-ClickHouse-User" HTTP header.
+        /// If the header is not set (or empty), the certificate must authenticate the default session user.
+        if (user.empty())
+            user = default_session_user;
         checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
 
         /// It is prohibited to mix different authorization schemes.
@@ -170,6 +189,10 @@ bool authenticateUserByHTTP(
     }
     else if (has_auth_headers)
     {
+        /// The client passed "X-ClickHouse-Key" without "X-ClickHouse-User" (or with an empty one):
+        /// the password is checked against the default session user.
+        if (user.empty())
+            user = default_session_user;
         checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
 
         /// It is prohibited to mix different authorization schemes.
@@ -197,6 +220,9 @@ bool authenticateUserByHTTP(
             Poco::Net::HTTPBasicCredentials credentials(auth_info);
             user = credentials.getUsername();
             password = credentials.getPassword();
+            /// An empty user name in Basic credentials means the default session user.
+            if (user.empty())
+                user = default_session_user;
             checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header", global_context);
         }
         else if (Poco::icompare(scheme, "Negotiate") == 0)
@@ -213,15 +239,17 @@ bool authenticateUserByHTTP(
     }
     else
     {
-        /// Authentication via the URL query parameters (or, if absent, the 'default' user).
+        /// Authentication via the URL query parameters (or, if absent, the default session user).
         /// The query parameters take precedence over the `Authorization` header (which was
         /// excluded from `has_http_credentials` above), but mixing the header with credentials
         /// configured for the handler is still rejected, as for every other method.
         if (has_config_credentials && has_authorization_header)
             throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication set in config");
 
-        /// If the user name is not set we assume it's the 'default' user.
-        user = params.get("user", "default");
+        /// If the user name is not set (or set to an empty string), the default session user is assumed.
+        user = params.get("user", "");
+        if (user.empty())
+            user = default_session_user;
         password = params.get("password", "");
         checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context);
     }

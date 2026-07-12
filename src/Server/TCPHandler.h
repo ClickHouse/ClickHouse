@@ -173,6 +173,7 @@ public:
         bool parse_proxy_protocol_,
         String server_display_name_,
         String host_name_,
+        std::optional<String> default_session_user_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
     TCPHandler(
@@ -182,6 +183,7 @@ public:
         TCPProtocolStackData & stack_data,
         String server_display_name_,
         String host_name_,
+        std::optional<String> default_session_user_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
     ~TCPHandler() override;
@@ -263,6 +265,10 @@ private:
     /// It is the name of the server that will be sent to the client.
     String server_display_name;
     String host_name;
+
+    /// If set, overrides the `default_session_user` server setting for this listener
+    /// (composable protocols allow a per-endpoint default user).
+    std::optional<String> default_session_user;
 
     void runImpl();
 

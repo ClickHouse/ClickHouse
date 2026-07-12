@@ -13,6 +13,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <QueryPipeline/ProfileInfo.h>
@@ -84,6 +85,11 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool use_concurrency_control;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
 }
 
 namespace ErrorCodes
@@ -882,8 +888,8 @@ namespace
 
         if (user.empty())
         {
-            user = "default";
-            password = "";
+            /// An empty user name means the default session user (the `default_session_user` server setting).
+            user = iserver.context()->getServerSettings()[ServerSetting::default_session_user];
         }
 
         /// Authentication.

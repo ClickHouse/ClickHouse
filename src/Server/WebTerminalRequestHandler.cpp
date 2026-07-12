@@ -6,6 +6,7 @@
 #include <Server/ClientEmbedded/ClientEmbeddedRunner.h>
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Access/Credentials.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 #include <Common/Exception.h>
@@ -34,6 +35,11 @@ constexpr unsigned char resource_webterminal_html[] =
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_session_user;
+}
 
 namespace
 {
@@ -557,9 +563,9 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// abnormal close (1006) indistinguishable from a network drop. Catch
     /// parse errors and send a deterministic policy close (1008) instead.
     ///
-    /// `auth_user` is seeded with the server's default user so that omitting
-    /// the "user" field in the JSON falls back to that default.
-    String auth_user = "default";
+    /// `auth_user` is seeded with the default session user (the `default_session_user`
+    /// server setting) so that omitting the "user" field in the JSON falls back to that default.
+    String auth_user = server.context()->getServerSettings()[ServerSetting::default_session_user];
     String auth_password;
     bool auth_parsed = false;
     try

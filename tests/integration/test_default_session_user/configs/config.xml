@@ -1,0 +1,60 @@
+<clickhouse>
+    <default_session_user>global_default_user</default_session_user>
+
+    <session_log>
+        <database>system</database>
+        <table>session_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </session_log>
+
+    <protocols>
+        <tcp_defuser>
+            <type>tcp</type>
+            <host>0.0.0.0</host>
+            <port>9101</port>
+            <default_session_user>proto_tcp_user</default_session_user>
+            <description>native protocol with its own default session user</description>
+        </tcp_defuser>
+        <tcp_base>
+            <type>tcp</type>
+            <host>0.0.0.0</host>
+            <port>9102</port>
+            <description>native protocol without an endpoint-level default session user</description>
+        </tcp_base>
+        <tcp_endpoint_defuser>
+            <impl>tcp_base</impl>
+            <host>0.0.0.0</host>
+            <port>9103</port>
+            <default_session_user>proto_endpoint_user</default_session_user>
+            <description>endpoint of tcp_base with its own default session user</description>
+        </tcp_endpoint_defuser>
+        <tcp_no_anonymous>
+            <type>tcp</type>
+            <host>0.0.0.0</host>
+            <port>9104</port>
+            <default_session_user></default_session_user>
+            <description>native protocol that rejects connections without a user name</description>
+        </tcp_no_anonymous>
+        <http_defuser>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8124</port>
+            <default_session_user>proto_http_user</default_session_user>
+            <description>http protocol with its own default session user</description>
+        </http_defuser>
+        <mysql_defuser>
+            <type>mysql</type>
+            <host>0.0.0.0</host>
+            <port>9106</port>
+            <default_session_user>proto_mysql_user</default_session_user>
+            <description>mysql protocol with its own default session user</description>
+        </mysql_defuser>
+        <postgres_defuser>
+            <type>postgres</type>
+            <host>0.0.0.0</host>
+            <port>9107</port>
+            <default_session_user>proto_pg_user</default_session_user>
+            <description>postgres protocol with its own default session user</description>
+        </postgres_defuser>
+    </protocols>
+</clickhouse>

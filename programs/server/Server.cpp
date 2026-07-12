@@ -3656,10 +3656,16 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     AsynchronousMetrics & async_metrics,
     bool & is_secure)
 {
+    /// The default session user for the endpoint: the `default_session_user` key looked up
+    /// from the endpoint's protocol module towards the referenced (`impl`) modules; the value
+    /// closest to the endpoint wins. If not set anywhere in the chain, the handlers fall back
+    /// to the `default_session_user` server setting.
+    std::optional<String> default_session_user;
+
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
         if (type == "tcp")
-            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes));
+            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes, default_session_user));
 
         if (type == "tls")
 #if USE_SSL
@@ -3671,12 +3677,12 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "proxy1")
             return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
         if (type == "mysql")
-            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, server_settings[ServerSetting::mysql_require_secure_transport], ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, server_settings[ServerSetting::mysql_require_secure_transport], ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes, default_session_user));
         if (type == "postgres")
 #if USE_SSL
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes, default_session_user));
 #else
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, server_settings[ServerSetting::postgresql_require_secure_transport], ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes, default_session_user));
 #endif
         if (type == "http")
         {
@@ -3686,14 +3692,14 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             if (config.has(conf_name + ".handlers"))
                 handlers_config_key = config.getString(conf_name + ".handlers");
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key, default_session_user), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         }
         if (type == "prometheus")
         {
             const std::string handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name, /* http_handlers_key= */ {}, default_session_user), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
             );
         }
         if (type == "interserver")
@@ -3710,8 +3716,13 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
 
     auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
 
+    bool has_interserver = false;
+
     while (true)
     {
+        if (!default_session_user && config.has(prefix + "default_session_user"))
+            default_session_user = config.getString(prefix + "default_session_user");
+
         // if there is no "type" - it's a reference to another protocol and this is just an endpoint
         if (config.has(prefix + "type"))
         {
@@ -3722,6 +3733,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
                 is_secure = true;
             }
+            if (type == "interserver")
+                has_interserver = true;
 
             stack->append(create_factory(type, conf_name));
         }
@@ -3735,6 +3748,12 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (!pset.insert(conf_name).second)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
     }
+
+    /// Interserver connections are authenticated by the cluster secret and the initial user
+    /// and never use the default session user, so such a configuration is an error.
+    if (has_interserver && default_session_user)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Protocol '{}': 'default_session_user' cannot be used with the 'interserver' protocol", protocol);
 
     return stack;
 }
@@ -4226,6 +4245,7 @@ void Server::updateServers(
             std::string port_name = server->getPortName();
             bool has_host = false;
             bool is_http = false;
+            bool default_session_user_changed = false;
             String handlers_key = "http_handlers";
             if (port_name.starts_with("protocols."))
             {
@@ -4237,6 +4257,11 @@ void Server::updateServers(
                 std::unordered_set<std::string> pset {conf_name};
                 while (true)
                 {
+                    /// The per-endpoint default session user is fixed in the protocol handler
+                    /// factory, so the endpoint must be restarted when it changes.
+                    if (!isSameConfiguration(previous_config, config, prefix + "default_session_user"))
+                        default_session_user_changed = true;
+
                     if (config.has(prefix + "type"))
                     {
                         std::string type = config.getString(prefix + "type");
@@ -4273,6 +4298,11 @@ void Server::updateServers(
             bool force_restart = is_http && !isSameConfiguration(previous_config, config, handlers_key);
             if (force_restart)
                 LOG_TRACE(log, "<{}> had been changed, will reload {}", handlers_key, server->getDescription());
+            if (default_session_user_changed)
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<default_session_user> had been changed, will reload {}", server->getDescription());
+            }
 
             if (!has_host || !has_port || config.getInt(server->getPortName()) != server->portNumber() || force_restart)
             {
