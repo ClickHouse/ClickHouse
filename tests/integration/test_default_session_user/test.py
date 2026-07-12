@@ -75,16 +75,40 @@ def native_hello(port, user, password=""):
         return response[0]
 
 
-def postgres_login(port, user):
-    """Send a PostgreSQL startup message and return True if the server replied
-    with AuthenticationOk."""
+def recv_exact(sock, size):
+    data = b""
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            break
+        data += chunk
+    return data
+
+
+def postgres_login(port, user, password=""):
+    """Log in over the PostgreSQL wire protocol and return True if the server
+    accepted the credentials. Users with a plaintext password (even an empty
+    one) are asked for it with AuthenticationCleartextPassword first."""
     with socket.create_connection((node1.ip_address, port), timeout=10) as sock:
         parameters = b"user\x00" + user.encode("utf-8") + b"\x00\x00"
         body = struct.pack("!I", 196608) + parameters  # protocol version 3.0
         sock.sendall(struct.pack("!I", len(body) + 4) + body)
-        response = sock.recv(9)
-        # 'R' + Int32 length (8) + Int32 authentication type (0 is AuthenticationOk)
-        return response == b"R\x00\x00\x00\x08\x00\x00\x00\x00"
+
+        # 'R' + Int32 length (8) + Int32 authentication type
+        response = recv_exact(sock, 9)
+        if response[:1] != b"R":
+            return False
+        auth_type = struct.unpack("!I", response[5:9])[0]
+        if auth_type == 3:  # AuthenticationCleartextPassword
+            password_bytes = password.encode("utf-8") + b"\x00"
+            sock.sendall(
+                b"p" + struct.pack("!I", len(password_bytes) + 4) + password_bytes
+            )
+            response = recv_exact(sock, 9)
+            if response[:1] != b"R":
+                return False
+            auth_type = struct.unpack("!I", response[5:9])[0]
+        return auth_type == 0  # AuthenticationOk
 
 
 def assert_login_success(user, interface):
@@ -106,7 +130,9 @@ def test_http_per_protocol_default_session_user():
     assert execute_query_http(8124, "SELECT currentUser()") == "proto_http_user\n"
 
     # An explicitly empty user parameter also means the default session user.
-    assert execute_query_http(8124, "SELECT currentUser()", user="") == "proto_http_user\n"
+    assert (
+        execute_query_http(8124, "SELECT currentUser()", user="") == "proto_http_user\n"
+    )
 
     # An explicitly specified user is not affected.
     assert (
@@ -152,9 +178,17 @@ def test_native_default_session_user():
 
 
 def test_mysql_default_session_user():
+    # pymysql substitutes the OS user name for an empty user name on the client
+    # side, so trick it into sending a genuinely empty user name.
     connection = pymysql.connect(
-        user="", password="", host=node1.ip_address, port=9106
+        user="placeholder",
+        password="",
+        host=node1.ip_address,
+        port=9106,
+        defer_connect=True,
     )
+    connection.user = b""
+    connection.connect()
     with connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT currentUser()")
