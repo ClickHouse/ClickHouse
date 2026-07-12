@@ -199,5 +199,47 @@ INSERT INTO ttl_multi_group_by (k, ts, x, eph, payload) VALUES (1, '2020-01-01',
 OPTIMIZE TABLE ttl_multi_group_by FINAL;
 
 SELECT k, x, payload FROM ttl_multi_group_by ORDER BY k;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
+-- G2: cascading order loss. Once an earlier GROUP BY TTL runs unsorted (its SET rewrites its own key),
+-- it finalizes via the aggregator hash table, which does NOT preserve primary-key order. A later GROUP
+-- BY TTL keyed on a shorter, unaffected prefix (day) therefore also receives an unordered stream and
+-- must run unsorted too, otherwise its streaming flush-on-key-change re-fragments the day groups.
+-- Here TTL1 groups by (day,region,user) and SET region (its own key) -> unsorted; TTL2 groups by
+-- (day,region) SET payload; TTL3 groups by day SET payload. Expect exactly 5 rows (one per day),
+-- each with the full per-day payload sum; more rows mean a later TTL fragmented the scrambled stream.
+CREATE TABLE ttl_multi_group_by (day Date, region UInt32, user UInt32, ts DateTime, payload UInt64)
+ENGINE = MergeTree ORDER BY (day, region, user)
+TTL ts + toIntervalSecond(1) GROUP BY day, region, user SET region = max(region),
+    ts + toIntervalSecond(1) GROUP BY day, region SET payload = sum(payload),
+    ts + toIntervalSecond(1) GROUP BY day SET payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4, index_granularity = 4;
+
+INSERT INTO ttl_multi_group_by SELECT toDate('2020-01-01') + (number % 5), number % 7, number, toDateTime('2020-01-01 00:00:00'), 1 FROM numbers(70);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+SELECT count() AS rows, sum(payload) AS total FROM ttl_multi_group_by;
+SELECT day, count() AS n, sum(payload) AS p FROM ttl_multi_group_by GROUP BY day ORDER BY day;
+SELECT '---';
+
+DROP TABLE ttl_multi_group_by;
+
+-- G2 negative: two GROUP BY TTLs whose keys are unrelated to any earlier SET must both keep the ordered
+-- fast path (no cascade is triggered). TTL1 groups by k SET payload only (does NOT rewrite its own key
+-- k), TTL2 groups by k SET payload. No key is ever rewritten, so neither TTL loses order and both run
+-- sorted. Result must be a single group per k.
+CREATE TABLE ttl_multi_group_by (k UInt32, ts DateTime, payload UInt64)
+ENGINE = MergeTree ORDER BY k
+TTL ts + toIntervalDay(1) GROUP BY k SET payload = sum(payload),
+    ts + toIntervalDay(1) GROUP BY k SET payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 4, index_granularity = 4;
+
+INSERT INTO ttl_multi_group_by SELECT number % 5, toDateTime('2020-01-01 00:00:00'), 1 FROM numbers(40);
+OPTIMIZE TABLE ttl_multi_group_by FINAL;
+
+SELECT count() AS rows, sum(payload) AS total FROM ttl_multi_group_by;
+SELECT k, payload FROM ttl_multi_group_by ORDER BY k;
 
 DROP TABLE ttl_multi_group_by;

@@ -99,12 +99,24 @@ TTLTransform::TTLTransform(
     /// the input is unsorted (defer finalization to end of stream) AND refresh the derived key columns
     /// in the block before it runs.
     NameSet earlier_group_by_set_targets;
+    bool earlier_group_by_lost_order = false;
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
     {
         const bool affected_by_earlier_set = groupByKeysAffectedByEarlierSet(
             group_by_ttl.group_by_keys, earlier_group_by_set_targets, metadata_snapshot_, context);
 
+        /// Once ANY earlier GROUP BY TTL has to run unsorted, its accumulated state is flushed via
+        /// `finalizeAggregates` -> `Aggregator::convertToChunks`, which iterates the hash table and does
+        /// NOT preserve primary-key order. So the stream a later GROUP BY TTL then consumes is no longer
+        /// ordered by ANY key -- not even a shorter, unaffected key prefix (e.g. `GROUP BY day` after an
+        /// earlier `GROUP BY day, region ... SET region` went unsorted). The later TTL must therefore also
+        /// run unsorted, otherwise its streaming flush-on-key-change would re-fragment the scrambled groups.
+        const bool input_unsorted = affected_by_earlier_set || earlier_group_by_lost_order;
+
         ExpressionActionsPtr key_refresh_actions;
+        /// Only THIS TTL's own key being rewritten by an earlier SET makes its in-stream key value stale
+        /// and in need of refreshing. Losing input order (the cascade case above) does not change the key
+        /// values, so no refresh is required there.
         if (affected_by_earlier_set)
         {
             if (auto refresh_dag = buildRefreshGroupByKeysDAG(
@@ -115,9 +127,12 @@ TTLTransform::TTLTransform(
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
                 getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
                 old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
-                getInputPort().getHeader(), storage_, /*input_sorted_by_group_by_keys=*/!affected_by_earlier_set));
+                getInputPort().getHeader(), storage_, /*input_sorted_by_group_by_keys=*/!input_unsorted));
         algorithm_key_refresh_actions.resize(algorithms.size());
         algorithm_key_refresh_actions.back() = std::move(key_refresh_actions);
+
+        if (input_unsorted)
+            earlier_group_by_lost_order = true;
 
         for (const auto & set_part : group_by_ttl.set_parts)
             earlier_group_by_set_targets.insert(set_part.column_name);
