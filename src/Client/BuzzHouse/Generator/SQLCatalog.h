@@ -79,9 +79,6 @@ enum class LakeCatalog
     Unity = 4
 };
 
-extern const std::vector<std::vector<OutFormat>> outFormats;
-extern const std::unordered_map<OutFormat, InFormat> outIn;
-extern const std::vector<std::vector<InOutFormat>> inOutFormats;
 
 struct SQLColumn
 {
@@ -268,7 +265,7 @@ public:
     TableEngineDescriptor engine;
     std::optional<TableEngineDescriptor> subengine;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
-    std::optional<InOutFormat> file_format;
+    std::optional<String> file_format;
     IntegrationCall integration = IntegrationCall::None;
 
     SQLBase() = default;
@@ -450,11 +447,15 @@ struct SQLTable : SQLBase
 public:
     uint32_t col_counter = 0;
     uint32_t idx_counter = 0;
+    uint32_t hidx_counter = 0;
     uint32_t proj_counter = 0;
     uint32_t constr_counter = 0;
     std::unordered_map<String, SQLColumn> cols;
     std::unordered_map<String, SQLColumn> staged_cols;
     std::unordered_map<String, String> frozen_partitions;
+    /// Names of hypothetical (WHAT-IF) indexes created on this table. They are session
+    /// scoped on the server, so this is best effort only.
+    std::unordered_set<String> hypothetical_indexes;
 
     SQLTable()
         : SQLBase("t")
