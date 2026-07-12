@@ -57,7 +57,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 DROP TABLE tab;
 
-SELECT '-- tokenizer must be splitByNonAlpha, ngrams, sparseGrams, splitByString or array.';
+SELECT '-- tokenizer must be splitByNonAlpha, ngrams, sparseGrams, splitByString, asciiCJK or array.';
 
 CREATE TABLE tab
 (
@@ -515,6 +515,49 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT 'Test positions argument.';
+
+SELECT '-- positions argument is experimental';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, positions = 1)
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, positions = 1)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS allow_experimental_text_index_positions = 1;
+
+DROP TABLE tab;
+
+SELECT '-- positions argument is must be 0 or 1';
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, positions = 2)
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS allow_experimental_text_index_positions = 1; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE tab
+(
+    str String,
+    INDEX idx str TYPE text(tokenizer = splitByNonAlpha, positions = 'abc')
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS allow_experimental_text_index_positions = 1; -- { serverError BAD_ARGUMENTS }
 
 SELECT 'Types are incorrect.';
 

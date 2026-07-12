@@ -241,17 +241,20 @@ Chunk CreatingSetsTransform::generate()
 {
     if (set_and_key->set && !set_from_cache)
     {
-        bool skip_finish_insert = false;
-        fiu_do_on(FailPoints::prepared_sets_build_ordered_set_inplace_fail, { skip_finish_insert = true; });
-
-        if (!skip_finish_insert)
+        /// Simulate a silent in-place build failure: skip `finishInsert`, leaving the set not created
+        /// (the same observable state as a subquery timeout with `overflow_mode = 'break'`). Fires once,
+        /// so the in-place build during primary key analysis fails while the deferred build succeeds.
+        fiu_do_on(FailPoints::prepared_sets_build_ordered_set_inplace_fail,
         {
-            set_and_key->set->finishInsert();
-            if (promise_to_build)
-            {
-                promise_to_build->set_value(set_and_key->set);
-                promise_to_build.reset();
-            }
+            finishSubquery();
+            return {};
+        });
+
+        set_and_key->set->finishInsert();
+        if (promise_to_build)
+        {
+            promise_to_build->set_value(set_and_key->set);
+            promise_to_build.reset();
         }
     }
 

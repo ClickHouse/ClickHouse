@@ -1,0 +1,116 @@
+---
+sidebarTitle: '迁移指南'
+slug: /migrations/snowflake
+description: '从 Snowflake 迁移到 ClickHouse'
+keywords: ['Snowflake']
+title: '从 Snowflake 迁移到 ClickHouse'
+show_related_blogs: false
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+> 本指南介绍如何将数据从 Snowflake 迁移到 ClickHouse。
+
+在 Snowflake 与 ClickHouse 之间迁移数据时，需要使用对象存储 (例如 S3) 作为传输过程中的中间存储。迁移过程还依赖于 Snowflake 的 `COPY INTO` 命令和 ClickHouse 的 `INSERT INTO SELECT` 命令。
+
+<Steps>
+  <Step>
+    ## 从 Snowflake 导出数据
+
+    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="从 Snowflake 迁移到 ClickHouse" />
+
+    如上图所示，从 Snowflake 导出数据需要借助外部 stage。
+
+    假设我们要导出一个 schema 如下的 Snowflake 表：
+
+    ```sql
+    CREATE TABLE MYDATASET (
+       timestamp TIMESTAMP,
+       some_text varchar,
+       some_file OBJECT,
+       complex_data VARIANT,
+    ) DATA_RETENTION_TIME_IN_DAYS = 0;
+    ```
+
+    要将该表的数据迁移到 ClickHouse 数据库，首先需要将数据复制到外部 stage。复制数据时，我们建议使用 Parquet 作为中间格式，因为它可以保留类型信息、保持精度、具备良好的压缩效果，并且原生支持分析场景中常见的嵌套结构。
+
+    在下面的示例中，我们先在 Snowflake 中创建一个命名文件格式，用于表示 Parquet 及所需的文件选项。然后指定复制后 dataset 所在的 bucket。最后，将 dataset 复制到该 bucket。
+
+    ```sql
+    CREATE FILE FORMAT my_parquet_format TYPE = parquet;
+
+    -- 创建外部 stage，并指定要复制到的 S3 bucket
+    CREATE OR REPLACE STAGE external_stage
+    URL='s3://mybucket/mydataset'
+    CREDENTIALS=(AWS_KEY_ID='<key>' AWS_SECRET_KEY='<secret>')
+    FILE_FORMAT = my_parquet_format;
+
+    -- 为所有文件添加 "mydataset" 前缀，并指定最大文件大小为 150mb
+    -- `header=true` 参数是获取列名所必需的
+    COPY INTO @external_stage/mydataset from mydataset max_file_size=157286400 header=true;
+    ```
+
+    对于一个约 5TB 的 dataset，如果最大文件大小为 150MB，并使用与 S3 bucket 位于同一 AWS `us-east-1` 区域的 2X-Large Snowflake 仓库，复制数据大约需要 30 分钟。
+  </Step>
+
+  <Step>
+    ## 导入到 ClickHouse
+
+    当数据已暂存到中间对象存储后，就可以使用 ClickHouse 函数 (例如 [s3 table function](/zh/reference/functions/table-functions/s3)) 将数据写入表中，如下所示。
+
+    本示例使用适用于 AWS S3 的 [s3 table function](/zh/reference/functions/table-functions/s3)；如果使用 Google Cloud Storage，则可以使用 [gcs table function](/zh/reference/functions/table-functions/gcs)；如果使用 Azure Blob 存储，则可以使用 [azureBlobStorage table function](/zh/reference/functions/table-functions/azureBlobStorage)。
+
+    假设目标表的 schema 如下：
+
+    ```sql
+    CREATE TABLE default.mydataset
+    (
+      `timestamp` DateTime64(6),
+      `some_text` String,
+      `some_file` Tuple(filename String, version String),
+      `complex_data` Tuple(name String, description String),
+    )
+    ENGINE = MergeTree
+    ORDER BY (timestamp)
+    ```
+
+    然后，我们可以使用 `INSERT INTO SELECT` 命令将数据从 S3 插入到 ClickHouse 表中：
+
+    ```sql
+    INSERT INTO mydataset
+    SELECT
+      timestamp,
+      some_text,
+      JSONExtract(
+        ifNull(some_file, '{}'),
+        'Tuple(filename String, version String)'
+      ) AS some_file,
+      JSONExtract(
+        ifNull(complex_data, '{}'),
+        'Tuple(filename String, description String)'
+      ) AS complex_data,
+    FROM s3('https://mybucket.s3.amazonaws.com/mydataset/mydataset*.parquet')
+    SETTINGS input_format_null_as_default = 1, -- 如果值为 null，则确保列按默认值写入
+    input_format_parquet_case_insensitive_column_matching = 1 -- 源数据与目标表之间的列匹配应大小写不敏感
+    ```
+
+    <Info>
+      **关于嵌套列结构的说明**
+
+      原始 Snowflake 表 schema 中的 `VARIANT` 和 `OBJECT` 列默认会输出为 JSON 字符串，因此在将它们写入 ClickHouse 时，需要进行类型转换。
+
+      像 `some_file` 这样的嵌套结构在复制时会被 Snowflake 转换为 JSON 字符串。导入这些数据时，需要在 ClickHouse 写入时将这些结构转换为 Tuple，具体方法如上所示，即使用 [JSONExtract function](/zh/reference/functions/regular-functions/json-functions#JSONExtract)。
+    </Info>
+  </Step>
+
+  <Step>
+    ## 测试数据是否已成功导出
+
+    要验证数据是否已正确写入，只需对新表运行一条 `SELECT` 查询：
+
+    ```sql
+    SELECT * FROM mydataset LIMIT 10;
+    ```
+  </Step>
+</Steps>

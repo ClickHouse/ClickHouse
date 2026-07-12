@@ -1,0 +1,69 @@
+---
+description: 'ClickHouse 中的 loop 表函数用于无限循环返回查询结果。'
+slug: /sql-reference/table-functions/loop
+title: 'loop'
+doc_type: 'reference'
+---
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+SELECT ... FROM loop(database, table);
+SELECT ... FROM loop(database.table);
+SELECT ... FROM loop(table);
+SELECT ... FROM loop(other_table_function(...));
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+| 参数                          | 描述                                                                                           |
+| --------------------------- | -------------------------------------------------------------------------------------------- |
+| `database`                  | 数据库名。                                                                                        |
+| `table`                     | 表名。                                                                                          |
+| `other_table_function(...)` | 其他表函数。示例：`SELECT * FROM loop(numbers(10));` 这里的 `other_table_function(...)` 是 `numbers(10)`。 |
+
+<div id="returned_values">
+  ## 返回值
+</div>
+
+用于持续返回查询结果的无限循环。
+
+<div id="examples">
+  ## 示例
+</div>
+
+从 ClickHouse 查询数据：
+
+```sql
+SELECT * FROM loop(test_database, test_table);
+SELECT * FROM loop(test_database.test_table);
+SELECT * FROM loop(test_table);
+```
+
+或使用其他表函数：
+
+```sql
+SELECT * FROM loop(numbers(3)) LIMIT 7;
+   ┌─number─┐
+1. │      0 │
+2. │      1 │
+3. │      2 │
+   └────────┘
+   ┌─number─┐
+4. │      0 │
+5. │      1 │
+6. │      2 │
+   └────────┘
+   ┌─number─┐
+7. │      0 │
+   └────────┘
+```
+
+```sql
+SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
+...
+```
