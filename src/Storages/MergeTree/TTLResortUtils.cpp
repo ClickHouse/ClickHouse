@@ -640,16 +640,49 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
     /// was rewritten but the derived subcolumn still holds its pre-`SET` value.
     /// `createSubcolumnsExtractionActions` returns early when the required subcolumn is already in the
     /// stream, so it would reuse the stale copy and recompute the MATERIALIZED column from the
-    /// pre-`SET` subcolumn. Drop every re-extractable derived subcolumn (a subcolumn whose physical
-    /// parent is also in the stream) alongside the stale MATERIALIZED values, so it is rebuilt fresh
-    /// from the post-`SET` physical column below -- exactly as `buildRecomputeSortKeyExpressionDAG`
-    /// hides the stale computed sort-key columns.
+    /// pre-`SET` subcolumn. Such a stale subcolumn must be dropped so it is rebuilt fresh from the
+    /// post-`SET` physical column below.
+    ///
+    /// Drop ONLY the subcolumns that feed the recompute -- not every re-extractable subcolumn in the
+    /// stream. An unrelated pass-through subcolumn (e.g. a sort-key column `t.a` with
+    /// `ORDER BY (d, t.a)` while only `d` is recomputed) is preserved by `save_unneeded_columns`, but
+    /// this DAG never restores it, so dropping it would make the later `TTLAggregationAlgorithm` throw
+    /// NOT_FOUND_COLUMN_IN_BLOCK.
+    ///
+    /// A re-extractable subcolumn is stale (and must be re-extracted from the post-`SET` physical
+    /// parent) only when its physical parent is a SOURCE of one of the recomputed MATERIALIZED columns:
+    /// e.g. `d MATERIALIZED toDate(tup.ts)` reads `tup.ts` whose parent `tup` is `d`'s source, so the
+    /// pre-extracted `tup.ts` is stale. A subcolumn whose parent is not a recompute source (`t.a`) is
+    /// unrelated and kept.
     const auto storage_names = columns_desc.getAllPhysical().getNameSet();
+
+    /// The physical storage columns each recomputed MATERIALIZED column reads from (analyzed the same
+    /// way the mutation path does). Only a subcolumn of one of these parents can be a stale input.
+    NamesAndTypesList all_columns_with_ephemeral = columns_desc.getAllPhysical();
+    NameSet ephemeral_columns;
+    for (const auto & column : columns_desc.getEphemeral())
+    {
+        ephemeral_columns.insert(column.name);
+        all_columns_with_ephemeral.push_back(column);
+    }
+    NameSet recompute_source_parents;
+    for (const auto & name : recompute_names)
+    {
+        if (!columns_desc.has(name))
+            continue;
+        const auto & column_desc = columns_desc.get(name);
+        if (column_desc.default_desc.kind != ColumnDefaultKind::Materialized || !column_desc.default_desc.expression)
+            continue;
+        if (auto sources = getMaterializedColumnSourceColumns(
+                column_desc, all_columns_with_ephemeral, storage_names, ephemeral_columns, context))
+            recompute_source_parents.insert(sources->begin(), sources->end());
+    }
+
     NameSet drop_names = recompute_names;
     for (const auto & column : header)
         if (!storage_names.contains(column.name))
             if (auto parent = Nested::tryGetColumnNameInStorage(column.name, storage_names);
-                parent && header.has(*parent))
+                parent && header.has(*parent) && recompute_source_parents.contains(*parent))
                 drop_names.insert(column.name);
 
     /// Drop the stale values from the stream so `evaluateMissingDefaults` treats the columns as

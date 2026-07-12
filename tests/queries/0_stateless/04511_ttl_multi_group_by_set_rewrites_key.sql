@@ -346,3 +346,23 @@ OPTIMIZE TABLE ttl_i2 FINAL;
 SELECT toStartOfDay(ts) AS day, k, payload FROM ttl_i2 ORDER BY day, k;
 
 DROP TABLE ttl_i2;
+
+SELECT '--- I3';
+
+-- I3: refreshing a MATERIALIZED group_by key must recompute ONLY the subcolumns feeding that key,
+-- not every re-extractable subcolumn in the stream. ORDER BY (d, t.a) pre-extracts t.a; d MATERIALIZED
+-- toDate(ts). TTL1 GROUP BY (d, t.a) SET ts fires (rewrites ts); TTL2 GROUP BY d has its key d refreshed.
+-- The refresh recomputes d from the post-SET ts but must leave the unrelated pass-through t.a in the
+-- stream, otherwise the later TTL throws NOT_FOUND_COLUMN_IN_BLOCK (t.a). Result: one group per (d, t.a).
+CREATE TABLE ttl_i3 (ts DateTime, t Tuple(a UInt32, b UInt32), d Date MATERIALIZED toDate(ts), payload UInt64)
+ENGINE = MergeTree ORDER BY (d, t.a)
+TTL ts + toIntervalDay(1) GROUP BY d, t.a SET ts = max(ts) + toIntervalYear(50),
+    ts + toIntervalDay(2) GROUP BY d SET payload = sum(payload)
+SETTINGS min_bytes_for_wide_part = 0, merge_max_block_size = 1;
+
+INSERT INTO ttl_i3 (ts, t, payload) VALUES ('2020-01-01 00:00:00', (1, 1), 10), ('2020-01-01 00:00:00', (2, 2), 20), ('2020-01-01 00:00:00', (1, 1), 5);
+OPTIMIZE TABLE ttl_i3 FINAL;
+
+SELECT toYear(d) AS post_set_year, t.a, payload FROM ttl_i3 ORDER BY t.a;
+
+DROP TABLE ttl_i3;
