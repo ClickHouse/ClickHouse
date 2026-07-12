@@ -78,7 +78,7 @@ public:
     /// have been created over the framing format's payload buffer. When set, the format notifies
     /// the framing format on packet boundaries, and progress is routed to the framing format
     /// instead of the `writeProgress` method. Not compatible with parallel formatting.
-    void setFraming(const std::shared_ptr<IFramingFormat> & framing_) { framing = framing_; }
+    void setFraming(const std::shared_ptr<IFramingFormat> & framing_);
     const std::shared_ptr<IFramingFormat> & getFraming() const { return framing; }
 
     size_t getResultRows() const { return result_rows; }

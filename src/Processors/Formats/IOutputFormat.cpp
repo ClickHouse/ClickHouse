@@ -5,12 +5,18 @@
 #include <Processors/Formats/Framing/IFramingFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <base/sleep.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace FailPoints
 {
@@ -267,6 +273,22 @@ void IOutputFormat::onProgress(const Progress & progress)
 void IOutputFormat::setProgress(Progress progress)
 {
     statistics.progress = std::move(progress);
+}
+
+void IOutputFormat::setFraming(const std::shared_ptr<IFramingFormat> & framing_)
+{
+    /// Some output formats (for example `Template`) do not write totals and extremes in
+    /// `consumeTotals` / `consumeExtremes`, but store them and emit them later from `finalizeImpl`.
+    /// A framing format cannot tell such deferred totals/extremes apart from the main data, so it
+    /// would mislabel them as `data` packets. Reject these formats instead of producing wrong output.
+    if (areTotalsAndExtremesUsedInFinalize())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The output format {} is not compatible with framing formats, "
+            "because it writes totals and extremes in a deferred way",
+            getName());
+
+    framing = framing_;
 }
 
 InputPort & IOutputFormat::getPort(PortKind kind)
