@@ -25,6 +25,12 @@ totals | 0	4
 extremes | 
 extremes | 0	2
 extremes | 1	2
+--- EventStream, payload without a trailing newline
+data | (0),(1),(2)
+--- framing works with HTTP compression
+{"number":0}
+{"number":1}
+{"number":2}
 --- EventStream content type
 text/event-stream; charset=UTF-8
 --- JSONEachPacket content type

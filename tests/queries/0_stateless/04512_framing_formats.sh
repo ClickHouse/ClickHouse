@@ -44,6 +44,17 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&extremes=1${SIN
     -d "SELECT intDiv(number, 2) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT TSV" \
     | awk '/^event: /{name=$2; next} /^data: /{if (name != "progress" && name != "profile_events") print name" | "substr($0, 7)}'
 
+echo '--- EventStream, payload without a trailing newline'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
+    -d "SELECT number FROM numbers(3) FORMAT Values" \
+    | awk '/^event: /{name=$2; next} /^data: /{if (name != "progress" && name != "profile_events") print name" | "substr($0, 7)}'
+
+echo '--- framing works with HTTP compression'
+${CLICKHOUSE_CURL} -sS --compressed "${URL}&framing_output_format=JSONEachPacketBase64&enable_http_compression=1" \
+    -d "SELECT number FROM numbers(3) FORMAT JSONEachRow" \
+    | grep '"packet":"data"' | sed -E 's/.*"data":"([^"]*)".*/\1/' \
+    | while read -r encoded_payload; do echo "$encoded_payload" | base64 --decode; done
+
 echo '--- EventStream content type'
 ${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" -d "SELECT 1"
 
