@@ -1,0 +1,61 @@
+---
+title: 'ClickHouse Private'
+slug: /cloud/infrastructure/clickhouse-private
+keywords: ['خاص', 'محلي']
+description: 'نظرة عامة على ClickHouse Private'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+ClickHouse Private هي حزمة ذاتية النشر تتألف من النسخة الاحتكارية نفسها من ClickHouse التي تعمل على ClickHouse Cloud، إلى جانب ClickHouse Operator، ومُهيأة وفق نمط فصل الحوسبة عن التخزين.
+
+<Info>
+  **ملاحظة**
+
+  صُممت ClickHouse Private للمؤسسات الكبيرة التي تنشر أكثر من 2 تيرابايت من الذاكرة وتحتاج إلى تحكم كامل في بنيتها التحتية المخصصة. ويتحمل العملاء مسؤولية إدارة البنية التحتية بالكامل، لذا ينبغي أن تكون لديهم خبرة كافية في تشغيل ClickHouse على نطاق واسع. لا يتوفر هذا الخيار إلا من خلال [التواصل معنا](https://clickhouse.com/company/contact?loc=nav).
+</Info>
+
+<div id="benefits-over-os">
+  ## المزايا مقارنةً بعمليات النشر مفتوحة المصدر
+</div>
+
+تُميّز الميزات التالية ClickHouse Private عن عمليات النشر مفتوحة المصدر المُدارة ذاتيًا:
+
+* الفصل الأصلي بين الحوسبة والتخزين
+* ميزات سحابية حصرية مثل [shared merge tree](/ar/products/cloud/features/infrastructure/shared-merge-tree) وإمكانات [warehouse](/ar/products/cloud/features/infrastructure/warehouses)
+* إصدارات قاعدة بيانات ClickHouse والمشغّل، المختبرة بالكامل والمُتحقَّق منها في ClickHouse Cloud
+* واجهة برمجة تطبيقات لتنفيذ العمليات برمجيًا، بما في ذلك النسخ الاحتياطي وعمليات التوسّع
+
+<div id="architecture">
+  ## المعمارية
+</div>
+
+يعمل ClickHouse Private بصورة مستقلة بالكامل داخل بيئة النشر الخاصة بك، ويوفّر فصلًا سحابيًا أصيلًا بين الموارد الحاسوبية والتخزين.
+
+<br />
+
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="معمارية ClickHouse Private" background="black" />
+
+<br />
+
+<div id="supported-configurations">
+  ## التهيئات المدعومة
+</div>
+
+يتوفر ClickHouse Private حاليًا ضمن التهيئات التالية:
+
+| البيئة | التنسيق                          | التخزين                     | الحالة |
+| :----- | :------------------------------- | :-------------------------- | :----- |
+| AWS    | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | متاح   |
+| GCP    | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | معاينة |
+
+<div id="onboarding-process">
+  ## عملية التهيئة
+</div>
+
+يمكن للعملاء المهتمين بـ ClickHouse Private [التواصل معنا](https://clickhouse.com/company/contact) لتحديد موعد لمكالمة مراجعة لمناقشة حالة الاستخدام الخاصة بهم. وستُؤخذ الطلبات التي تستوفي الحد الأدنى لمتطلبات الحجم وتستهدف التكوينات المدعومة في الاعتبار، مع العلم أن سعة التهيئة محدودة. وتتضمن عملية التهيئة اتباع دليل تثبيت خاص بالبيئة باستخدام صور الحاويات ومخططات Helm المسحوبة من AWS ECR.

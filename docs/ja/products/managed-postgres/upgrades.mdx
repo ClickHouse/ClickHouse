@@ -1,0 +1,44 @@
+---
+slug: /cloud/managed-postgres/upgrades
+sidebarTitle: 'アップグレード'
+title: 'アップグレード'
+description: 'ClickHouse Managed Postgres での PostgreSQL のバージョンアップグレードの仕組み'
+keywords: ['managed postgres upgrades', 'postgres version', 'minor upgrade', 'major upgrade', 'maintenance window']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
+
+Managed Postgres では、インスタンスの安全性を保ち、最新の状態を維持するために、PostgreSQL のバージョンアップグレードを実施します。マイナーバージョンアップグレードとメジャーバージョンアップグレードの両方に対応しており、影響は最小限に抑えられます。
+
+<div id="maintenance-updates">
+  ## メンテナンス更新
+</div>
+
+PostgreSQL インスタンスの定期メンテナンスには、次の内容が含まれます。
+
+* マイナーバージョンのアップグレード (例: 17.4 から 17.5) には、バグ修正と PostgreSQL エンジンのセキュリティパッチが含まれます。
+* Managed Service の機能。native CDC、オブザーバビリティ、pg&#95;clickhouse、その他の拡張機能の改善。
+* オペレーティングシステムおよびシステムコンポーネントのパッチ。セキュリティ修正、効率化、その他の改善が含まれます。
+
+これらはフェイルオーバーによって実施され、通常はごく短時間の切断が発生するだけで、多くの場合は数秒で復旧します。
+
+[standbys](/ja/products/managed-postgres/high-availability) が有効なインスタンスでは、ダウンタイムを最小限に抑えるため、まずスタンバイにアップグレードが適用され、その後フェイルオーバーが実行されます。
+
+<div id="maintenance-windows">
+  ## メンテナンスウィンドウ
+</div>
+
+デフォルトのメンテナンスウィンドウは、日曜日の 14:00 ～ 16:00 UTC です。
+想定ダウンタイムは、この時間帯の中で 1 分未満です。
+
+Enterprise Tier の組織では、Managed Postgres でメンテナンスウィンドウがサポートされているため、アップグレードやその他のメンテナンス作業を、ワークロードへの影響が最小となる時間帯にスケジュールできます。メンテナンスウィンドウを設定するための UI と API のサポートは近日中に提供予定です。それまでは、[support](https://clickhouse.com/support/program) に連絡して、インスタンスのメンテナンスウィンドウを設定してください。
+
+<div id="major-version-upgrades">
+  ## メジャーバージョンアップグレード
+</div>
+
+UI と API でのメジャーバージョンアップグレード (例: 17.x から 18.x) には、まもなく対応予定です。
+それまでの間、Managed Postgres インスタンスのアップグレードについては、[support](https://clickhouse.com/support/program) までお問い合わせください。

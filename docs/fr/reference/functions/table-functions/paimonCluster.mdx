@@ -1,0 +1,58 @@
+---
+description: 'Une extension de la fonction de table paimon qui permet de traiter en parallèle des fichiers
+  Apache Paimon depuis de nombreux nœuds d''un cluster spécifié.'
+sidebarTitle: 'paimonCluster'
+slug: /sql-reference/table-functions/paimonCluster
+title: 'paimonCluster'
+doc_type: 'référence'
+---
+
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="paimoncluster-table-function">
+  # Fonction de table paimonCluster
+</div>
+
+<ExperimentalBadge />
+
+Il s&#39;agit d&#39;une extension de la fonction de table [paimon](/fr/reference/functions/table-functions/paimon).
+
+Elle permet de traiter en parallèle les fichiers d&#39;Apache [Paimon](https://paimon.apache.org/) sur plusieurs nœuds d&#39;un cluster spécifié. Sur l&#39;initiateur, elle établit une connexion avec tous les nœuds du cluster et répartit dynamiquement les fichiers. Sur le nœud worker, elle demande à l&#39;initiateur la prochaine tâche à traiter, puis l&#39;exécute. Ce processus se répète jusqu&#39;à ce que toutes les tâches soient terminées.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+paimonS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+* `cluster_name` — Nom d’un cluster servant à constituer un ensemble d’adresses et de paramètres de connexion aux serveurs distants et locaux.
+* La description de tous les autres arguments est identique à celle des arguments de la fonction de table [paimon](/fr/reference/functions/table-functions/paimon) équivalente.
+* Un paramètre optionnel `extra_credentials` peut être utilisé pour transmettre un `role_arn` pour l’accès basé sur les rôles dans ClickHouse Cloud. Consultez [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour les étapes de configuration.
+
+**Valeur de retour**
+
+Une table de la structure spécifiée pour lire les données du cluster dans la table Paimon indiquée.
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
+* `_file` — Nom du fichier. Type : `LowCardinality(String)`.
+* `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille du fichier est inconnue, la valeur est `NULL`.
+* `_time` — Date et heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si cette date et heure sont inconnues, la valeur est `NULL`.
+* `_etag` — ETag du fichier. Type : `LowCardinality(String)`. Si l’ETag est inconnu, la valeur est `NULL`.
+
+**Voir aussi**
+
+* [fonction de table Paimon](/fr/reference/functions/table-functions/paimon)

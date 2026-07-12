@@ -288,6 +288,7 @@ struct ZooKeeperCreate2Response : ZooKeeperCreateResponse
     using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
     Stat zstat;
 
+    void readImpl(ReadBuffer & in) override;
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
 

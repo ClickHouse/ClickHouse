@@ -1,0 +1,686 @@
+---
+slug: /guides/sre/tls/configuring-tls
+sidebarTitle: 'Configurer TLS'
+title: 'Configurer TLS'
+description: 'Ce guide présente une configuration simple et minimale pour permettre à ClickHouse d’utiliser des certificats OpenSSL afin de valider les connexions.'
+keywords: ['configuration SSL', 'configuration TLS', 'certificats OpenSSL', 'connexions sécurisées', 'guide SRE']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/fr/_self_managed_only_automated.mdx';
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<SelfManaged />
+
+Ce guide présente des paramètres simples et minimaux pour configurer ClickHouse afin d’utiliser des certificats OpenSSL pour valider les connexions. Pour cette démonstration, un certificat d’autorité de certification (CA) auto-signé et sa clé, ainsi que des certificats de nœud, sont créés afin d’établir les connexions avec les paramètres appropriés.
+
+<Note>
+  La mise en œuvre de TLS est complexe, et de nombreuses options doivent être prises en compte pour garantir un déploiement entièrement sécurisé et robuste. Il s’agit d’un tutoriel d’introduction avec des exemples de configuration TLS simple. Consultez votre équipe PKI/sécurité pour générer les certificats appropriés pour votre organisation.
+
+  Consultez ce [tutoriel d’introduction sur l’utilisation des certificats](https://ubuntu.com/server/docs/security-certificates) pour une vue d’ensemble.
+</Note>
+
+<Steps>
+  <Step>
+    ## Créer un déploiement ClickHouse
+
+    Ce guide a été rédigé avec Ubuntu 20.04, et ClickHouse a été installé sur les hôtes suivants à l’aide du paquet DEB (avec apt). Le domaine est `marsnet.local` :
+
+    | Hôte      | Adresse IP    |
+    | --------- | ------------- |
+    | `chnode1` | 192.168.1.221 |
+    | `chnode2` | 192.168.1.222 |
+    | `chnode3` | 192.168.1.223 |
+
+    <Note>
+      Consultez le [Quick Start](/fr/get-started/setup/install) pour plus de détails sur l’installation de ClickHouse.
+    </Note>
+  </Step>
+
+  <Step>
+    ## Créer des certificats TLS
+
+    <Note>
+      L’utilisation de certificats auto-signés est uniquement destinée à la démonstration et ne doit pas être utilisée en production. Les demandes de certificat doivent être créées afin d’être signées par l’organisation et validées à l’aide de la chaîne de certification de la CA qui sera configurée dans les paramètres. Toutefois, ces étapes peuvent être utilisées pour configurer et tester les paramètres, puis être remplacées par les certificats réels qui seront utilisés.
+    </Note>
+
+    1. Générez une clé qui sera utilisée pour la nouvelle CA :
+       ```bash
+       openssl genrsa -out marsnet_ca.key 2048
+       ```
+
+    2. Générez un nouveau certificat de CA auto-signé. La commande suivante créera un nouveau certificat qui sera utilisé pour signer d’autres certificats à l’aide de la clé de la CA :
+       ```bash
+       openssl req -x509 -subj "/CN=marsnet.local CA" -nodes -key marsnet_ca.key -days 1095 -out marsnet_ca.crt
+       ```
+
+    <Note>
+      Sauvegardez la clé et le certificat de CA dans un emplacement sécurisé, en dehors du cluster. Après avoir généré les certificats des nœuds, la clé doit être supprimée des nœuds du cluster.
+    </Note>
+
+    3. Vérifiez le contenu du nouveau certificat de CA :
+       ```bash
+       openssl x509 -in marsnet_ca.crt -text
+       ```
+
+    4. Créez une demande de certificat (CSR) et générez une clé pour chaque nœud :
+       ```bash
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode1" -addext "subjectAltName = DNS:chnode1.marsnet.local,IP:192.168.1.221" -keyout chnode1.key -out chnode1.csr
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode2" -addext "subjectAltName = DNS:chnode2.marsnet.local,IP:192.168.1.222" -keyout chnode2.key -out chnode2.csr
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode3" -addext "subjectAltName = DNS:chnode3.marsnet.local,IP:192.168.1.223" -keyout chnode3.key -out chnode3.csr
+       ```
+
+    5. À l’aide des CSR et de la CA, créez de nouvelles paires certificat-clé :
+       ```bash
+       openssl x509 -req -in chnode1.csr -out chnode1.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       openssl x509 -req -in chnode2.csr -out chnode2.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       openssl x509 -req -in chnode3.csr -out chnode3.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       ```
+
+    6. Vérifiez le sujet et l’émetteur des certificats :
+       ```bash
+       openssl x509 -in chnode1.crt -text -noout
+       ```
+
+    7. Vérifiez que les nouveaux certificats sont bien validés par le certificat de CA :
+       ```bash
+       openssl verify -CAfile marsnet_ca.crt chnode1.crt
+       chnode1.crt: OK
+       ```
+  </Step>
+
+  <Step>
+    ## Créez et configurez un répertoire pour stocker les certificats et les clés.
+
+    <Note>
+      Cette opération doit être effectuée sur chaque nœud. Utilisez les certificats et les clés appropriés sur chaque hôte.
+    </Note>
+
+    1. Créez, sur chaque nœud, un dossier dans un répertoire accessible à ClickHouse. Nous recommandons le répertoire de configuration par défaut (par exemple `/etc/clickhouse-server`) :
+       ```bash
+       mkdir /etc/clickhouse-server/certs
+       ```
+
+    2. Copiez le certificat de l’autorité de certification (CA), le certificat du nœud et la clé correspondant à chaque nœud dans le nouveau répertoire `certs`.
+
+    3. Modifiez le propriétaire et les permissions afin de permettre à ClickHouse de lire les certificats :
+
+       ```bash
+       chown clickhouse:clickhouse -R /etc/clickhouse-server/certs
+       chmod 600 /etc/clickhouse-server/certs/*
+       chmod 755 /etc/clickhouse-server/certs
+       ll /etc/clickhouse-server/certs
+       ```
+
+       ```response
+       total 20
+       drw-r--r-- 2 clickhouse clickhouse 4096 Apr 12 20:23 ./
+       drwx------ 5 clickhouse clickhouse 4096 Apr 12 20:23 ../
+       -rw------- 1 clickhouse clickhouse  997 Apr 12 20:22 chnode1.crt
+       -rw------- 1 clickhouse clickhouse 1708 Apr 12 20:22 chnode1.key
+       -rw------- 1 clickhouse clickhouse 1131 Apr 12 20:23 marsnet_ca.crt
+       ```
+  </Step>
+
+  <Step>
+    ## Configurer l&#39;environnement avec des clusters de base à l&#39;aide de ClickHouse Keeper
+
+    Pour cet environnement de déploiement, les paramètres ClickHouse Keeper suivants sont utilisés sur chaque nœud. Chaque serveur possède son propre `<server_id>`. (Par exemple, `<server_id>1</server_id>` pour le nœud `chnode1`, et ainsi de suite.)
+
+    <Note>
+      Le port recommandé pour ClickHouse Keeper est `9281`. Toutefois, ce port est configurable et peut être modifié s’il est déjà utilisé par une autre application dans l’environnement.
+
+      Pour une explication complète de toutes les options, consultez https://clickhouse.com/docs/operations/clickhouse-keeper/
+    </Note>
+
+    1. Ajoutez le contenu suivant dans la balise `<clickhouse>` du `config.xml` du serveur ClickHouse
+
+    <Note>
+      Pour les environnements de production, il est recommandé d’utiliser un fichier de configuration `.xml` distinct dans le répertoire `config.d`.
+      Pour en savoir plus, consultez https://clickhouse.com/docs/operations/configuration-files/
+    </Note>
+
+    ```xml
+    <keeper_server>
+        <tcp_port_secure>9281</tcp_port_secure>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+        </coordination_settings>
+
+        <raft_configuration>
+            <secure>true</secure>
+            <server>
+                <id>1</id>
+                <hostname>chnode1.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>chnode2.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>chnode3.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+    ```
+
+    <Note>
+      Lorsque ClickHouse Keeper est intégré au ClickHouse server (comme indiqué ci-dessus), Keeper utilise la configuration OpenSSL du serveur définie dans la section OpenSSL de [Configurer les interfaces TLS sur les nœuds ClickHouse](#5-configure-tls-interfaces-on-clickhouse-nodes). Si vous exécutez ClickHouse Keeper comme processus autonome, vous devez ajouter une section `<openSSL>` au fichier de configuration de Keeper avec le même certificat d’AC et les mêmes paramètres de certificat/clé du nœud. Voir [Configurer OpenSSL pour un ClickHouse Keeper autonome](#configure-openssl-for-standalone-clickhouse-keeper) ci-dessous pour plus de détails.
+    </Note>
+
+    2. Décommentez et mettez à jour les paramètres de Keeper sur tous les nœuds, puis définissez l’option `<secure>` sur 1 :
+       ```xml
+       <zookeeper>
+           <node>
+               <host>chnode1.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+           <node>
+               <host>chnode2.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+           <node>
+               <host>chnode3.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+       </zookeeper>
+       ```
+
+    3. Mettez à jour et ajoutez les paramètres de cluster suivants sur `chnode1` et `chnode2`. `chnode3` sera utilisé pour constituer le quorum de ClickHouse Keeper.
+
+    <Note>
+      Pour cette configuration, un seul cluster d’exemple est configuré. Les clusters d’exemple de test doivent être soit supprimés, soit commentés, ou, si un cluster existant est en cours de test, le port doit être mis à jour et l’option `<secure>` doit être ajoutée. Les champs `<user` et `<password>` doivent être définis si l’utilisateur `default` a été initialement configuré avec un mot de passe lors de l’installation ou dans le fichier `users.xml`.
+    </Note>
+
+    La configuration suivante crée un cluster avec un réplica de segment sur deux serveurs (un par nœud).
+
+    ```xml
+    <remote_servers>
+        <cluster_1S_2R>
+            <shard>
+                <replica>
+                    <host>chnode1.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+                <replica>
+                    <host>chnode2.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </cluster_1S_2R>
+    </remote_servers>
+    ```
+
+    4. Définissez les valeurs de macros afin de pouvoir créer une table ReplicatedMergeTree pour les tests. Sur `chnode1` :
+
+       ```xml
+       <macros>
+           <shard>1</shard>
+           <replica>replica_1</replica>
+       </macros>
+       ```
+
+       Sur `chnode2` :
+
+       ```xml
+       <macros>
+           <shard>1</shard>
+           <replica>replica_2</replica>
+       </macros>
+       ```
+  </Step>
+
+  <Step>
+    ## Configurer les interfaces TLS sur les nœuds ClickHouse
+
+    Les paramètres ci-dessous sont configurés dans le `config.xml` du serveur ClickHouse
+
+    1. Définissez le nom d’affichage du déploiement (facultatif) :
+       ```xml
+       <display_name>clickhouse</display_name>
+       ```
+
+    2. Configurez ClickHouse pour écouter sur les ports externes :
+       ```xml
+       <listen_host>0.0.0.0</listen_host>
+       ```
+
+    3. Configurez le port `https` et désactivez le port `http` sur chaque nœud :
+       ```xml
+       <https_port>8443</https_port>
+       {/*<http_port>8123</http_port>*/}
+       ```
+
+    4. Configurez le port TCP sécurisé natif de ClickHouse et désactivez le port non sécurisé par défaut sur chaque nœud :
+       ```xml
+       <tcp_port_secure>9440</tcp_port_secure>
+       {/*<tcp_port>9000</tcp_port>*/}
+       ```
+
+    5. Configurez le port `interserver https` et désactivez le port non sécurisé par défaut sur chaque nœud :
+       ```xml
+       <interserver_https_port>9010</interserver_https_port>
+       {/*<interserver_http_port>9009</interserver_http_port>*/}
+       ```
+
+    6. Configurez OpenSSL avec les certificats et les chemins d’accès
+
+    <Note>
+      Chaque nom de fichier et chaque chemin d’accès doivent être mis à jour en fonction du nœud configuré.
+      Par exemple, remplacez la valeur de l’entrée `<certificateFile>` par `chnode2.crt` lors de la configuration de l’hôte `chnode2`.
+    </Note>
+
+    ```xml
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/certs/chnode1.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/chnode1.key</privateKeyFile>
+            <verificationMode>relaxed</verificationMode>
+            <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <verificationMode>relaxed</verificationMode>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+    ```
+
+    Pour plus d’informations, consultez [cette page](/fr/reference/settings/server-settings/settings#openssl)
+
+    7. Configurez TLS pour gRPC sur chaque nœud :
+
+       ```xml
+       <grpc>
+           <enable_ssl>1</enable_ssl>
+           <ssl_cert_file>/etc/clickhouse-server/certs/chnode1.crt</ssl_cert_file>
+           <ssl_key_file>/etc/clickhouse-server/certs/chnode1.key</ssl_key_file>
+           <ssl_require_client_auth>true</ssl_require_client_auth>
+           <ssl_ca_cert_file>/etc/clickhouse-server/certs/marsnet_ca.crt</ssl_ca_cert_file>
+           <transport_compression_type>none</transport_compression_type>
+           <transport_compression_level>0</transport_compression_level>
+           <max_send_message_size>-1</max_send_message_size>
+           <max_receive_message_size>-1</max_receive_message_size>
+           <verbose_logs>false</verbose_logs>
+       </grpc>
+       ```
+
+       Pour plus d’informations, consultez https://clickhouse.com/docs/interfaces/grpc/
+
+    8. Configurez le client ClickHouse sur au moins un des nœuds afin d’utiliser TLS pour ses connexions, dans son propre fichier `config.xml` (situé par défaut dans `/etc/clickhouse-client/`) :
+       ```xml
+       <openSSL>
+           <client>
+               <loadDefaultCAFile>false</loadDefaultCAFile>
+               <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+               <cacheSessions>true</cacheSessions>
+               <disableProtocols>sslv2,sslv3</disableProtocols>
+               <preferServerCiphers>true</preferServerCiphers>
+               <invalidCertificateHandler>
+                   <name>RejectCertificateHandler</name>
+               </invalidCertificateHandler>
+           </client>
+       </openSSL>
+       ```
+
+    9. Désactivez les ports d’émulation par défaut pour MySQL et PostgreSQL :
+       ```xml
+       {/*mysql_port>9004</mysql_port*/}
+       {/*postgresql_port>9005</postgresql_port*/}
+       ```
+  </Step>
+
+  <Step>
+    ## Tests
+
+    1. Démarrez tous les nœuds, un à la fois :
+       ```bash
+       service clickhouse-server start
+       ```
+
+    2. Vérifiez que les ports sécurisés sont actifs et en écoute ; le résultat devrait ressembler à cet exemple sur chaque nœud :
+
+       ```bash
+       root@chnode1:/etc/clickhouse-server# netstat -ano | grep tcp
+       ```
+
+       ```response
+       tcp        0      0 0.0.0.0:9010            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:8443            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:9440            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:9281            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 192.168.1.221:33046     192.168.1.222:9444      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:42730     192.168.1.223:9444      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:51952     192.168.1.222:9281      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:22        192.168.1.210:49801     ESTABLISHED keepalive (6618.05/0/0)
+       tcp        0     64 192.168.1.221:22        192.168.1.210:59195     ESTABLISHED on (0.24/0/0)
+       tcp6       0      0 :::22                   :::*                    LISTEN      off (0.00/0/0)
+       tcp6       0      0 :::9444                 :::*                    LISTEN      off (0.00/0/0)
+       tcp6       0      0 192.168.1.221:9444      192.168.1.222:59046     ESTABLISHED off (0.00/0/0)
+       tcp6       0      0 192.168.1.221:9444      192.168.1.223:41976     ESTABLISHED off (0.00/0/0)
+       ```
+
+       | Port de ClickHouse | Description                        |
+       | ------------------ | ---------------------------------- |
+       | 8443               | interface HTTPS                    |
+       | 9010               | port HTTPS interserveur            |
+       | 9281               | port sécurisé de ClickHouse Keeper |
+       | 9440               | protocole TCP natif sécurisé       |
+       | 9444               | port Raft de ClickHouse Keeper     |
+
+    3. Vérifier l’état de santé de ClickHouse Keeper
+       Les commandes [mot de 4 lettres (4lW)](/fr/guides/oss/deployment-and-scaling/keeper/index#four-letter-word-commands) habituelles ne fonctionnent pas avec `echo` sans TLS ; voici comment les utiliser avec `openssl`.
+       * Ouvrez une session interactive avec `openssl`
+
+    ```bash
+    openssl s_client -connect chnode1.marsnet.local:9281
+    ```
+
+    ```response
+    CONNECTED(00000003)
+    depth=0 CN = chnode1
+    verify error:num=20:unable to get local issuer certificate
+    verify return:1
+    depth=0 CN = chnode1
+    verify error:num=21:unable to verify the first certificate
+    verify return:1
+    ---
+    Certificate chain
+     0 s:CN = chnode1
+       i:CN = marsnet.local CA
+    ---
+    Server certificate
+    -----BEGIN CERTIFICATE-----
+    MIICtDCCAZwCFD321grxU3G5pf6hjitf2u7vkusYMA0GCSqGSIb3DQEBCwUAMBsx
+    ...
+    ```
+
+    * Saisissez les commandes 4LW dans la session OpenSSL
+
+      ```bash
+      mntr
+      ```
+
+      ```response highlight={9,15,24}
+      ---
+      Post-Handshake New Session Ticket arrived:
+      SSL-Session:
+          Protocol  : TLSv1.3
+      ...
+      read R BLOCK
+      zk_version      v22.7.3.5-stable-e140b8b5f3a5b660b6b576747063fd040f583cf3
+      zk_avg_latency  0
+      zk_max_latency  4087
+      zk_min_latency  0
+      zk_packets_received     4565774
+      zk_packets_sent 4565773
+      zk_num_alive_connections        2
+      zk_outstanding_requests 0
+      zk_server_state leader
+      zk_znode_count  1087
+      zk_watch_count  26
+      zk_ephemerals_count     12
+      zk_approximate_data_size        426062
+      zk_key_arena_size       258048
+      zk_latest_snapshot_size 0
+      zk_open_file_descriptor_count   187
+      zk_max_file_descriptor_count    18446744073709551615
+      zk_followers    2
+      zk_synced_followers     1
+      closed
+      ```
+
+    4. Démarrez le client ClickHouse avec l’option `--secure` et le port TLS :
+       ```bash
+       root@chnode1:/etc/clickhouse-server# clickhouse-client --user default --password ClickHouse123! --port 9440 --secure --host chnode1.marsnet.local
+       ClickHouse client version 22.3.3.44 (official build).
+       Connecting to chnode1.marsnet.local:9440 as user default.
+       Connected to ClickHouse server version 22.3.3 revision 54455.
+
+       clickhouse :)
+       ```
+
+    5. Connectez-vous à l’interface Play via l’interface `https` à l’adresse `https://chnode1.marsnet.local:8443/play`.
+
+       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="Configurer TLS" size="md" border />
+
+    <Note>
+      le navigateur affichera un certificat non approuvé, car il y accède depuis un poste de travail et les certificats ne se trouvent pas dans les magasins d’AC racines de la machine cliente.
+      Lors de l’utilisation de certificats émis par une autorité de certification publique ou une AC d’entreprise, le certificat devrait être reconnu comme fiable.
+    </Note>
+
+    6. Créez une table répliquée :
+
+       ```sql
+       clickhouse :) CREATE TABLE repl_table ON CLUSTER cluster_1S_2R
+                   (
+                       id UInt64,
+                       column1 Date,
+                       column2 String
+                   )
+                   ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/default/repl_table', '{replica}' )
+                   ORDER BY (id);
+       ```
+
+       ```response
+       ┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+       │ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+       │ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+       └───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+       ```
+
+    7. Ajoutez quelques lignes sur `chnode1` :
+       ```sql
+       INSERT INTO repl_table
+       (id, column1, column2)
+       VALUES
+       (1,'2022-04-01','abc'),
+       (2,'2022-04-02','def');
+       ```
+
+    8. Vérifiez la réplication en consultant les lignes sur `chnode2` :
+
+       ```sql
+       SELECT * FROM repl_table
+       ```
+
+       ```response
+       ┌─id─┬────column1─┬─column2─┐
+       │  1 │ 2022-04-01 │ abc     │
+       │  2 │ 2022-04-02 │ def     │
+       └────┴────────────┴─────────┘
+       ```
+  </Step>
+</Steps>
+
+<div id="configure-openssl-for-standalone-clickhouse-keeper">
+  ## Configurer OpenSSL pour un ClickHouse Keeper autonome
+</div>
+
+Lorsque ClickHouse Keeper s’exécute en tant que processus autonome (au lieu d’être intégré à ClickHouse server), les certificats et paramètres OpenSSL doivent être configurés séparément dans le fichier de configuration de Keeper. Sans cela, Keeper ne pourra pas établir de connexions sécurisées pour les communications client (`tcp_port_secure`) ni pour la réplication Raft entre les nœuds Keeper.
+
+Ajoutez la section `<openSSL>` suivante au fichier de configuration du ClickHouse Keeper autonome sur chaque nœud :
+
+<Note>
+  Chaque nom de fichier doit être mis à jour pour correspondre au nœud sur lequel la configuration est appliquée.
+  Par exemple, remplacez la valeur de l’entrée `<certificateFile>` par `chnode2.crt` lors de la configuration de l’hôte `chnode2`.
+</Note>
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-keeper/certs/chnode1.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-keeper/certs/chnode1.key</privateKeyFile>
+        <verificationMode>relaxed</verificationMode>
+        <caConfig>/etc/clickhouse-keeper/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-keeper/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>relaxed</verificationMode>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+La section `<server>` est utilisée pour les connexions clientes entrantes sur le port Keeper sécurisé (`tcp_port_secure`). La section `<client>` est utilisée pour les connexions sortantes entre les nœuds Keeper lors de la réplication Raft.
+
+<Note>
+  Les chemins des certificats ci-dessus utilisent `/etc/clickhouse-keeper/certs/`, qui correspond au chemin habituel pour les installations autonomes de Keeper. Si vous avez installé Keeper dans un autre chemin, adaptez en conséquence. Les certificats eux-mêmes sont les mêmes que ceux créés à [l’étape 2](#2-create-tls-certificates).
+</Note>
+
+<div id="openssl-verification-modes">
+  ## Modes de vérification d’OpenSSL et gestionnaires de certificats
+</div>
+
+La configuration `<openSSL>` prend en charge plusieurs options pour `<verificationMode>` et `<invalidCertificateHandler>`, qui déterminent la manière dont ClickHouse valide les certificats TLS. Ces paramètres s’appliquent à clickhouse-server, clickhouse-client et à ClickHouse Keeper autonome.
+
+<div id="verification-modes">
+  ### Modes de vérification
+</div>
+
+Définissez `<verificationMode>` dans la section `<server>` ou `<client>` de `<openSSL>` :
+
+| Mode      | Description                                                                                                                                                                           |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `none`    | Aucune vérification du certificat. La connexion est chiffrée, mais l’identité du pair n’est pas vérifiée. À utiliser uniquement pour les tests.                                       |
+| `relaxed` | Vérifie le certificat du pair s’il est présenté, mais n’échoue pas si aucun certificat n’est fourni.                                                                                  |
+| `once`    | Côté serveur, vérifie le certificat client uniquement lors du handshake initial et sans renégociation. Côté client, se comporte comme `relaxed`.                                      |
+| `strict`  | Exige le certificat du pair et le vérifie intégralement. La connexion échoue si le certificat est absent, expiré ou non signé par une CA de confiance. Recommandé pour la production. |
+
+<div id="invalid-certificate-handlers">
+  ### Gestionnaires de certificats invalides
+</div>
+
+Définissez `<invalidCertificateHandler>` dans la section `<server>` ou `<client>` de `<openSSL>`. Ce gestionnaire détermine le comportement à adopter lorsque la vérification du certificat échoue. Côté serveur, il contrôle la réponse aux certificats client invalides. Côté client, il contrôle la réponse aux certificats serveur invalides.
+
+| Gestionnaire               | Description                                                                                                                |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `RejectCertificateHandler` | Rejette la connexion si le certificat est invalide. Il s&#39;agit du paramètre par défaut, et de l&#39;option recommandée. |
+| `AcceptCertificateHandler` | Accepte la connexion même si le certificat est invalide. À utiliser uniquement pour les tests.                             |
+
+<div id="disabling-certificate-verification">
+  ### Exemple : désactiver la vérification des certificats
+</div>
+
+<Warning>
+  Désactiver la vérification des certificats supprime les vérifications d’identité TLS et expose les connexions à des attaques de type man-in-the-middle. N’utilisez cette configuration que dans des environnements isolés de développement ou de test.
+</Warning>
+
+Pour ignorer complètement la vérification des certificats (par exemple, lors de l’utilisation de certificats autosignés dans un environnement de test), définissez `verificationMode` sur `none` et utilisez `AcceptCertificateHandler`.
+
+Pour `clickhouse-client`, vous pouvez également utiliser l’option de CLI `--accept-invalid-certificate`, qui applique automatiquement les deux paramètres.
+
+**clickhouse-client** (`/etc/clickhouse-client/config.xml`) :
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+**clickhouse-server** (`config.xml` ou un fichier dans `config.d/`). La section `<server>` requiert toujours les chemins du certificat et de la clé, car le serveur doit présenter son propre certificat aux clients, même lorsqu’il ne vérifie pas les leurs :
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-server/certs/server.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-server/certs/server.key</privateKeyFile>
+        <verificationMode>none</verificationMode>
+        <caConfig>/etc/clickhouse-server/certs/ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+**ClickHouse Keeper autonome** (fichier de configuration de Keeper) :
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-keeper/certs/keeper.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-keeper/certs/keeper.key</privateKeyFile>
+        <verificationMode>none</verificationMode>
+        <caConfig>/etc/clickhouse-keeper/certs/ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="summary">
+  ## Résumé
+</div>
+
+Cet article a porté sur la configuration d’un environnement ClickHouse avec TLS. Les paramètres varient selon les exigences des environnements de production ; par exemple, les niveaux de vérification des certificats, les protocoles, les suites de chiffrement, etc. Vous devriez désormais avoir une bonne compréhension des étapes à suivre pour configurer et mettre en œuvre des connexions sécurisées.
