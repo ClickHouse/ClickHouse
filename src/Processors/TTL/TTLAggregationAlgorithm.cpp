@@ -2,10 +2,9 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/castColumn.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Core/Settings.h>
 
@@ -335,20 +334,16 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
             {
                 it.expression->execute(agg_block);
 
-                /// Restore LowCardinality wrappers on SET expression results if needed
-                /// Aggregation strips LowCardinality, but result_columns expects it
+                /// The SET expression result type may diverge from the declared column type:
+                /// aggregation strips LowCardinality, and the mismatch can be nested (e.g. a Tuple
+                /// whose element wrapper differs). result_columns expects the declared type exactly,
+                /// so coerce the result to it before inserting to keep the block structure valid.
                 const auto & result_column_type = header.getByName(it.column_name).type;
-                if (result_column_type->lowCardinality())
+                auto & column_with_type = agg_block.getByName(it.expression_result_column_name);
+                if (!column_with_type.type->equals(*result_column_type))
                 {
-                    auto & column_with_type = agg_block.getByName(it.expression_result_column_name);
-                    // Only convert if the column doesn't already have LowCardinality
-                    if (!column_with_type.type->lowCardinality())
-                    {
-                        auto nested_type = recursiveRemoveLowCardinality(result_column_type);
-                        column_with_type.column = recursiveLowCardinalityTypeConversion(
-                            column_with_type.column, nested_type, result_column_type);
-                        column_with_type.type = result_column_type;
-                    }
+                    column_with_type.column = castColumn(column_with_type, result_column_type);
+                    column_with_type.type = result_column_type;
                 }
             }
 

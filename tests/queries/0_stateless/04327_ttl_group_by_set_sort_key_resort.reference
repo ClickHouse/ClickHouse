@@ -10,6 +10,8 @@ lc sorted	1
 sub data	100	2100-06-10 10:00:00
 sub data	900	2100-06-09 10:00:00
 sub sorted	1
+subwrap data	100	2100-06-10 10:00:00
+subwrap data	900	2100-06-09 10:00:00
 mut data	41302	2100-06-10 10:00:00	41302
 mut data	96827	2100-06-09 10:00:00	96827
 mut sorted	1

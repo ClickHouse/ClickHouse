@@ -83,6 +83,26 @@ SELECT 'sub sorted', (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.
                    = (SELECT groupArray((t.a, toStartOfDay(ts))) FROM (SELECT t.a, ts FROM t_sub ORDER BY t.a, toStartOfDay(ts)));
 DROP TABLE t_sub;
 
+-- SET result type diverges from the declared column type in a NESTED wrapper: the SET target `t`
+-- is Tuple(UInt32, UInt32) but the source `cand` has a LowCardinality inner element, so
+-- argMax(cand, v) produces Tuple(LowCardinality(UInt32), UInt32). The aggregation-finalization
+-- path must coerce the SET result back to the declared type before appending it to the result
+-- block; otherwise the block-structure type check aborts the merge (fuzzer STID 2508-3698).
+SET allow_suspicious_low_cardinality_types = 1;
+DROP TABLE IF EXISTS t_subwrap;
+CREATE TABLE t_subwrap (t Tuple(a UInt32, b UInt32), ts DateTime, cand Tuple(a LowCardinality(UInt32), b UInt32), v UInt32)
+ENGINE = MergeTree ORDER BY (t.a, toStartOfDay(ts))
+TTL ts + toIntervalDay(1) GROUP BY t.a, toStartOfDay(ts)
+    SET ts = max(ts) + interval 100 years, t = argMax(cand, v)
+SETTINGS min_bytes_for_full_part_storage = 128;
+SYSTEM STOP MERGES t_subwrap;
+INSERT INTO t_subwrap VALUES ((5, 0), '2000-06-09 10:00', (900, 0), 10);
+INSERT INTO t_subwrap VALUES ((5, 0), '2000-06-10 10:00', (100, 0), 20);
+SYSTEM START MERGES t_subwrap;
+OPTIMIZE TABLE t_subwrap FINAL;
+SELECT 'subwrap data', t.a, ts FROM t_subwrap ORDER BY ALL;
+DROP TABLE t_subwrap;
+
 -- Mutation path: the same violation is reachable through ALTER TABLE ... MATERIALIZE TTL.
 -- The mutation runs the GROUP BY ... SET aggregation through the mutation pipeline and the
 -- full-rewrite writer also rebuilds the primary index from the stream, so the post-SET stream
