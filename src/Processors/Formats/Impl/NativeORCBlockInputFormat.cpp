@@ -1905,7 +1905,13 @@ static bool orcTimestampTargetIsUTCInstant(const DataTypePtr & type)
 /// collapse them to identical `DateTime64(9)`, and be rejected by the duplicate-branch check.
 /// Variant sorts its nested types, so the positional correspondence between ORC union branches and
 /// Variant alternatives is lost; this predicate is used to reconstruct it.
-static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const DataTypePtr & target_type)
+///
+/// STRUCT branches follow the same named-tuple rules as the non-union ORC struct path: a target
+/// tuple with explicit names matches by field name and may project and reorder the ORC struct's
+/// fields (the per-branch repair cast then projects/reorders the read tuple to exactly the target),
+/// while an unnamed target tuple is matched positionally with the same arity. `case_insensitive`
+/// mirrors `input_format_orc_case_insensitive_column_matching` for that name-based matching.
+static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const DataTypePtr & target_type, bool case_insensitive)
 {
     checkStackSize();
 
@@ -1951,24 +1957,56 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
                 || which.isDecimal256();
         case orc::TypeKind::LIST:
             return which.isArray() && orc_branch_type->getSubtypeCount() == 1
-                && orcUnionBranchMatchesType(orc_branch_type->getSubtype(0), assert_cast<const DataTypeArray &>(*type).getNestedType());
+                && orcUnionBranchMatchesType(
+                    orc_branch_type->getSubtype(0), assert_cast<const DataTypeArray &>(*type).getNestedType(), case_insensitive);
         case orc::TypeKind::MAP:
         {
             if (!which.isMap() || orc_branch_type->getSubtypeCount() != 2)
                 return false;
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            return orcUnionBranchMatchesType(orc_branch_type->getSubtype(0), map_type.getKeyType())
-                && orcUnionBranchMatchesType(orc_branch_type->getSubtype(1), map_type.getValueType());
+            return orcUnionBranchMatchesType(orc_branch_type->getSubtype(0), map_type.getKeyType(), case_insensitive)
+                && orcUnionBranchMatchesType(orc_branch_type->getSubtype(1), map_type.getValueType(), case_insensitive);
         }
         case orc::TypeKind::STRUCT:
         {
             if (!which.isTuple())
                 return false;
-            const auto & elements = assert_cast<const DataTypeTuple &>(*type).getElements();
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
+            const auto & elements = tuple_type.getElements();
+            if (tuple_type.hasExplicitNames())
+            {
+                /// Match by field name, like the non-union ORC struct path: the target tuple may be
+                /// a subset of the ORC struct's fields, in any order. Each target field must map to
+                /// an ORC field with a recursively matching type; extra ORC fields are projected out
+                /// by the repair cast. Build a name -> ORC subtype map for the lookup.
+                std::unordered_map<String, const orc::Type *> orc_field_by_name;
+                orc_field_by_name.reserve(orc_branch_type->getSubtypeCount());
+                for (size_t i = 0; i < orc_branch_type->getSubtypeCount(); ++i)
+                {
+                    String field_name = orc_branch_type->getFieldName(i);
+                    if (case_insensitive)
+                        boost::to_lower(field_name);
+                    orc_field_by_name.emplace(std::move(field_name), orc_branch_type->getSubtype(i));
+                }
+
+                const auto & element_names = tuple_type.getElementNames();
+                for (size_t i = 0; i < elements.size(); ++i)
+                {
+                    String element_name = element_names[i];
+                    if (case_insensitive)
+                        boost::to_lower(element_name);
+                    auto it = orc_field_by_name.find(element_name);
+                    if (it == orc_field_by_name.end() || !orcUnionBranchMatchesType(it->second, elements[i], case_insensitive))
+                        return false;
+                }
+                return true;
+            }
+
+            /// Unnamed tuple: positional, same arity (no ORC field is silently dropped).
             if (elements.size() != orc_branch_type->getSubtypeCount())
                 return false;
             for (size_t i = 0; i < elements.size(); ++i)
-                if (!orcUnionBranchMatchesType(orc_branch_type->getSubtype(i), elements[i]))
+                if (!orcUnionBranchMatchesType(orc_branch_type->getSubtype(i), elements[i], case_insensitive))
                     return false;
             return true;
         }
@@ -2033,7 +2071,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             std::vector<std::vector<size_t>> candidates(num_children);
             for (size_t i = 0; i < num_children; ++i)
                 for (size_t a = 0; a < alternatives.size(); ++a)
-                    if (orcUnionBranchMatchesType(orc_type->getSubtype(i), alternatives[a]))
+                    if (orcUnionBranchMatchesType(orc_type->getSubtype(i), alternatives[a], case_insensitive_matching))
                         candidates[i].push_back(a);
 
             std::vector<bool> alternative_taken(alternatives.size(), false);
