@@ -55,7 +55,7 @@ struct AccessRightsElement
     bool anyParameter() const { return parameter.empty(); }
     bool hasFilter() const { return !filter.empty(); }
 
-    auto toTuple() const { return std::tie(access_flags, default_database, database, table, columns, parameter, wildcard, grant_option, is_partial_revoke); }
+    auto toTuple() const { return std::tie(access_flags, default_database, database, table, columns, parameter, filter, wildcard, grant_option, is_partial_revoke); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return !(left == right); }
     friend bool operator<(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() < right.toTuple(); }
