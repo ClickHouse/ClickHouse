@@ -2778,6 +2778,12 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 LOG_DEBUG(log, "Will fetch part {} instead of {}", entry.actual_new_part_name, entry.new_part_name);
 
             String source_replica_path = fs::path(zookeeper_path) / "replicas" / replica;
+            /// For a MERGE_PARTS entry, record the exact source parts (normalized to the same V1 name
+            /// form the SYNC MERGES snapshot uses) so the wait is scoped to fetches of this merge only.
+            NameSet merge_source_parts;
+            if (entry.type == LogEntry::MERGE_PARTS)
+                for (const auto & source_part_name : entry.source_parts)
+                    merge_source_parts.insert(MergeTreePartInfo::fromPartName(source_part_name, format_version).getPartNameV1());
             if (!fetchPart(part_name,
                 metadata_snapshot,
                 zookeeper_info.zookeeper_name,
@@ -2786,7 +2792,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 entry.quorum,
                 /* zookeeper_ */ nullptr,
                 /* try_fetch_shared= */ true,
-                /* is_merge_fetch= */ entry.type == LogEntry::MERGE_PARTS))
+                /* merge_source_parts= */ merge_source_parts))
             {
                 return false;
             }
@@ -5461,7 +5467,7 @@ bool StorageReplicatedMergeTree::fetchPart(
     size_t quorum,
     zkutil::ZooKeeper::Ptr zookeeper_,
     bool try_fetch_shared,
-    bool is_merge_fetch)
+    const NameSet & merge_source_parts)
 {
     if (isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
@@ -5492,16 +5498,17 @@ bool StorageReplicatedMergeTree::fetchPart(
         /// DOWNLOAD_PART part_log row that SYSTEM SYNC MERGES must wait for. Ordinary GET_PART /
         /// ATTACH_PART fetches (which can resolve to a covering merged part), mutation fetches, and
         /// detached fetches (SYSTEM FETCH PART/PARTITION) are not merge results and must not make
-        /// SYNC MERGES wait, even when they cover a scheduled source part.
-        if (!to_detached && is_merge_fetch)
-            currently_fetching_merged_parts.insert(part_name);
+        /// SYNC MERGES wait, even when they cover a scheduled source part. Record the entry's exact
+        /// source parts so SYNC MERGES only waits on fetches whose source parts intersect its snapshot.
+        if (!to_detached && !merge_source_parts.empty())
+            currently_fetching_merged_parts.emplace(part_name, merge_source_parts);
     }
 
     SCOPE_EXIT_MEMORY
     ({
         std::lock_guard lock(currently_fetching_parts_mutex);
         currently_fetching_parts.erase(part_name);
-        if (!to_detached && is_merge_fetch)
+        if (!to_detached && !merge_source_parts.empty())
             currently_fetching_merged_parts.erase(part_name);
     });
 
@@ -5782,7 +5789,7 @@ bool StorageReplicatedMergeTree::fetchPart(
 }
 
 
-bool StorageReplicatedMergeTree::hasInFlightFetchCoveringParts(const NameSet & source_part_names) const
+bool StorageReplicatedMergeTree::hasInFlightFetchOfSourceParts(const NameSet & source_part_names) const
 {
     if (source_part_names.empty())
         return false;
@@ -5793,11 +5800,17 @@ bool StorageReplicatedMergeTree::hasInFlightFetchCoveringParts(const NameSet & s
     /// resolve to a covering merged part), a mutation fetch, an unrelated SYSTEM FETCH PART/PARTITION
     /// (detached), or a shared-storage move of a covering part queues no success row for a scheduled
     /// merge and must not make SYNC MERGES wait or time out.
-    for (const auto & fetching_part_name : currently_fetching_merged_parts)
+    ///
+    /// Match a fetch to this snapshot by its MERGE_PARTS entry's exact source parts, not by whether
+    /// its result part covers a snapshotted source part. A merge scheduled AFTER this snapshot can
+    /// produce a result part that covers this snapshot's source parts (e.g. snapshot {all_0_0_0,
+    /// all_1_1_0}, later schedule {all_0_1_1, all_2_2_0} fetching all_0_2_2 which contains both), so a
+    /// result-part-coverage test would let that later fetch extend this earlier wait. Intersecting the
+    /// entry's source parts with the snapshot keeps each wait scoped to its own scheduled merges.
+    for (const auto & [fetching_part_name, fetch_source_parts] : currently_fetching_merged_parts)
     {
-        const auto fetching_part_info = MergeTreePartInfo::fromPartName(fetching_part_name, format_version);
-        for (const auto & source_part_name : source_part_names)
-            if (fetching_part_info.contains(MergeTreePartInfo::fromPartName(source_part_name, format_version)))
+        for (const auto & fetch_source_part : fetch_source_parts)
+            if (source_part_names.contains(fetch_source_part))
                 return true;
     }
     return false;

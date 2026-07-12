@@ -2300,12 +2300,13 @@ void InterpreterSystemQuery::syncMerges()
         /// merge is left in the merge list. Scoping to the scheduled source parts (and skipping
         /// mutations) keeps this from over-waiting on unrelated in-flight merges/mutations, and
         /// covers both plain and replicated storage that run the Manual selector. The replicated
-        /// fetch path has no merge list entry, so we also wait for any in-flight fetch whose result
-        /// part covers a scheduled source part (the fetch keeps it in currently_fetching_parts until
-        /// after its DOWNLOAD_PART part_log write).
+        /// fetch path has no merge list entry, so we also wait for any in-flight MERGE_PARTS fetch
+        /// whose own source parts intersect this snapshot's scheduled source parts (the fetch keeps it
+        /// tracked until after its DOWNLOAD_PART part_log write). Matching by the fetch's source parts
+        /// rather than its result part keeps a later-scheduled merge's fetch from extending this wait.
         if (ManualMergeSelector::isAllScheduledPartsCovered(scheduled_part_infos, active_set)
             && !merge_list.hasUnfinishedMergeOfSourceParts(table_id, scheduled_part_names)
-            && !(replicated_merge_tree && replicated_merge_tree->hasInFlightFetchCoveringParts(scheduled_part_names)))
+            && !(replicated_merge_tree && replicated_merge_tree->hasInFlightFetchOfSourceParts(scheduled_part_names)))
         {
             /// The command has fully succeeded: the scheduled parts are covered and their part_log
             /// rows are queued. Drop them now (not inside the coverage check) so a call that times
