@@ -4,7 +4,6 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -75,62 +74,39 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     if (!pre_distinct)
         pipeline.resize(1);
 
+    if (!distinct_sort_desc.empty())
     {
-        if (!distinct_sort_desc.empty())
+        /// pre-distinct for sorted chunks
+        if (pre_distinct)
         {
-            /// pre-distinct for sorted chunks
-            if (pre_distinct)
-            {
-                pipeline.addSimpleTransform(
-                    [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-                    {
-                        if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                            return nullptr;
-
-                        return std::make_shared<DistinctSortedStreamTransform>(
-                            header,
-                            set_size_limits,
-                            limit_hint,
-                            distinct_sort_desc,
-                            columns);
-                    });
-                return;
-            }
-
-            /// final distinct for sorted stream (sorting inside and among chunks)
-            if (pipeline.getNumStreams() != 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "DistinctStep with in-order expects single input");
-
-            if (distinct_sort_desc.size() < columns.size())
-            {
-                if (DistinctSortedTransform::isApplicable(pipeline.getHeader(), distinct_sort_desc, columns))
+            pipeline.addSimpleTransform(
+                [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
                 {
-                    pipeline.addSimpleTransform(
-                        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-                        {
-                            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                                return nullptr;
+                    if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                        return nullptr;
 
-                            return std::make_shared<DistinctSortedTransform>(
-                                header, distinct_sort_desc, set_size_limits, limit_hint, columns);
-                        });
-                    return;
-                }
-            }
-            else
-            {
-                pipeline.addSimpleTransform(
-                    [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-                    {
-                        if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                            return nullptr;
-
-                        return std::make_shared<DistinctSortedStreamTransform>(
-                            header, set_size_limits, limit_hint, distinct_sort_desc, columns);
-                    });
-                return;
-            }
+                    return std::make_shared<DistinctSortedStreamTransform>(
+                        header, set_size_limits, limit_hint, distinct_sort_desc, columns);
+                });
+            return;
         }
+
+        /// final distinct for sorted stream (sorting inside and among chunks)
+        /// `DistinctSortedStreamTransform` covers both coverage cases: when the sort prefix is
+        /// only a subset of the distinct columns, it deduplicates each range of equal prefix
+        /// values by hashing the remaining columns into a set cleared between ranges.
+        if (pipeline.getNumStreams() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "DistinctStep with in-order expects single input");
+
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<DistinctSortedStreamTransform>(header, set_size_limits, limit_hint, distinct_sort_desc, columns);
+            });
+        return;
     }
 
     pipeline.addSimpleTransform(
