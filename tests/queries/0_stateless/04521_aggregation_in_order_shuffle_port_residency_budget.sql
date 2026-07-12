@@ -4,13 +4,17 @@
 -- is still true), so releasing its budget charge the moment it leaves the queue let those bytes escape
 -- `aggregation_in_order_shuffle_max_buffered_bytes`: a scatter could park a full block in each of its ports
 -- while the shared counter read far less than the memory actually held. The charge must instead stay held
--- until the merge pulls the chunk out of the port.
+-- until the merge pulls the chunk out of the port (including after the scatter's input is exhausted: the
+-- charge survives until the merge actually consumes the parked chunk, not until the scatter finishes).
 --
--- Long single-key runs are the worst case (see 04515): a scatter reads its part into one shard while that
--- shard's merge is blocked, so at a large `max_block_size` most of the buffered data sits as big chunks in
--- flight between the scatter and the merge (in the output ports) rather than in the queue. A budget that the
--- correctly-accounted buffered bytes exceed - but that the queue-only accounting stayed under - must fail the
--- query. With the charge released too early (on dequeue) this 6 MiB budget wrongly passed.
+-- Why the budget trip is deterministic: every part holds one long single-key run, so a per-shard merge gets
+-- data on the lane fed by that part and neither data nor EOF on the lanes from the other scatters until those
+-- scatters exhaust their inputs. A merge absorbs at most ONE chunk per lane while it initializes (that chunk
+-- leaves the port and its charge is legitimately released) and cannot pull anything more until every lane has
+-- data or EOF, i.e. until the last scatter finishes reading. So at that moment everything beyond the first
+-- chunk of each part is still buffered in the scatter stage and charged: with 8 parts of 150000 rows and
+-- chunks capped at `max_block_size` = 65536, at least 8 * (150000 - 65536) * 16 bytes ~ 10.8 MB is charged
+-- simultaneously, which crosses the 6 MiB budget no matter how the threads interleave.
 
 SET enable_parallel_replicas = 0;
 
@@ -19,19 +23,30 @@ SET enable_parallel_replicas = 0;
 -- whole test, so reset it to 0.
 SET max_rows_to_group_by = 0;
 
+-- One part per INSERT. With parallel insert threads each INSERT splits into several single-chunk parts, and a
+-- single-chunk part contributes nothing to the guaranteed buffered floor above: its whole content is the
+-- "first chunk" that escapes into the per-shard merge's initialization, so the budget would never be crossed.
+SET max_insert_threads = 1;
+
+-- Keep every part read as one plain in-order stream. Randomized range splitting or two-level in-order merging
+-- would split a part among several streams, and each sub-stream's first chunk escapes into the merges'
+-- initialization the same way, eroding the guaranteed buffered floor.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+SET read_in_order_two_level_merge_threshold = 100;
+
 DROP TABLE IF EXISTS t_aio_shuffle_ports;
 
 CREATE TABLE t_aio_shuffle_ports (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 
 SYSTEM STOP MERGES t_aio_shuffle_ports;
-INSERT INTO t_aio_shuffle_ports SELECT 1, number FROM numbers(100000);
-INSERT INTO t_aio_shuffle_ports SELECT 2, number FROM numbers(100000);
-INSERT INTO t_aio_shuffle_ports SELECT 3, number FROM numbers(100000);
-INSERT INTO t_aio_shuffle_ports SELECT 4, number FROM numbers(100000);
-INSERT INTO t_aio_shuffle_ports SELECT 5, number FROM numbers(100000);
-INSERT INTO t_aio_shuffle_ports SELECT 6, number FROM numbers(100000);
-INSERT INTO t_aio_shuffle_ports SELECT 7, number FROM numbers(100000);
-INSERT INTO t_aio_shuffle_ports SELECT 8, number FROM numbers(100000);
+INSERT INTO t_aio_shuffle_ports SELECT 1, number FROM numbers(150000);
+INSERT INTO t_aio_shuffle_ports SELECT 2, number FROM numbers(150000);
+INSERT INTO t_aio_shuffle_ports SELECT 3, number FROM numbers(150000);
+INSERT INTO t_aio_shuffle_ports SELECT 4, number FROM numbers(150000);
+INSERT INTO t_aio_shuffle_ports SELECT 5, number FROM numbers(150000);
+INSERT INTO t_aio_shuffle_ports SELECT 6, number FROM numbers(150000);
+INSERT INTO t_aio_shuffle_ports SELECT 7, number FROM numbers(150000);
+INSERT INTO t_aio_shuffle_ports SELECT 8, number FROM numbers(150000);
 
 -- The shuffle path must actually be used.
 SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
@@ -39,10 +54,10 @@ FROM (EXPLAIN PIPELINE SELECT k, sum(v) FROM t_aio_shuffle_ports GROUP BY k
       SETTINGS max_threads = 8, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
 
 -- With a large `max_block_size` the buffered chunks are big and mostly held in the output ports (few, large
--- chunks) rather than in the queue, so the correctly-accounted buffered bytes far exceed 6 MiB and the query
--- must throw. Counting only the queued chunks (releasing port-resident chunks too early) kept the counter
--- below 6 MiB, so this budget wrongly passed. `max_threads`/`max_block_size` are pinned so the shape does not
--- depend on the harness's random settings.
+-- chunks) rather than in the queue, so the correctly-accounted buffered bytes exceed 6 MiB (see the floor
+-- estimate at the top) and the query must throw. Counting only the queued chunks (releasing port-resident
+-- chunks too early) kept the counter below 6 MiB, so this budget wrongly passed. `max_threads`/`max_block_size`
+-- are pinned so the shape does not depend on the harness's random settings.
 SELECT k, sum(v) FROM t_aio_shuffle_ports GROUP BY k FORMAT Null
 SETTINGS max_threads = 8, max_block_size = 65536, optimize_aggregation_in_order = 1,
          aggregation_in_order_shuffle = 1,
