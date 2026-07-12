@@ -1,0 +1,18 @@
+--- schema (native) ---
+arr	Array(UInt64)					
+arr_nullable	Array(Nullable(UInt32))					
+tup	Tuple(\n    `1` UInt64,\n    `2` String)					
+m	Map(String, UInt64)					
+lc	LowCardinality(String)					
+lc_null	LowCardinality(Nullable(String))					
+nested_arr	Array(Array(UInt8))					
+--- data (native) ---
+[]	[]	(0,'0')	{'0':0,'k':0}	0	\N	[[1,2],[3]]
+[0]	[NULL]	(1,'1')	{'1':1,'k':2}	1	1	[[1,2],[3]]
+[0,1]	[NULL,1]	(2,'2')	{'2':2,'k':4}	2	\N	[[1,2],[3]]
+[0,1,2]	[NULL,1,NULL]	(3,'3')	{'3':3,'k':6}	0	3	[[1,2],[3]]
+[0,1,2,3]	[NULL,1,NULL,3]	(4,'4')	{'4':4,'k':8}	1	\N	[[1,2],[3]]
+--- native vs library: schema identical? ---
+OK
+--- native vs library: data identical? ---
+OK
