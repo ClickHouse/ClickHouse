@@ -2613,7 +2613,8 @@ Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster
 - [`background_distributed_schedule_pool_size`](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting
 - [`shardNum()`](../../../sql-reference/functions/other-functions.md#shardNum) and [`shardCount()`](../../../sql-reference/functions/other-functions.md#shardCount) functions
 )DOCS_MD",
-        .syntax = "ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]])",
+        .syntax = "ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]])\n"
+                  "ENGINE = Distributed(cluster, table_function()[, sharding_key[, policy_name]])",
         .related = {"Merge"}});
 }
 

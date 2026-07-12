@@ -28,6 +28,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     ...
 ) ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]])
 [SETTINGS name=value, ...]
+
+-- Or, a table function can be used as the remote target instead of a database and a table
+-- (the columns can be omitted in that case; see "From a table function" below):
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+ENGINE = Distributed(cluster, table_function()[, sharding_key[, policy_name]])
+[SETTINGS name=value, ...]
 ```
 
 ### From a table {#distributed-from-a-table}
