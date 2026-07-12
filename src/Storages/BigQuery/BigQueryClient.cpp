@@ -39,7 +39,9 @@ namespace ErrorCodes
 namespace
 {
 
+#if USE_SSL
 constexpr auto BIGQUERY_OAUTH_SCOPE = "https://www.googleapis.com/auth/bigquery";
+#endif
 constexpr auto GOOGLE_OAUTH2_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
 Poco::JSON::Object::Ptr parseJSONObject(const String & data, const String & what)
