@@ -14,3 +14,7 @@ count except	1
 count intersect	1
 count except mt	1
 count intersect mt	1
+dec except on	1
+dec except off	1
+reuse on	3
+reuse off	3

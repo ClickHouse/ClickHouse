@@ -7,6 +7,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -71,32 +72,64 @@ static bool filterInputsHaveDynamicType(const FilterStep & filter)
     return false;
 }
 
-/// True if any function node in the filter DAG may throw at runtime for some argument values
-/// (e.g. intDiv by a non-const divisor, which throws on a zero row). Determinism alone does not
-/// imply a function is total: isDeterministic() only means "same inputs give same output", so a
-/// deterministic predicate like intDiv(1, c0) still throws on c0 = 0.
+/// True if the filter predicate may throw at runtime for some argument values, so it is unsafe to
+/// clone below a row-eliminating step (INTERSECT/EXCEPT): the pushed filter would then be evaluated
+/// on branch rows the set operation removes, surfacing an error the unoptimized plan never produces
+/// (e.g. intDiv(1, c0) on a c0 = 0 row, or decimal plus/minus/multiply overflowing under the
+/// decimal_check_overflow default).
 ///
-/// The signal is IFunctionBase::isSuitableForShortCircuitArgumentsExecution, which the executor
-/// itself treats as "can throw or is heavy" (see FunctionToExecutableFunctionAdaptor::canThrow in
-/// IFunctionAdaptors.h). Ordinary comparisons and plain arithmetic return false here, so this does
-/// not regress the common key-condition pushdown (a = 5); only genuinely throwing predicates
-/// (division/modulo by a non-const, LIKE/ILIKE, parsing, etc.) are rejected.
-static bool filterCanThrow(const FilterStep & filter)
+/// There is no sound per-function "cannot throw" oracle: IExecutableFunction::canThrow defaults to
+/// true and its only override forwards to isSuitableForShortCircuitArgumentsExecution, which is a
+/// heuristic that misses value-dependent throwers such as decimal-arithmetic overflow. So instead of
+/// blacklisting known throwers we take the conservative inverse: allow the pushdown only when every
+/// function node is on a small whitelist of operations that are total for every input value, and even
+/// then reject Decimal arguments, because decimal comparison and arithmetic can raise DECIMAL_OVERFLOW.
+/// This preserves the common key-condition pushdown (comparisons like a = 5, logical connectives)
+/// while blocking arithmetic/parsing/division and any function we have not proven total.
+static bool functionIsProvenTotal(const std::string & name)
+{
+    static const NameSet total_functions
+    {
+        /// Comparisons (for non-decimal arguments; decimal args are rejected separately).
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
+        /// Logical connectives and negation.
+        "and", "or", "not", "xor",
+        /// Null/default predicates.
+        "isNull", "isNotNull", "isZeroOrNull",
+    };
+    return total_functions.contains(name);
+}
+
+static bool filterMayThrow(const FilterStep & filter)
 {
     for (const auto & node : filter.getExpression().getNodes())
     {
         if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
             continue;
 
-        DataTypesWithConstInfo argument_types;
-        argument_types.reserve(node.children.size());
-        for (const auto & child : node.children)
-            argument_types.push_back({child->result_type, child->column != nullptr});
-
-        if (node.function_base->isSuitableForShortCircuitArgumentsExecution(argument_types))
+        if (!functionIsProvenTotal(node.function_base->getName()))
             return true;
+
+        /// Even whitelisted comparisons throw DECIMAL_OVERFLOW on decimal arguments with a scale
+        /// mismatch (Core/DecimalComparison.h), so treat any Decimal argument as potentially throwing.
+        for (const auto & child : node.children)
+        {
+            if (child->result_type && WhichDataType(removeNullable(child->result_type)).isDecimal())
+                return true;
+        }
     }
     return false;
+}
+
+/// True if the DAG output node is just the corresponding branch input column, renamed through alias
+/// nodes only (no computation). IntersectOrExcept compares whole rows, so the set key must remain the
+/// original branch columns; an output that is a function/constant result would replace a key column
+/// (e.g. feeding x > 0 into the set instead of x) and change the result.
+static bool outputIsPassThroughInput(const ActionsDAG::Node * node)
+{
+    while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.empty() ? nullptr : node->children.front();
+    return node && node->type == ActionsDAG::ActionType::INPUT;
 }
 
 /// Assert that `node->children` has at least `child_num` elements
@@ -1243,12 +1276,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///
         /// Unlike UNION ALL, INTERSECT/EXCEPT eliminate rows, so the pushed-down filter is
         /// evaluated on branch rows that the set operation would have removed. A predicate that
-        /// throws on some values (e.g. intDiv(1, c0) on a c0 = 0 row) would then surface an error
-        /// the unoptimized plan never produces, because that row is dropped before the top filter
-        /// runs. Skip the pushdown when the filter may throw. The Variant/Dynamic guard is kept as
-        /// well: such a filter can throw depending on the concrete alternative a row carries even
-        /// when the function is otherwise total.
-        if (filterCanThrow(*filter) || filterInputsHaveDynamicType(*filter))
+        /// throws on some values (e.g. intDiv(1, c0) on a c0 = 0 row, or decimal arithmetic
+        /// overflowing) would then surface an error the unoptimized plan never produces, because
+        /// that row is dropped before the top filter runs. Skip the pushdown when the filter may
+        /// throw. The Variant/Dynamic guard is kept as well: such a filter can throw depending on
+        /// the concrete alternative a row carries even when the function is otherwise total.
+        if (filterMayThrow(*filter) || filterInputsHaveDynamicType(*filter))
             return 0;
 
         /// IntersectOrExcept compares whole rows positionally: its entire header is the set key.
@@ -1265,6 +1298,21 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         for (size_t i = 0; i < set_key_header.columns(); ++i)
         {
             if (!expected_output->getByPosition(i).type->equals(*set_key_header.getByPosition(i).type))
+                return 0;
+        }
+
+        /// A same-typed column count is not enough: the planner may retain the filter-predicate
+        /// column when a parent reuses it (e.g. SELECT x > 0 ... WHERE x > 0), so a single-UInt8 set
+        /// key would silently become x > 0 fed into IntersectOrExcept instead of x, changing the
+        /// result. Require every new set-key column to be an original branch input carried through
+        /// (rename-only), never a function or constant result.
+        std::unordered_map<std::string_view, const ActionsDAG::Node *> output_by_name;
+        for (const auto * out : filter->getExpression().getOutputs())
+            output_by_name.emplace(out->result_name, out);
+        for (const auto & col : *expected_output)
+        {
+            auto it = output_by_name.find(col.name);
+            if (it == output_by_name.end() || !outputIsPassThroughInput(it->second))
                 return 0;
         }
 
