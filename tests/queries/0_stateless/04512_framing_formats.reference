@@ -20,13 +20,18 @@
 --- EventStream
 data | 0	2
 data | 1	2
+data | 
 totals | 
 totals | 0	4
+totals | 
 extremes | 
 extremes | 0	2
 extremes | 1	2
+extremes | 
 --- EventStream, payload without a trailing newline
 data | (0),(1),(2)
+--- EventStream reconstructs the payload byte-for-byte, including the trailing newline
+byte-exact round trip: OK
 --- framing works with HTTP compression
 {"number":0}
 {"number":1}

@@ -49,6 +49,22 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}"
     -d "SELECT number FROM numbers(3) FORMAT Values" \
     | awk '/^event: /{name=$2; next} /^data: /{if (name != "progress" && name != "profile_events") print name" | "substr($0, 7)}'
 
+# The client rebuilds `event.data` by joining the values of consecutive `data:` fields with '\n' and then
+# stripping a single trailing '\n' (per the SSE specification). Reconstruct it here and compare byte-for-byte
+# with the unframed output: the trailing newline that line-based formats emit must survive the round trip.
+echo '--- EventStream reconstructs the payload byte-for-byte, including the trailing newline'
+expected_output=$(mktemp "$CLICKHOUSE_TMP/04512_expected_XXXXXX")
+reconstructed_output=$(mktemp "$CLICKHOUSE_TMP/04512_reconstructed_XXXXXX")
+${CLICKHOUSE_CURL} -sS "${URL}" -d "SELECT number FROM numbers(3) FORMAT TSV" > "$expected_output"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
+    -d "SELECT number FROM numbers(3) FORMAT TSV" \
+    | awk '
+        /^event: /{event=$2; data=""; next}
+        /^data: /{data=data substr($0, 7) "\n"; next}
+        /^$/{if (event == "data") {sub(/\n$/, "", data); printf "%s", data} event=""; data=""}' > "$reconstructed_output"
+if cmp -s "$expected_output" "$reconstructed_output"; then echo 'byte-exact round trip: OK'; else echo 'byte-exact round trip: MISMATCH'; fi
+rm -f "$expected_output" "$reconstructed_output"
+
 echo '--- framing works with HTTP compression'
 ${CLICKHOUSE_CURL} -sS --compressed "${URL}&framing_output_format=JSONEachPacketBase64&enable_http_compression=1" \
     -d "SELECT number FROM numbers(3) FORMAT JSONEachRow" \

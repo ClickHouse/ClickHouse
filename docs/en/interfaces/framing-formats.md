@@ -36,7 +36,9 @@ The default. Transparently routes everything applicable (data, totals, extremes,
 
 Frames packets as [HTTP server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html) and sets the `Content-Type` of the response to `text/event-stream`. Every packet is sent as an event named after the packet kind: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. The bytes produced by the output format become the `data` fields of the event, one field per line of the payload (per the specification, the client joins consecutive `data` fields with a newline). Progress and other auxiliary packets are sent as JSON.
 
-Server-sent events is a text protocol, so this framing format is suitable only for text output formats.
+Because the client reconstructs the payload by joining the `data` fields with a newline and then stripping a single trailing newline, a payload that ends with a newline (the common case for line-based formats such as `JSONEachRow`, `TSV`, or `CSV`) is followed by an extra empty `data:` field, so the trailing newline survives the reconstruction. As a result, the concatenation of the reconstructed payloads of the `data`, `totals`, and `extremes` packets is exactly what the output format would have produced without framing.
+
+Server-sent events is a text protocol, so this framing format is suitable only for text output formats. Because server-sent events treat line breaks as field delimiters, carriage returns (`\r`) in the payload are not preserved; use `JSONEachPacketBase64` for byte-exact transport of arbitrary output.
 
 ```bash
 curl "http://localhost:8123/?framing_output_format=EventStream" -d "SELECT number FROM numbers(3) FORMAT JSONEachRow"
@@ -47,6 +49,7 @@ event: data
 data: {"number":"0"}
 data: {"number":"1"}
 data: {"number":"2"}
+data: 
 
 event: progress
 data: {"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1174415"}
