@@ -4129,8 +4129,15 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
                 /// finished (case b) and there is nothing to repair; only if the local structure still lags do we
                 /// materialize the entry (case a). checkTableStructureAttempt is non-strict, exactly like the guard
                 /// above.
+                /// Re-read the LIVE in-memory metadata here rather than reusing metadata_snapshot captured before the
+                /// queue scan: in case (b) executeMetadataAlter -> setTableStructure -> setInMemoryMetadata has already
+                /// committed the new structure, and the pre-scan snapshot still holds the old pre-alter structure. The
+                /// storage metadata is multiversion, so getInMemoryMetadataPtr(bypass_metadata_cache = true) returns the
+                /// latest committed version without a lock. Comparing the stale snapshot would always report "still
+                /// lags" and resurrect the just-finished entry.
+                auto live_metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
                 Int32 recheck_metadata_version = 0;
-                if (checkTableStructureAttempt(zookeeper_path, metadata_snapshot, &recheck_metadata_version, /* strict_check */ false))
+                if (checkTableStructureAttempt(zookeeper_path, live_metadata_snapshot, &recheck_metadata_version, /* strict_check */ false))
                 {
                     LOG_INFO(log, "An ALTER_METADATA entry with alter_version {} exists in {} but not in the in-memory "
                                   "queue; the local structure now matches ZooKeeper, so a real alter just finished "
