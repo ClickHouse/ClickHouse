@@ -56,3 +56,10 @@ DROP TABLE t_intex_r;
 -- these columns. https://github.com/ClickHouse/ClickHouse/issues/110113
 SELECT 'variant except', count() FROM (SELECT c0 FROM ((SELECT 'a') EXCEPT ALL SELECT (1, 2))(c0)) AS t0 WHERE t0.c0 ILIKE t0.c0 = true;
 SELECT 'variant intersect', count() FROM (SELECT c0 FROM ((SELECT 'a') INTERSECT ALL SELECT (1, 2))(c0)) AS t0 WHERE t0.c0 ILIKE t0.c0 = true;
+
+-- A deterministic predicate can still throw on some values: intDiv(1, c0) throws on a c0 = 0 row.
+-- INTERSECT/EXCEPT remove that row before the top filter runs, so without the optimization the
+-- query returns 1. Pushing the filter into the branches would evaluate intDiv on the eliminated
+-- 0 row and throw ILLEGAL_DIVISION. The pushdown must be skipped for throwing predicates.
+SELECT 'intdiv except', count() FROM (SELECT c0 FROM ((SELECT 1) EXCEPT ALL SELECT 0)(c0)) WHERE intDiv(1, c0) = 1;
+SELECT 'intdiv intersect', count() FROM (SELECT c0 FROM ((SELECT 1) INTERSECT ALL SELECT 0)(c0)) WHERE intDiv(1, c0) = 1;

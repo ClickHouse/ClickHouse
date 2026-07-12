@@ -71,6 +71,34 @@ static bool filterInputsHaveDynamicType(const FilterStep & filter)
     return false;
 }
 
+/// True if any function node in the filter DAG may throw at runtime for some argument values
+/// (e.g. intDiv by a non-const divisor, which throws on a zero row). Determinism alone does not
+/// imply a function is total: isDeterministic() only means "same inputs give same output", so a
+/// deterministic predicate like intDiv(1, c0) still throws on c0 = 0.
+///
+/// The signal is IFunctionBase::isSuitableForShortCircuitArgumentsExecution, which the executor
+/// itself treats as "can throw or is heavy" (see FunctionToExecutableFunctionAdaptor::canThrow in
+/// IFunctionAdaptors.h). Ordinary comparisons and plain arithmetic return false here, so this does
+/// not regress the common key-condition pushdown (a = 5); only genuinely throwing predicates
+/// (division/modulo by a non-const, LIKE/ILIKE, parsing, etc.) are rejected.
+static bool filterCanThrow(const FilterStep & filter)
+{
+    for (const auto & node : filter.getExpression().getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+            continue;
+
+        DataTypesWithConstInfo argument_types;
+        argument_types.reserve(node.children.size());
+        for (const auto & child : node.children)
+            argument_types.push_back({child->result_type, child->column != nullptr});
+
+        if (node.function_base->isSuitableForShortCircuitArgumentsExecution(argument_types))
+            return true;
+    }
+    return false;
+}
+
 /// Assert that `node->children` has at least `child_num` elements
 static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
 {
@@ -1214,12 +1242,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// each input does not change the result.
         ///
         /// Unlike UNION ALL, INTERSECT/EXCEPT eliminate rows, so the pushed-down filter is
-        /// evaluated on branch rows that the set operation would have removed. If a filter
-        /// input is a Variant/Dynamic type, a statically valid function can throw at runtime
-        /// on the concrete alternative carried by an eliminated row (e.g. ilike over the Tuple
-        /// alternative of Variant(String, Tuple(...))). That would surface an error the
-        /// unoptimized plan never produces, so skip the pushdown in that case.
-        if (filterInputsHaveDynamicType(*filter))
+        /// evaluated on branch rows that the set operation would have removed. A predicate that
+        /// throws on some values (e.g. intDiv(1, c0) on a c0 = 0 row) would then surface an error
+        /// the unoptimized plan never produces, because that row is dropped before the top filter
+        /// runs. Skip the pushdown when the filter may throw. The Variant/Dynamic guard is kept as
+        /// well: such a filter can throw depending on the concrete alternative a row carries even
+        /// when the function is otherwise total.
+        if (filterCanThrow(*filter) || filterInputsHaveDynamicType(*filter))
             return 0;
 
         auto input_headers = child->getInputHeaders();

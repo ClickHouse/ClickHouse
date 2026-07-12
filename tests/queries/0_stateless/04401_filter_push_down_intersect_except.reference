@@ -8,3 +8,5 @@ res INTERSECT DISTINCT	5
 res EXCEPT ALL	5
 variant except	1
 variant intersect	0
+intdiv except	1
+intdiv intersect	0
