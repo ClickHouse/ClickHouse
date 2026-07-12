@@ -452,7 +452,7 @@ private:
             return;
 
         using Key = decltype(getKey(AggregateFunctionUniqTraits<T, ColumnType>::value(column, row_begin)));
-        std::array<Key, hash_chunk_size> keys;
+        std::array<Key, hash_chunk_size> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are written before read
 
         size_t row = row_begin;
 
