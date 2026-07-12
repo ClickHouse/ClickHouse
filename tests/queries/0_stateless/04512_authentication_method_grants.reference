@@ -50,3 +50,5 @@ CREATE USER user3 IDENTIFIED WITH plaintext_password GRANTS (READ ON S3)
 ACCESS_DENIED
 ACCESS_DENIED
 ACCESS_DENIED
+-- A token limited to SELECT cannot create a temporary table, though the user (granted CREATE TEMPORARY TABLE) can
+ACCESS_DENIED

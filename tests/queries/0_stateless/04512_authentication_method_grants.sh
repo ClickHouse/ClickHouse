@@ -11,6 +11,7 @@ user="u_04512_${CLICKHOUSE_DATABASE}"
 user2="u2_04512_${CLICKHOUSE_DATABASE}"
 user3="u3_04512_${CLICKHOUSE_DATABASE}"
 user4="u4_04512_${CLICKHOUSE_DATABASE}"
+user5="u5_04512_${CLICKHOUSE_DATABASE}"
 role="r_04512_${CLICKHOUSE_DATABASE}"
 role2="r2_04512_${CLICKHOUSE_DATABASE}"
 
@@ -31,11 +32,11 @@ function login_expect_error()
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
 }
 trap cleanup EXIT
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t1 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "CREATE TABLE t2 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "INSERT INTO t1 VALUES (1)" -q "INSERT INTO t2 VALUES (2)"
 
 # The second authentication method is a 'token': it limits the access rights to a subset of the grants.
@@ -147,3 +148,17 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user4}&password=role_token" -d 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user4}&password=role_token" -d "DROP ROLE ${role2}" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
 # The full credential can drop the role (which also proves the limited credential did not drop it).
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user4}&password=full4" -d "DROP ROLE ${role2}"
+
+# The GRANTS clause limits the effective rights - the set that access checks actually consult, which includes the
+# implicit privileges. The implicit expansion (addImplicitAccessRights) is applied to the already-intersected
+# access, so only implicit privileges derivable from the listed grants survive: they cannot reintroduce a
+# privilege that the intersection removed. In particular, CREATE TEMPORARY TABLE is a global privilege implied
+# only by a CREATE TABLE grant; a token limited to SELECT does not imply it, so it stays denied even though the
+# user itself is granted it.
+echo "-- A token limited to SELECT cannot create a temporary table, though the user (granted CREATE TEMPORARY TABLE) can"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user5} IDENTIFIED WITH plaintext_password BY 'full5', plaintext_password BY 'token5' GRANTS (SELECT ON t1)"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user5}" -q "GRANT CREATE TEMPORARY TABLE ON *.* TO ${user5}"
+# The full credential (no GRANTS clause) has CREATE TEMPORARY TABLE and succeeds (no output on success).
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user5}&password=full5" -d "CREATE TEMPORARY TABLE tmp5 (x UInt64) ENGINE = Memory"
+# The token's SELECT-only intersection does not imply CREATE TEMPORARY TABLE, so the implicit expansion cannot bring it back.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user5}&password=token5" -d "CREATE TEMPORARY TABLE tmp5 (x UInt64) ENGINE = Memory" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
