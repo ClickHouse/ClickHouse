@@ -7,6 +7,8 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
@@ -55,6 +57,34 @@ namespace FailPoints
 namespace ClusterProxy
 {
 
+namespace
+{
+
+/// The legacy read path replaces a `Distributed`-over-table-function `FROM` with an aliased table
+/// function and restores qualified column references (`db.dist.x`) onto that alias via
+/// `RestoreQualifiedNamesVisitor`. That visitor only rewrites `ASTIdentifier`, so `db.dist.*`
+/// (an `ASTQualifiedAsterisk`, whose qualifier is a whole table reference rather than a column) is
+/// left untouched and dangles against `table_function() AS <alias>` on the shard. Rewrite the
+/// asterisk qualifier onto the alias here as well (mirrors `JoinedTables::RenameQualifiedIdentifiersMatcher`).
+void restoreQualifiedAsterisksForShard(ASTPtr & ast, const DatabaseAndTableWithAlias & source, const String & alias)
+{
+    if (ast->as<ASTSelectWithUnionQuery>())
+        return; /// do not descend into subqueries (matches `RestoreQualifiedNamesMatcher::needChildVisit`)
+
+    if (auto * qualified_asterisk = ast->as<ASTQualifiedAsterisk>())
+    {
+        if (auto * qualifier = qualified_asterisk->qualifier ? qualified_asterisk->qualifier->as<ASTIdentifier>() : nullptr)
+            if (DatabaseAndTableWithAlias(qualified_asterisk->qualifier).satisfies(source, /*table_may_be_an_alias=*/true))
+                qualifier->setShortName(alias);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        restoreQualifiedAsterisksForShard(child, source, alias);
+}
+
+}
+
 /// select query has database, table and table function names as AST pointers
 /// Creates a copy of query, changes database, table and table function names.
 ASTPtr rewriteSelectQuery(
@@ -96,6 +126,9 @@ ASTPtr rewriteSelectQuery(
                 data.distributed_table = original;
                 data.remote_table.alias = qualifier;
                 RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
+
+                /// `RestoreQualifiedNamesVisitor` only handles `ASTIdentifier`; rewrite `db.dist.*` too.
+                restoreQualifiedAsterisksForShard(modified_query_ast, original, qualifier);
             }
         }
         else

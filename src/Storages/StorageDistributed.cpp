@@ -41,6 +41,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -1183,6 +1184,17 @@ void restoreQualifiedColumnNamesForShard(ASTPtr & ast, const DatabaseAndTableWit
                     break;
             }
         }
+        return;
+    }
+
+    /// `db.dist.*` / `dist.*` / `d.*` are `ASTQualifiedAsterisk`, whose qualifier is a whole table
+    /// reference rather than an `ASTIdentifier` column, so it needs the same rewrite onto the shard-side
+    /// alias (mirrors `JoinedTables::RenameQualifiedIdentifiersMatcher`).
+    if (auto * qualified_asterisk = ast->as<ASTQualifiedAsterisk>())
+    {
+        if (auto * qualifier = qualified_asterisk->qualifier ? qualified_asterisk->qualifier->as<ASTIdentifier>() : nullptr)
+            if (DatabaseAndTableWithAlias(qualified_asterisk->qualifier).satisfies(source, /*table_may_be_an_alias=*/true))
+                qualifier->setShortName(shard_alias.alias);
         return;
     }
 

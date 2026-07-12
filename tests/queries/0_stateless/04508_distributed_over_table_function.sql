@@ -144,6 +144,22 @@ DROP TABLE dist_over_tf;
 DROP TABLE dist_over_tf_dst;
 DROP TABLE dist_over_tf_local;
 
+-- The qualified-asterisk form (`db.dist_over_tf.*`) must be rewritten onto the shard-side alias in the
+-- parallel `INSERT ... SELECT` fast path too: it is an `ASTQualifiedAsterisk`, whose qualifier is a whole
+-- table reference rather than an `ASTIdentifier` column, so the database qualifier would otherwise dangle
+-- against `numbers(10) AS dist_over_tf` on the shard and the fast path would fail at execution time.
+CREATE TABLE dist_over_tf_local (x UInt64) ENGINE = Memory;
+CREATE TABLE dist_over_tf_dst ENGINE = Distributed(test_shard_localhost, currentDatabase(), dist_over_tf_local);
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, numbers(10));
+INSERT INTO dist_over_tf_dst
+SELECT {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.*
+FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf
+SETTINGS parallel_distributed_insert_select = 2, distributed_foreground_insert = 1;
+SELECT count(), sum(x) FROM dist_over_tf_dst;
+DROP TABLE dist_over_tf;
+DROP TABLE dist_over_tf_dst;
+DROP TABLE dist_over_tf_local;
+
 -- `distributed_product_mode = 'local'` rewrites a nested Distributed subquery to its concrete remote table.
 -- A table-function-backed Distributed table has no such table, so the rewrite is rejected with a clear
 -- `NOT_IMPLEMENTED` instead of failing deep inside the rewrite on an empty table id. Covered for both the
@@ -166,4 +182,17 @@ SELECT sum({CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.number) FROM {CLICKHOUS
 SELECT sum(dist_over_tf.number) FROM dist_over_tf SETTINGS enable_analyzer = 1;
 SELECT sum(d.number) FROM dist_over_tf AS d SETTINGS enable_analyzer = 1;
 SELECT sum({CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.number) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf SETTINGS enable_analyzer = 1;
+DROP TABLE dist_over_tf;
+
+-- The qualified-*asterisk* form (`db.dist_over_tf.*`) is an `ASTQualifiedAsterisk`, whose qualifier is a
+-- whole table reference rather than an `ASTIdentifier` column, so `RestoreQualifiedNamesVisitor` (which only
+-- rewrites identifiers) leaves it untouched and `db.dist_over_tf.*` dangles against `numbers(...) AS
+-- dist_over_tf` on the shard. The asterisk qualifier must be rewritten onto the alias as well. Covered for the
+-- table-qualified, alias-qualified and database-qualified forms on the legacy path (and the analyzer path,
+-- which resolves it structurally, as a control). A three-row source keeps the reference small.
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, numbers(3));
+SELECT dist_over_tf.* FROM dist_over_tf ORDER BY number SETTINGS enable_analyzer = 0;
+SELECT d.* FROM dist_over_tf AS d ORDER BY number SETTINGS enable_analyzer = 0;
+SELECT {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.* FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf ORDER BY number SETTINGS enable_analyzer = 0;
+SELECT {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf.* FROM {CLICKHOUSE_DATABASE:Identifier}.dist_over_tf ORDER BY number SETTINGS enable_analyzer = 1;
 DROP TABLE dist_over_tf;
