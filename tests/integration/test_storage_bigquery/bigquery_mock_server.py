@@ -173,6 +173,18 @@ WRITABLE_SCHEMA = [
     f("meta", "RECORD", "NULLABLE", fields=[f("a", "INTEGER")]),
 ]
 
+# A REPEATED field whose elements can be NULL: BigQuery serves them as {"v": null},
+# and they must be preserved (not coerced to a default).
+ARR_NULLS_SCHEMA = [
+    f("i", "INTEGER", "REQUIRED"),
+    f("arr", "INTEGER", "REPEATED"),
+    f("tags", "STRING", "REPEATED"),
+]
+
+ARR_NULLS_ROWS = [
+    row("1", [v("1"), v(None), v("2")], [v("a"), v(None)]),
+]
+
 TABLES = {}
 
 
@@ -191,6 +203,11 @@ def reset_tables():
         },
         "writable": {"type": "TABLE", "schema": WRITABLE_SCHEMA, "rows": []},
         "a_view": {"type": "VIEW", "schema": PAGING_SCHEMA, "rows": []},
+        "test_arr_nulls": {
+            "type": "TABLE",
+            "schema": ARR_NULLS_SCHEMA,
+            "rows": [json.loads(json.dumps(r)) for r in ARR_NULLS_ROWS],
+        },
     }
 
 

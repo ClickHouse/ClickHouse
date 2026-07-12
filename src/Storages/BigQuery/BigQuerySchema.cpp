@@ -137,7 +137,16 @@ DataTypePtr computeClickHouseType(const BigQueryField & field)
     }
 
     if (field.repeated)
+    {
+        /// A BigQuery array can contain NULL elements, and `tabledata.list` returns them as
+        /// `{"v": null}`. Use a Nullable element type so such values are preserved losslessly
+        /// instead of being coerced to a default. A RECORD element cannot be made Nullable
+        /// (Nullable(Tuple) is gated behind the `enable_nullable_tuple_type` setting which is
+        /// off by default), so repeated RECORD fields keep a plain Tuple element.
+        if (base->canBeInsideNullable())
+            base = std::make_shared<DataTypeNullable>(base);
         return std::make_shared<DataTypeArray>(base);
+    }
     /// A NULL of a NULLABLE RECORD becomes a Tuple of default values:
     /// Nullable(Tuple) is gated behind the `enable_nullable_tuple_type` setting which is off by default.
     if (!field.required && field.type != BigQueryField::Type::Record && base->canBeInsideNullable())

@@ -72,13 +72,13 @@ Store credentials in a [named collection](/operations/named-collections) to avoi
 | `JSON`                   | [String](../../sql-reference/data-types/string.md) |
 | `INTERVAL`, `RANGE`      | [String](../../sql-reference/data-types/string.md) |
 | `RECORD` / `STRUCT`      | [Tuple](../../sql-reference/data-types/tuple.md) |
-| `REPEATED` mode          | [Array](../../sql-reference/data-types/array.md) |
+| `REPEATED` mode          | [Array](../../sql-reference/data-types/array.md) of the element type (with a [Nullable](../../sql-reference/data-types/nullable.md) element, except for `RECORD`) |
 | `NULLABLE` mode          | [Nullable](../../sql-reference/data-types/nullable.md) |
 
 Notes:
 
 - BigQuery `DATETIME` has no time zone; it is mapped to `DateTime64(6, 'UTC')` so that the displayed value does not depend on the server time zone.
-- A `NULL` value of a `RECORD` becomes a `Tuple` of default values, and a `NULL` array becomes an empty array, because `Tuple` and `Array` cannot be inside `Nullable` in ClickHouse.
+- A `NULL` value of a `RECORD` becomes a `Tuple` of default values, and a `NULL` (or empty) array becomes an empty array, because `Tuple` and `Array` cannot be inside `Nullable` in ClickHouse. The elements of a `REPEATED` field are mapped to a `Nullable` type (except for `RECORD` elements, which cannot be `Nullable`), so a `NULL` array element is preserved rather than coerced to a default.
 - `BIGNUMERIC` values with more than 38 digits in the integer part do not fit into `Decimal(76, 38)` and produce an error.
 - `TIMESTAMP` and `DATE` values outside of the range of `DateTime64`/`Date32` (years 1900-2299) are not supported.
 

@@ -122,10 +122,25 @@ def test_schema_inference():
         "num_p": "Nullable(Decimal(10, 2))",
         "geo": "Nullable(String)",
         "j": "Nullable(String)",
-        "arr": "Array(Int64)",
-        "rec": "Tuple(\\n    x Nullable(Int64),\\n    y String,\\n    tags Array(String))",
+        "arr": "Array(Nullable(Int64))",
+        "rec": "Tuple(\\n    x Nullable(Int64),\\n    y String,\\n    tags Array(Nullable(String)))",
         "recs": "Array(Tuple(\\n    k Int64,\\n    val Nullable(String)))",
     }
+
+
+def test_array_with_null_element():
+    # A REPEATED field is inferred as Array(Nullable(...)) so that NULL elements
+    # returned by tabledata.list are preserved instead of being coerced to a default.
+    result = node.query(f"DESCRIBE TABLE {bq('test_arr_nulls')}")
+    name_to_type = dict(line.split("\t")[:2] for line in result.strip().split("\n"))
+    assert name_to_type == {
+        "i": "Int64",
+        "arr": "Array(Nullable(Int64))",
+        "tags": "Array(Nullable(String))",
+    }
+
+    result = node.query(f"SELECT arr, tags FROM {bq('test_arr_nulls')} FORMAT TSV")
+    assert result == "[1,NULL,2]\t['a',NULL]\n"
 
 
 def test_select_all_types():
