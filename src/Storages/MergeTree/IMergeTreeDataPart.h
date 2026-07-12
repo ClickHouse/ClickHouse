@@ -846,9 +846,9 @@ private:
     template <typename Writer>
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
 
-    /// Found column without specific compression and return codec
-    /// for this column with default parameters.
-    CompressionCodecPtr detectDefaultCompressionCodec() const;
+    /// Find a column that was compressed with the default codec and return that codec.
+    /// If no such column exists (every column has an explicit CODEC), returns `fallback_codec`.
+    CompressionCodecPtr detectDefaultCompressionCodec(const CompressionCodecPtr & fallback_codec) const;
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;

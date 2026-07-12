@@ -442,3 +442,52 @@ def test_default_codec_for_compact_parts(start_cluster):
 
     assert node4.query("SELECT COUNT() FROM compact_parts_table") == "1\n"
     node4.query("DROP TABLE compact_parts_table SYNC")
+
+
+def test_default_codec_for_legacy_part_without_codec_file(start_cluster):
+    # A part written by an old version has no `default_compression_codec.txt` file (that file was
+    # introduced long ago). If every column has an explicit CODEC, no column proves the default
+    # codec, so `IMergeTreeDataPart::detectDefaultCompressionCodec` cannot read it from a column
+    # `.bin` and must fall back. Such a legacy part was produced when the built-in default codec was
+    # `LZ4` (it stayed `LZ4` until the default was changed to `ZSTD(3)`), so its inferred default
+    # must stay `LZ4` rather than silently becoming the new global default `ZSTD(3)`. We simulate a
+    # legacy part by removing the codec file from a freshly written part.
+    node4.query(
+        """
+    CREATE TABLE legacy_no_codec_file (
+        key UInt64 CODEC(ZSTD(1)),
+        data String CODEC(ZSTD(1))
+    )
+    ENGINE MergeTree ORDER BY tuple()
+    """
+    )
+
+    node4.query("INSERT INTO legacy_no_codec_file VALUES (1, 'Hello world')")
+
+    node4.query("ALTER TABLE legacy_no_codec_file DETACH PART 'all_1_1_0'")
+
+    data_path = node4.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='legacy_no_codec_file'"
+    ).strip()
+    node4.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"rm {data_path}detached/all_1_1_0/default_compression_codec.txt",
+        ]
+    )
+
+    node4.query("ALTER TABLE legacy_no_codec_file ATTACH PART 'all_1_1_0'")
+
+    assert node4.query("SELECT COUNT() FROM legacy_no_codec_file") == "1\n"
+
+    # Without the fix this reports `ZSTD(3)` (the new global default); with the fix it stays `LZ4`.
+    assert (
+        node4.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='legacy_no_codec_file' AND active AND name='all_1_1_0'"
+        ).strip()
+        == "LZ4"
+    )
+
+    node4.query("DROP TABLE legacy_no_codec_file SYNC")

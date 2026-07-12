@@ -1615,7 +1615,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
                 name,
                 path,
                 codec_line);
-            default_codec = detectDefaultCompressionCodec();
+            default_codec = detectDefaultCompressionCodec(CompressionCodecFactory::instance().getDefaultCodec());
         }
 
         try
@@ -1627,11 +1627,21 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         catch (const DB::Exception & ex)
         {
             LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}', error '{}'. Default compression codec will be deduced automatically, from data on disk.", name, path, codec_line, ex.what());
-            default_codec = detectDefaultCompressionCodec();
+            default_codec = detectDefaultCompressionCodec(CompressionCodecFactory::instance().getDefaultCodec());
         }
     }
     else
-        default_codec = detectDefaultCompressionCodec();
+    {
+        /// A part without a `default_compression_codec.txt` file predates that file (it was
+        /// introduced long ago), so it was produced by a version whose built-in default codec was
+        /// `LZ4` (it stayed `LZ4` until the default was changed to `ZSTD(3)`). Its default-coded
+        /// auxiliary streams (for example `checksums.txt`, written by `MergeTreeDataPartChecksums::write`)
+        /// are therefore `LZ4`. When no column proves the codec, infer `LZ4` rather than the current
+        /// global default, so `system.parts.default_compression_codec` stays accurate for such
+        /// upgraded legacy parts (and the projection codec inheritance in `MergeTask` / `MutateTask`
+        /// does not propagate a wrong `ZSTD(3)` to re-merges of a part that was actually `LZ4`).
+        default_codec = detectDefaultCompressionCodec(CompressionCodecFactory::instance().get("LZ4", {}));
+    }
 }
 
 void IMergeTreeDataPart::loadSourcePartsSet()
@@ -1717,7 +1727,7 @@ void IMergeTreeDataPart::removeMetadataVersion()
     getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
 }
 
-CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
+CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const CompressionCodecPtr & fallback_codec) const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
 
@@ -1757,7 +1767,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
     }
 
     if (!result)
-        result = CompressionCodecFactory::instance().getDefaultCodec();
+        result = fallback_codec;
 
     return result;
 }
