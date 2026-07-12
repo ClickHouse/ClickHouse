@@ -61,10 +61,10 @@ CREATE TABLE dist_over_tf (x UInt8) ENGINE = Distributed(test_shard_localhost, m
 SELECT * FROM dist_over_tf SETTINGS max_distributed_depth = 3; -- { serverError TOO_LARGE_DISTRIBUTED_DEPTH }
 DROP TABLE dist_over_tf;
 
--- A `dictGet` in the sharding key registers a loading dependency on the dictionary, so on restart the
--- Distributed table is loaded after the dictionary it references. In the table-function form the sharding key
--- is the 3rd argument (vs the 4th in the classic form), so the loading-dependency visitor must look at the
--- shifted position - otherwise the dependency is silently dropped and the table can fail to load after a reboot.
+-- A `dictGet` / `joinGet` in the sharding key of the table-function form is ignored by the engine (the key
+-- does not apply - see `has_sharding_key` in `StorageDistributed`), so it must not register a loading
+-- dependency on the dictionary. Otherwise, the ignored key would constrain the loading order at startup and
+-- block `DROP` / `RENAME` of an object the engine never uses. `loading_dependencies_table` is empty.
 DROP DICTIONARY IF EXISTS shard_dict;
 CREATE DICTIONARY shard_dict (key UInt64, val UInt64)
 PRIMARY KEY key
@@ -74,6 +74,21 @@ LIFETIME(0);
 CREATE TABLE dist_over_tf (number UInt64) ENGINE = Distributed(test_shard_localhost, numbers(10), dictGetUInt64('shard_dict', 'val', number));
 SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'dist_over_tf';
 DROP TABLE dist_over_tf;
+DROP DICTIONARY shard_dict;
+
+-- On the classic named-table form the sharding key is real, so a `dictGet` in it still registers a loading
+-- dependency. This locks in that the skip above is specific to the table-function form.
+DROP DICTIONARY IF EXISTS shard_dict;
+CREATE DICTIONARY shard_dict (key UInt64, val UInt64)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(QUERY 'SELECT 0 AS key, 0 AS val'))
+LAYOUT(FLAT())
+LIFETIME(0);
+CREATE TABLE dist_over_tf_local (number UInt64) ENGINE = Memory;
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, currentDatabase(), dist_over_tf_local, dictGetUInt64('shard_dict', 'val', number));
+SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'dist_over_tf';
+DROP TABLE dist_over_tf;
+DROP TABLE dist_over_tf_local;
 DROP DICTIONARY shard_dict;
 
 -- `additional_table_filters` matched against the Distributed table cannot be propagated to the shards

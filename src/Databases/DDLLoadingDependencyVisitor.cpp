@@ -145,21 +145,28 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 
     if (storage.engine->name == "Distributed")
     {
-        /// Checks that dict* expression was used as sharding_key and builds dependency between the dictionary and current table.
+        /// Checks that a `dict*` / `joinGet` expression was used as the sharding_key and builds a loading
+        /// dependency between the referenced object and the current table.
         /// The sharding key is the 4th argument in the classic form
-        /// Distributed(logs, default, hits[, sharding_key[, policy_name]])
-        /// but the 3rd argument when the target is a table function
-        /// Distributed(logs, table_function()[, sharding_key[, policy_name]]),
-        /// mirroring how `registerStorageDistributed` disambiguates the second argument.
-        size_t sharding_key_arg_idx = 3;
+        /// Distributed(logs, default, hits[, sharding_key[, policy_name]]).
+        ///
+        /// In the table-function form Distributed(logs, table_function()[, sharding_key[, policy_name]]) the
+        /// sharding key is ignored by the engine (see `has_sharding_key` in `StorageDistributed`), so it must
+        /// not create loading dependencies: a `dictGet` / `joinGet` inside the ignored key would otherwise
+        /// block DROP / RENAME of objects the engine never uses, contradicting the documented read-only
+        /// semantics of that form. We detect the table-function form the same way `registerStorageDistributed`
+        /// disambiguates the second argument, and skip dependency extraction for it entirely.
         const auto & engine = *storage.engine;
+        bool is_table_function_target = false;
         if (engine.arguments && engine.arguments->children.size() >= 2)
         {
             const auto * second_arg = engine.arguments->children[1]->as<ASTFunction>();
             if (second_arg && TableFunctionFactory::instance().isTableFunctionName(second_arg->name))
-                sharding_key_arg_idx = 2;
+                is_table_function_target = true;
         }
-        extractTableNameFromArgument(engine, data, sharding_key_arg_idx);
+
+        if (!is_table_function_target)
+            extractTableNameFromArgument(engine, data, 3);
     }
     else if (storage.engine->name == "Dictionary")
         extractTableNameFromArgument(*storage.engine, data, 0);
