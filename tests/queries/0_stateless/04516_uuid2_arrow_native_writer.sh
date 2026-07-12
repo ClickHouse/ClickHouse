@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# ^ The Arrow library is not compiled into the fast-test build, so FORMAT Arrow would fail there.
 # The default native Arrow writer (output_format_arrow_use_native_writer = 1) must emit a UUID2 column as a real
 # Arrow UUID (fixed_size_binary(16) with the arrow.uuid extension), byte-identical to UUID for the same value,
 # instead of silently falling back to raw Binary. It must also round-trip back to the correct textual value.
