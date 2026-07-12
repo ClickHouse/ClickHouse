@@ -35,6 +35,13 @@ SELECT CAST('61f0c404-5cb3-11e7-907b-a6006ad3dba0'::UUID2 AS UInt128) = CAST('61
 SELECT '-- comparison with string literal';
 SELECT count() FROM t_uuid2 WHERE x = '00000000-0000-0000-0000-000000000009';
 
+SELECT '-- Field-level UUID <-> UUID2 coercion swaps halves (convertFieldToType, e.g. IN-set)';
+-- A `UUID` constant coerced into a `UUID2` IN-set (and vice versa) must denote the same textual value.
+SELECT count() FROM t_uuid2 WHERE x IN (toUUID('00000000-0000-0000-0000-000000000009'));
+SELECT '61f0c404-5cb3-11e7-907b-a6006ad3dba0'::UUID2 IN (toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')) AS uuid_into_uuid2,
+       '61f0c404-5cb3-11e7-907b-a6006ad3dba0'::UUID IN ('61f0c404-5cb3-11e7-907b-a6006ad3dba0'::UUID2) AS uuid2_into_uuid,
+       '61f0c404-5cb3-11e7-907b-a6006ad3dba0'::UUID2 IN (toUUID('00000000-0000-0000-0000-000000000001')) AS different_value;
+
 SELECT '-- setting materializes bare UUID as UUID2 (version 2), leaves UUID1/UUID2 explicit';
 DROP TABLE IF EXISTS t_mat;
 SET uuid_type_version = 2;
@@ -57,6 +64,20 @@ SELECT '-- ALTER version 1 (default) leaves UUID as UUID';
 SET uuid_type_version = 1;
 ALTER TABLE t_alter ADD COLUMN f UUID, ADD COLUMN g Array(UUID);
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter' AND name IN ('f', 'g') ORDER BY name;
+
+SELECT '-- CREATE ON CLUSTER with a legacy DDL format version still materializes bare UUID as UUID2 on the initiator';
+SET distributed_ddl_output_mode = 'none';
+-- A version below NORMALIZE_CREATE_ON_INITIATOR_VERSION (3) takes the legacy path that enqueues the query before it is
+-- normalized in `createTable`; the initiator must still bake in `uuid_type_version` so workers do not fall back to `UUID`.
+SET distributed_ddl_entry_format_version = 2;
+SET uuid_type_version = 2;
+DROP TABLE IF EXISTS t_cluster_legacy ON CLUSTER test_shard_localhost SYNC;
+CREATE TABLE t_cluster_legacy ON CLUSTER test_shard_localhost (a UUID, b UUID1, c UUID2, d Array(UUID), e Nullable(UUID)) ENGINE = MergeTree ORDER BY tuple();
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_cluster_legacy' ORDER BY name;
+DROP TABLE IF EXISTS t_cluster_legacy ON CLUSTER test_shard_localhost SYNC;
+SET distributed_ddl_entry_format_version = DEFAULT;
+SET distributed_ddl_output_mode = DEFAULT;
+SET uuid_type_version = 1;
 
 SELECT '-- function parity: hex/UUIDv7ToDateTime/reinterpret/empty match UUID for the same value';
 WITH '0192d2b8-7c3f-7e1a-b2c4-1234567890ab' AS s

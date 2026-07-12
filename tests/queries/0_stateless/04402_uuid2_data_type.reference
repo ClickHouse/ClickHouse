@@ -22,6 +22,9 @@ UUID
 1
 -- comparison with string literal
 1
+-- Field-level UUID <-> UUID2 coercion swaps halves (convertFieldToType, e.g. IN-set)
+1
+1	1	0
 -- setting materializes bare UUID as UUID2 (version 2), leaves UUID1/UUID2 explicit
 a	UUID2
 b	UUID
@@ -41,6 +44,12 @@ id	UInt64
 -- ALTER version 1 (default) leaves UUID as UUID
 f	UUID
 g	Array(UUID)
+-- CREATE ON CLUSTER with a legacy DDL format version still materializes bare UUID as UUID2 on the initiator
+a	UUID2
+b	UUID
+c	UUID2
+d	Array(UUID2)
+e	Nullable(UUID2)
 -- function parity: hex/UUIDv7ToDateTime/reinterpret/empty match UUID for the same value
 1	1	1	1	1	1
 -- generateRandom produces UUID2

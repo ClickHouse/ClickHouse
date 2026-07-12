@@ -2644,6 +2644,35 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     return {};
 }
 
+namespace
+{
+
+/** Materialize the `uuid_type_version` setting into the column-declaration ASTs of a `CREATE` query.
+  *
+  * The modern `ON CLUSTER` path (`distributed_ddl_entry_format_version >= NORMALIZE_CREATE_ON_INITIATOR_VERSION`) and
+  * `Replicated` databases normalize the query on the initiator via `getTablePropertiesAndNormalizeCreateQuery`, which
+  * already bakes the concrete column types (including `UUID2`) into the enqueued AST. The legacy `ON CLUSTER` path,
+  * however, enqueues the query verbatim before normalization runs, and workers treat it as already-normalized internal
+  * DDL - so a bare `UUID` would be created as historical `UUID` regardless of the initiator's `uuid_type_version`.
+  * Materializing the setting here, on the initiator, closes that gap and mirrors the `ALTER` handling.
+  */
+void materializeUUIDTypeVersion(ASTCreateQuery & create, UInt64 uuid_type_version)
+{
+    if (uuid_type_version != 2 || !create.columns_list || !create.columns_list->columns)
+        return;
+
+    for (const auto & child : create.columns_list->columns->children)
+    {
+        auto * col_decl = child->as<ASTColumnDeclaration>();
+        if (!col_decl)
+            continue;
+        if (auto type_ast = col_decl->getType())
+            col_decl->setType(applyUUIDTypeVersion(type_ast, uuid_type_version));
+    }
+}
+
+}
+
 void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr local_context, const String & cluster_name)
 {
     if (create.attach)
@@ -2722,7 +2751,15 @@ BlockIO InterpreterCreateQuery::execute()
 
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
+        {
+            /// This legacy path enqueues the query before it is normalized on the initiator (see `createTable`), so
+            /// materialize the `uuid_type_version` setting into the column types here; otherwise workers, which treat
+            /// the forwarded query as already-normalized internal DDL, would ignore the setting and create a bare
+            /// `UUID` as the historical `UUID` type.
+            if (!is_create_database)
+                materializeUUIDTypeVersion(create, getContext()->getSettingsRef()[Setting::uuid_type_version]);
             return executeQueryOnCluster(create);
+        }
     }
 
     getContext()->checkAccess(getRequiredAccess());
