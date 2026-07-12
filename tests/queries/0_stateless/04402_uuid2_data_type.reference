@@ -52,6 +52,8 @@ d	Array(UUID2)
 e	Nullable(UUID2)
 -- function parity: hex/UUIDv7ToDateTime/reinterpret/empty match UUID for the same value
 1	1	1	1	1	1
+-- hashing parity: hashes match UUID for the same value
+1	1	1	1	1	1
 -- generateRandom produces UUID2
 5
 -- bloom_filter skip index on UUID2

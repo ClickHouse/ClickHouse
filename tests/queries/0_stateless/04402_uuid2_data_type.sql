@@ -89,6 +89,16 @@ SELECT
     empty('00000000-0000-0000-0000-000000000000'::UUID2),
     notEmpty(s::UUID2);
 
+SELECT '-- hashing parity: hashes match UUID for the same value';
+WITH '0192d2b8-7c3f-7e1a-b2c4-1234567890ab' AS s
+SELECT
+    sipHash64(s::UUID2) = sipHash64(s::UUID),
+    sipHash128(s::UUID2) = sipHash128(s::UUID),
+    cityHash64(s::UUID2) = cityHash64(s::UUID),
+    halfMD5(s::UUID2) = halfMD5(s::UUID),
+    xxHash64(s::UUID2) = xxHash64(s::UUID),
+    farmHash64(s::UUID2) = farmHash64(s::UUID);
+
 SELECT '-- generateRandom produces UUID2';
 SELECT count() FROM (SELECT * FROM generateRandom('x UUID2', 1, 1, 1) LIMIT 5);
 
