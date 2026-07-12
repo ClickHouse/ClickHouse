@@ -31,7 +31,7 @@ namespace
 /// is visible to the type checks below; the top-level Nullable wrapper is preserved.
 bool columnSliceHasNaN(const IColumn & column, size_t start, size_t end)
 {
-    auto full_column = column.convertToFullIfNeeded();
+    auto full_column = column.convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     const IColumn * nested = full_column.get();
     const NullMap * null_map = nullptr;
     if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(nested))
@@ -70,7 +70,7 @@ void getMinMaxIndexExtremes(const IColumn & column, size_t start, size_t end, Fi
     /// and the NaN check below see the nested float; the top-level Nullable wrapper is preserved.
     /// The part-level minmax (IMergeTreeDataPart::MinMaxIndex::update) runs before sparse removal, so a
     /// sparse float block would otherwise hide its NaN behind a finite [min, max].
-    auto column_full = column.convertToFullIfNeeded();
+    auto column_full = column.convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column_full.get()))
         column_nullable->getExtremesNullLast(min_value, max_value, start, end);
     else

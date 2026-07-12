@@ -1,6 +1,10 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
+-- materialize_statistics_on_insert is orthogonal to minmax NaN pruning and, when randomized on, makes
+-- even the use_skip_indexes=0 reference count wrong for the NaN rows, so pin it off.
+SET materialize_statistics_on_insert = 0;
+
 -- minmax skip index must not prune a granule that may contain NaN under a negated comparison range.
 -- `NOT ((val >= a) AND (val <= b))` is satisfied by NaN rows (NaN >= a is false, so the negation is true),
 -- but range analysis over the stored [min, max] hyperrectangle dropped such granules (issue #106948).
