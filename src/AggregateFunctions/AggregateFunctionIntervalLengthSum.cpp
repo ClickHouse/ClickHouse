@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 
 #include <unordered_set>
@@ -180,8 +181,8 @@ private:
 public:
     String getName() const override { return "intervalLengthSum"; }
 
-    explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, {}, createResultType())
+    explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments, const Array & parameters_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, parameters_, createResultType())
     {
     }
 
@@ -190,6 +191,22 @@ public:
         if constexpr (is_floating_point<T>)
             return std::make_shared<DataTypeFloat64>();
         return std::make_shared<DataTypeUInt64>();
+    }
+
+    /// Historically intervalLengthSum silently ignored any parameters, so both intervalLengthSum(...)
+    /// calls and persisted types AggregateFunction(intervalLengthSum(...), ...) were accepted.
+    /// Parameters are non-semantic here and never touch the serialized state (serialize/deserialize
+    /// store only the segments). Preserve them so getParameters() matches the -Array wrapper, but
+    /// normalize them away in the state type so a parameterized state and a legacy parameterless
+    /// AggregateFunction(intervalLengthSum, ...) column stay Merge-/CAST-compatible and legacy
+    /// metadata keeps reparsing.
+    DataTypePtr getNormalizedStateType() const override
+    {
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(this->argument_types.size());
+        for (const auto & arg : this->argument_types)
+            normalized_argument_types.emplace_back(arg->getNormalizedType());
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -239,8 +256,6 @@ template <template <typename> class Data>
 AggregateFunctionPtr
 createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
 {
-    assertNoParameters(name, parameters);
-
     if (arguments.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Aggregate function {} requires two timestamps argument.", name);
@@ -261,7 +276,7 @@ createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTyp
                             "be native integral type, Date/DateTime or Float", arg->getName(), name);
     }
 
-    AggregateFunctionPtr res(createWithBasicNumberOrDateOrDateTime<AggregateFunctionIntervalLengthSum, Data>(*arguments[0], arguments));
+    AggregateFunctionPtr res(createWithBasicNumberOrDateOrDateTime<AggregateFunctionIntervalLengthSum, Data>(*arguments[0], arguments, parameters));
 
     if (res)
         return res;

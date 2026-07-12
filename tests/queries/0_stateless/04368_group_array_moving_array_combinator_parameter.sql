@@ -32,19 +32,23 @@ FROM (SELECT 1. AS x, 0. AS y);
 SELECT toTypeName(mannWhitneyUTestState('two-sided', 1)(x, y))
 FROM (SELECT 1. AS x, 0. AS y);
 
--- intervalLengthSum takes no parameters; passing some used to be silently dropped, so the
--- -Array combinator later aborted on the wrapper-vs-nested parameter mismatch. It now rejects
--- parameters up front instead.
-SELECT intervalLengthSumArray('two-sided', 1)([0., 0, 1, 1], [0., 10, 1025, 3]); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
-SELECT intervalLengthSum('two-sided', 1)(0., 10.); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
+-- intervalLengthSum takes no semantic parameters, but before this patch the factory silently
+-- ignored any passed parameters, so plain calls and persisted parameterized types were accepted.
+-- Hard-rejecting them would make legacy AggregateFunction(intervalLengthSum(...)) metadata
+-- unreadable on upgrade, so the parameters are preserved (satisfying the -Array invariant) and
+-- normalized away only in the state type.
+SELECT intervalLengthSumArray('two-sided', 1)([0., 0, 1, 1], [0., 10, 1025, 3]);
+SELECT intervalLengthSum('two-sided', 1)(0., 10.);
+SELECT toTypeName(intervalLengthSumState('two-sided', 1)(number::Float64, (number + 2)::Float64)) FROM numbers(1);
 
--- argMin / argMax (and aliases argAndMin / argAndMax / min_by / max_by) take no parameters
--- either; they silently dropped them, so the -Array combinator later aborted on the
--- wrapper-vs-nested parameter mismatch. They now reject parameters up front too.
-SELECT argMinArray('two-sided', 2147483647)([0., 0, 1, 1], [0., 10, 1025, 3]); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
-SELECT argMin('two-sided', 1)(number, number) FROM numbers(3); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
-SELECT argMaxArray(2)([1, 2, 3], [1, 2, 3]); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
-SELECT min_by('two-sided', 1)(number, number) FROM numbers(3); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
+-- argMin / argMax (and aliases argAndMin / argAndMax / min_by / max_by) also silently ignored
+-- parameters before this patch, so the same upgrade concern applies. Preserve the parameters for
+-- the -Array invariant and normalize them away in the state type instead of hard-rejecting.
+SELECT argMinArray('two-sided', 2147483647)([0., 0, 1, 1], [0., 10, 1025, 3]);
+SELECT argMin('two-sided', 1)(number, number) FROM numbers(3);
+SELECT argMaxArray(2)([1, 2, 3], [1, 2, 3]);
+SELECT min_by('two-sided', 1)(number, number) FROM numbers(3);
+SELECT toTypeName(argMinState('x', 1)(number, number)) FROM numbers(1);
 -- parameterless argMin/argMax still work (bare and via -Array).
 SELECT argMin(number, number) FROM numbers(5);
 SELECT argMinArray([1, 2, 3], [3, 2, 1]);
@@ -86,3 +90,33 @@ SELECT tupleElement(mannWhitneyUTestMerge('two-sided', 1)(s), 'u_statistic') >= 
 INSERT INTO legacy_mwu SELECT mannWhitneyUTestState('two-sided', 1)(x, y) FROM (SELECT arrayJoin([5., 6]) AS x, arrayJoin([2., 2]) AS y);
 SELECT tupleElement(mannWhitneyUTestMerge('two-sided', 1)(s), 'u_statistic') >= 0 FROM legacy_mwu;
 DROP TABLE legacy_mwu;
+
+-- Same upgrade contract for intervalLengthSum: the parameters were silently ignored before this
+-- patch, so a legacy parameterless AggregateFunction(intervalLengthSum, ...) column must stay
+-- usable with the parameterized ...Merge(...) and accept aggregate-to-aggregate inserts.
+DROP TABLE IF EXISTS legacy_ils;
+CREATE TABLE legacy_ils (s AggregateFunction(intervalLengthSum, Float64, Float64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO legacy_ils SELECT intervalLengthSumState(1.0, 3.0);
+SELECT intervalLengthSumMerge('two-sided', 1)(s) FROM legacy_ils;
+INSERT INTO legacy_ils SELECT intervalLengthSumState('two-sided', 1)(5.0, 8.0);
+SELECT intervalLengthSumMerge(s) FROM legacy_ils;
+DROP TABLE legacy_ils;
+
+-- Same upgrade contract for argMin / argMax: legacy parameterless
+-- AggregateFunction(argMin, ...) / AggregateFunction(argMax, ...) columns must stay usable with
+-- the parameterized ...Merge(...) and accept aggregate-to-aggregate inserts of parameterized states.
+DROP TABLE IF EXISTS legacy_argmin;
+CREATE TABLE legacy_argmin (s AggregateFunction(argMin, String, UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO legacy_argmin SELECT argMinState(concat('v', toString(number)), number) FROM numbers(5);
+SELECT argMinMerge('x', 1)(s) FROM legacy_argmin;
+INSERT INTO legacy_argmin SELECT argMinState('x', 1)(concat('w', toString(number)), number + 100) FROM numbers(3);
+SELECT argMinMerge(s) FROM legacy_argmin;
+DROP TABLE legacy_argmin;
+
+DROP TABLE IF EXISTS legacy_argmax;
+CREATE TABLE legacy_argmax (s AggregateFunction(argMax, String, UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO legacy_argmax SELECT argMaxState(concat('v', toString(number)), number) FROM numbers(5);
+SELECT argMaxMerge('x', 1)(s) FROM legacy_argmax;
+INSERT INTO legacy_argmax SELECT argMaxState('x', 1)(concat('w', toString(number)), number + 100) FROM numbers(3);
+SELECT argMaxMerge(s) FROM legacy_argmax;
+DROP TABLE legacy_argmax;
