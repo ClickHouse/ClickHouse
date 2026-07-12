@@ -1,0 +1,43 @@
+---
+alias: []
+description: 'Документация по формату PrettyNoEscapes'
+input_format: false
+keywords: ['PrettyNoEscapes']
+output_format: true
+slug: /interfaces/formats/PrettyNoEscapes
+title: 'PrettyNoEscapes'
+doc_type: 'reference'
+---
+
+import PrettyFormatSettings from '/snippets/ru/common-pretty-format-settings.mdx';
+
+| Вход | Выход | Алиас |
+| ---- | ----- | ----- |
+| ✗    | ✔     |       |
+
+<div id="description">
+  ## Описание
+</div>
+
+Отличается от [Pretty](/ru/reference/formats/Pretty/Pretty) тем, что [ANSI-escape sequences](http://en.wikipedia.org/wiki/ANSI_escape_code) не используются.
+Это необходимо для отображения этого формата в браузере, а также для использования утилиты командной строки `watch`.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+Пример:
+
+```bash
+$ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
+```
+
+<Note>
+  [HTTP-интерфейс](/ru/concepts/features/interfaces/http) можно использовать для просмотра этого формата в браузере.
+</Note>
+
+<div id="format-settings">
+  ## Настройки формата
+</div>
+
+<PrettyFormatSettings />

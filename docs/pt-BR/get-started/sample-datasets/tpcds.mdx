@@ -1,0 +1,80 @@
+---
+description: 'O conjunto de dados e as consultas do benchmark TPC-DS.'
+sidebarTitle: 'TPC-DS'
+slug: /getting-started/example-datasets/tpcds
+title: 'TPC-DS (2012)'
+doc_type: 'guide'
+keywords: ['conjunto de dados de exemplo', 'tpcds', 'benchmark', 'dados de amostra', 'teste de desempenho']
+---
+
+Assim como o [Star Schema Benchmark (SSB)](/pt-BR/get-started/sample-datasets/star-schema), o TPC-DS é baseado em [TPC-H](/pt-BR/get-started/sample-datasets/tpch), mas seguiu o caminho oposto, ou seja, aumentou o número de junções necessárias ao armazenar os dados em um esquema snowflake complexo (24 tabelas em vez de 8).
+A distribuição dos dados é enviesada (por exemplo, distribuições normal e de Poisson).
+Ele inclui 99 consultas de relatório e ad hoc com substituições aleatórias.
+
+**Referências**
+
+* [The Making of TPC-DS](https://dl.acm.org/doi/10.5555/1182635.1164217) (Nambiar), 2006
+
+<div id="data-generation-and-import">
+  ## Geração e Importação de Dados
+</div>
+
+Primeiro, faça o checkout do repositório TPC-DS e compile o gerador de dados:
+
+```bash
+git clone https://github.com/gregrahn/tpcds-kit.git
+cd tpcds-kit/tools
+make
+```
+
+Em seguida, gere os dados. O parâmetro `-scale` define o fator de escala.
+
+```bash
+./dsdgen -scale 1
+```
+
+Agora, crie as tabelas no ClickHouse. As definições das tabelas estão disponíveis em [`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/init.sql) no repositório do ClickHouse.
+
+Os dados podem ser importados da seguinte forma:
+
+```bash
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO call_center FORMAT CSV" < call_center.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO catalog_page FORMAT CSV" < catalog_page.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO catalog_returns FORMAT CSV" < catalog_returns.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO catalog_sales FORMAT CSV" < catalog_sales.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO customer FORMAT CSV" < customer.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO customer_address FORMAT CSV" < customer_address.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO customer_demographics FORMAT CSV" < customer_demographics.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO date_dim FORMAT CSV" < date_dim.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO household_demographics FORMAT CSV" < household_demographics.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO income_band FORMAT CSV" < income_band.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO inventory FORMAT CSV" < inventory.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO item FORMAT CSV" < item.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO promotion FORMAT CSV" < promotion.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO reason FORMAT CSV" < reason.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO ship_mode FORMAT CSV" < ship_mode.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO store FORMAT CSV" < store.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO store_returns FORMAT CSV" < store_returns.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO store_sales FORMAT CSV" < store_sales.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO time_dim FORMAT CSV" < time_dim.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO warehouse FORMAT CSV" < warehouse.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO web_page FORMAT CSV" < web_page.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO web_returns FORMAT CSV" < web_returns.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO web_sales FORMAT CSV" < web_sales.dat
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO web_site FORMAT CSV" < web_site.dat
+```
+
+Em seguida, execute as consultas geradas.
+
+<div id="queries">
+  ## Consultas
+</div>
+
+As 99 consultas TPC-DS podem ser encontradas [aqui](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-ds/queries), no repositório do ClickHouse.
+
+Para obter um comportamento compatível com o padrão SQL e os resultados esperados, aplique as configurações de [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/settings.json).
+Consulte o [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/README.md) para ver os problemas conhecidos e as observações sobre consultas específicas.
+
+**Corretude**
+
+Os resultados das consultas correspondem aos resultados oficiais, salvo indicação em contrário. Pode haver pequenas diferenças de precisão, permitidas pela especificação TPC-DS.

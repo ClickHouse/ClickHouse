@@ -1,0 +1,77 @@
+---
+description: 'ハードウェアリソースの使用状況に加えて、ClickHouse サーバーのメトリクスも監視できます。'
+keywords: ['監視', 'オブザーバビリティ', '高度なダッシュボード', 'ダッシュボード', 'オブザーバビリティダッシュボード']
+sidebarTitle: '監視'
+slug: /operations/monitoring
+title: '監視'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<Note>
+  このガイドで説明する監視データは、ClickHouse Cloud で利用できます。以下で説明する組み込みダッシュボードで表示できるほか、基本的なものから高度なものまで、パフォーマンスメトリクスをメインのサービスコンソールで直接確認することもできます。
+</Note>
+
+次の項目を監視できます。
+
+* ハードウェアリソースの使用状況
+* ClickHouse server のメトリクス
+
+<div id="built-in-advanced-observability-dashboard">
+  ## 組み込みの高度なオブザーバビリティダッシュボード
+</div>
+
+<Image img="https://github.com/ClickHouse/ClickHouse/assets/3936029/2bd10011-4a47-4b94-b836-d44557c7fdc1" alt="2023-11-12 午後6時08分58秒のスクリーンショット" size="md" />
+
+ClickHouse には組み込みの高度なオブザーバビリティダッシュボード機能があり、`$HOST:$PORT/dashboard` でアクセスできます (ユーザー名とパスワードが必要です) 。このダッシュボードでは、次のメトリクスを確認できます。
+
+* クエリ/秒
+* CPU 使用率 (コア)
+* 実行中のクエリ
+* 実行中のマージ
+* 選択バイト数/秒
+* I/O wait
+* CPU wait
+* OS CPU 使用率 (ユーザー空間)
+* OS CPU 使用率 (カーネル)
+* ディスクからの読み取り
+* ファイルシステムからの読み取り
+* メモリ (追跡対象)
+* 挿入行数/秒
+* MergeTree パーツの合計数
+* パーティションあたりの最大パーツ数
+
+<div id="resource-utilization">
+  ## リソース使用率
+</div>
+
+ClickHouse は、次のようなハードウェアリソースの状態も独自に監視しています。
+
+* プロセッサの負荷と温度。
+* ストレージシステム、RAM、ネットワークの使用状況。
+
+このデータは `system.asynchronous_metric_log` テーブルに収集されます。
+
+<div id="clickhouse-server-metrics">
+  ## ClickHouse server のメトリクス
+</div>
+
+ClickHouse server には、自身の状態を監視するための計測機能が組み込まれています。
+
+サーバーイベントを追跡するには、サーバーログを使用します。設定ファイルの [logger](/ja/reference/settings/server-settings/settings#logger) セクションを参照してください。
+
+ClickHouse が収集するもの:
+
+* サーバーの計算リソース使用状況に関する各種メトリクス。
+* クエリ処理に関する一般的な統計情報。
+
+メトリクスは、[system.metrics](/ja/reference/system-tables/metrics)、[system.events](/ja/reference/system-tables/events)、および [system.asynchronous&#95;metrics](/ja/reference/system-tables/asynchronous_metrics) テーブルで確認できます。
+
+ClickHouse は、メトリクスを [Graphite](https://github.com/graphite-project) にエクスポートするよう設定できます。ClickHouse server の設定ファイルにある [Graphite セクション](/ja/reference/settings/server-settings/settings#graphite) を参照してください。メトリクスのエクスポートを設定する前に、公式の [ガイド](https://graphite.readthedocs.io/en/latest/install.html) に従って Graphite をセットアップしておく必要があります。
+
+ClickHouse は、メトリクスを [Prometheus](https://prometheus.io) にエクスポートするよう設定できます。ClickHouse server の設定ファイルにある [Prometheus セクション](/ja/reference/settings/server-settings/settings#prometheus) を参照してください。メトリクスのエクスポートを設定する前に、公式の [ガイド](https://prometheus.io/docs/prometheus/latest/installation/) に従って Prometheus をセットアップしておく必要があります。
+
+さらに、HTTP API を介してサーバーの可用性を監視できます。`HTTP GET` リクエストを `/ping` に送信します。サーバーが利用可能な場合は、`200 OK` を返します。
+
+クラスター構成でサーバーを監視するには、[max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ja/reference/settings/session-settings#max_replica_delay_for_distributed_queries) パラメータを設定し、HTTP リソース `/replicas_status` を使用する必要があります。`/replicas_status` へのリクエストは、レプリカが利用可能で、かつ他のレプリカに対して遅延していない場合に `200 OK` を返します。レプリカが遅延している場合は、その差分に関する情報とともに `503 HTTP_SERVICE_UNAVAILABLE` を返します。

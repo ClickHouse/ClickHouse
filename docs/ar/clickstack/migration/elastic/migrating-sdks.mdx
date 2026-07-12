@@ -1,0 +1,53 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/migrating-sdks
+title: 'ترحيل SDKs من Elastic'
+sidebarTitle: 'ترحيل SDKs'
+description: 'ترحيل SDKs من Elastic'
+show_related_blogs: true
+keywords: ['ClickStack']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يوفّر Elastic Stack نوعين من حِزم SDK الخاصة بلغات البرمجة لإضافة أدوات الرصد إلى التطبيقات:
+
+1. **[Elastic Official APM agents](https://www.elastic.co/docs/reference/apm-agents/)** – صُمِّمت هذه خصيصًا للاستخدام مع Elastic Stack. لا يتوفر حاليًا مسار ترحيل مباشر لهذه الحِزم. وستحتاج التطبيقات التي تستخدمها إلى إعادة تزويدها بأدوات الرصد باستخدام [ClickStack SDKs](/ar/clickstack/ingesting-data/sdks/index) المناسبة.
+
+2. **[Elastic Distributions of OpenTelemetry (EDOT SDKs)](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/)** – هذه هي توزيعات Elastic من OpenTelemetry SDKs القياسية، وهي متاحة لـ .NET وJava وNode.js وPHP وبايثون. إذا كان تطبيقك يستخدم بالفعل إحدى حِزم EDOT SDK، فلن تحتاج إلى إعادة تزويد الشيفرة بأدوات الرصد. بدلًا من ذلك، يمكنك ببساطة إعادة تهيئة الـ SDK لتصدير بيانات القياس عن بُعد إلى OTLP Collector المضمَّن في ClickStack. راجع [&quot;ترحيل EDOT SDKs&quot;](#migrating-edot-sdks) لمزيد من التفاصيل.
+
+<Info>
+  **استخدم ClickStack SDKs كلما أمكن**
+
+  رغم أن OpenTelemetry SDKs القياسية مدعومة، فإننا نوصي بشدة باستخدام [**ClickStack-distributed SDKs**](/ar/clickstack/ingesting-data/sdks/index) لكل لغة. تتضمن هذه التوزيعات أدوات رصد إضافية، وإعدادات افتراضية محسّنة، وامتدادات مخصّصة صُمِّمت للعمل بسلاسة مع pipeline وواجهة المستخدم في ClickStack. ومن خلال استخدام ClickStack SDKs، يمكنك الاستفادة من ميزات متقدمة مثل stack traces الخاصة بالاستثناءات، وهي ميزات لا تتوفر في OpenTelemetry أو EDOT SDKs القياسية.
+</Info>
+
+<div id="migrating-edot-sdks">
+  ## ترحيل EDOT SDKs
+</div>
+
+على غرار SDKs المستندة إلى OpenTelemetry في ClickStack، تُعدّ Elastic Distributions of the OpenTelemetry SDKs ‏(EDOT SDKs) إصدارات مخصّصة من OpenTelemetry SDKs الرسمية. فعلى سبيل المثال، تُعدّ [EDOT بايثون SDK](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/) توزيعة مخصّصة من المورّد لـ [OpenTelemetry بايثون SDK](https://opentelemetry.io/docs/languages/python/)، ومصمّمة للعمل بسلاسة مع Elastic Observability.
+
+ونظرًا إلى أن هذه SDKs تستند إلى مكتبات OpenTelemetry القياسية، فإن الترحيل إلى ClickStack عملية مباشرة، ولا يتطلّب الأمر إعادة instrumentation. وكل ما تحتاج إليه هو تعديل الإعدادات لتوجيه بيانات القياس عن بُعد إلى ClickStack OpenTelemetry Collector.
+
+تتّبع configuration آليات OpenTelemetry القياسية. وفي بايثون، يتم ذلك عادةً عبر متغيرات البيئة، كما هو موضّح في [وثائق OpenTelemetry Zero-Code Instrumentation](https://opentelemetry.io/docs/zero-code/python/configuration/).
+
+قد تبدو configuration نموذجية لـ EDOT SDK كما يلي:
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES=service.name=<app-name>
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://my-deployment.ingest.us-west1.gcp.cloud.es.io
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=ApiKey P....l"
+```
+
+للترحيل إلى ClickStack، حدِّث نقطة النهاية لتشير إلى OTLP Collector المحلي، وغيِّر ترويسة Authorization:
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES=service.name=<app-name>
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>"
+```
+
+يتم إنشاء مفتاح API للإدخال بواسطة تطبيق HyperDX، ويمكن العثور عليه ضمن Team Settings → API Keys.
+
+<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="مفاتيح الإدخال" size="lg" />

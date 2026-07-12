@@ -1604,7 +1604,10 @@ class QueryProgressElement extends HTMLElement
                 :host
                 {
                     display: grid;
-                    grid-template-columns: auto 1fr auto;
+                    /* Progress and stats share the available width equally, and both can
+                       shrink below their content size (the zero minimum), so they resize
+                       uniformly when the row is narrow instead of one hogging the space. */
+                    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
                     gap: 1rem;
                     align-items: center;
                 }
@@ -1644,7 +1647,6 @@ class QueryProgressElement extends HTMLElement
                 #stats
                 {
                     color: var(--misc-text-color);
-                    white-space: nowrap;
                 }
 
                 #stats b
@@ -1755,6 +1757,9 @@ class QueryResultElement extends HTMLElement
     static _loadVizPromise = null;
     static _vizInstance = null;
     static _loadUplotPromise = null;
+
+    /// The glyph used to render SQL NULL values (superscript "NULL").
+    static _NULL_TEXT = 'ᴺᵁᴸᴸ';
 
     constructor()
     {
@@ -1976,6 +1981,18 @@ class QueryResultElement extends HTMLElement
                 .colorize-toggle:hover
                 {
                     opacity: 0.7;
+                }
+
+                /* Per-column color coding compares values across rows; with no more than a single
+                   row there is nothing to compare, so hide the toggles. A column already colorized
+                   with a non-default mode is exempted (its header carries the keep-colorize-toggle
+                   class), so that mode stays clearable. The exemption is per column: one colorized
+                   column must not reveal every other column's toggle. The extra selector specificity
+                   overrides the hover and coarse-pointer rules above. */
+                .hide-colorize-toggle th:not(.keep-colorize-toggle) .colorize-toggle,
+                .hide-colorize-toggle th:not(.keep-colorize-toggle):hover .colorize-toggle
+                {
+                    display: none;
                 }
 
                 /* Apply hover/selection filter per-cell, excluding the active cell,
@@ -2250,6 +2267,11 @@ class QueryResultElement extends HTMLElement
 
         this._dataTable.classList.remove('fixed');
         this._dataDiv.classList.remove('fixed');
+        /// Drop the stale single-row marker: it is recomputed in `applyColumnColors` once the new
+        /// result finishes rendering. Clearing it here means that while rows are still streaming in,
+        /// the toggles follow the default hover behavior instead of staying hidden because the
+        /// previous result had at most a single row.
+        this._dataTable.classList.remove('hide-colorize-toggle');
 
         this._extremes = {};
         this._totals = null;
@@ -2315,10 +2337,14 @@ class QueryResultElement extends HTMLElement
         let is_null = (value === null);
         let is_link = false;
 
+        /// Mark the cell from the original value, so categorical coloring can skip real NULLs
+        /// without relying on the rendered glyph (a string value equal to `_NULL_TEXT` is data).
+        if (is_null) { td.dataset.isNull = ''; }
+
         let text;
         if (is_null)
         {
-            text = '\u1D3A\u1D41\u1D38\u1D38';
+            text = QueryResultElement._NULL_TEXT;
         }
         else if (typeof(value) === 'object')
         {
@@ -2542,6 +2568,9 @@ class QueryResultElement extends HTMLElement
         if (col_idx < 0) { return; }
 
         this._applyColumnColor(name, col_idx);
+        /// The new mode can colorize (or de-colorize) a single-row table whose toggles were hidden,
+        /// so re-evaluate their visibility to keep an active mode reachable.
+        this._updateColorizeToggleVisibility();
         /// Keep the active-cell categorical emphasis consistent with the new mode.
         this._scheduleCategoricalEmphasis();
 
@@ -2709,7 +2738,13 @@ class QueryResultElement extends HTMLElement
             {
                 const cell = row.cells[col_idx];
                 if (!cell) { continue; }
-                const hue = this._hashHue((cell.querySelector('.cell-content') || cell).innerText);
+                /// Empty strings and NULLs carry no category, so leave them uncolored. NULL is
+                /// detected from the original value (marked in `_renderCell`), not the rendered
+                /// glyph, so a real string value equal to the NULL glyph still gets a color.
+                if (cell.dataset.isNull !== undefined) { continue; }
+                const text = (cell.querySelector('.cell-content') || cell).innerText;
+                if (text === '') { continue; }
+                const hue = this._hashHue(text);
                 cell.style.background = `oklch(var(--viz-cell-lightness) var(--viz-cell-chroma) ${hue})`;
             }
             return;
@@ -2810,11 +2845,50 @@ class QueryResultElement extends HTMLElement
         }
     }
 
+    /// Whether a column is currently painted with color: it has an effective mode that both differs
+    /// from the per-type default and actually colorizes (anything other than `none`). Such a column
+    /// is "already colorized", so it keeps its toggle even on a single-row result — the modes are
+    /// shared by column name across tables, so a mode persisted from an earlier multi-row query
+    /// would otherwise have no visible control to switch it back off. A column explicitly set to
+    /// `none` (e.g. a numeric column whose default is `bar`) paints nothing, so it does not qualify.
+    _columnIsColorized(name)
+    {
+        const mode = this._effectiveColorMode(name);
+        return mode !== 'none' && mode !== this._defaultColorMode(name);
+    }
+
+    /// Show or hide the per-column colorize toggles for this result. Per-column color coding
+    /// compares values across rows; with no more than a single row there is nothing to compare, so
+    /// the toggles are hidden. A totals row (from `WITH TOTALS`) is a second comparable value per
+    /// column, so coloring stays meaningful there. The hiding is per column: a column already
+    /// colorized with a non-default mode is exempted (its header keeps `keep-colorize-toggle`), so
+    /// that mode stays clearable, while unrelated single-value columns still hide their toggle.
+    /// Recomputed on the final repaint and whenever a mode is cycled (a shared mode can colorize a
+    /// single-row table) — never per row.
+    _updateColorizeToggleVisibility()
+    {
+        const tbody = this._dataTable.tBodies[0];
+        this._dataTable.classList.toggle('hide-colorize-toggle',
+            !this._totals && (!tbody || tbody.rows.length <= 1));
+
+        /// Mark the header of every already-colorized column, so its toggle survives the table-wide
+        /// hiding above. Iterating the header (rather than one class for the whole table) keeps the
+        /// exemption per column: one colorized column must not reveal every other column's toggle.
+        const thead = this._dataTable.tHead;
+        if (!thead || !Array.isArray(this._header)) { return; }
+        for (const column of this._header)
+        {
+            const th = thead.children[this._columnIndex(column.name)];
+            if (th) { th.classList.toggle('keep-colorize-toggle', this._columnIsColorized(column.name)); }
+        }
+    }
+
     /// Re-apply color coding for every column (after rendering or restoring a result).
     applyColumnColors()
     {
         /// Only tabular results have a column header array; raw/chart/image results do not.
         if (!Array.isArray(this._header)) { return; }
+        this._updateColorizeToggleVisibility();
         /// Vertical (transposed) single-row results do not show per-column color coding.
         if (this._willTranspose()) { return; }
         let col_idx = 0;
@@ -2886,8 +2960,16 @@ class QueryResultElement extends HTMLElement
             const name = this._header[idx - 1]?.name;
             if (name !== undefined && this._effectiveColorMode(name) === 'categorical')
             {
-                col_idx = idx;
-                active_text = (cell.querySelector('.cell-content') || cell).innerText;
+                /// Empty strings and NULLs carry no category (mirroring `_applyColumnColor`), so
+                /// selecting one emphasizes nothing. NULL is detected from the original value marked
+                /// in `_renderCell`, not the rendered glyph, so a real string value equal to the NULL
+                /// glyph is still a category.
+                const text = (cell.querySelector('.cell-content') || cell).innerText;
+                if (cell.dataset.isNull === undefined && text !== '')
+                {
+                    col_idx = idx;
+                    active_text = text;
+                }
             }
         }
 
@@ -2914,8 +2996,11 @@ class QueryResultElement extends HTMLElement
         {
             const c = row.cells[col_idx];
             if (!c) { continue; }
+            /// A real NULL peer must not match a real string equal to the NULL glyph, so exclude
+            /// NULL cells from grouping just like `_applyColumnColor` does. Empty cells never match
+            /// here because `active_text` is guaranteed non-empty above.
             const target = c.querySelector('.cell-content') || c;
-            this._setCellEmphasis(c, c !== cell && target.innerText === active_text);
+            this._setCellEmphasis(c, c !== cell && c.dataset.isNull === undefined && target.innerText === active_text);
         }
         this._emphasized_col_idx = col_idx;
         this._emphasized_value = active_text;
@@ -5210,8 +5295,28 @@ connection_dropdown_elem.addEventListener('click', (e) => e.stopPropagation());
 /// call `stopPropagation()` in their own bubble-phase click handlers, so a bubbling listener
 /// would never see those clicks and the popover would stay open. A capture-phase listener runs
 /// before all of them, so every outside interaction dismisses it.
+///
+/// A `click` fires on the nearest common ancestor of the `mousedown` and `mouseup` targets, so a
+/// text selection that starts inside an input (e.g. selecting the user name) and is dragged past
+/// the drop-down's border before release lands its `click` on an ancestor outside `#connection-menu`
+/// — which would wrongly dismiss the popover mid-selection. Remember where the pointer went down
+/// (capture phase, so it is unaffected by `stopPropagation()` on inner handlers) and only close
+/// when the interaction both started and ended outside the menu.
+let connection_pointerdown_inside = false;
+document.addEventListener('mousedown', (e) => {
+    connection_pointerdown_inside = connection_menu_elem.contains(e.target);
+}, true);
 document.addEventListener('click', (e) => {
-    if (!connection_menu_elem.contains(e.target)) closeConnectionDropdown();
+    /// The latch is meaningful only for the pointer press that produced this `click`, and a press
+    /// arms it only when it goes on to emit a `click` (`detail !== 0`). Two kinds of `click` must
+    /// therefore ignore it: a keyboard or synthetic activation (Space/Enter on a focused control, or
+    /// a programmatic `.click()`) reports `detail === 0` and has no preceding `mousedown`; and a
+    /// mouse interaction that ends without a `click` — a right-click's `contextmenu`, a middle-click,
+    /// or a drag released outside the window — leaves a stale latch that no `click` ever consumes.
+    /// In both cases a stale `true` would otherwise wrongly suppress the outside dismissal, so the
+    /// latch counts only for a real pointer `click`.
+    const started_inside = e.detail !== 0 && connection_pointerdown_inside;
+    if (!connection_menu_elem.contains(e.target) && !started_inside) closeConnectionDropdown();
 }, true);
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !connection_dropdown_elem.hidden) {
@@ -7461,8 +7566,25 @@ query_area.addEventListener('keydown', (e) => {
         }
         return;
     }
+    /// The selected candidate whose full text equals the already-typed word (an "empty
+    /// completion" — same length as the prefix, since every candidate starts with it) would
+    /// accept to a no-op. In that case Right / Enter must keep their native meaning — move the
+    /// caret one character, or insert a newline — instead of being swallowed by a completion
+    /// that changes nothing. This matters e.g. after typing `f()` with the caret between `f`
+    /// and `(`: Right should step into the parens, not "accept" the already-complete `f`.
+    const selectedIsNoop = completionCandidates[completionSelected].length === completionPrefix.length;
+
     /// Plain Enter accepts the completion; Ctrl/Cmd+Enter is left alone so it still runs the query.
-    if (e.key === 'Tab' || e.key === 'ArrowRight' || (e.key === 'Enter' && !e.ctrlKey && !e.metaKey)) {
+    if (e.key === 'ArrowRight' || (e.key === 'Enter' && !e.ctrlKey && !e.metaKey)) {
+        if (selectedIsNoop) {
+            /// Nothing to accept — dismiss the list and let the key act natively.
+            closeCompletions();
+            return;
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        acceptCompletion(completionSelected);
+    } else if (e.key === 'Tab') {
         e.preventDefault();
         e.stopImmediatePropagation();
         acceptCompletion(completionSelected);

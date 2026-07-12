@@ -1,0 +1,136 @@
+---
+title: 'Arquitetura'
+slug: /cloud/reference/byoc/architecture
+sidebarTitle: 'Arquitetura'
+keywords: ['BYOC', 'nuvem', 'Bring Your Own Cloud']
+description: 'Implante o ClickHouse na sua própria infraestrutura em nuvem'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="key-concepts">
+  ## Conceitos-chave
+</div>
+
+O diagrama abaixo mostra como as organizations do ClickHouse Cloud, as contas de nuvem e a infraestrutura BYOC se relacionam.
+
+<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="Hierarquia de organizations BYOC" />
+
+* **Organization do ClickHouse Cloud:** A entidade de nível superior no ClickHouse Cloud que gerencia usuários, billing e serviços ClickHouse que não são BYOC. Os usuários de uma organization podem acessar tanto os serviços Cloud padrão quanto os serviços BYOC.
+* **Organization BYOC do ClickHouse:** Uma organization separada, dedicada ao gerenciamento de implantações BYOC. Ela compartilha usuários com a organization Cloud, mas está vinculada a uma ou mais contas de nuvem em que a infraestrutura BYOC é implantada.
+* **Conta de nuvem / projeto:** A conta da AWS ou o projeto do GCP pertencente ao cliente, em que a infraestrutura BYOC é provisionada. Cada conta ou projeto pode hospedar implantações BYOC em uma ou mais regiões. Para isolamento, recomenda-se uma conta ou projeto dedicado para cada implantação BYOC.
+* **Infraestrutura BYOC:** O conjunto de recursos de nuvem implantados em uma região específica de uma conta de nuvem, incluindo uma VPC, um cluster Kubernetes (EKS/GKE), buckets de armazenamento, funções do IAM e serviços de suporte. Uma única conta de nuvem pode conter várias infraestruturas BYOC em diferentes regiões.
+* **Serviço ClickHouse:** Um cluster ClickHouse individual em execução em uma infraestrutura BYOC. Vários serviços podem ser executados na mesma infraestrutura BYOC.
+
+<Note>
+  Misturar contas da AWS e projetos do GCP na mesma organization só é possível para clientes que não foram configurados por meio de um [marketplace de provedor de serviços de nuvem](/pt-BR/products/cloud/reference/billing/marketplace/overview).
+</Note>
+
+<div id="glossary">
+  ## Glossário
+</div>
+
+* **ClickHouse VPC:**  A VPC pertencente ao ClickHouse Cloud.
+* **VPC BYOC do cliente:** A VPC, pertencente à conta de nuvem do cliente, é provisionada e gerenciada pelo ClickHouse Cloud e dedicada a uma implantação BYOC do ClickHouse Cloud.
+* **Customer VPC:** Outras VPCs pertencentes à conta de nuvem do cliente, usadas por aplicações que precisam se conectar à VPC BYOC do cliente.
+
+<div id="architecture">
+  ## Arquitetura técnica
+</div>
+
+O BYOC separa o **plano de controle do ClickHouse**, que é executado na VPC do ClickHouse, do **plano de dados**, que é executado inteiramente na sua conta de Cloud. A VPC do ClickHouse hospeda o ClickHouse Cloud Console, autenticação, gerenciamento de usuários, APIs, faturamento, componentes de gerenciamento de infraestrutura, como o controlador de BYOC, além de ferramentas de alertas e incidentes. Esses serviços orquestram e monitoram sua implantação, mas não armazenam seus dados.
+
+Na sua **VPC BYOC do cliente**, o ClickHouse provisiona um cluster Kubernetes (por exemplo, Amazon EKS) que executa o plano de dados do ClickHouse. Como mostrado no diagrama, isso inclui o próprio cluster ClickHouse, o ClickHouse Operator e serviços de suporte, como Entrada, DNS, gerenciamento de certificados, exportadores de estado e scrapers. Uma stack de monitoramento dedicada (Prometheus, Grafana, AlertManager e Thanos) também é executada dentro da sua VPC, garantindo que métricas e alertas se originem e permaneçam no seu ambiente.
+
+<br />
+
+<Image img="/images/cloud/reference/byoc-1.webp" size="lg" alt="Arquitetura do BYOC" background="black" />
+
+<br />
+
+Os principais recursos de Cloud que o ClickHouse Cloud implantará na sua conta são:
+
+* **VPC:** Uma Virtual Private Cloud dedicada à sua implantação do ClickHouse. Ela pode ser gerenciada pelo ClickHouse ou por você, o cliente, e normalmente é conectada por peering às VPCs das suas aplicações.
+* **Funções e políticas do IAM:** Funções e permissões necessárias para o Kubernetes, os serviços do ClickHouse e a stack de monitoramento. Elas podem ser provisionadas pelo ClickHouse ou fornecidas pelo cliente.
+* **Buckets de armazenamento:** Usados para armazenar partes de dados, backups e, opcionalmente, arquivos de métricas e logs de longo prazo.
+* **Cluster Kubernetes:** Pode ser Amazon EKS, Google GKE ou Azure AKS, dependendo do seu provedor de Cloud, e hospeda os servidores ClickHouse e os serviços de suporte mostrados no diagrama de arquitetura.
+
+Por padrão, o ClickHouse Cloud provisiona uma VPC nova e dedicada e configura as funções do IAM necessárias para garantir a operação segura dos serviços do Kubernetes. Para organizações com necessidades avançadas de rede ou segurança, também existe a opção de gerenciar a VPC e as funções do IAM por conta própria. Essa abordagem permite maior personalização das configurações de rede e um controle mais preciso sobre as permissões. No entanto, optar por gerenciar esses recursos por conta própria aumentará suas responsabilidades operacionais.
+
+<div id="data-storage">
+  ### Armazenamento de dados
+</div>
+
+Todos os dados do ClickHouse, os backups e os dados de observabilidade permanecem na sua conta de nuvem. As partes de dados e os backups são armazenados no seu armazenamento de objetos (por exemplo, Amazon S3), enquanto os logs são armazenados nos volumes de armazenamento anexados aos nós do ClickHouse. Em uma atualização futura, os logs serão gravados no LogHouse, um serviço de logging baseado em ClickHouse que também é executado dentro da sua VPC BYOC. As métricas podem ser armazenadas localmente ou em um bucket independente na sua VPC BYOC para retenção de longo prazo. A conectividade do plano de controle entre a VPC do ClickHouse e a sua VPC BYOC é fornecida por um canal seguro e de escopo bem restrito (por exemplo, via Tailscale, como mostrado no diagrama); isso é usado apenas para operações de gerenciamento, não para tráfego de consultas.
+
+<div id="control-plane-communication">
+  ### Comunicação com o plano de controle
+</div>
+
+A VPC do ClickHouse se comunica com sua VPC BYOC por HTTPS (porta 443) para operações de gerenciamento do serviço, incluindo alterações de configuração, verificações de integridade e comandos de implantação. Esse tráfego transporta apenas dados do plano de controle para orquestração. A telemetria crítica e os alertas fluem da sua VPC BYOC para a VPC do ClickHouse para permitir o monitoramento da utilização de recursos e da integridade.
+
+<div id="key-requirements">
+  ## Principais requisitos para BYOC
+</div>
+
+O modelo de implantação BYOC exige dois componentes essenciais para garantir operação confiável, facilidade de manutenção e segurança:
+
+<div id="cross-account-iam-permissions">
+  ### Permissões de IAM entre contas
+</div>
+
+O ClickHouse Cloud precisa de permissões de IAM entre contas para provisionar e gerenciar recursos na sua conta de nuvem. Isso permite que o ClickHouse:
+
+* **Gerencie funções do IAM**: crie e configure funções do IAM para contas de serviço do Kubernetes e serviços de suporte
+* **Gerencie clusters do Kubernetes**: implante e mantenha clusters EKS/GKE, grupos de nós e componentes do cluster
+* **Crie recursos de armazenamento**: provisione buckets do S3 ou armazenamento de objetos equivalente para dados e backups
+* **Gerencie funções do IAM**: crie e configure funções do IAM para contas de serviço do Kubernetes e serviços de suporte
+* **Opere serviços de suporte**: implante e gerencie stacks de monitoramento, controladores de Entrada e outros componentes de infraestrutura
+
+Essas permissões são concedidas por meio de uma função do IAM entre contas (AWS) ou de uma conta de serviço (GCP) criada por você durante o processo inicial de onboarding. A função segue o princípio do menor privilégio, com permissões limitadas apenas ao necessário para as operações de BYOC.
+
+Para informações detalhadas sobre as permissões específicas exigidas, consulte a [Referência de Privilégios do BYOC](/pt-BR/products/bring-your-own-cloud/reference/privilege).
+
+<div id="tailscale-private-network">
+  ### Conexão de rede privada Tailscale
+</div>
+
+O Tailscale fornece uma conexão segura de rede privada, com modelo zero trust, entre os serviços de gerenciamento do ClickHouse Cloud e sua implantação BYOC. Essa conexão permite:
+
+* **Monitoramento contínuo**: engenheiros do ClickHouse podem acessar a stack de monitoramento Prometheus implantada na sua VPC BYOC para acompanhar a saúde e o desempenho do serviço
+* **Manutenção proativa**: engenheiros podem realizar manutenção de rotina, upgrades e operações de solução de problemas
+* **Suporte de emergência**: em caso de problemas no serviço, engenheiros podem acessar rapidamente seu ambiente para diagnosticar e resolver falhas
+* **Gerenciamento de infraestrutura**: os serviços de gerenciamento podem se coordenar com sua infraestrutura BYOC para operações automatizadas
+
+A conexão do Tailscale é **apenas de saída** a partir da sua VPC BYOC — nenhuma conexão de entrada é necessária, reduzindo sua exposição a riscos de segurança. Todo acesso é:
+
+* **Aprovado e auditado**: engenheiros precisam solicitar acesso por meio de um sistema interno de aprovação
+* **Limitado no tempo**: o acesso expira automaticamente após um período definido
+* **Restrito**: engenheiros podem acessar apenas tabelas do sistema e componentes da infraestrutura, nunca dados de clientes
+* **Criptografado**: toda a comunicação é criptografada de ponta a ponta
+
+Para informações detalhadas sobre como o Tailscale funciona no BYOC e sobre os controles de segurança, consulte a [documentação de segurança de rede](/pt-BR/products/bring-your-own-cloud/reference/network-security#tailscale-private-network).
+
+<div id="why-requirements-matter">
+  ### Por que esses requisitos são importantes
+</div>
+
+Juntos, esses dois componentes permitem que o ClickHouse Cloud:
+
+* **Mantenha a confiabilidade**: monitore e mantenha sua implantação de forma proativa para evitar problemas
+* **Garanta a segurança**: use acesso com privilégio mínimo e auditabilidade completa
+* **Simplifique as operações**: automatize o gerenciamento da infraestrutura sem perder o controle
+* **Forneça suporte**: responda rapidamente aos problemas e resolva-os quando ocorrerem
+
+Todos os dados do cliente permanecem na sua conta na nuvem e nunca são acessados nem transmitidos por esses canais de gerenciamento.
+
+**Recomendações e considerações adicionais:**
+
+* Garanta que as faixas de CIDR da rede da sua VPC BYOC não se sobreponham a nenhuma VPC existente com a qual você pretende fazer peering.
+* Identifique claramente seus recursos com tags para simplificar o gerenciamento e o suporte.
+* Planeje adequadamente o dimensionamento das sub-redes e a distribuição entre zonas de disponibilidade para garantir alta disponibilidade.
+* Consulte o [guia de segurança](/pt-BR/products/cloud/guides/security/audit-logging/byoc-security-playbook) para entender a responsabilidade compartilhada e as melhores práticas quando o ClickHouse Cloud opera no seu ambiente.
+* Revise o guia completo de onboarding para obter instruções passo a passo sobre a configuração inicial da conta, configuração da VPC, conectividade de rede (por exemplo, VPC peering) e delegação de função do IAM.
+
+Se você tiver requisitos ou restrições específicos, entre em contato com o suporte do ClickHouse para receber orientações sobre configurações avançadas de rede ou políticas de IAM personalizadas.

@@ -1,0 +1,219 @@
+---
+sidebarTitle: 'Overview'
+description: 'Seamlessly connect your object storage to ClickHouse Cloud.'
+slug: /integrations/clickpipes/object-storage/s3/overview
+title: 'Integrating Amazon S3 with ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+The S3 ClickPipe provides a fully-managed and resilient way to ingest data from Amazon S3 and S3-compatible object stores into ClickHouse Cloud. It supports both **one-time** and **continuous ingestion** with exactly-once semantics.
+
+S3 ClickPipes can be deployed and managed manually using the ClickPipes UI, as well as programmatically using [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) and [Terraform](/integrations/clickpipes/programmatic-access/terraform).
+
+## Supported data sources {#supported-data-sources}
+
+| Name                 | Logo                                                                                      | Details           |
+|----------------------|-------------------------------------------------------------------------------------------|-------------------|
+| **Amazon S3**            | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 logo" width="32" />     | Continuous ingestion requires [lexicographical order](#continuous-ingestion-lexicographical-order) by default, but can be configured to [ingest files in any order](#continuous-ingestion-any-order). |
+| **Cloudflare R2** <br></br> _S3-compatible_ | <img src="/images/integrations/logos/cloudflare.svg" alt="Cloudflare R2 logo" width="32" /> | Continuous ingestion requires [lexicographical order](#continuous-ingestion-lexicographical-order). Unordered mode isn't supported. |
+| **DigitalOcean Spaces** <br></br> _S3-compatible_ | <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean logo" width="32" /> |  Continuous ingestion requires [lexicographical order](#continuous-ingestion-lexicographical-order). Unordered mode isn't supported. |
+| **OVH Object Storage** <br></br> _S3-compatible_ | <img src="/images/integrations/logos/ovh.webp" alt="Cloud Storage logo" width="32" />                         |  Continuous ingestion requires [lexicographical order](#continuous-ingestion-lexicographical-order). Unordered mode isn't supported. |
+
+<Tip>
+Due to differences in URL formats and API implementations across object storage service providers, not all S3-compatible services are supported out-of-the-box. If you're running into issues with a service that isn't listed above, please [reach out to our team](https://clickhouse.com/company/contact?loc=clickpipes).
+</Tip>
+
+## Supported formats {#supported-formats}
+
+- [JSON](/reference/formats/JSON/JSON)
+- [CSV](/reference/formats/CSV/CSV)
+- [TSV](/reference/formats/TabSeparated/TabSeparated)
+- [Parquet](/reference/formats/Parquet/Parquet)
+- [Avro](/reference/formats/Avro/Avro)
+
+## Features {#features}
+
+### One-time ingestion {#one-time-ingestion}
+
+By default, the S3 ClickPipe will load all files matched by a pattern from the specified bucket into the ClickHouse destination table in a single batch operation. Once the ingestion task completes, the ClickPipe stops automatically. This one-time ingestion mode provides exactly-once semantics, ensuring that each file is processed reliably without duplicates.
+
+### Continuous ingestion {#continuous-ingestion}
+
+When continuous ingestion is enabled, ClickPipes continuously ingests data from the specified path. To determine ingestion order, the S3 ClickPipe relies on the implicit [lexicographical order](#continuous-ingestion-lexicographical-order) of files, by default. It can also be configured to ingest files in [any order](#continuous-ingestion-any-order) using an [Amazon SQS](https://aws.amazon.com/sqs/) queue connected to the bucket.
+
+#### Lexicographical order {#continuous-ingestion-lexicographical-order}
+
+By default, the S3 ClickPipe assumes files are added to a bucket in lexicographical order, and relies on this implicit order to ingest files sequentially. This means that any new file **must** be lexically greater than the last ingested file. For example, files named `file1`, `file2`, and `file3` will be ingested sequentially, but if a new `file 0` is added to the bucket, it will be **ignored** because the file name isn't lexically greater than the last ingested file.
+
+In this mode, the S3 ClickPipe does an initial load of **all files** in the specified path, and then polls for new files at a configurable interval (by default, 30 seconds). It is **not possible** to start ingestion from a specific file or point in time — ClickPipes will always load all files in the specified path.
+
+#### Any order {#continuous-ingestion-any-order}
+
+<Tip>
+See [Configuring unordered mode for continuous ingestion](/integrations/clickpipes/object-storage/amazon-s3/unordered-mode) for step-by-step instructions.
+</Tip>
+
+It's possible to configure an S3 ClickPipe to ingest files that don't have an implicit order by setting up an [Amazon SQS](https://aws.amazon.com/sqs/) queue connected to the bucket, optionally using [Amazon EventBridge](https://aws.amazon.com/eventbridge/) as an event router. This allows ClickPipes to listen for object created events and ingest any new files regardless of the file naming convention.
+
+<Note>
+Unordered mode is **only** supported for Amazon S3 and is **not** supported for public buckets or S3-compatible services. It requires setting up an [Amazon SQS](https://aws.amazon.com/sqs/) queue connected to the bucket, optionally using [Amazon EventBridge](https://aws.amazon.com/eventbridge/) as an event router.
+</Note>
+
+In this mode, the S3 ClickPipe does an initial load of **all files** in the selected path, and then listens for `ObjectCreated:*` events in the queue that match the specified path. Any message for a previously seen file, file not matching the path, or event of a different type will be **ignored**.
+
+<Note>
+Setting a prefix/postfix for events is optional. If you do, make sure it matches the path set for the clickpipe. S3 doesn't allow multiple overlapping notification rules for the same event types.
+</Note>
+
+Files are ingested once the threshold configured in `max insert bytes` or `max file count` is reached, or after a configurable interval (by default, 30 seconds). It is **not possible** to start ingestion from a specific file or point in time — ClickPipes will always load all files in the selected path. If a DLQ is configured, failed messages will be reenqueued and reprocessed up to the number of times configured in the DLQ `maxReceiveCount` parameter.
+
+<Tip>
+We strongly recommend configuring a **Dead-Letter-Queue (DLQ)** for the SQS queue, so it's easier to debug and retry failed messages.
+</Tip>
+
+##### EventBridge to SQS {#eb-to-sqs}
+
+It is also possible to emit S3 event notifications to SQS via [Amazon EventBridge](https://aws.amazon.com/eventbridge/). This is the recommended approach for most use cases, as EventBridge supports richer event filtering, fan-out to multiple targets, and is not subject to S3's one notification rule per event type per prefix limitation. See [Configuring unordered mode for continuous ingestion](/integrations/clickpipes/object-storage/amazon-s3/unordered-mode) for step-by-step instructions.
+
+##### SNS to SQS {#sns-to-sqs}
+
+It is also possible to emit S3 event notifications to SQS via an SNS topic. This can be used in case some of the limitations of direct S3 → SQS integration have been met. In this case, you’ll need to enable the [raw message delivery](https://docs.aws.amazon.com/sns/latest/dg/sns-large-payload-raw-message-delivery.html) option.
+
+### File pattern matching {#file-pattern-matching}
+
+Object Storage ClickPipes follow the POSIX standard for file pattern matching. All patterns are **case-sensitive** and match the **full path** after the bucket name. For better performance, use the most specific pattern possible (e.g., `data-2024-*.csv` instead of `*.csv`).
+
+#### Supported patterns {#supported-patterns}
+
+| Pattern | Description | Example | Matches |
+|---------|-------------|---------|---------|
+| `?` | Matches exactly **one** character (excluding `/`) | `data-?.csv` | `data-1.csv`, `data-a.csv`, `data-x.csv` |
+| `*` | Matches **zero or more** characters (excluding `/`) | `data-*.csv` | `data-1.csv`, `data-001.csv`, `data-report.csv`, `data-.csv` |
+| `**` <br></br> Recursive | Matches **zero or more** characters (including `/`). Enables **recursive directory traversal**. | `logs/**/error.log` | `logs/error.log`, `logs/2024/error.log`, `logs/2024/01/error.log` |
+
+**Examples:**
+
+* `https://bucket.s3.amazonaws.com/folder/*.csv`
+* `https://bucket.s3.amazonaws.com/logs/**/data.json`
+* `https://bucket.s3.amazonaws.com/file-?.parquet`
+* `https://bucket.s3.amazonaws.com/data-2024-*.csv.gz`
+
+#### Unsupported patterns {#unsupported-patterns}
+
+| Pattern     | Description                    | Example                | Alternatives                              |
+|-------------|--------------------------------|------------------------|-------------------------------------------|
+| `{abc,def}` | Brace expansion. | `{logs,data}/file.csv` | Create separate ClickPipes for each path. |
+| `{N..M}`    | Numeric range expansion        | `file-{1..100}.csv`    | Use `file-*.csv` or `file-?.csv`.         |
+
+**Examples:**
+
+* `https://bucket.s3.amazonaws.com/{documents-01,documents-02}.json`
+* `https://bucket.s3.amazonaws.com/file-{1..100}.csv`
+* `https://bucket.s3.amazonaws.com/{logs,metrics}/data.parquet`
+
+### Exactly-once semantics {#exactly-once-semantics}
+
+Various types of failures can occur when ingesting large dataset, which can result in a partial inserts or duplicate data. Object Storage ClickPipes are resilient to insert failures and provides exactly-once semantics. This is accomplished by using temporary "staging" tables. Data is first inserted into the staging tables. If something goes wrong with this insert, the staging table can be truncated and the insert can be retried from a clean state. Only when an insert is completed and successful, the partitions in the staging table are moved to target table. To read more about this strategy, check-out [this blog post](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
+
+### Virtual columns {#virtual-columns}
+
+To track which files have been ingested, include the `_file` virtual column to the column mapping list. The `_file` virtual column contains the filename of the source object, which can be used to query which files have been processed.
+
+## Access control {#access-control}
+
+### Permissions {#permissions}
+
+The S3 ClickPipe supports public and private buckets. [Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html) buckets are **not** supported.
+
+#### S3 bucket {#s3-bucket}
+
+Buckets must allow the following actions in the bucket policy:
+
+* [`s3:GetObject`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)
+* [`s3:ListBucket`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html)
+
+#### SQS queue {#sqs-queue}
+
+When using [unordered mode](#continuous-ingestion-any-order), the SQS must allow the following actions in the queue policy:
+
+* [`sqs:ReceiveMessage`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ReceiveMessage.html)
+* [`sqs:DeleteMessage`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteMessage.html)
+* [`sqs:GetQueueAttributes`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_GetQueueAttributes.html)
+* [`sqs:ListQueues`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ListQueues.html)
+
+### Authentication {#authentication}
+
+#### IAM credentials {#iam-credentials}
+
+To use [access keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) to authenticate, choose `Credentials` under **Authentication method** when setting up your ClickPipe connection. Then, provide the access key ID (e.g., `AKIAIOSFODNN7EXAMPLE`) and secret access key (e.g., `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) under `Access key` and `Secret key`, respectively.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp" alt="IAM credentials for S3 ClickPipes" size="lg" border/>
+
+#### IAM role {#iam-role}
+
+To use [role-based access](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html) to authenticate, choose `IAM role` under **Authentication method** when setting up your ClickPipe connection.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp" alt="IAM authentication for S3 ClickPipes" size="lg" border/>
+
+Follow [this guide](/products/cloud/guides/data-sources/accessing-s3-data-securely) to [create a role](/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role) with the required trust policy for S3 access. Then, provide the IAM role ARN under `IAM role ARN`.
+
+### Network access {#network-access}
+
+S3 ClickPipes use two distinct network paths for metadata discovery and data ingestion: the ClickPipes service and the ClickHouse Cloud service, respectively. If you want to configure an additional layer of network security (e.g., for compliance reasons), network access **must be configured for both paths**.
+
+* For **IP-based access control**, the S3 bucket policy must allow the static IPs for the ClickPipes service region listed [here](/integrations/clickpipes/home#list-of-static-ips), as well as the [static IPs](/products/cloud/guides/data-sources/cloud-endpoints-api) for the ClickHouse Cloud service. To obtain the static IPs for your ClickHouse Cloud region, open a terminal and run:
+
+    ```bash
+    # Replace <your-region> with your ClickHouse Cloud region
+    curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .egress_ips[]'
+    ```
+
+* For **VPC endpoint-based access control**, the S3 bucket must be in the same region as the ClickHouse Cloud service and restrict `GetObject` operations to the VPC endpoint IDs of the ClickHouse Cloud service. To obtain the VPC endpoints for your ClickHouse Cloud region, open a terminal and run:
+
+    ```bash
+    # Replace <your-region> with your ClickHouse Cloud region
+    curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
+    ```
+
+## Advanced settings {#advanced-settings}
+
+ClickPipes provides sensible defaults that cover the requirements of most use cases. If your use case requires additional fine-tuning, you can adjust the following settings:
+
+| Setting                            | Default value |  Description                     |                    
+|------------------------------------|---------------|---------------------------------------------------------------------------------------|
+| `Max insert bytes`                 | 10GB          | Number of bytes to process in a single insert batch.                                  |
+| `Max file count`                   | 100           | Maximum number of files to process in a single insert batch.                          |
+| `Max threads`                      | auto(3)       | [Maximum number of concurrent threads](/reference/settings/session-settings#max_threads) for file processing. |
+| `Max insert threads`               | 1             | [Maximum number of concurrent insert threads](/reference/settings/session-settings#max_insert_threads) for file processing. |
+| `Min insert block size bytes`      | 1GB           | [Minimum size of bytes in the block](/reference/settings/session-settings#min_insert_block_size_bytes) which can be inserted into a table. |
+| `Max download threads`             | 4             | [Maximum number of concurrent download threads](/reference/settings/session-settings#max_download_threads). |
+| `Object storage polling interval`  | 30s           | Configures the maximum wait period before inserting data into the ClickHouse cluster. |
+| `Parallel distributed insert select` | 2           | [Parallel distributed insert select setting](/reference/settings/session-settings#parallel_distributed_insert_select). |
+| `Parallel view processing`         | false         | Whether to enable pushing to attached views [concurrently instead of sequentially](/reference/settings/session-settings#parallel_view_processing). |
+| `Use cluster function`             | true          | Whether to process files in parallel across multiple nodes. |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Advanced settings for ClickPipes" size="lg" border/>
+
+### Scaling {#scaling}
+
+Object Storage ClickPipes are scaled based on the minimum ClickHouse service size determined by the [configured vertical autoscaling settings](/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling). The size of the ClickPipe is determined when the pipe is created. Subsequent changes to the ClickHouse service settings won't affect the ClickPipe size.
+
+To increase the throughput on large ingest jobs, we recommend scaling the ClickHouse service before creating the ClickPipe.
+
+## Known limitations {#known-limitations}
+
+### File size {#file-size}
+
+ClickPipes will only attempt to ingest objects that are **10GB or smaller** in size. If a file is greater than 10GB, an error will be appended to the ClickPipes dedicated error table.
+
+### Compatibility {#compatibility}
+
+Despite being S3-compatible, some services use a different URL structure that the S3 ClickPipe might not be able to parse (e.g., Backblaze B2), or require integration with provider-specific queue services for continuous, unordered ingestion. If you're running into issues with a service that isn't listed under [Supported data sources](#supported-data-sources), please [reach out to our team](https://clickhouse.com/company/contact?loc=clickpipes).
+
+### View support {#view-support}
+
+Materialized views on the target table are also supported. ClickPipes will create staging tables not only for the target table, but also any dependent materialized view.
+
+We don't create staging tables for non-materialized views. This means that if you have a target table with one of more downstream materialized views, those materialized views should avoid selecting data via a view from the target table. Otherwise, you may find that you're missing data in the materialized view.

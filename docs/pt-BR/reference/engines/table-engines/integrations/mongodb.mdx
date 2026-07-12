@@ -1,0 +1,245 @@
+---
+description: 'O motor MongoDB é um motor de tabela somente leitura que permite ler dados de
+  uma coleção remota.'
+sidebarTitle: 'MongoDB'
+slug: /engines/table-engines/integrations/mongodb
+title: 'Motor de tabela do MongoDB'
+doc_type: 'reference'
+---
+
+O motor MongoDB é um motor de tabela somente leitura que permite ler dados de uma coleção remota do [MongoDB](https://www.mongodb.com/).
+
+Há suporte apenas para servidores MongoDB v3.6+.
+[Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) ainda não é compatível.
+
+<div id="creating-a-table">
+  ## Criando uma tabela
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = MongoDB(host:port, database, collection, user, password[, options[, oid_columns]]);
+```
+
+**Parâmetros do motor**
+
+| Parameter     | Description                                                                                                                                                                                                           |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host:port`   | Endereço do servidor MongoDB.                                                                                                                                                                                         |
+| `database`    | Nome do banco de dados remoto.                                                                                                                                                                                        |
+| `collection`  | Nome da coleção remota.                                                                                                                                                                                               |
+| `user`        | Usuário do MongoDB.                                                                                                                                                                                                   |
+| `password`    | Senha do usuário.                                                                                                                                                                                                     |
+| `options`     | Opcional. [Opções](https://www.mongodb.com/docs/manual/reference/connection-string-options/#connection-options) da string de conexão do MongoDB, como uma string formatada em URL. Ex.: `'authSource=admin&ssl=true'` |
+| `oid_columns` | Lista de colunas separadas por vírgulas que devem ser tratadas como `oid` na cláusula WHERE. `_id` por padrão.                                                                                                        |
+
+<Tip>
+  Se você estiver usando o serviço em nuvem MongoDB Atlas, a URL de conexão pode ser obtida na opção &#39;Atlas SQL&#39;.
+  Seed list(`mongodb**+srv**`) ainda não é compatível, mas será adicionada em versões futuras.
+</Tip>
+
+Como alternativa, você pode informar um URI:
+
+```sql
+ENGINE = MongoDB(uri, collection[, oid_columns]);
+```
+
+**Parâmetros do motor**
+
+| Parâmetro     | Descrição                                                                                                      |
+| ------------- | -------------------------------------------------------------------------------------------------------------- |
+| `uri`         | URI de conexão do servidor MongoDB.                                                                            |
+| `collection`  | Nome da coleção remota.                                                                                        |
+| `oid_columns` | Lista de colunas separadas por vírgulas que devem ser tratadas como `oid` na cláusula WHERE. `_id` por padrão. |
+
+<div id="types-mappings">
+  ## Mapeamento de tipos
+</div>
+
+| MongoDB                 | ClickHouse                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| bool, int32, int64      | *qualquer tipo numérico, exceto Decimals*, Boolean, String                                       |
+| double                  | Float64, String                                                                                  |
+| date                    | Date, Date32, DateTime, DateTime64, String                                                       |
+| string                  | String, *qualquer tipo numérico (exceto Decimals), se formatado corretamente*                    |
+| document                | String (como JSON)                                                                               |
+| array                   | Array, String (como JSON)                                                                        |
+| oid                     | String                                                                                           |
+| binary                  | String se estiver em uma coluna, string codificada em base64 se estiver em um array ou documento |
+| uuid (binary subtype 4) | UUID                                                                                             |
+| *qualquer outro*        | String                                                                                           |
+
+Se a chave não for encontrada no documento do MongoDB (por exemplo, se o nome da coluna não corresponder), o valor padrão ou `NULL` (se a coluna puder ser nula) será inserido.
+
+<div id="oid">
+  ### OID
+</div>
+
+Se você quiser que uma `String` seja tratada como `oid` na cláusula WHERE, basta informar o nome da coluna no último argumento do mecanismo de tabela.
+Isso pode ser necessário ao consultar um registro pela coluna `_id`, que por padrão tem o tipo `oid` no MongoDB.
+Se o campo `_id` na tabela tiver outro tipo, por exemplo `uuid`, você precisará especificar `oid_columns` vazio; caso contrário, será usado o valor padrão desse parâmetro, `_id`.
+
+```javascript
+db.sample_oid.insertMany([
+    {"another_oid_column": ObjectId()},
+]);
+
+db.sample_oid.find();
+[
+    {
+        "_id": {"$oid": "67bf6cc44ebc466d33d42fb2"},
+        "another_oid_column": {"$oid": "67bf6cc40000000000ea41b1"}
+    }
+]
+```
+
+Por padrão, apenas `_id` é tratado como a coluna `oid`.
+
+```sql
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid');
+
+SELECT count() FROM sample_oid WHERE _id = '67bf6cc44ebc466d33d42fb2'; --retornará 1.
+SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; --retornará 0
+```
+
+Nesse caso, a saída será `0`, porque o ClickHouse não sabe que `another_oid_column` é do tipo `oid`, então vamos corrigir isso:
+
+```sql
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid', '_id,another_oid_column');
+
+-- ou
+
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('host', 'db', 'sample_oid', 'user', 'pass', '', '_id,another_oid_column');
+
+SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; -- agora retornará 1
+```
+
+<div id="supported-clauses">
+  ## Cláusulas suportadas
+</div>
+
+Somente consultas com expressões simples são suportadas (por exemplo, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
+Essas expressões são traduzidas para a linguagem de consulta do MongoDB e executadas no lado do servidor.
+Você pode desativar todas essas restrições usando [mongodb&#95;throw&#95;on&#95;unsupported&#95;query](/pt-BR/reference/settings/session-settings#mongodb_throw_on_unsupported_query).
+Nesse caso, o ClickHouse tenta converter a consulta da melhor forma possível, mas isso pode levar a uma varredura completa da tabela e ao processamento do lado do ClickHouse.
+
+<Note>
+  É sempre melhor definir explicitamente o tipo do literal, porque o Mongo exige filtros com tipagem estrita.
+  Por exemplo, suponha que você queira filtrar por `Date`:
+
+  ```sql
+  SELECT * FROM mongo_table WHERE date = '2024-01-01'
+  ```
+
+  Isso não vai funcionar porque o Mongo não fará cast de string para `Date`, então você precisa fazer o cast manualmente:
+
+  ```sql
+  SELECT * FROM mongo_table WHERE date = '2024-01-01'::Date OR date = toDate('2024-01-01')
+  ```
+
+  Isso se aplica a `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
+</Note>
+
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
+
+Supondo que o MongoDB tenha o conjunto de dados [sample&#95;mflix](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix) carregado
+
+Crie uma tabela no ClickHouse que permita ler dados a partir de uma coleção do MongoDB:
+
+```sql title="Query"
+CREATE TABLE sample_mflix_table
+(
+    _id String,
+    title String,
+    plot String,
+    genres Array(String),
+    directors Array(String),
+    writers Array(String),
+    released Date,
+    imdb String,
+    year String
+) ENGINE = MongoDB('mongodb://<USERNAME>:<PASSWORD>@atlas-sql-6634be87cefd3876070caf96-98lxs.a.query.mongodb.net/sample_mflix?ssl=true&authSource=admin', 'movies');
+```
+
+```sql title="Query"
+SELECT count() FROM sample_mflix_table
+```
+
+```text title="Response"
+   ┌─count()─┐
+1. │   21349 │
+   └─────────┘
+```
+
+```sql title="Query"
+-- JSONExtractString não pode ser enviado para o MongoDB
+SET mongodb_throw_on_unsupported_query = 0;
+
+-- Encontrar todas as sequências de 'Back to the Future' com avaliação > 7.5
+SELECT title, plot, genres, directors, released FROM sample_mflix_table
+WHERE title IN ('Back to the Future', 'Back to the Future Part II', 'Back to the Future Part III')
+    AND toFloat32(JSONExtractString(imdb, 'rating')) > 7.5
+ORDER BY year
+FORMAT Vertical;
+```
+
+```text title="Response"
+Linha 1:
+──────
+title:     Back to the Future
+plot:      A young man is accidentally sent 30 years into the past in a time-traveling DeLorean invented by his friend, Dr. Emmett Brown, and must make sure his high-school-age parents unite in order to save his own existence.
+genres:    ['Adventure','Comedy','Sci-Fi']
+directors: ['Robert Zemeckis']
+released:  1985-07-03
+
+Linha 2:
+──────
+title:     Back to the Future Part II
+plot:      After visiting 2015, Marty McFly must repeat his visit to 1955 to prevent disastrous changes to 1985... without interfering with his first trip.
+genres:    ['Action','Adventure','Comedy']
+directors: ['Robert Zemeckis']
+released:  1989-11-22
+```
+
+```sql title="Query"
+-- Encontrar os 3 filmes mais bem avaliados baseados nos livros de Cormac McCarthy
+SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) AS rating
+FROM sample_mflix_table
+WHERE arrayExists(x -> x LIKE 'Cormac McCarthy%', writers)
+ORDER BY rating DESC
+LIMIT 3;
+```
+
+```text title="Response"
+   ┌─title──────────────────┬─rating─┐
+1. │ No Country for Old Men │    8.1 │
+2. │ The Sunset Limited     │    7.4 │
+3. │ The Road               │    7.3 │
+   └────────────────────────┴────────┘
+```
+
+<div id="troubleshooting">
+  ## Solução de problemas
+</div>
+
+Você pode ver a consulta MongoDB gerada nos logs no nível DEBUG.
+
+Os detalhes de implementação podem ser encontrados na documentação do [mongocxx](https://github.com/mongodb/mongo-cxx-driver) e do [mongoc](https://github.com/mongodb/mongo-c-driver).

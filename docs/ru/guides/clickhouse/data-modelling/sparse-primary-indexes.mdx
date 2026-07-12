@@ -1,0 +1,1509 @@
+---
+sidebarTitle: 'Первичные индексы'
+description: 'В этом руководстве мы подробно рассмотрим индексирование в ClickHouse.'
+title: 'Практическое введение в первичные индексы ClickHouse'
+slug: /guides/best-practices/sparse-primary-indexes
+show_related_blogs: true
+doc_type: 'guide'
+keywords: ['первичный индекс', 'индексирование', 'производительность', 'оптимизация запросов', 'лучшие практики']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="introduction">
+  ## Введение
+</div>
+
+В этом руководстве мы подробно разберём индексирование в ClickHouse. Мы наглядно покажем и детально обсудим:
+
+* [чем индексирование в ClickHouse отличается от традиционных систем управления реляционными базами данных](#an-index-design-for-massive-data-scales)
+* [как ClickHouse формирует и использует разреженный первичный индекс таблицы](#a-table-with-a-primary-key)
+* [какие рекомендации по индексированию в ClickHouse считаются лучшими практиками](#using-multiple-primary-indexes)
+
+При желании вы можете самостоятельно выполнить на своей машине все операторы ClickHouse SQL и запросы, приведённые в этом руководстве.
+Инструкции по установке ClickHouse и началу работы см. в разделе [Быстрый старт](/ru/get-started/setup/install).
+
+<Note>
+  Это руководство посвящено разреженным первичным индексам ClickHouse.
+
+  О [вторичных индексах пропуска данных](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) в ClickHouse см. в [руководстве](/ru/concepts/features/performance/skip-indexes/skipping-indexes).
+</Note>
+
+<div id="data-set">
+  ### Набор данных
+</div>
+
+В этом руководстве мы будем использовать пример обезличенного набора данных о веб-трафике.
+
+* Мы будем использовать подмножество из 8,87 миллиона строк (событий) из этого набора данных.
+* Размер данных в несжатом виде составляет 8,87 миллиона событий и около 700 МБ. При хранении в ClickHouse они сжимаются до 200 МБ.
+* В нашем подмножестве каждая строка содержит три столбца: идентификатор интернет-пользователя (столбец `UserID`), URL, по которому он щёлкнул (столбец `URL`), и время события (столбец `EventTime`).
+
+Используя эти три столбца, мы уже можем сформулировать несколько типичных запросов веб-аналитики, например:
+
+* &quot;Какие 10 URL пользователь открывал чаще всего?&quot;
+* &quot;Какие 10 пользователей чаще всего открывали определённый URL?&quot;
+* &quot;В какое время (например, в какие дни недели) пользователь чаще всего открывает определённый URL?&quot;
+
+<div id="test-machine">
+  ### Тестовая машина
+</div>
+
+Все показатели времени выполнения, приведённые в этом документе, основаны на запуске ClickHouse 22.2.1 локально на MacBook Pro с чипом Apple M1 Pro и 16 ГБ оперативной памяти.
+
+<div id="a-full-table-scan">
+  ### Полное сканирование таблицы
+</div>
+
+Чтобы увидеть, как выполняется запрос к нашему набору данных без первичного ключа, создадим таблицу (с движком таблицы MergeTree), выполнив следующий SQL DDL-оператор:
+
+```sql
+CREATE TABLE hits_NoPrimaryKey
+(
+    `UserID` UInt32,
+    `URL` String,
+    `EventTime` DateTime
+)
+ENGINE = MergeTree
+PRIMARY KEY tuple();
+```
+
+Затем вставьте в таблицу подмножество набора данных hits с помощью следующего SQL-оператора INSERT.
+Для этого используется [табличная функция URL](/ru/reference/functions/table-functions/url), чтобы загрузить подмножество полного набора данных, размещённого на clickhouse.com:
+
+```sql
+INSERT INTO hits_NoPrimaryKey SELECT
+   intHash32(UserID) AS UserID,
+   URL,
+   EventTime
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz', 'TSV', 'WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8')
+WHERE URL != '';
+```
+
+Ответ:
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 145.993 sec. Processed 8.87 million rows, 18.40 GB (60.78 thousand rows/s., 126.06 MB/s.)
+```
+
+Вывод клиента ClickHouse показывает, что приведённый выше оператор вставил в таблицу 8,87 миллиона строк.
+
+Наконец, чтобы упростить дальнейшее изложение в этом руководстве и сделать диаграммы и результаты воспроизводимыми, мы [оптимизируем](/ru/reference/statements/optimize) таблицу с помощью ключевого слова FINAL:
+
+```sql
+OPTIMIZE TABLE hits_NoPrimaryKey FINAL;
+```
+
+<Note>
+  В целом не требуется и не рекомендуется сразу оптимизировать таблицу
+  после загрузки в неё данных. Почему это необходимо в данном примере, станет понятно далее.
+</Note>
+
+Теперь выполним наш первый запрос для веб-аналитики. Ниже вычисляются 10 URL, по которым чаще всего кликал интернет-пользователь с UserID 749927693:
+
+```sql
+SELECT URL, count(URL) AS Count
+FROM hits_NoPrimaryKey
+WHERE UserID = 749927693
+GROUP BY URL
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+Ответ:
+
+```response highlight={15}
+┌─URL────────────────────────────┬─Count─┐
+│ http://auto.ru/chatay-barana.. │   170 │
+│ http://auto.ru/chatay-id=371...│    52 │
+│ http://public_search           │    45 │
+│ http://kovrik-medvedevushku-...│    36 │
+│ http://forumal                 │    33 │
+│ http://korablitz.ru/L_1OFFER...│    14 │
+│ http://auto.ru/chatay-id=371...│    14 │
+│ http://auto.ru/chatay-john-D...│    13 │
+│ http://auto.ru/chatay-john-D...│    10 │
+│ http://wot/html?page/23600_m...│     9 │
+└────────────────────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.022 sec.
+Processed 8.87 million rows,
+70.45 MB (398.53 million rows/s., 3.17 GB/s.)
+```
+
+Вывод клиента ClickHouse показывает, что ClickHouse выполнил полное сканирование таблицы! ClickHouse пришлось прочитать каждую из 8,87 миллиона строк в нашей таблице. Такой подход не масштабируется.
+
+Чтобы сделать это гораздо эффективнее и намного быстрее, нам нужно использовать таблицу с подходящим первичным ключом. Это позволит ClickHouse автоматически создать разреженный первичный индекс (на основе столбцов первичного ключа), который затем можно использовать, чтобы значительно ускорить выполнение нашего примера запроса.
+
+<div id="clickhouse-index-design">
+  ## Проектирование индексов в ClickHouse
+</div>
+
+<div id="an-index-design-for-massive-data-scales">
+  ### Проектирование индексов для огромных объёмов данных
+</div>
+
+В традиционных реляционных системах управления базами данных первичный индекс содержал бы одну запись на каждую строку таблицы. В результате первичный индекс для нашего набора данных содержал бы 8,87 миллиона записей. Такой индекс позволяет быстро находить конкретные строки, обеспечивая высокую эффективность поисковых запросов и точечных обновлений. Поиск записи в структуре данных `B(+)-Tree` имеет среднюю временную сложность `O(log n)`; точнее, `log_b n = log_2 n / log_2 b`, где `b` — коэффициент ветвления `B(+)-Tree`, а `n` — число индексированных строк. Поскольку `b` обычно находится в диапазоне от нескольких сотен до нескольких тысяч, `B(+)-Tree` представляют собой очень неглубокие структуры, и для поиска записей требуется небольшое число операций позиционирования на диске. При 8,87 миллиона строк и коэффициенте ветвления 1000 в среднем требуется 2,3 таких обращения к диску. За это приходится платить: дополнительными затратами дискового пространства и памяти, более высокими издержками на вставку при добавлении новых строк в таблицу и записей в индекс, а также иногда необходимостью перебалансировки B-Tree.
+
+С учётом ограничений, связанных с индексами B-Tree, движки таблиц в ClickHouse используют другой подход. [Семейство движков MergeTree](/ru/reference/engines/table-engines/mergetree-family/index) в ClickHouse спроектировано и оптимизировано для работы с огромными объёмами данных. Эти таблицы рассчитаны на приём миллионов вставок строк в секунду и хранение очень больших объёмов данных (сотни PB). Данные быстро записываются в таблицу [по частям](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage), а затем к этим частям в фоне применяются правила слияния. В ClickHouse у каждой части есть собственный первичный индекс. Когда части сливаются, первичные индексы слитой части тоже объединяются. В тех очень больших масштабах, на которые рассчитан ClickHouse, крайне важно эффективно расходовать диск и память. Поэтому вместо индексации каждой строки первичный индекс части содержит одну запись индекса (так называемую «метку») на каждую группу строк (называемую «гранулой») — этот приём называется **разреженным индексом**.
+
+Разреженная индексация возможна потому, что ClickHouse хранит строки каждой части на диске упорядоченными по столбцам первичного ключа. Вместо прямого поиска отдельных строк (как в индексе на основе B-Tree) разреженный первичный индекс позволяет быстро — с помощью двоичного поиска по записям индекса — определить группы строк, которые потенциально могут соответствовать запросу. Найденные группы потенциально подходящих строк (гранулы) затем параллельно передаются в движок ClickHouse для поиска совпадений. Такое проектирование индексов позволяет сделать первичный индекс небольшим (он может и должен полностью помещаться в оперативную память), при этом всё равно значительно ускоряя выполнение запросов — особенно диапазонных запросов, типичных для аналитических сценариев работы с данными.
+
+Ниже подробно показано, как ClickHouse строит и использует свой разреженный первичный индекс. Далее в статье мы обсудим некоторые рекомендации по выбору, исключению и упорядочиванию столбцов таблицы, которые используются для построения индекса (столбцов первичного ключа).
+
+<div id="a-table-with-a-primary-key">
+  ### Таблица с первичным ключом
+</div>
+
+Создайте таблицу с составным первичным ключом по столбцам UserID и URL:
+
+```sql highlight={8}
+CREATE TABLE hits_UserID_URL
+(
+    `UserID` UInt32,
+    `URL` String,
+    `EventTime` DateTime
+)
+ENGINE = MergeTree
+PRIMARY KEY (UserID, URL)
+ORDER BY (UserID, URL, EventTime)
+SETTINGS index_granularity_bytes = 0, compress_primary_key = 0;
+```
+
+[//]: # "<details open>"
+
+<Accordion title="Подробности DDL-оператора">
+  <p>
+    Чтобы упростить дальнейшее изложение в этом руководстве, а также сделать диаграммы и результаты воспроизводимыми, этот DDL-оператор:
+
+    <ul>
+      <li>
+        Задаёт составной ключ сортировки таблицы с помощью предложения <code>ORDER BY</code>.
+      </li>
+
+      <li>
+        Явно задаёт, сколько записей будет в первичном индексе, с помощью следующих настроек:
+
+        <ul>
+          <li>
+            <code>index&#95;granularity</code>: явно установлено значение по умолчанию 8192. Это означает, что на каждую группу из 8192 строк в первичном индексе будет одна запись. Например, если таблица содержит 16384 строки, в индексе будет две записи.
+          </li>
+
+          <li>
+            <code>index&#95;granularity&#95;bytes</code>: установлено в 0, чтобы отключить <a href="/ru/resources/changelogs/oss/2019#experimental-features-1" target="_blank">адаптивную гранулярность индекса</a>. Адаптивная гранулярность индекса означает, что ClickHouse автоматически создаёт одну запись индекса для группы из n строк, если выполняется хотя бы одно из следующих условий:
+
+            <ul>
+              <li>
+                Если <code>n</code> меньше 8192, а суммарный размер данных этих <code>n</code> строк больше или равен 10 МБ (значение по умолчанию для <code>index&#95;granularity&#95;bytes</code>).
+              </li>
+
+              <li>
+                Если суммарный размер данных <code>n</code> строк меньше 10 МБ, но <code>n</code> равно 8192.
+              </li>
+            </ul>
+          </li>
+
+          <li>
+            <code>compress&#95;primary&#95;key</code>: установлено в 0, чтобы отключить <a href="https://github.com/ClickHouse/ClickHouse/issues/34437" target="_blank">сжатие первичного индекса</a>. Это позволит нам при необходимости позже просмотреть его содержимое.
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </p>
+</Accordion>
+
+Первичный ключ в приведённом выше DDL-операторе приводит к созданию первичного индекса на основе двух указанных столбцов ключа.
+
+<br />
+
+Далее вставьте данные:
+
+```sql
+INSERT INTO hits_UserID_URL SELECT
+   intHash32(UserID) AS UserID,
+   URL,
+   EventTime
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz', 'TSV', 'WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8')
+WHERE URL != '';
+```
+
+Ответ выглядит так:
+
+```response
+0 rows in set. Elapsed: 149.432 sec. Processed 8.87 million rows, 18.40 GB (59.38 thousand rows/s., 123.16 MB/s.)
+```
+
+<br />
+
+Затем оптимизируйте таблицу:
+
+```sql
+OPTIMIZE TABLE hits_UserID_URL FINAL;
+```
+
+<br />
+
+Мы можем использовать следующий запрос, чтобы получить метаданные о нашей таблице:
+
+```sql
+SELECT
+    part_type,
+    path,
+    formatReadableQuantity(rows) AS rows,
+    formatReadableSize(data_uncompressed_bytes) AS data_uncompressed_bytes,
+    formatReadableSize(data_compressed_bytes) AS data_compressed_bytes,
+    formatReadableSize(primary_key_bytes_in_memory) AS primary_key_bytes_in_memory,
+    marks,
+    formatReadableSize(bytes_on_disk) AS bytes_on_disk
+FROM system.parts
+WHERE (table = 'hits_UserID_URL') AND (active = 1)
+FORMAT Vertical;
+```
+
+Ответ:
+
+```response
+part_type:                   Wide
+path:                        ./store/d9f/d9f36a1a-d2e6-46d4-8fb5-ffe9ad0d5aed/all_1_9_2/
+rows:                        8.87 million
+data_uncompressed_bytes:     733.28 MiB
+data_compressed_bytes:       206.94 MiB
+primary_key_bytes_in_memory: 96.93 KiB
+marks:                       1083
+bytes_on_disk:               207.07 MiB
+
+1 rows in set. Elapsed: 0.003 sec.
+```
+
+Вывод клиента ClickHouse показывает:
+
+* Данные таблицы хранятся в [широком формате](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) в определённом каталоге на диске, то есть внутри этого каталога для каждого столбца таблицы будет один файл данных (и один файл меток).
+* В таблице 8,87 миллиона строк.
+* Общий размер несжатых данных всех строк составляет 733,28 МБ.
+* Общий сжатый размер всех строк на диске составляет 206,94 МБ.
+* У таблицы есть первичный индекс с 1083 записями (так называемыми &#39;метками&#39;), а размер индекса составляет 96,93 КБ.
+* В сумме данные таблицы, файлы меток и файл первичного индекса занимают на диске 207,07 МБ.
+
+<div id="data-is-stored-on-disk-ordered-by-primary-key-columns">
+  ### Данные хранятся на диске в порядке столбцов первичного ключа
+</div>
+
+Наша таблица, созданная выше, имеет
+
+* составной [первичный ключ](/ru/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) `(UserID, URL)` и
+* составной [ключ сортировки](/ru/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key) `(UserID, URL, EventTime)`.
+
+<Note>
+  - Если бы мы указали только ключ сортировки, первичный ключ был бы неявно задан равным ключу сортировки.
+
+  - Для более эффективного использования памяти мы явно указали первичный ключ, содержащий только те столбцы, по которым наши запросы выполняют фильтрацию. Первичный индекс, построенный на основе первичного ключа, полностью загружается в оперативную память.
+
+  - Чтобы сохранить единообразие диаграмм в руководстве и максимально увеличить коэффициент сжатия, мы определили отдельный ключ сортировки, включающий все столбцы таблицы (если похожие данные в столбце расположены близко друг к другу, например благодаря сортировке, они сжимаются лучше).
+
+  - Если заданы оба ключа, первичный ключ должен быть префиксом ключа сортировки.
+</Note>
+
+Вставленные строки хранятся на диске в лексикографическом порядке (по возрастанию) по столбцам первичного ключа (и по дополнительному столбцу `EventTime` из ключа сортировки).
+
+<Note>
+  ClickHouse позволяет вставлять несколько строк с одинаковыми значениями в столбцах первичного ключа. В этом случае (см. строку 1 и строку 2 на диаграмме ниже) итоговый порядок определяется указанным ключом сортировки и, следовательно, значением столбца `EventTime`.
+</Note>
+
+ClickHouse — это <a href="/ru/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">столбцовая система управления базами данных</a>. Как показано на диаграмме ниже,
+
+* в представлении на диске для каждого столбца таблицы существует отдельный файл данных (*.bin), в котором все значения этого столбца хранятся в <a href="/ru/get-started/about/distinctive-features#data-compression" target="_blank">сжатом</a> формате, и
+* 8,87 миллиона строк хранятся на диске в лексикографическом порядке по возрастанию по столбцам первичного ключа (и дополнительным столбцам ключа сортировки), то есть в данном случае
+  * сначала по `UserID`,
+  * затем по `URL`,
+  * и наконец по `EventTime`:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-01.webp" size="lg" alt="Разреженные первичные индексы 01" />
+
+`UserID.bin`, `URL.bin` и `EventTime.bin` — это файлы данных на диске, в которых хранятся значения столбцов `UserID`, `URL` и `EventTime`.
+
+<Note>
+  * Поскольку первичный ключ задает лексикографический порядок строк на диске, у таблицы может быть только один первичный ключ.
+
+  * Мы нумеруем строки, начиная с 0, чтобы соответствовать внутренней схеме нумерации строк в ClickHouse, которая также используется в сообщениях журналирования.
+</Note>
+
+<div id="data-is-organized-into-granules-for-parallel-data-processing">
+  ### Данные организуются в гранулы для параллельной обработки
+</div>
+
+Для обработки данных значения столбцов таблицы логически делятся на гранулы.
+Гранула — это наименьший неделимый набор данных, который передаётся в ClickHouse в потоковом режиме для обработки.
+Это означает, что вместо чтения отдельных строк ClickHouse всегда читает (в потоковом режиме и параллельно) целую группу строк — гранулу.
+
+<Note>
+  Значения столбцов физически не хранятся внутри гранул: гранулы — это лишь логический способ организации значений столбцов для обработки запросов.
+</Note>
+
+Следующая диаграмма показывает, как (значения столбцов) 8,87 миллиона строк нашей таблицы
+организованы в 1083 гранулы, поскольку DDL-оператор таблицы содержит настройку `index_granularity` (со значением по умолчанию 8192).
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-02.webp" size="lg" alt="Разреженные первичные индексы 02" />
+
+Первые 8192 строки (их значения столбцов) — в физическом порядке на диске — логически относятся к грануле 0, затем следующие 8192 строки (их значения столбцов) относятся к грануле 1 и так далее.
+
+<Note>
+  * Последняя гранула (гранула 1082) &quot;содержит&quot; менее 8192 строк.
+
+  * В начале этого руководства, в разделе &quot;Подробности DDL-оператора&quot;, мы упоминали, что отключили [адаптивную гранулярность индекса](/ru/resources/changelogs/oss/2019#experimental-features-1) (чтобы упростить изложение в этом руководстве, а также сделать диаграммы и результаты воспроизводимыми).
+
+    Поэтому все гранулы (кроме последней) в нашей таблице-примере имеют одинаковый размер.
+
+  * Для таблиц с адаптивной гранулярностью индекса (по [умолчанию](/ru/reference/settings/merge-tree-settings#index_granularity_bytes) гранулярность индекса является адаптивной) размер некоторых гранул может быть меньше 8192 строк в зависимости от размера данных в строках.
+
+  * Мы выделили оранжевым цветом некоторые значения из столбцов первичного ключа (`UserID`, `URL`).
+    Эти выделенные оранжевым значения столбцов — значения столбцов первичного ключа из первой строки каждой гранулы.
+    Как мы увидим ниже, именно эти выделенные оранжевым значения будут записями в первичном индексе таблицы.
+
+  * Мы нумеруем гранулы, начиная с 0, чтобы соответствовать внутренней схеме нумерации ClickHouse, которая также используется в сообщениях журналирования.
+</Note>
+
+<div id="the-primary-index-has-one-entry-per-granule">
+  ### У первичного индекса одна запись на гранулу
+</div>
+
+Первичный индекс создаётся на основе гранул, показанных на диаграмме выше. Этот индекс представляет собой несжатый файл в виде плоского массива (primary.idx), содержащий так называемые числовые метки индекса, начиная с 0.
+
+На диаграмме ниже показано, что индекс хранит значения столбцов первичного ключа (значения, отмеченные оранжевым на диаграмме выше) для первой строки каждой гранулы.
+Иными словами, первичный индекс хранит значения столбцов первичного ключа из каждой 8192-й строки таблицы (в соответствии с физическим порядком строк, заданным столбцами первичного ключа).
+Например:
+
+* первая запись индекса (&#39;метка 0&#39; на диаграмме ниже) хранит значения столбцов ключа первой строки гранулы 0 с диаграммы выше,
+* вторая запись индекса (&#39;метка 1&#39; на диаграмме ниже) хранит значения столбцов ключа первой строки гранулы 1 с диаграммы выше, и так далее.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-03a.webp" size="lg" alt="Разреженные первичные индексы 03a" />
+
+Всего индекс содержит 1083 записи для нашей таблицы с 8,87 миллиона строк и 1083 гранулами:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-03b.webp" size="lg" alt="Разреженные первичные индексы 03b" />
+
+<Note>
+  * Для таблиц с [адаптивной гранулярностью индекса](/ru/resources/changelogs/oss/2019#experimental-features-1) в первичном индексе также хранится ещё одна, дополнительная &quot;финальная&quot; метка, в которой записываются значения столбцов первичного ключа последней строки таблицы. Но поскольку мы отключили адаптивную гранулярность индекса (чтобы упростить объяснение в этом руководстве, а также сделать диаграммы и результаты воспроизводимыми), индекс нашей таблицы в примере не содержит этой финальной метки.
+
+  * Файл первичного индекса полностью загружается в оперативную память. Если размер файла превышает объём доступной свободной памяти, ClickHouse выдаст ошибку.
+</Note>
+
+<Accordion title="Просмотр содержимого первичного индекса">
+  <p>
+    В самоуправляемом кластере ClickHouse мы можем использовать <a href="/ru/reference/functions/table-functions/file" target="_blank">табличную функцию file</a>, чтобы просмотреть содержимое первичного индекса нашей таблицы-примера.
+
+    Для этого сначала нужно скопировать файл первичного индекса в <a href="/ru/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a> одного из узлов работающего кластера:
+
+    <ul>
+      <li>Шаг 1: Получить путь к части, содержащей файл первичного индекса</li>
+      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
+
+      на тестовой машине возвращает `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`.
+
+      <li>Шаг 2: Получить user&#95;files&#95;path</li>
+      <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">Значение user&#95;files&#95;path по умолчанию</a> в Linux:
+      `/var/lib/clickhouse/user_files/`
+
+      В Linux можно проверить, не было ли оно изменено: `$ grep user_files_path /etc/clickhouse-server/config.xml`
+
+      На тестовой машине этот путь — `/Users/tomschreiber/Clickhouse/user_files/`
+
+      <li>Шаг 3: Скопировать файл первичного индекса в user&#95;files&#95;path</li>
+
+      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
+    </ul>
+
+    <br />
+
+    Теперь мы можем просмотреть содержимое первичного индекса через SQL:
+
+    <ul>
+      <li>Получить количество записей</li>
+      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
+      возвращает `1083`
+
+      <li>Получить первые две метки индекса</li>
+      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
+
+      возвращает
+
+      `240923, http://showtopics.html%3...<br/>
+                  4073710, http://mk.ru&pos=3_0`
+
+      <li>Получить последнюю метку индекса</li>
+      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
+      возвращает
+      `4292714039 │ http://sosyal-mansetleri...`
+    </ul>
+
+    <br />
+
+    Это в точности соответствует нашей диаграмме содержимого первичного индекса для таблицы-примера:
+  </p>
+</Accordion>
+
+Записи первичного ключа называются метками индекса, потому что каждая запись индекса обозначает начало определённого диапазона данных. В частности, для таблицы-примера:
+
+* Метки индекса UserID:
+
+  Значения `UserID`, хранящиеся в первичном индексе, отсортированы по возрастанию.<br />
+  Поэтому «метка 1» на диаграмме выше указывает, что значения `UserID` всех строк таблицы в грануле 1 и во всех следующих гранулах гарантированно больше либо равны 4.073.710.
+
+[Как мы увидим позже](#the-primary-index-is-used-for-selecting-granules), этот глобальный порядок позволяет ClickHouse <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">использовать алгоритм двоичного поиска</a> по меткам индекса для первого столбца ключа, когда запрос фильтрует по первому столбцу первичного ключа.
+
+* Метки индекса для URL:
+
+  Довольно близкая мощность столбцов первичного ключа `UserID` и `URL`
+  означает, что метки индекса для всех столбцов ключа после первого, как правило, задают диапазон данных только до тех пор, пока значение предыдущего столбца ключа остаётся одинаковым для всех строк таблицы хотя бы в пределах текущей гранулы.<br />
+  Например, поскольку значения UserID для метки 0 и метки 1 на диаграмме выше различаются, ClickHouse не может предположить, что все значения URL во всех строках таблицы в грануле 0 больше или равны `'http://showtopics.html%3...'`. Однако если бы значения UserID для метки 0 и метки 1 на диаграмме выше были одинаковыми (то есть значение UserID оставалось бы одним и тем же для всех строк таблицы в пределах гранулы 0), ClickHouse мог бы предположить, что все значения URL во всех строках таблицы в грануле 0 больше или равны `'http://showtopics.html%3...'`.
+
+  Позже мы подробнее обсудим, как это влияет на производительность выполнения запросов.
+
+<div id="the-primary-index-is-used-for-selecting-granules">
+  ### Первичный индекс используется для отбора гранул
+</div>
+
+Теперь мы можем выполнять запросы с использованием первичного индекса.
+
+Следующий запрос вычисляет 10 URL, по которым пользователь с UserID 749927693 переходил чаще всего.
+
+```sql
+SELECT URL, count(URL) AS Count
+FROM hits_UserID_URL
+WHERE UserID = 749927693
+GROUP BY URL
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+Ответ:
+
+```response highlight={15}
+┌─URL────────────────────────────┬─Count─┐
+│ http://auto.ru/chatay-barana.. │   170 │
+│ http://auto.ru/chatay-id=371...│    52 │
+│ http://public_search           │    45 │
+│ http://kovrik-medvedevushku-...│    36 │
+│ http://forumal                 │    33 │
+│ http://korablitz.ru/L_1OFFER...│    14 │
+│ http://auto.ru/chatay-id=371...│    14 │
+│ http://auto.ru/chatay-john-D...│    13 │
+│ http://auto.ru/chatay-john-D...│    10 │
+│ http://wot/html?page/23600_m...│     9 │
+└────────────────────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.005 sec.
+Processed 8.19 thousand rows,
+740.18 KB (1.53 million rows/s., 138.59 MB/s.)
+```
+
+Теперь вывод клиента ClickHouse показывает, что вместо полного сканирования таблицы в ClickHouse было передано только 8,19 тысячи строк.
+
+Если <a href="/ru/reference/settings/server-settings/settings#logger" target="_blank">трассировочное логирование</a> включено, то в файле журнала сервера ClickHouse видно, что ClickHouse выполнял <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">двоичный поиск</a> по 1083 меткам индекса UserID, чтобы определить гранулы, которые могут содержать строки со значением `749927693` в столбце UserID. Для этого требуется 19 шагов при средней временной сложности `O(log2 n)`:
+
+```response highlight={2,7}
+...Executor): Key condition: (column 0 in [749927693, 749927693])
+...Executor): Running binary search on index range for part all_1_9_2 (1083 marks)
+...Executor): Found (LEFT) boundary mark: 176
+...Executor): Found (RIGHT) boundary mark: 177
+...Executor): Found continuous range in 19 steps
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              1/1083 marks by primary key, 1 marks to read from 1 ranges
+...Reading ...approx. 8192 rows starting from 1441792
+```
+
+Мы видим в приведённом выше журнале трассировки, что запросу удовлетворила одна метка из 1083 существующих меток.
+
+<Accordion title="Подробности журнала трассировки">
+  <p>
+    Была определена метка 176 (&#39;найденная левая граничная метка&#39; включается, а &#39;найденная правая граничная метка&#39; не включается), и поэтому все 8192 строки из гранулы 176 (которая начинается со строки 1.441.792 — мы увидим это позже в этом руководстве) затем передаются в ClickHouse, чтобы найти фактические строки со значением `749927693` в столбце UserID.
+  </p>
+</Accordion>
+
+Мы также можем воспроизвести это с помощью <a href="/ru/reference/statements/explain" target="_blank">предложения EXPLAIN</a> в нашем примере запроса:
+
+```sql
+EXPLAIN indexes = 1
+SELECT URL, count(URL) AS Count
+FROM hits_UserID_URL
+WHERE UserID = 749927693
+GROUP BY URL
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+Ответ выглядит так:
+
+```response highlight={17}
+┌─explain───────────────────────────────────────────────────────────────────────────────┐
+│ Expression (Projection)                                                               │
+│   Limit (preliminary LIMIT (without OFFSET))                                          │
+│     Sorting (Sorting for ORDER BY)                                                    │
+│       Expression (Before ORDER BY)                                                    │
+│         Aggregating                                                                   │
+│           Expression (Before GROUP BY)                                                │
+│             Filter (WHERE)                                                            │
+│               SettingQuotaAndLimits (Set limits and quota after reading from storage) │
+│                 ReadFromMergeTree                                                     │
+│                 Indexes:                                                              │
+│                   PrimaryKey                                                          │
+│                     Keys:                                                             │
+│                       UserID                                                          │
+│                     Condition: (UserID in [749927693, 749927693])                     │
+│                     Parts: 1/1                                                        │
+│                     Granules: 1/1083                                                  │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+
+16 rows in set. Elapsed: 0.003 sec.
+```
+
+По выводу клиента видно, что из 1083 гранул была выбрана одна, которая может содержать строки со значением 749927693 в столбце UserID.
+
+<Info>
+  **Вывод**
+
+  Когда запрос фильтрует по столбцу, который входит в составной ключ и является его первым столбцом, ClickHouse выполняет алгоритм двоичного поиска по меткам индекса этого ключевого столбца.
+</Info>
+
+<br />
+
+Как обсуждалось выше, ClickHouse использует свой разреженный первичный индекс, чтобы быстро (с помощью двоичного поиска) выбирать гранулы, которые потенциально могут содержать строки, соответствующие запросу.
+
+Это **первый этап (выбор гранул)** выполнения запроса к ClickHouse.
+
+На **втором этапе (чтение данных)** ClickHouse определяет расположение выбранных гранул, чтобы передать все их строки в движок ClickHouse и найти строки, которые действительно соответствуют запросу.
+
+Этот второй этап подробнее рассматривается в следующем разделе.
+
+<div id="mark-files-are-used-for-locating-granules">
+  ### Файлы меток используются для определения расположения гранул
+</div>
+
+Следующая диаграмма иллюстрирует часть файла первичного индекса нашей таблицы.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-04.webp" size="lg" alt="Разреженные первичные индексы 04" />
+
+Как обсуждалось выше, с помощью двоичного поиска по 1083 меткам `UserID` в индексе была найдена метка 176. Следовательно, соответствующая ей гранула 176 потенциально может содержать строки со значением 749.927.693 в столбце `UserID`.
+
+<Accordion title="Подробности выбора гранулы">
+  <p>
+    Приведённая выше диаграмма показывает, что метка 176 — это первая запись индекса, для которой минимальное значение `UserID` связанной гранулы 176 меньше 749.927.693, а минимальное значение `UserID` гранулы 177 для следующей метки (метки 177) больше этого значения. Поэтому только гранула 176, соответствующая метке 176, потенциально может содержать строки со значением 749.927.693 в столбце `UserID`.
+  </p>
+</Accordion>
+
+Чтобы подтвердить (или опровергнуть), что некоторые строки в грануле 176 содержат значение 749.927.693 в столбце `UserID`, все 8192 строки этой гранулы нужно передать в ClickHouse потоком.
+
+Для этого ClickHouse должен знать физическое расположение гранулы 176.
+
+В ClickHouse физические расположения всех гранул нашей таблицы хранятся в файлах меток. Как и в случае с файлами данных, для каждого столбца таблицы существует отдельный файл меток.
+
+Следующая диаграмма показывает три файла меток `UserID.mrk`, `URL.mrk` и `EventTime.mrk`, в которых хранятся физические расположения гранул для столбцов таблицы `UserID`, `URL` и `EventTime`.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="Разреженные первичные индексы 05" />
+
+Мы уже обсуждали, что первичный индекс — это плоский несжатый файл-массив (`primary.idx`), содержащий метки индекса, нумерация которых начинается с 0.
+
+Аналогично, файл меток тоже представляет собой плоский несжатый файл-массив (`*.mrk`), содержащий метки, нумерация которых начинается с 0.
+
+После того как ClickHouse определяет и выбирает метку индекса для гранулы, которая потенциально может содержать строки, соответствующие запросу, в файлах меток можно выполнить позиционный поиск по массиву, чтобы получить физические расположения этой гранулы.
+
+Каждая запись в файле меток для конкретного столбца хранит два расположения в виде смещений:
+
+* Первое смещение (`'block_offset'` на диаграмме выше) указывает на <a href="/ru/resources/develop-contribute/introduction/architecture#block" target="_blank">блок</a> в <a href="/ru/get-started/about/distinctive-features#data-compression" target="_blank">сжатом</a> файле данных столбца, который содержит сжатую версию выбранной гранулы. Такой сжатый блок потенциально может содержать несколько сжатых гранул. При чтении найденный сжатый блок распаковывается в оперативную память.
+
+* Второе смещение (`'granule_offset'` на диаграмме выше) из файла меток указывает расположение гранулы внутри несжатых данных блока.
+
+После этого все 8192 строки, принадлежащие найденной несжатой грануле, передаются в ClickHouse для дальнейшей обработки.
+
+<Note>
+  * Для таблиц с [широким форматом](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) и без [адаптивной гранулярности индекса](/ru/resources/changelogs/oss/2019#experimental-features-1) ClickHouse использует файлы меток `.mrk`, как показано выше; они содержат записи с двумя 8-байтными адресами в каждой записи. Эти записи представляют собой физические расположения гранул, и все такие гранулы имеют одинаковый размер.
+
+  Гранулярность индекса по [умолчанию](/ru/reference/settings/merge-tree-settings#index_granularity_bytes) адаптивна, но для нашей таблицы-примера мы отключили адаптивную гранулярность индекса (чтобы упростить объяснение в этом руководстве, а также сделать диаграммы и результаты воспроизводимыми). Наша таблица использует широкий формат, потому что объём данных превышает [min&#95;bytes&#95;for&#95;wide&#95;part](/ru/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (по умолчанию это 10 МБ для самоуправляемых кластеров).
+
+  * Для таблиц с широким форматом и адаптивной гранулярностью индекса ClickHouse использует файлы меток `.mrk2`, которые содержат записи, аналогичные файлам `.mrk`, но с дополнительным третьим значением в каждой записи: числом строк в грануле, с которой связана текущая запись.
+
+  * Для таблиц с [компактным форматом](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) ClickHouse использует файлы меток `.mrk3`.
+</Note>
+
+<Info>
+  **Зачем нужны файлы меток**
+
+  Почему первичный индекс не содержит напрямую физические расположения гранул, соответствующих меткам индекса?
+
+  Потому что в тех очень больших масштабах, на которые рассчитан ClickHouse, крайне важно эффективно расходовать дисковое пространство и память.
+
+  Файл первичного индекса должен помещаться в оперативную память.
+
+  В нашем примере запроса ClickHouse использовал первичный индекс и выбрал одну гранулу, которая потенциально может содержать строки, соответствующие запросу. Только для этой гранулы ClickHouse затем нужны физические смещения, чтобы считать соответствующие строки для дальнейшей обработки.
+
+  Кроме того, информация о смещениях нужна только для столбцов UserID и URL.
+
+  Информация о смещениях не нужна для столбцов, которые не используются в запросе, например `EventTime`.
+
+  Для нашего примера запроса ClickHouse нужны только два смещения физического расположения для гранулы 176 в файле данных UserID (UserID.bin) и два смещения физического расположения для гранулы 176 в файле данных URL (URL.bin).
+
+  Дополнительный уровень косвенности, обеспечиваемый файлами меток, позволяет не хранить непосредственно в первичном индексе записи о физических расположениях всех 1083 гранул для всех трёх столбцов и тем самым избежать хранения ненужных (и потенциально неиспользуемых) данных в оперативной памяти.
+</Info>
+
+Следующая схема и текст ниже показывают, как в нашем примере запроса ClickHouse находит гранулу 176 в файле данных UserID.bin.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-06.webp" size="lg" alt="Sparse Primary Indices 06" />
+
+Ранее в этом руководстве мы уже обсуждали, что ClickHouse выбрал метку 176 в первичном индексе и, следовательно, гранулу 176 как потенциально содержащую строки, соответствующие нашему запросу.
+
+Теперь ClickHouse использует выбранный из индекса номер метки (176) для позиционного поиска в массиве в файле меток UserID.mrk, чтобы получить два смещения, необходимых для нахождения гранулы 176.
+
+Как показано на схеме, первое смещение указывает на сжатый блок в файле данных UserID.bin, который, в свою очередь, содержит сжатую версию гранулы 176.
+
+После того как найденный блок распакован в оперативную память, второе смещение из файла меток можно использовать для нахождения гранулы 176 в несжатых данных.
+
+Чтобы выполнить наш пример запроса (10 URL с наибольшим числом кликов для интернет-пользователя с UserID 749.927.693), ClickHouse нужно найти гранулу 176 (и считать все значения из неё) как из файла данных UserID.bin, так и из файла данных URL.bin.
+
+На схеме выше показано, как ClickHouse находит гранулу в файле данных UserID.bin.
+
+Параллельно ClickHouse делает то же самое для гранулы 176 в файле данных URL.bin. Эти две соответствующие гранулы выравниваются и передаются в ClickHouse engine для дальнейшей обработки, то есть агрегации и подсчёта значений URL по группам для всех строк, где UserID равен 749.927.693, а затем вывода 10 самых больших групп URL в порядке убывания количества.
+
+<div id="using-multiple-primary-indexes">
+  ## Использование нескольких индексов первичного ключа
+</div>
+
+<a name="filtering-on-key-columns-after-the-first" />
+
+<div id="secondary-key-columns-can-not-be-inefficient">
+  ### Второстепенные столбцы ключа могут быть (не)эффективны
+</div>
+
+Если запрос фильтрует по столбцу, который входит в составной ключ и является первым столбцом ключа, [то ClickHouse использует алгоритм двоичного поиска по меткам индекса этого столбца ключа](#the-primary-index-is-used-for-selecting-granules).
+
+Но что происходит, если запрос фильтрует по столбцу, который входит в составной ключ, но не является первым столбцом ключа?
+
+<Note>
+  Здесь мы рассматриваем сценарий, в котором запрос намеренно фильтрует не по первому столбцу ключа, а по второстепенному столбцу ключа.
+
+  Если запрос фильтрует и по первому столбцу ключа, и по любому из следующих за ним столбцов ключа, ClickHouse выполняет двоичный поиск по меткам индекса первого столбца ключа.
+</Note>
+
+<br />
+
+<br />
+
+<a name="query-on-url" />
+
+Мы используем запрос, который вычисляет 10 пользователей, чаще всего переходивших по URL &quot;http://public&#95;search&quot;:
+
+```sql
+SELECT UserID, count(UserID) AS Count
+FROM hits_UserID_URL
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+Ответ: <a name="query-on-url-slow" />
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.086 sec.
+Processed 8.81 million rows,
+799.69 MB (102.11 million rows/s., 9.27 GB/s.)
+```
+
+Вывод клиента показывает, что ClickHouse почти выполнил полное сканирование таблицы, несмотря на то, что [столбец URL является частью составного первичного ключа](#a-table-with-a-primary-key)! ClickHouse считывает 8,81 миллиона строк из 8,87 миллиона строк в таблице.
+
+Если включен [trace&#95;logging](/ru/reference/settings/server-settings/settings#logger), то файл журнала сервера ClickHouse показывает, что ClickHouse использовал <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">универсальный алгоритм поиска с исключением</a> по 1083 меткам индекса URL, чтобы определить гранулы, которые потенциально могут содержать строки со значением столбца URL &quot;http://public&#95;search&quot;:
+
+```response highlight={3,6}
+...Executor): Key condition: (column 1 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): Used generic exclusion search over index for part all_1_9_2
+              with 1537 steps
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              1076/1083 marks by primary key, 1076 marks to read from 5 ranges
+...Executor): Reading approx. 8814592 rows with 10 streams
+```
+
+Как видно из примера трассировочного лога выше, 1076 из 1083 гранул (по меткам индекса) были выбраны как потенциально содержащие строки с совпадающим значением URL.
+
+В результате в движок ClickHouse было передано для обработки 8,81 миллиона строк (параллельно с использованием 10 потоков), чтобы определить строки, которые действительно содержат значение URL &quot;http://public&#95;search&quot;.
+
+Однако, как мы увидим далее, из этих 1076 выбранных гранул только 39 действительно содержат совпадающие строки.
+
+Хотя первичный индекс, основанный на составном первичном ключе (UserID, URL), был очень полезен для ускорения запросов, фильтрующих строки по конкретному значению UserID, для ускорения запроса, фильтрующего строки по конкретному значению URL, этот индекс почти не помогает.
+
+Причина в том, что столбец URL не является первым ключевым столбцом, и поэтому ClickHouse использует универсальный алгоритм поиска с исключением (вместо двоичного поиска) по меткам индекса столбца URL, и **эффективность этого алгоритма зависит от разницы в мощности** между столбцом URL и предшествующим ему ключевым столбцом UserID.
+
+Чтобы проиллюстрировать это, приведём некоторые подробности о том, как работает универсальный алгоритм поиска с исключением.
+
+<a name="generic-exclusion-search-algorithm" />
+
+<div id="generic-exclusion-search-algorithm">
+  ### Универсальный алгоритм поиска с исключением
+</div>
+
+Ниже показано, как работает <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1438" target="_blank">универсальный алгоритм поиска с исключением ClickHouse</a>, когда гранулы выбираются по вторичному столбцу, а предшествующий ключевой столбец имеет низкую или высокую мощность.
+
+В качестве примера для обоих случаев будем считать, что:
+
+* запрос ищет строки, где URL = &quot;W3&quot;.
+* используется абстрактная версия нашей таблицы hits с упрощёнными значениями UserID и URL.
+* для индекса используется один и тот же составной первичный ключ (UserID, URL). Это означает, что строки сначала упорядочиваются по значениям UserID. Затем строки с одинаковым значением UserID упорядочиваются по URL.
+* размер гранулы равен двум, то есть каждая гранула содержит две строки.
+
+На диаграммах ниже оранжевым выделены значения ключевых столбцов для первой строки таблицы в каждой грануле.
+
+**Предшествующий ключевой столбец имеет низкую мощность**<a name="generic-exclusion-search-fast" />
+
+Предположим, что UserID имеет низкую мощность. В этом случае велика вероятность, что одно и то же значение UserID будет распределено по нескольким строкам таблицы, гранулам и, следовательно, меткам индекса. Для меток индекса с одинаковым UserID значения URL отсортированы по возрастанию (поскольку строки таблицы упорядочены сначала по UserID, а затем по URL). Это позволяет эффективно фильтровать данные, как описано ниже:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-07.webp" size="lg" alt="Sparse Primary Indices 06" />
+
+Для процесса выбора гранул в наших абстрактных примерных данных на диаграмме выше возможны три разных сценария:
+
+1. Метка индекса 0, для которой **значение URL меньше W3 и значение URL у непосредственно следующей метки индекса тоже меньше W3**, может быть исключена, потому что метки 0 и 1 имеют одинаковое значение UserID. Обратите внимание: это предварительное условие исключения гарантирует, что гранула 0 целиком состоит из значений UserID U1, поэтому ClickHouse может предположить, что максимальное значение URL в грануле 0 тоже меньше W3, и исключить эту гранулу.
+
+2. Метка индекса 1, для которой **значение URL меньше (или равно) W3, а значение URL у непосредственно следующей метки индекса больше (или равно) W3**, выбирается, потому что это означает, что гранула 1 потенциально может содержать строки с URL W3.
+
+3. Метки индекса 2 и 3, для которых **значение URL больше W3**, могут быть исключены, поскольку метки первичного индекса хранят значения ключевых столбцов для первой строки таблицы в каждой грануле, а строки таблицы на диске отсортированы по значениям ключевых столбцов, поэтому гранулы 2 и 3 не могут содержать значение URL W3.
+
+**Предшествующий ключевой столбец имеет высокую мощность**<a name="generic-exclusion-search-slow" />
+
+Когда UserID имеет высокую мощность, маловероятно, что одно и то же значение UserID будет распределено по нескольким строкам таблицы и гранулам. Это означает, что значения URL для меток индекса не возрастают монотонно:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-08.webp" size="lg" alt="Sparse Primary Indices 06" />
+
+Как видно на диаграмме выше, все показанные метки, у которых значения URL меньше W3, выбираются для передачи строк связанных с ними гранул в движок ClickHouse.
+
+Это происходит потому, что, хотя все метки индекса на диаграмме подпадают под сценарий 1, описанный выше, они не удовлетворяют упомянутому предварительному условию исключения: *непосредственно следующая метка индекса должна иметь то же значение UserID, что и текущая метка*, — и потому не могут быть исключены.
+
+Например, рассмотрим метку индекса 0, для которой **значение URL меньше W3 и значение URL у непосредственно следующей метки индекса тоже меньше W3**. Она *не* может быть исключена, потому что непосредственно следующая метка индекса 1 *не* имеет того же значения UserID, что и текущая метка 0.
+
+В итоге это не позволяет ClickHouse делать предположения о максимальном значении URL в грануле 0. Вместо этого он должен исходить из того, что гранула 0 потенциально содержит строки со значением URL W3, и вынужден выбрать метку 0.
+
+То же самое верно для меток 1, 2 и 3.
+
+<Info>
+  **Вывод**
+
+  <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">универсальный алгоритм поиска с исключением</a>, который ClickHouse использует вместо <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">алгоритма двоичного поиска</a>, когда запрос фильтрует по столбцу, входящему в состав составного ключа, но не являющемуся первым столбцом ключа, наиболее эффективен, если предыдущий столбец ключа имеет низкую мощность.
+</Info>
+
+В нашем примере оба столбца ключа (UserID, URL) имеют схожую высокую мощность, и, как уже объяснялось, универсальный алгоритм поиска с исключением не очень эффективен, когда предыдущий столбец ключа для столбца URL имеет более высокую или сопоставимую мощность.
+
+<div id="note-about-data-skipping-index">
+  ### Примечание об индексе пропуска данных
+</div>
+
+Из-за одинаково высокой мощности UserID и URL наш [запрос с фильтрацией по URL](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient) тоже почти не выиграл бы от создания [вторичного индекса пропуска данных](/ru/concepts/features/performance/skip-indexes/skipping-indexes) для столбца URL
+в нашей [таблице с составным первичным ключом (UserID, URL)](#a-table-with-a-primary-key).
+
+Например, следующие два оператора создают и заполняют индекс пропуска данных [minmax](/ru/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) для столбца URL в нашей таблице:
+
+```sql
+ALTER TABLE hits_UserID_URL ADD INDEX url_skipping_index URL TYPE minmax GRANULARITY 4;
+ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
+```
+
+Теперь ClickHouse создал дополнительный индекс, который хранит — для каждой группы из 4 последовательных [гранул](#data-is-organized-into-granules-for-parallel-data-processing) (обратите внимание на предложение `GRANULARITY 4` в операторе `ALTER TABLE` выше) — минимальное и максимальное значения URL:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-13a.webp" size="lg" alt="Разреженные первичные индексы 13a" />
+
+Первая запись индекса (&#39;mark 0&#39; на диаграмме выше) хранит минимальное и максимальное значения URL для [строк, относящихся к первым 4 гранулам нашей таблицы](#data-is-organized-into-granules-for-parallel-data-processing).
+
+Вторая запись индекса (&#39;mark 1&#39;) хранит минимальное и максимальное значения URL для строк, относящихся к следующим 4 гранулам нашей таблицы, и так далее.
+
+(ClickHouse также создал специальный [файл меток](#mark-files-are-used-for-locating-granules) для индекса пропуска данных, чтобы [определять расположение](#mark-files-are-used-for-locating-granules) групп гранул, связанных с метками индекса.)
+
+Из-за столь же высокой мощности UserID и URL этот вторичный индекс пропуска данных не помогает исключать гранулы при выполнении нашего [запроса с фильтрацией по URL](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient).
+
+Конкретное значение URL, которое ищет запрос (то есть &#39;http://public&#95;search&#39;), с большой вероятностью находится между минимальным и максимальным значениями, сохранёнными в индексе для каждой группы гранул, из-за чего ClickHouse вынужден выбирать эти группы гранул (поскольку они могут содержать строки, соответствующие запросу).
+
+<div id="a-need-to-use-multiple-primary-indexes">
+  ### Необходимость использовать несколько первичных индексов
+</div>
+
+Как следствие, если мы хотим значительно ускорить наш пример запроса, который фильтрует строки с определённым URL, нам нужно использовать первичный индекс, оптимизированный под этот запрос.
+
+Если вдобавок мы хотим сохранить хорошую производительность нашего примера запроса, который фильтрует строки с определённым UserID, нам нужно использовать несколько первичных индексов.
+
+Ниже показано, как этого можно добиться.
+
+<a name="multiple-primary-indexes" />
+
+<div id="options-for-creating-additional-primary-indexes">
+  ### Варианты создания дополнительных первичных индексов
+</div>
+
+Если мы хотим значительно ускорить оба наших примера запросов — тот, который фильтрует строки по конкретному UserID, и тот, который фильтрует строки по конкретному URL, — нам нужно использовать несколько первичных индексов, выбрав один из этих трех вариантов:
+
+* Создать **вторую таблицу** с другим первичным ключом.
+* Создать **materialized view** для существующей таблицы.
+* Добавить **проекцию** в существующую таблицу.
+
+Во всех трех случаях наши примерные данные фактически будут дублироваться в дополнительной таблице, чтобы изменить первичный индекс таблицы и порядок сортировки строк.
+
+Однако эти три варианта различаются тем, насколько эта дополнительная таблица прозрачна для пользователя с точки зрения маршрутизации запросов и команд вставки.
+
+При создании **второй таблицы** с другим первичным ключом запросы нужно явно отправлять в ту версию таблицы, которая лучше всего подходит для конкретного запроса, а новые данные нужно явно вставлять в обе таблицы, чтобы поддерживать их синхронизацию:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-09a.webp" size="lg" alt="Sparse Primary Indices 09a" />
+
+В случае с **materialized view** дополнительная таблица создается неявно, а данные в обеих таблицах автоматически поддерживаются в синхронизированном состоянии:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-09b.webp" size="lg" alt="Sparse Primary Indices 09b" />
+
+А **проекция** — самый прозрачный вариант, потому что, помимо автоматической синхронизации неявно созданной (и скрытой) дополнительной таблицы при изменениях данных, ClickHouse также автоматически выберет наиболее эффективную версию таблицы для запросов:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-09c.webp" size="lg" alt="Sparse Primary Indices 09c" />
+
+Далее мы подробнее рассмотрим эти три варианта создания и использования нескольких первичных индексов на реальных примерах.
+
+<a name="multiple-primary-indexes-via-secondary-tables" />
+
+<div id="option-1-secondary-tables">
+  ### Вариант 1: Вторичные таблицы
+</div>
+
+<a name="secondary-table" />
+
+Мы создаём ещё одну таблицу, в которой меняем порядок столбцов ключа в первичном ключе по сравнению с исходной таблицей:
+
+```sql highlight={8}
+CREATE TABLE hits_URL_UserID
+(
+    `UserID` UInt32,
+    `URL` String,
+    `EventTime` DateTime
+)
+ENGINE = MergeTree
+PRIMARY KEY (URL, UserID)
+ORDER BY (URL, UserID, EventTime)
+SETTINGS index_granularity_bytes = 0, compress_primary_key = 0;
+```
+
+Вставьте все 8,87 миллиона строк из [исходной таблицы](#a-table-with-a-primary-key) в дополнительную таблицу:
+
+```sql
+INSERT INTO hits_URL_UserID
+SELECT * FROM hits_UserID_URL;
+```
+
+Ответ выглядит так:
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 2.898 sec. Processed 8.87 million rows, 838.84 MB (3.06 million rows/s., 289.46 MB/s.)
+```
+
+И наконец, оптимизируйте таблицу:
+
+```sql
+OPTIMIZE TABLE hits_URL_UserID FINAL;
+```
+
+Поскольку мы изменили порядок столбцов в первичном ключе, вставленные строки теперь хранятся на диске в другом лексикографическом порядке (по сравнению с нашей [исходной таблицей](#a-table-with-a-primary-key)), и поэтому 1083 гранулы этой таблицы теперь тоже содержат иные значения, чем раньше:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-10.webp" size="lg" alt="Разреженные первичные индексы 10" />
+
+Вот получившийся первичный ключ:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-11.webp" size="lg" alt="Разреженные первичные индексы 11" />
+
+Теперь его можно использовать, чтобы значительно ускорить выполнение нашего примера запроса с фильтрацией по столбцу URL и определить 10 пользователей, которые чаще всего переходили по URL &quot;http://public&#95;search&quot;:
+
+```sql highlight={2}
+SELECT UserID, count(UserID) AS Count
+FROM hits_URL_UserID
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+Ответ:
+
+<a name="query-on-url-fast" />
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.017 sec.
+Processed 319.49 thousand rows,
+11.38 MB (18.41 million rows/s., 655.75 MB/s.)
+```
+
+Теперь, вместо [почти полного сканирования таблицы](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns), ClickHouse выполнил этот запрос значительно эффективнее.
+
+С первичным индексом из [исходной таблицы](#a-table-with-a-primary-key), где UserID был первым, а URL — вторым ключевым столбцом, ClickHouse использовал [универсальный алгоритм поиска с исключением](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) по меткам индекса для выполнения этого запроса, и это было не слишком эффективно из-за одинаково высокой мощности UserID и URL.
+
+Когда URL стал первым столбцом в первичном индексе, ClickHouse теперь выполняет <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">двоичный поиск</a> по меткам индекса.
+Это подтверждает соответствующий трассировочный лог в файле журнала сервера ClickHouse:
+
+```response highlight={3,8}
+...Executor): Key condition: (column 0 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): Running binary search on index range for part all_1_9_2 (1083 marks)
+...Executor): Found (LEFT) boundary mark: 644
+...Executor): Found (RIGHT) boundary mark: 683
+...Executor): Found continuous range in 19 steps
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              39/1083 marks by primary key, 39 marks to read from 1 ranges
+...Executor): Reading approx. 319488 rows with 2 streams
+```
+
+ClickHouse выбрал только 39 меток индекса вместо 1076 при использовании универсального алгоритма поиска с исключением.
+
+Обратите внимание, что дополнительная таблица оптимизирована для ускорения выполнения нашего примера запроса с фильтрацией по URL.
+
+Как и в случае с [низкой производительностью](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient) этого запроса на нашей [исходной таблице](#a-table-with-a-primary-key), наш [пример запроса с фильтрацией по `UserIDs`](#the-primary-index-is-used-for-selecting-granules) тоже будет работать с новой дополнительной таблицей не слишком эффективно, потому что UserID теперь является вторым ключевым столбцом в первичном индексе этой таблицы, и поэтому ClickHouse будет использовать универсальный алгоритм поиска с исключением для выбора гранул, который [не очень эффективен при столь же высокой мощности](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) UserID и URL.
+Откройте блок с подробностями.
+
+<Accordion title="Запрос с фильтрацией по UserIDs теперь работает медленно">
+  <p>
+    ```sql
+    SELECT URL, count(URL) AS Count
+    FROM hits_URL_UserID
+    WHERE UserID = 749927693
+    GROUP BY URL
+    ORDER BY Count DESC
+    LIMIT 10;
+    ```
+
+    Ответ:
+
+    ```response highlight={15}
+    ┌─URL────────────────────────────┬─Count─┐
+    │ http://auto.ru/chatay-barana.. │   170 │
+    │ http://auto.ru/chatay-id=371...│    52 │
+    │ http://public_search           │    45 │
+    │ http://kovrik-medvedevushku-...│    36 │
+    │ http://forumal                 │    33 │
+    │ http://korablitz.ru/L_1OFFER...│    14 │
+    │ http://auto.ru/chatay-id=371...│    14 │
+    │ http://auto.ru/chatay-john-D...│    13 │
+    │ http://auto.ru/chatay-john-D...│    10 │
+    │ http://wot/html?page/23600_m...│     9 │
+    └────────────────────────────────┴───────┘
+
+    10 rows in set. Elapsed: 0.024 sec.
+    Processed 8.02 million rows,
+    73.04 MB (340.26 million rows/s., 3.10 GB/s.)
+    ```
+
+    Log сервера:
+
+    ```response highlight={2,5}
+    ...Executor): Key condition: (column 1 in [749927693, 749927693])
+    ...Executor): Used generic exclusion search over index for part all_1_9_2
+                  with 1453 steps
+    ...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+                  980/1083 marks by primary key, 980 marks to read from 23 ranges
+    ...Executor): Reading approx. 8028160 rows with 10 streams
+    ```
+  </p>
+</Accordion>
+
+Теперь у нас есть две таблицы, оптимизированные соответственно для ускорения запросов с фильтрацией по `UserIDs` и по URL:
+
+<div id="option-2-materialized-views">
+  ### Вариант 2: Materialized Views
+</div>
+
+Создайте [materialized view](/ru/reference/statements/create/view) на основе существующей таблицы.
+
+```sql
+CREATE MATERIALIZED VIEW mv_hits_URL_UserID
+ENGINE = MergeTree()
+PRIMARY KEY (URL, UserID)
+ORDER BY (URL, UserID, EventTime)
+POPULATE
+AS SELECT * FROM hits_UserID_URL;
+```
+
+Ответ выглядит так:
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 2.935 sec. Processed 8.87 million rows, 838.84 MB (3.02 million rows/s., 285.84 MB/s.)
+```
+
+<Note>
+  * мы меняем порядок столбцов ключа в первичном ключе представления по сравнению с нашей [исходной таблицей](#a-table-with-a-primary-key)
+  * materialized view опирается на **неявно созданную таблицу**, порядок строк и первичный индекс которой определяются заданным первичным ключом
+  * неявно созданная таблица выводится запросом `SHOW TABLES` и имеет имя, начинающееся с `.inner`
+  * также можно сначала явно создать базовую таблицу для materialized view, а затем представление сможет использовать эту таблицу через [предложение](/ru/reference/statements/create/view) `TO [db].[table]`
+  * мы используем ключевое слово `POPULATE`, чтобы сразу заполнить неявно созданную таблицу всеми 8,87 миллиона строк из исходной таблицы [hits&#95;UserID&#95;URL](#a-table-with-a-primary-key)
+  * если в исходную таблицу hits&#95;UserID&#95;URL вставляются новые строки, эти строки автоматически вставляются и в неявно созданную таблицу
+  * Фактически неявно созданная таблица имеет тот же порядок строк и тот же первичный индекс, что и [вторичная таблица, которую мы создали явно](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables):
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12b-1.webp" size="lg" alt="Sparse Primary Indices 12b1" />
+
+  ClickHouse хранит [файлы данных столбцов](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), [файлы меток](#mark-files-are-used-for-locating-granules) (*.mrk2) и [первичный индекс](#the-primary-index-has-one-entry-per-granule) (primary.idx) неявно созданной таблицы в специальной папке внутри каталога данных сервера ClickHouse:
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12b-2.webp" size="md" alt="Sparse Primary Indices 12b2" />
+</Note>
+
+Неявно созданная таблица (и её первичный индекс), лежащая в основе materialized view, теперь может использоваться для значительного ускорения выполнения нашего запроса из примера с фильтрацией по столбцу URL:
+
+```sql highlight={2}
+SELECT UserID, count(UserID) AS Count
+FROM mv_hits_URL_UserID
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+Ответ:
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.026 sec.
+Processed 335.87 thousand rows,
+13.54 MB (12.91 million rows/s., 520.38 MB/s.)
+```
+
+Поскольку неявно созданная таблица (и её первичный индекс), лежащая в основе materialized view, фактически идентична [вторичной таблице, которую мы создали явно](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), запрос выполняется по сути так же, как и для явно созданной таблицы.
+
+Соответствующий трассировочный лог в файле журнала сервера ClickHouse подтверждает, что ClickHouse выполняет двоичный поиск по меткам индекса:
+
+```response highlight={3,6}
+...Executor): Key condition: (column 0 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): Running binary search on index range ...
+...
+...Executor): Selected 4/4 parts by partition key, 4 parts by primary key,
+              41/1083 marks by primary key, 41 marks to read from 4 ranges
+...Executor): Reading approx. 335872 rows with 4 streams
+```
+
+<div id="option-3-projections">
+  ### Вариант 3: Проекции
+</div>
+
+Создайте проекцию для существующей таблицы:
+
+```sql
+ALTER TABLE hits_UserID_URL
+    ADD PROJECTION prj_url_userid
+    (
+        SELECT *
+        ORDER BY (URL, UserID)
+    );
+```
+
+Затем материализуйте проекцию:
+
+```sql
+ALTER TABLE hits_UserID_URL
+    MATERIALIZE PROJECTION prj_url_userid;
+```
+
+<Note>
+  * проекция создает **скрытую таблицу**, порядок строк и первичный индекс которой определяются указанным предложением `ORDER BY` проекции
+  * скрытая таблица не отображается запросом `SHOW TABLES`
+  * мы используем ключевое слово `MATERIALIZE`, чтобы сразу заполнить скрытую таблицу всеми 8,87 миллиона строк из исходной таблицы [hits&#95;UserID&#95;URL](#a-table-with-a-primary-key)
+  * если в исходную таблицу hits&#95;UserID&#95;URL вставляются новые строки, они также автоматически вставляются в скрытую таблицу
+  * запрос всегда (синтаксически) обращен к исходной таблице hits&#95;UserID&#95;URL, но если порядок строк и первичный индекс скрытой таблицы позволяют выполнить запрос эффективнее, вместо исходной будет использована скрытая таблица
+  * обратите внимание, что проекции не делают более эффективными запросы с ORDER BY, даже если ORDER BY совпадает с ORDER BY проекции (см. https://github.com/ClickHouse/ClickHouse/issues/47333)
+  * фактически неявно созданная скрытая таблица имеет тот же порядок строк и тот же первичный индекс, что и [вторичная таблица, которую мы явно создали](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables):
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12c-1.webp" size="lg" alt="Sparse Primary Indices 12c1" />
+
+  ClickHouse хранит [файлы данных столбцов](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), [файлы меток](#mark-files-are-used-for-locating-granules) (*.mrk2) и [первичный индекс](#the-primary-index-has-one-entry-per-granule) (primary.idx) скрытой таблицы в специальной папке (выделена оранжевым на снимке экрана ниже) рядом с файлами данных, файлами меток и файлами первичного индекса исходной таблицы:
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12c-2.webp" size="sm" alt="Sparse Primary Indices 12c2" />
+</Note>
+
+Скрытая таблица (и ее первичный индекс), созданная проекцией, теперь может (неявно) использоваться для значительного ускорения выполнения нашего примера запроса с фильтрацией по столбцу URL. Обратите внимание: синтаксически запрос обращен к исходной таблице проекции.
+
+```sql highlight={2}
+SELECT UserID, count(UserID) AS Count
+FROM hits_UserID_URL
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+Результат:
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.029 sec.
+Processed 319.49 thousand rows, 1
+1.38 MB (11.05 million rows/s., 393.58 MB/s.)
+```
+
+Поскольку скрытая таблица (и её первичный индекс), созданная проекцией, фактически идентична [вторичной таблице, которую мы создали явным образом](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), запрос выполняется практически так же, как и для таблицы, созданной явным образом.
+
+Соответствующий трассировочный лог в файле журнала сервера ClickHouse подтверждает, что ClickHouse выполняет двоичный поиск по меткам индекса:
+
+```response highlight={3,5,8}
+...Executor): Key condition: (column 0 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): Running binary search on index range for part prj_url_userid (1083 marks)
+...Executor): ...
+...Executor): Choose complete Normal projection prj_url_userid
+...Executor): projection required columns: URL, UserID
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              39/1083 marks by primary key, 39 marks to read from 1 ranges
+...Executor): Reading approx. 319488 rows with 2 streams
+```
+
+<div id="summary">
+  ### Краткое резюме
+</div>
+
+Первичный индекс нашей [таблицы с составным первичным ключом (UserID, URL)](#a-table-with-a-primary-key) был очень полезен для ускорения [запроса с фильтрацией по UserID](#the-primary-index-is-used-for-selecting-granules). Но этот индекс почти не помогает ускорить [запрос с фильтрацией по URL](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient), хотя столбец URL входит в составной первичный ключ.
+
+И наоборот:
+Первичный индекс нашей [таблицы с составным первичным ключом (URL, UserID)](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables) ускорял [запрос с фильтрацией по URL](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient), но почти не помогал [запросу с фильтрацией по UserID](#the-primary-index-is-used-for-selecting-granules).
+
+Из-за одинаково высокой мощности столбцов первичного ключа UserID и URL запрос с фильтрацией по второму столбцу ключа [почти не выигрывает от включения второго столбца ключа в индекс](#generic-exclusion-search-algorithm).
+
+Поэтому имеет смысл удалить второй столбец ключа из первичного индекса (это уменьшит потребление памяти индексом) и вместо этого [использовать несколько первичных индексов](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#using-multiple-primary-indexes).
+
+Однако если столбцы ключа в составном первичном ключе сильно различаются по мощности, то для [запросов полезно](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) упорядочить столбцы первичного ключа по возрастанию мощности.
+
+Чем больше разница в мощности между столбцами ключа, тем важнее их порядок в ключе. Мы покажем это в следующем разделе.
+
+<div id="ordering-key-columns-efficiently">
+  ## Эффективный порядок столбцов ключа
+</div>
+
+<a name="test" />
+
+В составном первичном ключе порядок столбцов ключа может существенно влиять как на:
+
+* эффективность фильтрации по вторичным столбцам ключа в запросах, так и на
+* коэффициент сжатия файлов данных таблицы.
+
+Чтобы продемонстрировать это, мы будем использовать версию нашего [набора примерных данных о веб-трафике](#data-set),
+в котором каждая строка содержит три столбца, указывающих, был ли доступ интернет-&#39;пользователя&#39; (столбец `UserID`) к URL (столбец `URL`) помечен как трафик бота (столбец `IsRobot`).
+
+Мы будем использовать составной первичный ключ, включающий все три вышеупомянутых столбца. Его можно использовать для ускорения типичных запросов веб-аналитики, вычисляющих:
+
+* какая доля (в процентах) трафика к определённому URL приходится на ботов, или
+* насколько мы уверены, что конкретный пользователь является (или не является) ботом (какой процент трафика от этого пользователя считается трафиком бота или, наоборот, не считается)
+
+Мы используем этот запрос, чтобы вычислить мощности трёх столбцов, которые хотим использовать в качестве столбцов ключа в составном первичном ключе (обратите внимание, что мы используем [табличную функцию URL](/ru/reference/functions/table-functions/url), чтобы выполнять специальные запросы к TSV-данным без необходимости создавать локальную таблицу). Выполните этот запрос в `clickhouse client`:
+
+```sql
+SELECT
+    formatReadableQuantity(uniq(URL)) AS cardinality_URL,
+    formatReadableQuantity(uniq(UserID)) AS cardinality_UserID,
+    formatReadableQuantity(uniq(IsRobot)) AS cardinality_IsRobot
+FROM
+(
+    SELECT
+        c11::UInt64 AS UserID,
+        c15::String AS URL,
+        c20::UInt8 AS IsRobot
+    FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+    WHERE URL != ''
+)
+```
+
+Ответ:
+
+```response
+┌─cardinality_URL─┬─cardinality_UserID─┬─cardinality_IsRobot─┐
+│ 2.39 million    │ 119.08 thousand    │ 4.00                │
+└─────────────────┴────────────────────┴─────────────────────┘
+
+1 row in set. Elapsed: 118.334 sec. Processed 8.87 million rows, 15.88 GB (74.99 thousand rows/s., 134.21 MB/s.)
+```
+
+Мы видим, что мощность столбцов сильно различается, особенно у столбцов `URL` и `IsRobot`, поэтому порядок этих столбцов в составном первичном ключе важен как для эффективного ускорения запросов с фильтрацией по этим столбцам, так и для достижения оптимальных коэффициентов сжатия файлов с данными столбцов таблицы.
+
+Чтобы продемонстрировать это, мы создадим две версии таблицы для наших данных анализа бот-трафика:
+
+* таблицу `hits_URL_UserID_IsRobot` с составным первичным ключом `(URL, UserID, IsRobot)`, где столбцы ключа упорядочены по мощности в порядке убывания
+* таблицу `hits_IsRobot_UserID_URL` с составным первичным ключом `(IsRobot, UserID, URL)`, где столбцы ключа упорядочены по мощности в порядке возрастания
+
+Создайте таблицу `hits_URL_UserID_IsRobot` с составным первичным ключом `(URL, UserID, IsRobot)`:
+
+```sql highlight={8}
+CREATE TABLE hits_URL_UserID_IsRobot
+(
+    `UserID` UInt32,
+    `URL` String,
+    `IsRobot` UInt8
+)
+ENGINE = MergeTree
+PRIMARY KEY (URL, UserID, IsRobot);
+```
+
+И заполните её 8,87 млн строк:
+
+```sql
+INSERT INTO hits_URL_UserID_IsRobot SELECT
+    intHash32(c11::UInt64) AS UserID,
+    c15 AS URL,
+    c20 AS IsRobot
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+WHERE URL != '';
+```
+
+Вот ответ:
+
+```response
+0 rows in set. Elapsed: 104.729 sec. Processed 8.87 million rows, 15.88 GB (84.73 thousand rows/s., 151.64 MB/s.)
+```
+
+Затем создайте таблицу `hits_IsRobot_UserID_URL` с составным первичным ключом `(IsRobot, UserID, URL)`:
+
+```sql highlight={8}
+CREATE TABLE hits_IsRobot_UserID_URL
+(
+    `UserID` UInt32,
+    `URL` String,
+    `IsRobot` UInt8
+)
+ENGINE = MergeTree
+PRIMARY KEY (IsRobot, UserID, URL);
+```
+
+И заполните её теми же 8,87 миллиона строк, что и предыдущую таблицу:
+
+```sql
+INSERT INTO hits_IsRobot_UserID_URL SELECT
+    intHash32(c11::UInt64) AS UserID,
+    c15 AS URL,
+    c20 AS IsRobot
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+WHERE URL != '';
+```
+
+Ответ:
+
+```response
+0 rows in set. Elapsed: 95.959 sec. Processed 8.87 million rows, 15.88 GB (92.48 thousand rows/s., 165.50 MB/s.)
+```
+
+<div id="efficient-filtering-on-secondary-key-columns">
+  ### Эффективная фильтрация по вторичным столбцам ключа
+</div>
+
+Когда запрос фильтрует хотя бы по одному столбцу, входящему в состав составного ключа, и этот столбец является первым столбцом ключа, [ClickHouse использует алгоритм двоичного поиска по меткам индекса этого столбца ключа](#the-primary-index-is-used-for-selecting-granules).
+
+Когда запрос фильтрует (только) по столбцу, входящему в состав составного ключа, но не являющемуся первым столбцом ключа, [ClickHouse использует универсальный алгоритм поиска с исключением по меткам индекса этого столбца ключа](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient).
+
+Во втором случае порядок столбцов ключа в составном первичном ключе важен для эффективности [универсального алгоритма поиска с исключением](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444).
+
+Ниже показан запрос, фильтрующий по столбцу `UserID` таблицы, в которой мы упорядочили столбцы ключа `(URL, UserID, IsRobot)` по мощности в порядке убывания:
+
+```sql
+SELECT count(*)
+FROM hits_URL_UserID_IsRobot
+WHERE UserID = 112304
+```
+
+Ответ:
+
+```response highlight={6}
+┌─count()─┐
+│      73 │
+└─────────┘
+
+1 row in set. Elapsed: 0.026 sec.
+Processed 7.92 million rows,
+31.67 MB (306.90 million rows/s., 1.23 GB/s.)
+```
+
+Это тот же запрос к таблице, в котором мы упорядочили столбцы ключа `(IsRobot, UserID, URL)` по мощности в порядке возрастания:
+
+```sql
+SELECT count(*)
+FROM hits_IsRobot_UserID_URL
+WHERE UserID = 112304
+```
+
+Ответ:
+
+```response highlight={6}
+┌─count()─┐
+│      73 │
+└─────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+Processed 20.32 thousand rows,
+81.28 KB (6.61 million rows/s., 26.44 MB/s.)
+```
+
+Мы видим, что запрос выполняется значительно эффективнее и быстрее для таблицы, в которой столбцы ключа упорядочены по возрастанию мощности.
+
+Это связано с тем, что [универсальный алгоритм поиска с исключением](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444) работает наиболее эффективно, когда [гранулы](#the-primary-index-is-used-for-selecting-granules) выбираются по вторичному столбцу ключа, а предшествующий ему столбец ключа имеет меньшую мощность. Мы подробно показали это в [предыдущем разделе](#generic-exclusion-search-algorithm) этого руководства.
+
+<div id="optimal-compression-ratio-of-data-files">
+  ### Оптимальный коэффициент сжатия файлов данных
+</div>
+
+Этот запрос сравнивает коэффициент сжатия для столбца `UserID` в двух таблицах, которые мы создали выше:
+
+```sql
+SELECT
+    table AS Table,
+    name AS Column,
+    formatReadableSize(data_uncompressed_bytes) AS Uncompressed,
+    formatReadableSize(data_compressed_bytes) AS Compressed,
+    round(data_uncompressed_bytes / data_compressed_bytes, 0) AS Ratio
+FROM system.columns
+WHERE (table = 'hits_URL_UserID_IsRobot' OR table = 'hits_IsRobot_UserID_URL') AND (name = 'UserID')
+ORDER BY Ratio ASC
+```
+
+Вот ответ:
+
+```response
+┌─Table───────────────────┬─Column─┬─Uncompressed─┬─Compressed─┬─Ratio─┐
+│ hits_URL_UserID_IsRobot │ UserID │ 33.83 MiB    │ 11.24 MiB  │     3 │
+│ hits_IsRobot_UserID_URL │ UserID │ 33.83 MiB    │ 877.47 KiB │    39 │
+└─────────────────────────┴────────┴──────────────┴────────────┴───────┘
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+
+Мы видим, что коэффициент сжатия для столбца `UserID` значительно выше у таблицы, в которой столбцы ключа `(IsRobot, UserID, URL)` упорядочены по мощности по возрастанию.
+
+Хотя в обеих таблицах хранится абсолютно одинаковый набор данных (мы вставили в обе таблицы одни и те же 8,87 миллиона строк), порядок столбцов ключа в составном первичном ключе существенно влияет на то, сколько места на диске занимают <a href="/ru/get-started/about/distinctive-features#data-compression" target="_blank">сжатые</a> [файлы данных столбцов](#data-is-stored-on-disk-ordered-by-primary-key-columns) таблицы:
+
+* в таблице `hits_URL_UserID_IsRobot` с составным первичным ключом `(URL, UserID, IsRobot)`, где столбцы ключа упорядочены по мощности по убыванию, файл данных `UserID.bin` занимает **11.24 MiB** места на диске
+* в таблице `hits_IsRobot_UserID_URL` с составным первичным ключом `(IsRobot, UserID, URL)`, где столбцы ключа упорядочены по мощности по возрастанию, файл данных `UserID.bin` занимает всего **877.47 KiB** места на диске
+
+Хороший коэффициент сжатия данных столбца таблицы на диске не только экономит место, но и ускоряет запросы (особенно аналитические), которым требуется чтение данных из этого столбца, поскольку для перемещения данных столбца с диска в оперативную память (файловый кеш операционной системы) требуется меньше операций ввода-вывода.
+
+Ниже мы покажем, почему для коэффициента сжатия столбцов таблицы выгодно упорядочивать столбцы первичного ключа по мощности по возрастанию.
+
+На диаграмме ниже схематично показан порядок строк на диске для первичного ключа, в котором столбцы ключа упорядочены по мощности по возрастанию:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-14a.webp" size="lg" alt="Разреженные первичные индексы 14a" />
+
+Мы уже обсуждали, что [данные строк таблицы хранятся на диске в порядке столбцов первичного ключа](#data-is-stored-on-disk-ordered-by-primary-key-columns).
+
+На приведённой выше диаграмме строки таблицы (то есть значения их столбцов на диске) сначала упорядочены по значению `cl`, а строки с одинаковым значением `cl` — по значению `ch`. И поскольку первый столбец ключа `cl` имеет низкую мощность, велика вероятность, что существуют строки с одинаковым значением `cl`. А значит, велика и вероятность того, что значения `ch` окажутся упорядоченными (локально — для строк с одинаковым значением `cl`).
+
+Если в столбце похожие данные расположены близко друг к другу, например благодаря сортировке, такие данные будут сжиматься лучше.
+В целом алгоритм сжатия выигрывает от длины последовательностей данных (чем больше данных он видит, тем лучше для сжатия)
+и локальности (чем более похожи данные, тем выше коэффициент сжатия).
+
+В отличие от диаграммы выше, на диаграмме ниже схематично показан порядок строк на диске для первичного ключа, в котором столбцы ключа упорядочены по мощности по убыванию:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-14b.webp" size="lg" alt="Разреженные первичные индексы 14b" />
+
+Теперь строки таблицы сначала упорядочиваются по значению `ch`, а строки с одинаковым значением `ch` — по значению `cl`.
+Но поскольку первый ключевой столбец `ch` имеет высокую мощность, строки с одинаковым значением `ch` встречаются редко. А значит, значения `cl` тоже вряд ли будут упорядочены (локально — в пределах строк с одинаковым значением `ch`).
+
+Поэтому значения `cl`, скорее всего, расположены в случайном порядке и, соответственно, имеют низкую локальность и плохой коэффициент сжатия.
+
+<div id="summary-1">
+  ### Кратко
+</div>
+
+Как для эффективной фильтрации по вторичным столбцам ключа в запросах, так и для коэффициента сжатия файлов со столбцовыми данными таблицы полезно упорядочивать столбцы первичного ключа по возрастанию их мощности.
+
+<div id="identifying-single-rows-efficiently">
+  ## Эффективная идентификация отдельных строк
+</div>
+
+Хотя в целом это [не](/ru/resources/support-center/knowledge-base/general-faqs/key-value) самый подходящий сценарий использования ClickHouse,
+иногда приложения, построенные на ClickHouse, требуют идентифицировать отдельные строки таблицы ClickHouse.
+
+Интуитивное решение в таком случае — использовать столбец [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier) с уникальным значением для каждой строки и, чтобы быстро извлекать строки, сделать этот столбец столбцом первичного ключа.
+
+Для максимально быстрого извлечения столбец UUID [должен быть первым столбцом ключа](#the-primary-index-is-used-for-selecting-granules).
+
+Как уже обсуждалось, поскольку [данные строк таблицы ClickHouse хранятся на диске в порядке столбцов первичного ключа](#data-is-stored-on-disk-ordered-by-primary-key-columns), наличие столбца с очень высокой мощностью (например, столбца UUID) в первичном ключе или в составном первичном ключе перед столбцами с меньшей мощностью [ухудшает коэффициент сжатия других столбцов таблицы](#optimal-compression-ratio-of-data-files).
+
+Компромисс между максимально быстрым извлечением и оптимальным сжатием данных — использовать составной первичный ключ, в котором UUID является последним столбцом ключа после столбцов ключа с низкой (или более низкой) мощностью, обеспечивающих хороший коэффициент сжатия для некоторых столбцов таблицы.
+
+<div id="a-concrete-example">
+  ### Конкретный пример
+</div>
+
+Один из наглядных примеров — сервис для публикации открытого текста [https://pastila.nl](https://pastila.nl), который разработал Alexey Milovidov и о котором он [написал в блоге](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/).
+
+При каждом изменении в текстовом поле данные автоматически сохраняются в строку таблицы ClickHouse (одна строка на каждое изменение).
+
+Один из способов идентифицировать и получить (конкретную версию) вставленного содержимого — использовать хеш содержимого в качестве UUID строки таблицы, в которой хранится это содержимое.
+
+Следующая диаграмма показывает
+
+* порядок вставки строк при изменении содержимого (например, из-за нажатий клавиш при вводе текста в текстовое поле) и
+* порядок данных на диске из вставленных строк при использовании `PRIMARY KEY (hash)`:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-15a.webp" size="lg" alt="Sparse Primary Indices 15a" />
+
+Поскольку столбец `hash` используется в качестве столбца первичного ключа,
+
+* конкретные строки можно получать [очень быстро](#the-primary-index-is-used-for-selecting-granules), но
+* строки таблицы (то есть их данные в столбцах) хранятся на диске в порядке возрастания (уникальных и случайных) значений hash. Поэтому значения столбца content тоже хранятся в случайном порядке, без локальности данных, что приводит к **неоптимальному коэффициенту сжатия файла данных столбца content**.
+
+Чтобы значительно улучшить коэффициент сжатия для столбца content и при этом сохранить быстрое получение конкретных строк, pastila.nl использует два хеша (и составной первичный ключ) для идентификации конкретной строки:
+
+* хеш содержимого, как обсуждалось выше, который различается для разных данных, и
+* [locality-sensitive hash (fingerprint)](https://en.wikipedia.org/wiki/Locality-sensitive_hashing), который **не** меняется при небольших изменениях данных.
+
+Следующая диаграмма показывает
+
+* порядок вставки строк при изменении содержимого (например, из-за нажатий клавиш при вводе текста в текстовое поле) и
+* порядок данных на диске из вставленных строк при использовании составного `PRIMARY KEY (fingerprint, hash)`:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-15b.webp" size="lg" alt="Sparse Primary Indices 15b" />
+
+Теперь строки на диске сначала упорядочиваются по `fingerprint`, а для строк с одинаковым значением fingerprint итоговый порядок определяется значением `hash`.
+
+Поскольку данные, различающиеся лишь незначительно, получают одно и то же значение fingerprint, похожие данные теперь хранятся на диске рядом друг с другом в столбце content. А это очень хорошо влияет на коэффициент сжатия столбца content, поскольку алгоритмы сжатия в целом выигрывают от локальности данных (чем больше данные похожи, тем выше коэффициент сжатия).
+
+Компромисс заключается в том, что для получения конкретной строки требуются два поля (`fingerprint` и `hash`), чтобы оптимально использовать первичный индекс, который получается из составного `PRIMARY KEY (fingerprint, hash)`.
