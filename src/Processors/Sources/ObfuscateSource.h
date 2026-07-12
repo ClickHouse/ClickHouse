@@ -13,7 +13,7 @@ namespace DB
 
 class PullingPipelineExecutor;
 
-/** Source that runs an inner SELECT query twice:
+/** Source that runs an inner SELECT query multiple times:
   *   1. Training phase: drains the inner query to train the obfuscator's models.
   *   2. Generation phase: re-executes the inner query repeatedly, feeding each
   *      block through the obfuscator to produce anonymized output.
