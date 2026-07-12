@@ -88,3 +88,43 @@ TEST(ContextExternalRoles, DeferredReplayPreservesExternalRoles)
         EXPECT_TRUE(contains(job_context->getCurrentRoles(), role_id));
     }
 }
+
+/// Regression for switching principals on a context that already carries pushed (external) roles.
+/// `ContextData`'s copy constructor now preserves `external_roles`, so `setUser` must clear them when the
+/// new principal does not bring its own; otherwise the stale external role would remain enabled for the
+/// target user (e.g. `EXECUTE AS target_user` reuses the session context via `impersonateSessionContext`,
+/// calling `setUser(target_id)` with no external roles), silently widening the target's privileges.
+TEST(ContextExternalRoles, SetUserClearsStaleExternalRolesOnUserSwitch)
+{
+    auto context = getMutableContext().context;
+    auto & access_control = context->getAccessControl();
+    access_control.addMemoryStorage("gtest_external_roles_switch_memory", /*allow_backup_=*/ false);
+
+    /// The principal that authenticated with a pushed (external) role, and the one we switch to.
+    auto source_user = std::make_shared<User>();
+    source_user->setName("gtest_external_roles_source_user");
+    UUID source_user_id = access_control.insert(source_user);
+
+    auto target_user = std::make_shared<User>();
+    target_user->setName("gtest_external_roles_target_user");
+    UUID target_user_id = access_control.insert(target_user);
+
+    /// A role that is not granted to either user, standing in for a role pushed from another node.
+    auto role = std::make_shared<Role>();
+    role->setName("gtest_external_roles_switch_role");
+    UUID role_id = access_control.insert(role);
+
+    /// A session authenticated as the source user with the role received as an external (pushed) role.
+    auto session_context = Context::createCopy(context);
+    session_context->makeQueryContext();
+    session_context->setUser(source_user_id, /*external_roles=*/ {role_id});
+    EXPECT_EQ(session_context->getExternalRoles(), std::vector<UUID>{role_id});
+    EXPECT_TRUE(contains(session_context->getCurrentRoles(), role_id));
+
+    /// Switch the same context to another principal without bringing any external roles.
+    session_context->setUser(target_user_id);
+
+    /// The stale external role must be gone; otherwise the target user would silently keep it enabled.
+    EXPECT_TRUE(session_context->getExternalRoles().empty());
+    EXPECT_FALSE(contains(session_context->getCurrentRoles(), role_id));
+}
