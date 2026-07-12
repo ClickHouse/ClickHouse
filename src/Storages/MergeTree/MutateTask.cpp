@@ -62,6 +62,7 @@ namespace ProfileEvents
     extern const Event MutationAllPartColumns;
     extern const Event MutationSomePartColumns;
     extern const Event MutateTaskProjectionsCalculationMicroseconds;
+    extern const Event MutateTaskMetadataDriftDetected;
 }
 
 namespace CurrentMetrics
@@ -3043,7 +3044,24 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
     /// Skip this optimization in that case; the normal mutation path will surface the error.
     const auto * column_desc = metadata_snapshot->getColumns().tryGet(command.column_name);
     fiu_do_on(FailPoints::mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc, { column_desc = nullptr; });
-    if (!column_desc || !column_desc->statistics.empty())
+    if (!column_desc)
+    {
+        /// Metadata/commands drift under concurrent ALTERs: the column is in the mutation
+        /// commands but missing from this metadata snapshot. Not an error (the normal mutation
+        /// path handles it), but it degrades the metadata-only optimization into a full rewrite,
+        /// so surface it instead of failing open silently.
+        ProfileEvents::increment(ProfileEvents::MutateTaskMetadataDriftDetected);
+        LOG_WARNING(
+            getLogger("MutateTask"),
+            "Column '{}' is present in the mutation commands but missing from the metadata snapshot "
+            "(concurrent ALTER drift). Skipping the metadata-only conversion to Nullable for part {}; "
+            "the part will be rewritten.",
+            command.column_name,
+            part->name);
+        return false;
+    }
+
+    if (!column_desc->statistics.empty())
         return false;
 
     return true;

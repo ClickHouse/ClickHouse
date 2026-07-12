@@ -513,6 +513,7 @@
     M(VersionedCollapsingSortedMilliseconds, "Total time spent while version collapsing sorted columns", ValueType::Milliseconds) \
     M(GatheringColumnMilliseconds, "Total time spent while gathering columns for vertical merge", ValueType::Milliseconds) \
     \
+    M(MutateTaskMetadataDriftDetected, "Number of times a mutation observed a column present in its commands but missing from the metadata snapshot (mutation commands and metadata drifted apart under concurrent ALTERs). The metadata-only optimization is skipped and the part is fully rewritten.", ValueType::Number) \
     M(MutationTotalParts, "Number of total parts for which mutations tried to be applied", ValueType::Number) \
     M(MutationUntouchedParts, "Number of total parts for which mutations tried to be applied but which was completely skipped according to predicate", ValueType::Number) \
     M(MutationCreatedEmptyParts, "Number of total parts which were replaced to empty parts instead of running mutation", ValueType::Number) \
