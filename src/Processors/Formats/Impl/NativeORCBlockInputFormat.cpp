@@ -1353,6 +1353,34 @@ static ColumnPtr readByteMapFromORCColumn(const orc::ColumnVectorBatch * orc_col
 }
 
 
+/// A branch of an ORC union can be non-null at the union level yet select a null payload; ORC
+/// leaves a placeholder (a default value) at such positions. When the branch is later cast to an
+/// explicit Variant alternative, a value-checking cast (e.g. Int8 -> Enum8, or the same inside a
+/// Tuple field) would reject those placeholders even though the rows are never read (they become
+/// the Variant NULL discriminator). Overwrite every null-payload row with a copy of a non-null row
+/// before casting; the copied values are discarded downstream. If every row is a null payload there
+/// is nothing to read, so a null is returned and the caller uses a default-valued column instead.
+static ColumnPtr replaceNullPayloadRowsWithValidRow(const ColumnPtr & column, const NullMap & null_map)
+{
+    size_t valid_row = column->size();
+    for (size_t row = 0; row < column->size(); ++row)
+        if (!null_map[row])
+        {
+            valid_row = row;
+            break;
+        }
+
+    if (valid_row == column->size())
+        return nullptr;
+
+    auto result = column->cloneEmpty();
+    result->reserve(column->size());
+    for (size_t row = 0; row < column->size(); ++row)
+        result->insertFrom(*column, null_map[row] ? valid_row : row);
+    return result;
+}
+
+
 static const orc::ColumnVectorBatch * getNestedORCColumn(const orc::ListVectorBatch * orc_column)
 {
     return orc_column->elements.get();
@@ -2021,8 +2049,8 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         /// discriminator (see the row loop below). The branch null map is taken directly from the
         /// ORC batch rather than from a Nullable result column: complex (LIST/MAP) and
         /// dictionary-encoded branches never come back as ColumnNullable, yet their payload can
-        /// still be null. inside_nullable is set because nulls are handled here, and e.g. a STRUCT
-        /// branch could not be wrapped in Nullable anyway (Tuple cannot be inside Nullable).
+        /// still be null. inside_nullable is set because nulls are handled here rather than by
+        /// wrapping the branch value in Nullable.
         DataTypes branch_types;
         Columns branch_columns;
         std::vector<ColumnPtr> branch_null_map_columns(num_children); /// keeps the null maps alive
@@ -2056,18 +2084,22 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             /// skip the Bool -> UInt8 repair cast for a boolean branch hinted as UInt8.
             if (branch_hints[i] && branch_hints[i]->getName() != branch_non_nullable.type->getName())
             {
-                /// Cast through Nullable when the branch has nulls: a value-checking cast (e.g.
-                /// Int8 -> Enum8) must not inspect the placeholder values at null-payload
-                /// positions (such rows become the Variant NULL discriminator below).
-                if (branch_null_map_columns[i] && branch_non_nullable.column->canBeInsideNullable()
-                    && branch_hints[i]->canBeInsideNullable())
+                if (branch_null_map_columns[i])
                 {
-                    ColumnWithTypeAndName nullable_branch{
-                        ColumnNullable::create(branch_non_nullable.column, branch_null_map_columns[i]),
-                        std::make_shared<DataTypeNullable>(branch_non_nullable.type),
-                        branch_non_nullable.name};
-                    auto cast_column = castColumn(nullable_branch, std::make_shared<DataTypeNullable>(branch_hints[i]));
-                    branch_non_nullable.column = assert_cast<const ColumnNullable &>(*cast_column).getNestedColumnPtr();
+                    /// A value-checking cast (e.g. Int8 -> Enum8, or the same on a nested Tuple
+                    /// field) must not inspect the placeholder values ORC leaves at null-payload
+                    /// positions - those rows become the Variant NULL discriminator below and are
+                    /// never read. Replace them with a valid, castable row before casting.
+                    /// Wrapping the branch in Nullable is not enough: a Nullable(Tuple) cast would
+                    /// still descend into and reject a null nested field.
+                    if (auto safe = replaceNullPayloadRowsWithValidRow(branch_non_nullable.column, *branch_null_maps[i]))
+                        branch_non_nullable.column
+                            = castColumn({safe, branch_non_nullable.type, branch_non_nullable.name}, branch_hints[i]);
+                    else
+                        /// Every row is a null payload and none is read, so a default-valued column
+                        /// of the target type with the same number of rows is enough.
+                        branch_non_nullable.column
+                            = branch_hints[i]->createColumn()->cloneResized(branch_non_nullable.column->size());
                 }
                 else
                 {
