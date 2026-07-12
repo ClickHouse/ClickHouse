@@ -105,13 +105,22 @@ SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregatin
     EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v, v % 2 LIMIT 5
 );
 
--- ... the user has set explicit DISTINCT or GROUP BY limits (the rewrite would change
--- which of the limits apply to the query);
+-- The rewrite fires under DISTINCT/GROUP BY size limits (commonly set as global sanity
+-- limits, e.g. in the CI test configs) without changing which limits apply to the query:
+-- the DISTINCT limits are cleared for the rewritten query (the user did not write DISTINCT,
+-- and the distinct set is bounded by LIMIT + OFFSET rows anyway), and max_rows_to_group_by
+-- stops applying together with the aggregation it guards.
 SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
     EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 SETTINGS max_rows_in_distinct = 100
 );
 SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
     EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 SETTINGS max_rows_to_group_by = 1000000
+);
+
+-- Behavioral check: a distinct-rows limit smaller than the number of groups does not apply
+-- to the rewritten query (the original aggregation would not have been subject to it either).
+SELECT count() FROM (
+    SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 SETTINGS max_rows_in_distinct = 3
 );
 
 -- ... group_by_use_nulls is enabled (conservative, same as other GROUP BY passes).

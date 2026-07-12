@@ -7,6 +7,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <base/arithmeticOverflow.h>
 
@@ -18,9 +19,6 @@ namespace Setting
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool optimize_group_by_limit_to_distinct;
     extern const SettingsUInt64 optimize_group_by_limit_to_distinct_max_limit;
-    extern const SettingsUInt64 max_bytes_in_distinct;
-    extern const SettingsUInt64 max_rows_in_distinct;
-    extern const SettingsUInt64 max_rows_to_group_by;
 }
 
 namespace
@@ -103,14 +101,6 @@ public:
         if (settings[Setting::group_by_use_nulls])
             return;
 
-        /// max_rows_to_group_by with a non-throw overflow mode makes GROUP BY return a partial
-        /// result, and after the rewrite the cap would no longer apply. Conversely, the DISTINCT
-        /// limits would start applying to a query that did not have DISTINCT. Preserve the user's
-        /// explicit contracts by skipping the rewrite when any of these limits is set.
-        if (settings[Setting::max_rows_to_group_by] != 0 || settings[Setting::max_rows_in_distinct] != 0
-            || settings[Setting::max_bytes_in_distinct] != 0)
-            return;
-
         if (hasAggregateFunctionNodes(query->getProjectionNode()))
             return;
 
@@ -139,9 +129,26 @@ public:
             if (!is_contained_in(group_by_node, projection_nodes))
                 return;
 
+        const bool had_distinct = query->isDistinct();
+
         query->setIsDistinct(true);
         query->setIsGroupByAll(false);
         query->getGroupBy().getNodes().clear();
+
+        /// The DISTINCT set size limits (commonly set as global sanity limits, e.g. in the CI
+        /// test configs) must not start applying to a query the user did not write DISTINCT in:
+        /// the original query was not subject to them, and the rewritten query's distinct set is
+        /// bounded by LIMIT + OFFSET <= optimize_group_by_limit_to_distinct_max_limit rows anyway.
+        /// When the query already had DISTINCT on top of GROUP BY, the user's limits keep applying.
+        /// max_rows_to_group_by needs no special handling: there is no aggregation left, and its
+        /// resource-guard intent is preserved by the same bound on the distinct set (the default
+        /// optimize_trivial_group_by_limit_query already relaxes this cap for such queries).
+        if (!had_distinct)
+        {
+            auto & mutable_context = query->getMutableContext();
+            mutable_context->setSetting("max_rows_in_distinct", UInt64(0));
+            mutable_context->setSetting("max_bytes_in_distinct", UInt64(0));
+        }
     }
 };
 

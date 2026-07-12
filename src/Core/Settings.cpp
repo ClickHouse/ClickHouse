@@ -4715,7 +4715,7 @@ Rewrites `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` into `SELECT DIS
 
 The rewrite applies only when `LIMIT + OFFSET` is a constant not exceeding [optimize_group_by_limit_to_distinct_max_limit](#optimize_group_by_limit_to_distinct_max_limit): for large limits `DISTINCT` is weaker than aggregation on high-cardinality data (the final distinct transform runs on a single stream, and the `DISTINCT` set cannot spill to disk).
 
-The rewrite is suppressed when `max_rows_to_group_by`, `max_rows_in_distinct` or `max_bytes_in_distinct` is set (the rewrite would change which of the limits apply to the query), and when `group_by_use_nulls` is enabled.
+The rewrite does not change which size limits apply to the query: `max_rows_in_distinct` and `max_bytes_in_distinct` are cleared for the rewritten query (the user did not write `DISTINCT`, and the distinct set is bounded by `LIMIT + OFFSET` rows anyway) unless the original query already had `DISTINCT`, and `max_rows_to_group_by` stops applying together with the aggregation it guards. The rewrite is suppressed when `group_by_use_nulls` is enabled.
 
 Possible values:
 
