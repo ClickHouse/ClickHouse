@@ -1,0 +1,179 @@
+---
+sidebarTitle: 'Rocket BI'
+slug: /integrations/rocketbi
+keywords: ['clickhouse', 'RocketBI', 'connect', 'integrate', 'ui']
+description: 'RocketBI 是一个自助式商业智能平台，可帮助你快速分析数据、创建拖放式可视化内容，并直接在 Web 浏览器中与同事协作。'
+title: '目标：使用 Rocket.BI 搭建你的第一个仪表盘'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+在本指南中，你将安装 Rocket.BI，并用它搭建一个简单的仪表盘。
+下面就是这个仪表盘：
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_01.webp" alt="显示销售指标、图表和 KPI 的 Rocket BI 仪表盘" border />
+
+<br />
+
+你可以通过[此链接查看该仪表盘](https://demo.rocket.bi/dashboard/sales-dashboard-7?token=7eecf750-cbde-4c53-8fa8-8b905fec667e)。
+
+<div id="install">
+  ## 安装
+</div>
+
+使用我们预先构建的 Docker 镜像启动 RocketBI。
+
+获取 docker-compose.yml 和配置文件：
+
+```bash
+wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/docker-compose.yml
+wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.clickhouse.env
+```
+
+编辑 `.clickhouse.env`，添加 ClickHouse server 的信息。
+
+运行以下命令启动 RocketBI：`docker-compose up -d .`
+
+打开浏览器，访问 `localhost:5050`，使用以下账号登录：`hello@gmail.com/123456`
+
+如需从源码构建或进行高级配置，可在此查看 [Rocket.BI Readme](https://github.com/datainsider-co/rocket-bi/blob/main/README.md)
+
+<div id="lets-build-the-dashboard">
+  ## 开始创建仪表盘
+</div>
+
+在 Dashboard 中，你会看到自己的报表。点击 **+New** 即可开始进行可视化。
+
+你可以创建**不限数量的仪表盘**，并在单个仪表盘中绘制**不限数量的图表**。
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_02.webp" alt="展示在 Rocket BI 中创建新图表过程的动画" border />
+
+<br />
+
+在 YouTube 上查看高清教程：[https://www.youtube.com/watch?v=TMkdMHHfvqY](https://www.youtube.com/watch?v=TMkdMHHfvqY)
+
+<div id="build-the-chart-controls">
+  ### 设置图表控件
+</div>
+
+<div id="create-a-metrics-control">
+  #### 创建指标控件
+</div>
+
+在 Tab 过滤器中，选择要使用的指标字段。请务必留意聚合设置。
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_03.webp" alt="Rocket BI 指标控件配置面板，显示已选字段和聚合设置" border />
+
+<br />
+
+重命名过滤器，并将控件保存到仪表盘
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_04.webp" alt="已重命名过滤器、可保存到仪表盘的指标控件" border />
+
+<div id="create-a-date-type-control">
+  #### 创建日期类型控件
+</div>
+
+选择一个 Date 字段作为主日期列：
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_05.webp" alt="Rocket BI 中的日期字段选择界面，显示可用的日期列" border />
+
+<br />
+
+添加查找范围不同的重复变体。例如，按年、按月、按日或按星期几。
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_06.webp" alt="日期范围配置，显示按年、按月和按日等不同的时间段选项" border />
+
+<br />
+
+重命名过滤器，并将控件保存到仪表盘
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_07.webp" alt="已重命名过滤器并准备保存到仪表盘的日期范围控件" border />
+
+<div id="now-let-build-the-charts">
+  ### 现在，开始创建图表
+</div>
+
+<div id="pie-chart-sales-metrics-by-regions">
+  #### 饼图：按区域划分的销售指标
+</div>
+
+选择 Adding new chart，然后选择 Pie Chart
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_08.webp" alt="图表类型选择面板，其中饼图选项已高亮显示" border />
+
+<br />
+
+首先，将 Dataset 中的“Region”列拖放到 Legend Field
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_09.webp" alt="拖放界面，显示将 Region 列添加到图例字段" border />
+
+<br />
+
+然后，切换到图表控件标签页
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_10.webp" alt="图表控件标签页界面，显示可视化配置选项" border />
+
+<br />
+
+将指标控件拖放到 Value Field
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_11.webp" alt="将指标控件添加到饼图的值字段中" border />
+
+<br />
+
+ (你也可以将 指标控件 用于排序) 
+
+前往 Chart Setting 进行进一步自定义
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_12.webp" alt="图表设置面板，显示饼图的自定义选项" border />
+
+<br />
+
+例如，将 Data label 更改为 Percentage
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_13.webp" alt="数据标签设置已更改为在饼图上显示百分比" border />
+
+<br />
+
+保存并将图表添加到仪表盘
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_14.webp" alt="仪表盘视图，显示新添加的饼图和其他控件" border />
+
+<div id="use-date-control-in-a-time-series-chart">
+  #### 在时间序列图表中使用日期控件
+</div>
+
+让我们使用堆叠柱状图
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_15.webp" alt="使用时间序列数据创建堆叠柱状图的界面" border />
+
+<br />
+
+在图表控件中，将指标控件用作 Y 轴，将日期范围用作 X 轴
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_16.webp" alt="图表控件配置，Y 轴显示指标，X 轴显示日期范围" border />
+
+<br />
+
+将区域列添加到 Breakdown 中
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_17.webp" alt="将区域列添加为堆叠柱状图中的 breakdown 维度" border />
+
+<br />
+
+添加数值图表作为 KPI，并美化仪表盘
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_18.webp" alt="包含 KPI 数值图表、饼图和时间序列可视化的完整仪表盘" border />
+
+<br />
+
+现在，你已经成功搭建出第一个 rocket.BI 仪表盘

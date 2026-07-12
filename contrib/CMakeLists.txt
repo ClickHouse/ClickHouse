@@ -61,6 +61,9 @@ enable_dummy_launchers_if_needed()
 enable_heavy_build_check_if_needed()
 
 add_contrib (miniselect-cmake miniselect)
+# mapbox-geometry must precede wagyu: the wagyu interface target links ch_contrib::mapbox_geometry.
+add_contrib (mapbox-geometry-cmake mapbox-geometry)
+add_contrib (wagyu-cmake wagyu)
 add_contrib (pdqsort-cmake pdqsort)
 add_contrib (ipnsort-cmake ipnsort)
 add_contrib (driftsort-cmake driftsort)

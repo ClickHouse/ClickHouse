@@ -1,0 +1,167 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schema/map-vs-json
+description: 'ClickStack에서 속성에 맵(Map) 타입과 JSON 타입을 언제 사용해야 하는지'
+sidebarTitle: '맵(Map) 타입 vs JSON 타입'
+title: 'ClickStack의 속성에 대한 맵(Map) 타입 vs JSON 타입'
+doc_type: '참고'
+keywords: ['clickstack', 'json', 'map', '속성', '스키마', '관측성']
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+ClickStack의 [기본 스키마](/ko/clickstack/ingesting-data/schemas)는 리소스, 스코프, 로그, 스팬 속성을 `Map(LowCardinality(String), String)` 컬럼에 저장합니다. ClickHouse는 엄격한 타입의 [`JSON` 타입](/ko/reference/formats/JSON/JSON)도 지원하며, ClickStack은 `Map` 대신 이를 사용할 수 있도록 베타로 지원합니다.
+
+**일반적인 관측성 워크로드에는 [기본 `Map` 기반 스키마](/ko/clickstack/ingesting-data/schemas)를 그대로 사용하는 것을 권장합니다.** JSON 타입은 속성 키 집합이 작고 안정적인 워크로드에서 이를 평가해 보려는 사용자를 위해 제공되지만, 일반적으로 사용하기에 권장되는 스키마는 아닙니다.
+
+<div id="why-map">
+  ## 기본값으로 Map을 권장하는 이유
+</div>
+
+관측성 데이터는 리소스 속성, 스코프 속성, 스팬 및 로그 속성과 같은 속성이 큰 비중을 차지합니다. 이러한 집합은 일반적으로 규모가 크고 카디널리티가 높으며 고처리량으로 수집됩니다. 따라서 이러한 속성에 어떤 스키마를 선택하느냐가 수집 비용과 저장 레이아웃을 결정하는 가장 중요한 요소입니다.
+
+`Map(LowCardinality(String), String)`은 키와 값을 하나의 구조로 저장합니다. 과거에는 `Map`의 단점이 특정 키 하나를 읽기 위해 전체 맵 컬럼을 읽어야 한다는 점이었습니다. 하지만 이제는 그렇지 않습니다. ClickHouse는 이제 [bucketed map serialization](/ko/reference/data-types/map#bucketed-map-serialization)을 지원하며, 이를 통해 맵을 여러 버킷으로 나누어 쿼리가 필요한 버킷만 읽을 수 있습니다. 여기에 [ClickStack의 기본 스키마](/ko/clickstack/ingesting-data/schemas)에서 사용하는 것처럼 맵 키와 값에 [텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)를 함께 적용하면, 새 키에 대해 추가 수집 비용을 치르지 않으면서도 읽기 시점에 `Map`을 선택적으로 빠르게 조회할 수 있습니다.
+
+실제로는 다음을 의미합니다:
+
+* **키가 늘어나도 수집 비용이 안정적으로 유지됩니다.** 새 속성 키를 추가해도 디스크상의 컬럼 레이아웃이 바뀌거나 새로운 컬럼 파일이 생성되지 않습니다. 수집 비용은 키 카디널리티가 아니라 데이터 양에 의해 제한됩니다.
+* **메타데이터가 폭증하지 않습니다.** 디스크상의 컬럼 파일 수는 고유한 속성 키 수에 비례해 늘어나지 않습니다.
+* **인덱스를 통한 선택적 조회가 가능합니다.** 맵 키와 값에 대한 텍스트 인덱스를 사용하면 모든 행을 스캔하지 않고도 포인트 조회를 수행할 수 있습니다.
+* **고처리량 환경에서도 예측 가능한 동작을 제공합니다.** `Map`은 추적과 로그에서 흔히 나타나는 버스트성의 스키마 없는 속성 집합을 키별 오버헤드 없이 처리합니다.
+
+<div id="why-not-json">
+  ## 기본값으로 JSON을 사용하지 않는 이유
+</div>
+
+`JSON` 타입은 다른 접근 방식을 사용합니다. 데이터 삽입 시점에 ClickHouse는 발견한 각 경로마다 전용의, 강하게 타입 지정된 서브컬럼을 동적으로 생성합니다. 읽기 시점에는 요청한 서브컬럼만 읽으면 되고, 타입도 유지되며, 쿼리 시점의 형 변환도 필요하지 않으므로 이는 매력적입니다.
+
+하지만 그 대가는 수집 시점에 발생합니다. 동적 서브컬럼을 많이 생성하고 관리하면 쓰기 시점의 오버헤드와 메타데이터 복잡성이 커집니다. 관측성 워크로드는 대개 속성 집합이 매우 크거나 동적으로 자주 바뀌고 수집 처리량도 높기 때문에, 이러한 오버헤드는 무시하기 어렵습니다. [`max_dynamic_paths`](/ko/reference/data-types/newjson#reading-json-paths-as-sub-columns) 제한을 사용하면 추가 경로를 공유 컬럼으로 스필해 영향을 줄일 수 있지만, 공유 컬럼에 대한 접근은 전용 서브컬럼보다 느립니다. 따라서 애초에 JSON을 사용하려던 이유였던 읽기 시점의 이점도 줄어듭니다.
+
+bucketed map serialization으로 `Map`의 기존 읽기 시점 오버헤드 대부분이 사라지면서, 일반적인 관측성 워크로드에서는 `JSON`의 읽기 시점 이점이 더 이상 수집 시점 비용을 상쇄하지 못합니다.
+
+<div id="when-to-consider-json">
+  ## 여전히 JSON을 고려할 수 있는 경우
+</div>
+
+다음 조건을 *모두* 충족한다면 JSON 타입이 적절한 선택일 수 있습니다:
+
+* 속성 키 집합이 **작고 안정적**입니다. 즉, 고유 키가 수천 개씩 생기지 않고 새 키도 드물게 나타납니다.
+* 수집 처리량이 속성 카디널리티에 비해 **크지 않습니다**.
+* 쿼리 시점의 형 변환 없이 속성에 **강한 타입으로 접근**하고자 합니다(숫자는 숫자로, 불리언은 불리언으로 유지됩니다).
+* ClickStack에서 **베타 기능**을 운영하면서 통합이 변경될 수 있다는 점을 감수할 수 있습니다.
+
+이 조건을 모두 충족하지 않는다면 [기본 `Map` 기반 스키마](/ko/clickstack/ingesting-data/schemas)를 계속 사용하십시오.
+
+<div id="beta-status">
+  ## 베타 상태
+</div>
+
+<BetaBadge />
+
+<Warning>
+  **베타 기능, 프로덕션 환경에 적합하지 않음**
+
+  **ClickStack**의 JSON 타입 지원은 **베타 기능**입니다. JSON 타입 자체는 ClickHouse 25.3+에서 프로덕션 환경에서 사용할 수 있지만, ClickStack과의 통합은 아직 활발히 개발 중이므로 제한 사항이 있을 수 있으며, 향후 변경되거나 버그가 있을 수 있습니다.
+</Warning>
+
+ClickStack은 버전 `2.0.4`부터 JSON 타입에 대한 베타 지원을 제공합니다.
+
+<div id="enabling-json-support">
+  ## JSON 지원 활성화
+</div>
+
+[기본 `Map` 기반 스키마](/ko/clickstack/ingesting-data/schemas) 대신 JSON 타입 스키마를 사용하려면 다음 환경 변수를 설정하십시오.
+
+| 변수                                                              | 설정 위치                   | 용도                                                                      |
+| --------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------- |
+| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector          | ClickHouse에서 JSON 타입을 사용하는 스키마를 생성합니다.                                  |
+| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`                         | HyperDX (ClickStack UI) | 애플리케이션 계층에서 JSON 타입 스키마를 쿼리할 수 있게 합니다. ClickStack Open Source에서만 지원됩니다. |
+
+<div id="managed-clickstack">
+  ### Managed ClickStack
+</div>
+
+Managed ClickStack에서 JSON 지원을 활성화하려면 collector를 구성하기 전에 support@clickhouse.com으로 지원팀에 문의하십시오. 이 기능은 ClickHouse Cloud의 ClickStack UI(HyperDX)에서도 활성화해야 합니다.
+
+collector에서 `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'`를 설정하십시오. 예시:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+<div id="oss-clickstack">
+  ### 오픈 소스 ClickStack
+</div>
+
+collector가 포함된 모든 배포에 `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'`를 설정하고, HyperDX 애플리케이션 계층에는 JSON 타입 스키마를 쿼리할 수 있도록 `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`를 설정합니다.
+
+예시:
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+<div id="migrating-from-map-to-json">
+  ## Map 기반 스키마에서 JSON으로 마이그레이션하기
+</div>
+
+<Warning>
+  **이전 버전과의 호환성**
+
+  [JSON 타입](/ko/reference/formats/JSON/JSON)은 기존 Map 기반 스키마와 **호환되지 않습니다**. 이 기능을 활성화하면 `JSON` 타입을 사용하는 새 테이블이 생성되며, 데이터를 수동으로 마이그레이션해야 합니다.
+</Warning>
+
+[기본 Map 기반 스키마](/ko/clickstack/ingesting-data/schemas)에서 마이그레이션하려면 다음 단계를 따르십시오.
+
+<Steps>
+  <Step>
+    ### OTel collector 중지하기
+  </Step>
+
+  <Step>
+    ### 기존 테이블 이름 변경 및 데이터 소스 업데이트
+
+    기존 테이블의 이름을 변경하고 HyperDX에서 데이터 소스를 업데이트합니다.
+
+    예시:
+
+    ```sql
+    RENAME TABLE otel_logs TO otel_logs_map;
+    RENAME TABLE otel_metrics TO otel_metrics_map;
+    ```
+  </Step>
+
+  <Step>
+    ### collector 배포하기
+
+    `OTEL_AGENT_FEATURE_GATE_ARG`를 설정한 상태로 collector를 배포합니다.
+  </Step>
+
+  <Step>
+    ### JSON 스키마 지원으로 HyperDX 컨테이너 재시작하기
+
+    ```shell
+    export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
+    ```
+  </Step>
+
+  <Step>
+    ### 새 데이터 소스 생성하기
+
+    HyperDX에서 JSON 테이블을 가리키는 새 데이터 소스를 생성합니다.
+  </Step>
+</Steps>
+
+<div id="migrating-existing-data">
+  ### 기존 데이터 마이그레이션(선택 사항)
+</div>
+
+기존 데이터를 새 JSON 테이블로 옮기려면 다음을 수행하십시오:
+
+```sql
+INSERT INTO otel_logs SELECT * FROM otel_logs_map;
+INSERT INTO otel_metrics SELECT * FROM otel_metrics_map;
+```
+
+<Warning>
+  약 100억 행 미만의 데이터셋에만 권장합니다. 이전에 맵(Map) 타입으로 저장된 데이터는 타입 정밀도가 유지되지 않았으며(모든 값이 문자열이었음), 그 결과 기존 데이터는 수명 주기가 끝나 제거될 때까지 새 스키마에서도 문자열로 표시됩니다. 따라서 프런트엔드에서 일부 캐스팅이 필요합니다. 새로 유입되는 데이터의 타입은 JSON 타입에서 유지됩니다.
+</Warning>

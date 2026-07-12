@@ -1,0 +1,150 @@
+---
+description: 'تنشئ جدولًا من ملفات موجودة في HDFS. تشبه دالة الجدول هذه دالتي الجدول url وfile.'
+sidebarTitle: 'hdfs'
+slug: /sql-reference/table-functions/hdfs
+title: 'hdfs'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="hdfs-table-function">
+  # دالة الجدول hdfs
+</div>
+
+تنشئ جدولًا من ملفات موجودة في HDFS. تشبه دالة الجدول هذه دالتي الجدول [url](/ar/reference/functions/table-functions/url) و[file](/ar/reference/functions/table-functions/file).
+
+<div id="syntax">
+  ## البنية
+</div>
+
+```sql
+hdfs(URI, format, structure)
+```
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+| الوسيطة     | الوصف                                                                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `URI`       | عنوان `URI` النسبي للملف في HDFS. يدعم مسار الملف أنماط `globs` التالية في وضع `readonly`: `*`، `?`، `{abc,def}` و `{N..M}`، حيث إن `N` و `M` — أرقام، و`'abc'` و`'def'` — سلاسل نصية. |
+| `format`    | [صيغة](/ar/reference/formats/index) الملف.                                                                                                                                                |
+| `structure` | بنية الجدول. الصيغة: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                    |
+
+<div id="returned_value">
+  ## القيمة المُعادة
+</div>
+
+جدول ذو البنية المحددة لقراءة البيانات من الملف المحدد أو كتابتها فيه.
+
+**مثال**
+
+جدول من `hdfs://hdfs1:9000/test` واختيار أول صفين منه:
+
+```sql
+SELECT *
+FROM hdfs('hdfs://hdfs1:9000/test', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+LIMIT 2
+```
+
+```text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+<div id="globs_in_path">
+  ## أنماط globs في المسار
+</div>
+
+قد تستخدم المسارات `globbing`. ويجب أن تطابق الملفات نمط المسار بالكامل، وليس اللاحقة أو البادئة فقط.
+
+* `*` — يمثّل أي عدد من المحارف باستثناء `/`، بما في ذلك السلسلة الفارغة.
+* `**` — يمثّل جميع الملفات داخل مجلد بشكل تكراري.
+* `?` — يمثّل محرفًا واحدًا عشوائيًا.
+* `{some_string,another_string,yet_another_one}` — يستبدل أيًّا من السلاسل `'some_string', 'another_string', 'yet_another_one'`. ويمكن أن تحتوي السلاسل على الرمز `/`.
+* `{N..M}` — يمثّل أي عدد `>= N` و `<= M`.
+
+التركيبات التي تحتوي على `{}` مشابهة لدوال الجداول [remote](/ar/reference/functions/table-functions/remote) و [file](/ar/reference/functions/table-functions/file).
+
+**مثال**
+
+1. لنفترض أن لدينا عدة ملفات بعناوين URI التالية على HDFS:
+
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;3&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
+
+2. استعلم عن عدد الصفوف في هذه الملفات:
+
+{/* */}
+
+```sql
+SELECT count(*)
+FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
+```
+
+3. استعلم عن عدد الصفوف في جميع ملفات هذين الدليلين:
+
+{/* */}
+
+```sql
+SELECT count(*)
+FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
+```
+
+<Note>
+  إذا كانت قائمة الملفات لديك تتضمن نطاقات رقمية تبدأ بأصفار، فاستخدم الصيغة التي تعتمد على الأقواس المعقوفة لكل رقم على حدة، أو استخدم `?`.
+</Note>
+
+**مثال**
+
+استعلم عن البيانات من الملفات المسماة `file000` و`file001` و... و`file999`:
+
+```sql
+SELECT count(*)
+FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
+```
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — مسار الملف. النوع: `LowCardinality(String)`.
+* `_file` — اسم الملف. النوع: `LowCardinality(String)`.
+* `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان الحجم غير معروف، تكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
+
+<div id="hive-style-partitioning">
+  ## إعداد use_hive_partitioning
+</div>
+
+عند تعيين `use_hive_partitioning` إلى 1، سيكتشف ClickHouse التقسيم بأسلوب Hive في المسار (`/name=value/`)، وسيتيح استخدام أعمدة التقسيم كأعمدة افتراضية في الاستعلام. وستحمل هذه الأعمدة الافتراضية الأسماء نفسها الموجودة في مسار التقسيم.
+
+**مثال**
+
+استخدام عمود افتراضي أُنشئ باستخدام التقسيم بأسلوب Hive
+
+```sql
+SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="storage-settings">
+  ## إعدادات التخزين
+</div>
+
+* [hdfs&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings#hdfs_truncate_on_insert) - يسمح باقتطاع الملف قبل الإدراج فيه. يكون معطّلًا افتراضيًا.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ar/reference/settings/session-settings#hdfs_create_new_file_on_insert) - يسمح بإنشاء ملف جديد عند كل عملية إدراج إذا كان للتنسيق لاحقة. يكون معطّلًا افتراضيًا.
+* [hdfs&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings#hdfs_skip_empty_files) - يسمح بتخطي الملفات الفارغة أثناء القراءة. يكون معطّلًا افتراضيًا.
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)

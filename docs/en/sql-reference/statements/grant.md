@@ -178,6 +178,7 @@ The hierarchy of privileges in ClickHouse is shown below:
       - `ALTER CONSTRAINT`
         - `ALTER ADD CONSTRAINT`
         - `ALTER DROP CONSTRAINT`
+        - `ALTER MODIFY CONSTRAINT`
       - `ALTER DELETE`
       - `ALTER FETCH PARTITION`
       - `ALTER FREEZE PARTITION`
@@ -341,7 +342,7 @@ The hierarchy of privileges in ClickHouse is shown below:
 Examples of how this hierarchy is treated:
 
 - The `ALTER` privilege includes all other `ALTER*` privileges.
-- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
+- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` and `ALTER MODIFY CONSTRAINT` privileges.
 
 Privileges are applied at different levels. Knowing of a level suggests syntax available for privilege.
 
@@ -434,6 +435,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
   - `ALTER CONSTRAINT`. Level: `GROUP`. Aliases: `CONSTRAINT`
   - `ALTER ADD CONSTRAINT`. Level: `TABLE`. Aliases: `ADD CONSTRAINT`
   - `ALTER DROP CONSTRAINT`. Level: `TABLE`. Aliases: `DROP CONSTRAINT`
+  - `ALTER MODIFY CONSTRAINT`. Level: `TABLE`. Aliases: `MODIFY CONSTRAINT`
   - `ALTER TTL`. Level: `TABLE`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
   - `ALTER MATERIALIZE TTL`. Level: `TABLE`. Aliases: `MATERIALIZE TTL`
   - `ALTER SETTINGS`. Level: `TABLE`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -449,7 +451,7 @@ Allows executing [ALTER](../../sql-reference/statements/alter/index.md) queries 
 Examples of how this hierarchy is treated:
 
 - The `ALTER` privilege includes all other `ALTER*` privileges.
-- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT` and `ALTER DROP CONSTRAINT` privileges.
+- `ALTER CONSTRAINT` includes `ALTER ADD CONSTRAINT`, `ALTER DROP CONSTRAINT` and `ALTER MODIFY CONSTRAINT` privileges.
 
 **Notes**
 
