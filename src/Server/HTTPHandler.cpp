@@ -609,6 +609,11 @@ void HTTPHandler::processQuery(
                 else
                     current_output_format.setException(status.message);
                 current_output_format.finalize();
+                /// The output format may defer finalizing the framing format (see
+                /// `deferFramingFinalize`); finalize it here so the exception packet is written.
+                /// `finalize` is idempotent, so this is a no-op if it was already finalized.
+                if (framing)
+                    framing->finalize();
                 releaseOrCloseSession(session_id, close_session);
                 used_output.finalize();
 

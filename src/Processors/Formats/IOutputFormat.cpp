@@ -198,7 +198,15 @@ void IOutputFormat::finalizeUnlocked()
     finalizeBuffers();
 
     if (framing)
-        framing->finalize();
+    {
+        if (framing_finalize_deferred)
+            /// Emit the format suffix (if any) as the last data packet now, but leave the trailing
+            /// logs, profile events, exception packet and stream close to the deferred
+            /// `framing->finalize()` call, so logs emitted after this point are captured too.
+            framing->onPayload(FramedPacketKind::Data);
+        else
+            framing->finalize();
+    }
 
     finalized = true;
 }

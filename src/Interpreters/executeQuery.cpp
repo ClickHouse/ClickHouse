@@ -1,6 +1,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -2496,28 +2497,57 @@ FramingFormatPtr createFramingFormatIfApplicable(
     return framing;
 }
 
-/// Attach the queues for server logs and profile events to the current thread
-/// (the thread group of the query inherits them), so the framing format can send them as packets.
-void attachLogsAndProfileEventsForFraming(IFramingFormat & framing, const ContextMutablePtr & context)
+/// The queues for server logs and profile events that a framing format sends as packets.
+struct FramingQueues
 {
+    std::shared_ptr<InternalTextLogsQueue> logs_queue;
+    InternalProfileEventsQueuePtr profile_events_queue;
+};
+
+/// Attach the logs and profile-events queues to the current thread (the thread group of the query
+/// inherits them) as early as possible - before the query is interpreted - so the framing format
+/// captures the logs and profile events emitted during parsing, planning and analysis, just like
+/// the native protocol does. The queues are wired into the framing format later, once it is created
+/// (the framing format only becomes known after the output format's header is available).
+/// Does nothing unless a framing format is requested over HTTP.
+FramingQueues attachQueuesForFramingIfApplicable(const ContextMutablePtr & context)
+{
+    FramingQueues queues;
+
+    if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
+        return queues;
+
     const Settings & settings = context->getSettingsRef();
+    if (boost::iequals(settings[Setting::framing_output_format].value, "None"))
+        return queues;
 
     const auto client_logs_level = settings[Setting::send_logs_level];
     if (client_logs_level != LogsLevel::none)
     {
-        auto logs_queue = std::make_shared<InternalTextLogsQueue>();
-        logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
-        logs_queue->setSourceRegexp(settings[Setting::send_logs_source_regexp]);
-        CurrentThread::attachInternalTextLogsQueue(logs_queue, client_logs_level);
-        framing.setLogsQueue(logs_queue);
+        queues.logs_queue = std::make_shared<InternalTextLogsQueue>();
+        queues.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+        queues.logs_queue->setSourceRegexp(settings[Setting::send_logs_source_regexp]);
+        CurrentThread::attachInternalTextLogsQueue(queues.logs_queue, client_logs_level);
     }
 
     if (settings[Setting::send_profile_events])
     {
-        auto profile_events_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
-        CurrentThread::attachInternalProfileEventsQueue(profile_events_queue);
-        framing.setProfileEventsQueue(profile_events_queue, getFQDNOrHostName(), settings[Setting::interactive_delay]);
+        queues.profile_events_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+        CurrentThread::attachInternalProfileEventsQueue(queues.profile_events_queue);
     }
+
+    return queues;
+}
+
+/// Wire the queues attached by `attachQueuesForFramingIfApplicable` into the framing format.
+void setFramingQueues(IFramingFormat & framing, const ContextMutablePtr & context, const FramingQueues & queues)
+{
+    if (queues.logs_queue)
+        framing.setLogsQueue(queues.logs_queue);
+
+    if (queues.profile_events_queue)
+        framing.setProfileEventsQueue(
+            queues.profile_events_queue, getFQDNOrHostName(), context->getSettingsRef()[Setting::interactive_delay]);
 }
 
 }
@@ -2685,6 +2715,12 @@ void executeQuery(
         }
     };
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
+
+    /// If a framing format is requested, attach its logs and profile-events queues to the current
+    /// thread before the query is interpreted, so the logs emitted during parsing, planning and
+    /// analysis are captured too (they are wired into the framing format once it is created below).
+    const FramingQueues framing_queues = attachQueuesForFramingIfApplicable(context);
+
     try
     {
         streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback, result_details);
@@ -2771,7 +2807,13 @@ void executeQuery(
                     output_format_settings);
 
                 output_format->setFraming(framing);
-                attachLogsAndProfileEventsForFraming(*framing, context);
+                setFramingQueues(*framing, context, framing_queues);
+
+                /// Finalize the framing format ourselves after the query-finish logging (below),
+                /// rather than letting the output format do it during pipeline execution, so the
+                /// trailing server logs (for example "Read N rows" and the peak memory usage) are
+                /// included in the stream, just like the native protocol does.
+                output_format->deferFramingFinalize();
             }
             else
             {
@@ -2877,19 +2919,50 @@ void executeQuery(
         throw;
     }
 
-    QueryFinishCallback finish_callback;
-    if (query_finish_callback)
-    {
-        finish_callback = [&]()
-        {
-            /// Flush the progress (result_rows/result_bytes) before query_finish_callback sends the final HTTP header,
-            /// so the X-ClickHouse-Summary header is correct.
-            flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
-            query_finish_callback();
-        };
-    }
+    const auto & framing = output_format ? output_format->getFraming() : nullptr;
 
-    finishExecutedQuery(streams, finish_callback);
+    if (framing)
+    {
+        /// The framing format's finalization was deferred (see `deferFramingFinalize`), so that the
+        /// trailing server logs and profile events - emitted by the query-finish logging in
+        /// `onFinish` - are included in the stream, like the native protocol does. The order is:
+        ///   1. flush the progress (so the `X-ClickHouse-Summary` HTTP header is correct),
+        ///   2. `onFinish` (inside `finishExecutedQuery`) emits the trailing logs into the queue,
+        ///   3. finalize the framing format: it drains those logs and writes the final packets,
+        ///   4. run the HTTP `query_finish_callback`, which closes the response stream.
+        finishExecutedQuery(streams, [&]()
+        {
+            flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+        });
+
+        /// Emit the "peak memory usage" log now, before the framing format drains the logs, so it is
+        /// included in the stream. Otherwise it would be logged only when the query's thread group is
+        /// destroyed (from `QueryScope`, after this function returns) - too late for the framing format.
+        /// This mirrors what `TCPHandler` does before it drains the logs for the native protocol.
+        if (auto thread_group = CurrentThread::getGroup())
+            thread_group->memory_tracker.logPeakMemoryUsage();
+
+        framing->finalize();
+
+        if (query_finish_callback)
+            query_finish_callback();
+    }
+    else
+    {
+        QueryFinishCallback finish_callback;
+        if (query_finish_callback)
+        {
+            finish_callback = [&]()
+            {
+                /// Flush the progress (result_rows/result_bytes) before query_finish_callback sends the final HTTP header,
+                /// so the X-ClickHouse-Summary header is correct.
+                flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+                query_finish_callback();
+            };
+        }
+
+        finishExecutedQuery(streams, finish_callback);
+    }
 }
 
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback)

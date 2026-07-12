@@ -81,6 +81,13 @@ public:
     void setFraming(const std::shared_ptr<IFramingFormat> & framing_);
     const std::shared_ptr<IFramingFormat> & getFraming() const { return framing; }
 
+    /// By default the output format finalizes the framing format (which writes the trailing logs,
+    /// profile events and the exception packet, then closes the stream) as part of its own
+    /// finalization. Deferring it lets the caller finalize the framing format later - after the
+    /// query-finish logging - so those trailing server logs are captured too. When deferred, the
+    /// caller is responsible for calling `getFraming()->finalize()`.
+    void deferFramingFinalize() { framing_finalize_deferred = true; }
+
     size_t getResultRows() const { return result_rows; }
     size_t getResultBytes() const { return result_bytes; }
 
@@ -204,6 +211,7 @@ protected:
     bool has_input = false;
     bool finished = false;
     bool finalized = false;
+    bool framing_finalize_deferred = false;
 
     /// Flush data on each consumed chunk. This is intended for interactive applications to output data as soon as it's ready.
     bool auto_flush = false;
