@@ -518,6 +518,16 @@ INSTANTIATE_TEST_SUITE_P(ParserAttachUserQuery, ParserTest,
         {
             "ATTACH USER user1 IDENTIFIED WITH sha256_hash BY '2CC4880302693485717D34E06046594CFDFE425E3F04AA5A094C4AABAB3CB0BF'",  //for users created in older releases that sha256_password has no salt
             "^$"
+        },
+        {
+            /// `VALID FOR` is a shorthand resolved at query execution time; it must never appear in the
+            /// on-disk (attach) form, so `deserializeAccessEntity` should reject a hand-written definition.
+            "ATTACH USER user1 VALID FOR INTERVAL 1 DAY",
+            "throws VALID FOR is not allowed in ATTACH USER queries"
+        },
+        {
+            "ATTACH USER user1 IDENTIFIED WITH plaintext_password BY 'x' VALID FOR INTERVAL 1 DAY",
+            "throws VALID FOR is not allowed in ATTACH USER queries"
         }
 })));
 

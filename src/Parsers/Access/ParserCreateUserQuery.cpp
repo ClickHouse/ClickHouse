@@ -739,6 +739,22 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
     }
 
+    /// `VALID FOR <interval>` is resolved to an absolute deadline at query execution time and stored
+    /// (and shown) in the `VALID UNTIL` form. It therefore never appears in the on-disk (`ATTACH`)
+    /// representation, and it cannot be evaluated during attach anyway: there is no query context, and
+    /// re-resolving `now` on every startup would let the deadline drift forever. Reject it here with a
+    /// clear message instead of failing later, deep inside `deserializeAccessEntity`, while loading a
+    /// hand-written access definition.
+    if (attach_mode)
+    {
+        bool has_valid_for = global_valid_until_is_interval;
+        for (const auto & authentication_method : auth_data)
+            has_valid_for = has_valid_for || authentication_method->valid_until_is_interval;
+
+        if (has_valid_for)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "VALID FOR is not allowed in ATTACH USER queries; the deadline must be stored as an absolute VALID UNTIL value");
+    }
+
     auto query = make_intrusive<ASTCreateUserQuery>();
     node = query;
 
