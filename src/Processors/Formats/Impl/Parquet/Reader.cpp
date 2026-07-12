@@ -368,50 +368,42 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
     }
 
-    /// `geo_meta` is keyed by raw parquet column names, but `SpatialFilter::geometry_column_name`
-    /// comes from the filter DAG / sample block, i.e. the ClickHouse name as of the CURRENT/query-side
-    /// schema. `format_filter_info->column_mapper` may have been swapped for a per-file mapper (data
-    /// lake schema evolution, e.g. after an Iceberg `RENAME COLUMN`): that mapper's `field_id ->
-    /// ClickHouse name` maps back to the name the file's OWN schema used, not the query-side name, so
-    /// using it here would build a self-referential (i.e. useless) map on any renamed column. Prefer
-    /// `current_schema_column_mapper`, which is always the query-side one, when set. Build the reverse
-    /// (top-level only, since GeoParquet's "geometry" column is always top-level) so lookups below
-    /// still hit on mapped schemas instead of silently skipping `covering.bbox` pruning.
-    std::unordered_map<String, String> clickhouse_to_parquet_geometry_column_name;
+    /// `geo_meta` is keyed by raw parquet column names (the "geo" metadata is part of the file
+    /// itself), but `SpatialFilter::geometry_column_name` and the `covering.bbox` sub-column paths
+    /// inside `geo_meta` live in two different naming domains when
+    /// `format_filter_info->column_mapper` has been swapped for a per-file mapper (data lake schema
+    /// evolution, e.g. after an Iceberg `RENAME COLUMN`): the former is the ClickHouse name as of
+    /// the CURRENT/query-side schema, the latter is always the raw name the file's OWN schema used.
+    ///
+    /// Join `current_schema_column_mapper` (query-side ClickHouse name -> field_id) with the
+    /// per-file `column_mapper` (field_id -> the name this file's OWN schema used) via
+    /// `ColumnMapper::makeMapping`, which handles arbitrary (including nested) column paths and,
+    /// crucially, never touches the Parquet footer's own `field_id` metadata - it works purely from
+    /// Iceberg schema metadata, which our writer always has even though it currently omits
+    /// per-column `field_id` from the footer.
+    std::unordered_map<String, String> clickhouse_to_parquet_name;
+    std::unordered_map<String, String> parquet_to_clickhouse_name;
     const auto * query_side_column_mapper = format_filter_info->current_schema_column_mapper
         ? format_filter_info->current_schema_column_mapper.get()
         : format_filter_info->column_mapper.get();
-    if (const auto * column_mapper = query_side_column_mapper)
-    {
-        const auto & field_id_to_clickhouse_name = column_mapper->getFieldIdToClickHouseName();
-        const auto & schema = file_metadata.schema;
-        if (schema.size() >= 2 && schema.at(0).num_children > 0)
-        {
-            size_t schema_idx = 1;
-            for (int i = 0; i < schema.at(0).num_children && schema_idx < schema.size(); ++i)
-            {
-                const auto & element = schema.at(schema_idx);
-                if (element.__isset.field_id)
-                    if (auto it = field_id_to_clickhouse_name.find(element.field_id); it != field_id_to_clickhouse_name.end())
-                        clickhouse_to_parquet_geometry_column_name.emplace(it->second, element.name);
-                /// Skip past this element's own subtree so `schema_idx` stays aligned with the
-                /// next top-level sibling (mirrors the `schema_leaf_paths` walk below).
-                std::function<void(const parq::SchemaElement &)> skip_subtree = [&](const parq::SchemaElement & elem)
-                {
-                    ++schema_idx;
-                    if (elem.__isset.num_children)
-                        for (int c = 0; c < elem.num_children && schema_idx < schema.size(); ++c)
-                            skip_subtree(schema.at(schema_idx));
-                };
-                skip_subtree(element);
-            }
-        }
-    }
+    if (query_side_column_mapper && format_filter_info->column_mapper)
+        std::tie(clickhouse_to_parquet_name, parquet_to_clickhouse_name) =
+            query_side_column_mapper->makeMapping(format_filter_info->column_mapper->getFieldIdToClickHouseName());
     auto resolve_geo_meta = [&](const String & ch_name) -> std::unordered_map<String, DB::GeoColumnMetadata>::const_iterator
     {
-        if (auto it = clickhouse_to_parquet_geometry_column_name.find(ch_name); it != clickhouse_to_parquet_geometry_column_name.end())
+        if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
             return geo_meta->find(it->second);
         return geo_meta->find(ch_name);
+    };
+    /// `covering.bbox` sub-column paths from `geo_meta` are raw parquet-side names; translate them
+    /// to the query-side names `SchemaConverter` will actually use for `primitive_columns[i].name`
+    /// and `extended_sample_block`, so injection (Phase A) and primitive-column lookup (Phase B)
+    /// agree with what SchemaConverter produces.
+    auto resolve_bbox_column_name = [&](const String & parquet_name) -> String
+    {
+        if (auto it = parquet_to_clickhouse_name.find(parquet_name); it != parquet_to_clickhouse_name.end())
+            return it->second;
+        return parquet_name;
     };
 
     /// Phase A: inject covering.bbox sub-columns into extended_sample_block BEFORE
@@ -464,36 +456,43 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
             const auto & bbox_cov = *geo_it->second.covering_bbox;
 
-            const std::array<const String *, 4> bbox_col_ptrs = {
+            const std::array<const String *, 4> raw_bbox_col_ptrs = {
                 &bbox_cov.xmin_column, &bbox_cov.ymin_column,
                 &bbox_cov.xmax_column, &bbox_cov.ymax_column};
 
-            /// Skip injection if parent struct column (e.g. "location_bbox") is already in block.
-            bool conflict = false;
-            for (const String * col : bbox_col_ptrs)
-            {
-                auto dot = col->find('.');
-                if (dot != String::npos && extended_sample_block.has(col->substr(0, dot)))
-                { conflict = true; break; }
-            }
-            if (conflict)
-            { geostats_spatial_filters.push_back(sf); continue; }
-
-            /// Skip injection if any bbox column is absent from the actual file schema.
-            /// Falls back to geostats pruning; avoids THERE_IS_NO_COLUMN when
+            /// Skip injection if any bbox column is absent from the actual file schema. Checked
+            /// against raw parquet-side paths, matching `schema_leaf_paths` (built from the file's
+            /// own schema). Falls back to geostats pruning; avoids THERE_IS_NO_COLUMN when
             /// input_format_parquet_allow_missing_columns = 0 with stale metadata.
             bool all_bbox_in_schema = true;
-            for (const String * col : bbox_col_ptrs)
+            for (const String * col : raw_bbox_col_ptrs)
                 if (!schema_leaf_paths.contains(*col))
                 { all_bbox_in_schema = false; break; }
             if (!all_bbox_in_schema)
             { geostats_spatial_filters.push_back(sf); continue; }
 
-            for (const String * col : bbox_col_ptrs)
-                if (!extended_sample_block.has(*col))
+            /// Translate to the query-side names SchemaConverter will actually produce (identity
+            /// when no column_mapper is active) before touching extended_sample_block.
+            const std::array<String, 4> bbox_cols = {
+                resolve_bbox_column_name(bbox_cov.xmin_column), resolve_bbox_column_name(bbox_cov.ymin_column),
+                resolve_bbox_column_name(bbox_cov.xmax_column), resolve_bbox_column_name(bbox_cov.ymax_column)};
+
+            /// Skip injection if parent struct column (e.g. "location_bbox") is already in block.
+            bool conflict = false;
+            for (const String & col : bbox_cols)
+            {
+                auto dot = col.find('.');
+                if (dot != String::npos && extended_sample_block.has(col.substr(0, dot)))
+                { conflict = true; break; }
+            }
+            if (conflict)
+            { geostats_spatial_filters.push_back(sf); continue; }
+
+            for (const String & col : bbox_cols)
+                if (!extended_sample_block.has(col))
                 {
-                    extended_sample_block.insert({float64->createColumn(), float64, *col});
-                    injected_bbox_columns.insert(*col);
+                    extended_sample_block.insert({float64->createColumn(), float64, col});
+                    injected_bbox_columns.insert(col);
                 }
         }
     }
@@ -569,9 +568,15 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                     continue; // already in geostats_spatial_filters
 
                 const auto & bbox_cov = *geo_it->second.covering_bbox;
+                /// Translate raw parquet-side bbox paths to the query-side names SchemaConverter
+                /// produced (identity when no column_mapper is active) - matches Phase A, and is
+                /// what extended_sample_block / primitive_columns[i].name actually use.
+                const std::array<String, 4> bbox_cols = {
+                    resolve_bbox_column_name(bbox_cov.xmin_column), resolve_bbox_column_name(bbox_cov.ymin_column),
+                    resolve_bbox_column_name(bbox_cov.xmax_column), resolve_bbox_column_name(bbox_cov.ymax_column)};
                 auto sc = buildBboxKeyCondition(sf,
-                    bbox_cov.xmin_column, bbox_cov.ymin_column,
-                    bbox_cov.xmax_column, bbox_cov.ymax_column,
+                    bbox_cols[0], bbox_cols[1],
+                    bbox_cols[2], bbox_cols[3],
                     ctx, extended_sample_block);
                 if (!sc)
                     continue;
@@ -580,22 +585,19 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 /// Mark bbox primitives so getHyperrectangleForRowGroup reads their stats.
                 /// Also record their primitive_columns indices for null_count checks at
                 /// row-group pruning time (NULL bbox = unknown extent, must not prune).
-                const std::array<const String *, 4> bbox_col_ptrs = {
-                    &bbox_cov.xmin_column, &bbox_cov.ymin_column,
-                    &bbox_cov.xmax_column, &bbox_cov.ymax_column};
                 std::array<size_t, 4> bbox_pc_indices = {SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX};
                 for (size_t bi = 0; bi < 4; ++bi)
                     for (size_t ci = 0; ci < primitive_columns.size(); ++ci)
-                        if (primitive_columns[ci].name == *bbox_col_ptrs[bi])
+                        if (primitive_columns[ci].name == bbox_cols[bi])
                         {
                             bbox_pc_indices[bi] = ci;
                             break;
                         }
                 spatial_key_condition_bbox_col_indices.push_back(bbox_pc_indices);
 
-                for (const String * col : bbox_col_ptrs)
+                for (const String & col : bbox_cols)
                     for (auto & pc : primitive_columns)
-                        if (pc.name == *col)
+                        if (pc.name == col)
                         {
                             pc.used_by_key_condition = true;
                             pc.is_spatial_bbox_column = true;
@@ -605,7 +607,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                             /// ReadManager never matches. Columns already present before Phase A
                             /// (user-selected or used in WHERE/PREWHERE) are not in
                             /// injected_bbox_columns and keep their normal scheduling.
-                            if (injected_bbox_columns.contains(*col))
+                            if (injected_bbox_columns.contains(col))
                                 pc.first_step_to_calculate = SIZE_MAX;
                         }
             }
@@ -737,7 +739,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
             if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)
                 continue;
-            primitive_columns[output_info.primitive_start].column_index_condition = key_condition.get();
+            primitive_columns[output_info.primitive_start].column_index_conditions.push_back(key_condition.get());
         }
     }
 
@@ -760,7 +762,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                         continue;
                     if (!pc.decoder.allow_stats)
                         break;
-                    pc.column_index_condition = key_condition.get();
+                    pc.column_index_conditions.push_back(key_condition.get());
                     break;
                 }
             }
@@ -852,7 +854,7 @@ void Reader::prepareBloomFilterCondition()
 void Reader::initializePrefetches()
 {
     bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
-        || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.column_index_condition; });
+        || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return !c.column_index_conditions.empty(); });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
     for (RowGroup & row_group : row_groups)
@@ -922,7 +924,7 @@ void Reader::initializePrefetches()
             }
 
             /// Column index.
-            column.use_column_index = primitive_columns[column_idx].column_index_condition
+            column.use_column_index = !primitive_columns[column_idx].column_index_conditions.empty()
                 && column.offset_index_prefetch
                 && column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length;
             if (column.use_column_index)
@@ -1263,7 +1265,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
     try
     {
         chassert(column.use_column_index);
-        chassert(column_info.column_index_condition);
+        chassert(!column_info.column_index_conditions.empty());
 
         auto data = prefetcher.getRangeData(column.column_index_prefetch);
         parq::ColumnIndex column_index;
@@ -1308,8 +1310,15 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                 adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
             }
 
-            bool passes_filter = column_info.column_index_condition->checkInHyperrectangle(
-                hyperrectangle, extended_sample_block_data_types).can_be_true;
+            /// All conjunctive predicates on this column (e.g. two `pointInPolygon` calls sharing
+            /// the same bbox column) must agree the page can match; any one of them ruling it out
+            /// is enough to prune, so an unproductive later `checkInHyperrectangle` call is skipped.
+            bool passes_filter = std::all_of(
+                column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
+                [&](const KeyCondition * condition)
+                {
+                    return condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
+                });
 
             if (!passes_filter)
             {

@@ -180,7 +180,10 @@ struct Reader
         UInt8 max_array_def = 0;
 
         bool use_bloom_filter = false;
-        const KeyCondition * column_index_condition = nullptr;
+        /// Multiple conjunctive predicates on the same column (e.g. two `pointInPolygon` calls
+        /// on the same geometry, or a regular WHERE condition plus a spatial one on the same bbox
+        /// column) each contribute their own KeyCondition here; a page must pass all of them.
+        std::vector<const KeyCondition *> column_index_conditions;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
@@ -500,7 +503,7 @@ struct Reader
 
     /// Per-column KeyConditions for page-level filter push-down (column index).
     /// Stored here to keep the shared_ptrs alive, since raw pointers from them
-    /// are referenced by PrimitiveColumnInfo::column_index_condition.
+    /// are referenced by PrimitiveColumnInfo::column_index_conditions.
     std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 
     /// KeyConditions built from GeoParquet covering.bbox spatial filters.
@@ -514,7 +517,7 @@ struct Reader
     /// Per-column KeyConditions extracted from spatial_key_conditions for page-level
     /// spatial bbox pruning. Stored here (not as a local variable) to keep the shared_ptrs
     /// alive, since raw pointers from them are referenced by
-    /// PrimitiveColumnInfo::column_index_condition.
+    /// PrimitiveColumnInfo::column_index_conditions.
     std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
 
     std::optional<KeyCondition> bloom_filter_condition;
