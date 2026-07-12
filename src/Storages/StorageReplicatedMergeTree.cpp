@@ -3970,6 +3970,112 @@ void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_rep
 }
 
 
+bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
+{
+    /// After DatabaseReplicated recovery, a table with a matching UUID is kept as is (see
+    /// DatabaseReplicated::recoverLostReplica) and is expected to converge its structure "on table
+    /// replication level". That works while the ALTER_METADATA log entry is still present in
+    /// zookeeper_path/log when this replica processes the log. But if the replica was detached across the
+    /// ALTER (e.g. its Replicated database was detached) and the entry was already cleaned up from the log
+    /// by the time it re-attaches, recovery advances the replica log pointer past the missing entry without
+    /// applying it. SYSTEM SYNC REPLICA only drains the queue (pullLogsToQueue) and never re-reads
+    /// zookeeper_path/metadata, so the local structure stays behind the authoritative one indefinitely.
+    /// This is exactly the situation cloneMetadataIfNeeded() repairs for a cloned (lost) replica; do the
+    /// same repair here for a kept matching-UUID replica.
+    auto zookeeper = getZooKeeper();
+
+    /// The authoritative metadata version is the stat.version of the zookeeper_path/metadata znode: alter()
+    /// does a versioned set on it (using the current metadata version as the expected version), so its
+    /// stat.version always equals the applied in-memory metadata version and the alter_version of the
+    /// latest ALTER. ReplicatedMergeTree has no table-wide /metadata_version node (only per-replica ones).
+    Coordination::Stat metadata_stat;
+    if (!zookeeper->exists(zookeeper_path + "/metadata", &metadata_stat))
+        return false;
+    {
+        auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        if (metadata_snapshot->getMetadataVersion() >= metadata_stat.version)
+            return false;
+
+        LOG_WARNING(log, "Local metadata version ({}) is behind the version ({}) in ZooKeeper after recovery. "
+                         "Will force a metadata resync from {}.",
+                    metadata_snapshot->getMetadataVersion(), metadata_stat.version, zookeeper_path);
+    }
+
+    while (true)
+    {
+        if (shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Cannot sync table structure because shutdown called");
+
+        /// Read a consistent zookeeper_path/metadata + zookeeper_path/columns snapshot together with the
+        /// metadata version we are converging to (they are not updated atomically, hence the retry loop and
+        /// the version checks in the create request below - same approach as cloneMetadataIfNeeded).
+        Coordination::Stat columns_stat;
+        String zk_metadata = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+        String zk_columns = zookeeper->get(zookeeper_path + "/columns", &columns_stat);
+        Int32 zk_metadata_version = metadata_stat.version;
+
+        if (auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+            metadata_snapshot->getMetadataVersion() >= zk_metadata_version)
+            return false;
+
+        /// Drain the replication log to its head first. If the real ALTER_METADATA entry is still present in
+        /// zookeeper_path/log, pullLogsToQueue copies it into our queue and normal processing will converge
+        /// the structure - in that case we must NOT inject a synthetic entry, because a second ALTER_METADATA
+        /// with the same alter_version corrupts the alters sequence (ReplicatedMergeTreeAltersSequence keeps
+        /// a single slot per alter_version). Only if no metadata alter is pending after draining is the real
+        /// entry gone and a repair actually needed. This check also makes the whole operation idempotent
+        /// across recovery retries: the entry we enqueue below is itself counted here on the next call.
+        queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::SYNC);
+        if (queue.getStatus().metadata_alters_in_queue != 0)
+        {
+            LOG_DEBUG(log, "A metadata alter is already pending in the queue; it will converge the structure, "
+                           "not forcing a resync.");
+            return false;
+        }
+        if (auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+            metadata_snapshot->getMetadataVersion() >= zk_metadata_version)
+            return false;
+
+        /// Prepend a dummy ALTER_METADATA carrying the whole ZooKeeper snapshot, exactly as
+        /// cloneMetadataIfNeeded does for a cloned replica, so normal queue processing applies
+        /// setTableStructure. Create the queue znode atomically with a check that the snapshot is still
+        /// current: if a concurrent ALTER landed after we drained the log, the check fails and we retry, so
+        /// the next drain picks up that ALTER instead of us injecting a duplicate alter_version.
+        auto entry = std::make_shared<LogEntry>();
+        entry->type = LogEntry::ALTER_METADATA;
+        entry->source_replica = replica_name;
+        entry->metadata_str = zk_metadata;
+        entry->columns_str = zk_columns;
+        entry->alter_version = zk_metadata_version;
+        entry->create_time = time(nullptr);
+
+        Coordination::Requests ops;
+        Coordination::Responses responses;
+        ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/metadata", metadata_stat.version));
+        ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/columns", columns_stat.version));
+        ops.emplace_back(zkutil::makeCreateRequest(
+            replica_path + "/queue/queue-", entry->toString(), zkutil::CreateMode::PersistentSequential));
+
+        Coordination::Error code = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
+        if (code == Coordination::Error::ZOK)
+        {
+            const auto & create_response = dynamic_cast<const Coordination::CreateResponse &>(*responses.back());
+            entry->znode_name = create_response.path_created.substr(create_response.path_created.find_last_of('/') + 1);
+            queue.insert(zookeeper, entry);
+            LOG_INFO(log, "Created ALTER_METADATA entry {} to force a metadata resync to version {} after recovery.",
+                     entry->znode_name, entry->alter_version);
+            return true;
+        }
+        if (code == Coordination::Error::ZBADVERSION)
+        {
+            LOG_WARNING(log, "Metadata of table {} was changed concurrently, will retry the resync.", zookeeper_path);
+            continue;
+        }
+        zkutil::KeeperMultiException::check(code, ops, responses);
+    }
+}
+
+
 void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper)
 {
     Coordination::Stat is_lost_stat;

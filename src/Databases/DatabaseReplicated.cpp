@@ -46,6 +46,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <base/chrono_io.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
@@ -1604,6 +1605,17 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                     /// Need just update table name
                     replicated_tables_to_rename.push_back({name, intermediate_name, it->second});
                 }
+
+                /// The table is kept as is (same UUID), so recovery does not rewrite its structure and
+                /// relies on it converging "on table replication level". That breaks if this replica was
+                /// detached across an ALTER whose ALTER_METADATA log entry has since been cleaned up from
+                /// the table's log: recovery advances the replica log pointer past the missing entry, and
+                /// SYSTEM SYNC REPLICA only drains the queue without re-reading the structure, so the table
+                /// stays on the old structure indefinitely. Force a metadata resync from ZooKeeper if it is
+                /// behind. Let failures propagate: recovery must not report success (and let the caller
+                /// advance the database log pointer) while a table is left stale.
+                if (auto * rmt = dynamic_cast<StorageReplicatedMergeTree *>(existing_tables_it->table().get()))
+                    rmt->syncTableStructureFromZooKeeperIfNeeded();
                 continue;
             }
         }

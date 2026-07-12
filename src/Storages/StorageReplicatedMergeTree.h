@@ -218,6 +218,13 @@ public:
     /// If timeout is exceeded returns false
     bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas);
 
+    /// If the local table structure is behind the one in ZooKeeper, force a resync by prepending a dummy
+    /// ALTER_METADATA (built from zookeeper_path/metadata + /columns) to the replication queue, exactly as
+    /// cloneMetadataIfNeeded does for a cloned replica. Called from DatabaseReplicated::recoverLostReplica
+    /// to converge a kept matching-UUID replica whose ALTER_METADATA log entry was already cleaned up from
+    /// the log. Returns true if a resync entry was enqueued.
+    bool syncTableStructureFromZooKeeperIfNeeded();
+
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedStatus & res, bool with_zk_fields = true);
 
