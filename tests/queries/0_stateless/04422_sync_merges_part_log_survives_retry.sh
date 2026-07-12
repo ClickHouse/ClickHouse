@@ -49,8 +49,13 @@ fi
 
 # First SYNC MERGES: it reaches coverage (the part is active) and then waits for the part_log write,
 # which never comes while the failpoint is paused, so it times out. This is the call that used to
-# erase the scheduled set on coverage.
-timeout 60 $CLICKHOUSE_CLIENT --max_execution_time 3 -q "SYSTEM SYNC MERGES sm_retry" 2>/dev/null && echo "UNEXPECTED: first SYNC MERGES did not time out"
+# erase the scheduled set on coverage. It must NOT return successfully: a success means the part_log
+# was already written and the timeout/retry behavior this test proves never happened, so the second
+# phase could go green by luck. Fail hard on the unexpected success.
+if timeout 60 $CLICKHOUSE_CLIENT --max_execution_time 3 -q "SYSTEM SYNC MERGES sm_retry" 2>/dev/null; then
+    echo "FAIL: first SYNC MERGES did not time out"
+    exit 1
+fi
 
 # Release the pause shortly after, in the background, so the parked merge can queue its part_log row.
 ( sleep 3 && $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FP" ) &

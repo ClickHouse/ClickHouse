@@ -41,7 +41,13 @@ $CLICKHOUSE_CLIENT -q "SYSTEM SCHEDULE MERGE $TABLE PARTS '$p1', '$p2'"
 $CLICKHOUSE_CLIENT --max_execution_time 30 -q "SYSTEM SYNC MERGES $TABLE"
 
 merged=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = '$TABLE' AND active AND min_block_number <= (SELECT min_block_number FROM system.parts WHERE database = currentDatabase() AND table = '$TABLE' AND name = '$p2') AND max_block_number >= (SELECT max_block_number FROM system.parts WHERE database = currentDatabase() AND table = '$TABLE' AND name = '$p2')")
-[ "$merged" = "1" ] || echo "FAIL: expected p1/p2 covered by one merged part, got $merged"
+# This precondition must hold, not just warn: if p1/p2 are not covered by one active part the later
+# SYNC_OK can be reached by merging p1/p2 normally and then p3/p4, so the stale-entry/self-heal path
+# this test claims to cover is never exercised. Fail hard instead of continuing.
+if [ "$merged" != "1" ]; then
+    echo "FAIL: expected p1/p2 covered by one merged part, got $merged"
+    exit 1
+fi
 
 # Schedule the SAME parts again. They are gone locally (covered by the merged part), so select() can
 # never match them; SYNC MERGES returns on coverage alone and retires the scheduled merge. The
