@@ -1,0 +1,53 @@
+---
+title: Resolvendo o erro de verificação de certificado SSL no ClickHouse
+description: Saiba como resolver o erro SSL Exception CERTIFICATE_VERIFY_FAILED.
+date: 2023-05-02
+tags: ['Segurança e autenticação', 'Erros e exceções']
+keywords: ['Erro', 'Certificado SSL', '210']
+---
+
+<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+  ## Como resolver o erro de verificação de certificado SSL, código 210, no ClickHouse
+</div>
+
+O erro geralmente é exibido como:
+
+`Code: 210. DB::NetException: SSL Exception: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED`
+
+<div id="cause-of-the-error">
+  ## Causa do erro
+</div>
+
+Este erro ocorre ao tentar se conectar a um servidor ClickHouse usando `clickhouse-client`. A causa do erro é uma das seguintes:
+
+* o arquivo de configuração do cliente, `config.xml`, não inclui o certificado raiz no repositório padrão de CAs da máquina; ou
+* há um certificado de CA autoassinado ou de uma CA interna que não está configurado
+
+<div id="solution">
+  ## Solução
+</div>
+
+Se estiver usando uma CA interna ou autossinada, configure o certificado raiz da CA em `config.xml`, no diretório do cliente (por exemplo, `/etc/clickhouse-client`), e desative o carregamento, a partir do local padrão, dos certificados raiz de CA padrão.
+
+Veja um exemplo de configuração:
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="additional-resources">
+  ## Recursos adicionais
+</div>
+
+Consulte [https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/pt-BR/concepts/features/interfaces/cli#configuration_files)

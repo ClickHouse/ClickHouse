@@ -1,0 +1,70 @@
+---
+sidebarTitle: '스키마 레지스트리 통합'
+description: '스키마 관리를 위해 ClickPipes를 스키마 레지스트리와 통합하는 방법을 설명합니다.'
+slug: /integrations/clickpipes/kafka/schema-registries
+title: 'Kafka ClickPipe용 스키마 레지스트리'
+doc_type: 'guide'
+keywords: ['스키마 레지스트리', 'Kafka', 'ClickPipes', 'avro', 'confluent']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+ClickPipes는 Avro 및 Protobuf로 인코딩된 토픽을 디코딩할 수 있도록 스키마 레지스트리 통합을 지원합니다.
+
+<div id="supported-schema-registries">
+  ## Kafka ClickPipes에서 지원되는 스키마 레지스트리
+</div>
+
+Confluent 스키마 레지스트리와 API 호환되는 스키마 레지스트리를 지원합니다. 지원 대상은 다음과 같습니다.
+
+* Confluent 스키마 레지스트리
+* Redpanda 스키마 레지스트리
+
+ClickPipes는 아직 AWS Glue Schema Registry 또는 Azure Schema Registry를 지원하지 않습니다. 이러한 스키마 레지스트리 지원이 필요하면 [팀에 문의하세요](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="schema-registry-configuration">
+  ## 구성
+</div>
+
+ClickPipes를 구성하는 동안 스키마 레지스트리와 통합하려면 다음 방법 중 하나를 사용해야 합니다:
+
+1. 스키마 subject의 전체 경로를 제공합니다(예: `https://registry.example.com/subjects/events`)
+   * 필요에 따라 URL에 `/versions/[version]`을 추가하여 특정 버전을 참조할 수 있습니다(그렇지 않으면 ClickPipes가 최신 버전을 가져옵니다).
+2. 스키마 ID의 전체 경로를 제공합니다(예: `https://registry.example.com/schemas/ids/1000`)
+3. 스키마 레지스트리 루트 URL을 제공합니다(예: `https://registry.example.com`)
+
+<div id="network-connectivity">
+  ## 네트워크 연결
+</div>
+
+ClickPipes는 지정한 URL로 HTTPS를 통해 스키마 레지스트리에 연결합니다. 스키마 레지스트리가 공개적으로 액세스 가능할 필요는 없습니다.
+
+Kafka 브로커에 [reverse private endpoint](/ko/integrations/clickpipes/aws-privatelink) (AWS PrivateLink 또는 GCP Private Service Connect)를 통해 연결하는 경우, 스키마 레지스트리도 동일한 사설 연결을 사용할 수 있습니다. ClickPipes는 reverse private endpoint의 Private DNS를 통해 레지스트리 호스트명을 확인하므로, 브로커와 함께 비공개로 호스팅되는 레지스트리도 해당 호스트명이 reverse private endpoint의 사설 IP 주소로 확인되기만 하면 연결할 수 있습니다(엔드포인트의 Private DNS 지원 또는 사용자 지정 Private DNS 매핑을 통해).
+
+다음 사항에 유의하십시오:
+
+* 스키마 레지스트리 URL은 `https://`를 사용해야 합니다.
+* 레지스트리 호스트명이 사설 주소로 확인되는 경우, ClickPipe에 선택된 reverse private endpoint를 통해 연결할 수 있어야 합니다. 그렇지 않으면 Setup 중 연결 확인이 실패합니다.
+
+<div id="how-schema-registries-work">
+  ## 작동 방식
+</div>
+
+ClickPipes는 구성된 스키마 레지스트리에서 스키마를 동적으로 가져와 적용합니다.
+
+* 메시지에 스키마 ID가 포함되어 있으면 이를 사용해 스키마를 가져옵니다.
+* 메시지에 스키마 ID가 포함되어 있지 않으면 ClickPipe 구성에 지정된 스키마 ID 또는 subject 이름을 사용해 스키마를 가져옵니다.
+* 메시지가 내장된 스키마 ID 없이 작성되었고 ClickPipe 구성에도 스키마 ID 또는 subject 이름이 지정되지 않은 경우, 스키마를 가져오지 않으며 해당 메시지는 건너뜁니다. 이때 ClickPipes 오류 테이블에 `SOURCE_SCHEMA_ERROR`가 기록됩니다.
+* 메시지가 스키마를 준수하지 않으면 해당 메시지는 건너뜁니다. 이때 ClickPipes 오류 테이블에 `DATA_PARSING_ERROR`가 기록됩니다.
+* Protobuf 스키마에만 해당: ClickPipes는 종속성으로 정의된 가져온 스키마를 모두 로드합니다. 외부 참조가 있는 Avro 스키마는 아직 지원되지 않습니다.
+
+<div id="schema-mapping">
+  ## 스키마 매핑
+</div>
+
+가져온 스키마와 ClickHouse 대상 테이블 간의 매핑에는 다음 규칙이 적용됩니다.
+
+* 스키마에 ClickHouse 대상 매핑에 포함되지 않은 필드가 있으면 해당 필드는 무시됩니다.
+* 스키마에 ClickHouse 대상 매핑에 정의된 필드가 없으면 ClickHouse 컬럼은 0 또는 빈 문자열과 같은 &quot;제로&quot; 값으로 채워집니다. `DEFAULT` 표현식은 지원되지 않습니다.
+* 스키마 필드와 ClickHouse 컬럼이 호환되지 않으면 해당 행/메시지의 삽입이 실패하고, 이 실패는 ClickPipes 오류 테이블에 기록됩니다. 일부 암시적 변환(예: 숫자 타입 간 변환)은 지원되지만, 모든 경우가 지원되는 것은 아닙니다(예: Avro 레코드 필드는 `Int32` ClickHouse 컬럼에 삽입할 수 없습니다).

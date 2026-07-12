@@ -24,7 +24,7 @@ Shows the execution plan of a statement.
 Syntax:
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -65,6 +65,9 @@ Union
 - `QUERY TREE` — Query tree after Query Tree level optimizations.
 - `PLAN` — Query execution plan.
 - `PIPELINE` — Query execution pipeline.
+- `ANALYZE` — Executes the query and annotates the execution plan with measured runtime metrics.
+- `ESTIMATE` — Estimated number of rows, marks and parts to be read from the tables while processing the query.
+- `TABLE OVERRIDE` — Validated result of a table override on a table-function schema.
 
 ### EXPLAIN AST {#explain-ast}
 
@@ -652,6 +655,110 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersRange × 2 0 → 1
 ```
+
+### EXPLAIN ANALYZE {#explain-analyze}
+
+`EXPLAIN ANALYZE` actually runs the query, discards the result rows, and prints the same plan tree as `EXPLAIN PLAN` with each step annotated by what really happened at run time.
+
+Settings:
+
+`EXPLAIN ANALYZE` accepts the same display options as `EXPLAIN PLAN` (documented in the [EXPLAIN PLAN](#explain-plan) section).
+
+- `header` — see [EXPLAIN PLAN](#explain-plan) section.
+- `description` — see [EXPLAIN PLAN](#explain-plan) section.
+- `projections` — see [EXPLAIN PLAN](#explain-plan) section.
+- `sorting` — see [EXPLAIN PLAN](#explain-plan) section.
+- `input_headers` — see [EXPLAIN PLAN](#explain-plan) section.
+- `column_structure` — see [EXPLAIN PLAN](#explain-plan) section.
+- `actions` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
+- `indexes` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
+- `compact` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
+- `pretty` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
+- `processors` — For `EXPLAIN ANALYZE`, prints an additional line per stage with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
+
+:::note
+The current version of `EXPLAIN ANALYZE` doesn't support queries executed in distributed mode.
+:::
+
+Example:
+
+```sql
+EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k;
+```
+
+```text
+Query summary:
+  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
+  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
+  Peak memory: 28.98 KiB
+
+Output: number MOD 10, count()
+
+Expression ((Project names + Projection))
+│  I/O: rows 10 → 10 · 90 B → 90 B
+│    time 21.82 us (0.5%) · parallelism 0.98/1
+└──Aggregating
+   │  Keys: number MOD 10
+   │  Aggregates: count()
+   │  Skip merging: 0
+   │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
+   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
+   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
+      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      └──ReadFromSystemNumbers
+            Output: number
+            I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
+              time 993.94 us (23.3%) · parallelism 7.52/15
+```
+
+Let's examine the output. First let's look at the header.
+
+```txt
+   Query summary:
+     Time:        <total> (planning <planning> · execution <execution>)
+     Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
+     Peak memory: <peak>
+```
+
+- `Time` — total time split into planning (i.e. creation of plan + optimization of plan + pipeline construction) and execution (running the pipeline) phases.
+- `Read` — rows and uncompressed bytes read from tables, with throughput - the same numbers the normal query footer reports as "Processed".
+- `Peak memory` — peak memory the query used.
+
+Now let's look at the new lines that appear in the query plan.
+
+```txt
+I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
+  [Stage (<stage>): ]time <t> (<share>%) · parallelism <avg>/<max>
+```
+
+Rows and bytes are reported once for the whole step (the `I/O` line). Time and parallelism are reported per stage of the step on the following indented line(s).
+
+- `rows <in> → <out>` — rows that entered and left the step; (`<selectivity>`%) shows how much the step filtered (`out/in`) or expanded the data, it is hidden when input rows equals output rows and when input rows equals `0`.
+- `<bytes_in> → <bytes_out>` — uncompressed in-memory bytes flowing through the step (omitted when both are zero).
+- `time <t> (<share>%)` — wall-clock time the stage was active, and its share of query execution time (i.e. without build time). Note shares can add up to more than 100% because stages and steps run concurrently.
+- `parallelism <avg>/<max>` — average number of CPU threads working within this stage at once, out of the maximum it could use. A value near max means the stage was well parallelized; near 1 means it ran mostly serially.
+- `Stage (<stage>)` — the name of the stage. A step with a single stage prints the time line directly, without a `Stage (...)` label. Steps with several stages print one labeled line per stage, e.g. `Aggregating` shows `Stage (partial aggregation)` and `Stage (final aggregation)`, and a hash join shows `Stage (build)` and `Stage (probe)`.
+
+:::note
+ClickHouse parallelizes not only execution of tasks within a plan step, but also the execution of plan steps. The `parallelism` metric reflects only the work of this step. Other steps may run concurrently, so this number does not show how the step's parallelism compares to the whole query.
+:::
+
+:::note
+The maximum number in `parallelism` is computed as a minimum between:
+1. total number of tasks within the plan step;
+2. The maximum number of query processing threads set in `max_threads`.
+:::
+
+With `processors = 1`, an extra line is printed under each stage, showing the distribution of elapsed time across the stage's processors:
+
+```txt
+Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
+```
+
+`<n>` is the number of processors in the stage. A large gap between `median` and `max` points to load skew between parallel processors.
+
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
 Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family.

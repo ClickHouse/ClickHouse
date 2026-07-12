@@ -1,0 +1,49 @@
+---
+slug: /manage/data-sources/cloud-endpoints-api
+sidebarTitle: 'عناوين IP لـ Cloud'
+title: 'عناوين IP لـ Cloud'
+description: 'تُوثّق هذه الصفحة ميزات الأمان في واجهة برمجة تطبيقات نقاط نهاية Cloud ضمن ClickHouse. كما توضّح كيفية تأمين عمليات نشر ClickHouse من خلال إدارة الوصول عبر آليات المصادقة والتفويض.'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'عناوين IP الثابتة', 'نقاط نهاية Cloud', 'API', 'الأمان', 'عناوين IP الصادرة', 'عناوين IP الواردة', 'جدار الحماية']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="static-ips-api">
+  ## واجهة برمجة تطبيقات عناوين IP الثابتة
+</div>
+
+إذا كنت بحاجة إلى استرجاع قائمة عناوين IP الثابتة، فيمكنك استخدام نقطة نهاية ClickHouse Cloud API التالية: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). توفّر واجهة برمجة التطبيقات هذه نقاط النهاية لخدمات ClickHouse Cloud، مثل عناوين IP الواردة/الصادرة ونقاط نهاية S3 بحسب كل Region وCloud.
+
+إذا كنت تستخدم تكاملًا مثل MySQL أو PostgreSQL Engine، فقد تحتاج إلى تفويض ClickHouse Cloud للوصول إلى المثيلات الخاصة بك. يمكنك استخدام واجهة برمجة التطبيقات هذه لاسترجاع عناوين IP العامة وتهيئتها في `firewalls` أو `Authorized networks` في GCP أو `Security Groups` في Azure أو AWS، أو في أي نظام آخر تستخدمه لإدارة حركة egress ضمن البنية التحتية.
+
+على سبيل المثال، للسماح بالوصول من خدمة ClickHouse Cloud مستضافة على AWS في Region ‏`ap-south-1`، يمكنك إضافة عناوين `egress_ips` الخاصة بتلك المنطقة:
+
+```bash
+❯ curl -s https://api.clickhouse.cloud/static-ips.json | jq '.'
+{
+  "aws": [
+    {
+      "egress_ips": [
+        "3.110.39.68",
+        "15.206.7.77",
+        "3.6.83.17"
+      ],
+      "ingress_ips": [
+        "15.206.78.111",
+        "3.6.185.108",
+        "43.204.6.248"
+      ],
+      "region": "ap-south-1",
+      "s3_endpoints": "vpce-0a975c9130d07276d"
+    },
+...
+```
+
+على سبيل المثال، يجب أن تكون لدى مثيل AWS RDS الذي يعمل في `us-east-2` ويحتاج إلى الاتصال بخدمة ClickHouse Cloud قواعد مجموعة الأمان الواردة التالية:
+
+<Image img="/images/_snippets/aws-rds-mysql.webp" size="lg" alt="قواعد مجموعة الأمان في AWS" border />
+
+وبالنسبة إلى خدمة ClickHouse Cloud نفسها التي تعمل في `us-east-2`، ولكنها هذه المرة متصلة بـ MySQL على GCP، فيجب أن تبدو `Authorized networks` كما يلي:
+
+<Image img="/images/_snippets/gcp-authorized-network.webp" size="md" alt="الشبكات المصرح بها في GCP" border />

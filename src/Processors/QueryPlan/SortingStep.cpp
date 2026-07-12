@@ -16,11 +16,10 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/scatterByPartition.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTrackerUtils.h>
 
-#include <Processors/ResizeProcessor.h>
-#include <Processors/Transforms/ScatterByPartitionTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/scope_guard_safe.h>
@@ -257,7 +256,7 @@ SortingStep::SortingStep(
     const Settings & settings_,
     UInt64 limit_,
     bool always_read_till_end_)
-    : ITransformingStep(input_header, input_header, getTraits(limit_))
+    : ITransformingStep(input_header, input_header, getTraits(limit_), /*collect_processors*/ false)
     , type(Type::MergingSorted)
     , result_description(std::move(sort_description_))
     , limit(limit_)
@@ -337,36 +336,7 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
             key_columns.push_back(stream_header->getPositionByName(col.column_name));
         }
 
-        pipeline.transform([&](const OutputPortRawPtrs & ports)
-        {
-            Processors processors;
-            for (auto * port : ports)
-            {
-                auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, threads, key_columns);
-                connect(*port, scatter->getInputs().front());
-                processors.push_back(scatter);
-            }
-            return processors;
-        });
-
-        if (streams > 1)
-        {
-            pipeline.transform([&](const OutputPortRawPtrs & ports)
-            {
-                Processors processors;
-                for (size_t i = 0; i < threads; ++i)
-                {
-                    size_t output_it = i;
-                    auto resize = std::make_shared<ResizeProcessor>(stream_header, streams, 1);
-                    auto & inputs = resize->getInputs();
-
-                    for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += threads, ++input_it)
-                        connect(*ports[output_it], *input_it);
-                    processors.push_back(resize);
-                }
-                return processors;
-            });
-        }
+        scatterByPartition(pipeline, threads, key_columns);
     }
 }
 
@@ -524,10 +494,10 @@ void SortingStep::fullSortStreams(
     mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker);
 }
 
-void SortingStep::fullSort(
-    QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, const bool skip_partial_sort)
+void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
 {
     scatterByPartitionIfNeeded(pipeline);
+    scatter_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Scatter));
 
     fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker);
 
@@ -536,6 +506,7 @@ void SortingStep::fullSort(
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
     {
+        sorting_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
         auto transform = std::make_shared<MergingSortedTransform>(
             pipeline.getSharedHeader(),
             pipeline.getNumStreams(),
@@ -548,10 +519,14 @@ void SortingStep::fullSort(
             always_read_till_end);
 
         pipeline.addTransform(std::move(transform));
+        merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
+
     }
     else if (apply_virtual_row_conversions)
     {
         pipeline.addSimpleTransform(RemoveVirtualRowTransform::create);
+        auto tail = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
+        sorting_stage.insert(sorting_stage.end(), tail.begin(), tail.end());
     }
 }
 
@@ -560,6 +535,7 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     /// We consider that a caller has more information what type of sorting to apply.
     /// The type depends on constructor used to create sorting step.
     /// So we'll try to infer sorting to use only in case of Full sorting
+    QueryPipelineProcessorsCollector collector(pipeline, this);
 
     if (type == Type::MergingSorted)
     {
@@ -569,6 +545,8 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
                                         { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+
+        merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
         return;
     }
 
@@ -583,12 +561,16 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
+        merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
+
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
 
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
                                         { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+
+        finalizing = collector.detachProcessors(static_cast<size_t>(SortingStage::FinishSort));
         return;
     }
 
@@ -603,13 +585,26 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
                                         { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+
+        finalizing = collector.detachProcessors(static_cast<size_t>(SortingStage::FinishSort));
         return;
     }
 
-    fullSort(pipeline, result_description, limit);
+    fullSort(pipeline, result_description, limit, collector);
     if (dataflow_cache_updater)
         pipeline.addSimpleTransform([&](const SharedHeader & header)
                                     { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+
+    if (!merge_streams.empty())
+    {
+        auto tail = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
+        merge_streams.insert(merge_streams.end(), tail.begin(), tail.end());
+    }
+    else
+    {
+        auto tail = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
+        sorting_stage.insert(sorting_stage.end(), tail.begin(), tail.end());
+    }
 }
 
 void SortingStep::describeActions(FormatSettings & settings) const
@@ -702,6 +697,11 @@ void SortingStep::serialize(Serialization & ctx) const
     writeVarUInt(partition_by_description.size(), ctx.out);
 }
 
+QueryPlanStepPtr SortingStep::clone() const
+{
+    return std::make_unique<SortingStep>(*this);
+}
+
 QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
@@ -720,6 +720,51 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     return std::make_unique<SortingStep>(
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
+}
+
+std::vector<size_t> SortingStep::getStepGroups() const
+{
+    return { static_cast<size_t>(SortingStage::Scatter),
+        static_cast<size_t>(SortingStage::Sort),
+        static_cast<size_t>(SortingStage::MergeStreams),
+        static_cast<size_t>(SortingStage::FinishSort)
+    };
+}
+
+String SortingStep::getStepGroupName(size_t group) const
+{
+    switch (static_cast<SortingStage>(group))
+    {
+        case SortingStage::Scatter: return "scatter by partition";
+        case SortingStage::Sort: return "sorting";
+        case SortingStage::MergeStreams: return "merge sorted streams";
+        case SortingStage::FinishSort: return "finish sort";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown SortingStage group {}", group);
+}
+
+void SortingStep::describePipeline(FormatSettings & settings) const
+{
+    if (type == Type::Full)
+    {
+        IQueryPlanStep::describePipeline(finalizing, settings);
+        IQueryPlanStep::describePipeline(merge_streams, settings);
+        IQueryPlanStep::describePipeline(sorting_stage, settings);
+        IQueryPlanStep::describePipeline(scatter_stage, settings);
+    }
+    else if (type == Type::MergingSorted)
+    {
+        IQueryPlanStep::describePipeline(merge_streams, settings);
+    }
+    else if (type == Type::FinishSorting)
+    {
+        IQueryPlanStep::describePipeline(finalizing, settings);
+        IQueryPlanStep::describePipeline(merge_streams, settings);
+    }
+    else if (type == Type::PartitionedFinishSorting)
+    {
+        IQueryPlanStep::describePipeline(finalizing, settings);
+    }
 }
 
 void registerSortingStep(QueryPlanStepRegistry & registry);
