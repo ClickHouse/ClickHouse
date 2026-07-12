@@ -1,0 +1,78 @@
+---
+title: Выявление ресурсоемких запросов по использованию памяти в ClickHouse
+description: Узнайте, как использовать таблицу `system.query_log` для поиска запросов, потребляющих больше всего памяти в ClickHouse, на примерах для кластерных и автономных развертываний.
+date: 2023-06-07
+tags: ['Производительность и оптимизации']
+keywords: ['Ресурсоемкие запросы', 'Использование памяти']
+---
+
+<div id="using-the-systemquery_log-table">
+  ## Использование таблицы `system.query_log`
+</div>
+
+Следующий полезный запрос показывает, какие из выполненных вами запросов использовали больше всего памяти.
+
+Пара замечаний к этому запросу:
+
+* результаты вычисляются за последний день (`now() - toIntervalDay(1))`), но вы можете легко изменить временной интервал
+* предполагается, что у вас есть кластер с именем `default` — так называется ваш кластер в [ClickHouse Cloud](https://console.clickhouse.cloud). Замените `default` на имя вашего кластера
+* если у вас нет кластера, см. запрос, приведённый в конце этой статьи
+
+```sql
+SELECT
+    count() as nb_query,
+    user,
+    query,
+    sum(memory_usage) AS memory,
+    normalized_query_hash
+FROM
+    clusterAllReplicas(default, system.query_log)
+WHERE
+    (event_time >= (now() - toIntervalDay(1)))
+    AND query_kind = 'Select'
+    AND type = 'QueryFinish'
+    and user != 'monitoring-internal'
+GROUP BY
+    normalized_query_hash,
+    query,
+    user
+ORDER BY
+    memory DESC;
+```
+
+Ответ выглядит так:
+
+```response
+┌─nb_query─┬─user────┬─query─────────────────────────────────────────────────────────┬───memory─┬─normalized_query_hash─┐
+│       11 │ default │ select version()                                              │ 46178924 │   7202516440347714159 │
+│        2 │ default │ SELECT * FROM "system"."table_functions" LIMIT 31 OFFSET 0    │  8391544 │  12830067173062987695 │
+└──────────┴─────────┴───────────────────────────────────────────────────────────────┴──────────┴───────────────────────┘
+```
+
+<Note>
+  Если у вас нет таблицы `system.query_log`, скорее всего, у вас не включено логирование запросов. О том, как его включить, см. описание [настройки `query_log`](/ru/reference/settings/server-settings/settings#server_configuration_parameters-query-log).
+</Note>
+
+Если у вас нет кластера, вы можете просто выполнять запросы напрямую к единственной таблице `system.query_log`:
+
+```sql
+SELECT
+    count() as nb_query,
+    user,
+    query,
+    sum(memory_usage) AS memory,
+    normalized_query_hash
+FROM
+    system.query_log
+WHERE
+    (event_time >= (now() - toIntervalDay(1)))
+    AND query_kind = 'Select'
+    AND type = 'QueryFinish'
+    and user != 'monitoring-internal'
+GROUP BY
+    normalized_query_hash,
+    query,
+    user
+ORDER BY
+    memory DESC;
+```

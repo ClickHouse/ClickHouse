@@ -1,0 +1,100 @@
+---
+slug: /use-cases/observability/clickstack/search
+title: 'ClickStack으로 검색하기'
+sidebarTitle: '검색'
+description: 'ClickStack으로 검색하기'
+doc_type: 'guide'
+keywords: ['clickstack', 'search', 'logs', 'observability', 'full-text search']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import Tagging from '/snippets/ko/_clickstack_tagging.mdx';
+
+ClickStack에서는 이벤트(로그 및 트레이스)에 대해 전문 검색을 수행할 수 있습니다. 이벤트와 일치하는 키워드만 입력하면 바로 검색을 시작할 수 있습니다. 예를 들어, 로그에 &quot;Error&quot;가 포함되어 있다면 검색창에 &quot;Error&quot;를 입력하기만 해도 해당 로그를 찾을 수 있습니다.
+
+이와 동일한 검색 구문은 Dashboards 및 Charts에서 이벤트를 필터링할 때에도 사용됩니다.
+
+<div id="search-features">
+  ## 검색 기능
+</div>
+
+<div id="natural-language-syntax">
+  ### 자연어 검색 구문
+</div>
+
+* 검색은 대소문자를 구분하지 않습니다
+* 검색은 기본적으로 완전한 단어 단위로 일치합니다(예: `Error`는 `Error here`에는 일치하지만
+  `Errors here`에는 일치하지 않습니다). 단어의 일부만 일치시키려면 단어를 와일드카드로 감쌀 수 있습니다
+  (예: `*Error*`는 `AnyError`와 `AnyErrors`에 일치합니다)
+* 검색어는 순서와 관계없이 검색됩니다(예: `Hello World`는
+  `Hello World`와 `World Hello`를 포함하는 로그에 일치합니다)
+* `NOT` 또는 `-`를 사용하여 키워드를 제외할 수 있습니다(예: `Error NOT Exception` 또는
+  `Error -Exception`)
+* `AND`와 `OR`를 사용하여 여러 키워드를 조합할 수 있습니다(예:
+  `Error OR Exception`)
+* 큰따옴표를 사용하면 정확히 일치하는 항목을 검색할 수 있습니다(예: `"Error tests not found"`)
+
+<Image img="/images/use-cases/observability/hyperdx-27.webp" alt="검색" size="md" />
+
+<div id="column-search">
+  #### 컬럼/속성 검색
+</div>
+
+* `column:value`를 사용해 컬럼과 JSON/맵 속성을 검색할 수 있습니다(예: `level:Error`,
+  `service:app`)
+* 비교 연산자(`>`, `<`,
+  `>=`, `<=`)를 사용해 값 범위를 검색할 수 있습니다(예: `Duration:>1000`)
+* `property:*`를 사용해 속성의 존재 여부를 검색할 수 있습니다(예:
+  `duration:*`)
+
+<div id="time-input">
+  ### 시간 입력
+</div>
+
+* 시간 입력은 자연어 표현(예: `1 hour ago`, `yesterday`,
+  `last week`)을 지원합니다.
+* 단일 시점을 지정하면 해당 시점부터 현재까지를 검색합니다.
+* 시간 쿼리를 쉽게 디버깅할 수 있도록, 검색 시 시간 범위는 항상 파싱된 시간 범위로 변환됩니다.
+* 히스토그램 막대를 선택해 특정 시간 범위로 확대할 수도 있습니다.
+
+<div id="sql-syntax">
+  ### SQL 검색 구문
+</div>
+
+필요에 따라 검색 입력을 SQL 모드로 전환할 수 있습니다. 이 모드에서는 검색 조건으로 유효한 모든
+SQL WHERE 절을 사용할 수 있습니다. Lucene 구문으로 표현할 수 없는
+복잡한 쿼리를 작성할 때 유용합니다.
+
+<div id="select-statement">
+  ### SELECT 문
+</div>
+
+검색 결과에 표시할 컬럼을 지정하려면 `SELECT` 입력란을 사용할 수 있습니다. 이는 검색 페이지에서 선택할 컬럼을 지정하는 SQL SELECT 표현식입니다.
+현재는 별칭이 지원되지 않습니다(예: `column as "alias"`는 사용할 수 없습니다).
+
+<div id="saved-searches">
+  ## 저장된 검색
+</div>
+
+나중에 빠르게 접근할 수 있도록 검색을 저장할 수 있습니다. 한 번 저장하면 검색이 `Saved Searches` 페이지에 표시되므로, 자주 사용하는 검색 쿼리를 매번 다시 만들지 않고도 쉽게 불러올 수 있습니다.
+
+<Image img="/images/use-cases/observability/clickstack-saved-search-listing.webp" alt="저장된 검색 목록 페이지" size="lg" />
+
+검색을 저장하려면 검색 쿼리를 설정한 다음 저장 버튼을 클릭하면 됩니다. 나중에 쉽게 구분할 수 있도록 저장된 검색에 설명적인 이름을 지정할 수 있습니다.
+
+<Image img="/images/use-cases/observability/clickstack-saved-search.webp" alt="검색 저장" size="md" />
+
+<div id="alerts-on-saved-searches">
+  ### 저장된 검색에 알림 추가하기
+</div>
+
+저장된 검색은 특정 조건이 충족될 때 알림을 보내도록 모니터링할 수 있습니다. 저장된 검색과 일치하는 이벤트 수가 지정된 임계값을 초과하거나 그보다 낮아질 때 알림이 발생하도록 설정할 수 있습니다.
+
+알림을 설정하고 구성하는 방법에 대한 자세한 내용은 [알림 문서](/ko/clickstack/features/alerts)를 참조하십시오.
+
+<div id="tagging">
+  ### 태그 지정
+</div>
+
+<Tagging />

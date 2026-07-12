@@ -1,0 +1,43 @@
+---
+noindex: true
+title: "ClickHouse Private のバックアップ戦略"
+sidebarTitle: "バックアップ戦略"
+description: "このドキュメントでは、ClickHouse Private に固有のバックアップの挙動と制限事項について説明します。"
+---
+
+このドキュメントでは、ClickHouse Private に固有のバックアップの挙動と制限事項について説明します。ClickHouse の一般的なバックアップの概念 (フルとインクリメンタル、バックアップチェーン、SQL 構文) については、[ClickHouse 本体のバックアップドキュメント](https://clickhouse.com/docs/operations/backup/overview)を参照してください。手順を追った操作方法については、[バックアップと復元 (手動) ](/ja/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) または [API を使用したバックアップの管理](/ja/products/clickhouse-private/guides/manage-backups-via-the-private-api) を参照してください。
+
+<div id="backup-location">
+  ## バックアップの保存場所
+</div>
+
+バックアップは **Amazon S3** に保存されます。各クラスターのバックアップは、そのクラスターの S3 キー・プレフィックス (CR の `spec.s3.keyPrefix` にあります) 配下に整理されるため、同じ S3バケットを共有している場合でも、異なるクラスターのバックアップは互いに分離された状態に保たれます。
+
+<div id="manual-vs-api-driven-backups">
+  ## 手動バックアップと API 経由のバックアップ
+</div>
+
+ClickHouse Private は、2 つのバックアップ方法をサポートしています。
+
+* **手動 (SQL)&#x20;**&#x20;-- `BACKUP`/`RESTORE` ステートメントをサーバーポッドで直接実行します。対象範囲と S3 パスを完全に制御できます。[バックアップと復元 (手動) ](/ja/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) を参照してください。
+* **API-driven** -- Private API の REST エンドポイントを使用します。これにより、オペレーターが管理する `Backup` カスタムリソースが作成されます。[API を使用したバックアップの管理](/ja/products/clickhouse-private/guides/manage-backups-via-the-private-api) と [API リファレンス](/ja/products/clickhouse-private/reference/clickhouse-private-api-reference) を参照してください。
+
+<div id="backup-pod-designation">
+  ## バックアップポッドの指定
+</div>
+
+MultiSTS アーキテクチャでは、1 つのレプリカだけが **バックアップポッド** として指定されます (ReplicaStateMap では `isBackupPod: true`) 。バックアップ操作は常にこのポッドで実行されます。オペレーターは、バックアップ操作が中断されるのを防ぐため、スケールイン時にバックアップポッドを廃棄対象としてマークしないようにします。
+
+<div id="restore-limitation">
+  ## 復元の制限
+</div>
+
+Private API では、**バックアップの取得元と同じクラスターへの復元** (`instance_id == target_instance_id`) は許可されていません。これは、稼働中の本番クラスターに余分な負荷がかかるのを防ぎ、データが上書きされるリスクを低減するためです。推奨される方法は、新しいクラスターをプロビジョニングし、そこに復元することです。
+
+同じクラスターに復元する必要がある場合 (たとえば、特定のテーブルを復元する場合) は、サーバーポッド上で手動の SQL コマンドを直接実行してください。
+
+<div id="incremental-backup-chain-integrity">
+  ## インクリメンタルバックアップチェーンの整合性
+</div>
+
+S3 のライフサイクルポリシーでインクリメンタルバックアップを運用する場合は、それに依存するインクリメンタルバックアップが残っている間に、有効期限ルールによってフルバックアップが削除されないようにしてください。フルバックアップが削除されると、そのチェーンに含まれるすべてのインクリメンタルバックアップは復元できなくなります。

@@ -1,0 +1,182 @@
+---
+description: 'Configuração da chave e dos atributos do Dicionário'
+sidebarTitle: 'Atributos'
+slug: /sql-reference/statements/create/dictionary/attributes
+title: 'Atributos do Dicionário'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/pt-BR/_snippet_dictionary_in_cloud.mdx';
+
+<CloudDetails />
+
+A cláusula `structure` descreve a chave do dicionário e os campos disponíveis para consultas.
+
+Descrição em XML:
+
+```xml
+<dictionary>
+    <structure>
+        <id>
+            <name>Id</name>
+        </id>
+
+        <attribute>
+            <!-- Parâmetros de atributo -->
+        </attribute>
+
+        ...
+
+    </structure>
+</dictionary>
+```
+
+Os atributos são descritos nos elementos:
+
+* `<id>` — coluna-chave
+* `<attribute>` — coluna de dados: pode haver vários atributos.
+
+Consulta DDL:
+
+```sql
+CREATE DICTIONARY dict_name (
+    Id UInt64,
+    -- atributos
+)
+PRIMARY KEY Id
+...
+```
+
+Os atributos são descritos no corpo da consulta:
+
+* `PRIMARY KEY` — coluna-chave
+* `AttrName AttrType` — coluna de dados. Pode haver vários atributos.
+
+<div id="key">
+  ## Chave
+</div>
+
+O ClickHouse oferece suporte aos seguintes tipos de chaves:
+
+* Chave numérica. `UInt64`. Definida na tag `<id>` ou com a palavra-chave `PRIMARY KEY`.
+* Chave composta. Conjunto de valores de tipos diferentes. Definida na tag `<key>` ou com a palavra-chave `PRIMARY KEY`.
+
+Uma estrutura XML pode conter `<id>` ou `<key>`. A consulta DDL deve conter uma única `PRIMARY KEY`.
+
+<Note>
+  Você não deve descrever a chave como um atributo.
+</Note>
+
+<div id="numeric-key">
+  ### Chave numérica
+</div>
+
+Tipo: `UInt64`.
+
+Exemplo de configuração:
+
+```xml
+<id>
+    <name>Id</name>
+</id>
+```
+
+Campos de configuração:
+
+* `name` – O nome da coluna que contém as chaves.
+
+Para a consulta DDL:
+
+```sql
+CREATE DICTIONARY (
+    Id UInt64,
+    ...
+)
+PRIMARY KEY Id
+...
+```
+
+* `PRIMARY KEY` – O nome da coluna que contém as chaves.
+
+<div id="composite-key">
+  ### Chave composta
+</div>
+
+A chave pode ser uma `tuple` formada por campos de qualquer tipo. O [layout](/pt-BR/reference/statements/create/dictionary/layouts/overview) nesse caso deve ser `complex_key_hashed` ou `complex_key_cache`.
+
+<Tip>
+  Uma chave composta pode consistir em um único elemento. Isso possibilita usar uma string como chave, por exemplo.
+</Tip>
+
+A estrutura da chave é definida no elemento `<key>`. Os campos da chave são especificados no mesmo formato dos [atributos](#attributes) do dicionário. Exemplo:
+
+```xml
+<structure>
+    <key>
+        <attribute>
+            <name>field1</name>
+            <type>String</type>
+        </attribute>
+        <attribute>
+            <name>field2</name>
+            <type>UInt32</type>
+        </attribute>
+        ...
+    </key>
+...
+```
+
+ou
+
+```sql
+CREATE DICTIONARY (
+    field1 String,
+    field2 UInt32
+    ...
+)
+PRIMARY KEY field1, field2
+...
+```
+
+Para uma consulta à função `dictGet*`, uma tupla é usada como chave. Exemplo: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
+
+<div id="attributes">
+  ## Atributos
+</div>
+
+Exemplo de configuração:
+
+```xml
+<structure>
+    ...
+    <attribute>
+        <name>Name</name>
+        <type>ClickHouseDataType</type>
+        <null_value></null_value>
+        <expression>rand64()</expression>
+        <hierarchical>true</hierarchical>
+        <injective>true</injective>
+        <is_object_id>true</is_object_id>
+    </attribute>
+</structure>
+```
+
+or
+
+```sql
+CREATE DICTIONARY somename (
+    Name ClickHouseDataType DEFAULT '' EXPRESSION rand64() HIERARCHICAL INJECTIVE IS_OBJECT_ID
+)
+```
+
+Campos de configuração:
+
+| Tag                                                | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Obrigatório |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- |
+| `name`                                             | Nome da coluna.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Sim         |
+| `type`                                             | Tipo de dado do ClickHouse: [UInt8](/pt-BR/reference/data-types/int-uint), [UInt16](/pt-BR/reference/data-types/int-uint), [UInt32](/pt-BR/reference/data-types/int-uint), [UInt64](/pt-BR/reference/data-types/int-uint), [Int8](/pt-BR/reference/data-types/int-uint), [Int16](/pt-BR/reference/data-types/int-uint), [Int32](/pt-BR/reference/data-types/int-uint), [Int64](/pt-BR/reference/data-types/int-uint), [Float32](/pt-BR/reference/data-types/float), [Float64](/pt-BR/reference/data-types/float), [UUID](/pt-BR/reference/data-types/uuid), [Decimal32](/pt-BR/reference/data-types/decimal), [Decimal64](/pt-BR/reference/data-types/decimal), [Decimal128](/pt-BR/reference/data-types/decimal), [Decimal256](/pt-BR/reference/data-types/decimal),[Date](/pt-BR/reference/data-types/date), [Date32](/pt-BR/reference/data-types/date32), [DateTime](/pt-BR/reference/data-types/datetime), [DateTime64](/pt-BR/reference/data-types/datetime64), [String](/pt-BR/reference/data-types/string), [Array](/pt-BR/reference/data-types/array).<br />O ClickHouse tenta converter o valor do dicionário para o tipo de dado especificado. Por exemplo, no MySQL, o campo pode ser `TEXT`, `VARCHAR` ou `BLOB` na tabela de origem do MySQL, mas pode ser carregado como `String` no ClickHouse.<br />Atualmente, [Nullable](/pt-BR/reference/data-types/nullable) é compatível com os dicionários [Flat](/pt-BR/reference/statements/create/dictionary/layouts/flat), [Hashed](/pt-BR/reference/statements/create/dictionary/layouts/hashed), [ComplexKeyHashed](/pt-BR/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed), [Direct](/pt-BR/reference/statements/create/dictionary/layouts/direct), [ComplexKeyDirect](/pt-BR/reference/statements/create/dictionary/layouts/direct#complex_key_direct), [RangeHashed](/pt-BR/reference/statements/create/dictionary/layouts/range-hashed), Polygon, [Cache](/pt-BR/reference/statements/create/dictionary/layouts/cache), [ComplexKeyCache](/pt-BR/reference/statements/create/dictionary/layouts/cache), [SSDCache](/pt-BR/reference/statements/create/dictionary/layouts/ssd-cache), [SSDComplexKeyCache](/pt-BR/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache). Em dicionários [IPTrie](/pt-BR/reference/statements/create/dictionary/layouts/ip-trie), tipos `Nullable` não são compatíveis. | Sim         |
+| `null_value`                                       | Valor padrão para um elemento inexistente.<br />No exemplo, é uma string vazia. O valor [NULL](/pt-BR/reference/syntax#null) só pode ser usado com tipos `Nullable` (veja a linha anterior com a descrição dos tipos).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Sim         |
+| `expression`                                       | [Expressão](/pt-BR/reference/syntax#expressions) que o ClickHouse executa sobre o valor.<br />A expressão pode ser um nome de coluna no banco de dados SQL remoto. Assim, você pode usá-la para criar um alias para a coluna remota.<br /><br />Valor padrão: nenhuma expressão.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Não         |
+| <a name="hierarchical-dict-attr" /> `hierarchical` | Se `true`, o atributo contém o valor da chave pai da chave atual. Veja [Hierarchical Dictionaries](/pt-BR/reference/statements/create/dictionary/layouts/hierarchical).<br /><br />Valor padrão: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Não         |
+| `injective`                                        | Flag que indica se o mapeamento `id -> attribute` é [injetivo](https://en.wikipedia.org/wiki/Injective_function).<br />Se `true`, o ClickHouse pode colocar automaticamente, após a cláusula `GROUP BY`, as consultas aos dicionários com injetividade. Em geral, isso reduz significativamente a quantidade dessas consultas.<br /><br />Valor padrão: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Não         |
+| `is_object_id`                                     | Flag que indica se a consulta é executada para um documento do MongoDB por `ObjectID`.<br /><br />Valor padrão: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |             |

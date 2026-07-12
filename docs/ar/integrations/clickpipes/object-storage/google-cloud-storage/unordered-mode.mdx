@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'تهيئة الوضع غير المرتب'
+title: 'تهيئة الوضع غير المرتب للإدخال المستمر'
+slug: /integrations/clickpipes/object-storage/gcs/unordered-mode
+description: 'دليل خطوة بخطوة لتهيئة الوضع غير المرتب للإدخال المستمر في GCS ClickPipes.'
+doc_type: 'guide'
+---
+
+بشكل افتراضي، يفترض GCS ClickPipe أن الملفات تُضاف إلى الحاوية وفق [الترتيب المعجمي](/ar/integrations/clickpipes/object-storage/google-cloud-storage/overview#continuous-ingestion-lexicographical-order). ويمكن تهيئة GCS ClickPipe لإدخال الملفات التي لا تتبع ترتيبًا ضمنيًا من خلال إعداد اشتراك [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) متصل بالحاوية. يتيح ذلك لـ ClickPipes الاستماع إلى إشعارات `OBJECT_FINALIZE` وإدخال أي ملفات جديدة بغض النظر عن اصطلاح تسمية الملفات.
+
+<Note>
+  الوضع غير المرتب **غير** مدعوم للحاويات العامة. ويتطلب ذلك مصادقة باستخدام **حساب خدمة** واشتراك [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) متصل بالحاوية.
+</Note>
+
+<div id="how-it-works">
+  ## كيف يعمل
+</div>
+
+في هذا الوضع، يُجري ClickPipe الخاص بـ GCS تحميلًا أوليًا لكل **الملفات** الموجودة في المسار المحدد، ثم يستمع إلى إشعارات الكائنات عبر اشتراك Pub/Sub التي تطابق هذا المسار. سيتم **تجاهل** أي رسالة تخص ملفًا سبق اكتشافه، أو ملفًا لا يطابق المسار، أو حدثًا من نوع مختلف. **لا يمكن** بدء الإدخال من ملف معيّن أو من نقطة زمنية محددة — إذ يحمّل ClickPipes دائمًا جميع الملفات في المسار المحدد.
+
+قد تحدث أنواع مختلفة من الإخفاقات أثناء إدخال البيانات، ما قد يؤدي إلى عمليات insert جزئية أو إلى بيانات مكررة. يتميز Object Storage ClickPipes بالقدرة على التعامل مع إخفاقات insert ويوفر دلالات exactly-once باستخدام جداول مرحلية مؤقتة. تُدرج البيانات أولًا في جدول مرحلي؛ وإذا حدث خطأ ما، يُفرَّغ الجدول المرحلي وتُعاد محاولة insert من حالة نظيفة. ولا تُنقل partitions إلى الجدول الهدف إلا بعد اكتمال عملية insert بنجاح.
+
+<Steps>
+  <Step>
+    ## أنشئ topic في Google Cloud Pub/Sub
+
+    **1.** في Google Cloud Console، انتقل إلى **Pub/Sub &gt; Topics &gt; Create topic**. أنشئ topic جديدًا مع اشتراك افتراضي، ودوّن **اسم الـ Topic**.
+
+    **2.** اضبط إشعارًا لحاوية GCS ينشر [أحداث `OBJECT_FINALIZE`](https://docs.cloud.google.com/storage/docs/pubsub-notifications) إلى topic في Pub/Sub الذي أنشأته أعلاه.
+
+    **2.1.** لا يمكن تنفيذ هذه الخطوة من خلال Google Cloud Console، لذلك يجب استخدام عميل `gcloud` أو واجهتك البرمجية المفضلة لـ Google Cloud. على سبيل المثال، باستخدام `gcloud`:
+
+    ```bash
+    # أنشئ إشعار Pub/Sub للكائنات الجديدة في الحاوية
+    gcloud storage buckets notifications create "gs://${YOUR_BUCKET_NAME}" \
+      --topic="projects/${YOUR_PROJECT_ID}/topics/${YOUR_TOPIC_NAME}" \
+      --event-types="OBJECT_FINALIZE" \
+      --payload-format="json"
+
+    # اعرض إشعارات Pub/Sub في الحاوية
+    gcloud storage buckets notifications describe
+    ```
+  </Step>
+
+  <Step>
+    ## اضبط حساب خدمة
+
+    **1.** اضبط [حساب خدمة](http://docs.cloud.google.com/iam/docs/keys-create-delete) مع [الأذونات المطلوبة](/ar/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions) للسماح لـ ClickPipes بسرد الكائنات وجلبها من الحاوية المحددة، وكذلك باستهلاك الإشعارات من اشتراك Pub/Sub ومراقبتها.
+
+    **1.1.** يمكن تنفيذ هذه الخطوة في Google Cloud Console، أو باستخدام عميل `gcloud`، أو عبر واجهتك البرمجية المفضلة لـ Google Cloud. على سبيل المثال، باستخدام `gcloud`:
+
+    ```bash
+    # 1. امنح حق القراءة لحاوية GCS
+    gcloud storage buckets add-iam-policy-binding "gs://${YOUR_BUCKET_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/storage.objectViewer"
+
+    # 2. امنح حق القراءة لاشتراك Pub/Sub
+    gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/pubsub.subscriber"
+
+    # 3. امنح إذن الوصول إلى البيانات الوصفية لاشتراك Pub/Sub
+    gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/pubsub.viewer"
+    ```
+  </Step>
+
+  <Step>
+    ## أنشئ ClickPipe باستخدام الوضع غير المرتب
+
+    **1.** في ClickHouse Cloud console، انتقل إلى **Data Sources &gt; Create ClickPipe** واختر **Google Cloud Storage**. أدخل التفاصيل اللازمة للاتصال بحاوية GCS الخاصة بك. ضمن **Authentication method**، اختر **حساب خدمة** وقدّم مفتاح حساب الخدمة بصيغة `.json`.
+
+    **2.** فعّل **Continuous ingestion**، ثم اختر **Any order** بوصفه وضع الإدخال، وقدّم اسم **اشتراك Pub/Sub** للاشتراك المتصل بحاويتك. يجب أن يتبع اسم الاشتراك التنسيق التالي:
+
+    ```text
+    projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}
+    ```
+
+    **3.** انقر على **Incoming data**. حدّد **Sorting key** للجدول الهدف. أجرِ أي تعديلات لازمة على schema المعيّن، ثم اضبط role لمستخدم قاعدة البيانات الخاص بـ ClickPipes.
+
+    **4.** راجع configuration وانقر على **Create ClickPipe**. سيُجري ClickPipes فحصًا أوليًا لحاويتك لتحميل جميع الملفات الموجودة التي تطابق المسار المحدد، ثم سيبدأ في معالجة الملفات عند وصول أحداث `OBJECT_FINALIZE` الجديدة إلى الـ topic.
+  </Step>
+</Steps>

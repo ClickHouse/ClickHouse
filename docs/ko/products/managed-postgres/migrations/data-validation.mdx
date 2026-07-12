@@ -1,0 +1,30 @@
+---
+slug: /cloud/managed-postgres/migrations/data-validation
+sidebarTitle: '데이터 검증'
+title: '마이그레이션 후 데이터 정확성 검증'
+description: 'ClickHouse Managed Postgres로 마이그레이션한 후 데이터가 올바른지 검증하는 방법을 알아봅니다'
+keywords: ['postgres', 'postgresql', '논리적 복제', '마이그레이션', '데이터 전송', 'Managed Postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.data-validation-beta" />
+
+<div id="data-validation-counts">
+  ## 모든 테이블의 개수 비교
+</div>
+
+마이그레이션 후 데이터가 정확한지 검증하는 간단한 방법은 원본 데이터베이스와 대상 데이터베이스의 모든 테이블 개수를 비교하는 것입니다. 이를 위해 두 데이터베이스에서 다음 쿼리를 실행할 수 있습니다.
+
+```sql
+SELECT table_name, 
+       (xpath('/row/cnt/text()', xml_count))[1]::text::bigint AS row_count
+FROM (
+  SELECT table_name, 
+         query_to_xml('SELECT count(*) AS cnt FROM ' || quote_ident(table_name), false, true, '') AS xml_count
+  FROM information_schema.tables
+  WHERE table_schema = 'public'
+) t
+ORDER BY table_name;
+```
