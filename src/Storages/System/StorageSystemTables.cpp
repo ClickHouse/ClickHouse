@@ -311,9 +311,12 @@ protected:
         if (metadata_snapshot)
         {
             /// Collect distinct types, sorted, so the result is deterministic.
+            /// Skip implicitly created indices (e.g. via add_minmax_index_for_numeric_columns)
+            /// so the column reports only skip indices explicitly defined on the table.
             std::set<String> types;
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
-                types.insert(index.type);
+                if (!index.isImplicitlyCreated())
+                    types.insert(index.type);
 
             skipping_indices_types.reserve(types.size());
             for (const auto & type : types)
