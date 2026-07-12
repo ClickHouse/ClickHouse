@@ -28,6 +28,12 @@ FROM (SELECT 1. AS x, 0. AS y);
 SELECT toTypeName(mannWhitneyUTestState('two-sided', 1)(x, y))
 FROM (SELECT 1. AS x, 0. AS y);
 
+-- intervalLengthSum takes no parameters; passing some used to be silently dropped, so the
+-- -Array combinator later aborted on the wrapper-vs-nested parameter mismatch. It now rejects
+-- parameters up front instead.
+SELECT intervalLengthSumArray('two-sided', 1)([0., 0, 1, 1], [0., 10, 1025, 3]); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
+SELECT intervalLengthSum('two-sided', 1)(0., 10.); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
+
 -- Backward compatibility: the parameters only affect finalization, not the serialized state,
 -- so a legacy parameterless state column (written before this patch) must stay Merge-/CAST-
 -- compatible with the parameterized function. getNormalizedStateType() normalizes both to the
@@ -38,7 +44,10 @@ CREATE TABLE legacy_moving (s AggregateFunction(groupArrayMovingSum, UInt8)) ENG
 INSERT INTO legacy_moving SELECT groupArrayMovingSumState(x) FROM (SELECT arrayJoin([1, 2, 3]) AS x);
 -- parameterized -Merge over a legacy parameterless column (was ILLEGAL_TYPE_OF_ARGUMENT before the fix)
 SELECT groupArrayMovingSumMerge(2)(s) FROM legacy_moving;
--- insert a new parameterized state into the legacy parameterless column, then merge everything
+-- insert a new parameterized state into the legacy parameterless column, then merge everything.
+-- The concatenation order of the two states is not deterministic, so assert order-independent
+-- invariants: the merged moving sum has one element per input value (6) and its last element is
+-- the running total of all values (1+2+3+10+20+30 = 66).
 INSERT INTO legacy_moving SELECT groupArrayMovingSumState(2)(x) FROM (SELECT arrayJoin([10, 20, 30]) AS x);
-SELECT groupArrayMovingSumMerge(s) FROM legacy_moving;
+SELECT length(r), r[length(r)] FROM (SELECT groupArrayMovingSumMerge(s) AS r FROM legacy_moving);
 DROP TABLE legacy_moving;

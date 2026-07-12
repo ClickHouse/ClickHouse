@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
 
@@ -236,8 +237,10 @@ public:
 
 template <template <typename> class Data>
 AggregateFunctionPtr
-createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTypes & arguments, const Array &, const Settings *)
+createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
 {
+    assertNoParameters(name, parameters);
+
     if (arguments.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Aggregate function {} requires two timestamps argument.", name);
