@@ -39,10 +39,9 @@ SELECT count() FROM t_gating AS a LOCAL INNER JOIN t_gating_dim AS b ON a.k = b.
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 0;
 DROP TABLE t_gating_dim;
 
--- `force_aggregation_in_order` makes an in-order aggregation. It passes the Cascades
--- pre-check (the step sorts its own input, so exchanges below it are safe), but the plan
--- serializer cannot ship an in-order aggregation to workers, so the query is rejected
--- cleanly instead of returning wrong groups.
+-- `force_aggregation_in_order` makes an in-order aggregation, which assumes its input arrives
+-- ordered by the group keys - the exchanges Cascades inserts do not preserve that. The pre-check
+-- rejects it cleanly instead of building a plan that would return wrong groups.
 SELECT '-- 5. force_aggregation_in_order is rejected (in-order aggregation is not serializable)';
 SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,

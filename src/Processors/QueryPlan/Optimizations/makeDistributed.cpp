@@ -226,11 +226,11 @@ static void checkStepSupportedByCascades(const IQueryPlanStep & step)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan with enable_cascades_optimizer does not support LOCAL JOIN");
 
-    /// Defensive: the pass that creates such steps is skipped when Cascades is active.
-    /// An in-order aggregation without explicit input sorting assumes its input arrives
-    /// ordered by the group keys, which exchanges do not guarantee.
+    /// An in-order aggregation assumes its input arrives ordered by the group keys, which the
+    /// exchanges Cascades inserts do not guarantee, and `AggregatingStep::isSerializable` refuses
+    /// to ship it. Reject it up front instead of failing later while serializing a fragment.
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(&step);
-        aggregating_step && aggregating_step->inOrder() && !aggregating_step->explicitSortingRequired())
+        aggregating_step && aggregating_step->inOrder())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan with enable_cascades_optimizer does not support in-order aggregation");
 
