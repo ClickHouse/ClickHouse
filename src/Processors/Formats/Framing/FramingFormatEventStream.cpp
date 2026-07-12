@@ -19,6 +19,10 @@ void FramingFormatEventStream::writeDataFields(std::string_view data)
         writeCString("data: ", out);
         out.write(pos, line_end - pos);
         writeChar('\n', out);
+        /// The last payload line may have no trailing '\n' (for example `FORMAT JSON`).
+        /// Stop instead of advancing past `end`, which would be undefined pointer arithmetic.
+        if (line_end == end)
+            break;
         pos = line_end + 1;
     }
 }
