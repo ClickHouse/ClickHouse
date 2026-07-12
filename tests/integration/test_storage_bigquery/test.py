@@ -115,16 +115,16 @@ def test_schema_inference():
         "flag": "Nullable(Bool)",
         "d": "Nullable(Date32)",
         "t": "Nullable(Time64(6))",
-        "dt": "Nullable(DateTime64(6, 'UTC'))",
-        "ts": "Nullable(DateTime64(6, 'UTC'))",
+        "dt": "Nullable(DateTime64(6, \\'UTC\\'))",
+        "ts": "Nullable(DateTime64(6, \\'UTC\\'))",
         "num": "Nullable(Decimal(38, 9))",
         "bignum": "Nullable(Decimal(76, 38))",
         "num_p": "Nullable(Decimal(10, 2))",
         "geo": "Nullable(String)",
         "j": "Nullable(String)",
         "arr": "Array(Int64)",
-        "rec": "Tuple(\n    x Nullable(Int64),\n    y String,\n    tags Array(String))",
-        "recs": "Array(Tuple(\n    k Int64,\n    val Nullable(String)))",
+        "rec": "Tuple(\\n    x Nullable(Int64),\\n    y String,\\n    tags Array(String))",
+        "recs": "Array(Tuple(\\n    k Int64,\\n    val Nullable(String)))",
     }
 
 
@@ -156,11 +156,18 @@ def test_selected_fields():
     mock_reset()
     # The columns are requested in reverse order on purpose: the response returns them
     # in the schema order, and ClickHouse must reorder them for the query.
-    result = node.query(f"SELECT s, i FROM {bq('test_paging')} WHERE i < 2 ORDER BY i")
-    assert result == "value0\t0\nvalue1\t1\n"
+    result = node.query(f"SELECT s, i FROM {bq('test_types')} WHERE i = 1")
+    assert result == "hello\t1\n"
 
     requests = mock_stats()["data_requests"]
     assert all(r["params"]["selectedFields"] == "i,s" for r in requests)
+
+    # When all columns are selected, the parameter is omitted.
+    mock_reset()
+    result = node.query(f"SELECT s, i FROM {bq('test_paging')} WHERE i < 2 ORDER BY i")
+    assert result == "value0\t0\nvalue1\t1\n"
+    requests = mock_stats()["data_requests"]
+    assert all("selectedFields" not in r["params"] for r in requests)
 
     mock_reset()
     result = node.query(f"SELECT sum(i) FROM {bq('test_paging')}")
