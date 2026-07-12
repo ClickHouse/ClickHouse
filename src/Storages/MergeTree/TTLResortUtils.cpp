@@ -726,8 +726,12 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
         if (column_desc.default_desc.kind != ColumnDefaultKind::Materialized || !column_desc.default_desc.expression)
             continue;
 
+        /// Analyze the default expression as written (do NOT rewrite subcolumn reads to
+        /// `getSubcolumn(parent, ...)` first): a rewritten `tup.ts` collapses to its physical parent
+        /// `tup` in `requiredSourceColumns()`, hiding the subcolumn we must drop. Analyzed as-is, a
+        /// subcolumn read such as `tup.ts` in `d MATERIALIZED toDate(tup.ts)` is reported by its
+        /// subcolumn name, so it is recognised and dropped below.
         auto query = column_desc.default_desc.expression->clone();
-        replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
         auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
         for (const auto & source : syntax_result->requiredSourceColumns())
             /// A subcolumn source is one that is not itself a physical column but maps to one.
