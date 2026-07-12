@@ -68,7 +68,10 @@ FormatSettings getFormatSettingsForCSVFieldDelimiter(const FormatSettings & form
     result.csv.custom_delimiter.clear();
 
     if (field_delimiter.empty())
+    {
+        result.csv.quote_date_time_types = true;
         return result;
+    }
 
     if (field_delimiter.size() == 1)
         result.csv.delimiter = field_delimiter.front();

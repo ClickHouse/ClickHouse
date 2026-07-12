@@ -26,5 +26,9 @@ CustomSeparated CSV escaping uses its field delimiter
 "2024-01-15"-42
 CustomSeparated CSV escaping uses its final row delimiter
 "2024-01-15"-
+CustomSeparated CSV escaping keeps a boundary without a field delimiter
+"12:30:00.456"42
 Template CSV escaping uses its following delimiter
 "2024-01-15"-42
+Template CSV escaping keeps a boundary without a delimiter
+"1234567890"42

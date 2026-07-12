@@ -89,10 +89,28 @@ SETTINGS
     format_custom_row_after_delimiter = '-',
     format_custom_result_after_delimiter = '\n';
 
+SELECT 'CustomSeparated CSV escaping keeps a boundary without a field delimiter' FORMAT TSVRaw;
+SELECT toTime64('12:30:00.456', 3) AS t, 42 AS n
+FORMAT CustomSeparated
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '',
+    format_custom_row_after_delimiter = '\n';
+
 SELECT 'Template CSV escaping uses its following delimiter' FORMAT TSVRaw;
 SELECT toDate('2024-01-15') AS d, 42 AS n
 FORMAT Template
 SETTINGS
     output_format_csv_quote_date_time_types = 0,
     format_template_row_format = '${d:CSV}-${n:CSV}\n',
+    format_template_resultset_format = '${data}';
+
+SELECT 'Template CSV escaping keeps a boundary without a delimiter' FORMAT TSVRaw;
+SELECT toDateTime(1234567890, 'UTC') AS dt, 42 AS n
+FORMAT Template
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    date_time_output_format = 'unix_timestamp',
+    format_template_row_format = '${dt:CSV}${n:CSV}\n',
     format_template_resultset_format = '${data}';
