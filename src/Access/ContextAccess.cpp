@@ -464,7 +464,15 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 
 void ContextAccess::calculateAccessRights() const
 {
-    access = std::make_shared<AccessRights>(mixAccessRightsFromUserAndRoles(*user, *roles_info));
+    auto mixed_access = mixAccessRightsFromUserAndRoles(*user, *roles_info);
+
+    /// The GRANTS clause of the authentication method the user logged in with limits the access rights
+    /// of the session to the intersection with the specified elements. Note that the intersection also erases
+    /// all the grant options, because the elements of the GRANTS clause never have them.
+    if (params.authentication_grants)
+        mixed_access.makeIntersection(AccessRights{*params.authentication_grants});
+
+    access = std::make_shared<AccessRights>(std::move(mixed_access));
     access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access, *access_control));
 
     if (trace_log)
@@ -476,6 +484,8 @@ void ContextAccess::calculateAccessRights() const
                 boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
         }
         LOG_TRACE(trace_log, "Settings: readonly = {}, allow_ddl = {}, allow_introspection_functions = {}", params.readonly, params.allow_ddl, params.allow_introspection);
+        if (params.authentication_grants)
+            LOG_TRACE(trace_log, "Access rights are limited to the intersection with: {}", params.authentication_grants->toStringWithoutOptions());
         LOG_TRACE(trace_log, "List of all grants: {}", access->toString());
         LOG_TRACE(trace_log, "List of all grants including implicit: {}", access_with_implicit->toString());
     }
@@ -971,6 +981,18 @@ bool ContextAccess::checkAdminOptionImplHelper(const ContextPtr & context, const
 
     if (!std::size(role_ids))
         return true;
+
+    /// A session with the access rights limited by the GRANTS clause of an authentication method
+    /// is not allowed to administer roles at all: the clause cannot express the admin option,
+    /// so we follow the fail-close principle here.
+    if (params.authentication_grants)
+    {
+        show_error(ErrorCodes::ACCESS_DENIED,
+                   "Not enough privileges. "
+                   "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
+                   "and such sessions cannot administer roles");
+        return false;
+    }
 
     if (isGranted(context, AccessType::ROLE_ADMIN))
         return true;

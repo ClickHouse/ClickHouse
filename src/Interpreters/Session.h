@@ -115,6 +115,10 @@ private:
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
     void recordLoginSuccess(ContextPtr login_context) const;
 
+    /// Returns the GRANTS clause of the authentication method the user logged in with
+    /// (the access rights of the session are limited to the intersection with it), or null if there is no limit.
+    std::shared_ptr<const AccessRightsElements> getAuthenticationGrants() const;
+
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
     const ContextPtr global_context;

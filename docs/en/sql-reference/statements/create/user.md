@@ -13,7 +13,7 @@ Syntax:
 
 ```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
-    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime] 
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime] [GRANTS (privilege ON object [,...])]
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [VALID UNTIL datetime]
@@ -202,6 +202,21 @@ Examples:
 :::note
 The datetime string is parsed by `parseDateTimeBestEffort`, which only recognizes the timezone tokens `UTC`, `GMT`, `Z`, `MSK`, `MSD`, and numeric offsets such as `+09:00` or `-05:00`. Named IANA timezones like `Asia/Tokyo` or `Europe/London` are not supported, and a fixed offset is not equivalent to an IANA zone for regions that observe daylight saving time, so you must compute the correct offset for the specific date you are encoding.
 :::
+
+## GRANTS Clause {#grants-clause}
+
+Allows you to limit the access rights available to a session authenticated with a particular authentication method. It accepts a list of privileges in the same form as the [GRANT](../../../sql-reference/statements/grant.md) statement, in parentheses. The clause is specified after an authentication method (after its `VALID UNTIL` clause, if any) and applies only to that method.
+
+When a user logs in with such an authentication method, the access rights of the session are the intersection of the user's access rights (including the rights from granted roles) with the privileges listed in the clause. The clause never adds any access rights: if a listed privilege is not granted to the user, the session does not have it. Sessions authenticated with such a method also cannot grant privileges (the `GRANT OPTION` never survives the intersection) or administer roles.
+
+This provides a convenient way to create tokens for applications: an additional credential with an expiration date and a limited set of privileges, which is tied to the user - it is displayed in `system.query_log` and `system.processes` as the user, it stops working if the user is deleted, and it loses access rights when the user loses them.
+
+Examples:
+
+- `CREATE USER name1 IDENTIFIED BY 'qwerty' GRANTS (SELECT ON db.*)`
+- `ALTER USER name1 ADD IDENTIFIED WITH plaintext_password BY 'app_token' VALID UNTIL '2026-12-31' GRANTS (SELECT ON db.table, INSERT ON db.table)`
+
+Note that the limit is a property of the authentication method, captured at the moment of the login: changing the clause with `ALTER USER` affects new sessions, not the already established ones.
 
 ## GRANTEES Clause {#grantees-clause}
 

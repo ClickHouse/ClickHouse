@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/Common/AuthenticationType.h>
 #include <optional>
 
@@ -43,6 +44,10 @@ public:
     bool contains_hash = false;
     bool jwt_use_authenticator = false;
     ASTPtr valid_until;
+
+    /// If not empty, the access rights of a user authenticated with this method
+    /// are limited to the intersection with these elements (the GRANTS clause).
+    AccessRightsElements grants;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

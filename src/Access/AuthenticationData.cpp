@@ -1,4 +1,5 @@
 #include <Access/AccessControl.h>
+#include <Access/AccessRights.h>
 #include <Access/AuthenticationData.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/Base64.h>
@@ -157,7 +158,8 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 #endif
         && (lhs.http_auth_scheme == rhs.http_auth_scheme)
         && (lhs.http_auth_server_name == rhs.http_auth_server_name)
-        && (lhs.valid_until == rhs.valid_until);
+        && (lhs.valid_until == rhs.valid_until)
+        && (lhs.grants == rhs.grants);
 }
 
 
@@ -475,11 +477,42 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         node->valid_until = make_intrusive<ASTLiteral>(out.str());
     }
 
+    node->grants = grants;
+
     return node;
 }
 
 
 AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate)
+{
+    auto auth_data = fromASTImpl(query, context, validate);
+
+    if (!query.grants.empty())
+    {
+        AccessRightsElements grants = query.grants;
+        grants.replaceDeprecated();
+
+        /// Elements like `SELECT ON table` (without a database) are bound to the current database once,
+        /// when the query is interpreted, so that the restriction does not depend on the session which
+        /// uses the credential later. There is no context when the user is loaded from a storage, but
+        /// in that case the elements were already bound at the time of CREATE/ALTER.
+        if (context)
+            grants.replaceEmptyDatabase(context->getCurrentDatabase());
+
+        if (validate)
+        {
+            /// Check that the elements can form access rights (throws otherwise).
+            [[maybe_unused]] AccessRights access_rights_for_validation{grants};
+        }
+
+        auth_data.setGrants(std::move(grants));
+    }
+
+    return auth_data;
+}
+
+
+AuthenticationData AuthenticationData::fromASTImpl(const ASTAuthenticationData & query, ContextPtr context, bool validate)
 {
     time_t valid_until = 0;
 

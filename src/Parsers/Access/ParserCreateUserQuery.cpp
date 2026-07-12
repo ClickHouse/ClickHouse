@@ -9,6 +9,7 @@
 #include <Parsers/Access/ParserSettingsProfileElement.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/Access/ParserPublicSSHKey.h>
+#include <Parsers/Access/parseAccessRightsElements.h>
 #include <Parsers/Access/parseUserName.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
@@ -61,6 +62,28 @@ namespace
             ParserStringAndSubstitution until_p;
 
             return until_p.parse(pos, valid_until, expected);
+        });
+    }
+
+    bool parseGrants(IParserBase::Pos & pos, Expected & expected, AccessRightsElements & grants)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{Keyword::GRANTS}.ignore(pos, expected))
+                return false;
+
+            if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
+                return false;
+
+            AccessRightsElements elements;
+            if (!parseAccessRightsElementsWithoutOptions(pos, expected, elements))
+                return false;
+
+            if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
+                return false;
+
+            grants = std::move(elements);
+            return true;
         });
     }
 
@@ -255,6 +278,7 @@ namespace
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
             parseValidUntil(pos, expected, auth_data->valid_until);
+            parseGrants(pos, expected, auth_data->grants);
 
             return true;
         });
@@ -317,6 +341,7 @@ namespace
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
 
                 parseValidUntil(pos, expected, authentication_methods.back()->valid_until);
+                parseGrants(pos, expected, authentication_methods.back()->grants);
 
                 return true;
             }

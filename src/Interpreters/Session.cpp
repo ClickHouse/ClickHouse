@@ -421,6 +421,14 @@ void Session::checkIfUserIsStillValid()
     }
 }
 
+std::shared_ptr<const AccessRightsElements> Session::getAuthenticationGrants() const
+{
+    const auto & grants = user_authenticated_with.getGrants();
+    if (grants.empty())
+        return nullptr;
+    return std::make_shared<const AccessRightsElements>(grants);
+}
+
 void Session::onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e)
 {
     LOG_DEBUG(log, "Authentication failed with error: {}", e.what());
@@ -582,7 +590,7 @@ ContextMutablePtr Session::makeSessionContext()
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    new_session_context->setUser(*user_id, external_roles);
+    new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants());
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -637,11 +645,17 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     /// Set user information for the new context: current profiles, roles, access rights.
     if (!access->tryGetUser())
     {
-        new_session_context->setUser(*user_id, external_roles);
+        new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants());
         max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
     }
     else
     {
+        /// The session context is reused, but the current connection could be authenticated with
+        /// a different authentication method than the one which created the session. The access rights
+        /// limit must correspond to the method used by this connection: otherwise reattaching to a named session
+        /// would allow a credential with the GRANTS clause to use the full access rights of the user.
+        new_session_context->setAuthenticationGrants(getAuthenticationGrants());
+
         // Always get setting from profile
         // profile can be changed by ALTER PROFILE during single session
         auto settings = access->getDefaultSettings();
@@ -729,7 +743,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, external_roles);
+        query_context->setUser(*user_id, external_roles, getAuthenticationGrants());
 
     /// Query context is ready.
     query_context_created = true;

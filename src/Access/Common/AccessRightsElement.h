@@ -58,6 +58,7 @@ struct AccessRightsElement
     auto toTuple() const { return std::tie(access_flags, default_database, database, table, columns, parameter, wildcard, grant_option, is_partial_revoke); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return !(left == right); }
+    friend bool operator<(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() < right.toTuple(); }
 
     bool sameDatabaseAndTableAndParameter(const AccessRightsElement & other) const
     {

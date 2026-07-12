@@ -486,6 +486,34 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         {
             "ALTER USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' IDENTIFIED WITH plaintext_password BY 'def123'",
             "throws Only one identified with is permitted"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077-01-01' GRANTS (SELECT(id) ON db.tbl, INSERT ON *.*)",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' VALID UNTIL '2077\-01\-01' GRANTS \(SELECT\(id\) ON db\.tbl, INSERT ON \*\.\*\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.*), plaintext_password BY 'def123'",
+            R"(CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.\*\), plaintext_password BY 'def123')"
+        },
+        {
+            "ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS (SELECT ON db.tbl)",
+            R"(ALTER USER user1 ADD IDENTIFIED WITH plaintext_password BY 'abc123' GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 NOT IDENTIFIED GRANTS (SELECT ON db.tbl)",
+            R"(CREATE USER user1 IDENTIFIED WITH no_password GRANTS \(SELECT ON db\.tbl\))"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS ()",
+            "throws Syntax error"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'qwe123' GRANTS SELECT ON db.table",
+            "throws Syntax error"
         }
 })));
 

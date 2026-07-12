@@ -20,6 +20,13 @@ namespace
         ostr << " VALID UNTIL ";
         valid_until.format(ostr, settings);
     }
+
+    void formatGrants(const AccessRightsElements & grants, WriteBuffer & ostr)
+    {
+        ostr << " GRANTS (";
+        grants.formatElementsWithoutOptions(ostr);
+        ostr << ")";
+    }
 }
 
 std::optional<String> ASTAuthenticationData::getPassword() const
@@ -58,6 +65,11 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
         if (valid_until)
         {
             formatValidUntil(*valid_until, ostr, settings);
+        }
+
+        if (!grants.empty())
+        {
+            formatGrants(grants, ostr);
         }
 
         return;
@@ -237,6 +249,10 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
         formatValidUntil(*valid_until, ostr, settings);
     }
 
+    if (!grants.empty())
+    {
+        formatGrants(grants, ostr);
+    }
 }
 
 bool ASTAuthenticationData::hasSecretParts() const

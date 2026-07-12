@@ -366,6 +366,9 @@ protected:
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<std::vector<UUID>> external_roles;
+    /// If not null, the access rights are limited to the intersection with these elements.
+    /// This comes from the GRANTS clause of the authentication method the user logged in with.
+    std::shared_ptr<const AccessRightsElements> authentication_grants;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
@@ -866,8 +869,15 @@ public:
 
     /// Sets the current user, assuming they are already authenticated.
     /// WARNING: This function doesn't check the password!
-    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
+    /// `authentication_grants_` limits the access rights to the intersection with these elements
+    /// (it comes from the GRANTS clause of the authentication method the user logged in with);
+    /// it is reset if not specified, because it is a property of the authentication, not of the user.
+    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr);
     UserPtr getUser() const;
+
+    /// Limits the access rights to the intersection with the elements (or resets the limit if null).
+    /// See the GRANTS clause of the authentication methods in CREATE USER.
+    void setAuthenticationGrants(const std::shared_ptr<const AccessRightsElements> & authentication_grants_);
 
     std::optional<UUID> getUserID() const;
     String getUserName() const;
@@ -1933,6 +1943,8 @@ private:
     void setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> & lock);
+
+    void setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
 
