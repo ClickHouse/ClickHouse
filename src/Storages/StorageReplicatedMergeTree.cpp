@@ -3995,13 +3995,23 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
         return false;
 
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+
+    /// The in-memory metadata_version is NOT reliable proof that the local structure already matches ZooKeeper.
+    /// table->startup() runs before DatabaseReplicated recovery, and fixReplicaMetadataVersionIfNeeded() there
+    /// advances replica_path/metadata_version (and thus the in-memory version) to the current zookeeper_path/metadata
+    /// version whenever there is no queued ALTER_METADATA. That is exactly the single-missed-ALTER case this function
+    /// repairs: the log entry was already cleaned up, so startup can bump the version to the ZooKeeper /metadata
+    /// version while the on-disk structure is still pre-ALTER. A version-only guard would then falsely conclude we
+    /// are up to date and skip the repair, leaving the stale structure indefinitely. So compare the actual local
+    /// metadata + columns against the ZooKeeper snapshot instead (non-strict, like checkTableStructure during attach)
+    /// rather than the version counter. checkTableStructureAttempt also writes the /metadata stat.version we need.
     Int32 zk_metadata_version = table_metadata_stat.version;
-    if (metadata_snapshot->getMetadataVersion() >= zk_metadata_version)
+    if (checkTableStructureAttempt(zookeeper_path, metadata_snapshot, &zk_metadata_version, /* strict_check */ false))
         return false;
 
-    LOG_WARNING(log, "Local metadata version ({}) is behind the metadata version ({}) in ZooKeeper after recovery. "
+    LOG_WARNING(log, "Local table structure is behind the structure (metadata version {}) in ZooKeeper after recovery. "
                      "Forcing a metadata resync from {}.",
-                metadata_snapshot->getMetadataVersion(), zk_metadata_version, zookeeper_path);
+                zk_metadata_version, zookeeper_path);
 
     /// Read a consistent /metadata + /columns snapshot from the table root (same approach as cloneMetadataIfNeeded).
     /// Capture the /metadata stat.version of the snapshot we actually take: it may be newer than the version probed

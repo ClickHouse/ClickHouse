@@ -1433,6 +1433,112 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
 
+def test_replicated_table_single_missed_alter(started_cluster):
+    # Regression for the single-missed-ALTER recovery case. Unlike
+    # test_replicated_table_structure_alter, exactly ONE metadata ALTER happens
+    # while the replica is detached and no other metadata alter is left in flight.
+    # That lets the startup fast-path in fixReplicaMetadataVersionIfNeeded advance
+    # the in-memory metadata_version to the ZooKeeper /metadata version even though
+    # the on-disk structure is still pre-ALTER, so a version-only recovery guard
+    # would skip the repair and the stale structure would persist.
+    main_node.query("DROP DATABASE IF EXISTS single_alter SYNC")
+    dummy_node.query("DROP DATABASE IF EXISTS single_alter SYNC")
+    competing_node.query("DROP DATABASE IF EXISTS single_alter SYNC")
+
+    main_node.query(
+        "CREATE DATABASE single_alter ENGINE = Replicated('/clickhouse/databases/single_alter', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE single_alter ENGINE = Replicated('/clickhouse/databases/single_alter', 'shard1', 'replica2');"
+    )
+    competing_node.query(
+        "CREATE DATABASE single_alter ENGINE = Replicated('/clickhouse/databases/single_alter', 'shard1', 'replica3');"
+    )
+
+    # A Memory table whose metadata file we remove to force recoverLostReplica on restart.
+    competing_node.query("CREATE TABLE single_alter.mem (n int) ENGINE=Memory")
+
+    settings = {"distributed_ddl_task_timeout": 0}
+    # Aggressive replication-log GC so the single ALTER_METADATA entry is cleaned up from
+    # zookeeper_path/log while this replica is detached. Once it is gone, the recovering
+    # replica can never re-read it via SYSTEM SYNC REPLICA, and its startup
+    # fixReplicaMetadataVersionIfNeeded advances the in-memory metadata_version to the
+    # ZooKeeper /metadata version (no ALTER_METADATA left in the queue), which is exactly
+    # what a version-only recovery guard trusts. This is the single-missed-ALTER case.
+    main_node.query(
+        "CREATE TABLE single_alter.rmt (n int, v UInt64) ENGINE=ReplicatedReplacingMergeTree(v) ORDER BY n "
+        "SETTINGS max_replicated_logs_to_keep=1, min_replicated_logs_to_keep=1, "
+        "cleanup_delay_period=1, cleanup_delay_period_random_add=1, cleanup_thread_preferred_points_per_iteration=0",
+        settings=settings,
+    )
+    competing_node.query("SYSTEM SYNC DATABASE REPLICA single_alter")
+
+    # Capture the path while the database is still attached (see the sibling test).
+    metadata_path = competing_node.query(
+        "SELECT metadata_path FROM system.tables WHERE database='single_alter' AND name='mem'"
+    ).strip()
+    db_disk_name = get_database_disk_name(competing_node)
+
+    competing_node.query("DETACH DATABASE single_alter")
+
+    # Exactly one metadata ALTER, nothing else in flight afterwards.
+    main_node.query("ALTER TABLE single_alter.rmt ADD COLUMN m int", settings=settings)
+    main_node.query("INSERT INTO single_alter.rmt VALUES (1, 2, 3)")
+    # Push the log pointer forward and let the cleanup thread drop old /log entries
+    # (including the single ALTER_METADATA) now that the only lagging replica is detached.
+    rmt_uuid = main_node.query(
+        "SELECT toString(uuid) FROM system.tables WHERE database='single_alter' AND name='rmt'"
+    ).strip()
+    log_path = f"/clickhouse/tables/{rmt_uuid}/log"
+    for i in range(20):
+        main_node.query(f"INSERT INTO single_alter.rmt VALUES ({10 + i}, 0, 0)")
+    # With max_replicated_logs_to_keep=1 the cleanup thread trims /log to its tail, so the
+    # early ALTER_METADATA entry is removed and can no longer be replayed by SYNC REPLICA.
+    assert_eq_with_retry(
+        main_node,
+        f"SELECT max(toInt64(replaceRegexpOne(name, 'log-0*', ''))) - "
+        f"min(toInt64(replaceRegexpOne(name, 'log-0*', ''))) < 5 "
+        f"FROM system.zookeeper WHERE path='{log_path}'",
+        "1\n",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    competing_node.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "-C",
+            "/etc/clickhouse-server/config.xml",
+            "--disk",
+            f"{db_disk_name}",
+            "--save-logs",
+            "--query",
+            f"remove {metadata_path}",
+        ],
+        user="root",
+    )
+    # The restart re-attaches the database (DETACH is not persistent) and, because the
+    # mem metadata file was removed, triggers recoverLostReplica for this replica.
+    competing_node.restart_clickhouse(kill=True)
+
+    competing_node.query("SYSTEM SYNC DATABASE REPLICA single_alter")
+    competing_node.query("SYSTEM SYNC REPLICA single_alter.rmt")
+    # The recovered replica must converge to the post-ALTER structure: column m must exist.
+    # Without the recovery repair the stale replica keeps the pre-ALTER (n, v) structure.
+    assert_eq_with_retry(
+        competing_node,
+        "SELECT count() FROM system.columns "
+        "WHERE database='single_alter' AND table='rmt' AND name='m'",
+        "1\n",
+    )
+    assert "mem" in competing_node.query("SHOW TABLES FROM single_alter")
+
+    main_node.query("DROP DATABASE single_alter SYNC")
+    dummy_node.query("DROP DATABASE single_alter SYNC")
+    competing_node.query("DROP DATABASE single_alter SYNC")
+
+
 def test_modify_comment(started_cluster):
     main_node.query(
         "CREATE DATABASE modify_comment_db ENGINE = Replicated('/test/modify_comment', 'shard1', 'replica' || '1');"
