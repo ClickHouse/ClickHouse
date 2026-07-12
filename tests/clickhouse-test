@@ -1334,6 +1334,9 @@ class SettingsRandomizer:
         "max_insert_threads": lambda: (
             12 if random.random() < 0.03 else random.randint(1, 3)
         ),
+        # Exercise both the legacy "client converts inline data to native blocks" path
+        # and the new "server parses inline data" path (added in PR #101034).
+        "send_table_structure_on_insert_with_inline_data": lambda: random.randint(0, 1),
         "group_by_two_level_threshold": threshold_generator(0.2, 0.2, 1, 1000000),
         "group_by_two_level_threshold_bytes": threshold_generator(
             0.2, 0.2, 1, 50000000
@@ -1385,9 +1388,6 @@ class SettingsRandomizer:
         "throw_on_error_from_cache_on_write_operations": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "distributed_cache_discard_connection_if_unread_data": lambda: random.randint(
-            0, 1
-        ),
-        "distributed_cache_use_clients_cache_for_write": lambda: random.randint(
             0, 1
         ),
         "distributed_cache_use_clients_cache_for_read": lambda: random.randint(
