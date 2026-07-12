@@ -427,9 +427,9 @@ private:
 
     // ─── Long connection ─────────────────────────────────────────────────
 
-    /// Clamp the estimator's (unclamped) reach to a concrete physical end: the file
+    /// Clamp the estimator's (unclamped) predicted end to a concrete physical end: the file
     /// end when the size is known (an unknown-size object has no end to clamp).
-    size_t clampReach(size_t reach, size_t phys_off) const;
+    size_t clampReach(size_t predicted_end, size_t phys_off) const;
 
     /// The physical end a source connection opened at `phys_off` reaches before a cached run
     /// forces a reopen - the plan-geometry lookahead that sizes the long connection. See the
