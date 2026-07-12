@@ -105,32 +105,35 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d "SELECT 1 AS k FORMAT Template SETTINGS format_template_row_format = '\${k:CSV}\n', format_template_resultset_format = '\${data}'" \
     | grep -o -m1 'is not compatible with framing formats'
 
-echo '--- text framings are rejected for binary output formats (EventStream + Native)'
-${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream" \
+# `EventStream` base64-encodes the payloads for output formats that may produce non-UTF-8 bytes
+# (binary formats, and raw passthrough formats that write the column bytes verbatim), signalling it
+# with a `payload=base64` content-type parameter. The base64-decoded payload is byte-for-byte the
+# output the format would have produced without framing.
+echo '--- EventStream base64-encodes binary output formats (Native)'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
+    -d "SELECT number FROM numbers(3) FORMAT Native"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
     -d "SELECT number FROM numbers(3) FORMAT Native" \
-    | grep -o -m1 'is not compatible with the output format Native'
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d "SELECT number FROM numbers(3) FORMAT Native") \
+    && echo 'Native payload round-trips' || echo 'MISMATCH'
 
-echo '--- text framings are rejected for binary output formats (JSONEachPacketString + RowBinary)'
+echo '--- JSONEachPacketString is still rejected for binary output formats (RowBinary)'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d "SELECT number FROM numbers(3) FORMAT RowBinary" \
     | grep -o -m1 'is not compatible with the output format RowBinary'
 
-# Raw passthrough formats advertise a textual content type but write the column bytes verbatim, so the
-# output is not guaranteed to be valid UTF-8. They must be rejected for text framings just like binary formats.
-echo '--- text framings are rejected for always-raw output formats (EventStream + RawBLOB)'
-${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream" \
+echo '--- EventStream base64-encodes always-raw output formats (RawBLOB)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
     -d "SELECT toString(number) FROM numbers(3) FORMAT RawBLOB" \
-    | grep -o -m1 'is not compatible with the output format RawBLOB'
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d "SELECT toString(number) FROM numbers(3) FORMAT RawBLOB") \
+    && echo 'RawBLOB payload round-trips' || echo 'MISMATCH'
 
-echo '--- text framings are rejected for text-labeled raw output formats (JSONEachPacketString + TSVRaw)'
+echo '--- JSONEachPacketString is still rejected for text-labeled raw output formats (TSVRaw)'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d "SELECT number FROM numbers(3) FORMAT TSVRaw" \
     | grep -o -m1 'is not compatible with the output format TSVRaw'
-
-echo '--- text framings are rejected for text-labeled raw output formats (EventStream + LineAsString)'
-${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream" \
-    -d "SELECT toString(number) FROM numbers(3) FORMAT LineAsString" \
-    | grep -o -m1 'is not compatible with the output format LineAsString'
 
 echo '--- JSONEachPacketBase64 carries binary output formats (Native)'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketBase64${SINGLE_BLOCK}" \

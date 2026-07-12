@@ -20,19 +20,30 @@ namespace DB
   * event: progress
   * data: {"read_rows":"2","read_bytes":"16","total_rows_to_read":"2","elapsed_ns":"105341"}
   *
-  * Server-sent events is a text protocol, so it is suitable only for text output formats.
+  * Server-sent events is a text protocol. Text output formats are embedded as text, one `data:`
+  * field per line. Output formats that may produce non-UTF-8 bytes (binary formats such as `Native`
+  * or `RowBinary`, and raw passthrough formats such as `RawBLOB` or `TSVRaw`) are base64-encoded
+  * instead, so arbitrary bytes survive the text transport. In that case the `Content-Type` carries
+  * a `payload=base64` parameter, so the client knows to base64-decode the `data`, `totals` and
+  * `extremes` payloads (the auxiliary JSON packets - progress, logs, profile events, exceptions -
+  * are never encoded).
   */
 class FramingFormatEventStream final : public IFramingFormat
 {
 public:
-    FramingFormatEventStream(WriteBuffer & out_, const FormatSettings & format_settings_)
-        : IFramingFormat(out_, format_settings_)
+    FramingFormatEventStream(WriteBuffer & out_, const FormatSettings & format_settings_, bool base64_ = false)
+        : IFramingFormat(out_, format_settings_), base64(base64_)
     {
     }
 
     String getName() const override { return "EventStream"; }
-    String getContentType() const override { return "text/event-stream; charset=UTF-8"; }
-    bool requiresTextPayload() const override { return true; }
+    String getContentType() const override
+    {
+        return base64 ? "text/event-stream; charset=UTF-8; payload=base64" : "text/event-stream; charset=UTF-8";
+    }
+    /// `EventStream` embeds the output as text, but falls back to base64 for non-UTF-8 output, so it
+    /// does not require a text output format (unlike `JSONEachPacketString`).
+    bool requiresTextPayload() const override { return false; }
 
 protected:
     void writePayloadPacket(FramedPacketKind kind, std::string_view data) override;
@@ -43,6 +54,9 @@ protected:
 
 private:
     void writeDataFields(std::string_view data);
+
+    /// Base64-encode the payloads (for binary and raw output formats).
+    const bool base64;
 };
 
 }

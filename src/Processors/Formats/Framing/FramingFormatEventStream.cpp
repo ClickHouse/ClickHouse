@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <IO/Progress.h>
 #include <IO/WriteHelpers.h>
+#include <Common/Base64.h>
 #include <base/find_symbols.h>
 
 namespace DB
@@ -40,7 +41,19 @@ void FramingFormatEventStream::writePayloadPacket(FramedPacketKind kind, std::st
     writeCString("event: ", out);
     writeString(getPacketKindName(kind), out);
     writeChar('\n', out);
-    writeDataFields(data);
+    if (base64)
+    {
+        /// Base64 has no line breaks, so the whole payload is a single `data:` field. The client
+        /// base64-decodes it; the concatenation of the decoded payloads of the `data`, `totals` and
+        /// `extremes` packets is exactly what the output format would have produced.
+        writeCString("data: ", out);
+        writeString(base64Encode(String(data)), out);
+        writeChar('\n', out);
+    }
+    else
+    {
+        writeDataFields(data);
+    }
     writeChar('\n', out);
 }
 

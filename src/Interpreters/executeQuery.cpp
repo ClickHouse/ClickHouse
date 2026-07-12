@@ -2478,14 +2478,19 @@ FramingFormatPtr createFramingFormatIfApplicable(
         return nullptr;
 
     FormatSettings format_settings = output_format_settings ? *output_format_settings : getFormatSettings(context);
-    auto framing = createFramingFormat(framing_name, ostr, format_settings, {.is_http = true});
+
+    /// Whether the output format may produce bytes that are not valid UTF-8 text: binary formats
+    /// (such as `Native` or `RowBinary`) and raw passthrough formats (`RawBLOB`, `TSVRaw`,
+    /// `LineAsString`) that write the column bytes verbatim.
+    const bool binary_payload = !outputFormatProducesText(format_name, output_format_settings);
+
+    auto framing = createFramingFormat(framing_name, ostr, format_settings, {.is_http = true, .binary_payload = binary_payload});
 
     /// A text framing embeds the output bytes as UTF-8 text, so an output format that can produce
-    /// non-textual output would corrupt the stream. This includes binary formats (such as `Native`
-    /// or `RowBinary`) as well as raw passthrough formats (`RawBLOB`, `TSVRaw`, `LineAsString`) that
-    /// write the column bytes verbatim. Reject it instead and point to `JSONEachPacketBase64`, which
-    /// encodes arbitrary bytes safely.
-    if (framing->requiresTextPayload() && !outputFormatProducesText(format_name, output_format_settings))
+    /// non-textual output would corrupt the stream. `EventStream` handles this by base64-encoding
+    /// the payloads (see `binary_payload`), but `JSONEachPacketString` puts the bytes into a JSON
+    /// string and cannot; it is rejected here, pointing to `JSONEachPacketBase64` instead.
+    if (framing->requiresTextPayload() && binary_payload)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The framing format {} embeds the output as text and is not compatible with the output format {}, "
