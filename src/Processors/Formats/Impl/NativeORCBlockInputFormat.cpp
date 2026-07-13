@@ -228,6 +228,23 @@ static DataTypePtr parseORCType(
     /// would map to a Variant, which Variant does not allow to nest.
     if (orc_type->getKind() == orc::TypeKind::UNION)
     {
+        /// A union with more branches than Variant can hold (ColumnVariant::MAX_NESTED_COLUMNS)
+        /// is valid ORC but not representable; reject it through the normal unsupported-type /
+        /// skip path before any branch is parsed - otherwise the DataTypeVariant constructor
+        /// throws a generic BAD_ARGUMENTS and the skip setting is never consulted.
+        if (static_cast<size_t>(subtype_count) > ColumnVariant::MAX_NESTED_COLUMNS)
+        {
+            if (skip_columns_with_unsupported_types)
+            {
+                skipped = true;
+                return {};
+            }
+            throw Exception(
+                ErrorCodes::UNKNOWN_TYPE,
+                "ORC union type with {} branches is not supported: Variant supports at most {} nested types",
+                subtype_count, ColumnVariant::MAX_NESTED_COLUMNS);
+        }
+
         DataTypes nested_types;
         std::unordered_set<String> seen_type_names;
         nested_types.reserve(subtype_count);
@@ -2082,6 +2099,16 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
 
         const size_t num_children = orc_type->getSubtypeCount();
         const size_t num_rows = orc_union_column->numElements;
+
+        /// Mirror of the schema-inference guard: a union with more branches than Variant can hold
+        /// (ColumnVariant::MAX_NESTED_COLUMNS) is rejected explicitly instead of letting the
+        /// DataTypeVariant below throw a confusing BAD_ARGUMENTS. Only reachable with an explicit
+        /// structure, since schema inference already rejects oversized unions.
+        if (num_children > ColumnVariant::MAX_NESTED_COLUMNS)
+            throw Exception(
+                ErrorCodes::UNKNOWN_TYPE,
+                "ORC union type with {} branches is not supported (Variant supports at most {} nested types), while reading column {}",
+                num_children, ColumnVariant::MAX_NESTED_COLUMNS, column_name);
 
         /// Variant sorts its nested types, so the positional correspondence between ORC union
         /// branches and the alternatives of an explicit Variant type hint is lost. Reconstruct it
