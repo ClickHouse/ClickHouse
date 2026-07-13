@@ -276,14 +276,16 @@ DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 
 ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
+    auto info = getSerializationInfo(*column, SerializationInfoSettings::enableAllSupportedSerializations());
+    auto data = SubstreamData(getSerialization(*info)).withType(getPtr()).withColumn(column);
     auto subcolumn_data = getSubcolumnData(subcolumn_name, data, {}, false);
     return subcolumn_data ? subcolumn_data->column : nullptr;
 }
 
 ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
+    auto info = getSerializationInfo(*column, SerializationInfoSettings::enableAllSupportedSerializations());
+    auto data = SubstreamData(getSerialization(*info)).withType(getPtr()).withColumn(column);
     return getSubcolumnData(subcolumn_name, data, {}, true)->column;
 }
 
@@ -330,15 +332,12 @@ MutableSerializationInfoPtr IDataType::createSerializationInfo(const Serializati
     return std::make_shared<SerializationInfo>(ISerialization::KindStack{ISerialization::Kind::DEFAULT}, settings);
 }
 
-SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
+SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
-        return getSerializationInfo(column_const->getDataColumn());
+        return getSerializationInfo(column_const->getDataColumn(), settings);
 
-    /// Enable all supported serialization features when deriving info from an existing column. Since the column
-    /// reflects the actual in-memory state, the serialization info must accept any variant that the column may contain.
-    return std::make_shared<SerializationInfo>(
-        ISerialization::getKindStack(column), SerializationInfoSettings::enableAllSupportedSerializations());
+    return std::make_shared<SerializationInfo>(ISerialization::getKindStack(column), settings);
 }
 
 SerializationPtr IDataType::getDefaultSerialization() const

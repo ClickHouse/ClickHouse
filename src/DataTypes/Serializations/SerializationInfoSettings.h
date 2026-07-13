@@ -50,8 +50,10 @@ struct SerializationInfoSettings
 
     /// Build a settings object that enables the broadest set of serialization capabilities. This is intended for
     /// readers that operate on in-memory state (e.g. NativeReader), which must handle all serialization variants.
-    /// Additional serialization versions can be added here in the future.
-    static SerializationInfoSettings enableAllSupportedSerializations();
+    /// `with_string_size_stream` enables the size-stream serialization for String columns (including Strings inside
+    /// nested types). It is not self-describing on the wire, so it must be enabled only when the peer protocol
+    /// revision supports it (DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION).
+    static SerializationInfoSettings enableAllSupportedSerializations(bool with_string_size_stream = false);
 };
 
 }

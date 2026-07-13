@@ -111,7 +111,10 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
                 result_column = recursiveRemoveSparse(result_column);
         }
 
-        auto info = column.type->getSerializationInfo(*result_column);
+        auto info = column.type->getSerializationInfo(
+            *result_column,
+            SerializationInfoSettings::enableAllSupportedSerializations(
+                client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
         return {column.type->getSerialization(*info), info, result_column};
     }
 

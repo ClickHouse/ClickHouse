@@ -64,7 +64,7 @@ The Native format builds on four primitive encodings.
 |-----------------|----------|-------------|
 | VarUInt         | 1–10 B   | LEB-128 variable-length unsigned integer |
 | Fixed-width int | 1, 2, 4, 8, 16, 32 B | Little-endian, two's complement for signed |
-| String          | variable | VarUInt length prefix + raw bytes |
+| String          | variable | VarUInt length prefix + raw bytes per value; a separate [size stream](#string-type) at revision `54487`+ |
 | Bool            | 1 B      | `0x00` = false, non-zero = true |
 
 ### VarUInt {#varuint}
@@ -339,6 +339,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | `has_custom_serialization` byte | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION` | `54454` | The per-column [`has_custom_serialization`](#column-wire-layout) byte is omitted; every column uses default serialization (no sparse, replicated, or detached forms). |
 | `LowCardinality` on the wire | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE` | `54405` | Special case — does **not** follow the simple below-threshold rule. `LowCardinality(T)` is stripped to base type `T` only when the revision is *non-zero* and below `54405`, or when stripping is forced separately. Revision `0` keeps it. See the note below. |
 | V2 `Dynamic` / `JSON` serialization | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION` | `54473` | `Dynamic` and `JSON`/`Object` use V1 serialization (with the `max_dynamic_*` parameter) instead of V2. |
+| Size-stream `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54487` | `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [size-stream layout](#string-type) (all sizes as `UInt64`, then all data concatenated). At or above the threshold the size-stream layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of `LowCardinality(String)`, which keeps the per-value layout. |
 | Aggregate-function versioning | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING` | `54452` | `AggregateFunction` state is written without an embedded version. |
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
@@ -708,7 +709,9 @@ Each value carries its own length on the wire.
 
 #### String {#string-type}
 
-Type string: `String`. A `String` column is a sequence of `num_rows` length-prefixed byte sequences:
+Type string: `String`. A `String` column has two wire layouts, selected by the protocol revision (see [What the revision gates](#what-the-revision-gates)).
+
+**Per-value layout** — below `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` (`54487`), which includes the revision-`0` default of `FORMAT Native`: a sequence of `num_rows` length-prefixed byte sequences:
 
 ```text
 [VarUInt: byte_length] [byte_length bytes: raw value]
@@ -716,7 +719,7 @@ Type string: `String`. A `String` column is a sequence of `num_rows` length-pref
 ...
 ```
 
-There are no separators between rows beyond the length prefixes, and no row-level state. An empty string is a single `0x00` byte. ClickHouse `String` is byte-oriented rather than text-oriented: UTF-8 validity is not enforced, and a value may contain any bytes including embedded NUL. A decoder that targets a UTF-8 string type either validates on read or exposes raw bytes to the caller. The total bytes consumed by the column is `Σ (varuint_size(len_i) + len_i)` over all rows.
+There are no separators between rows beyond the length prefixes, and no row-level state. An empty string is a single `0x00` byte. The total bytes consumed by the column is `Σ (varuint_size(len_i) + len_i)` over all rows.
 
 A column of 3 strings `["ab", "", "c"]` (6 bytes total):
 
@@ -725,6 +728,28 @@ A column of 3 strings `["ab", "", "c"]` (6 bytes total):
 00                       row 1: length 0, empty
 01 63                    row 2: length 1, "c"
 ```
+
+**Size-stream layout** — at revision `54487` and above: two concatenated streams, all sizes first, then all data:
+
+```text
+[UInt64 × num_rows: byte_length per row, little-endian]
+[Σ byte_length bytes: all values concatenated, no separators]
+```
+
+A decoder reads `8 × num_rows` bytes of sizes, sums them, and then reads the whole data blob in one piece — which permits exact buffer preallocation and bulk copying instead of per-row parsing. A column with `num_rows = 0` contributes no bytes in either stream.
+
+The same 3 strings `["ab", "", "c"]` (27 bytes total):
+
+```text
+02 00 00 00 00 00 00 00  row 0 size: 2
+00 00 00 00 00 00 00 00  row 1 size: 0
+01 00 00 00 00 00 00 00  row 2 size: 1
+61 62 63                 "ab" + "" + "c"
+```
+
+At or above the threshold the size-stream layout applies to every `String` in the block, including `String` nested inside composite types (`Array(String)`, `Nullable(String)`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`) — with one exception: the dictionary of a [`LowCardinality(String)`](#lowcardinality) column always keeps the per-value layout, at every revision.
+
+In both layouts ClickHouse `String` is byte-oriented rather than text-oriented: UTF-8 validity is not enforced, and a value may contain any bytes including embedded NUL. A decoder that targets a UTF-8 string type either validates on read or exposes raw bytes to the caller.
 
 #### FixedString(N) {#fixedstring}
 
@@ -743,7 +768,7 @@ The two string types compared:
 
 | Property               | `String`              | `FixedString(N)`            |
 |------------------------|-----------------------|-----------------------------|
-| Per-row length prefix  | Yes (VarUInt)         | No                          |
+| Per-row length prefix  | Yes (VarUInt), or a separate size stream at revision `54487`+ | No |
 | Row size               | Variable              | Exactly `N` bytes           |
 | Total column bytes     | Variable              | `N × num_rows`              |
 | NUL-byte padding       | n/a                   | Right-padded by server      |
