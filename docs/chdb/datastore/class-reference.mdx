@@ -83,7 +83,7 @@ ds = DataStore()
 | `from_random(rows, cols)` | Create with random data |
 | `run_sql(query)` | Create from SQL query |
 
-See [Factory Methods](/products/chdb/datastore/factory-methods) for details.
+See [Factory Methods](/chdb/datastore/factory-methods) for details.
 
 ### Query Methods {#datastore-query}
 
@@ -103,11 +103,11 @@ See [Factory Methods](/products/chdb/datastore/factory-methods) for details.
 | `union(other, all=False)` | DataStore | Combine DataStores |
 | `when(cond, val)` | CaseWhen | CASE WHEN |
 
-See [Query Building](/products/chdb/datastore/query-building) for details.
+See [Query Building](/chdb/datastore/query-building) for details.
 
 ### Pandas-compatible methods {#datastore-pandas}
 
-See [Pandas Compatibility](/products/chdb/datastore/pandas-compat) for the complete list of 209 methods.
+See [Pandas Compatibility](/chdb/datastore/pandas-compat) for the complete list of 209 methods.
 
 **Indexing:**
 `head()`, `tail()`, `sample()`, `loc`, `iloc`, `at`, `iat`, `query()`, `isin()`, `where()`, `mask()`, `get()`, `xs()`, `pop()`
@@ -152,7 +152,7 @@ See [Pandas Compatibility](/products/chdb/datastore/pandas-compat) for the compl
 | `to_markdown()` | Markdown table |
 | `to_html()` | HTML table |
 
-See [I/O Operations](/products/chdb/datastore/io) for details.
+See [I/O Operations](/chdb/datastore/io) for details.
 
 ### Debugging Methods {#datastore-debug}
 
@@ -161,7 +161,7 @@ See [I/O Operations](/products/chdb/datastore/io) for details.
 | `explain(verbose=False)` | Show execution plan |
 | `clear_cache()` | Clear cached results |
 
-See [Debugging](/products/chdb/debugging/index) for details.
+See [Debugging](/chdb/debugging/index) for details.
 
 ### Magic Methods {#datastore-magic}
 
@@ -225,7 +225,7 @@ col = ds['name']  # Returns ColumnExpr
 | `.ip` | IP address operations | 9 methods |
 | `.geo` | Geo/distance operations | 14 methods |
 
-See [Accessors](/products/chdb/datastore/accessors) for complete documentation.
+See [Accessors](/chdb/datastore/accessors) for complete documentation.
 
 ### Arithmetic Operations {#columnexpr-arithmetic}
 
@@ -412,7 +412,7 @@ F.row_number().over(order_by='date')
 F.lag('price', 1).over(partition_by='product', order_by='date')
 ```
 
-See [Aggregation](/products/chdb/datastore/aggregation#f-namespace) for details.
+See [Aggregation](/chdb/datastore/aggregation#f-namespace) for details.
 
 ### Field {#field-class}
 
