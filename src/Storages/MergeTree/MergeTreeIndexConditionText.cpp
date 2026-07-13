@@ -797,14 +797,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         return false;
     }
-    /// The scalar-string functions below tokenize the whole constant via safeGet<String>(). A
-    /// whole-array comparison (e.g. `arr = ['x']`) supplies an array constant they cannot turn into
-    /// a token query, so treat it as UNKNOWN (scan all granules) instead of throwing BAD_GET. The
-    /// array-consuming functions (hasAnyTokens/hasAllTokens/hasAny/hasAll/multiSearchAny/...) keep
-    /// their own array handling below.
     if (function_name == "equals")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -921,7 +916,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
@@ -948,7 +943,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         /// Only splitByNonAlpha, splitByString, ngrams, and asciiCJK tokenizers are supported with the `hasPhrase` function.
         static const std::unordered_set<std::string_view> supported_tokenizers = {
@@ -967,7 +962,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "startsWith" && tokenizer->supportsStringLike())
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         auto tokens = substringToTokens(value_field, true, false);
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -976,7 +971,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "endsWith" && tokenizer->supportsStringLike())
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         auto tokens = substringToTokens(value_field, false, true);
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -986,7 +981,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         const bool has_preprocessor = preprocessor && preprocessor->hasActions();
         /// Requires explicit opt-in via use_text_index_like_evaluation_by_dictionary_scan because scanning
@@ -1026,7 +1021,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "ilike" && like_optimization_supported_tokenizers.contains(tokenizer->getType())
         && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         const bool has_preprocessor = preprocessor && preprocessor->hasActions();
         if (has_preprocessor && !preprocessor->isLowerOrUpper())
@@ -1045,7 +1040,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "match" && tokenizer->supportsStringLike())
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         /// Compile the pattern as `match` execution does, so an invalid regexp raises exception instead of being silently pruned.
         const auto & pattern = value_field.safeGet<String>();
@@ -1145,7 +1140,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "has")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;

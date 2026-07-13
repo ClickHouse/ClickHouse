@@ -555,7 +555,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     {
         /// A scalar-string function cannot consume an array constant (e.g. `arr = ['x']`);
         /// treat it as UNKNOWN (scan all granules) instead of throwing BAD_GET on safeGet<String>().
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
 
         out.key_column = is_case_insensitive_scenario ? *lowercase_key_index : *key_index;
@@ -654,7 +654,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// (The array-consuming functions above -- has(array)/hasAny/hasAll/multiSearchAny -- are exempt.)
     if (function_name == "notEquals")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
@@ -665,7 +665,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "equals")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -676,7 +676,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "like")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -687,7 +687,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "notLike")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
@@ -698,7 +698,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "startsWith")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -709,7 +709,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "endsWith")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -740,7 +740,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "match")
     {
-        if (value_data_type.isArray())
+        if (!value_data_type.isStringOrFixedString())
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_MATCH;
