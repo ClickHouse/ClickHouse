@@ -1,0 +1,265 @@
+---
+title: '고속 시계열 분석을 위한 materialized view 롤업 만들기'
+slug: /knowledgebase/materialized-view-rollup-timeseries
+description: '낮은 지연 시간의 분석을 위해 원시 이벤트 테이블, 롤업 테이블, materialized view를 생성하는 전체 과정 예시입니다.'
+keywords: ['materialized view', '롤업', '집계', '시계열', '튜토리얼']
+doc_type: 'guide'
+---
+
+> 이 튜토리얼에서는 [**materialized views**](/ko/concepts/features/materialized-views/index)를 사용해 대용량 이벤트 테이블의 사전 집계 롤업을 유지하는 방법을 설명합니다.
+> 생성할 객체는 3개입니다. 원시 테이블, 롤업 테이블, 그리고 롤업 테이블에 자동으로 기록하는 materialized view입니다.
+
+<div id="when-to-use">
+  ## 이 패턴을 사용해야 하는 경우
+</div>
+
+다음과 같은 경우 이 패턴을 사용하십시오:
+
+* **추가 전용 이벤트 스트림**(클릭, 페이지뷰, IoT, 로그)이 있습니다.
+* 대부분의 쿼리가 시간 범위(분/시간/일 단위)에 대한 **집계**입니다.
+* 모든 원시 행을 다시 스캔하지 않고도 **안정적으로 1초 미만의 읽기 성능**을 원합니다.
+
+<Steps>
+  <Step>
+    ## 원시 이벤트 테이블 생성
+
+    ```sql
+    CREATE TABLE events_raw
+    (
+        event_time   DateTime,
+        user_id      UInt64,
+        country      LowCardinality(String),
+        event_type   LowCardinality(String),
+        value        Float64
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMM(event_time)
+    ORDER BY (event_time, user_id)
+    TTL event_time + INTERVAL 90 DAY DELETE
+    ```
+
+    **참고**
+
+    * `PARTITION BY toYYYYMM(event_time)`는 파티션을 작게 유지해 쉽게 삭제할 수 있게 합니다.
+    * `ORDER BY (event_time, user_id)`는 시간 범위가 있는 쿼리와 보조 필터를 지원합니다.
+    * `LowCardinality(String)`는 범주형 차원의 메모리 사용량을 줄여줍니다.
+    * `TTL`은 90일 후 원시 데이터를 정리합니다(보존 요구 사항에 맞게 조정하세요).
+  </Step>
+
+  <Step>
+    ## 롤업(집계된) 테이블 설계
+
+    **시간별**로 미리 집계합니다.
+    가장 자주 사용하는 분석 윈도우에 맞춰 세분화 수준을 선택하십시오.
+
+    ```sql
+    CREATE TABLE events_rollup_1h
+    (
+        bucket_start  DateTime,            -- 시간 단위 버킷의 시작
+        country       LowCardinality(String),
+        event_type    LowCardinality(String),
+        users_uniq    AggregateFunction(uniqExact, UInt64),
+        value_sum     AggregateFunction(sum, Float64),
+        value_avg     AggregateFunction(avg, Float64),
+        events_count  AggregateFunction(count)
+    )
+    ENGINE = AggregatingMergeTree
+    PARTITION BY toYYYYMM(bucket_start)
+    ORDER BY (bucket_start, country, event_type)
+    ```
+
+    부분 집계를 간결하게 표현하고 나중에 머지하거나 최종 계산할 수 있는 **집계 상태(aggregate states)**(예: `AggregateFunction(sum, ...)`)를 저장합니다.
+  </Step>
+
+  <Step>
+    ## 롤업을 채우는 materialized view 생성
+
+    이 materialized view는 `events_raw`에 삽입이 발생하면 자동으로 실행되어 롤업에 **집계 상태(aggregate states)**를 기록합니다.
+
+    ```sql
+    CREATE MATERIALIZED VIEW mv_events_rollup_1h
+    TO events_rollup_1h
+    AS
+    SELECT
+        toStartOfHour(event_time) AS bucket_start,
+        country,
+        event_type,
+        uniqExactState(user_id)   AS users_uniq,
+        sumState(value)           AS value_sum,
+        avgState(value)           AS value_avg,
+        countState()              AS events_count
+    FROM events_raw
+    GROUP BY bucket_start, country, event_type;
+    ```
+  </Step>
+
+  <Step>
+    ## 샘플 데이터를 삽입합니다
+
+    샘플 데이터를 삽입합니다:
+
+    ```sql
+    INSERT INTO events_raw VALUES
+        (now() - INTERVAL 4 SECOND, 101, 'US', 'view', 1),
+        (now() - INTERVAL 3 SECOND, 101, 'US', 'click', 1),
+        (now() - INTERVAL 2 SECOND, 202, 'DE', 'view', 1),
+        (now() - INTERVAL 1 SECOND, 101, 'US', 'view', 1);
+    ```
+  </Step>
+
+  <Step>
+    ## 롤업 쿼리하기
+
+    상태를 읽기 시점에 **머지**하거나 **확정**할 수 있습니다:
+
+    <Tabs>
+      <Tab title="읽기 시점에 머지">
+        ```sql
+        SELECT
+            bucket_start,
+            country,
+            event_type,
+            uniqExactMerge(users_uniq) AS users,
+            sumMerge(value_sum)        AS value_sum,
+            avgMerge(value_avg)        AS value_avg,
+            countMerge(events_count)   AS events
+        FROM events_rollup_1h
+        WHERE bucket_start >= now() - INTERVAL 1 DAY
+        GROUP BY ALL
+        ORDER BY bucket_start, country, event_type;
+        ```
+      </Tab>
+
+      <Tab title="-Final로 확정">
+        ```sql
+        SELECT
+            bucket_start,
+            country,
+            event_type,
+            uniqExactMerge(users_uniq) AS users,
+            sumMerge(value_sum)        AS value_sum,
+            avgMerge(value_avg)        AS value_avg,
+            countMerge(events_count)   AS events
+        FROM events_rollup_1h
+        WHERE bucket_start >= now() - INTERVAL 1 DAY
+        GROUP BY ALL
+        ORDER BY bucket_start, country, event_type
+        SETTINGS final = 1;  -- 또는 SELECT ... FINAL 사용
+        ```
+      </Tab>
+    </Tabs>
+
+    <br />
+
+    <Tip>
+      읽기가 항상 롤업을 대상으로 이루어진다면, 동일한 1시간 단위로 *확정된* 수치를 &quot;일반&quot; `MergeTree` 테이블에 기록하는 **두 번째 materialized view**를 만들 수 있습니다.
+      상태는 더 높은 유연성을 제공하고, 확정된 수치는 읽기를 약간 더 단순하게 해줍니다.
+    </Tip>
+  </Step>
+
+  <Step>
+    ## 최상의 성능을 위해 프라이머리 키 필드로 필터링
+
+    `EXPLAIN` 명령을 사용하면 인덱스가 데이터를 어떻게 가지치기하는지 확인할 수 있습니다:
+
+    ```sql title="Query"
+    EXPLAIN indexes=1
+    SELECT *
+    FROM events_rollup_1h
+    WHERE bucket_start BETWEEN now() - INTERVAL 3 DAY AND now()
+      AND country = 'US';
+    ```
+
+    ```response title="Response"
+            ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+        1.  │ Expression ((Project names + Projection))                                                                                          │
+        2.  │   Expression                                                                                                                       │
+        3.  │     ReadFromMergeTree (default.events_rollup_1h)                                                                                   │
+        4.  │     Indexes:                                                                                                                       │
+        5.  │       MinMax                                                                                                                       │
+        6.  │         Keys:                                                                                                                      │
+        7.  │           bucket_start                                                                                                             │
+        8.  │         Condition: and((bucket_start in (-Inf, 1758550242]), (bucket_start in [1758291042, +Inf)))                                 │
+        9.  │         Parts: 1/1                                                                                                                 │
+        10. │         Granules: 1/1                                                                                                              │
+        11. │       Partition                                                                                                                    │
+        12. │         Keys:                                                                                                                      │
+        13. │           toYYYYMM(bucket_start)                                                                                                   │
+        14. │         Condition: and((toYYYYMM(bucket_start) in (-Inf, 202509]), (toYYYYMM(bucket_start) in [202509, +Inf)))                     │
+        15. │         Parts: 1/1                                                                                                                 │
+        16. │         Granules: 1/1                                                                                                              │
+        17. │       PrimaryKey                                                                                                                   │
+        18. │         Keys:                                                                                                                      │
+        19. │           bucket_start                                                                                                             │
+        20. │           country                                                                                                                  │
+        21. │         Condition: and((country in ['US', 'US']), and((bucket_start in (-Inf, 1758550242]), (bucket_start in [1758291042, +Inf)))) │
+        22. │         Parts: 1/1                                                                                                                 │
+        23. │         Granules: 1/1                                                                                                              │
+            └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    ```
+
+    위의 쿼리 실행 계획은 3가지 유형의 인덱스가 사용되는 것을 보여줍니다:
+    MinMax 인덱스, 파티션 인덱스, 그리고 프라이머리 키 인덱스입니다.
+    각 인덱스는 프라이머리 키에 지정된 필드 `(bucket_start, country, event_type)`를 활용합니다.
+    최적의 필터링 성능을 얻으려면 쿼리가 프라이머리 키 필드를 사용해 불필요한 데이터를 제외하도록 해야 합니다.
+  </Step>
+
+  <Step>
+    ## 일반적인 변형
+
+    * **다양한 집계 단위**: 일별 롤업을 추가합니다:
+
+    ```sql
+    CREATE TABLE events_rollup_1d
+    (
+        bucket_start Date,
+        country      LowCardinality(String),
+        event_type   LowCardinality(String),
+        users_uniq   AggregateFunction(uniqExact, UInt64),
+        value_sum    AggregateFunction(sum, Float64),
+        value_avg    AggregateFunction(avg, Float64),
+        events_count AggregateFunction(count)
+    )
+    ENGINE = AggregatingMergeTree
+    PARTITION BY toYYYYMM(bucket_start)
+    ORDER BY (bucket_start, country, event_type);
+    ```
+
+    다음으로 두 번째 materialized view:
+
+    ```sql
+    CREATE MATERIALIZED VIEW mv_events_rollup_1d
+    TO events_rollup_1d
+    AS
+    SELECT
+        toDate(event_time) AS bucket_start,
+        country,
+        event_type,
+        uniqExactState(user_id),
+        sumState(value),
+        avgState(value),
+        countState()
+    FROM events_raw
+    GROUP BY ALL;
+    ```
+
+    * **압축**: 원시 테이블의 큰 컬럼에 코덱을 적용합니다(예: `Codec(ZSTD(3))`).
+    * **비용 제어**: 보존 부담이 큰 데이터는 원시 테이블에 두고, 장기간 유지할 롤업만 유지합니다.
+    * **백필**: 과거 데이터를 로드할 때는 `events_raw`에 삽입하고 materialized view가 롤업을 자동으로 생성하도록 합니다. 기존 행에 대해서는 적절한 경우 materialized view 생성 시 `POPULATE`를 사용하거나 `INSERT SELECT`를 사용합니다.
+  </Step>
+
+  <Step>
+    ## 정리 및 보존
+
+    * 원시 데이터의 TTL(예: 30/90일)은 늘리고, 롤업은 더 오래(예: 1년) 유지합니다.
+    * 티어링이 활성화된 경우 **TTL을 사용해** 오래된 파트를 더 저렴한 스토리지로 이동할 수도 있습니다.
+  </Step>
+
+  <Step>
+    ## 문제 해결
+
+    * materialized view가 업데이트되지 않습니까? 삽입이 **events&#95;raw**로 들어가는지(롤업 테이블이 아닌지), 그리고 materialized view 대상이 올바른지(`TO events_rollup_1h`) 확인하세요.
+    * 쿼리가 느립니까? 롤업을 사용하고 있는지(롤업 테이블을 직접 쿼리) 확인하고, 시간 필터가 롤업 단위와 일치하는지 점검하세요.
+    * 백필 결과가 맞지 않습니까? `SYSTEM FLUSH LOGS`를 사용한 뒤 `system.query_log` / `system.parts`를 확인하여 삽입과 머지를 검증하세요.
+  </Step>
+</Steps>

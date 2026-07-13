@@ -3,9 +3,13 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
+
+#include <limits>
 
 
 namespace DB
@@ -16,13 +20,25 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace Setting
+{
+    extern const SettingsBool compile_regular_expressions;
+    extern const SettingsUInt64 min_count_to_compile_regular_expression;
+}
+
 template <typename Impl, typename Name>
 class FunctionStringReplace final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringReplace>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionStringReplace>(context); }
+
+    explicit FunctionStringReplace(ContextPtr context)
+    {
+        if (context && context->getSettingsRef()[Setting::compile_regular_expressions])
+            regexp_jit_min_count = context->getSettingsRef()[Setting::min_count_to_compile_regular_expression];
+    }
 
     String getName() const override { return name; }
 
@@ -71,12 +87,19 @@ public:
 
         if (col_haystack && col_needle_const && col_replacement_const)
         {
-            Impl::vectorConstantConstant(
-                col_haystack->getChars(), col_haystack->getOffsets(),
-                col_needle_const->getValue<String>(),
-                col_replacement_const->getValue<String>(),
-                col_res->getChars(), col_res->getOffsets(),
-                input_rows_count);
+            const String needle = col_needle_const->getValue<String>();
+            const String replacement = col_replacement_const->getValue<String>();
+            auto & res_chars = col_res->getChars();
+            auto & res_offsets = col_res->getOffsets();
+            /// Only impls that opt in (currently `ReplaceRegexpImpl`) take the JIT compile-count threshold.
+            if constexpr (requires { Impl::vectorConstantConstant(col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement, res_chars, res_offsets, input_rows_count, regexp_jit_min_count); })
+                Impl::vectorConstantConstant(
+                    col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement,
+                    res_chars, res_offsets, input_rows_count, regexp_jit_min_count);
+            else
+                Impl::vectorConstantConstant(
+                    col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement,
+                    res_chars, res_offsets, input_rows_count);
             return col_res;
         }
         if (col_haystack && col_needle_vector && col_replacement_const)
@@ -134,6 +157,10 @@ public:
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
     }
+
+private:
+    /// Compile-count threshold for JIT-compiling regular expressions, or `size_t(-1)` to disable.
+    size_t regexp_jit_min_count = std::numeric_limits<size_t>::max();
 };
 
 }

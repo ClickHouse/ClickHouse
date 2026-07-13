@@ -1,18 +1,9 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/StorageID.h>
-
-namespace ProfileEvents
-{
-    extern const Event FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds;
-}
 
 namespace DB
 {
@@ -105,57 +96,6 @@ void IFileCachePriority::removeEntries(
         if (entry_state != Entry::State::Removed)
             it->remove(lock);
     }
-}
-
-void IFileCachePriority::startup(BackgroundSchedulePool & pool, CachePriorityGuard & cache_guard)
-{
-    cleanup_guard = &cache_guard;
-    cleanup_task = pool.createTask(StorageID::createEmpty(), "FileCacheInvalidatedEntriesCleanup", [this] { cleanupTaskFunc(); });
-    /// Propagate the wake hook (and threshold) to all sub-queues so any of them can
-    /// nudge the single task.
-    setInvalidateNotifier(invalidated_threshold.load(std::memory_order_relaxed), [this] { cleanup_task->schedule(); });
-    cleanup_task->scheduleAfter(cleanup_interval_ms);
-}
-
-void IFileCachePriority::deactivateBackgroundOperations()
-{
-    if (cleanup_task)
-        cleanup_task->deactivate();
-}
-
-void IFileCachePriority::cleanupTaskFunc()
-{
-    Stopwatch watch;
-
-    size_t removed = 0;
-    try
-    {
-        removed = removeInvalidatedEntries(cleanup_batch, *cleanup_guard);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    auto elapsed_ms = watch.elapsedMilliseconds();
-    ProfileEvents::increment(
-        ProfileEvents::FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds, elapsed_ms);
-
-    /// A full batch likely means there is more to clean: come back immediately.
-    bool reschedule_now = removed == cleanup_batch;
-
-    if (removed)
-    {
-        LOG_TRACE(
-            getLogger("FileCachePriority"),
-            "Removed {} invalidated entries in {} ms, next cleanup in {} ms",
-            removed, elapsed_ms, reschedule_now ? 0 : cleanup_interval_ms);
-    }
-
-    if (reschedule_now)
-        cleanup_task->schedule();
-    else
-        cleanup_task->scheduleAfter(cleanup_interval_ms);
 }
 
 IFileCachePriority::IPriorityDump::IPriorityDump() = default;

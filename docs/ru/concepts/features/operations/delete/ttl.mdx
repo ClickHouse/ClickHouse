@@ -1,0 +1,288 @@
+---
+slug: /guides/developer/ttl
+sidebarTitle: 'TTL (time-to-live)'
+keywords: ['ttl', 'time-to-live', 'ClickHouse', 'старые', 'данные']
+description: 'TTL (time-to-live) позволяет перемещать, удалять или агрегировать строки и столбцы по истечении заданного интервала времени.'
+title: 'Управление данными с помощью TTL (time-to-live)'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="overview-of-ttl">
+  ## Обзор TTL
+</div>
+
+TTL (time-to-live) позволяет перемещать, удалять или агрегировать строки и столбцы по истечении заданного интервала времени. Хотя выражение &quot;time-to-live&quot; звучит так, будто речь идёт только об удалении старых данных, у TTL есть несколько вариантов использования:
+
+* Удаление старых данных: здесь всё ожидаемо — вы можете удалять строки или столбцы по истечении заданного интервала времени
+* Перемещение данных между дисками: через определённое время данные можно перемещать между томами хранения — это полезно при развёртывании архитектуры hot/warm/cold
+* Rollup данных: перед удалением старые данные можно сворачивать в различные полезные агрегации и вычисляемые значения
+
+<Note>
+  TTL можно применять как ко всей таблице, так и к отдельным столбцам.
+</Note>
+
+<div id="ttl-syntax">
+  ## Синтаксис TTL
+</div>
+
+Секция `TTL` может располагаться после определения столбца и/или в конце определения таблицы. Используйте секцию `INTERVAL`, чтобы указать интервал времени (для этого требуется тип данных `Date` или `DateTime`). Например, в следующей таблице есть два столбца
+с секциями `TTL`:
+
+```sql
+CREATE TABLE example1 (
+   timestamp DateTime,
+   x UInt32 TTL timestamp + INTERVAL 1 MONTH,
+   y String TTL timestamp + INTERVAL 1 DAY,
+   z String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+* Для столбца x задан TTL 1 месяц от столбца timestamp
+* Для столбца y задан TTL 1 день от столбца timestamp
+* Когда интервал истекает, срок действия столбца заканчивается. ClickHouse заменяет значение столбца значением по умолчанию для его типа данных. Если в части данных истекают все значения столбца, ClickHouse удаляет этот столбец из части данных в файловой системе.
+
+<Note>
+  Правила TTL можно изменять и удалять. Подробнее см. на странице [Управление TTL таблицы](/ru/reference/statements/alter/ttl).
+</Note>
+
+<Tip>
+  **Рекомендация**
+
+  При использовании TTL на уровне таблицы для удаления старых строк рекомендуем **разбивать таблицу на партиции по дате или месяцу** того же поля времени, которое используется в выражении TTL.
+
+  ClickHouse может удалять целые партиции значительно эффективнее, чем отдельные строки.
+  Если ключ партиционирования соответствует выражению TTL, ClickHouse может удалять целые партиции сразу после истечения их срока действия вместо того, чтобы переписывать части данных для удаления устаревших строк.
+
+  Выбирайте гранулярность партиционирования в зависимости от периода TTL:
+
+  * Для TTL в днях/неделях: партиционируйте по дню с помощью `toYYYYMMDD(date_field)`
+  * Для TTL в месяцах/годах: партиционируйте по месяцу с помощью `toYYYYMM(date_field)` или `toStartOfMonth(date_field)`
+</Tip>
+
+<div id="triggering-ttl-events">
+  ## Срабатывание событий TTL
+</div>
+
+Удаление или агрегирование строк с истекшим TTL происходит не сразу — это выполняется только во время слияния частей таблицы. Если у вас есть таблица, для которой слияния по какой-либо причине не выполняются активно, есть две настройки, которые запускают события TTL:
+
+* `merge_with_ttl_timeout`: минимальная задержка в секундах перед повторным слиянием с delete TTL. Значение по умолчанию — 14400 секунд (4 часа).
+* `merge_with_recompression_ttl_timeout`: минимальная задержка в секундах перед повторным слиянием с recompression TTL (правилами, которые агрегируют данные перед удалением). Значение по умолчанию — 14400 секунд (4 часа).
+
+Таким образом, по умолчанию правила TTL будут применяться к вашей таблице как минимум раз в 4 часа. Если нужно, чтобы они применялись чаще, просто измените указанные выше настройки.
+
+<Note>
+  Это не лучшее решение (и мы не рекомендуем часто его использовать), но вы также можете принудительно запустить слияние с помощью `OPTIMIZE`:
+
+  ```sql
+  OPTIMIZE TABLE example1 FINAL
+  ```
+
+  `OPTIMIZE` инициирует внеплановое слияние частей таблицы, а `FINAL` принудительно запускает повторную оптимизацию, если таблица уже состоит из одной части.
+</Note>
+
+<div id="removing-rows">
+  ## Удаление строк
+</div>
+
+Чтобы удалять строки из таблицы по истечении определённого времени, задайте правило TTL на уровне таблицы:
+
+```sql
+CREATE TABLE customers (
+timestamp DateTime,
+name String,
+balance Int32,
+address String
+)
+ENGINE = MergeTree
+ORDER BY timestamp
+TTL timestamp + INTERVAL 12 HOUR
+```
+
+Кроме того, можно задать правило TTL на основе значения записи.
+Это легко реализовать, указав условие where.
+Можно задать несколько условий:
+
+```sql
+CREATE TABLE events
+(
+    `event` String,
+    `time` DateTime,
+    `value` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (event, time)
+TTL time + INTERVAL 1 MONTH DELETE WHERE event != 'error',
+    time + INTERVAL 6 MONTH DELETE WHERE event = 'error'
+```
+
+<div id="removing-columns">
+  ## Удаление столбцов
+</div>
+
+Предположим, что вместо удаления всей строки вы хотите, чтобы срок действия истекал только у столбцов balance и address. Давайте изменим таблицу `customers` и зададим TTL 2 часа для обоих столбцов:
+
+```sql
+ALTER TABLE customers
+MODIFY COLUMN balance Int32 TTL timestamp + INTERVAL 2 HOUR,
+MODIFY COLUMN address String TTL timestamp + INTERVAL 2 HOUR
+```
+
+<div id="implementing-a-rollup">
+  ## Реализация rollup
+</div>
+
+Предположим, мы хотим удалять строки через определённое время, но при этом сохранять часть данных для отчётности. Нам нужны не все детали, а лишь несколько агрегированных результатов по историческим данным. Это можно реализовать, добавив предложение `GROUP BY` в выражение `TTL`, а также несколько столбцов в таблицу для хранения агрегированных результатов.
+
+Предположим, что в приведённой ниже таблице `hits` мы хотим удалять старые строки, но перед их удалением сохранять сумму и максимум по столбцам `hits`. Для этого потребуется поле для хранения этих значений, а также нужно будет добавить предложение `GROUP BY` в выражение `TTL`, которое выполняет rollup суммы и максимума:
+
+```sql
+CREATE TABLE hits (
+   timestamp DateTime,
+   id String,
+   hits Int32,
+   max_hits Int32 DEFAULT hits,
+   sum_hits Int64 DEFAULT hits
+)
+ENGINE = MergeTree
+PRIMARY KEY (id, toStartOfDay(timestamp), timestamp)
+TTL timestamp + INTERVAL 1 DAY
+    GROUP BY id, toStartOfDay(timestamp)
+    SET
+        max_hits = max(max_hits),
+        sum_hits = sum(sum_hits);
+```
+
+Несколько замечаний о таблице `hits`:
+
+* Столбцы `GROUP BY` в выражении `TTL` должны быть префиксом `PRIMARY KEY`, а нам нужно группировать результаты по началу дня. Поэтому в `PRIMARY KEY` был добавлен `toStartOfDay(timestamp)`
+* Мы добавили два поля для хранения агрегированных результатов: `max_hits` и `sum_hits`
+* Чтобы наша логика работала, необходимо задать для `max_hits` и `sum_hits` значение по умолчанию, равное `hits`, с учётом того, как определено выражение `SET`
+
+<div id="implementing-a-hotwarmcold-architecture">
+  ## Реализация архитектуры hot/warm/cold
+</div>
+
+<CloudNotSupportedBadge />
+
+<Note>
+  Если вы используете ClickHouse Cloud, шаги из этого урока к вам не относятся. В ClickHouse Cloud не нужно беспокоиться о перемещении старых данных.
+</Note>
+
+Распространенная практика при работе с большими объемами данных — перемещать их по мере старения. Ниже приведены шаги по реализации архитектуры hot/warm/cold в ClickHouse с использованием секций `TO DISK` и `TO VOLUME` команды `TTL`. (Кстати, это не обязательно должно быть именно разделение на hot и cold — с помощью TTL можно перемещать данные в любом нужном вам сценарии.)
+
+1. Параметры `TO DISK` и `TO VOLUME` ссылаются на имена дисков или томов, определенных в файлах конфигурации ClickHouse. Создайте новый файл с именем `my_system.xml` (или любым другим именем), в котором будут определены диски, а затем определите тома, использующие эти диски. Поместите XML-файл в `/etc/clickhouse-server/config.d/`, чтобы конфигурация применилась в системе:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <default>
+            </default>
+           <hot_disk>
+              <path>./hot/</path>
+           </hot_disk>
+           <warm_disk>
+              <path>./warm/</path>
+           </warm_disk>
+           <cold_disk>
+              <path>./cold/</path>
+           </cold_disk>
+        </disks>
+        <policies>
+            <default>
+                <volumes>
+                    <default>
+                        <disk>default</disk>
+                    </default>
+                    <hot_volume>
+                        <disk>hot_disk</disk>
+                    </hot_volume>
+                    <warm_volume>
+                        <disk>warm_disk</disk>
+                    </warm_volume>
+                    <cold_volume>
+                        <disk>cold_disk</disk>
+                    </cold_volume>
+                </volumes>
+            </default>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+2. Указанная выше конфигурация описывает три диска, которые указывают на каталоги, из которых ClickHouse может читать и в которые может записывать. Том может содержать один или несколько дисков — мы определили отдельный том для каждого из трех дисков. Давайте посмотрим на диски:
+
+```sql
+SELECT name, path, free_space, total_space
+FROM system.disks
+```
+
+```response
+┌─name────────┬─path───────────┬───free_space─┬──total_space─┐
+│ cold_disk   │ ./data/cold/   │ 179143311360 │ 494384795648 │
+│ default     │ ./             │ 179143311360 │ 494384795648 │
+│ hot_disk    │ ./data/hot/    │ 179143311360 │ 494384795648 │
+│ warm_disk   │ ./data/warm/   │ 179143311360 │ 494384795648 │
+└─────────────┴────────────────┴──────────────┴──────────────┘
+```
+
+3. И... давайте проверим тома:
+
+```sql
+SELECT
+    volume_name,
+    disks
+FROM system.storage_policies
+```
+
+```response
+┌─volume_name─┬─disks─────────┐
+│ default     │ ['default']   │
+│ hot_volume  │ ['hot_disk']  │
+│ warm_volume │ ['warm_disk'] │
+│ cold_volume │ ['cold_disk'] │
+└─────────────┴───────────────┘
+```
+
+4. Теперь добавим правило `TTL`, которое перемещает данные между томами hot, warm и cold:
+
+```sql
+ALTER TABLE my_table
+   MODIFY TTL
+      trade_date TO VOLUME 'hot_volume',
+      trade_date + INTERVAL 2 YEAR TO VOLUME 'warm_volume',
+      trade_date + INTERVAL 4 YEAR TO VOLUME 'cold_volume';
+```
+
+5. Новое правило `TTL` должно материализоваться, но при необходимости вы можете принудительно материализовать его, чтобы убедиться:
+
+```sql
+ALTER TABLE my_table
+    MATERIALIZE TTL
+```
+
+6. Проверьте, что данные переместились на нужные диски, с помощью таблицы `system.parts`:
+
+```sql
+Используя таблицу system.parts, проверьте, на каких дисках находятся части таблицы crypto_prices:
+
+SELECT
+    name,
+    disk_name
+FROM system.parts
+WHERE (table = 'my_table') AND (active = 1)
+```
+
+Ответ будет выглядеть так:
+
+```response
+┌─name────────┬─disk_name─┐
+│ all_1_3_1_5 │ warm_disk │
+│ all_2_2_0   │ hot_disk  │
+└─────────────┴───────────┘
+```

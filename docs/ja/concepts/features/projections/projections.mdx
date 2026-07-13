@@ -1,0 +1,673 @@
+---
+slug: /data-modeling/projections
+title: 'プロジェクション'
+description: 'プロジェクションの概要、クエリパフォーマンスの向上にどのように活用できるか、およびmaterialized viewとの違いを説明するページ。'
+keywords: ['プロジェクション', 'プロジェクション', 'クエリ最適化']
+sidebar_order: 1
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
+
+<div id="introduction">
+  ## はじめに
+</div>
+
+ClickHouse には、リアルタイムなシナリオで大量のデータに対する分析クエリを高速化するための、さまざまな仕組みがあります。そうしたクエリ高速化の仕組みの 1 つが、*プロジェクション* の利用です。プロジェクションは、着目する属性に基づいてデータを並べ替えたものを作成することで、クエリの最適化に役立ちます。具体的には、次のいずれかの形を取ります。
+
+1. 完全な並べ替え
+2. 元のテーブルの一部を異なる順序で並べ替えたもの
+3. 事前計算された集約 (materialized view に似ています) で、集約に合わせた順序付けが
+   されているもの
+
+<br />
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="how-do-projections-work">
+  ## プロジェクション はどのように機能しますか？
+</div>
+
+実際のところ、PROJECTION は元のテーブルに追加される
+非表示テーブルのようなものと考えられます。PROJECTION は元のテーブルとは
+異なる行順序、したがって異なるプライマリインデックスを持つことができ、
+さらに集計値を自動的かつ段階的に事前計算できます。その結果、プロジェクション を使うことで、
+クエリ実行を高速化するための 2 つの「調整手段」が得られます。
+
+* **プライマリインデックスを適切に活用する**
+* **集計を事前計算する**
+
+プロジェクション は、ある意味で [materialized view](/ja/concepts/features/materialized-views/index)
+に似ています。これも複数の行順序を持てるほか、insert 時に集計を
+事前計算できます。
+ただし プロジェクション は自動的に更新され、
+元のテーブルとの同期が保たれます。一方、materialized view は
+明示的に更新する必要があります。クエリが元のテーブルを対象とすると、
+ClickHouse は自動的に主キーをサンプリングし、
+同じ正しい結果を生成でき、かつ読み取る必要があるデータ量が最も少ないテーブルを
+以下の図に示すように選択します。
+
+<Image img="/images/data-modeling/projections_1.webp" size="md" alt="ClickHouse における プロジェクション" />
+
+<div id="smarter_storage_with_part_offset">
+  ### `_part_offset` によるより効率的なストレージ
+</div>
+
+バージョン 25.5 以降、ClickHouse はプロジェクション内の仮想カラム `_part_offset` をサポートしており、
+これによりプロジェクションを定義する新しい方法が利用できるようになりました。
+
+現在、プロジェクションを定義する方法は 2 つあります。
+
+* **完全なカラムを保存する (従来の動作)&#x20;**: プロジェクションに完全な
+  データを保持し、それを直接読み取れるため、フィルタが
+  プロジェクションのソート順に一致する場合は、より高速に処理できます。
+
+* **ソートキー + `_part_offset` のみを保存する**: プロジェクションは索引のように機能します。
+  ClickHouse はプロジェクションのプライマリインデックスを使って一致する行を特定し、実際のデータは基となるテーブルから
+  読み取ります。これにより、クエリ時の I/O が
+  わずかに増える代わりに、ストレージのオーバーヘッドを削減できます。
+
+上記のアプローチは組み合わせることもでき、一部のカラムをプロジェクションに保存し、
+ほかのカラムは `_part_offset` を介して間接的に扱えます。
+
+<div id="when-to-use-projections">
+  ## Projections を使用すべきケース
+</div>
+
+Projections は、データの挿入に応じて自動的に維持されるため、新規ユーザーにとって魅力的な機能です。さらに、クエリは単一のテーブルに送るだけでよく、可能な場合は projections が活用されて応答時間の短縮につながります。
+
+これは materialized view とは対照的です。materialized view では、ユーザーはフィルターに応じて適切に最適化されたターゲットテーブルを選択するか、クエリを書き換える必要があります。そのため、ユーザーアプリケーション側の負担が大きくなり、クライアント側の複雑さも増します。
+
+このような利点がある一方で、projections にはいくつか本質的な制約もあるため、それを理解したうえで限定的に使用すべきです。
+
+* Projections では、ソーステーブルと
+  (隠し) ターゲットテーブルに異なる有効期限 (TTL) を設定できませんが、
+  materialized view では異なる有効期限 (TTL) を設定できます。
+* Projections を持つテーブルでは、論理更新と削除はサポートされません。
+* materialized view は連鎖できます。つまり、ある materialized view のターゲットテーブルを別の materialized view のソーステーブルにする、といった構成が可能です。これは
+  Projections ではできません。
+* Projection の定義では JOIN はサポートされませんが、materialized view ではサポートされます。ただし、Projections を持つテーブルに対するクエリでは JOIN を自由に使用できます。
+* Projection の定義ではフィルター (`WHERE` clause) はサポートされませんが、materialized view ではサポートされます。ただし、Projections を持つテーブルに対するクエリでは自由にフィルタリングできます。
+
+以下のような場合には、Projections の使用を推奨します。
+
+* データを完全に再並べ替える必要がある場合です。理論上、projection 内の式で
+  `GROUP BY,` を使用することもできますが、集計の維持には materialized view のほうが
+  効果的です。また、クエリオプティマイザーも、単純な再並べ替えを行う projection、
+  すなわち `SELECT * ORDER BY x` を使用する projection を活用しやすい傾向があります。
+  この式では、ストレージ使用量を抑えるためにカラムの一部だけを選択できます。
+* ストレージ使用量が増える可能性と、
+  データを二重に書き込むオーバーヘッドを許容できる場合です。挿入速度への影響を検証し、
+  [ストレージのオーバーヘッドを評価してください](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。
+
+<div id="examples">
+  ## 例
+</div>
+
+<div id="filtering-without-using-primary-keys">
+  ### 主キーに含まれていないカラムでのフィルタリング
+</div>
+
+この例では、テーブルにプロジェクションを追加する方法を紹介します。
+また、プロジェクションを使って、テーブルの主キーに含まれていないカラムで
+フィルタするクエリを高速化する方法も見ていきます。
+
+この例では、[sql.clickhouse.com](https://sql.clickhouse.com/) で利用できる New York Taxi Data
+データセットを使用します。このデータセットは `pickup_datetime` で並べ替えられています。
+
+まず、乗客がドライバーに $200 を超えるチップを支払ったすべての trip ID を見つける
+シンプルなクエリを書いてみましょう。
+
+<RunnableCode>
+  ```sql
+  SELECT
+    tip_amount,
+    trip_id,
+    dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min
+  FROM nyc_taxi.trips WHERE tip_amount > 200 AND trip_duration_min > 0
+  ORDER BY tip_amount, trip_id ASC
+  ```
+</RunnableCode>
+
+`ORDER BY` に含まれていない `tip_amount` でフィルタしているため、ClickHouse は
+テーブル全体をスキャンする必要があります。このクエリを高速化してみましょう。
+
+元のテーブルと結果を保持するため、新しいテーブルを作成し、`INSERT INTO SELECT` を使ってデータをコピーします。
+
+```sql
+CREATE TABLE nyc_taxi.trips_with_projection AS nyc_taxi.trips;
+INSERT INTO nyc_taxi.trips_with_projection SELECT * FROM nyc_taxi.trips;
+```
+
+プロジェクションを追加するには、`ALTER TABLE`ステートメントと`ADD PROJECTION`
+ステートメントを使用します。
+
+```sql
+ALTER TABLE nyc_taxi.trips_with_projection
+ADD PROJECTION prj_tip_amount
+(
+    SELECT *
+    ORDER BY tip_amount, dateDiff('minutes', pickup_datetime, dropoff_datetime)
+)
+```
+
+プロジェクションを追加した後は、その中のデータを物理的に並べ替えて書き換え、上記で指定したクエリに従わせるために、`MATERIALIZE PROJECTION`
+ステートメントを使用する必要があります。
+
+```sql
+ALTER TABLE nyc.trips_with_projection MATERIALIZE PROJECTION prj_tip_amount
+```
+
+projection を追加したので、もう一度クエリを実行してみましょう。
+
+<RunnableCode>
+  ```sql
+  SELECT
+    tip_amount,
+    trip_id,
+    dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min
+  FROM nyc_taxi.trips_with_projection WHERE tip_amount > 200 AND trip_duration_min > 0
+  ORDER BY tip_amount, trip_id ASC
+  ```
+</RunnableCode>
+
+クエリ時間が大幅に短縮され、スキャンする行数も
+少なくなっていることがわかります。
+
+また、作成した projection が実際に上記のクエリで使用されたことは、
+`system.query_log` テーブルにクエリを実行することで確認できます。
+
+```sql
+SELECT query, projections 
+FROM system.query_log 
+WHERE query_id='<query_id>'
+```
+
+```response
+   ┌─query─────────────────────────────────────────────────────────────────────────┬─projections──────────────────────┐
+   │ SELECT                                                                       ↴│ ['default.trips.prj_tip_amount'] │
+   │↳  tip_amount,                                                                ↴│                                  │
+   │↳  trip_id,                                                                   ↴│                                  │
+   │↳  dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min↴│                                  │
+   │↳FROM trips WHERE tip_amount > 200 AND trip_duration_min > 0                   │                                  │
+   └───────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────┘
+```
+
+<div id="using-projections-to-speed-up-UK-price-paid">
+  ### プロジェクションを使用して UK price paid クエリを高速化する
+</div>
+
+プロジェクションを使ってクエリ性能をどのように向上できるかを示すために、実際のデータセットを使った例を見てみましょう。この例では、3,003 万行を含む [UK Property Price Paid](/ja/get-started/sample-datasets/uk-price-paid) チュートリアルのテーブルを使用します。このデータセットは、[sql.clickhouse.com](https://sql.clickhouse.com/?query_id=6IDMHK3OMR1C97J6M9EUQS) 環境でも利用できます。
+
+テーブルがどのように作成され、データが挿入されたかを確認したい場合は、[&quot;The UK property prices dataset&quot;](/ja/get-started/sample-datasets/uk-price-paid) ページを参照してください。
+
+このデータセットに対して、2 つのシンプルなクエリを実行できます。1 つ目は、ロンドンで最も高額で取引された county を一覧表示し、2 つ目は county ごとの平均価格を計算します。
+
+<RunnableCode>
+  ```sql
+  SELECT
+    county,
+    price
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  ORDER BY price DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      county,
+      avg(price)
+  FROM uk.uk_price_paid
+  GROUP BY county
+  ORDER BY avg(price) DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+どちらのクエリも非常に高速ですが、テーブル作成時の `ORDER BY` ステートメントに `town` も `price` も含まれていなかったため、いずれのクエリでも 3,003 万行すべてに対するフルテーブルスキャンが発生している点に注目してください。
+
+```sql highlight={6}
+CREATE TABLE uk.uk_price_paid
+(
+  ...
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+プロジェクションを使って、このクエリを高速化できるか見てみましょう。
+
+元のテーブルと結果を保持するため、新しいテーブルを作成し、`INSERT INTO SELECT` を使ってデータをコピーします:
+
+```sql
+CREATE TABLE uk.uk_price_paid_with_projections AS uk_price_paid;
+INSERT INTO uk.uk_price_paid_with_projections SELECT * FROM uk.uk_price_paid;
+```
+
+`prj_oby_town_price` というプロジェクションを作成してデータを投入します。これにより、
+町名と価格で並べ替えたプライマリインデックスを持つ追加の (非表示の) テーブルが生成され、
+特定の町における最高価格の取引について郡を一覧表示するクエリを最適化できます。
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (ADD PROJECTION prj_obj_town_price
+  (
+    SELECT *
+    ORDER BY
+        town,
+        price
+  ))
+```
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (MATERIALIZE PROJECTION prj_obj_town_price)
+SETTINGS mutations_sync = 1
+```
+
+[`mutations_sync`](/ja/reference/settings/session-settings#mutations_sync) 設定は、
+同期実行を強制するために使用されます。
+
+プロジェクション `prj_gby_county` を作成してデータを投入します。これは追加の (非表示の) テーブルであり、
+英国にある既存の130のすべてのカウンティについて、avg(price) の集計値を段階的に事前計算します。
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (ADD PROJECTION prj_gby_county
+  (
+    SELECT
+        county,
+        avg(price)
+    GROUP BY county
+  ))
+```
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (MATERIALIZE PROJECTION prj_gby_county)
+SETTINGS mutations_sync = 1
+```
+
+<Note>
+  上記の `prj_gby_county` 射影のように、射影で `GROUP BY` 句が使われている場合、
+  (隠し) テーブルの基盤となるストレージエンジンは `AggregatingMergeTree`
+  となり、すべての集約関数は
+  `AggregateFunction` に変換されます。これにより、データの増分集約が適切に行われます。
+</Note>
+
+以下の図は、メインテーブル `uk_price_paid_with_projections`
+と、その 2 つの射影を可視化したものです。
+
+<Image img="/images/data-modeling/projections_2.webp" size="md" alt="メインテーブル uk_price_paid_with_projections とその 2 つの射影の可視化" />
+
+ここで、ロンドンの county のうち価格が最も高い 3 件を
+一覧表示するクエリを再度実行すると、クエリのパフォーマンスが改善していることがわかります。
+
+<RunnableCode>
+  ```sql
+  SELECT
+    county,
+    price
+  FROM uk.uk_price_paid_with_projections
+  WHERE town = 'LONDON'
+  ORDER BY price DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+同様に、平均支払価格が最も高いイギリスの county を 3 件
+一覧表示するクエリでも改善が見られます。
+
+<RunnableCode>
+  ```sql
+  SELECT
+      county,
+      avg(price)
+  FROM uk.uk_price_paid_with_projections
+  GROUP BY county
+  ORDER BY avg(price) DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+両方のクエリはいずれも元のテーブルを対象としており、2 つのプロジェクションを作成する前は、どちらのクエリでもフルテーブルスキャンが発生していたことに注意してください (3,003 万行すべてがディスクからストリーミングされました) 。
+
+また、支払価格が最も高い 3 件について London の counties を一覧表示するクエリでは、217 万行がストリーミングされている点にも注意してください。このクエリ用に最適化した 2 つ目のテーブルを直接使用した場合は、ディスクからストリーミングされたのは 8.192 万行だけでした。
+
+この違いが生じる理由は、前述の `optimize_read_in_order` 最適化が、現時点ではプロジェクションではサポートされていないためです。
+
+`system.query_log` テーブルを調べると、ClickHouse が上記 2 つのクエリに対して 2 つのプロジェクションを自動的に使用していたことがわかります (下の projections カラムを参照) :
+
+```sql
+SELECT
+  tables,
+  query,
+  query_duration_ms::String ||  ' ms' AS query_duration,
+        formatReadableQuantity(read_rows) AS read_rows,
+  projections
+FROM clusterAllReplicas(default, system.query_log)
+WHERE (type = 'QueryFinish') AND (tables = ['default.uk_price_paid_with_projections'])
+ORDER BY initial_query_start_time DESC
+  LIMIT 2
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+tables:         ['uk.uk_price_paid_with_projections']
+query:          SELECT
+    county,
+    avg(price)
+FROM uk_price_paid_with_projections
+GROUP BY county
+ORDER BY avg(price) DESC
+LIMIT 3
+query_duration: 5 ms
+read_rows:      132.00
+projections:    ['uk.uk_price_paid_with_projections.prj_gby_county']
+
+Row 2:
+──────
+tables:         ['uk.uk_price_paid_with_projections']
+query:          SELECT
+  county,
+  price
+FROM uk_price_paid_with_projections
+WHERE town = 'LONDON'
+ORDER BY price DESC
+LIMIT 3
+SETTINGS log_queries=1
+query_duration: 11 ms
+read_rows:      2.29 million
+projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+
+<div id="further-examples">
+  ### さらに例を見ていきます
+</div>
+
+以下の例では、同じ英国の価格データセットを使用し、projections を使用する場合としない場合のクエリを比較します。
+
+元のテーブル (およびパフォーマンス) を維持するため、ここでも `CREATE AS` と `INSERT INTO SELECT` を使用してテーブルのコピーを作成します。
+
+```sql
+CREATE TABLE uk.uk_price_paid_with_projections_v2 AS uk.uk_price_paid;
+INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
+```
+
+<div id="build-projection">
+  #### プロジェクションを作成する
+</div>
+
+`toYear(date)`、`district`、`town` の各次元で集計プロジェクションを作成しましょう。
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    ADD PROJECTION projection_by_year_district_town
+    (
+        SELECT
+            toYear(date),
+            district,
+            town,
+            avg(price),
+            sum(price),
+            count()
+        GROUP BY
+            toYear(date),
+            district,
+            town
+    )
+```
+
+既存のデータについてプロジェクションを作成します。 (これをマテリアライズしない場合、プロジェクションが作成されるのは新たに挿入されたデータのみです) :
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    MATERIALIZE PROJECTION projection_by_year_district_town
+SETTINGS mutations_sync = 1
+```
+
+以下のクエリでは、プロジェクションありの場合となしの場合で、パフォーマンスを比較します。プロジェクションの使用を無効にするには、デフォルトで有効になっている設定 [`optimize_use_projections`](/ja/reference/settings/session-settings#optimize_use_projections) を使用します。
+
+<div id="average-price-projections">
+  #### クエリ 1. 年ごとの平均価格
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 1000000, 80)
+  FROM uk.uk_price_paid_with_projections_v2
+  GROUP BY year
+  ORDER BY year ASC
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 1000000, 80)
+  FROM uk.uk_price_paid_with_projections_v2
+  GROUP BY year
+  ORDER BY year ASC
+
+  ```
+</RunnableCode>
+
+結果は同じですが、後者の例のほうがパフォーマンスは向上します。
+
+<div id="average-price-london-projections">
+  #### クエリ 2. ロンドンの年別平均価格
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 2000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year ASC
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 2000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year ASC
+  ```
+</RunnableCode>
+
+<div id="most-expensive-neighborhoods-projections">
+  #### クエリ 3. 最も高額な地域
+</div>
+
+条件 `(date >= '2020-01-01')` は、projection の dimension (`toYear(date) >= 2020`) に合うように変更する必要があります。
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE toYear(date) >= 2020
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE toYear(date) >= 2020
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
+
+今回も結果は同じですが、2 番目のクエリではクエリのパフォーマンスが向上していることがわかります。
+
+<div id="combining-projections">
+  ### 1つのクエリで複数のプロジェクションを組み合わせる
+</div>
+
+バージョン 25.6 以降、前バージョンで導入された `_part_offset` サポートを基盤として、ClickHouse では複数のフィルターを含む1つのクエリの高速化に複数のプロジェクションを利用できるようになりました。
+
+重要なのは、ClickHouse は引き続き 1 つのプロジェクション (または基となるテーブル) からしかデータを読み取りませんが、読み取り前に不要なパーツを絞り込むために、ほかのプロジェクションのプライマリインデックスを利用できるという点です。
+これは特に、複数のカラムでフィルタリングするクエリで有効です。各カラムがそれぞれ異なるプロジェクションに対応している可能性があるためです。
+
+> 現在、この仕組みで絞り込めるのはパーツ全体のみです。グラニュール単位の絞り込みは、まだサポートされていません。
+
+これを示すため、 (`_part_offset` カラムを使うプロジェクションを含む) テーブルを定義し、上の図に対応する 5 つの行の例を挿入します。
+
+```sql
+CREATE TABLE page_views
+(
+    id UInt64,
+    event_date Date,
+    user_id UInt32,
+    url String,
+    region String,
+    PROJECTION region_proj
+    (
+        SELECT _part_offset ORDER BY region
+    ),
+    PROJECTION user_id_proj
+    (
+        SELECT _part_offset ORDER BY user_id
+    )
+)
+ENGINE = MergeTree
+ORDER BY (event_date, id)
+SETTINGS
+  index_granularity = 1, -- granuleあたり1行
+  max_bytes_to_merge_at_max_space_in_pool = 1; -- mergeを無効化
+```
+
+次に、テーブルにデータを挿入します。
+
+```sql
+INSERT INTO page_views VALUES (
+1, '2025-07-01', 101, 'https://example.com/page1', 'europe');
+INSERT INTO page_views VALUES (
+2, '2025-07-01', 102, 'https://example.com/page2', 'us_west');
+INSERT INTO page_views VALUES (
+3, '2025-07-02', 106, 'https://example.com/page3', 'us_west');
+INSERT INTO page_views VALUES (
+4, '2025-07-02', 107, 'https://example.com/page4', 'us_west');
+INSERT INTO page_views VALUES (
+5, '2025-07-03', 104, 'https://example.com/page5', 'asia');
+```
+
+<Note>
+  注: このテーブルでは説明のため、1 行ごとの granule や無効化した part merge などのカスタム設定を使用していますが、これらは本番環境では推奨されません。
+</Note>
+
+この構成では、次のようになります。
+
+* 5 つの個別のパーツ (挿入した各行につき 1 つ)
+* 各行に対して 1 つのプライマリインデックスのエントリ (基となるテーブルと各プロジェクション)
+* 各パーツにはちょうど 1 行だけが含まれる
+
+この構成で、`region` と `user_id` の両方で絞り込むクエリを実行します。
+基となるテーブルのプライマリインデックスは `event_date` と `id` から構築されているため、
+この場合は役に立ちません。そのため ClickHouse は次を使用します。
+
+* `region_proj` を使って region でパーツを絞り込む
+* `user_id_proj` を使って `user_id` でさらに絞り込む
+
+この動作は `EXPLAIN projections = 1` を使うと確認でき、
+ClickHouse がどのようにプロジェクションを選択して適用するかが示されます。
+
+```sql
+EXPLAIN projections=1
+SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
+```
+
+```response
+    ┌─explain────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                              │
+ 2. │   Expression                                                                           │                                                                        
+ 3. │     ReadFromMergeTree (default.page_views)                                             │
+ 4. │     Projections:                                                                       │
+ 5. │       Name: region_proj                                                                │
+ 6. │         Description: Projection has been analyzed and is used for part-level filtering │
+ 7. │         Condition: (region in ['us_west', 'us_west'])                                  │
+ 8. │         Search Algorithm: binary search                                                │
+ 9. │         Parts: 3                                                                       │
+10. │         Marks: 3                                                                       │
+11. │         Ranges: 3                                                                      │
+12. │         Rows: 3                                                                        │
+13. │         Filtered Parts: 2                                                              │
+14. │       Name: user_id_proj                                                               │
+15. │         Description: Projection has been analyzed and is used for part-level filtering │
+16. │         Condition: (user_id in [107, 107])                                             │
+17. │         Search Algorithm: binary search                                                │
+18. │         Parts: 1                                                                       │
+19. │         Marks: 1                                                                       │
+20. │         Ranges: 1                                                                      │
+21. │         Rows: 1                                                                        │
+22. │         Filtered Parts: 2                                                              │
+    └────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+`EXPLAIN` の出力 (上記参照) には、論理クエリプランが上から下の順に示されています。
+
+| 行番号   | 説明                                                                                  |
+| ----- | ----------------------------------------------------------------------------------- |
+| 3     | `page_views` の基となるテーブルから読み取る計画                                                      |
+| 5-13  | `region_proj` を使って region = &#39;us&#95;west&#39; である 3 つのパーツを特定し、5 つのパーツのうち 2 つを除外 |
+| 14-22 | user`_id_proj` を使って `user_id = 107` である 1 つのパーツを特定し、残る 3 つのパーツのうちさらに 2 つを除外         |
+
+最終的に、基となるテーブルから読み取られるのは **5 つのパーツのうち 1 つ**だけです。
+複数のプロジェクションの索引解析を組み合わせることで、ClickHouse はスキャン対象のデータ量を大幅に削減し、
+ストレージのオーバーヘッドを低く抑えながらパフォーマンスを向上させます。
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* [ClickHouse におけるプライマリインデックスの実践入門](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
+* [materialized view](/ja/concepts/features/materialized-views/index)
+* [ALTER PROJECTION](/ja/reference/statements/alter/projection)

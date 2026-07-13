@@ -1,0 +1,147 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/oss
+title: 'オープンソース版 ClickStack の利用開始'
+sidebarTitle: 'オープンソース'
+description: 'オープンソース版 ClickStack の利用開始'
+doc_type: 'guide'
+keywords: ['ClickStack オープンソース', '利用開始', 'Docker デプロイ', 'HyperDX UI', 'ローカルデプロイ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+**ClickStack Open Source** をデプロイするために、つまり ClickHouse と ClickStack UI を自分で実行・管理する構成向けに、UI、OpenTelemetry collector、ClickHouse を単一のコンテナーにまとめたビルド済みの Docker image を提供しています。これにより、ローカルでの開発、テスト、セルフマネージド環境へのデプロイを簡単に始められます。
+
+<Tip>
+  ClickStack のマネージド版も利用できます。詳しくは [Managed ClickStack](/ja/clickstack/getting-started/managed) を参照してください。
+</Tip>
+
+これらのイメージは公式の ClickHouse Debian パッケージをベースとしており、用途に応じて選べる複数のディストリビューションを提供しています。
+
+最もシンプルな選択肢は、スタックの主要コンポーネントをすべてひとつにまとめた **単一イメージのディストリビューション** です。
+
+* **HyperDX UI**
+* **OpenTelemetry (OTel) collector**
+* **ClickHouse**
+
+このオールインワンイメージでは、1 つのコマンドでスタック全体を起動できるため、テスト、検証、または手早いローカルデプロイに最適です。
+
+<Steps>
+  <Step>
+    ## dockerでスタックをデプロイ
+
+    以下のコマンドは、OpenTelemetry collector (ポート 4317 と 4318) 、HyperDX UI (ポート 8080) 、および ClickHouse (ポート 8123) を起動します。
+
+    ```shell
+    docker run --name clickstack -p 8123:8123 -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest clickstack
+    ```
+
+    <Info>
+      **イメージ名の更新**
+
+      ClickStack のイメージは現在 `clickhouse/clickstack-*` として公開されています (以前は `docker.hyperdx.io/hyperdx/*`) 。
+    </Info>
+
+    <Tip>
+      **データと設定の永続化**
+
+      コンテナーの再起動後もデータと設定を保持するには、上記の docker コマンドを変更し、`/data/db`、`/var/lib/clickhouse`、`/var/log/clickhouse-server` の各パスをマウントします。
+
+      例:
+
+      ```shell
+      # パスをマウントするようにコマンドを変更
+      docker run \
+        --name clickstack \
+        -p 8123:8123 \
+        -p 8080:8080 \
+        -p 4317:4317 \
+        -p 4318:4318 \
+        -v "$(pwd)/.volumes/db:/data/db" \
+        -v "$(pwd)/.volumes/ch_data:/var/lib/clickhouse" \
+        -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
+        clickhouse/clickstack-all-in-one:latest
+      ```
+    </Tip>
+  </Step>
+
+  <Step>
+    ## ClickStack UI に移動する
+
+    [http://localhost:8080](http://localhost:8080) にアクセスして、ClickStack UI (HyperDX) を開きます。
+
+    複雑さの要件を満たすユーザー名とパスワードを指定して、ユーザーを作成します。
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    HyperDX は自動的にローカルクラスターに接続し、logs、traces、metrics、sessions 用のデータソースを作成するため、すぐに使い始められます。
+  </Step>
+
+  <Step>
+    ## 製品を試す
+
+    スタックをデプロイしたら、以下のデータセットのいずれかを試してみてください。
+
+    ローカルクラスターを引き続き使用する場合:
+
+    * [Example dataset](/ja/clickstack/example-datasets/sample-data) - 公開デモからサンプルデータセットを読み込み、簡単な問題を診断します。
+    * [Local files and metrics](/ja/clickstack/example-datasets/local-data) - ローカルファイルを読み込み、ローカル OTel collector を使用して OSX または Linux 上のシステムを監視します。
+
+    <br />
+
+    または、より大規模なデータセットを確認できるデモクラスターに接続することもできます。
+
+    * [Remote demo dataset](/ja/clickstack/example-datasets/remote-demo-data) - デモ ClickHouse service のデモデータセットを確認します。
+  </Step>
+</Steps>
+
+<div id="alternative-deployment-models">
+  ## 別のデプロイモデル
+</div>
+
+<div id="local-mode">
+  ### ローカルモード
+</div>
+
+ローカルモードは、認証なしで HyperDX をデプロイするための方法です。
+
+**認証はサポートされていません**。
+
+このモードは、認証や設定の永続化が不要な、簡単なテスト、開発、デモ、デバッグ用途を想定しています。
+
+このデプロイモデルの詳細については、[&quot;Local Mode Only&quot;](/ja/clickstack/deployment/local-mode-only) を参照してください。
+
+<div id="hosted-version">
+  ### ホステッド版
+</div>
+
+[play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com) では、ローカルモードで動作する ClickStack のホステッド版を利用できます。
+
+<div id="self-hosted-version">
+  ### セルフホスト版
+</div>
+
+<Steps>
+  <Step>
+    ### Docker で実行する
+
+    セルフホストのローカルモード用イメージには、OpenTelemetry Collector、ClickStack UI、ClickHouse server があらかじめ設定された状態で含まれています。これにより、アプリケーションからのテレメトリーデータを簡単に取り込み、最小限の追加セットアップで可視化できます。セルフホスト版を使い始めるには、必要なポートを公開して Docker コンテナーを実行するだけです。
+
+    ```shell
+    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    ```
+
+    &quot;All in one&quot; イメージとは異なり、**ローカルモードには認証が含まれていないため**、ユーザーの作成は求められません。
+  </Step>
+
+  <Step>
+    ### 接続認証情報を入力する
+
+    独自の**外部 ClickHouse クラスター**に接続するには、接続認証情報を手動で入力できます。
+
+    また、製品を手早く試したい場合は、**Connect to Demo Server** をクリックして、あらかじめ読み込まれたデータセットにアクセスし、セットアップ不要で ClickStack を試すこともできます。
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="認証情報" size="md" />
+
+    デモサーバーに接続する場合は、[デモデータセットの手順](/ja/clickstack/example-datasets/remote-demo-data)に従ってデータセットを確認できます。
+  </Step>
+</Steps>

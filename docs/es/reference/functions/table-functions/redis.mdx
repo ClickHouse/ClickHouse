@@ -1,0 +1,72 @@
+---
+description: 'Esta función de tabla permite integrar ClickHouse con Redis.'
+sidebarTitle: 'redis'
+slug: /sql-reference/table-functions/redis
+title: 'redis'
+doc_type: 'reference'
+---
+
+Esta función de tabla permite integrar ClickHouse con [Redis](https://redis.io/).
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+redis(host:port, key, structure[, db_index[, password[, pool_size]]])
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+| Argumento   | Descripción                                                                                                                        |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `host:port` | Dirección del servidor Redis; puede omitir el puerto y se usará el puerto predeterminado de Redis, 6379.                           |
+| `key`       | cualquier nombre de columna de la lista de columnas.                                                                               |
+| `structure` | El esquema de la tabla de ClickHouse que devuelve esta función.                                                                    |
+| `db_index`  | Índice de la base de datos de Redis, de 0 a 15; el valor predeterminado es 0.                                                      |
+| `password`  | Contraseña del usuario; el valor predeterminado es una cadena vacía.                                                               |
+| `pool_size` | Tamaño máximo del pool de conexiones de Redis; el valor predeterminado es 16.                                                      |
+| `primary`   | debe especificarse; solo admite una columna en la clave primaria. La clave primaria se serializará en binario como clave de Redis. |
+
+* las columnas distintas de la clave primaria se serializarán en binario como valor de Redis en el orden correspondiente.
+* las consultas con filtros por igualdad de clave o `IN` se optimizarán como búsquedas de varias claves en Redis. Si las consultas no tienen filtro por clave, se realizará un escaneo completo de la tabla, que es una operación costosa.
+
+Las [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections) no son compatibles con la función de tabla `redis` por el momento.
+
+<div id="returned_value">
+  ## Valor devuelto
+</div>
+
+Un objeto de tabla en el que la clave actúa como clave de Redis y las demás columnas se agrupan como valor de Redis.
+
+<div id="usage-example">
+  ## Ejemplo de uso
+</div>
+
+Lectura desde Redis:
+
+```sql
+SELECT * FROM redis(
+    'redis1:6379',
+    'key',
+    'key String, v1 String, v2 UInt32'
+)
+```
+
+Insertar en Redis:
+
+```sql
+INSERT INTO TABLE FUNCTION redis(
+    'redis1:6379',
+    'key',
+    'key String, v1 String, v2 UInt32') values ('1', '1', 1);
+```
+
+<div id="related">
+  ## Relacionado
+</div>
+
+* [El motor de tabla `Redis`](/es/reference/engines/table-engines/integrations/redis)
+* [Uso de Redis como fuente de diccionario](/es/reference/statements/create/dictionary/sources/redis)

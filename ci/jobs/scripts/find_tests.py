@@ -105,6 +105,104 @@ class Targeting:
                     return candidate
         return None
 
+    @staticmethod
+    def is_functional_test_file(fpath: str) -> bool:
+        """A changed path that is itself a stateless functional test source file."""
+        fpath = fpath.removeprefix("./")
+        return fpath.startswith("tests/queries/0_stateless/") and Path(fpath).is_file()
+
+    @staticmethod
+    def is_integration_test_file(fpath: str) -> bool:
+        """A changed path that is itself an integration test module."""
+        fpath = fpath.removeprefix("./")
+        return (
+            fpath.startswith("tests/integration/test_")
+            and not fpath.startswith("tests/integration/test_e2e_")
+            and Path(fpath).name.startswith("test")
+            and fpath.endswith(".py")
+            and Path(fpath).is_file()
+        )
+
+    @staticmethod
+    def is_ci_job_script(fpath: str) -> bool:
+        """A changed path under the CI job scripts themselves.
+
+        Tolerated alongside test-file changes by the batch-skip check in
+        `functional_tests.py` / `integration_test_job.py`: such a change is
+        exercised identically by every batch, so a batch that does not
+        contain the changed test file is still a valid check of the
+        (possibly changed) job script.
+        """
+        fpath = fpath.removeprefix("./")
+        return fpath.startswith("ci/jobs/") and Path(fpath).is_file()
+
+    @classmethod
+    def functional_test_hash_batch_file(cls, fpath: str):
+        """Return the on-disk stateless test filename (with extension) that
+        `clickhouse-test --run-by-hash-*` uses to bucket the given changed path,
+        or `None` if it cannot be resolved to a concrete test source file.
+
+        `clickhouse-test`'s `is_test_from_dir`/`get_selected_tests` only look
+        at files directly inside the suite root (`os.listdir`, not
+        recursive), so a file nested in a subdirectory - e.g.
+        `tests/queries/0_stateless/helpers/httpclient.py` or
+        `tests/queries/0_stateless/data_avro/generate_avro.sh` - is never a
+        test case there, no matter its extension. Hashing such a nested
+        file's basename would fabricate a bucket assignment that does not
+        correspond to how `--run-by-hash-*` actually splits the suite, so
+        return `None` (the caller then conservatively runs the batch) unless
+        the file's parent directory is exactly the suite root.
+        """
+        test_dir = Path("tests/queries/0_stateless")
+        path = Path(fpath.removeprefix("./"))
+        if path.parent != test_dir:
+            return None
+        fname = path.name
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            if fname.endswith(ext):
+                return fname
+        base_name = cls._derive_test_name(fpath)
+        if base_name is None:
+            return None
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            if (test_dir / f"{base_name}{ext}").is_file():
+                return f"{base_name}{ext}"
+        return None
+
+    @staticmethod
+    def is_sequential_functional_test(test_source_file: str) -> bool:
+        """True if the on-disk stateless test file (e.g. `00001_x.sql`, as
+        returned by `functional_test_hash_batch_file`) is tagged `no-parallel`
+        or `sequential`.
+
+        Mirrors `clickhouse-test`'s own `is_sequential_test`/tag-parsing logic,
+        so the batch-skip check in `functional_tests.py` can tell whether a
+        changed test would even be selected by a job invoked with the
+        `parallel`/`sequential` runner option (`--no-sequential`/`--no-parallel`),
+        which splits the suite into two independently hash-batched job flavors.
+        """
+        if test_source_file.endswith(".sql") or test_source_file.endswith(".sql.j2"):
+            comment_sign = "--"
+        elif test_source_file.endswith((".sh", ".py", ".expect")):
+            comment_sign = "#"
+        else:
+            return False
+        path = Path("tests/queries/0_stateless") / test_source_file
+        try:
+            with path.open("r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.rstrip("\n")
+                    if not line.startswith(comment_sign):
+                        continue
+                    rest = line[len(comment_sign):].lstrip()
+                    if not rest.startswith("Tags:"):
+                        continue
+                    tags = {t.strip() for t in rest[len("Tags:"):].split(",")}
+                    return "no-parallel" in tags or "sequential" in tags
+        except OSError:
+            return False
+        return False
+
     def get_changed_tests(self):
         # TODO: add support for integration tests
         result = set()
