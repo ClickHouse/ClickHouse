@@ -122,3 +122,23 @@ SELECT count() FROM t_minmax_null_nan WHERE val > 500 SETTINGS use_skip_indexes 
 SELECT countIf(explain LIKE '%Granules: 1/2%') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_minmax_null_nan WHERE val > 500);
 
 DROP TABLE t_minmax_null_nan;
+
+-- Single-sided negated comparison (issue #110266): NOT(f > c) is reduced by KeyCondition to the range
+-- f <= c, and a min=max=NaN granule reports "cannot match" and is pruned. But NOT(NaN > c) = NOT(false)
+-- = true, so the NaN row must be returned. Same for NOT(f < c). Non-negated forms are unaffected.
+
+DROP TABLE IF EXISTS t_minmax_nan_single;
+
+CREATE TABLE t_minmax_nan_single
+(f Float64, INDEX idx_f f TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 3, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_minmax_nan_single VALUES (nan);
+
+-- The all-NaN granule satisfies both negations and must be returned (1 row each).
+SELECT count() FROM t_minmax_nan_single WHERE NOT (f > 256);
+SELECT count() FROM t_minmax_nan_single WHERE NOT (f > 256) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_minmax_nan_single WHERE NOT (f < 256);
+SELECT count() FROM t_minmax_nan_single WHERE NOT (f < 256) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_minmax_nan_single;
