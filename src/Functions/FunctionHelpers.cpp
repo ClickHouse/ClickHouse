@@ -277,11 +277,11 @@ void validateNumberOfFunctionArguments(
         }
 }
 
-std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
+std::pair<VectorWithMemoryTracking<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
 {
-    assert(num_arguments > 0);
-    std::vector<const IColumn *> nested_columns(num_arguments);
+    chassert(num_arguments > 0);
+    VectorWithMemoryTracking<const IColumn *> nested_columns(num_arguments);
     const ColumnArray::Offsets * offsets = nullptr;
     for (size_t i = 0; i < num_arguments; ++i)
     {
@@ -325,7 +325,7 @@ wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const
         /// Const Nullable that are NULL.
         if (elem.column->onlyNull())
         {
-            assert(result_type->isNullable());
+            chassert(result_type->isNullable());
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
         }
 

@@ -1,0 +1,94 @@
+---
+slug: /use-cases/observability/clickstack/tuning-clickstack-schema
+title: 'Optimiser Managed ClickStack - affiner votre schéma'
+description: 'Affinez votre schéma ClickStack pour améliorer les performances des requêtes et l’efficacité du stockage dans Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'optimisation', 'schéma', 'managed', 'observabilité', 'performances', 'optimisation', 'stockage']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+Si vous utilisez ClickStack depuis un certain temps, vous avez probablement remarqué que le schéma par défaut couvre la plupart des charges de travail d’observabilité sans aucune modification. Cette page s’adresse au moment où cela ne suffit plus : la latence des requêtes commence à augmenter, ou vos modes d’accès se sont éloignés des réglages par défaut.
+
+Quatre optimisations couvrent l’essentiel de ce qui apporte des gains en pratique. Elles sont présentées approximativement par ordre d’effort. Les deux premières sont des modifications locales via `ALTER TABLE` que vous pouvez déployer de façon incrémentale. La troisième devient intéressante lorsque la même agrégation s’exécute à répétition dans un tableau de bord. La quatrième nécessite une migration de table ; c’est donc la plus complexe.
+
+Les résumés ci-dessous sont volontairement brefs. Pour comprendre le raisonnement derrière chaque modification, consulter les benchmarks et obtenir les procédures de déploiement sur des données existantes, voir [optimisation des performances](/fr/clickstack/managing/performance-tuning).
+
+<Steps>
+  <Step>
+    ## Matérialiser les attributs fréquemment interrogés
+
+    Filtrer sur `LogAttributes['service.version']` oblige ClickHouse à charger et décoder l’intégralité de la Map `LogAttributes` pour chaque ligne examinée. Promouvez cet attribut en colonne `MATERIALIZED` et le même filtre devient une simple lecture de colonne, généralement dix fois plus rapide. ClickStack réécrit automatiquement le filtre une fois la colonne créée, de sorte que les recherches enregistrées et les tableaux de bord continuent de fonctionner sans modification.
+
+    Ne retenez que les attributs que vous interrogez réellement souvent. Chaque colonne matérialisée a un coût en stockage et à l’insertion : il s’agit donc de « promouvoir ce que vous utilisez », pas de tout promouvoir.
+
+    ```sql
+    ALTER TABLE otel_logs
+      ADD COLUMN ServiceVersion LowCardinality(String)
+      MATERIALIZED LogAttributes['service.version'];
+    ```
+
+    Les lignes existantes restent vides dans la nouvelle colonne tant que vous n’exécutez pas aussi `ALTER TABLE otel_logs MATERIALIZE COLUMN ServiceVersion`.
+
+    Pour en savoir plus : [Materialize frequently queried attributes](/fr/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes).
+  </Step>
+
+  <Step>
+    ## Ajouter des skip indexes
+
+    Les skip indexes permettent à ClickHouse d’exclure les granules de données qui ne peuvent pas correspondre à un filtre, transformant un balayage complet en une lecture ciblée de faible ampleur. Trois types méritent d’être connus :
+
+    * **Text indexes** (`text(tokenizer = ...)`) sur les colonnes de type chaîne et sur les tableaux `mapKeys`/`*AttributeItems`. Le schéma de logs par défaut les inclut déjà.
+    * **Min-max indexes** sur les colonnes numériques filtrées par intervalle. `Duration` des traces est le cas classique.
+    * Des **bloom filters** pour les recherches d’égalité à forte cardinalité sur les versions de ClickHouse qui ne prennent pas encore en charge les text indexes.
+
+    ```sql
+    ALTER TABLE otel_traces ADD INDEX idx_duration Duration TYPE minmax GRANULARITY 1;
+    ALTER TABLE otel_traces MATERIALIZE INDEX idx_duration;
+    ```
+
+    Un skip index ne justifie son coût d’évaluation que s’il permet réellement d’éliminer des granules. Vérifiez-le avec `EXPLAIN indexes = 1` sur une requête représentative avant de supposer qu’il a apporté un gain.
+
+    Pour en savoir plus : [Adding skip indexes](/fr/clickstack/managing/performance-tuning#adding-skip-indexes).
+  </Step>
+
+  <Step>
+    ## Pré-calculer les agrégations répétées
+
+    Lorsqu’une même agrégation s’exécute encore et encore sur un tableau de bord (services principaux par taux d’erreur, latence p99 par endpoint, nombre de requêtes par minute), une vue matérialisée calcule le résultat à l’insertion et l’écrit dans une petite table d’agrégation. Les tableaux de bord interrogent alors cette agrégation plutôt que les logs ou traces bruts, ce qui coûte bien moins cher.
+
+    C’est particulièrement utile lorsque le tableau de bord est très consulté et que la table sous-jacente est volumineuse. En contrepartie, cela consomme un peu de CPU à l’insertion et ajoute une deuxième table à maintenir.
+
+    Pour en savoir plus : [Exploiting materialized views](/fr/clickstack/managing/performance-tuning#exploiting-materialized-views).
+  </Step>
+
+  <Step>
+    ## Choisir une clé primaire adaptée à votre modèle d’accès
+
+    La clé primaire détermine l’ordre de tri des lignes sur disque. Les filtres sur les premières colonnes de cette clé permettent à ClickHouse d’accéder directement à la région pertinente ; les filtres qui ne commencent pas par l’une de ces colonnes parcourent l’intégralité de la partition.
+
+    La clé des logs par défaut `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)` privilégie le cas d’usage « que s’est-il passé au cours des N dernières minutes pour le service X ? ». Si la plupart de vos requêtes commencent par une autre colonne (un ID de tenant, un ID client, une région), faire en sorte que la clé primaire commence par cette colonne est le changement le plus impactant que vous puissiez apporter.
+
+    ```sql
+    CREATE TABLE otel_logs_v2
+    (
+      -- mêmes colonnes que otel_logs
+    )
+    ENGINE = MergeTree
+    ORDER BY (TenantId, ServiceName, Timestamp);
+    ```
+
+    ClickHouse ne permet pas de modifier la clé primaire sur place : il s’agit donc d’une migration de table, et non d’un simple `ALTER`. Le guide de performance tuning explique pas à pas comment créer la nouvelle table, rediriger l’ingestion et utiliser une table `Merge` pour que les tableaux de bord existants continuent de fonctionner sur les anciennes comme sur les nouvelles données.
+
+    Pour en savoir plus : [Modifying the primary key](/fr/clickstack/managing/performance-tuning#modifying-the-primary-key).
+  </Step>
+</Steps>
+
+<div id="further-reading">
+  ## Pour aller plus loin
+</div>
+
+* [Optimisation des performances](/fr/clickstack/managing/performance-tuning) : guide complet, incluant les projections et l’accélération des recherches de lignes.
+* [Tables et schémas utilisés par ClickStack](/fr/clickstack/ingesting-data/schemas) : le DDL de référence sur lequel s’appuient les optimisations.
+* [Mise en production](/fr/clickstack/managing/production) : recommandations plus générales pour la production.

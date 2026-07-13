@@ -33,7 +33,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionBitmaskToList : public IFunction
+class FunctionBitmaskToList final : public IFunction
 {
 public:
     static constexpr auto name = "bitmaskToList";
@@ -133,7 +133,7 @@ private:
 };
 
 
-class FunctionBitmaskToArray : public IFunction
+class FunctionBitmaskToArray final : public IFunction
 {
 public:
     static constexpr auto name = "bitmaskToArray";
@@ -218,7 +218,7 @@ public:
     }
 };
 
-class FunctionBitPositionsToArray : public IFunction
+class FunctionBitPositionsToArray final : public IFunction
 {
 public:
     static constexpr auto name = "bitPositionsToArray";

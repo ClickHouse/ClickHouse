@@ -1,3 +1,4 @@
+#include <Functions/multiIf.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -10,6 +11,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -116,7 +118,7 @@ public:
 
         for_conditions([&](const DataTypePtr & arg)
         {
-            const IDataType * nested_type;
+            const IDataType * nested_type = nullptr;
             if (arg->isNullable())
             {
                 if (arg->onlyNull())
@@ -167,7 +169,7 @@ public:
         *  depending on values of conditions.
         */
 
-        std::vector<Instruction> instructions;
+        VectorWithMemoryTracking<Instruction> instructions;
         instructions.reserve(arguments.size() / 2 + 1);
 
         Columns converted_columns_holder;
@@ -324,7 +326,7 @@ public:
 
 private:
 
-    static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    static void executeInstructions(VectorWithMemoryTracking<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
         for (size_t i = 0; i < rows; ++i)
         {
@@ -360,7 +362,7 @@ private:
 
     /// We should read source from which instruction on each row?
     template <typename S>
-    static NO_INLINE void calculateInserts(const std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
+    static NO_INLINE void calculateInserts(const VectorWithMemoryTracking<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
     {
         for (S i = static_cast<S>(instructions.size() - 1); i != static_cast<S>(-1); --i)
         {
@@ -402,7 +404,7 @@ private:
 
     template <typename T, typename S, bool nullable_result = false>
     static NO_INLINE void executeInstructionsColumnar(
-        const std::vector<Instruction> & instructions,
+        const VectorWithMemoryTracking<Instruction> & instructions,
         size_t rows,
         PaddedPODArray<T> & res_data,
         PaddedPODArray<UInt8> * res_null_map = nullptr)
@@ -419,8 +421,8 @@ private:
             res_null_map->resize_exact(rows);
         }
 
-        std::vector<const T *> data_cols(instructions.size(), nullptr);
-        std::vector<const UInt8 *> null_map_cols(instructions.size(), nullptr);
+        VectorWithMemoryTracking<const T *> data_cols(instructions.size(), nullptr);
+        VectorWithMemoryTracking<const UInt8 *> null_map_cols(instructions.size(), nullptr);
         for (size_t i = 0; i < instructions.size(); ++i)
         {
             const auto & instruction = instructions[i];
@@ -490,7 +492,10 @@ private:
         {
             auto & cond_column = arguments[i - 1].column;
             /// If condition is const or null and value is false, we can skip execution of expression after this condition.
-            if ((isColumnConst(*cond_column) || cond_column->onlyNull()) && !cond_column->empty() && !cond_column->getBool(0))
+            /// `onlyNull` columns (e.g. `Const(Nullable(Nothing))`) are treated as false: their dummy nested column would
+            /// throw from `getBool`, and per the loop preamble `multiIf` already treats NULL conditions as 0.
+            if ((isColumnConst(*cond_column) || cond_column->onlyNull()) && !cond_column->empty()
+                && (cond_column->onlyNull() || !cond_column->getBool(0)))
             {
                 condition_mask_info.has_ones = false;
                 condition_mask_info.has_zeros = true;

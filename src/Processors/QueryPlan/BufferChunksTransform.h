@@ -15,7 +15,7 @@ class Block;
 /// the output whenever it is ready. It can be used
 /// to increase parallelism of execution, for example
 /// when it is adeded before MergingSortedTransform.
-class BufferChunksTransform : public IProcessor
+class BufferChunksTransform final : public IProcessor
 {
 public:
     /// OR condition is used for the limits on rows and bytes.

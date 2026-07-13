@@ -49,7 +49,7 @@ NO_SANITIZE_UNDEFINED inline decltype(auto) callJITFunction(F && f, Args &&... a
 struct CompiledFunction
 {
 
-    JITCompiledFunction compiled_function;
+    JITCompiledFunction compiled_function{};
 
     CHJIT::CompiledModule compiled_module;
 };
@@ -74,15 +74,15 @@ using JITInsertAggregateStatesIntoColumnsFunction = void (*)(ColumnDataRowsOffse
 
 struct CompiledAggregateFunctions
 {
-    JITCreateAggregateStatesFunction create_aggregate_states_function;
-    JITAddIntoAggregateStatesFunction add_into_aggregate_states_function;
-    JITAddIntoAggregateStatesFunctionSinglePlace add_into_aggregate_states_function_single_place;
+    JITCreateAggregateStatesFunction create_aggregate_states_function{};
+    JITAddIntoAggregateStatesFunction add_into_aggregate_states_function{};
+    JITAddIntoAggregateStatesFunctionSinglePlace add_into_aggregate_states_function_single_place{};
 
-    JITMergeAggregateStatesFunction merge_aggregate_states_function;
-    JITInsertAggregateStatesIntoColumnsFunction insert_aggregates_into_columns_function;
+    JITMergeAggregateStatesFunction merge_aggregate_states_function{};
+    JITInsertAggregateStatesIntoColumnsFunction insert_aggregates_into_columns_function{};
 
     /// Count of functions that were compiled
-    size_t functions_count;
+    size_t functions_count{};
 
     /// Compiled module. It is client responsibility to destroy it after functions are no longer required.
     CHJIT::CompiledModule compiled_module;
@@ -103,7 +103,7 @@ using JITSortDescriptionFunc = int8_t (*)(size_t, size_t, ColumnData *, ColumnDa
 
 struct CompiledSortDescriptionFunction
 {
-    JITSortDescriptionFunc comparator_function;
+    JITSortDescriptionFunc comparator_function{};
     CHJIT::CompiledModule compiled_module;
 };
 

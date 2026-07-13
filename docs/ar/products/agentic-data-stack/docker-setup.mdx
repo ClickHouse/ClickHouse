@@ -1,0 +1,155 @@
+---
+sidebarTitle: 'إعداد Docker'
+title: 'إعداد Agentic Data Stack باستخدام Docker Compose'
+description: 'شغّل حزمة Agentic Data Stack الكاملة (ClickHouse وLibreChat وخادم MCP وLangfuse) باستخدام Docker Compose'
+doc_type: 'guide'
+keywords: ['agentic data stack', 'docker compose', 'setup', 'LibreChat', 'MCP', 'Langfuse']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+شغّل Agentic Data Stack بالكامل محليًا باستخدام Docker Compose لطرح أسئلة على بياناتك منذ أول تسجيل دخول. يتيح لك أمر واحد فقط، وهو `docker compose up`، تشغيل [LibreChat](/ar/products/agentic-data-stack/components/librechat) و[خادم MCP من ClickHouse](/ar/products/agentic-data-stack/components/mcp-server) و[ClickHouse](/ar/get-started/setup/install) و[Langfuse](/ar/products/agentic-data-stack/components/langfuse) لأغراض المراقبة.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* **Docker** مع إضافة Compose (الإصدار 2 أو أحدث).
+* **Git**، لاستنساخ المستودع.
+* مفتاح API لمزوّد نماذج (مثل OpenAI أو Anthropic أو Google). يحتاج الوكيل إلى نموذج للإجابة عن الأسئلة، لذا وفّر مفتاحًا أثناء الإعداد أو أضِف واحدًا في واجهة LibreChat قبل بدء أول محادثة.
+
+<div id="stand-up-the-stack">
+  ## شغِّل المكدس
+</div>
+
+<Steps>
+  <Step title="استنسخ المستودع">
+    ```bash
+    git clone https://github.com/ClickHouse/agentic-data-stack
+    cd agentic-data-stack
+    ```
+
+    يتضمّن المستودع ملف `docker-compose.yml` في المستوى الأعلى، لذا يمكنك تشغيل المكدس بالكامل بأمر واحد. راجع [البنية](#how-it-is-wired) للاطلاع على القائمة الكاملة للخدمات.
+  </Step>
+
+  <Step title="شغّل سكربت إعداد العرض التوضيحي">
+    ```bash
+    ./scripts/prepare-demo.sh
+    ```
+
+    يؤدي ذلك إلى إنشاء ملف `.env` يحتوي على بيانات الاعتماد لكل خدمة، ثم يعرض قائمة تفاعلية لإعداد مفاتيح API لمزوّد تختاره. ويمكنك أيضًا ضبط هذه المفاتيح مباشرةً في ملف `.env`. وأي مزوّد تتخطّاه سيظل مضبوطًا على `user_provided`، بحيث يمكنك إضافة مفتاحك الخاص في واجهة LibreChat بدلًا من ذلك.
+
+    عند التشغيل لأول مرة، ينشئ المكدس مستخدم Admin من ملف `.env`. وبيانات تسجيل الدخول الافتراضية هي `admin@admin.com` / `password`.
+
+    <Accordion title="عيّن بيانات تسجيل الدخول الخاصة بك">
+      شغّل `generate-env.sh` بهذه المتغيرات قبل `prepare-demo.sh`:
+
+      ```bash
+      USER_EMAIL="you@example.com" USER_PASSWORD="supersecret" USER_NAME="YourName" ./scripts/generate-env.sh
+      ```
+
+      بعد ذلك سيتعرّف `prepare-demo.sh` على ملف `.env` الحالي وينتقل مباشرةً إلى إعداد مفاتيح API.
+    </Accordion>
+  </Step>
+
+  <Step title="ابدأ الخدمات في الخلفية">
+    ```bash
+    docker compose up -d
+    ```
+
+    يُرتَّب تسلسل بدء التشغيل تلقائيًا. ولا يبدأ LibreChat إلا بعد أن تصبح حالة خادم MCP سليمة، لذا يكون اتصاله بـ ClickHouse جاهزًا عند أول تحميل.
+  </Step>
+
+  <Step title="افتح LibreChat وسجّل الدخول">
+    بمجرد تشغيل المكدس، ستصبح الخدمات متاحة في متصفحك:
+
+    * **LibreChat** (واجهة الدردشة) — [http://localhost:3080](http://localhost:3080)
+    * **Langfuse** (المراقبة) — [http://localhost:3000](http://localhost:3000)
+    * **لوحة إدارة** (إعداد LibreChat عبر المتصفح) — [http://localhost:3081](http://localhost:3081)
+    * **وحدة تحكم MinIO** (تخزين الكائنات؛ بيانات الاعتماد في `.env`) — [http://localhost:9091](http://localhost:9091)
+
+    سجّل الدخول إلى LibreChat باستخدام بيانات اعتماد المسؤول من ملف `.env`.
+  </Step>
+
+  <Step title="اختر نموذجًا">
+    يكون هناك نموذج محدد افتراضيًا. وإذا أردت تغييره، فافتح محدِّد النماذج واختر النموذج الذي تريد استخدامه.
+
+    <Image img="/images/agentic-data-stack/select-model.webp" alt="محدِّد النماذج في LibreChat في الزاوية العلوية اليسرى، ويعرض النموذج الافتراضي مع تلميح Select a model" size="md" />
+
+    إذا لم تُعيّن مفتاح مزوّد أثناء الإعداد، فأضف واحدًا في واجهة المستخدم.
+
+    <Accordion title="عيّن مفتاح مزوّد في واجهة المستخدم">
+      افتح محدِّد النماذج وانقر على **Set API Key** بجانب المزوّد.
+
+      <Image img="/images/agentic-data-stack/set-api-key.webp" alt="محدِّد نماذج LibreChat مع زر Set API Key بجانب مزوّد Anthropic" size="md" />
+
+      ألصق مفتاحك في مربع الحوار وانقر على **Submit**. يمكنك تعيين تاريخ انتهاء، أو الإبقاء على المفتاح بدون انتهاء.
+
+      <Image img="/images/agentic-data-stack/set-api-key-modal.webp" alt="مربع الحوار Set API Key for Anthropic مع قائمة منسدلة لتاريخ الانتهاء، وحقل Key، وزري Submit وRevoke" size="md" />
+    </Accordion>
+  </Step>
+
+  <Step title="اختر خادم MCP">
+    يضبط المكدس مسبقًا خوادم MCP الخاصة به في ملف `librechat.yaml` الخاص بـ LibreChat. وفي منطقة كتابة الرسائل، انقر على **MCP Servers** واختر **ClickHouse-Local**.
+
+    واختر **ClickHouse-Cloud** بدلًا من ذلك لاستخدام خدمة ClickHouse Cloud.
+
+    {/* TODO: أرشد المستخدمين (أو أضف رابطًا إلى توثيق Remote MCP على /cloud/features/ai-ml/remote-mcp) بشأن توصيل ClickHouse-Cloud — إذ يتطلب OAuth flow، بخلاف الخادم المحلي المضمّن. */}
+
+    <Image img="/images/agentic-data-stack/select-clickhouse-local.webp" alt="قائمة MCP Servers مفتوحة في منطقة الكتابة في LibreChat، وتعرض ClickHouse-Local مع نقطة اتصال خضراء وClickHouse-Cloud" size="md" />
+  </Step>
+
+  <Step title="اطرح سؤالك الأول">
+    على سبيل المثال:
+
+    > ما قواعد البيانات والجداول المتاحة، وكم عدد الصفوف في أكبر جدول؟
+
+    يستخدم الوكيل أدوات خادم MCP لسرد قواعد البيانات والجداول، وتشغيل استعلامات read-only على ClickHouse، وبناء إجابة من النتائج. ولا تحتاج إلى كتابة SQL.
+
+    <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="LibreChat يجيب عن السؤال المثال عبر استدعاء أدوات ClickHouse-Local MCP وسرد قواعد البيانات والجداول المتاحة" size="md" />
+  </Step>
+</Steps>
+
+<div id="stop-or-reset">
+  ## إيقاف المكدس أو إعادة ضبطه
+</div>
+
+أوقف الخدمات من دون حذف أي شيء:
+
+```bash
+docker compose down
+```
+
+لإزالة جميع الحاويات ومسح كل وحدات التخزين والبدء من جديد بشكل نظيف، استخدم البرنامج النصي لإعادة تعيين المكدس:
+
+```bash
+./scripts/reset-all.sh
+```
+
+<div id="how-it-is-wired">
+  ## البنية المعمارية
+</div>
+
+يُعدّ `docker-compose.yml` نقطة دخول بسيطة تتضمن أربعة ملفات Compose:
+
+| ملف Compose                  | يعرّف                                                               |
+| ---------------------------- | ------------------------------------------------------------------- |
+| `langfuse-compose.yml`       | Langfuse وخدماته الداعمة (ClickHouse وPostgreSQL وRedis وMinIO)     |
+| `clickhouse-mcp-compose.yml` | خادم ClickHouse MCP                                                 |
+| `librechat-compose.yml`      | LibreChat وخدماته الداعمة (MongoDB وMeilisearch وpgvector وRAG API) |
+| `admin-panel-compose.yml`    | لوحة إدارة LibreChat                                                |
+
+هناك عاملان يجعلان التشغيل بأمر واحد ممكنًا:
+
+* **فحوصات الحالة وترتيب البدء.** يستخدم Compose فحوصات الحالة لتنظيم تسلسل بدء التشغيل. ينتظر خادم MCP حتى يصبح ClickHouse جاهزًا، وينتظر LibreChat خادم MCP.
+* **ملف بيئة مشترك.** يحتوي `.env` على بيانات الاعتماد وقيم الاتصال الخاصة بكل خدمة، وتُضبط هذه القيم بشكل متسق بحيث تتمكن الخدمات من الوصول إلى بعضها بعضًا. على سبيل المثال، يتصل خادم MCP بـ ClickHouse باستخدام بيانات اعتماد ClickHouse من `.env`. كما يُزوَّد LibreChat بكل من `LANGFUSE_PUBLIC_KEY` و`LANGFUSE_SECRET_KEY` و`LANGFUSE_BASE_URL`، بحيث يُرسَل تتبّع كل تشغيل إلى Langfuse مباشرةً من البداية.
+
+يلعب ClickHouse دورين في هذه المنظومة: فهو الواجهة الخلفية للتخزين لدى Langfuse، وهو أيضًا قاعدة البيانات التي يستعلم عنها الوكيل عبر خادم MCP.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* تعرّف على دور كل مكوّن في المكدس: [خادم MCP من ClickHouse](/ar/products/agentic-data-stack/components/mcp-server)، و[LibreChat](/ar/products/agentic-data-stack/components/librechat)، و[Langfuse](/ar/products/agentic-data-stack/components/langfuse).
+* اطّلع على [نظرة عامة](/ar/products/agentic-data-stack/overview) لمعرفة كيف تتكامل مكوّنات المكدس.
+* لتجربة المكدس على مجموعات بيانات عامة من دون تثبيت أي شيء، استخدم [AgentHouse](https://llm.clickhouse.com)، النسخة التجريبية المستضافة.

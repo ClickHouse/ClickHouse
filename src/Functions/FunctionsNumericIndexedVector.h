@@ -32,7 +32,7 @@ extern const int ILLEGAL_COLUMN;
 }
 
 template <typename Name>
-class FunctionNumericIndexedVectorBuildImpl : public IFunction,
+class FunctionNumericIndexedVectorBuildImpl final : public IFunction,
                                               public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVectorBuildImpl<Name>>
 {
 public:
@@ -125,7 +125,7 @@ struct NameNumericIndexedVectorBuild
 using FunctionNumericIndexedVectorBuild = FunctionNumericIndexedVectorBuildImpl<NameNumericIndexedVectorBuild>;
 
 template <template <class> class FuncImpl>
-class FunctionNumericIndexedVector : public IFunction, public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVector<FuncImpl>>
+class FunctionNumericIndexedVector final : public IFunction, public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVector<FuncImpl>>
 {
 public:
     /// The template parameters in BSINumericIndexedVector are randomly filled.
@@ -219,7 +219,7 @@ public:
         else
         {
             auto value_column = castColumn(arguments[1], std::make_shared<DataTypeNumber<typename VectorImpl::ValueType>>());
-            const PaddedPODArray<typename VectorImpl::ValueType> * second_column_ptr;
+            const PaddedPODArray<typename VectorImpl::ValueType> * second_column_ptr = nullptr;
             if (is_column_const[1])
                 second_column_ptr = &typeid_cast<const ColumnVector<typename VectorImpl::ValueType> &>(
                                          typeid_cast<const ColumnConst &>(*value_column.get()).getDataColumn())
@@ -622,7 +622,7 @@ using FunctionNumericIndexedVectorCardinality
 using FunctionNumericIndexedVectorAllValueSum
     = FunctionNumericIndexedVectorToNumberImpl<Float64, NumericIndexedVectorAllValueSumImpl<Float64>>;
 
-class FunctionNumericIndexedVectorGetValueImpl : public IFunction,
+class FunctionNumericIndexedVectorGetValueImpl final : public IFunction,
                                                  public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVectorGetValueImpl>
 {
 public:
@@ -694,7 +694,7 @@ public:
         auto uint64_column = castColumn(arguments[1], std::make_shared<DataTypeUInt64>());
         const IColumn * second_column_ptr = uint64_column.get();
 
-        const PaddedPODArray<UInt64> * container1;
+        const PaddedPODArray<UInt64> * container1 = nullptr;
         if (is_column_const[1])
             container1 = &typeid_cast<const ColumnUInt64 &>(typeid_cast<const ColumnConst &>(*second_column_ptr).getDataColumn()).getData();
         else
@@ -802,7 +802,7 @@ public:
 using FunctionNumericIndexedVectorShortDebugString = FunctionNumericIndexedVectorToStringImpl<NumericIndexedVectorShortDebugStringImpl>;
 
 template <typename Name>
-class FunctionNumericIndexedVectorToMapImpl : public IFunction,
+class FunctionNumericIndexedVectorToMapImpl final : public IFunction,
                                               public FunctionNumericIndexedVectorHelper<FunctionNumericIndexedVectorToMapImpl<Name>>
 {
 public:

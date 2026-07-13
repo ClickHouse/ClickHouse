@@ -22,6 +22,8 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/String.h>
 #include <boost/algorithm/string/split.hpp>
 #include <string_view>
@@ -51,7 +53,7 @@ const KnownIdentifierFunc & getKnownIdentifierFunc()
     /// as-is instead of being replaced by random words.
     static const KnownIdentifierFunc func = []() -> KnownIdentifierFunc
     {
-        auto names = std::make_shared<std::unordered_set<std::string>>();
+        auto names = std::make_shared<UnorderedSetWithMemoryTracking<std::string>>();
 
         auto insert = [&](const auto & range) { names->insert(range.begin(), range.end()); };
         insert(StorageFactory::instance().getAllRegisteredNames());
@@ -66,14 +68,14 @@ const KnownIdentifierFunc & getKnownIdentifierFunc()
 
         for (const auto * it = auto_time_zones; *it; ++it)
         {
-            std::vector<std::string> split;
+            VectorWithMemoryTracking<std::string> split;
             boost::split(split, std::string(*it), [](char c) { return c == '/'; });
             for (const auto & word : split)
                 if (!word.empty())
                     names->insert(word);
         }
 
-        auto names_lowercase = std::make_shared<std::unordered_set<std::string>>();
+        auto names_lowercase = std::make_shared<UnorderedSetWithMemoryTracking<std::string>>();
         for (const auto & name : *names)
             names_lowercase->insert(Poco::toLower(name));
 
@@ -222,7 +224,7 @@ ColumnPtr ObfuscateQueryFunction::execute(const ColumnsWithTypeAndName & argumen
     return col_res;
 }
 
-class ObfuscateQueryFunctionAdaptor : public IFunction
+class ObfuscateQueryFunctionAdaptor final : public IFunction
 {
 private:
     ObfuscateQueryFunction::Mode getMode(size_t num_args) const

@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the test exercises auto statistics, not parallel replicas, and reading
+-- through the randomized parallel_replicas cluster times out under sanitizers.
+
 DROP TABLE IF EXISTS test_table;
 SET allow_statistics = 1;
 SET insert_keeper_fault_injection_probability = 0.0;
@@ -15,7 +19,8 @@ ORDER BY id
 SETTINGS
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
-    auto_statistics_types = 'uniq,minmax';
+    auto_statistics_types = 'uniq,minmax',
+    merge_max_block_size = 8192; -- prevent extreme per-block values injected by the test harness from making the merge time out
 
 SYSTEM STOP MERGES test_table;
 

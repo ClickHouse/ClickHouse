@@ -43,7 +43,7 @@ class ClickHouseBinary:
         return res
 
     def start(self):
-        print(f"Starting ClickHouse server")
+        print("Starting ClickHouse server")
         print("Command: ", self.start_cmd)
         self.log_fd = open(self.log_file, "w")
         self.proc = subprocess.Popen(
@@ -56,12 +56,12 @@ class ClickHouseBinary:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print(f"ClickHouse server process started -> wait ready")
+        print("ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print(f"ClickHouse server ready")
+            print("ClickHouse server ready")
         else:
-            print(f"ClickHouse server NOT ready")
+            print("ClickHouse server NOT ready")
         return res
 
     def wait_ready(self):
@@ -70,13 +70,13 @@ class ClickHouseBinary:
         delay = 2
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {self.port} --query "select 1"', verbose=True
+                f'clickhouse-client --port {self.port} --receive_timeout=5 --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print("Server ready")
                 break
             else:
-                print(f"Server not ready, wait")
+                print("Server not ready, wait")
             Utils.sleep(delay)
         else:
             Utils.print_formatted_error(
@@ -87,7 +87,6 @@ class ClickHouseBinary:
 
 
 def main():
-    res = True
     results = []
     stop_watch = Utils.Stopwatch()
     ch = ClickHouseBinary()
@@ -246,7 +245,7 @@ def main():
                 total,
                 success / total,
                 reset_color,
-                f" - " + html.escape(description) if description else "",
+                " - " + html.escape(description) if description else "",
             )
         )
 

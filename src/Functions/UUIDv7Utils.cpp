@@ -1,4 +1,5 @@
 #include <Functions/UUIDv7Utils.h>
+#include <Core/UUID.h>
 
 namespace DB
 {

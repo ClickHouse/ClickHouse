@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -10,6 +11,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Common/Exception.h>
@@ -131,7 +133,7 @@ namespace
 }
 
 
-std::vector<std::pair<String, Int8>> getOriginEnumsValues()
+static std::vector<std::pair<String, Int8>> getOriginEnumsValues()
 {
     return std::vector<std::pair<String, Int8>>{
         {"System", static_cast<Int8>(FunctionOrigin::SYSTEM)},
@@ -203,6 +205,11 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         /// WASM functions are stored in the same SQL objects storage but have their own origin.
         /// They are emitted separately below; skip them here to avoid duplicates.
         if (ast && ast->as<ASTCreateWasmFunctionQuery>())
+            continue;
+
+        /// The same applies to driver-created executable functions: they are materialized
+        /// in the executable UDF loader and emitted with the `ExecutableUserDefined` origin below.
+        if (ast && ast->as<ASTCreateFunctionWithDriverQuery>())
             continue;
 
         String create_query;
@@ -280,3 +287,6 @@ void StorageSystemFunctions::restoreDataFromBackup(RestorerFromBackup & restorer
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemFunctions) }
