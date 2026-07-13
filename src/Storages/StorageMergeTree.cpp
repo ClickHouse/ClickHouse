@@ -307,7 +307,16 @@ void StorageMergeTree::shutdown(bool)
         refresh_stats_task->deactivate();
 
     if (shutdown_called.exchange(true))
+    {
+        /// The same race applies to the outdated/unexpected data parts loading tasks: a racing `startup()`
+        /// can re-arm them via `startOutdatedAndUnexpectedDataPartsLoadingTask` after the first `shutdown()`
+        /// already stopped them. The destructor's `shutdown(false)` takes this branch, so stop them again
+        /// here: otherwise an armed task could fire while `~MergeTreeData` destroys the state its callback
+        /// touches (the task holders are destroyed after `outdated_unloaded_data_parts` and
+        /// `unexpected_data_parts`). Stopping is idempotent and waits for a running iteration to finish.
+        stopOutdatedAndUnexpectedDataPartsLoadingTask();
         return;
+    }
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
