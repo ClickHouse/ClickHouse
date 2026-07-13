@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
-            {"use_projection_index_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by a projection index before read tasks are created in MergeTree read pools."},
+            {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the new analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
             {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},
             {"optimize_trivial_count_with_sparsity_filter", false, false, "New (experimental) setting to serve `SELECT count() FROM t WHERE <pred>` from per-column `num_defaults` / `num_rows` recorded in `serialization.json` when `<pred>` partitions rows into defaults vs non-defaults."},
@@ -52,6 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_embedding_default_credentials", "", "", "New setting"},
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
+            {"use_projection_index_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by a projection index before read tasks are created in MergeTree read pools."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"optimize_or_like_chain", false, true, "Enable by default: optimize OR chains of LIKE/ILIKE/match into multiSearchAny (pure-substring patterns) or multiMatchAny (other patterns, when Hyperscan/Vectorscan is permitted); when neither fast path applies the original OR chain is kept unchanged."},
             {"optimize_or_like_chain_min_patterns", 0, 10, "New setting controlling the minimum number of non-pure-substring LIKE/ILIKE/match branches (sharing the same LHS expression) required for optimize_or_like_chain to rewrite a chain into multiMatchAny. Shorter chains are kept as-is because the multiMatchAny (Hyperscan) rewrite only becomes faster than short-circuit OR evaluation from about nine branches."},
