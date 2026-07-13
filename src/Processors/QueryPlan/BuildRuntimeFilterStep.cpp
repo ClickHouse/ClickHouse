@@ -172,7 +172,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
 
-    DataTypePtr filter_column_type = decodeDataType(ctx.in);
+    DataTypePtr filter_column_type = decodeDataType(ctx.in, ctx.max_type_complexity);
 
     String filter_name;
     readStringBinary(filter_name, ctx.in);

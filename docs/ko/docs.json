@@ -2215,10 +2215,6 @@
                     }
                   ],
                   "root": "ko/products/cloud/guides/index"
-                },
-                {
-                  "group": "API 참조",
-                  "openapi": "https://api.clickhouse.cloud/v1"
                 }
               ]
             },

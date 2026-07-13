@@ -18,9 +18,7 @@ Generate TLS certificates for ClickHouse Server and Keeper using Cert Manager.
 
 <Steps>
 
-<Step>
-
-### 1. Create a Certificate Issuer
+<Step title="1. Create a Certificate Issuer" id="1-create-a-certificate-issuer">
 
 Create a self-signed `Issuer` to act as the certificate authority:
 
@@ -38,9 +36,7 @@ spec:
 
 </Step>
 
-<Step>
-
-### 2. Create Certificate Resources
+<Step title="2. Create Certificate Resources" id="2-create-certificate-resources">
 
 Create a `Certificate` resource for ClickHouse Server:
 
@@ -65,9 +61,7 @@ Repeat with the appropriate `dnsNames` and `secretName` for Keeper if needed.
 
 </Step>
 
-<Step>
-
-### 3. Configure Helm Values to Use Cert-Manager Secret Keys
+<Step title="3. Configure Helm Values to Use Cert-Manager Secret Keys" id="3-configure-helm-values-to-use-cert-manager-secret-keys">
 
 By default, the `onprem-clickhouse-cluster` Helm chart expects secret keys named `ca.crt`, `server.crt`, and `server.key`. Cert Manager produces `ca.crt`, `tls.crt`, and `tls.key`. Override the key names in your Helm values:
 
