@@ -119,9 +119,9 @@ void Router::runFirstSeenHook(const String & command, const char * kind, const S
 
 BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_config)
 {
-    const String key = fmt::format("{}:{}:{}:{}:{}:{}:{}",
+    const String key = fmt::format("{}:{}:{}:{}:{}:{}:{}:{}",
         backend_config.host, backend_config.tcp_port, backend_config.http_port, backend_config.mysql_port,
-        backend_config.postgresql_port, backend_config.raw_port, backend_config.secure);
+        backend_config.postgresql_port, backend_config.ssh_port, backend_config.raw_port, backend_config.secure);
 
     std::lock_guard lock(dynamic_mutex);
     auto it = dynamic_pools.find(key);
