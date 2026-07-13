@@ -2,11 +2,8 @@
 
 -- Test for bug 95944: text index preprocessor fails with ALIAS columns
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
-SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
-SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -14,27 +11,27 @@ SELECT 'Test ALIAS column without preprocessor';
 
 CREATE TABLE tab
 (
-    provider Nullable(String),
-    name String ALIAS ifNull(provider, 'default_name'),
-    INDEX name_text_idx(name) TYPE text(tokenizer = splitByNonAlpha)
+    str Nullable(String),
+    alias String ALIAS ifNull(str, 'default_name'),
+    INDEX idx(alias) TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree
 ORDER BY tuple();
 
 INSERT INTO tab VALUES ('Hello'), ('WORLD'), (NULL);
 
-SELECT count() FROM tab WHERE hasToken(name, 'Hello');
-SELECT count() FROM tab WHERE hasToken(name, 'WORLD');
-SELECT count() FROM tab WHERE hasToken(name, 'default');
-SELECT count() FROM tab WHERE hasToken(name, 'nonexistent');
+SELECT count() FROM tab WHERE hasToken(alias, 'Hello');
+SELECT count() FROM tab WHERE hasToken(alias, 'WORLD');
+SELECT count() FROM tab WHERE hasToken(alias, 'default');
+SELECT count() FROM tab WHERE hasToken(alias, 'nonexistent');
 
 SELECT '-- Verify original-case tokens are indexed (no preprocessor)';
-SELECT token FROM mergeTreeTextIndex(currentDatabase(), tab, name_text_idx) ORDER BY token;
+SELECT token FROM mergeTreeTextIndex(currentDatabase(), tab, idx) ORDER BY token;
 
 SELECT '-- Verify text index is used by hasToken';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
-    SELECT count() FROM tab WHERE hasToken(name, 'Hello')
+    SELECT count() FROM tab WHERE hasToken(alias, 'Hello')
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 1, 3;
 
@@ -44,11 +41,11 @@ SELECT 'Test ALIAS column with preprocessor';
 
 CREATE TABLE tab
 (
-    provider Nullable(String),
-    name String ALIAS ifNull(provider, 'DEFAULT_NAME'),
-    INDEX name_text_idx(name) TYPE text(
-        tokenizer = splitByNonAlpha,
-        preprocessor = lower(name)
+    str Nullable(String),
+    alias String ALIAS ifNull(str, 'DEFAULT_NAME'),
+    INDEX idx(alias) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        preprocessor = lower(alias)
     )
 )
 ENGINE = MergeTree
@@ -56,18 +53,18 @@ ORDER BY tuple();
 
 INSERT INTO tab VALUES ('Hello'), ('WORLD'), (NULL);
 
-SELECT count() FROM tab WHERE hasToken(name, 'hello');
-SELECT count() FROM tab WHERE hasToken(name, 'world');
-SELECT count() FROM tab WHERE hasToken(name, 'default');
-SELECT count() FROM tab WHERE hasToken(name, 'nonexistent');
+SELECT count() FROM tab WHERE hasToken(alias, 'hello');
+SELECT count() FROM tab WHERE hasToken(alias, 'world');
+SELECT count() FROM tab WHERE hasToken(alias, 'default');
+SELECT count() FROM tab WHERE hasToken(alias, 'nonexistent');
 
 SELECT '-- Verify preprocessed tokens are indexed (all lowercased)';
-SELECT token FROM mergeTreeTextIndex(currentDatabase(), tab, name_text_idx) ORDER BY token;
+SELECT token FROM mergeTreeTextIndex(currentDatabase(), tab, idx) ORDER BY token;
 
 SELECT '-- Verify text index is used by hasToken';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
-    SELECT count() FROM tab WHERE hasToken(name, 'hello')
+    SELECT count() FROM tab WHERE hasToken(alias, 'hello')
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 1, 3;
 
@@ -103,17 +100,17 @@ SELECT 'Test ALIAS name colliding with tokenizer identifier';
 
 CREATE TABLE tab
 (
-    s String,
-    `array` String ALIAS s,
-    INDEX idx(s) TYPE text(tokenizer = array)
+    str String,
+    arr String ALIAS str,
+    INDEX idx(str) TYPE text(tokenizer = 'array')
 )
 ENGINE = MergeTree
 ORDER BY tuple();
 
 INSERT INTO tab VALUES ('hello'), ('world');
 
-SELECT count() FROM tab WHERE hasToken(s, 'hello');
-SELECT count() FROM tab WHERE hasToken(s, 'world');
-SELECT count() FROM tab WHERE hasToken(s, 'nonexistent');
+SELECT count() FROM tab WHERE hasToken(str, 'hello');
+SELECT count() FROM tab WHERE hasToken(str, 'world');
+SELECT count() FROM tab WHERE hasToken(str, 'nonexistent');
 
 DROP TABLE tab;
