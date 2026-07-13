@@ -3,63 +3,69 @@
 -- Tag no-shared-merge-tree: SharedMergeTree allows non-deterministic mutations, so the
 --   Replicated-rejection assertions below do not hold there.
 
--- Only the niladic year() form is non-deterministic (it reads the wall clock, like now()/today()).
--- year(<date>) delegates to toYear and must stay deterministic, so it keeps working with the query
--- result cache and in Replicated mutations, exactly like toYear(<date>).
+-- The year() function is non-deterministic (its niladic form reads the wall clock, like
+-- now()/today()). The pre-build determinism checks inspect the unresolved AST by function name and
+-- cannot tell year() from year(<date>), so the whole function is treated as non-deterministic:
+-- year(<date>) is excluded from the query result cache and rejected in Replicated mutations. Use
+-- toYear(<date>) where determinism is required. Index/projection analysis, however, works on the
+-- resolved (post-build) function and is unaffected, so year(<date>) still prunes granules and uses
+-- projections exactly like toYear(<date>).
 
-SELECT '-- query result cache: year(<date>) is cacheable like toYear(<date>)';
+SELECT '-- query result cache: year(<date>) is non-deterministic (not cached), unlike toYear(<date>)';
 SYSTEM DROP QUERY CACHE;
 
 DROP TABLE IF EXISTS 03481_qc;
 CREATE TABLE 03481_qc (ts DateTime) ENGINE = MergeTree ORDER BY ts;
 INSERT INTO 03481_qc VALUES ('2024-06-01 00:00:00'), ('2023-01-01 00:00:00');
 
--- toYear(<date>) caches (baseline), and year(<date>) must behave identically. The query-cache
--- determinism check runs on the initiator, so pin enable_parallel_replicas = 0 to keep the test
--- focused on determinism (it is orthogonal to distributed routing).
-SELECT count() FROM 03481_qc WHERE toYear(ts) = 2024 SETTINGS use_query_cache = 1, enable_parallel_replicas = 0;
-SELECT count() FROM 03481_qc WHERE year(ts) = 2024 SETTINGS use_query_cache = 1, enable_parallel_replicas = 0;
-SELECT '-- both are stored in the query cache (one entry each)';
-SELECT count() FROM system.query_cache WHERE query LIKE '%03481_qc%';
-
-SYSTEM DROP QUERY CACHE;
-SELECT '-- niladic year() is non-deterministic and is rejected from the query cache';
-SELECT year() SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+-- The query-cache determinism check runs on the initiator, so pin enable_parallel_replicas = 0 to
+-- keep the test focused on determinism (it is orthogonal to distributed routing).
+SELECT '-- toYear(<date>) is deterministic and caches';
+SELECT count() FROM 03481_qc WHERE toYear(ts) = 2024 SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'throw', enable_parallel_replicas = 0;
+SELECT '-- year(<date>) is rejected from the query cache';
+SELECT count() FROM 03481_qc WHERE year(ts) = 2024 SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'throw', enable_parallel_replicas = 0; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT '-- niladic year() is rejected from the query cache too';
 SELECT year() SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'throw'; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
-SELECT '-- nothing was cached for niladic year()';
-SELECT count() FROM system.query_cache;
+SELECT '-- only the deterministic toYear(<date>) query is cached';
+SELECT count() FROM system.query_cache WHERE query LIKE '%03481_qc%';
 
 DROP TABLE 03481_qc;
 SYSTEM DROP QUERY CACHE;
 
-SELECT '-- Replicated mutations: ALTER ... WHERE year(<date>) is accepted like toYear(<date>)';
+SELECT '-- Replicated mutations: year(<date>) is rejected (non-deterministic), toYear(<date>) is accepted';
 DROP TABLE IF EXISTS 03481_rep SYNC;
 CREATE TABLE 03481_rep (ts DateTime, v UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/03481_year_determinism', '1')
 ORDER BY ts;
 INSERT INTO 03481_rep VALUES ('2024-06-01 00:00:00', 1), ('2023-01-01 00:00:00', 2), ('2022-01-01 00:00:00', 3);
 
--- Deterministic predicates are accepted without allow_nondeterministic_mutations. The point of the
--- test is that the pre-build determinism check does not reject year(<date>), so assert acceptance
--- via system.mutations (matching toYear) rather than racing on the mutated data.
-ALTER TABLE 03481_rep DELETE WHERE year(ts) = 2022 SETTINGS mutations_sync = 2;
 ALTER TABLE 03481_rep DELETE WHERE toYear(ts) = 2024 SETTINGS mutations_sync = 2;
-SELECT '-- both year(<date>) and toYear(<date>) DELETE mutations were accepted and completed';
+SELECT '-- the toYear(<date>) DELETE mutation was accepted and completed';
 SELECT command, is_done FROM system.mutations
 WHERE database = currentDatabase() AND table = '03481_rep'
 ORDER BY command;
-
-SELECT '-- niladic year() stays rejected in a Replicated mutation';
-ALTER TABLE 03481_rep DELETE WHERE ts < makeDateTime(year(), 1, 1, 0, 0, 0) SETTINGS mutations_sync = 2; -- { serverError BAD_ARGUMENTS }
+SELECT '-- year(<date>) mutation is rejected as non-deterministic';
+ALTER TABLE 03481_rep DELETE WHERE year(ts) = 2022 SETTINGS mutations_sync = 2; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE 03481_rep SYNC;
 
+SELECT '-- index analysis: year(<date>) still prunes granules like toYear(<date>) (post-build analysis is unaffected by determinism)';
+DROP TABLE IF EXISTS 03481_idx;
+CREATE TABLE 03481_idx (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 8192;
+INSERT INTO 03481_idx SELECT toDate('2000-01-01') + number FROM numbers(20000);
+SELECT '-- both toYear(d) and year(d) prune to the same granule count';
+-- Pin enable_parallel_replicas = 0 so the EXPLAIN reflects local granule pruning (parallel-replica
+-- routing is orthogonal to index analysis and would add distributed plan steps).
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM 03481_idx WHERE toYear(d) = 2005 SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Granules:%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM 03481_idx WHERE year(d) = 2005 SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Granules:%';
+DROP TABLE 03481_idx;
+
 SELECT '-- projections: year(<date>) filters/keys still select projections like toYear(<date>)';
 -- The projection implication checks run on the post-build ActionsDAG node (function_base), which for
--- year(<date>) is toYear's deterministic base via the resolver's build() delegation. So a normal or
--- aggregate projection defined over year(...) is still used for year(...) queries, exactly like toYear.
--- Projection selection is orthogonal to parallel-replica routing, so pin enable_parallel_replicas = 0
--- to keep the test focused (the standalone test server has no parallel_replicas cluster).
+-- year(<date>) is toYear's base via the resolver's build() delegation, so a projection defined over
+-- year(...) is still used for year(...) queries, exactly like toYear. Projection selection is
+-- orthogonal to parallel-replica routing, so pin enable_parallel_replicas = 0 to keep the test
+-- focused (the standalone test server has no parallel_replicas cluster).
 SET enable_parallel_replicas = 0;
 DROP TABLE IF EXISTS 03481_proj;
 CREATE TABLE 03481_proj

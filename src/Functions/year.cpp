@@ -63,13 +63,11 @@ private:
 ///     preimage and index analysis.
 ///   * Without arguments it returns the current year, analogous to `now()`/`today()`.
 ///
-/// Determinism is argument-count dependent: only the niladic `year()` form is non-deterministic
-/// (it reads the wall clock, like `now()`/`today()`), while `year(<date>)` delegates to `toYear`
-/// and is fully deterministic. The pre-build checks that inspect the unresolved AST by function
-/// name (query result cache, mutation determinism checks) query `isDeterministic(number_of_arguments)`
-/// so that `year(<date>)` remains cacheable and usable in Replicated mutations, exactly like
-/// `toYear(<date>)`. The argument-less `isDeterministic()` reports non-deterministic (used by the
-/// arg-blind `system.functions.is_deterministic` column), which is the conservative choice.
+/// The whole function is reported as non-deterministic. Pre-build checks that inspect the
+/// unresolved AST by function name (query result cache, mutation determinism checks) cannot tell
+/// the niladic form apart from `year(<date>)`, so every form is treated conservatively as
+/// non-deterministic. Consequently `year(<date>)` is excluded from the query result cache and
+/// rejected in Replicated mutations; use `toYear(<date>)` where determinism is required.
 class FunctionYearOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
@@ -89,7 +87,6 @@ public:
 
     bool isVariadic() const override { return true; }
     bool isDeterministic() const override { return false; }
-    bool isDeterministic(size_t number_of_arguments) const override { return number_of_arguments != 0; }
     size_t getNumberOfArguments() const override { return 0; }
 
     /// Forward everything about the argument form to `toYear`.
