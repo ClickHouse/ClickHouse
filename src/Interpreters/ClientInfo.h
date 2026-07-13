@@ -46,7 +46,9 @@ public:
         UNKNOWN = 0,
         GET     = 1,
         POST    = 2,
-        OPTIONS = 3
+        OPTIONS = 3,
+        PUT     = 4,
+        DELETE  = 5
     };
 
     enum class QueryKind : uint8_t

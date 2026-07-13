@@ -499,6 +499,10 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
         http_method = ClientInfo::HTTPMethod::GET;
     else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
+    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT)
+        http_method = ClientInfo::HTTPMethod::PUT;
+    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
+        http_method = ClientInfo::HTTPMethod::DELETE;
 
     http_user_agent = request.get("User-Agent", "");
     http_referer = request.get("Referer", "");
@@ -526,6 +530,10 @@ String toString(ClientInfo::HTTPMethod method)
             return "POST";
         case ClientInfo::HTTPMethod::OPTIONS:
             return "OPTIONS";
+        case ClientInfo::HTTPMethod::PUT:
+            return "PUT";
+        case ClientInfo::HTTPMethod::DELETE:
+            return "DELETE";
     }
 }
 

@@ -132,6 +132,19 @@ for _ in {1..60}; do
 done
 echo "$res"
 
+echo "=== query_log records the HTTP method for PUT and DELETE handlers ==="
+# PUT and DELETE are logged as http_method 4 and 5 (not 0/UNKNOWN).
+QIDP="qp_${DB}_$RANDOM"
+QIDD="qd_${DB}_$RANDOM"
+printf '7\n' | ${CLICKHOUSE_CURL} -sS -X PUT -H "X-ClickHouse-Database: ${DB}" "${BASE}${P}/insert_put?query_id=${QIDP}" --data-binary @- > /dev/null
+printf '8\n' | ${CLICKHOUSE_CURL} -sS -X DELETE -H "X-ClickHouse-Database: ${DB}" "${BASE}${P}/insert_del?query_id=${QIDD}" --data-binary @- > /dev/null
+for _ in {1..60}; do
+    res=$($CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log; SELECT (SELECT http_method FROM system.query_log WHERE query_id = '${QIDP}' AND type = 'QueryFinish' AND current_database = currentDatabase() ORDER BY event_time DESC LIMIT 1) AS put_m, (SELECT http_method FROM system.query_log WHERE query_id = '${QIDD}' AND type = 'QueryFinish' AND current_database = currentDatabase() ORDER BY event_time DESC LIMIT 1) AS del_m")
+    [ "$res" = $'4\t5' ] && break
+    sleep 0.5
+done
+echo "$res"
+
 echo "=== authentication: credentials provided in the request ==="
 $CLICKHOUSE_CLIENT -q "CREATE USER \`$RUSER\` IDENTIFIED WITH plaintext_password BY 'pw'; CREATE HANDLER \`$HWHO\` URL '${P}/whoami' AS SELECT currentUser() = '${RUSER}' AS ok FORMAT TSV"
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/whoami?user=${RUSER}&password=pw"
