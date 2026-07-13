@@ -503,7 +503,6 @@ protected:
 
             ++count;
         }
-        ++database_idx;
         return count;
     }
 
@@ -522,8 +521,12 @@ protected:
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
+            /// Consume the exhausted iterator, otherwise it could advance `database_idx` twice.
             if (tables_it && !tables_it->isValid())
+            {
                 ++database_idx;
+                tables_it.reset();
+            }
 
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
@@ -679,6 +682,7 @@ protected:
             {
                 size_t rows_added = fillTableNamesOnly(res_columns);
                 rows_count += rows_added;
+                ++database_idx;
                 continue;
             }
 
