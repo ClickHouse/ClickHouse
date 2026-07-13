@@ -63,6 +63,8 @@ folded alter
 AMBIGUOUS_IDENTIFIER
 --- standard: implicit current database stays exact with a case sibling
 0
+1
+x
 --- standard: CREATE TABLE AS folds the source, double-quoted wrong case stays exact
 0
 UNKNOWN_DATABASE

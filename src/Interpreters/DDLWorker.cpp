@@ -573,6 +573,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     try
     {
         auto query_context = task.makeQueryContext(context, zookeeper);
+        /// Names in a DDL log entry were canonicalized by the initiator; formatting does not
+        /// preserve quote pins, so folded re-resolution here could pick a different sibling.
+        query_context->setSetting("database_and_table_name_matching", Field{"sensitive"});
 
         chassert(!query_context->getCurrentTransaction());
         if (query_context->getSettingsRef()[Setting::implicit_transaction])

@@ -29,7 +29,8 @@ namespace
 StorageID resolveShownTable(const ASTShowColumnsQuery & query, ContextPtr context)
 {
     StorageID table_id{context->resolveDatabase(query.database), query.table};
-    table_id.database_name_quote = query.database_quote;
+    /// An implicit current database is already canonical and must not fold.
+    table_id.database_name_quote = query.database.empty() ? IdentifierPartQuote::DoubleQuoted : query.database_quote;
     table_id.table_name_quote = query.table_quote;
     return DatabaseCatalog::instance().resolveStorageIDNames(std::move(table_id), context);
 }

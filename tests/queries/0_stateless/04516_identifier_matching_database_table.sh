@@ -131,6 +131,8 @@ ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "ALTER 
 echo '--- standard: implicit current database stays exact with a case sibling'
 CLIENT_IN_DB_ONE=${CLICKHOUSE_CLIENT/--database=$CLICKHOUSE_DATABASE/--database=$DB_ONE}
 ${CLIENT_IN_DB_ONE} --database_and_table_name_matching=standard --query "SELECT count() FROM NewTable"
+${CLIENT_IN_DB_ONE} --database_and_table_name_matching=standard --query "EXISTS TABLE NewTable"
+${CLIENT_IN_DB_ONE} --database_and_table_name_matching=standard --query "SHOW COLUMNS FROM NewTable" | head -1 | cut -f1
 
 echo '--- standard: CREATE TABLE AS folds the source, double-quoted wrong case stays exact'
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB_TWO}"
