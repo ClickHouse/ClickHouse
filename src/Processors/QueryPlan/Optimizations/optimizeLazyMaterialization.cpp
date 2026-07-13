@@ -406,12 +406,17 @@ static bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node *
     {
         if (const auto * expr_step = typeid_cast<ExpressionStep *>(node->step.get()))
         {
-            if (expr_step->getExpression().hasArrayJoin())
+            /// `hasArrayJoin` - see the comment about #82279 below.
+            /// `hasStatefulFunctions` - lazy materialization splits an `ORDER BY ... LIMIT` expression into a part
+            /// evaluated before the `LIMIT` and a lazy part evaluated after it. A stateful function (e.g. `logTrace`,
+            /// `neighbor`) whose result depends on the observed rows must not be moved into the lazy part, or it would
+            /// only run on the post-`LIMIT` rows - `logTrace` would then log fewer times than there are input blocks.
+            if (expr_step->getExpression().hasArrayJoin() || expr_step->getExpression().hasStatefulFunctions())
                 return false;
         }
         else if (const auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
         {
-            if (filter_step->getExpression().hasArrayJoin())
+            if (filter_step->getExpression().hasArrayJoin() || filter_step->getExpression().hasStatefulFunctions())
                 return false;
         }
         else

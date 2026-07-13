@@ -72,6 +72,15 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     /// (e.g. `convertJoinToIn` can introduce qualified column names like `ty.c0`
     /// that are not in the expression DAG).
     const auto & expression = expression_step->getExpression();
+
+    /// Do not lift stateful functions (e.g. `logTrace`, `neighbor`) above the sorting step. Their result depends on
+    /// the order and grouping of the rows they observe, so moving them past the sort - which may additionally carry a
+    /// pushed-down `LIMIT` that reduces the number of rows - would change their behaviour. For `logTrace` this means it
+    /// would emit fewer per-block trace messages than there are input blocks. This mirrors the `hasStatefulFunctions`
+    /// guard already used by `splitFilter`, `filterPushDown`, and `removeRedundantSorting`.
+    if (expression.hasStatefulFunctions())
+        return 0;
+
     {
         NameSet output_names;
         for (const auto * output : expression.getOutputs())
