@@ -47,6 +47,14 @@ public:
     using ListLevelFunction = std::function<ObjectStorageListResult(
         const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & continuation_token)>;
 
+    /// A lightweight existence-only probe used by the flat keyspace split (`splitWouldHelp`): it only needs
+    /// to know whether *any* key exists past a boundary, so it must not fetch per-object metadata that the
+    /// probe discards (on `S3` the caller wires this to a `with_tags=false`, single-key `ListObjectsV2`), and
+    /// its result is only inspected at `.front()`. Separate from `list_level` so that enabling
+    /// `s3_list_object_parallelism` never turns a `_tags` scan into a fan of redundant `GetObjectTagging`
+    /// requests for pages that the probe throws away.
+    using ProbeLevelFunction = ListLevelFunction;
+
     /// `should_descend(common_prefix)` decides whether a discovered sub-"directory" might contain a key
     /// of interest. It may be called concurrently. Returning `true` when unsure is safe.
     /// `max_buffered_keys` softly bounds how many keys may be buffered ahead of the consumer.
@@ -62,6 +70,7 @@ public:
         size_t num_threads_,
         size_t max_buffered_keys_,
         ListLevelFunction list_level_,
+        ProbeLevelFunction probe_level_,
         std::function<bool(const std::string & common_prefix)> should_descend_,
         bool allow_keyspace_split_ = true,
         std::function<void()> check_cancellation_ = {});
@@ -109,6 +118,8 @@ private:
     const size_t num_threads;
     const size_t max_buffered_objects;
     const ListLevelFunction list_level;
+    /// Tags-free existence probe for the flat keyspace split; see `ProbeLevelFunction`.
+    const ProbeLevelFunction probe_level;
     const std::function<bool(const std::string & common_prefix)> should_descend;
     /// Throws (the proper `TIMEOUT_EXCEEDED` / `QUERY_WAS_CANCELLED`) when the owning query was
     /// cancelled; empty in non-query contexts. Polled by the consumer while waiting for a batch.

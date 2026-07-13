@@ -134,6 +134,29 @@ ObjectStorageParallelListingIterator::ListLevelFunction makeListLevel(const Fake
     { return s3.list(prefix, delimiter, start_after, token); };
 }
 
+/// The lightweight existence probe the flat keyspace split uses (what production wires as `with_tags=false`,
+/// `MaxKeys=1`). Emulating `MaxKeys=1` here — returning only the single globally smallest entry — also
+/// asserts that one key is enough for the probe to drive a correct, complete flat split.
+ObjectStorageParallelListingIterator::ProbeLevelFunction makeProbeLevel(const FakeS3 & s3)
+{
+    return [&s3](const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & token)
+    {
+        auto res = s3.list(prefix, delimiter, start_after, token);
+        const bool has_object = !res.objects.empty();
+        const bool has_prefix = !res.common_prefixes.empty();
+        /// Keep the single smallest entry (object vs. common prefix), like `ListObjectsV2` with MaxKeys=1.
+        if (has_object && (!has_prefix || res.objects.front()->getPath() <= res.common_prefixes.front()))
+            res.common_prefixes.clear();
+        else if (has_prefix)
+            res.objects.clear();
+        if (res.objects.size() > 1)
+            res.objects.resize(1);
+        if (res.common_prefixes.size() > 1)
+            res.common_prefixes.resize(1);
+        return res;
+    };
+}
+
 std::vector<std::string> drain(ObjectStorageParallelListingIterator & iterator)
 {
     std::vector<std::string> result;
@@ -163,7 +186,7 @@ void assertCompleteForAllParallelism(const FakeS3 & s3, const std::string & pref
     for (size_t threads : {1, 2, 4, 16, 64})
     {
         ObjectStorageParallelListingIterator iterator(
-            prefix, threads, /* max_buffered_keys */ 256, makeListLevel(s3), descendAll);
+            prefix, threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), descendAll);
         auto got = drain(iterator);
         std::sort(got.begin(), got.end());
         EXPECT_EQ(got, expected) << "threads=" << threads << " prefix=" << prefix;
@@ -212,7 +235,8 @@ TEST(ObjectStorageParallelListing, KeyspaceSplitCanBeDisabledForDirectoryBuckets
         s3.page_size = 50;
         fill(s3);
         ObjectStorageParallelListingIterator iterator(
-            "mb/flat/", 16, /* max_buffered_keys */ 256, makeListLevel(s3), descendAll, /* allow_keyspace_split */ true);
+            "mb/flat/", 16, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), descendAll,
+            /* allow_keyspace_split */ true);
         auto got = drain(iterator);
         std::sort(got.begin(), got.end());
         EXPECT_EQ(got, expected);
@@ -228,13 +252,47 @@ TEST(ObjectStorageParallelListing, KeyspaceSplitCanBeDisabledForDirectoryBuckets
         s3.page_size = 50;
         fill(s3);
         ObjectStorageParallelListingIterator iterator(
-            "mb/flat/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), descendAll, /* allow_keyspace_split */ false);
+            "mb/flat/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), descendAll,
+            /* allow_keyspace_split */ false);
         auto got = drain(iterator);
         std::sort(got.begin(), got.end());
         EXPECT_EQ(got, expected) << "threads=" << threads;
         EXPECT_EQ(s3.requests_with_start_after.load(), 0u) << "threads=" << threads;
         EXPECT_EQ(s3.requests_with_empty_delimiter.load(), 0u) << "threads=" << threads;
     }
+}
+
+TEST(ObjectStorageParallelListing, FlatSplitProbeUsesDedicatedCallback)
+{
+    /// Regression test: the flat keyspace-split existence probe must go through the dedicated probe callback,
+    /// not the main `list_level`. In production the probe callback lists a single key with `with_tags=false`,
+    /// so enabling `s3_list_object_parallelism` on a `_tags` scan must not turn the split probe into a fan of
+    /// redundant `GetObjectTagging` requests for a page it discards. Here the two callbacks get separate
+    /// counters, and the probe returns only one key, so a green run proves both that the split is driven by
+    /// the dedicated probe and that a single-key probe is enough to keep the listing complete.
+    FakeS3 s3;
+    s3.page_size = 50;
+    for (size_t i = 0; i < 6000; ++i)
+        s3.add("mb/flat/" + hexName(i) + ".txt.zst");
+    s3.finalize();
+
+    std::atomic<size_t> probe_calls{0};
+    auto base_probe = makeProbeLevel(s3);
+    auto probe_level = [&probe_calls, base_probe](
+        const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & token)
+    {
+        probe_calls.fetch_add(1, std::memory_order_relaxed);
+        return base_probe(prefix, delimiter, start_after, token);
+    };
+
+    ObjectStorageParallelListingIterator iterator(
+        "mb/flat/", 16, /* max_buffered_keys */ 256, makeListLevel(s3), probe_level, descendAll,
+        /* allow_keyspace_split */ true);
+    auto got = drain(iterator);
+    std::sort(got.begin(), got.end());
+    EXPECT_EQ(got, expectedUnder(s3, "mb/flat/"));
+    /// This uniform flat directory is split, so the dedicated (tags-free, single-key) probe was exercised.
+    EXPECT_GT(probe_calls.load(), 0u);
 }
 
 TEST(ObjectStorageParallelListing, GapsOutsideSampledAlphabet)
@@ -296,7 +354,7 @@ TEST(ObjectStorageParallelListing, SinglePageNotSplit)
         s3.add("s/" + std::to_string(i));
     s3.finalize();
 
-    ObjectStorageParallelListingIterator iterator("s/", 8, 1000, makeListLevel(s3), descendAll);
+    ObjectStorageParallelListingIterator iterator("s/", 8, 1000, makeListLevel(s3), makeProbeLevel(s3), descendAll);
     auto got = drain(iterator);
     std::sort(got.begin(), got.end());
     EXPECT_EQ(got, expectedUnder(s3, "s/"));
@@ -343,7 +401,7 @@ TEST(ObjectStorageParallelListing, Pruning)
     s3.finalize();
 
     auto should_descend = [](const std::string & prefix) { return prefix.find("skip") == std::string::npos; };
-    ObjectStorageParallelListingIterator iterator("root/", 4, 1000, makeListLevel(s3), should_descend);
+    ObjectStorageParallelListingIterator iterator("root/", 4, 1000, makeListLevel(s3), makeProbeLevel(s3), should_descend);
     auto got = drain(iterator);
     std::sort(got.begin(), got.end());
     EXPECT_EQ(got, expectedUnder(s3, "root/keep/"));
@@ -379,7 +437,7 @@ TEST(ObjectStorageParallelListing, DirectoryMarkerMatchesTrailingSlashGlob)
     for (size_t threads : {1, 2, 4, 16, 64})
     {
         ObjectStorageParallelListingIterator iterator(
-            "root/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeShouldDescendPredicate(glob));
+            "root/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), makeShouldDescendPredicate(glob));
         auto listed = drain(iterator);
 
         /// The walk may legitimately emit extra non-matching keys (the downstream per-file matcher drops
@@ -406,7 +464,8 @@ TEST(ObjectStorageParallelListing, ExceptionPropagates)
         throw std::runtime_error("listing failed");
     };
 
-    ObjectStorageParallelListingIterator iterator("root/", 4, 1000, list_level, descendAll);
+    /// No flat split happens here, so the probe callback is never invoked; reuse `list_level` for it.
+    ObjectStorageParallelListingIterator iterator("root/", 4, 1000, list_level, list_level, descendAll);
     EXPECT_THROW(drain(iterator), std::runtime_error);
 }
 
@@ -414,7 +473,7 @@ TEST(ObjectStorageParallelListing, EmptyResult)
 {
     FakeS3 s3;
     s3.finalize();
-    ObjectStorageParallelListingIterator iterator("nothing/", 4, 1000, makeListLevel(s3), descendAll);
+    ObjectStorageParallelListingIterator iterator("nothing/", 4, 1000, makeListLevel(s3), makeProbeLevel(s3), descendAll);
     EXPECT_TRUE(drain(iterator).empty());
 }
 
@@ -447,7 +506,7 @@ TEST(ObjectStorageParallelListing, CancellationUnblocksBlockedConsumer)
     };
 
     ObjectStorageParallelListingIterator iterator(
-        "root/", 4, /* max_buffered_keys */ 256, list_level, descendAll,
+        "root/", 4, /* max_buffered_keys */ 256, list_level, list_level, descendAll,
         /* allow_keyspace_split */ true, std::move(check_cancellation));
 
     /// Cancel only once a worker is actually parked inside the stalled listing request.

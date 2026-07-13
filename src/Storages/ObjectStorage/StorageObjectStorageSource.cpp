@@ -1548,6 +1548,15 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 return storage->listObjectsSingleLevel(prefix, delimiter, list_object_keys_size, with_tags, start_after, continuation_token);
             };
 
+            /// The flat keyspace-split probe only checks whether any key exists past a boundary, so it lists a
+            /// single key and never fetches tags: without this, enabling `s3_list_object_parallelism` on a
+            /// `_tags` scan would eagerly `GetObjectTagging` for every object of a probe page it then discards.
+            auto probe_level = [storage = object_storage]
+                (const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & continuation_token)
+            {
+                return storage->listObjectsSingleLevel(prefix, delimiter, /* max_keys */ 1, /* with_tags */ false, start_after, continuation_token);
+            };
+
             /// Make the parallel listing observe query cancellation: it waits on its own condition
             /// variables, which a `KILL` or a timeout does not notify, so give it a way to throw the
             /// proper exception instead of hanging (the parallel listing runs synchronously on the
@@ -1561,6 +1570,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 parallelism,
                 /* max_buffered_keys */ list_object_keys_size * parallelism * 2,
                 std::move(list_level),
+                std::move(probe_level),
                 makeShouldDescendPredicate(key_with_globs.path),
                 /* allow_keyspace_split */ object_storage->supportsListingKeyspaceSplit(),
                 std::move(check_cancellation));

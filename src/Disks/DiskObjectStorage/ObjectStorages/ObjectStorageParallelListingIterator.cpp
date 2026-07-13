@@ -45,12 +45,14 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     size_t num_threads_,
     size_t max_buffered_keys_,
     ListLevelFunction list_level_,
+    ProbeLevelFunction probe_level_,
     std::function<bool(const std::string & common_prefix)> should_descend_,
     bool allow_keyspace_split_,
     std::function<void()> check_cancellation_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
     , list_level(std::move(list_level_))
+    , probe_level(std::move(probe_level_))
     , should_descend(std::move(should_descend_))
     , check_cancellation(std::move(check_cancellation_))
     , thread_group(getCurrentThreadGroup())
@@ -229,7 +231,9 @@ bool ObjectStorageParallelListingIterator::splitWouldHelp(
     std::string probe = last_key.substr(0, range.split_pos);
     probe.push_back(static_cast<char>(static_cast<unsigned char>(bucket_byte + 1)));
 
-    auto result = list_level(range.prefix, delimiter, probe, std::string{});
+    /// Existence-only: use the lightweight probe callback (tags-free, single key) rather than `list_level`,
+    /// so that on `S3` a `_tags` scan does not eagerly fetch `GetObjectTagging` for a page we discard.
+    auto result = probe_level(range.prefix, delimiter, probe, std::string{});
     if (!result.objects.empty() && (range.end.empty() || result.objects.front()->getPath() <= range.end))
         return true;
     if (!result.common_prefixes.empty() && (range.end.empty() || result.common_prefixes.front() <= range.end))
