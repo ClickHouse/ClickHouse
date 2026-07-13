@@ -55,7 +55,8 @@ public:
         const Bucket & bucket,
         bool use_persistent_processing_nodes_,
         const std::string & zookeeper_name_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        ObjectStorageQueueLocalActiveNodesPtr local_active_nodes_ = {});
 
     static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(
         const std::string & path,
@@ -168,7 +169,8 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
         const std::string & bucket_lock_path_,
         const std::string & processor_info_,
         LoggerPtr log_,
-        const std::string & zookeeper_name_);
+        const std::string & zookeeper_name_,
+        ObjectStorageQueueLocalActiveNodesPtr local_active_nodes_ = {});
 
     ~BucketHolder();
 
@@ -185,6 +187,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 
 private:
     BucketInfoPtr bucket_info;
+    ObjectStorageQueueLocalActiveNodesPtr local_active_nodes;
     bool released = false;
     bool finished = false;
     LoggerPtr log;

@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/Parser.h>
 #include <numeric>
@@ -206,12 +207,14 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const std::string & bucket_lock_path_,
     const std::string & processor_info_,
     LoggerPtr log_,
-    const std::string & zookeeper_name_)
+    const std::string & zookeeper_name_,
+    ObjectStorageQueueLocalActiveNodesPtr local_active_nodes_)
     : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
         .bucket = bucket_,
         .bucket_lock_path = bucket_lock_path_,
         .processor_info = processor_info_,
         .zookeeper_name = zookeeper_name_ }))
+    , local_active_nodes(std::move(local_active_nodes_))
     , log(log_)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -250,6 +253,13 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
         return;
 
     released = true;
+
+    /// Unregister even when the removal below fails: the holder is gone,
+    /// so the TTL cleanup must be able to reap the lock node.
+    SCOPE_EXIT({
+        if (local_active_nodes)
+            local_active_nodes->remove(bucket_info->bucket_lock_path);
+    });
 
     LOG_TEST(log, "Releasing bucket {}", bucket_info->bucket);
 
@@ -568,7 +578,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const Bucket & bucket,
     bool /*use_persistent_processing_nodes_*/,
     const std::string & zookeeper_name_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    ObjectStorageQueueLocalActiveNodesPtr local_active_nodes_)
 {
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log_);
     const auto bucket_path = zk_path / "buckets" / toString(bucket);
@@ -615,7 +626,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
             bucket_lock_path,
             processor_info,
             log_,
-            zookeeper_name_);
+            zookeeper_name_,
+            std::move(local_active_nodes_));
     }
 
     if (code == Coordination::Error::ZNODEEXISTS)

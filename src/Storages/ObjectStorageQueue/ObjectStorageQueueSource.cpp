@@ -65,6 +65,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
+    extern const char object_storage_queue_park_in_generate[];
 }
 
 namespace ErrorCodes
@@ -1185,6 +1186,32 @@ Chunk ObjectStorageQueueSource::generateImpl()
             fiu_do_on(FailPoints::object_storage_queue_sleep_in_generate, {
                 sleepForSeconds(5);
             });
+
+            /// Simulates a pipeline stuck inside a blocking call: parks mid-file until
+            /// the pipeline is cancelled or the failpoint is disabled. The `shutdown_called`
+            /// chunk-boundary checks above never run while parked, so shutdown can only
+            /// proceed via executor-level cancellation.
+            {
+                bool was_parked = false;
+                while (!isCancelled())
+                {
+                    bool parked = false;
+                    fiu_do_on(FailPoints::object_storage_queue_park_in_generate, { parked = true; });
+                    if (!parked)
+                        break;
+                    if (!was_parked)
+                    {
+                        was_parked = true;
+                        /// Tests wait for this line before initiating shutdown.
+                        LOG_TEST(log, "Parked in generateImpl on failpoint (file: {})", path);
+                    }
+                    sleepForMilliseconds(50);
+                }
+                /// A cancelled park must take the loop-top cancellation branch,
+                /// marking the parked file `Cancelled`, instead of pulling further.
+                if (was_parked && isCancelled())
+                    continue;
+            }
         }
 
         Chunk chunk;

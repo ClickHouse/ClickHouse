@@ -989,7 +989,34 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         try
         {
             CompletedPipelineExecutor executor(block_io.pipeline);
+
+            /// The chunk-boundary shutdown checks in `generateImpl` cannot run while the
+            /// pipeline is stuck inside a blocking call, so `shutdown` would block on
+            /// `task->deactivate` indefinitely — cancel at executor level too. Same gate
+            /// as the chunk-boundary abort: without deduplication, aborting mid-file
+            /// would duplicate already-inserted rows on retry.
+            std::atomic_bool cancel_requested = false;
+            executor.setCancelCallback([this, is_deduplication_v2, &cancel_requested]
+            {
+                if (shutdown_called && (table_is_being_dropped || is_deduplication_v2))
+                {
+                    cancel_requested = true;
+                    return true;
+                }
+                return false;
+            }, /* interactive_timeout_ms */ 1000);
+
             executor.execute();
+
+            /// A cancelled pipeline can finish without an exception (e.g. a source
+            /// cancelled between `work` calls), leaving files unfinished and the sink
+            /// possibly unfinalized — committing as success could mark files Processed
+            /// whose rows were never written. Route it through the failed-commit path.
+            if (cancel_requested)
+                throw Exception(
+                    ErrorCodes::QUERY_WAS_CANCELLED,
+                    "{} (streaming pipeline was cancelled)",
+                    table_is_being_dropped ? "Table is being dropped" : "Shutdown was called");
         }
         catch (...)
         {
