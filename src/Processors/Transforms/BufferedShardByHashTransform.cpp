@@ -1,3 +1,5 @@
+#include <unordered_set>
+
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
@@ -13,6 +15,35 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS_OR_BYTES;
+}
+
+namespace
+{
+
+/// `scatter` shares one dictionary across a block's shard chunks (`ColumnLowCardinality::scatter` builds a
+/// single dictionary and `setShared`s it into every shard), so `allocatedBytes()` reports that dictionary once
+/// per shard. Summing `allocatedBytes()` over the shards therefore counts a shared dictionary `num_shards`
+/// times. This walks a shard chunk's columns and, for every `LowCardinality` at any nesting depth (the outer
+/// `ColumnTuple`/`ColumnArray`/`ColumnNullable`/`ColumnMap` delegate `scatter` to their nested columns, so a
+/// wrapped dictionary is shared the same way), subtracts the dictionary's bytes from `block_bytes` whenever the
+/// same dictionary object was already counted for an earlier shard chunk of the block. A shared dictionary is
+/// thus charged exactly once per block; a genuinely per-shard (distinct) dictionary keeps its full charge.
+void subtractDuplicateSharedDictionaries(const IColumn & column, std::unordered_set<const void *> & counted, Int64 & block_bytes)
+{
+    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        if (!counted.insert(lc->getDictionaryPtr().get()).second)
+            block_bytes -= static_cast<Int64>(lc->getDictionary().allocatedBytes());
+        /// The index column is owned per shard and already counted; the dictionary is the only shared buffer.
+        return;
+    }
+
+    column.forEachSubcolumn([&](const auto & subcolumn)
+    {
+        subtractDuplicateSharedDictionaries(*subcolumn, counted, block_bytes);
+    });
+}
+
 }
 
 BufferedShardByHashTransform::BufferedShardByHashTransform(
@@ -113,6 +144,24 @@ void BufferedShardByHashTransform::dischargePendingInput()
 {
     total_buffered_bytes->fetch_sub(pending_input_bytes, std::memory_order_relaxed);
     pending_input_bytes = 0;
+}
+
+bool BufferedShardByHashTransform::allOutputsFinished() const
+{
+    for (const auto & output : outputs)
+        if (!output.isFinished())
+            return false;
+    return true;
+}
+
+void BufferedShardByHashTransform::throwBufferBudgetExceeded() const
+{
+    throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
+        "Shuffled aggregation-in-order buffered more than {} bytes while repartitioning the input: "
+        "the data distribution requires reading too far ahead (e.g. long runs of a single set of GROUP BY keys). "
+        "Increase the setting `aggregation_in_order_shuffle_max_buffered_bytes` or disable the setting "
+        "`aggregation_in_order_shuffle`",
+        max_buffered_bytes);
 }
 
 IProcessor::Status BufferedShardByHashTransform::prepare()
@@ -280,23 +329,8 @@ void BufferedShardByHashTransform::work()
         /// budget charge, and return; the next prepare() observes the finished outputs and finishes this
         /// processor cleanly. When at least one output is still open the buffered data is genuinely needed, so
         /// the over-budget error stands.
-        bool all_outputs_finished = true;
-        for (const auto & output : outputs)
-        {
-            if (!output.isFinished())
-            {
-                all_outputs_finished = false;
-                break;
-            }
-        }
-
-        if (!all_outputs_finished)
-            throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
-                "Shuffled aggregation-in-order buffered more than {} bytes while repartitioning the input: "
-                "the data distribution requires reading too far ahead (e.g. long runs of a single set of GROUP BY keys). "
-                "Increase the setting `aggregation_in_order_shuffle_max_buffered_bytes` or disable the setting "
-                "`aggregation_in_order_shuffle`",
-                max_buffered_bytes);
+        if (!allOutputsFinished())
+            throwBufferBudgetExceeded();
 
         if (has_pending_input_chunk)
         {
@@ -312,6 +346,19 @@ void BufferedShardByHashTransform::work()
     {
         generateOutputChunks();
         has_pending_input_chunk = false;
+
+        /// `generateOutputChunks` reconciled the provisional pre-split charge to the exact post-split resident
+        /// bytes, which `scatter` can grow beyond that pre-split estimate (e.g. `ColumnString` does not reserve
+        /// `chars`, so each shard regrows its own `chars` buffer). If that reconciliation pushed the shared
+        /// counter past the cap, fail here: prepare()'s budget checks only run on the `may_pull` path before a
+        /// pull, and the last scatter can reach EOF and drain straight to Finished without another pull, so the
+        /// query could otherwise complete having buffered more than `max_buffered_bytes`. The carve-out matches
+        /// the pre-split path: once every output is finished the buffered data is needed by nobody.
+        const bool budget_enabled = max_queue_length == 0 && max_buffered_bytes != 0;
+        if (budget_enabled
+            && total_buffered_bytes->load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes)
+            && !allOutputsFinished())
+            throwBufferBudgetExceeded();
     }
 
     /// Push one queued chunk per shard (if the port can accept it).
@@ -378,19 +425,16 @@ void BufferedShardByHashTransform::generateOutputChunks()
             shard_columns[s].push_back(std::move(split[s]));
     }
 
-    /// A `LowCardinality` column keeps ONE dictionary shared across all of its shard chunks
-    /// (`ColumnLowCardinality::scatter` calls `setShared`), so the dictionary is resident once no matter how
-    /// many shards buffer it. Measure it once here, up front, before the shard columns are moved into the
-    /// queues; the per-shard owned bytes (the index column only, for `LowCardinality`) are summed in the loop
-    /// below. Every shard shares the same dictionary object, so reading it from shard 0 is exact regardless
-    /// of which shards end up buffered.
-    Int64 shared_dictionary_bytes = 0;
-    for (const auto & column : shard_columns[0])
-        if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(column.get()))
-            shared_dictionary_bytes += static_cast<Int64>(lc->getDictionary().allocatedBytes());
-
+    /// Charge the exact bytes resident after the split. `scatter` copies each column into independent per-shard
+    /// buffers, so the post-split total can exceed the pre-split block (e.g. `ColumnString` does not reserve
+    /// `chars`, so each shard regrows its own `chars` buffer by doubling); the pre-split provisional estimate
+    /// would under-count that. Sum each buffered shard chunk's `allocatedBytes()`, then discount any dictionary
+    /// `scatter` shares across the shards so it is charged exactly once per block (see
+    /// `subtractDuplicateSharedDictionaries`) - counting a shared dictionary once per shard would inflate the
+    /// counter up to `num_shards` times and trip the budget spuriously on safe inputs.
     const size_t block_id = next_block_id++;
-    Int64 owned_bytes = 0;
+    Int64 block_bytes = 0;
+    std::unordered_set<const void *> counted_dictionaries;
     size_t enqueued_chunks = 0;
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
@@ -402,16 +446,10 @@ void BufferedShardByHashTransform::generateOutputChunks()
         if (shard_rows == 0)
             continue;
 
-        /// Sum the bytes this shard chunk owns, excluding the shared dictionary (added once above). `scatter`
-        /// copies non-`LowCardinality` columns into independent per-shard buffers, so their post-split total
-        /// can exceed the pre-split block (e.g. `ColumnString` does not reserve `chars`, so each shard regrows
-        /// its own `chars` buffer by doubling); the pre-split estimate would under-count that.
         for (const auto & column : shard_columns[shard])
         {
-            if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(column.get()))
-                owned_bytes += static_cast<Int64>(lc->getIndexes().allocatedBytes());
-            else
-                owned_bytes += static_cast<Int64>(column->allocatedBytes());
+            block_bytes += static_cast<Int64>(column->allocatedBytes());
+            subtractDuplicateSharedDictionaries(*column, counted_dictionaries, block_bytes);
         }
 
         enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows), block_id);
@@ -420,10 +458,9 @@ void BufferedShardByHashTransform::generateOutputChunks()
 
     if (enqueued_chunks > 0)
     {
-        /// The block keeps its shared dictionaries alive as long as any of its shard chunks is buffered, so
-        /// the dictionary bytes are part of the block's charge and released with it (when its last shard chunk
-        /// drains). Reconcile the provisional charge already in the counter to these exact resident bytes.
-        const Int64 block_bytes = owned_bytes + shared_dictionary_bytes;
+        /// The block keeps its buffers (including any shared dictionaries) alive as long as any of its shard
+        /// chunks is buffered, so the bytes are part of the block's charge and released with it (when its last
+        /// shard chunk drains). Reconcile the provisional charge already in the counter to these exact bytes.
         total_buffered_bytes->fetch_add(block_bytes - provisional_bytes, std::memory_order_relaxed);
         block_budgets[block_id].bytes = block_bytes;
     }

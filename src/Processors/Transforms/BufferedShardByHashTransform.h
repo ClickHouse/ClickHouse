@@ -75,18 +75,19 @@ private:
 
     /// Budget bookkeeping for one input block. Accounting is per input block, NOT per queued chunk, because
     /// `scatter` can share one physical buffer across all shard chunks of a block (the canonical case is a
-    /// `LowCardinality` dictionary: `ColumnLowCardinality::scatter` keeps a single dictionary shared across
-    /// the shards). `generateOutputChunks` charges the exact bytes actually resident after the split: the
-    /// per-shard *owned* bytes summed across the buffered shard chunks, plus each shared dictionary once. This
-    /// captures buffers `scatter` grows beyond the pre-split block (e.g. `ColumnString` does not reserve
-    /// `chars`, so each shard regrows its own `chars` buffer) without the two errors of a naive per-shard
-    /// `allocatedBytes()` sum: counting a shared dictionary once per shard (inflating the counter up to
-    /// `num_shards` times) or, with `Chunk::bytes()`, dropping it entirely (a shared dictionary reports zero
-    /// owned bytes). The charge is held until `outstanding_chunks` reaches zero, i.e. until the block no
-    /// longer keeps any buffer alive.
+    /// `LowCardinality` dictionary: `ColumnLowCardinality::scatter` keeps a single dictionary shared across the
+    /// shards, at any nesting depth). `generateOutputChunks` charges the exact bytes actually resident after
+    /// the split: it sums each buffered shard chunk's `allocatedBytes()` and then discounts every dictionary
+    /// `scatter` shares across the shards so it is charged once per block (identified by pointer, see
+    /// `subtractDuplicateSharedDictionaries`). This captures buffers `scatter` grows beyond the pre-split block
+    /// (e.g. `ColumnString` does not reserve `chars`, so each shard regrows its own `chars` buffer) without the
+    /// two errors of a naive per-shard measure: counting a shared dictionary once per shard (inflating the
+    /// counter up to `num_shards` times) or, with `Chunk::bytes()`, dropping it entirely (a shared dictionary
+    /// reports zero owned bytes). The charge is held until `outstanding_chunks` reaches zero, i.e. until the
+    /// block no longer keeps any buffer alive.
     struct BlockBudget
     {
-        Int64 bytes = 0;             /// The block's exact resident bytes after the split (owned + shared dictionaries).
+        Int64 bytes = 0;             /// The block's exact resident bytes after the split (a shared dictionary counted once).
         size_t outstanding_chunks = 0; /// Shard chunks from this block still buffered (in a queue or an output port).
     };
 
@@ -103,6 +104,13 @@ private:
     /// bytes must remain counted until then; the transform never finishes a port that still holds a parked
     /// chunk and never returns Finished while one remains (see the EOF drain in prepare()).
     void reclaimPortResidentChunks();
+
+    /// True once every output port is finished. When the whole stage's outputs are closed the buffered data is
+    /// needed by nobody, so exceeding the budget must not fail the query (e.g. an outer `LIMIT 1` completing).
+    bool allOutputsFinished() const;
+    /// Raise TOO_MANY_ROWS_OR_BYTES for `max_buffered_bytes`. Used from both budget-enforcement paths: the
+    /// pre-split admission check (via `budget_exceeded`) and the post-split reconciliation re-check in work().
+    [[noreturn]] void throwBufferBudgetExceeded() const;
 
     /// Charge/release the just-pulled input chunk against the shared budget. Charging happens the moment
     /// the chunk is pulled (before it is split), so the budget accounts for the in-flight read-ahead of
