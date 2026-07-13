@@ -302,14 +302,16 @@ DROP TABLE dist_over_tf;
 SELECT count() FROM cluster('test_cluster_two_shards_localhost', numbers(10), number) WHERE number = 1 SETTINGS optimize_skip_unused_shards = 1, enable_analyzer = 1;
 SELECT count() FROM cluster('test_cluster_two_shards_localhost', numbers(10), number) WHERE number = 1 SETTINGS optimize_skip_unused_shards = 1, enable_analyzer = 0;
 
--- Because the sharding key is ignored for the table-function form, `checkAlterIsPossible` must not enforce it:
--- an `ALTER` of a column mentioned only in the ignored key (incompatible modify, rename, drop) is allowed. A
--- second column keeps the table non-empty so `DROP COLUMN` exercises the sharding-key check and not the
--- unrelated drop-all-columns guard.
+-- Because the sharding key is ignored for the table-function form, `checkAlterIsPossible` does not enforce its
+-- numeric type, so an incompatible `MODIFY COLUMN` of the column it mentions is allowed. But the key is stored
+-- verbatim in the engine definition and `ALTER` does not rewrite it, so `RENAME` / `DROP` of a column referenced
+-- by the key is rejected: otherwise `SHOW CREATE TABLE` and the persisted metadata would reference a column that
+-- no longer exists. An `ALTER` of an unrelated column is unaffected.
 CREATE TABLE dist_over_tf (number UInt64, x String) ENGINE = Distributed(test_cluster_two_shards_localhost, numbers(10), number);
 ALTER TABLE dist_over_tf MODIFY COLUMN number String;
-ALTER TABLE dist_over_tf RENAME COLUMN number TO n;
-ALTER TABLE dist_over_tf DROP COLUMN n;
+ALTER TABLE dist_over_tf RENAME COLUMN number TO n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE dist_over_tf DROP COLUMN number; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE dist_over_tf RENAME COLUMN x TO y;
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 'dist_over_tf' ORDER BY name;
 DROP TABLE dist_over_tf;
 

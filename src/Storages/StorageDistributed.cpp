@@ -1589,9 +1589,36 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     commands.apply(new_metadata, local_context);
     /// Only validate the sharding key when it actually applies (`has_sharding_key`). For a persisted
     /// `Distributed(...)` engine over a table function the key is ignored (see the constructor and the
-    /// documentation), so an `ALTER` of a column mentioned only in that ignored key must not be rejected.
+    /// documentation), so it is not enforced (e.g. an incompatible `MODIFY COLUMN` of a column it mentions is
+    /// allowed - the numeric-type constraint does not apply).
     if (has_sharding_key)
         checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
+    else if (sharding_key)
+    {
+        /// The ignored sharding key is nevertheless stored verbatim in the engine definition, and an `ALTER`
+        /// rewrites only the column list, not the engine arguments (`DatabaseOrdinary::alterTable` ->
+        /// `applyMetadataChangesToCreateQuery`). So a `RENAME COLUMN` / `DROP COLUMN` of a column referenced by
+        /// the stored key would leave `Distributed(..., <old column>)` in the metadata file and
+        /// `SHOW CREATE TABLE`, referencing a column that no longer exists. Reject it - as the classic form does -
+        /// to keep the stored definition consistent.
+        IdentifierNameSet sharding_key_columns;
+        sharding_key->collectIdentifierNames(sharding_key_columns);
+        for (const auto & command : commands)
+        {
+            const bool renames_key_column
+                = command.type == AlterCommand::Type::RENAME_COLUMN && sharding_key_columns.contains(command.column_name);
+            const bool drops_key_column
+                = command.type == AlterCommand::Type::DROP_COLUMN && !command.clear && sharding_key_columns.contains(command.column_name);
+            if (renames_key_column || drops_key_column)
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Cannot {} column {} because it is referenced by the sharding key in the engine definition of "
+                    "the Distributed table. The sharding key is ignored for a Distributed table over a table "
+                    "function, but it is stored verbatim and is not rewritten by ALTER, so renaming or dropping the "
+                    "column would leave a stale reference in the table metadata",
+                    command.type == AlterCommand::Type::DROP_COLUMN ? "drop" : "rename",
+                    backQuoteIfNeed(command.column_name));
+        }
+    }
 }
 
 void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
