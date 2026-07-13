@@ -534,7 +534,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
     /// the rest of the method uses only request-local state and can run concurrently with a
     /// sequential next() that rewrites current_uri (redirect) or file_info (initialize).
     Poco::URI request_uri;
-    size_t file_size;
+    size_t file_size = 0;
     {
         std::lock_guard lock(request_state_mutex);
         chassert(file_info && file_info->seekable);
