@@ -21,7 +21,6 @@ one
 two
 three
 lc	LowCardinality(Nullable(String))					
-OK
 dict	LowCardinality(Nullable(String))					
 one
 two

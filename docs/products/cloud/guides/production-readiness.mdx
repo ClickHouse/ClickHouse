@@ -1,0 +1,202 @@
+---
+slug: /cloud/guides/production-readiness
+sidebarTitle: 'Production readiness'
+title: 'ClickHouse Cloud production readiness guide'
+description: 'Guide for organizations transitioning from quick start to enterprise-ready ClickHouse Cloud deployments'
+keywords: ['production readiness', 'enterprise', 'saml', 'sso', 'terraform', 'monitoring', 'backup', 'disaster recovery']
+doc_type: 'guide'
+---
+
+For organizations who have completed the quick start guide and have an active service with data flowing
+
+<Info>
+**TL;DR**
+
+This guide helps you transition from quick start to enterprise-ready ClickHouse Cloud deployments. You'll learn how to:
+
+- Establish separate dev/staging/production environments for safe testing
+- Integrate SAML/SSO authentication with your identity provider
+- Automate deployments with Terraform or the Cloud API
+- Connect monitoring to your alerting infrastructure (Prometheus, PagerDuty)
+- Validate backup procedures and document disaster recovery processes
+</Info>
+
+## Introduction {#introduction}
+
+You have ClickHouse Cloud running successfully for your business workloads. Now you need to mature your deployment to meet enterprise production standards—whether triggered by a compliance audit, a production incident from an untested query, or IT requirements to integrate with corporate systems.
+
+ClickHouse Cloud's managed platform handles infrastructure operations, automatic scaling, and system maintenance. Enterprise production readiness requires connecting ClickHouse Cloud to your broader IT environment through authentication systems, monitoring infrastructure, automation tools, and business continuity processes.
+
+Your responsibilities for enterprise production readiness:
+- Establish separate environments for safe testing before production deployment
+- Integrate with existing identity providers and access management systems
+- Connect monitoring and alerting to your operational infrastructure
+- Implement infrastructure-as-code practices for consistent management
+- Establish backup validation and disaster recovery procedures
+- Configure cost management and billing integration
+
+This guide walks you through each area, helping you transition from a working ClickHouse Cloud deployment to an enterprise-ready system.
+
+## Environment strategy {#environment-strategy}
+
+Establish separate environments to safely test changes before impacting production workloads. Most production incidents trace back to untested queries or configuration changes deployed directly to production systems.
+
+<Note>
+**In ClickHouse Cloud, each environment is a separate service.** You'll provision distinct production, staging, and development services within your organization, each with its own compute resources, storage, and endpoint.
+</Note>
+
+**Environment structure**: Maintain production (live workloads), staging (production-equivalent validation), and development (individual/team experimentation) environments.
+
+**Testing**: Test queries in staging before production deployment. Queries that work on small datasets often cause memory exhaustion, excessive CPU usage, or slow execution at production scale. Validate configuration changes including user permissions, quotas, and service settings in staging—configuration errors discovered in production create immediate operational incidents.
+
+**Sizing**: Size your staging service to approximate production load characteristics. Testing on significantly smaller infrastructure may not reveal resource contention or scaling issues. Use production-representative datasets through periodic data refreshes or synthetic data generation. For guidance on how to size your staging environment and scale services appropriately, refer to the [Sizing and hardware recommendations](/guides/oss/best-practices/sizing-and-hardware-recommendations) and [Scaling in ClickHouse Cloud](/products/cloud/features/autoscaling/overview) documentation. These resources provide practical advice on memory, CPU, and storage sizing, as well as details on vertical and horizontal scaling options to help you match your staging environment to production workloads.
+
+## Private networking {#private-networking}
+
+[Private networking](/products/cloud/guides/security/connectivity/private-networking/index) in ClickHouse Cloud allows you to connect your ClickHouse services directly to your cloud virtual network, ensuring that data doesn't traverse the public internet. This is essential for organizations with strict security or compliance requirements, or for those running applications in private subnets.
+
+ClickHouse Cloud supports private networking through the following mechanisms:
+
+- [AWS PrivateLink](/products/cloud/guides/security/connectivity/private-networking/aws-privatelink): Enables secure connectivity between your VPC and ClickHouse Cloud without exposing traffic to the public internet. It supports cross-region connectivity and is available in the Scale and Enterprise plans. Setup involves creating a PrivateLink endpoint and adding it to your ClickHouse Cloud organization and service allow list. More details and step-by-step instructions are available in the documentation here.
+- [GCP Private Service Connect](/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect) (PSC): Allows private access to ClickHouse Cloud from your Google Cloud VPC. Like AWS, it is available in Scale and Enterprise plans and requires explicit configuration of service endpoints and allow lists here.
+- [Azure Private Link](/products/cloud/guides/security/connectivity/private-networking/azure-privatelink): Provides private connectivity between your Azure VNet and ClickHouse Cloud, supporting cross-region connections. The setup process involves obtaining a connection alias, creating a private endpoint, and updating allow lists here.
+
+If you need more technical details or step-by-step setup instructions, the linked documentation for each provider contains comprehensive guides.
+
+## Enterprise authentication and user management {#enterprise-authentication}
+
+Moving from console-based user management to enterprise authentication integration is essential for production readiness.
+
+### SSO and social authentication {#sso-authentication}
+
+[SAML SSO](/products/cloud/guides/security/cloud-access-management/saml-sso-setup): Enterprise tier ClickHouse Cloud supports SAML integration with identity providers including Okta, Azure Active Directory, and Google Workspace. SAML configuration requires coordination with ClickHouse support and involves providing your IdP metadata and configuring attribute mappings.
+
+[Social SSO](/products/cloud/guides/security/cloud-access-management/manage-my-account): ClickHouse Cloud also supports social authentication providers (Google, Microsoft, GitHub) as an equally secure alternative to SAML SSO. Social SSO provides faster setup for organizations without existing SAML infrastructure while maintaining enterprise security standards.
+
+<Info>
+**Important limitation**
+
+Users authenticated through SAML or social SSO are assigned the "Member" role by default and must be manually granted additional roles by an admin after their first login. Group-to-role mapping and automatic role assignment aren't currently supported.
+</Info>
+
+### Access control design {#access-control-design}
+
+ClickHouse Cloud uses organization-level roles (Admin, Developer, Billing, Member) and service/database-level roles (Service Admin, Read Only, SQL console roles). Design roles around job functions applying the principle of least privilege:
+
+- **Application users**: Service accounts with specific database and table access
+- **Analyst users**: Read-only access to curated datasets and reporting views
+- **Admin users**: Full administrative capabilities
+
+Configure quotas, limits, and settings profiles to manage resource usage for different users and roles. Set memory and execution time limits to prevent individual queries from impacting system performance. Monitor resource usage through audit, session, and query logs to identify users or applications that frequently hit limits. Conduct regular access reviews using ClickHouse Cloud's audit capabilities.
+
+### User lifecycle management limitations {#user-lifecycle-management}
+
+ClickHouse Cloud supports [SCIM provisioning](/products/cloud/guides/security/cloud-access-management/scim-setup) in private preview, with support for Okta. SCIM automates user and group lifecycle management, so users are created and removed automatically as you assign or unassign them in your identity provider. If you aren't using SCIM, users must be manually removed from the ClickHouse Cloud console after being removed from your IdP — plan for manual user management processes in that case.
+
+Learn more about [Cloud Access Management](/products/cloud/guides/security/cloud-access-management/index) and [SAML SSO setup](/products/cloud/guides/security/cloud-access-management/saml-sso-setup).
+
+## Infrastructure as code and automation {#infrastructure-as-code}
+
+Managing ClickHouse Cloud through infrastructure-as-code practices and API automation provides consistency, version control, and repeatability for your deployment configuration.
+
+### Terraform Provider {#terraform-provider}
+
+Configure the ClickHouse Terraform provider with API keys created in the ClickHouse Cloud console:
+
+```terraform
+terraform {
+  required_providers {
+    clickhouse = {
+      source  = "ClickHouse/clickhouse"
+      version = "~> 2.0"
+    }
+  }
+}
+
+provider "clickhouse" {
+  environment     = "production"
+  organization_id = var.organization_id
+  token_key       = var.token_key
+  token_secret    = var.token_secret
+}
+```
+
+The Terraform provider supports service provisioning, IP access lists, and user management. For features not covered by the provider, manage them through the console or contact ClickHouse support.
+
+For comprehensive examples including service configuration and network access controls, see [Terraform example on how to use Cloud API](/resources/support-center/knowledge-base/integrations/terraform-example).
+
+### Cloud API integration {#cloud-api-integration}
+
+Organizations with existing automation frameworks can integrate ClickHouse Cloud management directly through the Cloud API. The API provides programmatic access to service lifecycle management, user administration, backup operations, and monitoring data retrieval.
+
+Common API integration patterns:
+- Custom provisioning workflows integrated with internal ticketing systems
+- Automated scaling adjustments based on application deployment schedules
+- Programmatic backup validation and reporting for compliance workflows
+- Integration with existing infrastructure management platforms
+
+API authentication uses the same token-based approach as Terraform. For complete API reference and integration examples, see [ClickHouse Cloud API](/products/cloud/features/admin-features/api/api-overview) documentation.
+
+## Monitoring and operational integration {#monitoring-integration}
+
+Connecting ClickHouse Cloud to your existing monitoring infrastructure ensures visibility and proactive issue detection.
+
+### Built-in monitoring {#built-in-monitoring}
+
+ClickHouse Cloud provides an advanced dashboard with real-time metrics including queries per second, memory usage, CPU usage, and storage rates. Access via Cloud console under Monitoring → Advanced dashboard. Create custom dashboards tailored to specific workload patterns or team resource consumption.
+
+<Info>
+**Common production gaps**
+
+Lack of proactive alerting integration with enterprise incident management systems and automated cost monitoring. Built-in dashboards provide visibility but automated alerting requires external integration.
+</Info>
+
+### Production alerting setup {#production-alerting}
+
+**Built-in Capabilities**: ClickHouse Cloud provides notifications for billing events, scaling events, and service health via email, UI, and Slack. Configure delivery channels and notification severities through the console notification settings.
+
+**Enterprise Integration**: For advanced alerting (PagerDuty, custom webhooks), use the Prometheus endpoint to export metrics to your existing monitoring infrastructure:
+
+```yaml
+scrape_configs:
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["https://api.clickhouse.cloud/v1/organizations/<org_id>/prometheus"]
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+```
+
+For comprehensive setup including detailed Prometheus/Grafana configuration and advanced alerting, see the [ClickHouse Cloud Observability Guide](/guides/use-cases/observability/cloud-monitoring#prometheus).
+
+## Business continuity and support integration {#business-continuity}
+
+Establishing backup validation procedures and support integration ensures your ClickHouse Cloud deployment can recover from incidents and access help when needed.
+
+### Backup strategy assessment {#backup-strategy}
+
+ClickHouse Cloud provides automatic backups with configurable retention periods. Assess your current backup configuration against compliance and recovery requirements. If you have specific compliance requirements around backup location or encryption, you can configure ClickHouse Cloud to store backups in your own cloud storage buckets (BYOB). Contact ClickHouse support for BYOB configuration.
+
+### Validate and test recovery procedures {#validate-test-recovery}
+
+Most organizations discover backup gaps during actual recovery scenarios. Establish regular validation cycles to verify backup integrity and test recovery procedures before incidents occur. Schedule periodic test restorations to non-production environments, document step-by-step recovery procedures including time estimates, verify restored data completeness and application functionality, and test recovery procedures with different failure scenarios (service deletion, data corruption, regional outages). Maintain updated recovery runbooks accessible to on-call teams.
+
+Test backup restoration at least quarterly for critical production services. Organizations with strict compliance requirements may need monthly or even weekly validation cycles.
+
+### Disaster recovery planning {#disaster-recovery-planning}
+
+Document your recovery time objectives (RTO) and recovery point objectives (RPO) to validate that your current backup configuration meets business requirements. Establish regular testing schedules for backup restoration and maintain updated recovery documentation.
+
+**Cross-region backup storage**: Organizations with geographic disaster recovery requirements can configure ClickHouse Cloud to export backups to customer-owned storage buckets in alternate regions. This provides protection against regional outages but requires manual restoration procedures. Contact ClickHouse support to implement cross-region backup exports. Future platform releases will provide automated multi-region replication capabilities.
+
+### Production support integration {#production-support}
+
+Understand your current support tier's SLA expectations and escalation procedures. Create internal runbooks defining when to engage ClickHouse support and integrate these procedures with your existing incident management processes.
+
+Learn more about [ClickHouse Cloud backup and recovery](/products/cloud/guides/backups/review-and-restore-backups) and [support services](/resources/about/support).
+
+## Next steps {#next-steps}
+
+After implementing the integrations and procedures in this guide, visit the [Cloud resource tour](/products/cloud/getting-started/resource-tour) for guides on [monitoring](/products/cloud/getting-started/resource-tour#monitoring), [security](/products/cloud/getting-started/resource-tour#security), and [cost optimization](/products/cloud/getting-started/resource-tour#cost-optimization).
+
+When current [service tier limitations](/products/cloud/features/cloud-tiers) impact your production operations, consider upgrade paths for enhanced capabilities such as [private networking](/products/cloud/guides/security/connectivity/private-networking/index), [TDE/CMEK](/products/cloud/guides/security/cmek) (Transparent Data Encryption with Customer-Managed Encryption Keys), or [advanced backup options](/products/cloud/guides/backups/configurable-backups).

@@ -7,7 +7,7 @@
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveCommon.h>
@@ -39,6 +39,8 @@ public:
         ContextPtr context_);
 
     String getName() const override { return "Hive"; }
+
+    bool isExternalDatabase() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
 
@@ -87,7 +89,7 @@ private:
 
     void initMinMaxIndexExpression();
 
-    HiveFiles collectHiveFiles(
+    HiveFilesWithSkipSplits collectHiveFiles(
         size_t max_threads,
         const ActionsDAG * filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
@@ -95,7 +97,7 @@ private:
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    HiveFiles collectHiveFilesFromPartition(
+    HiveFilesWithSkipSplits collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition,
         const ActionsDAG * filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
@@ -103,7 +105,7 @@ private:
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
 
-    HiveFilePtr getHiveFileIfNeeded(
+    HiveFileWithSkipSplits getHiveFileIfNeeded(
         const FileInfo & file_info,
         const FieldVector & fields,
         const ActionsDAG * filter_actions_dag,

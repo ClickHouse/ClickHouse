@@ -35,22 +35,6 @@ struct QueryViewsLogElement
         WINDOW = 4,
     };
 
-    struct ViewRuntimeStats
-    {
-        String target_name;
-        ViewType type = ViewType::DEFAULT;
-        ThreadStatus * thread_status = nullptr;
-        std::atomic_uint64_t elapsed_ms = 0;
-        std::chrono::time_point<std::chrono::system_clock> event_time;
-        ViewStatus event_status = ViewStatus::QUERY_START;
-
-        void setStatus(ViewStatus s)
-        {
-            event_status = s;
-            event_time = std::chrono::system_clock::now();
-        }
-    };
-
     time_t event_time{};
     Decimal64 event_time_microseconds{};
     UInt64 view_duration_ms{};

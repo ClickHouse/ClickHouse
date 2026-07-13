@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class GRPCServer;
+class IGRPCServer;
 class TCPServer;
 
 /// Provides an unified interface to access a protocol implementing server
@@ -33,7 +33,7 @@ public:
         const std::string & listen_host_,
         const char * port_name_,
         const std::string & description_,
-        std::unique_ptr<GRPCServer> grpc_server_,
+        std::unique_ptr<IGRPCServer> grpc_server_,
         bool supports_runtime_reconfiguration_ = true);
 #endif
 

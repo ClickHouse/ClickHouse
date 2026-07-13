@@ -66,6 +66,46 @@ struct EnabledQuota::Impl
         }
     }
 
+    static void usedPerNormalizedHash(
+        const String & user_name,
+        const Intervals & intervals,
+        UInt64 normalized_query_hash,
+        std::chrono::system_clock::time_point current_time)
+    {
+        constexpr auto quota_type = QuotaType::QUERIES_PER_NORMALIZED_HASH;
+        constexpr auto quota_type_i = static_cast<size_t>(quota_type);
+
+        for (const auto & interval : intervals.intervals)
+        {
+            QuotaValue max = interval.max[quota_type_i];
+            if (!max)
+                continue;
+
+            /// Ensure the interval is current (may reset counters).
+            interval.getEndOfInterval(current_time);
+
+            QuotaValue current_count = 0;
+            {
+                std::lock_guard lock(interval.per_hash_mutex);
+                current_count = ++interval.per_hash_used[normalized_query_hash];
+            }
+
+            /// Update the atomic `used` counter with the max across all hashes for reporting.
+            QuotaValue old_used = interval.used[quota_type_i].load();
+            while (current_count > old_used)
+            {
+                if (interval.used[quota_type_i].compare_exchange_weak(old_used, current_count))
+                    break;
+            }
+
+            if (current_count > max)
+            {
+                auto end_of_interval = interval.getEndOfInterval(current_time);
+                throwQuotaExceed(user_name, intervals.quota_name, quota_type, current_count, max, interval.duration, end_of_interval);
+            }
+        }
+    }
+
     static void checkExceeded(
         const String & user_name,
         const Intervals & intervals,
@@ -151,6 +191,15 @@ EnabledQuota::Interval & EnabledQuota::Interval::operator =(const Interval & src
         max[quota_type_i] = src.max[quota_type_i];
         used[quota_type_i].store(src.used[quota_type_i].load());
     }
+
+    /// Copy per-hash map.
+    /// Use std::scoped_lock to acquire both mutexes with deadlock avoidance,
+    /// because std::swap (used in sort) calls operator= in both directions.
+    {
+        std::scoped_lock both_locks(src.per_hash_mutex, per_hash_mutex);
+        per_hash_used = src.per_hash_used;
+    }
+
     return *this;
 }
 
@@ -162,7 +211,7 @@ EnabledQuota::Interval & EnabledQuota::Interval::operator =(const Interval & src
 /// `counters_were_reset`.
 std::chrono::system_clock::time_point EnabledQuota::Interval::getEndOfInterval(std::chrono::system_clock::time_point current_time) const
 {
-    bool counters_were_reset;
+    bool counters_were_reset = false;
     return getEndOfInterval(current_time, counters_were_reset);
 }
 
@@ -198,6 +247,13 @@ std::chrono::system_clock::time_point EnabledQuota::Interval::getEndOfInterval(s
     if (need_reset_counters)
     {
         boost::range::fill(used, 0);
+
+        /// Also clear per-hash counters.
+        {
+            std::lock_guard lock(per_hash_mutex);
+            per_hash_used.clear();
+        }
+
         counters_were_reset = true;
     }
     return end;
@@ -234,6 +290,7 @@ std::optional<QuotaUsage> EnabledQuota::Intervals::getUsage(std::chrono::system_
 
 EnabledQuota::EnabledQuota(const Params & params_) : params(params_)
 {
+    quotas.store(boost::make_shared<const Quotas>());
 }
 
 EnabledQuota::~EnabledQuota() = default;
@@ -247,76 +304,188 @@ void EnabledQuota::used(QuotaType quota_type, QuotaValue value, bool check_excee
 
 void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, bool check_exceeded) const
 {
-    auto loaded = intervals.load();
+    if (empty)
+        return;
+    auto loaded = quotas.load();
     auto current_time = std::chrono::system_clock::now();
-    Impl::used(getUserName(), *loaded, usage1.first, usage1.second, current_time, check_exceeded);
+    for (const auto & quota : *loaded)
+        Impl::used(getUserName(), *quota->intervals, usage1.first, usage1.second, current_time, check_exceeded);
 }
 
 
 void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, bool check_exceeded) const
 {
-    auto loaded = intervals.load();
+    if (empty)
+        return;
+    auto loaded = quotas.load();
     auto current_time = std::chrono::system_clock::now();
-    Impl::used(getUserName(), *loaded, usage1.first, usage1.second, current_time, check_exceeded);
-    Impl::used(getUserName(), *loaded, usage2.first, usage2.second, current_time, check_exceeded);
+    for (const auto & quota : *loaded)
+    {
+        Impl::used(getUserName(), *quota->intervals, usage1.first, usage1.second, current_time, check_exceeded);
+        Impl::used(getUserName(), *quota->intervals, usage2.first, usage2.second, current_time, check_exceeded);
+    }
 }
 
 
 void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, const std::pair<QuotaType, QuotaValue> & usage3, bool check_exceeded) const
 {
-    auto loaded = intervals.load();
+    if (empty)
+        return;
+    auto loaded = quotas.load();
     auto current_time = std::chrono::system_clock::now();
-    Impl::used(getUserName(), *loaded, usage1.first, usage1.second, current_time, check_exceeded);
-    Impl::used(getUserName(), *loaded, usage2.first, usage2.second, current_time, check_exceeded);
-    Impl::used(getUserName(), *loaded, usage3.first, usage3.second, current_time, check_exceeded);
+    for (const auto & quota : *loaded)
+    {
+        Impl::used(getUserName(), *quota->intervals, usage1.first, usage1.second, current_time, check_exceeded);
+        Impl::used(getUserName(), *quota->intervals, usage2.first, usage2.second, current_time, check_exceeded);
+        Impl::used(getUserName(), *quota->intervals, usage3.first, usage3.second, current_time, check_exceeded);
+    }
 }
 
 
 void EnabledQuota::used(const std::vector<std::pair<QuotaType, QuotaValue>> & usages, bool check_exceeded) const
 {
-    auto loaded = intervals.load();
+    if (empty)
+        return;
+    auto loaded = quotas.load();
     auto current_time = std::chrono::system_clock::now();
-    for (const auto & usage : usages)
-        Impl::used(getUserName(), *loaded, usage.first, usage.second, current_time, check_exceeded);
+    for (const auto & quota : *loaded)
+        for (const auto & usage : usages)
+            Impl::used(getUserName(), *quota->intervals, usage.first, usage.second, current_time, check_exceeded);
+}
+
+
+void EnabledQuota::usedPerNormalizedHash(UInt64 normalized_query_hash) const
+{
+    if (empty)
+        return;
+    auto loaded = quotas.load();
+    auto current_time = std::chrono::system_clock::now();
+    for (const auto & quota : *loaded)
+        Impl::usedPerNormalizedHash(getUserName(), *quota->intervals, normalized_query_hash, current_time);
+}
+
+
+boost::shared_ptr<const EnabledQuota::Intervals> EnabledQuota::resolveIntervalsForHash(const SingleQuota & quota, UInt64 normalized_query_hash)
+{
+    /// Fast path: the intervals for this hash are already cached.
+    {
+        std::lock_guard lock(quota.resolved_intervals_mutex);
+        auto * it = quota.resolved_intervals_cache.find(normalized_query_hash);
+        if (it != quota.resolved_intervals_cache.end())
+            return it->getMapped();
+    }
+
+    /// Cache miss: resolve outside the lock, then store the result.
+    String key = std::to_string(normalized_query_hash);
+    auto resolved = quota.interval_resolver(key);
+    if (resolved)
+    {
+        std::lock_guard lock(quota.resolved_intervals_mutex);
+        quota.resolved_intervals_cache[normalized_query_hash] = resolved;
+    }
+    return resolved;
+}
+
+
+/// Resolves the intervals a per-query counter must be accounted against for `quota`: the per-hash
+/// intervals for `NORMALIZED_QUERY_HASH` quotas, or the shared session intervals for all others.
+boost::shared_ptr<const EnabledQuota::Intervals> EnabledQuota::resolveTargetIntervals(const SingleQuota & quota, UInt64 normalized_query_hash)
+{
+    if (quota.interval_resolver)
+        return resolveIntervalsForHash(quota, normalized_query_hash);
+    return quota.intervals;
+}
+
+
+void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, QuotaType quota_type, QuotaValue value, bool check_exceeded) const
+{
+    if (empty)
+        return;
+    auto loaded = quotas.load();
+    auto current_time = std::chrono::system_clock::now();
+    for (const auto & quota : *loaded)
+    {
+        auto target = resolveTargetIntervals(*quota, normalized_query_hash);
+        if (target)
+            Impl::used(getUserName(), *target, quota_type, value, current_time, check_exceeded);
+    }
+}
+
+
+void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, std::initializer_list<std::pair<QuotaType, QuotaValue>> usages, bool check_exceeded) const
+{
+    if (empty)
+        return;
+    auto loaded = quotas.load();
+    auto current_time = std::chrono::system_clock::now();
+    for (const auto & quota : *loaded)
+    {
+        auto target = resolveTargetIntervals(*quota, normalized_query_hash);
+        if (!target)
+            continue;
+        for (const auto & usage : usages)
+            Impl::used(getUserName(), *target, usage.first, usage.second, current_time, check_exceeded);
+    }
 }
 
 
 void EnabledQuota::checkExceeded() const
 {
-    auto loaded = intervals.load();
-    Impl::checkExceeded(getUserName(), *loaded, std::chrono::system_clock::now());
+    if (empty)
+        return;
+    auto loaded = quotas.load();
+    auto current_time = std::chrono::system_clock::now();
+    for (const auto & quota : *loaded)
+        Impl::checkExceeded(getUserName(), *quota->intervals, current_time);
 }
 
 
 void EnabledQuota::checkExceeded(QuotaType quota_type) const
 {
-    auto loaded = intervals.load();
-    Impl::checkExceeded(getUserName(), *loaded, quota_type, std::chrono::system_clock::now());
+    if (empty)
+        return;
+    auto loaded = quotas.load();
+    auto current_time = std::chrono::system_clock::now();
+    for (const auto & quota : *loaded)
+        Impl::checkExceeded(getUserName(), *quota->intervals, quota_type, current_time);
+}
+
+
+void EnabledQuota::checkExceededForQuery(UInt64 normalized_query_hash, QuotaType quota_type) const
+{
+    if (empty)
+        return;
+    auto loaded = quotas.load();
+    auto current_time = std::chrono::system_clock::now();
+    for (const auto & quota : *loaded)
+    {
+        auto target = resolveTargetIntervals(*quota, normalized_query_hash);
+        if (target)
+            Impl::checkExceeded(getUserName(), *target, quota_type, current_time);
+    }
 }
 
 
 void EnabledQuota::reset(QuotaType quota_type) const
 {
-    const auto loaded = intervals.load();
-    Impl::resetQuotaValue(*loaded, quota_type, 0, std::chrono::system_clock::now());
+    auto loaded = quotas.load();
+    auto current_time = std::chrono::system_clock::now();
+    for (const auto & quota : *loaded)
+        Impl::resetQuotaValue(*quota->intervals, quota_type, 0, current_time);
 }
 
-std::optional<QuotaUsage> EnabledQuota::getUsage() const
+std::vector<QuotaUsage> EnabledQuota::getAllUsage() const
 {
-    auto loaded = intervals.load();
-    return loaded->getUsage(std::chrono::system_clock::now());
-}
-
-
-std::shared_ptr<const EnabledQuota> EnabledQuota::getUnlimitedQuota()
-{
-    static const std::shared_ptr<const EnabledQuota> res = []
+    auto loaded = quotas.load();
+    auto current_time = std::chrono::system_clock::now();
+    std::vector<QuotaUsage> result;
+    result.reserve(loaded->size());
+    for (const auto & quota : *loaded)
     {
-        auto unlimited_quota = std::shared_ptr<EnabledQuota>(new EnabledQuota);
-        unlimited_quota->intervals = boost::make_shared<Intervals>();
-        return unlimited_quota;
-    }();
-    return res;
+        auto usage = quota->intervals->getUsage(current_time);
+        if (usage)
+            result.push_back(std::move(usage).value());
+    }
+    return result;
 }
-
 }

@@ -15,6 +15,7 @@
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/logger_useful.h>
@@ -36,7 +37,9 @@
         M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
 #endif
 
+#pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -52,15 +55,8 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
-    if (needsSetup())
-        setup();
-
-    if (!isEffective())
-    {
-        /// It has no effect - disable it
-        stop();
-        return;
-    }
+    if (isEffective())
+        started.store(true, std::memory_order_relaxed);
 }
 
 template <typename T>
@@ -280,6 +276,9 @@ void ThreadFuzzer::signalHandler(int)
 
 void ThreadFuzzer::setup() const
 {
+    if (!needsSetup())
+        return;
+
     struct sigaction sa{};
     sa.sa_handler = signalHandler;
     sa.sa_flags = SA_RESTART;
@@ -301,7 +300,7 @@ void ThreadFuzzer::setup() const
 
     static constexpr UInt32 timer_precision = 1000000;
 
-    struct timeval interval;
+    struct timeval interval{};
     interval.tv_sec = cpu_time_period_us / timer_precision;
     interval.tv_usec = cpu_time_period_us % timer_precision;
 
@@ -382,6 +381,8 @@ void ThreadFuzzer::setup() const
     #    define GLIBC_SYMVER "GLIBC_2.17"
     #elif (defined(__S390X__) || defined(__s390x__))
     #    define GLIBC_SYMVER "GLIBC_2.2"
+    #elif defined(__e2k__)
+    #    define GLIBC_SYMVER "GLIBC_2.0"
     #else
     #    error Your platform is not supported.
     #endif
@@ -449,5 +450,7 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_INTERNAL_SYMBOLS)
 
 #endif
 }
+
+#pragma clang diagnostic pop
 
 // NOLINTEND(readability-inconsistent-declaration-parameter-name,readability-else-after-return)

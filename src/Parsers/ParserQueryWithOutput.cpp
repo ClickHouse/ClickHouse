@@ -22,6 +22,7 @@
 #include <Parsers/ParserShowFunctionsQuery.h>
 #include <Parsers/ParserShowIndexesQuery.h>
 #include <Parsers/ParserShowSettingQuery.h>
+#include <Parsers/ParserSnapshotQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
@@ -32,6 +33,8 @@
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -66,6 +69,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserShowPrivilegesQuery show_privileges_p;
     ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
     ParserBackupQuery backup_p;
+    ParserSnapshotQuery snapshot_p;
 
     ASTPtr query;
 
@@ -96,7 +100,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
         || show_privileges_p.parse(pos, query, expected)
-        || backup_p.parse(pos, query, expected);
+        || backup_p.parse(pos, query, expected)
+        || snapshot_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;
@@ -114,19 +119,19 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserKeyword s_append(Keyword::APPEND);
         if (s_append.ignore(pos, expected))
         {
-            query_with_output.is_outfile_append = true;
+            query_with_output.setIsOutfileAppend(true);
         }
 
         ParserKeyword s_truncate(Keyword::TRUNCATE);
         if (s_truncate.ignore(pos, expected))
         {
-            query_with_output.is_outfile_truncate = true;
+            query_with_output.setIsOutfileTruncate(true);
         }
 
         ParserKeyword s_stdout(Keyword::AND_STDOUT);
         if (s_stdout.ignore(pos, expected))
         {
-            query_with_output.is_into_outfile_with_stdout = true;
+            query_with_output.setIsIntoOutfileWithStdout(true);
         }
 
         ParserKeyword s_compression_method(Keyword::COMPRESSION);
@@ -200,6 +205,32 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
         else
             break;
+    }
+
+    /// The formatter always outputs the output options in a fixed order:
+    /// INTO OUTFILE (with COMPRESSION/LEVEL), then FORMAT, then SETTINGS.
+    /// The parser, however, may append these children in a different order:
+    /// FORMAT and SETTINGS are allowed in either order above, and for
+    /// `EXPLAIN INSERT ... SELECT ... FORMAT ...` the FORMAT child is attached
+    /// to the query (by `ParserExplainQuery`) before INTO OUTFILE is parsed here.
+    /// Reorder the output-option children into the canonical (formatting) order
+    /// so that the tree hash is stable across a formatting roundtrip, regardless
+    /// of the original clause order. The order is shared with `cloneOutputOptions`
+    /// and `formatImpl` via `ASTQueryWithOutput::output_option_members`.
+    {
+        auto & ch = query_with_output.children;
+        auto is_output_option = [&](const ASTPtr & child)
+        {
+            return std::any_of(
+                ASTQueryWithOutput::output_option_members.begin(),
+                ASTQueryWithOutput::output_option_members.end(),
+                [&](auto member) { return (query_with_output.*member) && (query_with_output.*member).get() == child.get(); });
+        };
+
+        ch.erase(std::remove_if(ch.begin(), ch.end(), is_output_option), ch.end());
+        for (auto member : ASTQueryWithOutput::output_option_members)
+            if (query_with_output.*member)
+                ch.push_back(query_with_output.*member);
     }
 
     node = std::move(query);

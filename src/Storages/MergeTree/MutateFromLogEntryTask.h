@@ -33,6 +33,9 @@ public:
     {
         if (mutate_task)
             mutate_task->cancel();
+
+        if (new_part)
+            new_part->removeIfNeeded();
     }
 
 private:
@@ -53,6 +56,7 @@ private:
 
     MergeTreePartInfo new_part_info;
     MutationCommandsConstPtr commands;
+    Strings mutation_ids_for_log;
 
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     std::optional<ZeroCopyLock> zero_copy_lock;

@@ -8,12 +8,15 @@ namespace DB
 {
 
 BackupCoordinationLocal::BackupCoordinationLocal(
-    bool is_plain_backup_,
-    bool allow_concurrent_backup_,
-    BackupConcurrencyCounters & concurrency_counters_)
+    const BackupSettings & backup_settings_, bool allow_concurrent_backup_, BackupConcurrencyCounters & concurrency_counters_)
     : log(getLogger("BackupCoordinationLocal"))
-    , concurrency_check(/* is_restore = */ false, /* on_cluster = */ false, /* zookeeper_path = */ "", allow_concurrent_backup_, concurrency_counters_)
-    , file_infos(is_plain_backup_)
+    , concurrency_check(
+          /* is_restore = */ false, /* on_cluster = */ false, /* zookeeper_path = */ "", allow_concurrent_backup_, concurrency_counters_)
+    , file_infos(
+          BackupCoordinationFileInfos::Config{
+              !backup_settings_.deduplicate_files,
+              backup_settings_.data_file_name_generator,
+              *backup_settings_.data_file_name_prefix_length})
 {
 }
 

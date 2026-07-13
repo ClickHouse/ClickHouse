@@ -1,14 +1,13 @@
 # docker build -t clickhouse/stateless-test .
-FROM ubuntu:22.04
+ARG FROM_TAG=latest
+ARG REDPANDA_VERSION=v25.1.3
+FROM redpandadata/redpanda:${REDPANDA_VERSION} AS redpanda
 
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+FROM clickhouse/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.6.20200320/clickhouse-odbc-1.1.6-Linux.tar.gz"
 
-
-RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client && chmod 777 /etc/clickhouse-* \
+RUN mkdir /etc/clickhouse-server /etc/clickhouse-keeper /etc/clickhouse-client /usr/share/clickhouse/ && chmod 777 /etc/clickhouse-* /usr/share/clickhouse \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server && chmod 777 /var/log/clickhouse-server /var/lib/clickhouse
 
 RUN addgroup --gid 1000 clickhouse && adduser --uid 1000 --gid 1000 --disabled-password clickhouse
@@ -23,53 +22,44 @@ RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-
 # parallel - for perf tests
 
 # golang version 1.13 on Ubuntu 20 is enough for tests
+# Install additional packages not included in test-base
 RUN apt-get update -y \
-    && env DEBIAN_FRONTEND=noninteractive \
-        apt-get install --yes --no-install-recommends \
-            git \
-            awscli \
-            brotli \
-            lz4 \
-            expect \
-            moreutils \
-            bzip2 \
-            bsdmainutils \
-            golang \
-            lsof \
-            mysql-client=8.0* \
-            ncdu \
-            netcat-openbsd \
-            nodejs \
-            npm \
-            odbcinst \
-            openjdk-11-jre-headless \
-            openssl \
-            postgresql-client \
-            python3 \
-            python3-pip \
-            qemu-user-static \
-            sqlite3 \
-            sudo \
-            tree \
-            unixodbc \
-            rustc \
-            cargo \
-            zstd \
-            file \
-            jq \
-            pv \
-            zip \
-            unzip \
-            p7zip-full \
-            curl \
-            wget \
-            xz-utils \
-            ripgrep \
-            gnuplot \
-            imagemagick \
-            parallel \
+    && apt-get install --yes --no-install-recommends \
+        brotli \
+        lz4 \
+        expect \
+        bzip2 \
+        golang \
+        lsof \
+        mysql-client=8.0* \
+        ncdu \
+        netcat-openbsd \
+        openssh-client \
+        odbcinst \
+        openssl \
+        postgresql-client \
+        qemu-user-static \
+        sqlite3 \
+        tree \
+        unixodbc \
+        rustc \
+        cargo \
+        file \
+        jq \
+        zip \
+        unzip \
+        p7zip-full \
+        xz-utils \
+        gnuplot \
+        imagemagick \
+        parallel \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
+    && unzip -q awscliv2.zip \
+    && ./aws/install \
+    && rm awscliv2.zip
 
 ARG PROTOC_VERSION=25.1
 RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip \
@@ -77,7 +67,7 @@ RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PR
     && rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
 COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN python3.13 -m pip install --no-cache-dir -r /requirements.txt
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && cd /tmp/clickhouse-odbc-tmp \
@@ -89,22 +79,52 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
   && sed -i 's"=libclickhouseodbc"=/usr/local/lib64/libclickhouseodbc"' /etc/odbcinst.ini \
   && rm -rf /tmp/clickhouse-odbc-tmp
 
-ENV TZ=Europe/Amsterdam
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
 ENV NUM_TRIES=1
 
 # Unrelated to vars in setup_minio.sh, but should be the same there
 # to have the same binaries for local running scenario
-ARG MINIO_SERVER_VERSION=2024-08-03T04-33-23Z
-ARG MINIO_CLIENT_VERSION=2024-07-31T15-58-33Z
+ARG MINIO_SERVER_VERSION=2025-06-13T11-33-47Z
+ARG MINIO_CLIENT_VERSION=2025-05-21T01-59-54Z
 ARG TARGETARCH
 
-# Download Minio-related binaries
+# Download Minio-related binaries.
+# dl.min.io throttles under concurrent multi-arch image builds, so fetch with
+# --fail (never write an error body as a "binary") and retry with backoff on
+# transient errors/timeouts; otherwise one blip fails the build and the image
+# is never pushed, breaking every downstream stateless job with "image not found".
 RUN arch=${TARGETARCH:-amd64} \
-    && curl -L "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -o /minio \
-    && curl -L "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -o /mc \
+    && curl -fL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 60 --max-time 600 \
+        "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -o /minio \
+    && curl -fL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 60 --max-time 600 \
+        "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -o /mc \
     && chmod +x /mc /minio
+
+# Pre-bundle the AIStor (licensed MinIO) binaries so AIStor jobs do not each
+# re-fetch them from dl.min.io at runtime: ~22 stateless AIStor jobs start at
+# once, and that per-job download was a thundering herd on the external endpoint
+# that throttled/stalled the fetch. setup_minio.sh copies these into place instead
+# of downloading when present (community jobs keep using the /minio above).
+#
+# Pin explicit versions and fetch the versioned RELEASE archives rather than the
+# moving `edge` channel: an unpinned URL makes clickhouse/stateless-test
+# non-reproducible - rebuilding the same source could silently change the AIStor
+# version under CI with no Dockerfile diff. Keep AISTOR_SERVER_VERSION /
+# AISTOR_CLIENT_VERSION in sync with the minio_server_version / minio_client_version
+# defaults in setup_minio.sh, which fetches these same RELEASE archives for
+# non-docker runs.
+#
+# Use -f so a failed fetch fails the build rather than shipping a truncated binary,
+# and retry with backoff so a transient dl.min.io throttle during the concurrent
+# multi-arch build does not fail the build and leave the image unpushed.
+ARG AISTOR_SERVER_VERSION=2026-03-20T23-11-32Z
+ARG AISTOR_CLIENT_VERSION=2026-03-12T04-18-55Z
+RUN arch=${TARGETARCH:-amd64} \
+    && mkdir -p /opt/aistor \
+    && curl -fL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 60 --max-time 600 \
+        "https://dl.min.io/aistor/minio/release/linux-${arch}/archive/minio.RELEASE.${AISTOR_SERVER_VERSION}" -o /opt/aistor/minio \
+    && curl -fL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 60 --max-time 600 \
+        "https://dl.min.io/aistor/mc/release/linux-${arch}/archive/mc.RELEASE.${AISTOR_CLIENT_VERSION}" -o /opt/aistor/mc \
+    && chmod +x /opt/aistor/minio /opt/aistor/mc
 
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
@@ -113,12 +133,34 @@ ENV MINIO_ROOT_PASSWORD="clickhouse"
 RUN chmod 777 /home
 ENV HOME="/home"
 
-RUN npm install -g azurite@3.30.0 \
-    && npm install -g tslib && npm install -g node
+# Download azurite-rs (Azure Blob Storage emulator in Rust)
+# https://github.com/ClickHouse/azurite-rs
+ARG AZURITE_RS_VERSION=v0.1.0-1bc0ba9
+RUN arch=${TARGETARCH:-amd64} \
+    && curl -fsSL "https://github.com/ClickHouse/azurite-rs/releases/download/${AZURITE_RS_VERSION}/azurite-rs-linux-${arch}.tar.gz" | tar -xz -C /usr/local/bin/ \
+    && mv /usr/local/bin/azurite-rs-linux-${arch} /usr/local/bin/azurite-rs \
+    && chmod +x /usr/local/bin/azurite-rs
+
+# Install Redpanda (Kafka-compatible broker, no JVM required)
+COPY --from=redpanda /opt/redpanda /opt/redpanda
+ENV PATH="/opt/redpanda/bin:${PATH}"
 
 ENV PYTHONPATH=".:./ci"
-USER clickhouse
+
+#USER clickhouse
 
 # A directory for cache
 RUN mkdir /dev/shm/clickhouse
 
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
+ENV PATH="/opt/gdb/bin:${PATH}"
+
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
+  /opt/openssl-fips/openssl.cnf \
+  /opt/openssl-fips/fipsmodule.cnf \
+  /opt/openssl-fips/fips.so \
+  \
+  /etc/ssl/
+
+# Make timezone and locale files writable to randomize them in tests
+RUN chmod 666 /etc/timezone /etc/localtime

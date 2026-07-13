@@ -1,16 +1,21 @@
 #pragma once
+#include <optional>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
+#include <Common/SettingsChanges.h>
+#include <Interpreters/StorageID.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
+#include <Poco/JSON/Object.h>
 
 namespace DataLake
 {
 
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
+StorageType parseStorageTypeFromString(const std::string &type);
 
 struct DataLakeSpecificProperties
 {
@@ -28,6 +33,7 @@ public:
     TableMetadata & withSchema() { with_schema = true; return *this; }
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
     TableMetadata & withDataLakeSpecificProperties() { with_datalake_specific_metadata = true; return *this; }
+    TableMetadata & withForceAddBucket() { force_add_bucket = true; return *this; }
 
     bool hasLocation() const;
     bool hasSchema() const;
@@ -36,7 +42,8 @@ public:
 
     void setLocation(const std::string & location_);
     std::string getLocation() const;
-    std::string getLocationWithEndpoint(const std::string & endpoint_) const;
+    std::string getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style = DB::S3UriStyle::AUTO) const;
+    std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
 
     void setEndpoint(const std::string & endpoint_);
     std::string getEndpoint() const { return endpoint; }
@@ -49,6 +56,9 @@ public:
 
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
     std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
+
+    void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
+    std::optional<std::string> getTableUUID() const { return table_uuid; }
 
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
@@ -80,8 +90,14 @@ private:
     /// Path to table's data: `/path/to/table/data/`
     std::string path;
     DB::NamesAndTypesList schema;
+    // Type of storage
+    std::string storage_type_str;
 
     std::string bucket;
+    /// For Azure ABFSS URLs: stores the account with suffix (e.g., "account.dfs.core.windows.net")
+    /// This is extracted from URLs like: abfss://container@account.dfs.core.windows.net/path
+    std::string azure_account_with_suffix;
+    bool force_add_bucket = false;
     /// Endpoint is set and used in case we have non-AWS storage implementation, for example, Minio.
     /// Also not all catalogs support non-AWS storages.
     std::string endpoint;
@@ -93,6 +109,7 @@ private:
     std::optional<DataLakeSpecificProperties> data_lake_specific_metadata;
 
     std::string reason_why_table_is_not_readable;
+    std::optional<std::string> table_uuid;
 
     bool is_default_readable_table = true;
 
@@ -101,9 +118,41 @@ private:
     bool with_storage_credentials = false;
     bool with_datalake_specific_metadata = false;
 
-    std::string constructLocation(const std::string & endpoint_) const;
+    std::string constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const;
 };
 
+
+/// Catalog-layer view of the `name` predicate (translated from `DB::TablesFilter`
+/// by `DatabaseDataLake`) so the catalog can restrict which namespaces it lists.
+struct TableNameFilter
+{
+    /// Equals (`name = 'ns.table'`) and Like (`name LIKE 'ns.%'`) prune to specific
+    /// namespaces; All lists the whole catalog (fallback when we can't prune).
+    enum class Kind
+    {
+        All,
+        Equals,
+        Like,
+    };
+
+    Kind kind = Kind::All;
+    /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
+    std::string value;
+};
+
+
+struct CatalogSettings
+{
+    String storage_endpoint;
+    String aws_access_key_id;
+    String aws_secret_access_key;
+    String region;
+    String aws_role_arn;
+    String aws_role_session_name;
+    String aws_external_id;
+
+    DB::SettingsChanges allChanged() const;
+};
 
 /// Base class for catalog implementation.
 /// Used for communication with the catalog.
@@ -111,6 +160,7 @@ class ICatalog
 {
 public:
     using Namespaces = std::vector<std::string>;
+    using CredentialsRefreshCallback = std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>>;
 
     explicit ICatalog(const std::string & warehouse_) : warehouse(warehouse_) {}
 
@@ -123,6 +173,14 @@ public:
     /// Fetch tables' names list.
     /// Contains full namespaces in names.
     virtual DB::Names getTables() const = 0;
+
+    /// Enumerate every namespace as a full dot-separated path (hierarchical catalogs
+    /// return every nested level; flat catalogs their single-level names).
+    virtual Namespaces getNamespaces() const = 0;
+
+    /// Fetch fully-qualified table names, restricted by the `name` predicate (see
+    /// `TableNameFilter`). Default impl prunes namespaces via `getNamespaces()`.
+    virtual DB::Names getTables(const TableNameFilter & filter) const;
 
     /// Check that a table exists in a given namespace.
     virtual bool existsTable(
@@ -147,7 +205,45 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
+    /// Creates new table in catalog.
+    virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
+
+    /// Updates metadata in catalog.
+    virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
+
+    /// Commit a schema evolution (ADD/DROP/MODIFY/RENAME COLUMN) to the catalog.
+    /// `new_metadata_path` is the path of the freshly written `vN.metadata.json`; it is used by
+    /// non-transactional catalogs (e.g. Glue) that only store a pointer to the metadata file.
+    /// `new_schema` is the full new schema object and `previous_schema_id` is the schema id that the
+    /// catalog is expected to currently have - used to build the optimistic-concurrency requirement
+    /// (`assert-current-schema-id`) on transactional catalogs (e.g. Iceberg REST).
+    /// Returns `false` on a recoverable conflict so the caller can retry, throws otherwise.
+    virtual bool updateSchema(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_schema,
+        Int32 previous_schema_id) const;
+
+    /// Drop table from catalog.
+    virtual void dropTable(const String & namespace_name, const String & table_name) const;
+
+    /// Does the catalog support transactions or anything like that?
+    /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".
+    /// So the REST catalog is transactional.
+    /// The Glue catalog does not support such operation.
+    virtual bool isTransactional() const { return false; }
+
+    virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
+    {
+        return std::nullopt;
+    }
+
 protected:
+    /// List tables directly in `namespace_name` (non-recursive), as fully-qualified
+    /// `namespace.table` names.
+    virtual DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const = 0;
+
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".
     const std::string warehouse;

@@ -4,9 +4,8 @@ sidebar_label: 'Combinators'
 sidebar_position: 37
 slug: /sql-reference/aggregate-functions/combinators
 title: 'Aggregate Function Combinators'
+doc_type: 'reference'
 ---
-
-# Aggregate Function Combinators
 
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
@@ -39,7 +38,8 @@ CREATE TABLE map_map(
     date Date,
     timeslot DateTime,
     status Map(String, UInt64)
-) ENGINE = Log;
+) ENGINE = MergeTree
+ORDER BY ();
 
 INSERT INTO map_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [10, 10, 10])),
@@ -81,15 +81,11 @@ The value of an aggregate function with the `SimpleAggregateFunction(...)` type.
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─toTypeName(c)────────────────────────┬─c─┐
 │ SimpleAggregateFunction(any, UInt64) │ 0 │
 └──────────────────────────────────────┴───┘
@@ -106,8 +102,8 @@ Please notice, that -MapState is not an invariant for the same data due to the f
 To work with these states, use:
 
 - [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
-- [finalizeAggregation](/sql-reference/functions/other-functions#finalizeaggregation) function.
-- [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
+- [finalizeAggregation](/sql-reference/functions/other-functions#finalizeAggregation) function.
+- [runningAccumulate](../../sql-reference/functions/other-functions.md#runningAccumulate) function.
 - [-Merge](#-merge) combinator.
 - [-MergeState](#-mergestate) combinator.
 
@@ -122,6 +118,106 @@ Merges the intermediate aggregation states in the same way as the -Merge combina
 ## -ForEach {#-foreach}
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
+
+## -Tuple {#-tuple}
+
+The `-Tuple` suffix can be appended to any aggregate function. The combined function takes one argument of `Tuple` type per argument of the underlying aggregate function; all tuples must have the same number of elements. The aggregation is applied independently at each element position, receiving the corresponding element from every `Tuple`, and returns a `Tuple` of results.
+
+If the first input `Tuple` has explicit element names, they are preserved in the result.
+
+Aggregate functions that handle `NULL` values themselves (`anyRespectNulls`, `anyLastRespectNulls`, the `RESPECT NULLS` modifier) do not support the `Nullable(Tuple(...))` type as an argument; use `Nullable` elements instead.
+
+**Syntax**
+
+```sql
+<aggFunction>Tuple(tuple1[, tuple2, ...])
+```
+
+**Arguments**
+
+- `tuple1[, tuple2, ...]` — Columns of `Tuple` type, one per argument of the underlying aggregate function, all with the same number of elements. Each element must be a type supported by the underlying aggregate function at that argument position.
+
+**Returned values**
+
+- A `Tuple` containing the result of applying the aggregate function to each element independently.
+
+Type: `Tuple(aggFunction(element1), aggFunction(element2), ...)`.
+
+**Example**
+
+Query:
+
+```sql
+SELECT sumTuple(t) FROM
+(
+    SELECT tuple(toInt64(1), toFloat64(2.5)) AS t
+    UNION ALL
+    SELECT tuple(toInt64(3), toFloat64(4.5))
+    UNION ALL
+    SELECT tuple(toInt64(5), toFloat64(6.5))
+);
+```
+
+Result:
+
+```text
+┌─sumTuple(t)─┐
+│ (9,13.5)    │
+└─────────────┘
+```
+
+Using with `GROUP BY`:
+
+```sql
+SELECT
+    k,
+    avgTuple(t)
+FROM
+(
+    SELECT
+        number % 2 AS k,
+        tuple(toInt64(number), toFloat64(number) * 1.5) AS t
+    FROM numbers(6)
+)
+GROUP BY k
+ORDER BY k;
+```
+
+```text
+┌─k─┬─avgTuple(t)─┐
+│ 0 │ (2,3)       │
+│ 1 │ (3,4.5)     │
+└───┴─────────────┘
+```
+
+Using with a multi-argument aggregate function: each `Tuple` argument supplies one argument of the underlying function, and the elements are paired up by position:
+
+```text
+corrTuple((a1, a2), (b1, b2)) = (corr(a1, b1), corr(a2, b2))
+```
+
+```sql
+SELECT corrTuple((a1, a2), (b1, b2))
+FROM
+(
+    SELECT
+        toFloat64(number) AS a1,
+        toFloat64(number * 2) AS a2,
+        toFloat64(100 - number) AS b1,
+        toFloat64(number * 3) AS b2
+    FROM numbers(10)
+);
+```
+
+```text
+┌─corrTuple((a1, a2), (b1, b2))─┐
+│ (-1,1)                        │
+└───────────────────────────────┘
+```
+
+`a1` and `b1` are anticorrelated, while `a2` and `b2` are proportional, so the result is `(-1, 1)`.
+
+`-Tuple` can be combined with other combinators such as `-If`. For example: `sumTupleIf(tuple_column, cond)`.
 
 ## -Distinct {#-distinct}
 
@@ -154,15 +250,11 @@ Type depends on the aggregate function used.
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─avg(number)─┬─avgOrDefault(number)─┐
 │         nan │                    0 │
 └─────────────┴──────────────────────┘
@@ -170,9 +262,7 @@ Result:
 
 Also `-OrDefault` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT avgOrDefaultIf(x, x > 10)
 FROM
 (
@@ -180,9 +270,7 @@ FROM
 )
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─avgOrDefaultIf(x, greater(x, 10))─┐
 │                              0.00 │
 └───────────────────────────────────┘
@@ -217,15 +305,11 @@ Type: `Nullable(aggregate function return type)`.
 
 Add `-orNull` to the end of aggregate function.
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
 │              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
 └───────────────────┴───────────────────────────────┘
@@ -233,9 +317,7 @@ Result:
 
 Also `-OrNull` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT avgOrNullIf(x, x > 10)
 FROM
 (
@@ -243,9 +325,7 @@ FROM
 )
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─avgOrNullIf(x, greater(x, 10))─┐
 │                           ᴺᵁᴸᴸ │
 └────────────────────────────────┘

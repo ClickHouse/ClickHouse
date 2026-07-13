@@ -36,6 +36,14 @@ NATSHandler::NATSHandler(LoggerPtr log_)
     execute_tasks_scheduler.data = this;
 }
 
+NATSHandler::~NATSHandler()
+{
+    /// Close the async handle before UVLoop destructor runs,
+    /// otherwise uv_loop_close reads from already-destroyed memory.
+    uv_close(reinterpret_cast<uv_handle_t *>(&execute_tasks_scheduler), nullptr);
+    uv_run(loop.getLoop(), UV_RUN_NOWAIT);
+}
+
 void NATSHandler::runLoop()
 {
     {
@@ -156,7 +164,6 @@ std::future<NATSConnectionPtr> NATSHandler::createConnection(const NATSConfigura
             }
             catch (...)
             {
-                tryLogCurrentException(log);
                 try
                 {
                     connect_promise->set_exception(std::current_exception());

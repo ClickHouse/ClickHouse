@@ -131,7 +131,8 @@ private:
             std::string & fail_message,
             const Settings & settings,
             const QualifiedTableName * table_to_check = nullptr,
-            AsyncCallback async_callback = {});
+            AsyncCallback async_callback = {},
+            bool force_connected = false);
 
     GetPriorityForLoadBalancing::Func makeGetPriorityFunc(const Settings & settings);
 

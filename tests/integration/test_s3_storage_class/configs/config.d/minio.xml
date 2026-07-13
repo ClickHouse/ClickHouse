@@ -10,6 +10,7 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_storage_class>STANDARD</s3_storage_class>
+                <persistent_removal_log>true</persistent_removal_log>
             </use_s3_storage_class>
         </disks>
         <policies>

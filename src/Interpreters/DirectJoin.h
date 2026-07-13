@@ -38,7 +38,7 @@ public:
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
     /// Could be called from different threads in parallel.
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> &) override;
+    JoinResultPtr joinBlock(Block block) override;
 
     size_t getTotalRowCount() const override { return 0; }
 

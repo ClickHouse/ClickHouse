@@ -1,10 +1,9 @@
--- Tags: distributed, long, no-flaky-check
--- ^ no-flaky-check - sometimes longer than 600s with ThreadFuzzer.
+-- Tags: distributed, long, no-msan, no-tsan, no-asan, no-ubsan
+-- ^ slow
 
 SET max_memory_usage = 150000000;
 SET max_bytes_before_external_sort = 10000000;
 SET max_bytes_ratio_before_external_sort = 0;
-SET min_external_sort_block_bytes = '10M';
 SET max_threads = 8;
 SET max_execution_time = 300;
 SET max_execution_time_leaf = 300;

@@ -1,5 +1,5 @@
-#include "AggregateFunctionResample.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionResample.h>
 
 namespace DB
 {
@@ -69,8 +69,8 @@ public:
 
         if (which.isNativeInt() || which.isEnum() || which.isInterval())
         {
-            Int64 begin;
-            Int64 end;
+            Int64 begin = 0;
+            Int64 end = 0;
 
             // notice: UInt64 -> Int64 may lead to overflow
             if (!params[params.size() - 3].tryGet<Int64>(begin))
@@ -97,9 +97,13 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumResample`), it partitions the data into intervals `[start, end)` of width `step` according to a resampling key column and aggregates each interval separately, returning an array of results. The interval bounds and step are passed in the first parameter list; the nested aggregate function arguments and the resampling key are passed in the second.",
+        .syntax = "<aggregate_function>Resample(start, end, step)(<aggregate_function_arguments>, resampling_key)",
+        .related = {}});
 }
 
 }

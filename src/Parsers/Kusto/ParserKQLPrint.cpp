@@ -10,7 +10,7 @@ bool ParserKQLPrint::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     const String expr = getExprFromToken(pos);
 
     Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true);
-    IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos new_pos(tokens, pos);
 
     if (!ParserNotEmptyExpressionList(true).parse(new_pos, select_expression_list, expected))
         return false;

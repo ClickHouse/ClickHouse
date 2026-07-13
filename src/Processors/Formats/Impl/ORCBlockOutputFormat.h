@@ -4,6 +4,7 @@
 
 #if USE_ORC
 #include <Common/PODArray_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
@@ -15,7 +16,7 @@ namespace DB
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 class WriteBuffer;
 
 
@@ -38,10 +39,10 @@ private:
 };
 
 
-class ORCBlockOutputFormat : public IOutputFormat
+class ORCBlockOutputFormat final : public IOutputFormat
 {
 public:
-    ORCBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    ORCBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ORCBlockOutputFormat"; }
 

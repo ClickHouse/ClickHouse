@@ -1,0 +1,92 @@
+# Tests skipped on the macOS (Darwin) fast-test run.
+# Lines starting with '#' are comments; blank lines are ignored (see ci/jobs/fast_test.py).
+# Grouped by known reason. Sections below the "NOT a macOS platform gap" marker are env/harness/
+# portability issues that likely pass on the CI runner or are fixable - they are skip candidates to
+# re-verify or fix, not permanent platform gaps.
+
+# ─────────────────────────── macOS platform gaps (keep skipped) ───────────────────────────
+
+# Streaming distributed exchange: the DistributedQuery/stateless-worker layer is eventfd-based and
+# Linux-only ("Stateless worker client is not enabled" / "Only Persisted exchange is supported").
+03394_distributed_shuffle_join_with_aggregation
+03394_distributed_shuffle_join_with_filter
+03394_distributed_shuffle_join_with_in
+03394_distributed_shuffle_join_with_prewhere
+03394_distributed_sort
+04105_distributed_final_replacing
+
+# Query/memory profiler and trace_log: sampling uses timer_create + CLOCK_THREAD_CPUTIME_ID and
+# is #if defined(OS_LINUX) in QueryProfiler; system.trace_log stays empty on macOS.
+01473_event_time_microseconds
+01569_query_profiler_big_query_id
+02494_trace_log_profile_events
+02818_memory_profiler_sample_min_max_allocation_size
+03150_trace_log_add_build_id
+03221_merge_profile_events
+03761_trace_profile_events_list
+
+# Transactions are not supported on this build (experimental, NOT_IMPLEMENTED).
+03803_transaction_mutation_race
+03916_attach_as_replicated_implicit_transaction
+
+# Obfuscator output is platform-dependent (model/hash differs on macOS), so the generated
+# identifiers do not match the reference.
+04037_obfuscator_dictionary_definitions
+
+# Memory limit not hit as expected on macOS (the query that should exceed MEMORY_LIMIT_EXCEEDED
+# succeeds), likely a memory-accounting difference.
+01961_roaring_memory_tracking
+
+# Investigate
+04051_negative_limit_with_ties_distributed
+04052_negative_limit_with_ties_distributed_large
+04054_negative_limit_with_ties_distributed_large_boundary
+
+# ─────── NOT a macOS platform gap: env/harness/portability - verify on CI or fix ───────
+
+# Local fast-test server lacks these cluster/keeper definitions (CLUSTER_DOESNT_EXIST / NO_ZOOKEEPER);
+# the CI runner config has them, so these likely pass on CI. Re-verify before unskipping.
+02835_parallel_replicas_over_distributed
+02981_insert_select_resize_to_max_insert_threads
+03394_pr_insert_select
+03404_lazy_materialization_distributed
+
+# Needs a `ch` symlink (clickhouse) on PATH, which the Darwin fast test env does not provide.
+03536_ch_as_client_and_local
+
+# Client/socket error-message text differs on macOS (errno strings), so grep'd error lines are missing.
+02550_client_connections_credentials
+03025_clickhouse_host_env
+
+# Needs the 'pv' tool (not installed locally); loops until it sees timing output.
+02381_client_prints_server_side_time
+
+# Spawns the server binary and greps its stderr; hangs locally. Investigate (server-start behavior).
+02116_clickhouse_stderr
+
+# Local fast-test server did not enable system.text_log; CI does. Re-verify before unskipping.
+02813_starting_in_text_log
+
+# Harness: the per-test database is dropped mid-run on macOS (Database test_XXX does not exist while
+# the test is still running). Investigate whether this is a real CI issue or a local --jobs artifact.
+02483_elapsed_time
+02932_refreshable_materialized_views_2
+02933_replicated_database_forbid_create_as_select
+02995_new_settings_history
+03100_lwu_40_cleanup_race
+
+# Custom-disk static-storage behavior differs (TABLE_IS_PERMANENTLY_READ_ONLY). Worth a look.
+02454_create_table_with_custom_disk
+04498_alter_table_with_custom_disk
+
+# Flaky on macOS (failed 3/20 runs); investigate before unskipping.
+01903_http_fields
+
+# Times out on the macOS CI runner: the Python script hangs silently before sending any query
+# (no query reaches the server), while the identical test with the same numpy/scipy/pandas versions
+# passes in ~3s locally. Looks like a runner-specific hang in the scipy import. Needs further investigation.
+02294_anova_cmp
+
+# Flaky on CI (stuck timeout)
+04281_sparsity_stream_skips_trivial_count
+04319_skip_unavailable_shards_mode_table_missing

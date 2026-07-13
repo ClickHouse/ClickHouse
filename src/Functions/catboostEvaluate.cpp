@@ -7,11 +7,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include <Common/filesystemHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -23,6 +24,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 /// Evaluate CatBoost model.
@@ -36,7 +38,7 @@ private:
 public:
     static constexpr auto name = "catboostEvaluate";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCatBoostEvaluate>(context_); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCatBoostEvaluate>(context_->getGlobalContext()); }
 
     explicit FunctionCatBoostEvaluate(ContextPtr context_) : WithContext(context_) {}
     String getName() const override { return name; }
@@ -53,6 +55,18 @@ public:
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't load library {}: file doesn't exist", library_path);
 
         String model_path = name_col->getValue<String>();
+
+        /// model_path is user-controlled: restrict it to user_files (like file()/dictionaries).
+        /// Checked before the existence test so out-of-sandbox paths all return the same error (no oracle).
+        auto context = getContext();
+        if (context->getApplicationType() != Context::ApplicationType::LOCAL)
+        {
+            const String user_files_path = context->getUserFilesPath();
+            if (!fileOrSymlinkPathStartsWith(model_path, user_files_path))
+                throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                    "CatBoost model path must be inside the user_files directory ({})", user_files_path);
+        }
+
         if (!std::filesystem::exists(model_path))
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't load model {}: file doesn't exist", model_path);
 
@@ -174,7 +188,61 @@ public:
 
 REGISTER_FUNCTION(CatBoostEvaluate)
 {
-    factory.registerFunction<FunctionCatBoostEvaluate>();
+    FunctionDocumentation::Description description = R"(
+Evaluate an external catboost model. [CatBoost](https://catboost.ai) is an open-source gradient boosting library developed by Yandex for machine learning.
+Accepts a path to a catboost model and model arguments (features).
+
+**Prerequisites**
+
+1. Build the catboost evaluation library
+
+Before evaluating catboost models, the `libcatboostmodel.<so|dylib>` library must be made available. See [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html) how to compile it.
+
+Next, specify the path to `libcatboostmodel.<so|dylib>` in the clickhouse configuration:
+
+```xml
+<clickhouse>
+...
+    <catboost_lib_path>/path/to/libcatboostmodel.so</catboost_lib_path>
+...
+</clickhouse>
+```
+
+For security and isolation reasons, the model evaluation does not run in the server process but in the clickhouse-library-bridge process.
+At the first execution of `catboostEvaluate()`, the server starts the library bridge process if it is not running already. Both processes
+communicate using a HTTP interface. By default, port `9012` is used. A different port can be specified as follows - this is useful if port
+`9012` is already assigned to a different service.
+
+```xml
+<library_bridge>
+    <port>9019</port>
+</library_bridge>
+```
+
+2. Train a catboost model using libcatboost
+
+See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
+
+The model file must be located inside the [`user_files`](/operations/server-configuration-parameters/settings#user_files_path) directory, like for the [`file`](/sql-reference/functions/files#file) function.
+)";
+    FunctionDocumentation::Syntax syntax = "catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])";
+    FunctionDocumentation::Arguments arguments = {
+        {"path_to_model", "Path to the catboost model, located inside the `user_files` directory.", {"const String"}},
+        {"feature", "One or more model features/arguments.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the model evaluation result.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "catboostEvaluate",
+        "SELECT catboostEvaluate('/var/lib/clickhouse/user_files/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1",
+        "4.695691092573497"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionCatBoostEvaluate>(documentation);
 }
 
 }

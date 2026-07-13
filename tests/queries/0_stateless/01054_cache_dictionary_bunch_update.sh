@@ -17,8 +17,10 @@ $CLICKHOUSE_CLIENT --query="insert into test_01054 values (3, 3, 3, 3, 3, 3, 3, 
 
 function thread1()
 {
+  local TIMELIMIT=$((SECONDS+TIMEOUT))
   for _ in {1..100}
   do
+    [ $SECONDS -lt "$TIMELIMIT" ] || break
     RAND_NUMBER_THREAD1=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD1));"
   done
@@ -27,8 +29,10 @@ function thread1()
 
 function thread2()
 {
+  local TIMELIMIT=$((SECONDS+TIMEOUT))
   for _ in {1..100}
   do
+    [ $SECONDS -lt "$TIMELIMIT" ] || break
     RAND_NUMBER_THREAD2=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD2));"
   done
@@ -37,8 +41,10 @@ function thread2()
 
 function thread3()
 {
+  local TIMELIMIT=$((SECONDS+TIMEOUT))
   for _ in {1..100}
   do
+    [ $SECONDS -lt "$TIMELIMIT" ] || break
     RAND_NUMBER_THREAD3=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD3));"
   done
@@ -47,26 +53,23 @@ function thread3()
 
 function thread4()
 {
+  local TIMELIMIT=$((SECONDS+TIMEOUT))
   for _ in {1..100}
   do
+    [ $SECONDS -lt "$TIMELIMIT" ] || break
     RAND_NUMBER_THREAD4=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD4));"
   done
 }
 
 
-export -f thread1;
-export -f thread2;
-export -f thread3;
-export -f thread4;
-
 TIMEOUT=10
 
 # shellcheck disable=SC2188
-timeout $TIMEOUT bash -c thread1 > /dev/null 2>&1 &
-timeout $TIMEOUT bash -c thread2 > /dev/null 2>&1 &
-timeout $TIMEOUT bash -c thread3 > /dev/null 2>&1 &
-timeout $TIMEOUT bash -c thread4 > /dev/null 2>&1 &
+thread1 > /dev/null 2>&1 &
+thread2 > /dev/null 2>&1 &
+thread3 > /dev/null 2>&1 &
+thread4 > /dev/null 2>&1 &
 
 wait
 

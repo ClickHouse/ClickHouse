@@ -1,7 +1,8 @@
-#include "SQLiteUtils.h"
+#include <Databases/SQLite/SQLiteUtils.h>
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -16,14 +17,14 @@ namespace ErrorCodes
 
 static std::mutex init_sqlite_db_mutex;
 
-void processSQLiteError(const String & message, bool throw_on_error)
+static void processSQLiteError(const String & message, bool throw_on_error)
 {
     if (throw_on_error)
         throw Exception::createDeprecated(message, ErrorCodes::PATH_ACCESS_DENIED);
     LOG_ERROR(getLogger("SQLiteEngine"), fmt::runtime(message));
 }
 
-String validateSQLiteDatabasePath(const String & path, const String & user_files_path, bool need_check, bool throw_on_error)
+static String validateSQLiteDatabasePath(const String & path, const String & user_files_path, bool need_check, bool throw_on_error)
 {
     String absolute_path = fs::absolute(path).lexically_normal();
 
@@ -56,7 +57,7 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
         LOG_DEBUG(getLogger("SQLite"), "SQLite database path {} does not exist, will create an empty SQLite database", database_path);
 
     sqlite3 * tmp_sqlite_db = nullptr;
-    int status;
+    int status = 0;
     {
         std::lock_guard lock(init_sqlite_db_mutex);
         status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
@@ -64,6 +65,11 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
 
     if (status != SQLITE_OK)
     {
+        /// `sqlite3_open` allocates the connection handle even when it fails to open the database file
+        /// (the only exception being an out-of-memory condition, in which case the handle is left null).
+        /// The handle must be closed to avoid a memory leak, see https://www.sqlite.org/c3ref/open.html.
+        /// `sqlite3_close` is a harmless no-op when passed a null pointer.
+        sqlite3_close(tmp_sqlite_db);
         processSQLiteError(fmt::format("Cannot access sqlite database. Error status: {}. Message: {}",
                                        status, sqlite3_errstr(status)), throw_on_error);
         return nullptr;

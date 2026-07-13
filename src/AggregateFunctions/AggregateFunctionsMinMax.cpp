@@ -1,8 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
-#include <Common/Concepts.h>
-#include <Common/findExtreme.h>
 
 
 namespace DB
@@ -36,13 +34,18 @@ public:
                 this->result_type->getName(),
                 getName());
 
-        if (isDynamic(this->result_type) || isVariant(this->result_type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
-                "data types. Consider using typed subcolumns or cast column to a specific data type",
-                this->result_type->getName(),
-                getName());
+        auto check_not_dynamic_or_variant = [&](const IDataType & type)
+        {
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
+                    this->result_type->getName(),
+                    getName());
+        };
+        check_not_dynamic_or_variant(*this->result_type);
+        this->result_type->forEachChild(check_not_dynamic_or_variant);
     }
 
     String getName() const override
@@ -117,7 +120,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (isMin)
             this->data(place).setIfSmaller(this->data(rhs), arena);
@@ -132,7 +135,7 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, *serialization, arena);
+        this->data(place).read(buf, *serialization, this->result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
@@ -201,10 +204,111 @@ AggregateFunctionPtr createAggregateFunctionMinMax(
 }
 }
 
+void registerAggregateFunctionsMinMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsMinMax(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("min", createAggregateFunctionMinMax<true>, AggregateFunctionFactory::Case::Insensitive);
-    factory.registerFunction("max", createAggregateFunctionMinMax<false>, AggregateFunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description min_description = R"(
+Aggregate function that calculates the minimum across a group of values.
+    )";
+    FunctionDocumentation::Syntax min_syntax = R"(
+min(column)
+    )";
+    FunctionDocumentation::Arguments min_arguments = {
+        {"column", "Column name or expression.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue min_returned_value = {"Returns the minimum value across the group with type equal to that of the input.", {"Any"}};
+    FunctionDocumentation::Examples min_examples = {
+    {
+        "Simple min example",
+        R"(
+CREATE TABLE employees (name String, salary UInt32) ENGINE = Memory;
+INSERT INTO employees VALUES ('Alice', 3000), ('Bob', 4000), ('Charlie', 3500);
+
+SELECT min(salary) FROM employees;
+        )",
+        R"(
+┌─min(salary)─┐
+│        3000 │
+└─────────────┘
+        )"
+    },
+    {
+        "Min with GROUP BY",
+        R"(
+CREATE TABLE sales (department String, revenue UInt32) ENGINE = Memory;
+INSERT INTO sales VALUES ('Engineering', 100000), ('Engineering', 120000), ('Marketing', 80000), ('Marketing', 90000);
+
+SELECT department, min(revenue) FROM sales GROUP BY department ORDER BY department;
+        )",
+        R"(
+┌─department──┬─min(revenue)─┐
+│ Engineering │       100000 │
+│ Marketing   │        80000 │
+└─────────────┴──────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn min_introduced_in = {1, 1};
+    FunctionDocumentation::Category min_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation min_documentation = {min_description, min_syntax, min_arguments, {}, min_returned_value, min_examples, min_introduced_in, min_category};
+
+    factory.registerFunction("min", {createAggregateFunctionMinMax<true>, min_documentation}, AggregateFunctionFactory::Case::Insensitive);
+
+    FunctionDocumentation::Description max_description = R"(
+Aggregate function that calculates the maximum across a group of values.
+    )";
+    FunctionDocumentation::Syntax max_syntax = R"(
+max(column)
+    )";
+    FunctionDocumentation::Arguments max_arguments = {
+        {"column", "Column name or expression.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue max_returned_value = {"The maximum value across the group with type equal to that of the input.", {"Any"}};
+    FunctionDocumentation::Examples max_examples = {
+    {
+        "Simple max example",
+        R"(
+CREATE TABLE employees (name String, salary UInt32) ENGINE = Memory;
+INSERT INTO employees VALUES ('Alice', 3000), ('Bob', 4000), ('Charlie', 3500);
+
+SELECT max(salary) FROM employees;
+        )",
+        R"(
+┌─max(salary)─┐
+│        4000 │
+└─────────────┘
+        )"
+    },
+    {
+        "Max with GROUP BY",
+        R"(
+CREATE TABLE sales (department String, revenue UInt32) ENGINE = Memory;
+INSERT INTO sales VALUES ('Engineering', 100000), ('Engineering', 120000), ('Marketing', 80000), ('Marketing', 90000);
+
+SELECT department, max(revenue) FROM sales GROUP BY department ORDER BY department;
+        )",
+        R"(
+┌─department──┬─max(revenue)─┐
+│ Engineering │       120000 │
+│ Marketing   │        90000 │
+└─────────────┴──────────────┘
+        )"
+    },
+    {
+        "Note about non-aggregate maximum",
+        R"(
+-- If you need non-aggregate function to choose a maximum of two values, see greatest():
+SELECT greatest(a, b) FROM table;
+        )",
+        R"(
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn max_introduced_in = {1, 1};
+    FunctionDocumentation::Category max_category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation max_documentation = {max_description, max_syntax, max_arguments, {}, max_returned_value, max_examples, max_introduced_in, max_category};
+
+    factory.registerFunction("max", {createAggregateFunctionMinMax<false>, max_documentation}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

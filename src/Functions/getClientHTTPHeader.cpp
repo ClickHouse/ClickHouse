@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetClientHTTPHeader : public IFunction, WithContext
+class FunctionGetClientHTTPHeader final : public IFunction, WithContext
 {
 public:
     explicit FunctionGetClientHTTPHeader(ContextPtr context_)
@@ -35,6 +35,8 @@ public:
     }
 
     String getName() const override { return "getClientHTTPHeader"; }
+
+    bool isDeterministic() const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
@@ -77,26 +79,55 @@ public:
 
 REGISTER_FUNCTION(GetClientHTTPHeader)
 {
-    factory.registerFunction("getClientHTTPHeader",
-        [](ContextPtr context) { return std::make_shared<FunctionGetClientHTTPHeader>(context); },
-        FunctionDocumentation{
-            .description = R"(
-Get the value of an HTTP header.
-
+    FunctionDocumentation::Description description = R"(
+Gets the value of an HTTP header.
 If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
 Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
 
+:::note Setting `allow_get_client_http_header` is required
 The function requires the setting `allow_get_client_http_header` to be enabled.
 The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
+:::
 
 HTTP headers are case sensitive for this function.
-
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
-",
-            .syntax = "getClientHTTPHeader(name)",
-            .arguments = {{"name", "The HTTP header name (String)"}},
-            .returned_value = "The value of the header (String).",
-            .category = FunctionDocumentation::Category::Other});
+
+`getClientHTTPHeader` reads the headers of the current request, so it returns a non-empty value only when the query is sent over the HTTP interface.
+For example, supply the header with the request and read it back over HTTP:
+
+```bash
+echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1" | \
+    curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: application/x-www-form-urlencoded'
+```
+
+The command above returns `application/x-www-form-urlencoded`.
+)";
+    FunctionDocumentation::Syntax syntax = "getClientHTTPHeader(name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"name", "The HTTP header name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of the header.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+-- Over a non-HTTP interface (such as `clickhouse-client` or `clickhouse-local`) there are
+-- no request headers, so the function returns an empty string. See the description above
+-- for an HTTP example that returns the actual header value.
+SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1
+            )",
+            R"(
+
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("getClientHTTPHeader",
+        [](ContextPtr context) { return std::make_shared<FunctionGetClientHTTPHeader>(context); },
+        documentation);
 }
 
 }

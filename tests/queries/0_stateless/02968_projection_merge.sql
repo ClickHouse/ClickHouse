@@ -19,6 +19,8 @@ INSERT INTO tp SELECT number%3, 2 FROM numbers(3);
 
 OPTIMIZE TABLE tp FINAL;
 
+set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
+
 SELECT type,sum(eventcnt) FROM tp GROUP BY type ORDER BY type
 SETTINGS optimize_use_projections = 0, force_optimize_projection = 0;
 

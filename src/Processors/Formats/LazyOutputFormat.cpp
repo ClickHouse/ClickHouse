@@ -9,8 +9,8 @@ namespace DB
 
 NullWriteBuffer LazyOutputFormat::out;
 
-LazyOutputFormat::LazyOutputFormat(const Block & header)
-: IOutputFormat(header, out), queue(2)
+LazyOutputFormat::LazyOutputFormat(SharedHeader header)
+    : IOutputFormat(header, out), queue(2)
 {
 }
 

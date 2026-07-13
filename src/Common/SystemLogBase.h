@@ -6,15 +6,18 @@
 #include <vector>
 #include <base/types.h>
 
+#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ThreadPool_fwd.h>
+
 
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
     M(CrashLogElement) \
     M(OpenTelemetrySpanLogElement) \
     M(PartLogElement) \
+    M(BackgroundSchedulePoolLogElement) \
     M(QueryLogElement) \
     M(QueryThreadLogElement) \
     M(QueryViewsLogElement) \
@@ -30,7 +33,17 @@
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
-    M(QueryMetricLogElement)
+    M(QueryMetricLogElement) \
+    M(DeadLetterQueueElement) \
+    M(ZooKeeperConnectionLogElement) \
+    M(IcebergMetadataLogElement) \
+    M(DeltaMetadataLogElement) \
+    M(PredicateStatisticsLogElement) \
+
+#define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
+    M(DistributedCacheLogElement) \
+    M(DistributedCacheServerLogElement) \
+
 
 namespace Poco
 {
@@ -57,10 +70,16 @@ public:
 
     virtual String getName() const = 0;
 
+    /// For implementations that buffer data in memory and flush it to the log periodically,
+    /// this method forces an immediate write to the log.
+    virtual void flushBufferToLog(std::chrono::system_clock::time_point /* current_time */) {}
     /// Return the index of the latest added log element. That index no less than the flashed index.
     /// The flashed index is the index of the last log element which has been flushed successfully.
     /// Thereby all the records whose index is less than the flashed index are flushed already.
     virtual Index getLastLogIndex() = 0;
+    /// Notifies the implementation that a manual flush up to `target_index` was requested.
+    virtual void setManualFlushTargetIndex(Index /* target_index */) {}
+
     /// Call this method to wake up the flush thread and flush the data in the background. It is non blocking call
     virtual void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
     /// Call this method to wait until the logs are flushed up to expected_flushed_index. It is blocking call.
@@ -96,12 +115,12 @@ struct SystemLogQueueSettings
 {
     String database;
     String table;
-    size_t reserved_size_rows;
-    size_t max_size_rows;
-    size_t buffer_size_rows_flush_threshold;
-    size_t flush_interval_milliseconds;
-    bool notify_flush_on_crash;
-    bool turn_off_logger;
+    size_t reserved_size_rows{};
+    size_t max_size_rows{};
+    size_t buffer_size_rows_flush_threshold{};
+    size_t flush_interval_milliseconds{};
+    bool notify_flush_on_crash{};
+    bool turn_off_logger{};
 };
 
 template <typename LogElement>
@@ -158,7 +177,7 @@ private:
     // Flushed log up to this index, exclusive
     Index flushed_index = 0;
 
-    // The same logic for the prepare tables: if requested_prepar_tables > prepared_tables we need to do prepare
+    // The same logic for the prepare tables: if requested_prepare_tables > prepared_tables we need to do prepare
     // except that initial prepared_tables is -1
     // it is due to the difference: when no logs have been written and we call flush logs
     // it becomes in the state: requested_flush_index = 0 and flushed_index = 0 -- we do not want to do anything

@@ -18,3 +18,4 @@ $CLICKHOUSE_LOCAL -q "select uniqExact(a) from file('$CLICKHOUSE_TMP/$CLICKHOUSE
 
 $CLICKHOUSE_LOCAL -q "select * from file('$CUR_DIR/data_arrow/different_dicts.arrowstream') order by x"
 
+$CLICKHOUSE_LOCAL -q "select * from file('$CUR_DIR/data_arrow/non_unique_dict.arrowstream') -- { serverError INCORRECT_DATA }"

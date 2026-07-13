@@ -1,6 +1,8 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -15,6 +17,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -42,6 +46,7 @@ void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from, UIn
 
 UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemDetachedParts::calculateTotalSizeOnDisk");
     UInt64 total_size = 0;
     try
     {
@@ -85,10 +90,10 @@ struct WorkerState
     std::atomic<size_t> next_task = {0};
 };
 
-class DetachedPartsSource : public ISource
+class DetachedPartsSource final : public ISource
 {
 public:
-    DetachedPartsSource(Block header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_)
+    DetachedPartsSource(SharedHeader header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_)
         : ISource(std::move(header_))
         , state(state_)
         , columns_mask(std::move(columns_mask_))
@@ -111,6 +116,7 @@ protected:
 
     Chunk generate() override
     {
+        auto component_guard = Coordination::setCurrentComponent("DetachedPartsSource::generate");
         MutableColumns new_columns = getPort().getHeader().cloneEmptyColumns();
         chassert(!new_columns.empty());
 
@@ -165,13 +171,14 @@ private:
 
         auto max_thread_to_run = std::max(size_t(1), std::min(support_threads, worker_state.tasks.size() / 10));
 
-        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), "DP_BytesOnDisk");
+        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), ThreadName::DETACHED_PARTS_BYTES);
 
         for (size_t i = 0; i < max_thread_to_run; ++i)
         {
             if (worker_state.next_task.load() >= worker_state.tasks.size())
                 break;
 
+            /// Passing a reference to worker_state is safe, because the variable outlives runner
             auto worker = [&worker_state] ()
             {
                 for (auto id = worker_state.next_task++; id < worker_state.tasks.size(); id = worker_state.next_task++)
@@ -182,7 +189,7 @@ private:
                 }
             };
 
-            runner(std::move(worker));
+            runner.enqueueAndKeepTrack(std::move(worker));
         }
 
         runner.waitForAllToFinishAndRethrowFirstError();
@@ -254,7 +261,7 @@ private:
 }
 
 StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription{{
@@ -271,7 +278,16 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
         {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()), "The maximum number of data parts that make up the current part after merging."},
         {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
     }});
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemDetachedParts::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 class ReadFromSystemDetachedParts : public SourceStepWithFilter
@@ -288,7 +304,7 @@ public:
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            std::make_shared<const Block>(std::move(sample_block)),
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -327,13 +343,13 @@ void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), "active"));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), "uuid"));
 
-        filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
+        filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
         if (filter)
             VirtualColumnUtils::buildSetsForDAG(*filter, context);
     }
 }
 
-void StorageSystemDetachedParts::read(
+void StorageSystemDetachedParts::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -373,3 +389,6 @@ void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipe
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedParts) }

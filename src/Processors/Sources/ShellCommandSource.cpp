@@ -2,8 +2,15 @@
 
 #include <poll.h>
 
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/UDFProcessSubtreeSampler.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ErrnoException.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -13,10 +20,12 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include <Core/Field.h>
 
 #include <boost/circular_buffer.hpp>
 #include <fmt/ranges.h>
 
+#include <csignal>
 #include <ranges>
 
 
@@ -75,7 +84,7 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
     auto logger = getLogger("TimeoutReadBufferFromFileDescriptor");
     auto describe_fd = [](const auto & pollfd) { return fmt::format("(fd={}, flags={})", pollfd.fd, fcntl(pollfd.fd, F_GETFL)); };
 
-    int res;
+    int res = 0;
 
     while (true)
     {
@@ -115,9 +124,9 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
 
 static bool pollFd(int fd, size_t timeout_milliseconds, int events)
 {
-    pollfd pfd;
+    pollfd pfd{};
     pfd.fd = fd;
-    pfd.events = events;
+    pfd.events = static_cast<int16_t>(events);
     pfd.revents = 0;
 
     return pollWithTimeout(&pfd, 1, timeout_milliseconds) > 0;
@@ -130,11 +139,13 @@ public:
         int stdout_fd_,
         int stderr_fd_,
         size_t timeout_milliseconds_,
-        ExternalCommandStderrReaction stderr_reaction_)
+        ExternalCommandStderrReaction stderr_reaction_,
+        UDFProcessSubtreeSampler * sampler_)
         : stdout_fd(stdout_fd_)
         , stderr_fd(stderr_fd_)
         , timeout_milliseconds(timeout_milliseconds_)
         , stderr_reaction(stderr_reaction_)
+        , sampler(sampler_)
     {
         makeFdNonBlocking(stdout_fd);
         makeFdNonBlocking(stderr_fd);
@@ -158,8 +169,8 @@ public:
         {
             pfds[0].revents = 0;
             pfds[1].revents = 0;
-            size_t num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
-            if (0 == num_events)
+            int num_events = pollWithTimeout(pfds, num_pfds, timeout_milliseconds);
+            if (num_events <= 0)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
 
             bool has_stdout = pfds[0].revents > 0;
@@ -174,9 +185,21 @@ public:
                 {
                     std::string_view str(stderr_read_buf.get(), res);
                     if (stderr_reaction == ExternalCommandStderrReaction::THROW)
-                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", str);
-                    if (stderr_reaction == ExternalCommandStderrReaction::LOG)
+                    {
+                        /// Accumulate stderr up to safety limit
+                        size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
+                        if (current_size < MAX_STDERR_SIZE)
+                        {
+                            if (!stderr_full_output)
+                                stderr_full_output.emplace();
+                            size_t bytes_to_append = std::min(static_cast<size_t>(res), MAX_STDERR_SIZE - current_size);
+                            stderr_full_output->append(str.begin(), str.begin() + bytes_to_append);
+                        }
+                    }
+                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
+                    {
                         LOG_WARNING(getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
+                    }
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
                     {
                         res = std::min(ssize_t(stderr_result_buf.reserve()), res);
@@ -198,10 +221,67 @@ public:
                     throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from pipe");
 
                 if (res == 0)
+                {
+                    /// EOF on stdout - drain remaining stderr before returning
+                    if (stderr_reaction != ExternalCommandStderrReaction::NONE
+                        && stderr_reaction != ExternalCommandStderrReaction::LOG)
+                    {
+                        static constexpr int STDERR_DRAIN_TIMEOUT_MS = 100;  /// Short timeout for remaining stderr after stdout EOF
+
+                        while (true)
+                        {
+                            pfds[1].revents = 0;
+                            int stderr_events = pollWithTimeout(&pfds[1], 1, STDERR_DRAIN_TIMEOUT_MS);
+                            if (stderr_events <= 0)
+                                break;
+
+                            if (pfds[1].revents <= 0)
+                                break;
+
+                            if (stderr_read_buf == nullptr)
+                                stderr_read_buf.reset(new char[BUFFER_SIZE]);
+                            ssize_t stderr_res = ::read(stderr_fd, stderr_read_buf.get(), BUFFER_SIZE);
+                            if (stderr_res <= 0)
+                                break;
+
+                            std::string_view str(stderr_read_buf.get(), stderr_res);
+                            if (stderr_reaction == ExternalCommandStderrReaction::THROW)
+                            {
+                                size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
+                                if (current_size >= MAX_STDERR_SIZE)
+                                    break;
+                                if (!stderr_full_output)
+                                    stderr_full_output.emplace();
+                                size_t bytes_to_append = std::min(static_cast<size_t>(stderr_res), MAX_STDERR_SIZE - current_size);
+                                stderr_full_output->append(str.begin(), str.begin() + bytes_to_append);
+                            }
+                            else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
+                            {
+                                ssize_t to_insert = std::min(ssize_t(stderr_result_buf.reserve()), stderr_res);
+                                if (to_insert > 0)
+                                    stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + to_insert);
+                            }
+                            else if (stderr_reaction == ExternalCommandStderrReaction::LOG_LAST)
+                            {
+                                stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + stderr_res);
+                            }
+                        }
+                    }
                     break;
+                }
 
                 if (res > 0)
+                {
                     bytes_read += res;
+                    if (sampler)
+                    {
+                        sampler->recordOutputBytes(static_cast<size_t>(res));
+                        /// The child produced this output, so it was running; sample its subtree VmHWM.
+                        /// It may have already exited (short-lived UDF) — then the read finds no VmHWM
+                        /// and this is a harmless no-op. Also a no-op on the pool path (executable_root_pid <= 0).
+                        sampler->sampleExecutablePeak();
+                    }
+                }
             }
         }
 
@@ -212,6 +292,22 @@ public:
         }
         else
         {
+            /// Concluding best-effort tail sample. The function has closed stdout, so
+            /// this is the last point it is typically still alive; take one final
+            /// subtree sample (bypassing the throttle) to catch a peak reached after
+            /// the last IO sample but before EOF. Fired once; a no-op on the pool path
+            /// and harmless if the child has already exited. This is a single tail
+            /// attempt, not continuous sampling during the post-output reap.
+            /// This concluding sample is best-effort and is intentionally NOT covered
+            /// by a deterministic test — whether the child is still resident when EOF
+            /// is detected is timing-dependent, so any assertion on it would be
+            /// flaky; the deterministic guarantees (output-phase capture, max-not-sum,
+            /// parent-independence) are covered by the integration tests.
+            if (sampler && !final_sample_taken)
+            {
+                final_sample_taken = true;
+                sampler->sampleExecutablePeak(/*is_final=*/true);
+            }
             return false;
         }
 
@@ -223,17 +319,41 @@ public:
         tryMakeFdBlocking(stdout_fd);
         tryMakeFdBlocking(stderr_fd);
 
+        // Handle LOG_FIRST and LOG_LAST cases with circular buffer
         if (!stderr_result_buf.empty())
         {
             String stderr_result;
             stderr_result.reserve(stderr_result_buf.size());
             stderr_result.append(stderr_result_buf.begin(), stderr_result_buf.end());
-            LOG_WARNING(
-                getLogger("ShellCommandSource"),
-                "Executable generates stderr at the {}: {}",
-                stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
-                stderr_result);
+
+            if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST || stderr_reaction == ExternalCommandStderrReaction::LOG_LAST)
+            {
+                LOG_WARNING(
+                    getLogger("ShellCommandSource"),
+                    "Executable generates stderr at the {}: {}",
+                    stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
+                    stderr_result);
+            }
         }
+    }
+
+    /// Check if stderr was accumulated (for THROW mode)
+    bool hasStderr() const { return stderr_full_output.has_value(); }
+
+    /// Get accumulated stderr content (for THROW mode)
+    const String & getStderr() const { return *stderr_full_output; }
+
+    /// Get buffered stderr content from circular buffer (for LOG_FIRST/LOG_LAST modes)
+    /// Clears the buffer to prevent duplicate logging in destructor
+    String consumeBufferedStderr()
+    {
+        if (stderr_result_buf.empty())
+            return {};
+        String result;
+        result.reserve(stderr_result_buf.size());
+        result.append(stderr_result_buf.begin(), stderr_result_buf.end());
+        stderr_result_buf.clear();
+        return result;
     }
 
 private:
@@ -241,19 +361,23 @@ private:
     int stderr_fd;
     size_t timeout_milliseconds;
     ExternalCommandStderrReaction stderr_reaction;
+    UDFProcessSubtreeSampler * sampler;
+    bool final_sample_taken = false;
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
-    pollfd pfds[2];
+    static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation
+    pollfd pfds[2]{};
     size_t num_pfds;
     std::unique_ptr<char[]> stderr_read_buf;
     boost::circular_buffer_space_optimized<char> stderr_result_buf{BUFFER_SIZE};
+    std::optional<String> stderr_full_output;  /// For THROW mode: accumulate stderr up to MAX_STDERR_SIZE
 };
 
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
-        : fd(fd_), timeout_milliseconds(timeout_milliseconds_)
+    explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_, UDFProcessSubtreeSampler * sampler_)
+        : fd(fd_), timeout_milliseconds(timeout_milliseconds_), sampler(sampler_)
     {
         makeFdNonBlocking(fd);
     }
@@ -276,7 +400,17 @@ public:
                 throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot write into pipe");
 
             if (res > 0)
+            {
                 bytes_written += res;
+                if (sampler)
+                {
+                    sampler->recordInputBytes(static_cast<size_t>(res));
+                    /// The child's stdin is still open (this write succeeded), so it was
+                    /// running; sample its subtree VmHWM. It may exit before we sample — a
+                    /// harmless no-op. Also a no-op on the pool path (executable_root_pid <= 0).
+                    sampler->sampleExecutablePeak();
+                }
+            }
         }
     }
 
@@ -293,6 +427,7 @@ public:
 private:
     int fd;
     size_t timeout_milliseconds;
+    UDFProcessSubtreeSampler * sampler;
 };
 
 class ShellCommandHolder
@@ -342,7 +477,7 @@ namespace
             size_t command_read_timeout_milliseconds,
             ExternalCommandStderrReaction stderr_reaction,
             bool check_exit_code_,
-            const Block & sample_block_,
+            SharedHeader sample_block_,
             std::unique_ptr<ShellCommand> && command_,
             std::vector<SendDataTask> && send_data_tasks = {},
             const ShellCommandSourceConfiguration & configuration_ = {},
@@ -354,7 +489,7 @@ namespace
             , sample_block(sample_block_)
             , command(std::move(command_))
             , configuration(configuration_)
-            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction)
+            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
             , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
@@ -372,12 +507,16 @@ namespace
             context_for_reading->setSetting("input_format_custom_detect_header", false);
             context = context_for_reading;
 
+            auto thread_group = CurrentThread::getGroup();
+
             try
             {
                 for (auto && send_data_task : send_data_tasks)
                 {
-                    send_data_threads.emplace_back([task = std::move(send_data_task), this]() mutable
+                    send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
                     {
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::SEND_TO_SHELL_CMD);
+
                         try
                         {
                             task();
@@ -386,11 +525,15 @@ namespace
                         {
                             std::lock_guard lock(send_data_lock);
                             exception_during_send_data = std::current_exception();
-
-                            /// task should be reset inside catch block or else it breaks d'tor
-                            /// invariants such as in ~WriteBuffer.
-                            task = {};
                         }
+
+                        // In case of exception, the task should be reset in thread
+                        // worker function or else it breaks d'tor invariants such
+                        // as in ~WriteBuffer.
+                        //
+                        // For completed execution, the task reset allows to account
+                        // memory deallocation in sending data thread group.
+                        task = {};
                     });
                 }
                 size_t max_block_size = configuration.max_block_size;
@@ -406,7 +549,7 @@ namespace
                     max_block_size = configuration.number_of_rows_to_read;
                 }
 
-                pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
+                pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
                 executor = std::make_unique<PullingPipelineExecutor>(pipeline);
             }
             catch (...)
@@ -427,6 +570,64 @@ namespace
             for (auto & thread : send_data_threads)
                 if (thread.joinable())
                     thread.join();
+
+            /// Record this borrow's resource usage before the child is gone. The two
+            /// executable UDF types measure it differently.
+            if (configuration.sampler)
+            {
+                if (process_pool)
+                {
+                    /// Resource accounting must observe the borrow's resident set before
+                    /// the worker is torn down or the slot is handed back to the pool —
+                    /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
+                    /// would then read zero CPU and zero `VmHWM`.
+                    /// `recordReleased` reads procfs and may throw, but `cleanup` is
+                    /// called from the destructor — swallow any exception so the
+                    /// destructor stays noexcept.
+                    try
+                    {
+                        configuration.sampler->recordReleased();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException("ShellCommandSource");
+                    }
+                }
+                else if (command)
+                {
+                    /// Peak memory was sampled from /proc VmHWM during IO, while the child
+                    /// was provably alive; by cleanup the child has closed stdout and is
+                    /// exiting, so its `/proc` mm fields are gone — no useful sample here.
+                    ///
+                    /// Capture wait4 rusage for CPU. When `prepare` already waited the child
+                    /// via its blocking `wait` (`check_exit_code=true`), `isWaitCalled()` is
+                    /// true and this is skipped. A child lingering past the poll budget is left
+                    /// to `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM, so
+                    /// profiling cannot turn cleanup into a query hang. No status check: a
+                    /// non-zero exit must not raise CHILD_WAS_NOT_EXITED_NORMALLY here.
+                    if (!command->isWaitCalled())
+                    {
+                        try
+                        {
+                            command->tryWaitWithoutStatusCheck();
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException("ShellCommandSource");
+                        }
+                    }
+
+                    /// Peak memory is independent of the wait: it comes from /proc VmHWM
+                    /// sampled during IO and stamped by recordExecutableElapsed. CPU requires
+                    /// the wait4 rusage and is recorded only when the wait succeeded.
+                    configuration.sampler->recordExecutableElapsed();
+
+                    if (command->wasChildResourceUsageCaptured())
+                        configuration.sampler->recordExecutableFinished(
+                            command->getChildUserTimeMicroseconds(),
+                            command->getChildSystemTimeMicroseconds());
+                }
+            }
 
             if (command_is_invalid)
                 command = nullptr;
@@ -455,11 +656,11 @@ namespace
                     if (!executor && configuration.read_number_of_rows_from_process_output)
                     {
                         readText(configuration.number_of_rows_to_read, timeout_command_out);
-                        char dummy;
+                        char dummy = 0;
                         readChar(dummy, timeout_command_out);
 
                         size_t max_block_size = configuration.number_of_rows_to_read;
-                        pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
+                        pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
                         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
                     }
 
@@ -491,19 +692,38 @@ namespace
                     if (thread.joinable())
                         thread.join();
 
+                /// Check if stderr was accumulated before checking exit code
+                /// This ensures stderr exceptions take priority over exit code exceptions
+                if (timeout_command_out.hasStderr())
+                {
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                                  "Executable generates stderr: {}", timeout_command_out.getStderr());
+                }
+
                 if (check_exit_code)
                 {
-                    if (process_pool)
+                    try
                     {
-                        bool valid_command
-                            = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
+                        if (process_pool)
+                        {
+                            bool valid_command
+                                = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
 
-                        // We can only wait for pooled commands when they are invalid.
-                        if (!valid_command)
+                            // We can only wait for pooled commands when they are invalid.
+                            if (!valid_command)
+                                command->wait();
+                        }
+                        else
                             command->wait();
                     }
-                    else
-                        command->wait();
+                    catch (Exception & e)
+                    {
+                        /// Enrich exit code exception with buffered stderr content (LOG_FIRST/LOG_LAST modes)
+                        String stderr_content = timeout_command_out.consumeBufferedStderr();
+                        if (!stderr_content.empty())
+                            e.addMessage("Stderr: {}", stderr_content);
+                        throw;
+                    }
                 }
 
                 rethrowExceptionDuringSendDataIfNeeded();
@@ -528,7 +748,7 @@ namespace
 
         ContextPtr context;
         std::string format;
-        Block sample_block;
+        SharedHeader sample_block;
 
         std::unique_ptr<ShellCommand> command;
         ShellCommandSourceConfiguration configuration;
@@ -556,7 +776,7 @@ namespace
     class SendingChunkHeaderTransform final : public ISimpleTransform
     {
     public:
-        SendingChunkHeaderTransform(const Block & header, std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer_)
+        SendingChunkHeaderTransform(SharedHeader header, WriteBuffer & buffer_)
             : ISimpleTransform(header, header, false)
             , buffer(buffer_)
         {
@@ -568,12 +788,12 @@ namespace
 
         void transform(Chunk & chunk) override
         {
-            writeText(chunk.getNumRows(), *buffer);
-            writeChar('\n', *buffer);
+            writeText(chunk.getNumRows(), buffer);
+            writeChar('\n', buffer);
         }
 
     private:
-        std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer;
+        WriteBuffer & buffer;
     };
 
 }
@@ -587,7 +807,7 @@ ShellCommandSourceCoordinator::ShellCommandSourceCoordinator(const Configuration
 
 Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
-    const std::vector<std::string> & arguments,
+    const VectorWithMemoryTracking<std::string> & arguments,
     std::vector<Pipe> && input_pipes,
     Block sample_block,
     ContextPtr context,
@@ -595,6 +815,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 {
     ShellCommand::Config command_config(command);
     command_config.arguments = arguments;
+    command_config.pipe_capacity = configuration.command_pipe_capacity;
     for (size_t i = 1; i < input_pipes.size(); ++i)
         command_config.write_fds.emplace_back(i + 2);
 
@@ -603,6 +824,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
     auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};
     command_config.terminate_in_destructor_strategy = destructor_strategy;
+
+    command_config.register_in_udf_process_registry = configuration.is_user_defined_function;
 
     bool is_executable_pool = (process_pool != nullptr);
     if (is_executable_pool)
@@ -624,6 +847,13 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             },
             configuration.max_command_execution_time_seconds * 10000);
 
+        /// Pool wait is frozen here on both the success and the timeout-failure
+        /// paths so that `PoolWaitMicroseconds` always records contention for a
+        /// slot. Any time spent below in `buildCommand` (cold spawn) lands in
+        /// `ElapsedMicroseconds` instead.
+        if (source_configuration.sampler)
+            source_configuration.sampler->recordPoolWaitDone();
+
         if (!result)
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
@@ -631,13 +861,43 @@ Pipe ShellCommandSourceCoordinator::createPipe(
                 configuration.max_command_execution_time_seconds);
 
         process = process_holder->buildCommand();
+
+        /// Borrow acquired: capture pid for procfs sampling. The pre-snapshot
+        /// runs here so `clear_refs` and the utime/stime baseline cover only
+        /// the work attributable to this borrow.
+        ///
+        /// `recordPidAcquired` allocates (vector return from `walkSubtree`,
+        /// `unordered_set` and `unordered_map` inserts) and is not noexcept.
+        /// If it throws here, `process_holder` is still a local — ownership
+        /// does not transfer to `ShellCommandSource` until further below — so
+        /// stack unwinding would destroy it without calling `returnObject`,
+        /// permanently shrinking the pool's effective capacity by one. Swallow
+        /// the exception so the local stays intact for the normal hand-off;
+        /// sampling is best-effort and dropping one pre baseline is harmless.
+        if (source_configuration.sampler)
+        {
+            try
+            {
+                source_configuration.sampler->recordPidAcquired(process->getPid());
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSource");
+            }
+        }
     }
     else
     {
+        command_config.collect_resource_usage = (source_configuration.sampler != nullptr);
         if (configuration.execute_direct)
             process = ShellCommand::executeDirect(command_config);
         else
             process = ShellCommand::execute(command_config);
+
+        /// Record the child pid so sampleExecutablePeak can walk the subtree
+        /// during IO. No-op when sampler is null.
+        if (source_configuration.sampler)
+            source_configuration.sampler->recordExecutablePid(process->getPid());
     }
 
     std::vector<ShellCommandSource::SendDataTask> tasks;
@@ -662,22 +922,28 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         }
 
         int write_buffer_fd = write_buffer->getFD();
+        /// Only the primary stdin pipe (i == 0) contributes to InputBytes.
+        /// Additional write descriptors carry side-channel data that isn't
+        /// part of the UDF's observable input.
+        UDFProcessSubtreeSampler * write_sampler = (i == 0) ? source_configuration.sampler.get() : nullptr;
         auto timeout_write_buffer
-            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds);
+            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds, write_sampler);
 
         input_pipes[i].resize(1);
 
+        auto out = context->getOutputFormat(configuration.format, *timeout_write_buffer, materializeBlock(input_pipes[i].getHeader()));
+        out->setAutoFlush();
+
         if (configuration.send_chunk_header)
         {
-            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getHeader(), timeout_write_buffer);
+            /// We cannot use timeout_write_buffer directly since the output format may wrap the buffer, so we need to use a wrapper
+            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getSharedHeader(), *out->getWriteBufferPtr());
             input_pipes[i].addTransform(std::move(transform));
         }
 
         auto num_streams = input_pipes[i].maxParallelStreams();
         auto pipeline = std::make_shared<QueryPipeline>(std::move(input_pipes[i]));
         pipeline->setNumThreads(num_streams);
-        auto out = context->getOutputFormat(configuration.format, *timeout_write_buffer, materializeBlock(pipeline->getHeader()));
-        out->setAutoFlush();
         pipeline->complete(std::move(out));
 
         ShellCommandSource::SendDataTask task = [pipeline, timeout_write_buffer, write_buffer, is_executable_pool]()
@@ -686,7 +952,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             executor.execute();
 
             timeout_write_buffer->finalize();
-            timeout_write_buffer->reset();
+            (*timeout_write_buffer).reset();
 
             if (!is_executable_pool)
             {
@@ -703,7 +969,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         configuration.command_read_timeout_milliseconds,
         configuration.stderr_reaction,
         configuration.check_exit_code,
-        std::move(sample_block),
+        std::make_shared<const Block>(std::move(sample_block)),
         std::move(process),
         std::move(tasks),
         source_configuration,

@@ -1,6 +1,6 @@
-#include "CacheDictionary.h"
-#include "CacheDictionaryStorage.h"
-#include "SSDCacheDictionaryStorage.h"
+#include <Dictionaries/CacheDictionary.h>
+#include <Dictionaries/CacheDictionaryStorage.h>
+#include <Dictionaries/SSDCacheDictionaryStorage.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>
 
@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
-CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
+static CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
     const Poco::Util::AbstractConfiguration & config,
     const String & full_name,
     const String & layout_type,
@@ -51,9 +51,9 @@ CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
     return storage_configuration;
 }
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
 
-SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
+static SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
     const Poco::Util::AbstractConfiguration & config,
     const String & full_name,
     const String & layout_type,
@@ -117,7 +117,7 @@ SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
 
 #endif
 
-CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfiguration(
+static CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfiguration(
     const Poco::Util::AbstractConfiguration & config,
     const String & full_name,
     const String & layout_type,
@@ -219,7 +219,7 @@ DictionaryPtr createCacheDictionaryLayout(
         auto storage_configuration = parseCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
         storage = std::make_shared<CacheDictionaryStorage<dictionary_key_type>>(dict_struct, storage_configuration);
     }
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
     else
     {
         auto storage_configuration = parseSSDCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
@@ -252,6 +252,7 @@ DictionaryPtr createCacheDictionaryLayout(
     return dictionary;
 }
 
+void registerDictionaryCache(DictionaryFactory & factory);
 void registerDictionaryCache(DictionaryFactory & factory)
 {
     auto create_simple_cache_layout = [=](const String & full_name,
@@ -265,7 +266,10 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Simple, false/* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("cache", create_simple_cache_layout, false);
+    factory.registerLayout("cache", create_simple_cache_layout, false, true, Documentation{
+        .description = "Stores the dictionary in a fixed-size in-memory cache of cells. On a cache miss, the value is requested from the source and cached. Suitable for sources with a high cache hit rate.",
+        .syntax = "LAYOUT(CACHE(SIZE_IN_CELLS n))",
+        .related = {"ssd_cache", "direct"}});
 
     auto create_complex_key_cache_layout = [=](const std::string & full_name,
                                                const DictionaryStructure & dict_struct,
@@ -278,9 +282,12 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Complex, false /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true);
+    factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true, true, Documentation{
+        .description = "Like `cache`, but supports composite keys.",
+        .syntax = "LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS n))",
+        .related = {"cache"}});
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
 
     auto create_simple_ssd_cache_layout = [=](const std::string & full_name,
                                               const DictionaryStructure & dict_struct,
@@ -293,7 +300,10 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Simple, true /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("ssd_cache", create_simple_ssd_cache_layout, false);
+    factory.registerLayout("ssd_cache", create_simple_ssd_cache_layout, false, true, Documentation{
+        .description = "Like `cache`, but stores the cached cells on a local SSD/disk and keeps only the index in memory.",
+        .syntax = "LAYOUT(SSD_CACHE(PATH '/path/to/cache'))",
+        .related = {"cache"}});
 
     auto create_complex_key_ssd_cache_layout = [=](const std::string & full_name,
                                                    const DictionaryStructure & dict_struct,
@@ -305,7 +315,10 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Complex, true /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("complex_key_ssd_cache", create_complex_key_ssd_cache_layout, true);
+    factory.registerLayout("complex_key_ssd_cache", create_complex_key_ssd_cache_layout, true, true, Documentation{
+        .description = "Like `ssd_cache`, but supports composite keys.",
+        .syntax = "LAYOUT(COMPLEX_KEY_SSD_CACHE(PATH '/path/to/cache'))",
+        .related = {"ssd_cache"}});
 
 #endif
 

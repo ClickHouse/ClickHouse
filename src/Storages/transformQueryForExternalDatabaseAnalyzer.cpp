@@ -10,11 +10,9 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Analyzer/ConstantValue.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
 
-#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -46,7 +44,7 @@ public:
                 /// The code is ugly - how to convert artbitrary Field to proper string representation?
                 /// (maybe we can just consider numbers as unix timestamps?)
                 auto result_column = result_type->createColumnConst(1, constant_node->getValue());
-                const IColumn & inner_column = assert_cast<const ColumnConst &>(*result_column).getDataColumn();
+                const IColumn & inner_column = result_column->getDataColumn();
 
                 WriteBufferFromOwnString out;
                 result_type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
@@ -60,7 +58,8 @@ public:
 
 ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const QueryTreeNodePtr & table_expression)
 {
-    auto new_tree = query_tree->clone();
+    auto replacement_table_expression = table_expression->clone();
+    auto new_tree = query_tree->cloneAndReplace(table_expression, replacement_table_expression);
 
     PrepareForExternalDatabaseVisitor visitor;
     visitor.visit(new_tree);
@@ -71,9 +70,9 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     if (const auto * join_node = join_tree->as<JoinNode>())
     {
         if (join_node->getKind() == JoinKind::Left)
-            allow_where = join_node->getLeftTableExpression()->isEqual(*table_expression);
+            allow_where = join_node->getLeftTableExpression()->isEqual(*replacement_table_expression);
         else if (join_node->getKind() == JoinKind::Right)
-            allow_where = join_node->getRightTableExpression()->isEqual(*table_expression);
+            allow_where = join_node->getRightTableExpression()->isEqual(*replacement_table_expression);
         else
             allow_where = (join_node->getKind() == JoinKind::Inner);
     }
@@ -83,9 +82,9 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     if (allow_where)
     {
         if (query_node->hasPrewhere())
-            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), table_expression, context);
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
         if (query_node->hasWhere())
-            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), table_expression, context);
+            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
     }
 
     auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });

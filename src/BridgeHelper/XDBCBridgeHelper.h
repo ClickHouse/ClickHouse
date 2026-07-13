@@ -16,16 +16,10 @@
 #include <base/range.h>
 #include <BridgeHelper/IBridgeHelper.h>
 
-#include "config.h"
-
-
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
+using URLParams = std::vector<std::pair<std::string, std::string>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// Class for Helpers for XDBC-bridges, provide utility methods, not main request.
 class IXDBCBridgeHelper : public IBridgeHelper
@@ -34,7 +28,7 @@ class IXDBCBridgeHelper : public IBridgeHelper
 public:
     explicit IXDBCBridgeHelper(ContextPtr context_) : IBridgeHelper(context_) {}
 
-    virtual std::vector<std::pair<std::string, std::string>> getURLParams(UInt64 max_block_size) const = 0;
+    virtual URLParams getURLParams(UInt64 max_block_size) const = 0;
 
     virtual Poco::URI getColumnsInfoURI() const = 0;
 
@@ -106,7 +100,7 @@ protected:
 
             return checkString(PING_OK_ANSWER, *buf);
         }
-        catch (...)
+        catch (...) // Ok: bridge is not available
         {
             return false;
         }
@@ -133,19 +127,11 @@ protected:
 
     bool startBridgeManually() const override { return BridgeHelperMixin::startBridgeManually(); }
 
-    Poco::URI createBaseURI() const override
-    {
-        Poco::URI uri;
-        uri.setHost(bridge_host);
-        uri.setPort(bridge_port);
-        uri.setScheme("http");
-        uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
-        return uri;
-    }
+    Poco::URI createBaseURI() const override;
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override
     {
-       ShellCommandsHolder::instance().addCommand(std::move(cmd));
+        ShellCommandsHolder::instance().addCommand(std::move(cmd));
     }
 
 
@@ -167,8 +153,6 @@ private:
     Poco::Net::HTTPBasicCredentials credentials{};
 
 protected:
-    using URLParams = std::vector<std::pair<std::string, std::string>>;
-
     Poco::URI getColumnsInfoURI() const override
     {
         auto uri = createBaseURI();
@@ -179,7 +163,7 @@ protected:
 
     URLParams getURLParams(UInt64 max_block_size) const override
     {
-        std::vector<std::pair<std::string, std::string>> result;
+        URLParams result;
 
         result.emplace_back("connection_string", connection_string); /// already validated
         result.emplace_back("max_block_size", std::to_string(max_block_size));
@@ -187,70 +171,8 @@ protected:
         return result;
     }
 
-    bool isSchemaAllowed() override
-    {
-        if (!is_schema_allowed.has_value())
-        {
-            startBridgeSync();
-
-            auto uri = createBaseURI();
-            uri.setPath(SCHEMA_ALLOWED_HANDLER);
-            uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
-            uri.addQueryParameter("connection_string", getConnectionString());
-            uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
-
-            auto buf = BuilderRWBufferFromHTTP(uri)
-                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
-                           .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-                           .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
-                           .withSettings(getContext()->getReadSettings())
-                           .create(credentials);
-
-            bool res = false;
-            readBoolText(res, *buf);
-            is_schema_allowed = res;
-        }
-
-        return *is_schema_allowed;
-    }
-
-    IdentifierQuotingStyle getIdentifierQuotingStyle() override
-    {
-        if (!quote_style.has_value())
-        {
-            startBridgeSync();
-
-            auto uri = createBaseURI();
-            uri.setPath(IDENTIFIER_QUOTE_HANDLER);
-            uri.addQueryParameter("version", std::to_string(XDBC_BRIDGE_PROTOCOL_VERSION));
-            uri.addQueryParameter("connection_string", getConnectionString());
-            uri.addQueryParameter("use_connection_pooling", toString(use_connection_pooling));
-
-            auto buf = BuilderRWBufferFromHTTP(uri)
-                           .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
-                           .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-                           .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
-                           .withSettings(getContext()->getReadSettings())
-                           .create(credentials);
-
-            std::string character;
-            readStringBinary(character, *buf);
-            if (character.length() > 1)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Failed to parse quoting style from '{}' for service {}",
-                    character, BridgeHelperMixin::serviceAlias());
-
-            if (character.empty())
-                quote_style = IdentifierQuotingStyle::Backticks;
-            else if (character[0] == '`')
-                quote_style = IdentifierQuotingStyle::Backticks;
-            else if (character[0] == '"')
-                quote_style = IdentifierQuotingStyle::DoubleQuotes;
-            else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Can not map quote identifier '{}' to enum value", character);
-        }
-
-        return *quote_style;
-    }
+    bool isSchemaAllowed() override;
+    IdentifierQuotingStyle getIdentifierQuotingStyle() override;
 };
 
 
@@ -273,9 +195,9 @@ struct JDBCBridgeMixin
         return "JDBC";
     }
 
-    static AccessType getSourceAccessType()
+    static std::optional<AccessTypeObjects::Source> getSourceAccessObject()
     {
-        return AccessType::JDBC;
+        return AccessTypeObjects::Source::JDBC;
     }
 
     static bool startBridgeManually()
@@ -304,9 +226,9 @@ struct ODBCBridgeMixin
         return "ODBC";
     }
 
-    static AccessType getSourceAccessType()
+    static std::optional<AccessTypeObjects::Source> getSourceAccessObject()
     {
-        return AccessType::ODBC;
+        return AccessTypeObjects::Source::ODBC;
     }
 
     static bool startBridgeManually()

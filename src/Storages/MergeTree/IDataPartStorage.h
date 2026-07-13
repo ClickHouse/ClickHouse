@@ -1,23 +1,25 @@
 #pragma once
-#include <IO/WriteSettings.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <base/types.h>
 #include <Core/NamesAndTypes.h>
-#include <Interpreters/TransactionVersionMetadata.h>
-#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Disks/WriteMode.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteSettings.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <base/types.h>
+#include <Common/TransactionID.h>
 
 #include <memory>
 #include <optional>
 
 #include <boost/core/noncopyable.hpp>
+#include <Poco/Timestamp.h>
 
 namespace DB
 {
 struct ReadSettings;
 class ReadBufferFromFileBase;
+class ReadPipeline;
 class WriteBufferFromFileBase;
 
 struct IDiskTransaction;
@@ -127,6 +129,9 @@ public:
     /// Get metadata for a file inside path dir.
     virtual Poco::Timestamp getFileLastModified(const std::string & file_name) const = 0;
     virtual size_t getFileSize(const std::string & file_name) const = 0;
+    /// Uncompressed size of a packed skip-index substream from the archive index, or nullopt if
+    /// unknown (non-packed file, or v0 archive). Callers fall back to the compressed size.
+    virtual std::optional<UInt64> getPackedFileUncompressedSize(const std::string & /*file_name*/) const { return {}; }
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
     /// Get path on remote filesystem from file name on local filesystem.
@@ -135,20 +140,27 @@ public:
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
+    /// Convenience wrapper: calls prepareRead() + pipeline.build().
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint) const;
+
+    /// Populate a ReadPipeline with the stages needed to read from this part storage.
+    /// Every implementation must override this method.
+    virtual void prepareRead(
         const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const = 0;
+        ReadPipeline & pipeline) const = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const
+        std::optional<size_t> read_hint) const
     {
         if (existsFile(name))
-            return readFile(name, settings, read_hint, file_size);
+            return readFile(name, settings, read_hint);
         return {};
     }
 
@@ -187,10 +199,6 @@ public:
     virtual bool isBroken() const = 0;
     virtual bool isReadonly() const = 0;
 
-    /// TODO: remove or at least remove const.
-    virtual void syncRevision(UInt64 revision) const = 0;
-    virtual UInt64 getRevision() const = 0;
-
     /// Get a path for internal disk if relevant. It is used mainly for logging.
     virtual std::string getDiskPath() const = 0;
 
@@ -213,7 +221,7 @@ public:
         struct ReplicatedFileDescription
         {
             InputBufferGetter input_buffer_getter;
-            size_t file_size;
+            size_t file_size{};
         };
 
         std::map<String, ReplicatedFileDescription> files;
@@ -315,7 +323,7 @@ public:
     /// A special const method to write transaction file.
     /// It's const, because file with transaction metadata
     /// can be modified after part creation.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(const String & txn_file_name, WriteMode mode) const = 0;
 
     virtual void createFile(const String & name) = 0;
     virtual void moveFile(const String & from_name, const String & to_name) = 0;
@@ -350,6 +358,10 @@ public:
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
+
+    /// Returns true if underlying filesystem is case-insensitive,
+    /// e.g. file_name and FILE_NAME are the same files.
+    virtual bool isCaseInsensitive() const = 0;
 };
 
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;

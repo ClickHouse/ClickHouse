@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 
@@ -27,7 +26,7 @@ extern const int SUPPORT_IS_DISABLED;
 }
 
 template <typename Impl, typename Name>
-class FunctionTextClassificationString : public IFunction
+class FunctionTextClassificationString final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -76,7 +75,7 @@ public:
 };
 
 template <typename Impl, typename Name>
-class FunctionTextClassificationFloat : public IFunction
+class FunctionTextClassificationFloat final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

@@ -33,15 +33,26 @@ public:
 
     void assertDictionaryStructureExists(const std::string & dictionary_name, ContextPtr context) const;
 
+    /// Reloads all previously tried-to-load dictionaries in topological order
+    /// based on their source dependencies (dictionaries sourcing from other dictionaries).
+    /// Dictionaries within the same dependency level are reloaded in parallel.
+    void reloadAllTriedToLoadInOrder() const;
+
     static DictionaryStructure getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config = "dictionary");
 
     static DictionaryStructure getDictionaryStructure(const ObjectConfig & config);
 
+    std::optional<bool> isObjectLazy(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
+
     static void resetAll();
 
 protected:
-    LoadableMutablePtr createObject(const std::string & name, const Poco::Util::AbstractConfiguration & config,
-                                    const std::string & key_in_config, const std::string & repository_name) const override;
+    LoadableMutablePtr createObject(
+        const std::string & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & key_in_config,
+        const std::string & repository_name,
+        const std::string & config_file_path) const override;
 
     bool doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & old_config, const String & old_key_in_config,
                                                  const Poco::Util::AbstractConfiguration & new_config, const String & new_key_in_config) const override;

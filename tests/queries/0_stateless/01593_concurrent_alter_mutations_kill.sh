@@ -13,7 +13,8 @@ $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --query "INSERT
 
 function alter_thread
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         TYPE=$($CLICKHOUSE_CLIENT --query "SELECT type FROM system.columns WHERE table='concurrent_mutate_kill' and database='${CLICKHOUSE_DATABASE}' and name='value'")
         if [ "$TYPE" == "String" ]; then
             $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_kill MODIFY COLUMN value UInt64 SETTINGS replication_alter_partitions_sync=2"
@@ -25,7 +26,8 @@ function alter_thread
 
 function kill_mutation_thread
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         # find any mutation and kill it
         mutation_id=$($CLICKHOUSE_CLIENT --query "SELECT mutation_id FROM system.mutations WHERE is_done=0 and database='${CLICKHOUSE_DATABASE}' and table='concurrent_mutate_kill' LIMIT 1")
         if [ ! -z "$mutation_id" ]; then
@@ -36,13 +38,10 @@ function kill_mutation_thread
 }
 
 
-export -f alter_thread;
-export -f kill_mutation_thread;
-
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c kill_mutation_thread 2> /dev/null &
+alter_thread 2> /dev/null &
+kill_mutation_thread 2> /dev/null &
 
 wait
 

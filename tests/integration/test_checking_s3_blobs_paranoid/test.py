@@ -4,8 +4,8 @@ import logging
 import os
 import random
 import string
+import uuid
 
-import minio
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -39,6 +39,7 @@ def cluster():
             ],
             with_minio=True,
             stay_alive=True,
+            pids_limit=10000,
         )
         cluster.add_instance(
             "node_with_query_log_on_s3",
@@ -244,9 +245,9 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
 @pytest.mark.parametrize(
     "action_and_message",
     [
-        ("slow_down", "DB::Exception: Slow Down."),
-        ("qps_limit_exceeded", "DB::Exception: Please reduce your request rate."),
-        ("total_qps_limit_exceeded", "DB::Exception: Please reduce your request rate."),
+        ("slow_down", "DB::Exception: Slow Down"),
+        ("qps_limit_exceeded", "DB::Exception: Please reduce your request rate"),
+        ("total_qps_limit_exceeded", "DB::Exception: Please reduce your request rate"),
         (
             "connection_refused",
             "Poco::Exception. Code: 1000, e.code() = 111, Connection refused",
@@ -326,7 +327,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         action="broken_pipe",
     )
 
-    insert_query_id = randomize_query_id(f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD")
+    insert_query_id = randomize_query_id("TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD")
     node.query(
         f"""
         INSERT INTO
@@ -360,7 +361,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         after=2,
         action="broken_pipe",
     )
-    insert_query_id = randomize_query_id(f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD_1")
+    insert_query_id = randomize_query_id("TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD_1")
     error = node.query_and_get_error(
         f"""
                INSERT INTO
@@ -464,9 +465,8 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
 
     assert "Code: 1000" in error, error
     assert (
-        "DB::Exception: Connection reset by peer." in error
-        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
-        in error
+        "Connection reset by peer." in error
+        or "Code: 1000, e.code() = 104, Connection reset by peer" in error
     ), error
 
 
@@ -547,10 +547,85 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
 
     assert "Code: 1000" in error, error
     assert (
-        "DB::Exception: Connection reset by peer." in error
-        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
+        "Connection reset by peer." in error
+        or "Code: 1000, e.code() = 104, Connection reset by peer"
         in error
     ), error
+
+
+def test_when_s3_timeout_at_listing(
+    cluster, broken_s3
+):
+    node = cluster.instances["node_with_inf_s3_retries"]
+
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip(
+            "Memory Sanitizer is too slow for precise resource measurement in this test"
+        )
+
+    insert_query_id = randomize_query_id(
+        "TEST_WHEN_S3_TIMEOUT_AT_LISTING_INSERT"
+    )
+    node.query(
+        f"""
+        INSERT INTO
+            TABLE FUNCTION s3(
+                'http://resolver:8083/root/data/test_when_s3_timeout_at_listing/{{_partition_id}}/file',
+                'minio', '{minio_secret_key}',
+                'CSV', auto, 'none'
+            )
+            PARTITION BY number
+        SELECT
+            *
+        FROM system.numbers
+        LIMIT 2000
+        SETTINGS
+            s3_check_objects_after_upload=0,
+            s3_truncate_on_insert=1
+        """,
+        query_id=insert_query_id,
+    )
+
+    broken_s3.setup_at_listing(
+        count=1,
+        after=1,
+        action="timeout"
+    )
+
+    select_query_id = randomize_query_id(
+        "TEST_WHEN_S3_TIMEOUT_AT_LISTING_SELECT"
+    )
+    result = node.query(
+        f"""
+        SELECT * FROM
+            s3(
+                'http://resolver:8083/root/data/test_when_s3_timeout_at_listing/*/file',
+                'minio', '{minio_secret_key}',
+                'CSV', auto, 'none'
+            )
+        ORDER BY ALL
+        """,
+        query_id=select_query_id,
+    )
+    result = result.strip().split("\n")
+    assert len(result) == 2000
+    assert result == [str(i) for i in range(2000)]
+
+    node.query("SYSTEM FLUSH LOGS")
+    read_count, errors, retryable = node.query(
+        f"""
+            SELECT
+                ProfileEvents['S3ReadRequestsCount'],
+                ProfileEvents['S3ReadRequestsErrors'],
+                ProfileEvents['S3ReadRequestRetryableErrors'],
+            FROM system.query_log
+            WHERE query_id='{select_query_id}'
+                AND type='QueryFinish'
+            """).strip().split("\t")
+
+    assert int(read_count) > 10 # at least 10 files are read from s3
+    assert int(errors) >= 1
+    assert int(retryable) >= 1
 
 
 def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
@@ -562,8 +637,8 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         action="connection_refused",
     )
 
-    insert_query_id = randomize_query_id(f"TEST_QUERY_IS_CANCELED_WITH_INF_RETRIES")
-    request = node.get_query_request(
+    insert_query_id = randomize_query_id("TEST_QUERY_IS_CANCELED_WITH_INF_RETRIES")
+    node.get_query_request(
         f"""
         INSERT INTO
             TABLE FUNCTION s3(
@@ -649,7 +724,7 @@ def test_adaptive_timeouts(cluster, broken_s3, node_name):
     assert put_objects == 1
 
     s3_use_adaptive_timeouts = node.query(
-        f"""
+        """
         SELECT
             value
         FROM system.settings
@@ -728,7 +803,7 @@ def test_no_key_found_disk(cluster, broken_s3):
     error = node.query_and_get_error("SELECT * FROM no_key_found_disk").strip()
 
     assert (
-        "DB::Exception: The specified key does not exist. This error happened for S3 disk."
+        "The specified key does not exist. This error happened for S3 disk"
         in error
     )
 
@@ -890,3 +965,182 @@ def test_exception_in_onFinish(cluster, broken_s3):
     )
 
     assert count_from_query_log == "1\n"
+
+
+def test_exception_in_MV(cluster, broken_s3):
+    node = cluster.instances["node_with_query_log_on_s3"]
+
+    node.query(
+        """
+        DROP VIEW IF EXISTS source_sink_mv
+        """
+    )
+
+    node.query(
+        """
+        DROP TABLE IF EXISTS source_sink
+        """
+    )
+
+    node.query(
+        """
+        DROP TABLE IF EXISTS source
+        """
+    )
+
+    node.query(
+        """
+        CREATE TABLE source (i Int64)
+            ENGINE = MergeTree()
+            ORDER BY ()
+        """
+    )
+
+    node.query(
+        """
+        CREATE TABLE source_sink
+            ENGINE = MergeTree()
+            ORDER BY ()
+            SETTINGS storage_policy='broken_s3'
+            EMPTY AS
+            SELECT *
+            FROM source
+        """
+    )
+
+    node.query(
+        """
+        CREATE MATERIALIZED VIEW source_sink_mv TO source_sink AS
+            SELECT *
+            FROM source
+        """
+    )
+
+    node.query(
+        """
+        -- INSERT
+        INSERT INTO source SETTINGS materialized_views_ignore_errors=1 VALUES (1)
+        """
+    )
+
+    broken_s3.setup_at_object_upload(count=100, after=0)
+
+    query_id = uuid.uuid4().hex
+    node.query(
+        """
+        INSERT INTO source SETTINGS materialized_views_ignore_errors=1 VALUES (2)
+        """,
+        query_id=query_id
+    )
+
+    count_from_source = node.query(
+        """
+        SELECT count() from source
+        """
+    )
+
+    assert count_from_source == "2\n"
+
+    count_from_sink= node.query(
+        """
+        SELECT count() from source_sink
+        """
+    )
+
+    assert count_from_sink == "1\n"
+
+    count_from_sink= node.query(
+        """
+        SYSTEM FLUSH LOGS query_log, query_views_log
+        """
+    )
+
+    query_view_log = node.query(
+        f"""
+        SELECT
+            view_name,
+            status,
+            exception_code,
+            exception,
+            view_target,
+            view_query
+        FROM system.query_views_log
+        WHERE initial_query_id = '{query_id}'
+        ORDER BY view_name ASC
+        """
+    )
+
+    assert 'ExceptionName: ExpectedError Message: mock s3 injected unretryable error' in query_view_log
+    assert 'ExceptionWhileProcessing' in query_view_log
+
+
+def test_insert_to_s3_cancel_reports_cancellation(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    # Keep uploads failing with a retryable error so the query sits in the S3 retry loop when killed.
+    broken_s3.setup_at_object_upload(action="connection_reset_by_peer", count=10000)
+    broken_s3.setup_at_part_upload(action="connection_reset_by_peer", count=10000)
+
+    query_id = randomize_query_id("insert_to_s3_cancel")
+    request = node.get_query_request(
+        f"""
+        INSERT INTO TABLE FUNCTION s3(
+            'http://resolver:8083/root/data/insert_to_s3_cancel',
+            'minio', '{minio_secret_key}',
+            'CSV', 'key Int64, data String')
+        SELECT number, toString(number) FROM numbers(100)
+        SETTINGS s3_truncate_on_insert=1
+        """,
+        query_id=query_id,
+    )
+
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+        "1",
+    )
+    node.query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+    error = request.get_error()
+    assert "QUERY_WAS_CANCELLED" in error, error
+    assert "S3_ERROR" not in error, error
+
+
+def test_select_from_s3_cancel_reports_cancellation(cluster, broken_s3):
+    node = cluster.instances["node"]
+
+    node.query(
+        f"""
+        INSERT INTO TABLE FUNCTION s3(
+            'http://resolver:8083/root/data/select_from_s3_cancel',
+            'minio', '{minio_secret_key}',
+            'CSV', 'key Int64, data String')
+        SELECT number, toString(number) FROM numbers(100)
+        SETTINGS s3_truncate_on_insert=1
+        """
+    )
+
+    # Make reads hang so the query is inside an in-flight S3 request when killed.
+    broken_s3.setup_slow_get_answers(timeout=30)
+
+    query_id = randomize_query_id("select_from_s3_cancel")
+    request = node.get_query_request(
+        f"""
+        SELECT count() FROM s3(
+            'http://resolver:8083/root/data/select_from_s3_cancel',
+            'minio', '{minio_secret_key}',
+            'CSV', 'key Int64, data String')
+        """,
+        query_id=query_id,
+    )
+
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+        "1",
+    )
+    node.query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+    error = request.get_error()
+    assert "QUERY_WAS_CANCELLED" in error, error
+    assert "S3_ERROR" not in error, error

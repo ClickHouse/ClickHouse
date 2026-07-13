@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Decimal.h"
+#include "Decimal_fwd.h"
 #include "UUID.h"
 #include "IPv4andIPv6.h"
 
@@ -44,6 +44,7 @@ TN_MAP(Decimal64)
 TN_MAP(Decimal128)
 TN_MAP(Decimal256)
 TN_MAP(DateTime64)
+TN_MAP(Time64)
 TN_MAP(Array)
 TN_MAP(Tuple)
 TN_MAP(Map)

@@ -3,6 +3,7 @@ description: 'Settings at the query-level'
 sidebar_label: 'Query-level Session Settings'
 slug: /operations/settings/query-level
 title: 'Query-level Session Settings'
+doc_type: 'reference'
 ---
 
 ## Overview {#overview}
@@ -36,8 +37,7 @@ The order of priority for defining a setting is:
     clause of the SELECT query. The setting value is applied only to that query
     and is reset to the default or previous value after the query is executed.
 
-
-## Converting a Setting to its Default Value {#converting-a-setting-to-its-default-value}
+## Converting a setting to its default value {#converting-a-setting-to-its-default-value}
 
 If you change a setting and would like to revert it back to its default value, set the value to `DEFAULT`. The syntax looks like:
 
@@ -77,26 +77,38 @@ The setting is now back to its default:
 └─────────┘
 ```
 
-## Custom Settings {#custom_settings}
+## Custom settings {#custom_settings}
 
 In addition to the common [settings](/operations/settings/settings.md), users can define custom settings.
+Custom settings enable you to pass **session-specific parameters** that can be referenced within queries, policies, or functions. This is useful when you need to:
+- Filter data based on user identity or organization
+- Apply different business logic based on context
+- Maintain stateful information across queries in a session
 
-A custom setting name must begin with one of predefined prefixes. The list of these prefixes must be declared in the [custom_settings_prefixes](../../operations/server-configuration-parameters/settings.md#custom_settings_prefixes) parameter in the server configuration file.
+A custom setting name must begin with one of a number of predefined prefixes from a list you define.
+The list of prefixes can be specified using the [`custom_settings_prefixes`](../../operations/server-configuration-parameters/settings.md#custom_settings_prefixes) server setting, defined in your server configuration file.
+
+In the example below, `SQL_` is chosen as the custom prefix:
 
 ```xml
-<custom_settings_prefixes>custom_</custom_settings_prefixes>
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
 ```
 
-To define a custom setting use `SET` command:
+:::note
+In ClickHouse Cloud it is not possible to specify a custom prefix.
+All custom user settings begin with prefix `SQL_`.
+:::
+
+To define a custom setting use the `SET` command:
 
 ```sql
-SET custom_a = 123;
+SET SQL_a = 123;
 ```
 
 To get the current value of a custom setting use `getSetting()` function:
 
 ```sql
-SELECT getSetting('custom_a');
+SELECT getSetting('SQL_a');
 ```
 
 ## Examples {#examples}
@@ -146,7 +158,6 @@ IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f2
 -- highlight-next-line
 SETTINGS PROFILE log_ingest
 ```
-
 
 ### Using XML to create a settings profile and user {#using-xml-to-create-a-settings-profile-and-user}
 

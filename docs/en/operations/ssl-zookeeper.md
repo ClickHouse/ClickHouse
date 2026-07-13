@@ -5,9 +5,9 @@ sidebar_label: 'Secured Communication with Zookeeper'
 sidebar_position: 45
 slug: /operations/ssl-zookeeper
 title: 'Optional secured communication between ClickHouse and Zookeeper'
+doc_type: 'guide'
 ---
 
-# Optional secured communication between ClickHouse and Zookeeper
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
 
 <SelfManaged />

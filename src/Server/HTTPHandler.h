@@ -8,13 +8,13 @@
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Common/re2.h>
 #include <Access/Credentials.h>
 
-#include "HTTPResponseHeaderWriter.h"
+#include <Server/HTTPResponseHeaderWriter.h>
 
 namespace CurrentMetrics
 {
@@ -60,6 +60,9 @@ public:
 
     virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) = 0;
 
+protected:
+    LoggerPtr log;
+
 private:
     struct Output
     {
@@ -100,38 +103,11 @@ private:
             return out_maybe_delayed_and_compressed && out_maybe_delayed_and_compressed != out_maybe_compressed;
         }
 
-        void finalize()
-        {
-            if (finalized)
-                return;
-            finalized = true;
+        void pushDelayedResults() const;
 
-            if (out_delayed_and_compressed_holder)
-                out_delayed_and_compressed_holder->finalize();
-            if (out_compressed_holder)
-                out_compressed_holder->finalize();
-            if (wrap_compressed_holder)
-                wrap_compressed_holder->finalize();
-            if (out_holder)
-                out_holder->finalize();
-        }
+        void finalize();
 
-        void cancel()
-        {
-            if (canceled)
-                return;
-            canceled = true;
-
-            if (out_delayed_and_compressed_holder)
-                out_delayed_and_compressed_holder->cancel();
-            if (out_compressed_holder)
-                out_compressed_holder->cancel();
-            if (wrap_compressed_holder)
-                wrap_compressed_holder->cancel();
-            if (out_holder)
-                out_holder->cancel();
-        }
-
+        void cancel();
 
         bool isCanceled() const
         {
@@ -145,7 +121,6 @@ private:
     };
 
     IServer & server;
-    LoggerPtr log;
 
     /// It is the name of the server that will be sent in an http-header X-ClickHouse-Server-Display-Name.
     String server_display_name;
@@ -174,7 +149,7 @@ private:
         HTMLForm & params,
         HTTPServerResponse & response,
         Output & used_output,
-        std::optional<CurrentThread::QueryScope> & query_scope,
+        QueryScope & query_scope,
         const ProfileEvents::Event & write_event);
 
     bool trySendExceptionToClient(
@@ -218,8 +193,8 @@ class PredefinedQueryHandler : public HTTPHandler
 private:
     NameSet receive_params;
     std::string predefined_query;
-    CompiledRegexPtr url_regex;
-    std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regex;
+    CompiledRegexPtr url_regexp;
+    std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regexp;
 
 public:
     PredefinedQueryHandler(
@@ -227,8 +202,8 @@ public:
         const HTTPHandlerConnectionConfig & connection_config,
         const NameSet & receive_params_,
         const std::string & predefined_query_,
-        const CompiledRegexPtr & url_regex_,
-        const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_,
+        const CompiledRegexPtr & url_regexp_,
+        const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
 
     void customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body) override;

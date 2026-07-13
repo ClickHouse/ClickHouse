@@ -18,9 +18,12 @@
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <QueryPipeline/Pipe.h>
@@ -30,6 +33,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <bsoncxx/json.hpp>
+#include <mongocxx/exception/logic_error.hpp>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -47,6 +51,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
 }
@@ -57,13 +62,31 @@ namespace Setting
     extern const SettingsBool mongodb_throw_on_unsupported_query;
 }
 
+static constexpr const char * MONGODB_RESERVED_CHARS = "!?#/'\",;:$&()[]*+=@";
+
+void MongoDBConfiguration::checkHosts(const ContextPtr & context) const
+{
+    // Because domain records will be resolved inside the driver, we can't check resolved IPs for our restrictions.
+    for (const auto & host : uri->hosts())
+        context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
+}
+
+void MongoDBConfiguration::checkCollection() const
+{
+    /// The C driver builds the namespace as "<db>.<collection>" and asserts that the collection part is non-empty.
+    /// It treats the name as a NUL-terminated C string, so any embedded NUL truncates it and can produce an
+    /// effectively empty collection name, which aborts the process inside the driver.
+    if (collection.empty() || collection.find('\0') != String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
+}
+
 StorageMongoDB::StorageMongoDB(
     const StorageID & table_id_,
     MongoDBConfiguration configuration_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
-    : IStorage{table_id_}
+    : StorageWithCommonVirtualColumns{table_id_}
     , configuration{std::move(configuration_)}
     , log(getLogger("StorageMongoDB (" + table_id_.getFullTableName() + ")"))
 {
@@ -71,7 +94,16 @@ StorageMongoDB::StorageMongoDB(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageMongoDB::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 Pipe StorageMongoDB::read(
@@ -94,88 +126,139 @@ Pipe StorageMongoDB::read(
 
     auto options = mongocxx::options::find{};
 
-    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, buildMongoDBQuery(context, options, query_info, sample_block),
-        std::move(options), sample_block, max_block_size));
+    bsoncxx::document::view_or_value mongo_query = buildMongoDBQuery(context, options, query_info, sample_block);
+    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, mongo_query,
+        std::move(options), std::make_shared<const Block>(std::move(sample_block)), max_block_size));
+}
+
+static String encodeString(const String & str)
+{
+    String encoded;
+    Poco::URI::encode(str, MONGODB_RESERVED_CHARS, encoded);
+    return encoded;
+}
+
+MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(MutableNamedCollectionPtr named_collection, ContextPtr context)
+{
+    MongoDBConfiguration configuration;
+    if (named_collection->has("uri"))
+    {
+        validateNamedCollection(*named_collection, {"uri", "collection"}, {"oid_columns"});
+        configuration.uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
+    }
+    else
+    {
+        validateNamedCollection(*named_collection, {
+            "host", "port", "user", "password", "database", "collection"}, {"options", "oid_columns"});
+        String user = named_collection->get<String>("user");
+        String auth_string;
+        if (!user.empty())
+        {
+            String escaped_user = encodeString(user);
+            String escaped_password = encodeString(named_collection->get<String>("password"));
+            auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
+        }
+        configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
+                                                      auth_string,
+                                                      named_collection->get<String>("host"),
+                                                      named_collection->get<String>("port"),
+                                                      named_collection->get<String>("database"),
+                                                      named_collection->getOrDefault<String>("options", "")));
+    }
+    configuration.collection = named_collection->get<String>("collection");
+    if (named_collection->has("oid_columns"))
+        boost::split(configuration.oid_fields, named_collection->get<String>("oid_columns"), boost::is_any_of(","));
+
+    configuration.checkHosts(context);
+    configuration.checkCollection();
+    return configuration;
+}
+
+static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
+{
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+        return StorageMongoDB::getConfigurationFromCollection(named_collection, context);
+
+    MongoDBConfiguration configuration;
+
+    for (auto & engine_arg : engine_args)
+        engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+
+    if (engine_args.size() >= 5 && engine_args.size() <= 7)
+    {
+        configuration.collection = checkAndGetLiteralArgument<String>(engine_args[2], "collection");
+
+        String options;
+        if (engine_args.size() >= 6)
+            options = checkAndGetLiteralArgument<String>(engine_args[5], "options");
+
+        String user = checkAndGetLiteralArgument<String>(engine_args[3], "user");
+        String auth_string;
+        if (!user.empty())
+        {
+            String escaped_user = encodeString(user);
+            String escaped_password = encodeString(checkAndGetLiteralArgument<String>(engine_args[4], "password"));
+            auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
+        }
+
+        auto host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
+        auto database_name = checkAndGetLiteralArgument<String>(engine_args[1], "database");
+        auto parsed_host_port = parseAddress(host_port, 27017);
+        try
+        {
+            configuration.uri = std::make_unique<mongocxx::uri>(
+                fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options));
+        }
+        catch (const mongocxx::logic_error & e)
+        {
+            auto pos = host_port.find('/');
+            if (!allow_excessive_path_in_host || pos == String::npos)
+                throw;
+
+            LOG_WARNING(getLogger("StorageMongoDB"), "Failed to parse MongoDB connection string: '{}', trying to remove everything after slash from the hostname", e.what());
+
+            host_port = host_port.substr(0, pos);
+            parsed_host_port = parseAddress(host_port, 27017);
+
+            configuration.uri = std::make_unique<mongocxx::uri>(
+                fmt::format("mongodb://{}{}:{}/{}?{}", auth_string, parsed_host_port.first, parsed_host_port.second, database_name, options));
+
+            context->addOrUpdateWarningMessage(
+                Context::WarningType::OBSOLETE_MONGO_TABLE_DEFINITION,
+                PreformattedMessage::create(
+                    "The first argument in '{}' table definition with MongoDB engine contains a path which was ignored. "
+                    "To fix this, either use a complete MongoDB connection string with schema and database name as the first argument, "
+                    "or use only host:port format and specify database name and other parameters separately in the table engine definition. "
+                    "In future versions, this will be an error when loading the table.",
+                    table_id ? table_id->getNameForLogs() : ""));
+        }
+
+        if (engine_args.size() == 7)
+            boost::split(configuration.oid_fields,
+                checkAndGetLiteralArgument<String>(engine_args[6], "oid_columns"), boost::is_any_of(","));
+    }
+    else if (engine_args.size() == 2 || engine_args.size() == 3)
+    {
+        configuration.collection = checkAndGetLiteralArgument<String>(engine_args[1], "database");
+        configuration.uri =  std::make_unique<mongocxx::uri>(checkAndGetLiteralArgument<String>(engine_args[0], "host"));
+        if (engine_args.size() == 3)
+            boost::split(configuration.oid_fields,
+                checkAndGetLiteralArgument<String>(engine_args[2], "oid_columns"), boost::is_any_of(","));
+    }
+    else
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Incorrect number of arguments. Example usage: "
+                            "MongoDB('host:port', 'database', 'collection', 'user', 'password'[, options[, oid_columns]]) or MongoDB('uri', 'collection'[, oid columns]).");
+
+    configuration.checkHosts(context);
+    configuration.checkCollection();
+
+    return configuration;
 }
 
 MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    MongoDBConfiguration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
-    {
-        if (named_collection->has("uri"))
-        {
-            validateNamedCollection(*named_collection, {"uri", "collection"}, {"oid_columns"});
-            configuration.uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
-        }
-        else
-        {
-            validateNamedCollection(*named_collection, {
-                "host", "port", "user", "password", "database", "collection"}, {"options", "oid_columns"});
-            String user = named_collection->get<String>("user");
-            String auth_string;
-            String escaped_password;
-            Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
-            if (!user.empty())
-                auth_string = fmt::format("{}:{}@", user, escaped_password);
-            configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
-                                                          auth_string,
-                                                          named_collection->get<String>("host"),
-                                                          named_collection->get<String>("port"),
-                                                          named_collection->get<String>("database"),
-                                                          named_collection->getOrDefault<String>("options", "")));
-        }
-        configuration.collection = named_collection->get<String>("collection");
-        if (named_collection->has("oid_columns"))
-            boost::split(configuration.oid_fields, named_collection->get<String>("oid_columns"), boost::is_any_of(","));
-    }
-    else
-    {
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
-
-        if (engine_args.size() >= 5 && engine_args.size() <= 7)
-        {
-            configuration.collection = checkAndGetLiteralArgument<String>(engine_args[2], "collection");
-
-            String options;
-            if (engine_args.size() >= 6)
-                options = checkAndGetLiteralArgument<String>(engine_args[5], "options");
-
-            String user = checkAndGetLiteralArgument<String>(engine_args[3], "user");
-            String auth_string;
-            String escaped_password;
-            Poco::URI::encode(checkAndGetLiteralArgument<String>(engine_args[4], "password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
-            if (!user.empty())
-                auth_string = fmt::format("{}:{}@", user, escaped_password);
-            auto parsed_host_port = parseAddress(checkAndGetLiteralArgument<String>(engine_args[0], "host:port"), 27017);
-            configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
-                                                              auth_string,
-                                                              parsed_host_port.first,
-                                                              parsed_host_port.second,
-                                                              checkAndGetLiteralArgument<String>(engine_args[1], "database"),
-                                                              options));
-            if (engine_args.size() == 7)
-                boost::split(configuration.oid_fields,
-                    checkAndGetLiteralArgument<String>(engine_args[6], "oid_columns"), boost::is_any_of(","));
-        }
-        else if (engine_args.size() == 2 || engine_args.size() == 3)
-        {
-            configuration.collection = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-            configuration.uri =  std::make_unique<mongocxx::uri>(checkAndGetLiteralArgument<String>(engine_args[0], "host"));
-            if (engine_args.size() == 3)
-                boost::split(configuration.oid_fields,
-                    checkAndGetLiteralArgument<String>(engine_args[2], "oid_columns"), boost::is_any_of(","));
-        }
-        else
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Incorrect number of arguments. Example usage: "
-                                "MongoDB('host:port', 'database', 'collection', 'user', 'password'[, options[, oid_columns]]) or MongoDB('uri', 'collection'[, oid columns]).");
-    }
-
-    configuration.checkHosts(context);
-
-    return configuration;
+    return getConfigurationImpl(nullptr, std::move(engine_args), context, false);
 }
 
 static std::string mongoFuncName(const std::string & func)
@@ -550,20 +633,254 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 }
 
 
+void registerStorageMongoDB(StorageFactory & factory);
 void registerStorageMongoDB(StorageFactory & factory)
 {
     factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args)
     {
+        /// Allow loading tables with excessive path in host parameter created on older ClickHouse versions
+        /// (that used the previous Poco-based MongoDB implementation which allowed it).
+        /// TODO: we can remove it after ClickHouse 27.5, it should be enough time for users to migrate.
+        bool allow_excessive_path_in_host = args.mode > LoadingStrictnessLevel::CREATE;
         return std::make_shared<StorageMongoDB>(
             args.table_id,
-            StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext()),
+            getConfigurationImpl(&args.table_id, args.engine_args, args.getLocalContext(), allow_excessive_path_in_host),
             args.columns,
             args.constraints,
             args.comment);
     },
     {
-        .source_access_type = AccessType::MONGO,
-    });
+        .source_access_type = AccessTypeObjects::Source::MONGO,
+    },
+    Documentation{
+        .description = R"DOCS_MD(
+MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
+
+Only MongoDB >=7 is supported.
+[Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = MongoDB(host:port, database, collection, user, password[, options[, oid_columns]]);
+```
+
+**Engine Parameters**
+
+| Parameter     | Description                                                                                                                                                                                              |
+|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `host:port`   | MongoDB server address.                                                                                                                                                                                  |
+| `database`    | Remote database name.                                                                                                                                                                                    |
+| `collection`  | Remote collection name.                                                                                                                                                                                  |
+| `user`        | MongoDB user.                                                                                                                                                                                            |
+| `password`    | User password.                                                                                                                                                                                           |
+| `options`     | Optional. MongoDB connection string [options](https://www.mongodb.com/docs/manual/reference/connection-string-options/#connection-options) as a URL formatted string. e.g. `'authSource=admin&ssl=true'` |
+| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.                                                                                                   |
+
+:::tip
+If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
+Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future releases.
+:::
+
+Alternatively, you can pass a URI:
+
+```sql
+ENGINE = MongoDB(uri, collection[, oid_columns]);
+```
+
+**Engine Parameters**
+
+| Parameter     | Description                                                                                            |
+|---------------|--------------------------------------------------------------------------------------------------------|
+| `uri`         | MongoDB server's connection URI.                                                                       |
+| `collection`  | Remote collection name.                                                                                |
+| `oid_columns` | Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default. |
+
+## Types mappings {#types-mappings}
+
+| MongoDB                 | ClickHouse                                                            |
+|-------------------------|-----------------------------------------------------------------------|
+| bool, int32, int64      | *any numeric type except Decimals*, Boolean, String                   |
+| double                  | Float64, String                                                       |
+| date                    | Date, Date32, DateTime, DateTime64, String                            |
+| string                  | String, *any numeric type(except Decimals) if formatted correctly*    |
+| document                | String(as JSON)                                                       |
+| array                   | Array, String(as JSON)                                                |
+| oid                     | String                                                                |
+| binary                  | String if in column, base64 encoded string if in an array or document |
+| uuid (binary subtype 4) | UUID                                                                  |
+| *any other*             | String                                                                |
+
+If key is not found in MongoDB document (for example, column name doesn't match), default value or `NULL` (if the column is nullable) will be inserted.
+
+### OID {#oid}
+
+If you want a `String` to be treated as `oid` in the WHERE clause, just put the column's name in the last argument of the table engine.
+This may be necessary when querying a record by the `_id` column, which by default has `oid` type in MongoDB.
+If the `_id` field in the table has other type, for example `uuid`, you need to specify empty `oid_columns`, otherwise the default value for this parameter `_id` is used.
+
+```javascript
+db.sample_oid.insertMany([
+    {"another_oid_column": ObjectId()},
+]);
+
+db.sample_oid.find();
+[
+    {
+        "_id": {"$oid": "67bf6cc44ebc466d33d42fb2"},
+        "another_oid_column": {"$oid": "67bf6cc40000000000ea41b1"}
+    }
+]
+```
+
+By default, only `_id` is treated as `oid` column.
+
+```sql
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid');
+
+SELECT count() FROM sample_oid WHERE _id = '67bf6cc44ebc466d33d42fb2'; --will output 1.
+SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; --will output 0
+```
+
+In this case the output will be `0`, because ClickHouse doesn't know that `another_oid_column` has `oid` type, so let's fix it:
+
+```sql
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid', '_id,another_oid_column');
+
+-- or
+
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('host', 'db', 'sample_oid', 'user', 'pass', '', '_id,another_oid_column');
+
+SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; -- will output 1 now
+```
+
+## Supported clauses {#supported-clauses}
+
+Only queries with simple expressions are supported (for example, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
+Such expressions are translated to MongoDB query language and executed on the server side.
+You can disable all these restriction, using [mongodb_throw_on_unsupported_query](../../../operations/settings/settings.md#mongodb_throw_on_unsupported_query).
+In that case ClickHouse tries to convert query on best effort basis, but it can lead to full table scan and processing on ClickHouse side.
+
+:::note
+It's always better to explicitly set type of literal because Mongo requires strict typed filters.\
+For example you want to filter by `Date`:
+
+```sql
+SELECT * FROM mongo_table WHERE date = '2024-01-01'
+```
+
+This will not work because Mongo will not cast string to `Date`, so you need to cast it manually:
+
+```sql
+SELECT * FROM mongo_table WHERE date = '2024-01-01'::Date OR date = toDate('2024-01-01')
+```
+
+This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
+
+:::
+
+## Usage example {#usage-example}
+
+Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix) dataset loaded
+
+Create a table in ClickHouse which allows to read data from MongoDB collection:
+
+```sql title="Query"
+CREATE TABLE sample_mflix_table
+(
+    _id String,
+    title String,
+    plot String,
+    genres Array(String),
+    directors Array(String),
+    writers Array(String),
+    released Date,
+    imdb String,
+    year String
+) ENGINE = MongoDB('mongodb://<USERNAME>:<PASSWORD>@atlas-sql-6634be87cefd3876070caf96-98lxs.a.query.mongodb.net/sample_mflix?ssl=true&authSource=admin', 'movies');
+```
+
+```sql title="Query"
+SELECT count() FROM sample_mflix_table
+```
+
+```text title="Response"
+┌─count()─┐
+│   21349 │
+└─────────┘
+```
+
+```sql title="Query"
+-- JSONExtractString cannot be pushed down to MongoDB
+SET mongodb_throw_on_unsupported_query = 0;
+
+-- Find all 'Back to the Future' sequels with rating > 7.5
+SELECT title, plot, genres, directors, released FROM sample_mflix_table
+WHERE title IN ('Back to the Future', 'Back to the Future Part II', 'Back to the Future Part III')
+    AND toFloat32(JSONExtractString(imdb, 'rating')) > 7.5
+ORDER BY year
+FORMAT Vertical;
+```
+
+```text title="Response"
+Row 1:
+──────
+title:     Back to the Future
+plot:      A young man is accidentally sent 30 years into the past in a time-traveling DeLorean invented by his friend, Dr. Emmett Brown, and must make sure his high-school-age parents unite in order to save his own existence.
+genres:    ['Adventure','Comedy','Sci-Fi']
+directors: ['Robert Zemeckis']
+released:  1985-07-03
+
+Row 2:
+──────
+title:     Back to the Future Part II
+plot:      After visiting 2015, Marty McFly must repeat his visit to 1955 to prevent disastrous changes to 1985... without interfering with his first trip.
+genres:    ['Action','Adventure','Comedy']
+directors: ['Robert Zemeckis']
+released:  1989-11-22
+```
+
+```sql title="Query"
+-- Find top 3 movies based on Cormac McCarthy's books
+SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) AS rating
+FROM sample_mflix_table
+WHERE arrayExists(x -> x LIKE 'Cormac McCarthy%', writers)
+ORDER BY rating DESC
+LIMIT 3;
+```
+
+```text title="Response"
+┌─title──────────────────┬─rating─┐
+│ No Country for Old Men │    8.1 │
+│ The Sunset Limited     │    7.4 │
+│ The Road               │    7.3 │
+└────────────────────────┴────────┘
+```
+
+## Troubleshooting {#troubleshooting}
+You can see the generated MongoDB query in DEBUG level logs.
+
+Implementation details can be found in [mongocxx](https://github.com/mongodb/mongo-cxx-driver) and [mongoc](https://github.com/mongodb/mongo-c-driver) documentations.
+)DOCS_MD",
+        .syntax = "ENGINE = MongoDB('host:port', 'database', 'collection', 'user', 'password'[, 'options'])",
+        .related = {"MySQL", "PostgreSQL"}});
 }
 
 }

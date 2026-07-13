@@ -6,7 +6,7 @@ from multiprocessing.dummy import Pool
 
 import pytest
 
-from helpers.client import QueryRuntimeException
+from helpers.client import QueryRuntimeException, QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -46,8 +46,10 @@ def started_cluster():
         for node in [node1, node2]:
             node.query(
                 f"""
-                CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary;
-                CREATE DATABASE IF NOT EXISTS test;
+                DROP DATABASE IF EXISTS dict;
+                DROP DATABASE IF EXISTS test;
+                CREATE DATABASE dict ENGINE=Dictionary;
+                CREATE DATABASE test;
                 CREATE TABLE test_table_src(date Date, id UInt32, dummy UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table', '{nodenum}')
                 PARTITION BY date ORDER BY id
@@ -70,6 +72,7 @@ def get_status(dictionary_name):
 def test_dict_get_data(started_cluster):
     query = node1.query
 
+    query("DROP TABLE IF EXISTS test.elements")
     query(
         "CREATE TABLE test.elements (id UInt64, a String, b Int32, c Float64) ENGINE=Log;"
     )
@@ -134,31 +137,38 @@ def dependent_tables_assert():
     assert "system.join" in res
     assert "default.src" in res
     assert "dict.dep_y" in res
-    assert "lazy.log" in res
     assert "test.d" in res
     assert "default.join" in res
     assert "a.t" in res
 
 
+def cleanup_dependent_tables():
+    """Clean up tables in correct dependency order to allow repeatable test runs."""
+    # Tables/objects must be dropped in reverse dependency order:
+    # a.t depends on: system.join, test.d, default.join
+    # default.join depends on: test.d
+    # src depends on: system.join
+    # test.d depends on: src
+    node1.query("DROP TABLE IF EXISTS a.t")
+    node1.query("DROP TABLE IF EXISTS default.join")
+    node1.query("DROP DICTIONARY IF EXISTS test.d")
+    node1.query("DROP TABLE IF EXISTS default.src")
+    node1.query("DROP TABLE IF EXISTS system.join")
+    node1.query("DROP DATABASE IF EXISTS a")
+
+
 def test_dependent_tables(started_cluster):
     query = node1.query
-    query("create database lazy engine=Lazy(10)")
+    cleanup_dependent_tables()
     query("create database a")
-    query("create table lazy.src (n int, m int) engine=Log")
-    query(
-        "create dictionary a.d (n int default 0, m int default 42) primary key n "
-        "source(clickhouse(host 'localhost' port tcpPort() user 'default' table 'src' password '' db 'lazy'))"
-        "lifetime(min 1 max 10) layout(flat())"
-    )
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
     for i in range(2, 100):
         query(f"insert into system.join values (1, {i})")
 
     query(
-        "create table src (n int, m default joinGet('system.join', 'm', 1::int),"
-        "t default dictGetOrNull('a.d', 'm', toUInt64(3)),"
-        "k default dictGet('a.d', 'm', toUInt64(4))) engine=MergeTree order by n"
+        "create table src (n int, m default joinGet('system.join', 'm', 1::int))"
+        "engine=MergeTree order by n"
     )
     query(
         "create dictionary test.d (n int default 0, m int default 42) primary key n "
@@ -166,34 +176,32 @@ def test_dependent_tables(started_cluster):
         "lifetime(min 1 max 10) layout(flat())"
     )
     query(
-        "create table join (n int, m default dictGet('a.d', 'm', toUInt64(3)),"
+        "create table join (n int,"
         "k default dictGet('test.d', 'm', toUInt64(0))) engine=Join(any, left, n)"
-    )
-    query(
-        "create table lazy.log (n default dictGet(test.d, 'm', toUInt64(0))) engine=Log"
     )
     query(
         "create table a.t (n default joinGet('system.join', 'm', 1::int),"
         "m default dictGet('test.d', 'm', toUInt64(3)),"
-        "k default joinGet(join, 'm', 1::int)) engine=MergeTree order by n"
+        "k default joinGet(join, 'k', 1::int)) engine=MergeTree order by n"
     )
 
     dependent_tables_assert()
     node1.restart_clickhouse()
     dependent_tables_assert()
     query("drop table a.t")
-    query("drop table lazy.log")
     query("drop table join")
     query("drop dictionary test.d")
     query("drop table src")
     query("drop table system.join")
     query("drop database a")
-    query("drop database lazy")
 
 
 def test_multiple_tables(started_cluster):
     query = node1.query
     tables_count = 20
+    # Clean up any leftover tables from previous runs
+    for i in range(tables_count):
+        query(f"drop table if exists test.table_{i}")
     for i in range(tables_count):
         query(
             f"create table test.table_{i} (n UInt64, s String) engine=MergeTree order by n as select number, randomString(100) from numbers(100)"
@@ -225,7 +233,7 @@ def test_async_load_system_database(started_cluster):
             assert (
                 int(
                     node2.query(
-                        f"select count() from system.asynchronous_loader where job ilike '%_log_%_test' and execution_pool = 'BackgroundLoad'"
+                        "select count() from system.asynchronous_loader where job ilike '%_log_%_test' and execution_pool = 'BackgroundLoad'"
                     )
                 )
                 > 0
@@ -257,6 +265,7 @@ def test_async_load_system_database(started_cluster):
 
 def test_materialized_views(started_cluster):
     query = node1.query
+    query("drop database if exists test_mv")
     query("create database test_mv")
     query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
     query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
@@ -279,6 +288,7 @@ def test_materialized_views(started_cluster):
 
 def test_materialized_views_cascaded(started_cluster):
     query = node1.query
+    query("drop database if exists test_mv")
     query("create database test_mv")
     query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
     query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
@@ -301,6 +311,7 @@ def test_materialized_views_cascaded(started_cluster):
 
 def test_materialized_views_cascaded_multiple(started_cluster):
     query = node1.query
+    query("drop database if exists test_mv")
     query("create database test_mv")
     query("create table test_mv.t (Id UInt64) engine=MergeTree order by Id")
     query("create table test_mv.a (Id UInt64) engine=MergeTree order by Id")
@@ -330,7 +341,10 @@ def test_materialized_views_cascaded_multiple(started_cluster):
     query("insert into to_join values(42, 4200)")
 
     node1.restart_clickhouse()
-    query("insert into test_mv.t values(42)")
+    query("insert into test_mv.t values(42)", settings={
+        # Make sure that pushing to MVs are not reordered
+        "max_threads": 1
+    })
     assert query("select * from test_mv.a Format CSV") == "42\n"
     assert query("select * from test_mv.x Format CSV") == '"42"\n'
     assert query("select * from test_mv.z Format CSV") == "42,2\n"
@@ -354,6 +368,7 @@ def test_materialized_views_replicated(started_cluster):
     for node in [node1, node2]:
         node.query(
             f"""
+            DROP DATABASE IF EXISTS test_mv;
             CREATE DATABASE test_mv;
             CREATE TABLE test_mv.test_table_H(id UInt32)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table_H', '{nodenum}')
@@ -389,24 +404,30 @@ def test_materialized_views_replicated(started_cluster):
         )
     )
 
-    # start INSERTS when CH is not started yet
+    # Fire INSERTs while CH is restarting. Stop as soon as the restart finishes
+    # (event set) or its budget elapses, so repeated half-up-server hangs (each
+    # bounded by `timeout`) can't accumulate past the 900s pytest session timeout.
+    insert_phase_deadline = time.monotonic() + 180
     for i in range(100, 130):
+        if disconnect_event.is_set() or time.monotonic() >= insert_phase_deadline:
+            break
         try:
             node1.query(
-                f"INSERT INTO test_mv.test_table_H VALUES({i})"
+                f"INSERT INTO test_mv.test_table_H VALUES({i})", timeout=60
             )
             logging.debug(f"{i} inserted")
-        except QueryRuntimeException as e:
+        except (QueryRuntimeException, QueryTimeoutExceedException):
             # CH is not started yet
             logging.debug(f"{i} is not inserted - skip")
             time.sleep(0.2)
 
-
-    disconnect_event.wait(90)
+    # restart must finish within budget; assert loudly instead of session-timeout
+    assert disconnect_event.wait(180), "restart_clickhouse() did not finish within 180s"
 
     for i in range(2000, 2100):
+        # timeout: bound a hung insert so it can't exhaust the 900s session timeout
         node1.query(
-            f"INSERT INTO test_mv.test_table_H VALUES({i})"
+            f"INSERT INTO test_mv.test_table_H VALUES({i})", timeout=60
         )
 
     src_rows = node1.query("select count(*) from test_mv.test_table_H Format CSV")
@@ -422,7 +443,7 @@ def test_materialized_views_replicated(started_cluster):
 
     for node in [node1, node2]:
         node.query(
-            f"""
+            """
             DROP TABLE test_mv.test_table_H SYNC;
             DROP TABLE test_mv.test_table_S SYNC;
             DROP VIEW test_mv.test_mv SYNC;

@@ -1,8 +1,15 @@
-#include "ExternalUserDefinedExecutableFunctionsLoader.h"
+#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 
+#include <Core/UUID.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <boost/algorithm/string/split.hpp>
 #include <Common/StringUtils.h>
-#include <Core/Settings.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/filesystemHelpers.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -10,6 +17,8 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <filesystem>
 
 
 namespace DB
@@ -33,10 +42,10 @@ namespace
       * Example: test_script.py {parameter_name: UInt64}
       * After run function: test_script.py {parameter_name}
       */
-    std::vector<UserDefinedExecutableFunctionParameter> extractParametersFromCommand(String & command_value)
+    VectorWithMemoryTracking<UserDefinedExecutableFunctionParameter> extractParametersFromCommand(String & command_value)
     {
-        std::vector<UserDefinedExecutableFunctionParameter> parameters;
-        std::unordered_map<std::string_view, DataTypePtr> parameter_name_to_type;
+        VectorWithMemoryTracking<UserDefinedExecutableFunctionParameter> parameters;
+        UnorderedMapWithMemoryTracking<std::string_view, DataTypePtr> parameter_name_to_type;
 
         size_t previous_parameter_match_position = 0;
         while (true)
@@ -65,7 +74,7 @@ namespace
                 return isWordCharASCII(character);
             });
 
-            if (parameter_name.empty() && !is_identifier)
+            if (parameter_name.empty() || !is_identifier)
                 continue;
 
             std::string data_type_name(command_value.data() + semicolon_pos + 1, command_value.data() + end_parameter_pos);
@@ -96,6 +105,47 @@ namespace
         }
 
         return parameters;
+    }
+
+    String getDynamicFunctionWorkingDirectory(const ContextPtr & context, const String & config_file_path, const String & function_name)
+    {
+        if (config_file_path.empty())
+            return {};
+
+        String dynamic_path = context->getDynamicUserDefinedExecutableFunctionsPath();
+        if (dynamic_path.empty())
+            return {};
+        if (!dynamic_path.ends_with('/'))
+            dynamic_path.push_back('/');
+
+        if (!fileOrSymlinkPathStartsWith(config_file_path, dynamic_path))
+            return {};
+
+        auto config_path = std::filesystem::path(config_file_path);
+        const String extension = config_path.extension().string();
+        if (extension != ".xml" && extension != ".yaml")
+            return {};
+
+        const String metadata_path = config_path.replace_extension(".workdir").string();
+        if (!std::filesystem::exists(metadata_path))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dynamic executable user defined function '{}' config '{}' has no working directory metadata '{}'",
+                function_name,
+                config_file_path,
+                metadata_path);
+
+        String directory_name;
+        ReadBufferFromFile in(metadata_path);
+        readStringUntilEOF(directory_name, in);
+
+        UUID uuid;
+        if (directory_name.empty() || !tryParseUUID({reinterpret_cast<const UInt8 *>(directory_name.data()), directory_name.size()}, uuid))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Invalid dynamic executable user defined function working directory name '{}' for function '{}'",
+                directory_name,
+                function_name);
+
+        return dynamic_path + directory_name;
     }
 }
 
@@ -128,7 +178,8 @@ void ExternalUserDefinedExecutableFunctionsLoader::reloadFunction(const std::str
 ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader::createObject(const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & key_in_config,
-    const std::string &) const
+    const std::string &,
+    const std::string & config_file_path) const
 {
     if (FunctionFactory::instance().hasNameOrAlias(name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", name);
@@ -152,12 +203,15 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     bool execute_direct = config.getBool(key_in_config + ".execute_direct", true);
 
     String command_value = config.getString(key_in_config + ".command");
-    std::vector<UserDefinedExecutableFunctionParameter> parameters = extractParametersFromCommand(command_value);
+    String command_working_directory;
+    if (execute_direct)
+        command_working_directory = getDynamicFunctionWorkingDirectory(getContext(), config_file_path, name);
+    VectorWithMemoryTracking<UserDefinedExecutableFunctionParameter> parameters = extractParametersFromCommand(command_value);
 
     if (!execute_direct && !parameters.empty())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Parameters are not supported if executable user defined function is not direct");
 
-    std::vector<String> command_arguments;
+    VectorWithMemoryTracking<String> command_arguments;
 
     if (execute_direct)
     {
@@ -179,6 +233,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     size_t command_termination_timeout_seconds = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
     size_t command_read_timeout_milliseconds = config.getUInt64(key_in_config + ".command_read_timeout", 10000);
     size_t command_write_timeout_milliseconds = config.getUInt64(key_in_config + ".command_write_timeout", 10000);
+    size_t command_pipe_capacity = config.getUInt64(key_in_config + ".command_pipe_capacity", 0);
     ExternalCommandStderrReaction stderr_reaction
         = parseExternalCommandStderrReaction(config.getString(key_in_config + ".stderr_reaction", "log_last"));
     bool check_exit_code = config.getBool(key_in_config + ".check_exit_code", true);
@@ -201,7 +256,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     if (config.has(key_in_config + ".lifetime"))
         lifetime = ExternalLoadableLifetime(config, key_in_config + ".lifetime");
 
-    std::vector<UserDefinedExecutableFunctionArgument> arguments;
+    VectorWithMemoryTracking<UserDefinedExecutableFunctionArgument> arguments;
 
     Poco::Util::AbstractConfiguration::Keys config_elems;
     config.keys(key_in_config, config_elems);
@@ -237,6 +292,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         .name = name,
         .command = std::move(command_value),
         .command_arguments = std::move(command_arguments),
+        .command_working_directory = std::move(command_working_directory),
         .arguments = std::move(arguments),
         .parameters = std::move(parameters),
         .result_type = std::move(result_type),
@@ -250,13 +306,15 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         .command_termination_timeout_seconds = command_termination_timeout_seconds,
         .command_read_timeout_milliseconds = command_read_timeout_milliseconds,
         .command_write_timeout_milliseconds = command_write_timeout_milliseconds,
+        .command_pipe_capacity = command_pipe_capacity,
         .stderr_reaction = stderr_reaction,
         .check_exit_code = check_exit_code,
         .pool_size = pool_size,
         .max_command_execution_time_seconds = max_command_execution_time,
         .is_executable_pool = is_executable_pool,
         .send_chunk_header = send_chunk_header,
-        .execute_direct = execute_direct
+        .execute_direct = execute_direct,
+        .is_user_defined_function = true
     };
 
     auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);

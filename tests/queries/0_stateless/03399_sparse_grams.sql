@@ -17,6 +17,7 @@ SELECT sparseGramsUTF8('');
 SELECT sparseGramsUTF8('a😊Ω𐍈界𝄞bЦ⛄');
 SELECT sparseGramsUTF8('AΩЖ中😊🚀𝄞✨🎵🦄💡❄️', 4);
 SELECT sparseGramsUTF8(concat('a😊Ω𐍈', number, '🦄𝄞bЦ⛄', 4)) FROM numbers(3);
+SELECT sparseGramsUTF8('Ω', 5);
 
 SELECT '--- Regular hashes';
 SELECT sparseGramsHashes('');

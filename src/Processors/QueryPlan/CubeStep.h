@@ -13,13 +13,15 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 class CubeStep : public ITransformingStep
 {
 public:
-    CubeStep(const Header & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_);
+    CubeStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_);
 
     String getName() const override { return "Cube"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     const Aggregator::Params & getParams() const;
+
+    QueryPlanStepPtr clone() const override;
 private:
     void updateOutputHeader() override;
 

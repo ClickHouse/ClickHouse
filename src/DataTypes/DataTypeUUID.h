@@ -8,7 +8,9 @@
 namespace DB
 {
 
-class DataTypeUUID : public IDataType
+constexpr size_t UUID_BINARY_LENGTH = 16;
+
+class DataTypeUUID final : public IDataType
 {
 public:
     static constexpr bool is_parametric = false;
@@ -43,7 +45,9 @@ public:
     bool isCategorial() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    void updateHashImpl(SipHash &) const override {}
+
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 };
 
 }

@@ -17,6 +17,7 @@ struct AccessRightsElement
     String table;
     Strings columns;
     String parameter;
+    String filter;
 
     bool wildcard = false;
     bool default_database = false;
@@ -52,6 +53,7 @@ struct AccessRightsElement
     bool anyTable() const { return table.empty(); }
     bool anyColumn() const { return columns.empty(); }
     bool anyParameter() const { return parameter.empty(); }
+    bool hasFilter() const { return !filter.empty(); }
 
     auto toTuple() const { return std::tie(access_flags, default_database, database, table, columns, parameter, wildcard, grant_option, is_partial_revoke); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
@@ -59,7 +61,7 @@ struct AccessRightsElement
 
     bool sameDatabaseAndTableAndParameter(const AccessRightsElement & other) const
     {
-        return sameDatabaseAndTable(other) && sameParameter(other) && (wildcard == other.wildcard);
+        return sameDatabaseAndTable(other) && sameParameter(other) && (wildcard == other.wildcard) && (filter == other.filter);
     }
 
     bool sameParameter(const AccessRightsElement & other) const
@@ -93,6 +95,11 @@ struct AccessRightsElement
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
 
+    /// Checks if the current access type is deprecated and replaces it with the correct one.
+    void replaceDeprecated();
+
+    void makeBackwardCompatible();
+
     bool isGlobalWithParameter() const { return access_flags.isGlobalWithParameter(); }
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
@@ -100,7 +107,8 @@ struct AccessRightsElement
     String toStringWithoutOptions() const;
 
     void formatColumnNames(WriteBuffer & buffer) const;
-    void formatONClause(WriteBuffer & buffer, bool hilite = false) const;
+    void formatFilter(WriteBuffer & buffer) const;
+    void formatONClause(WriteBuffer & buffer) const;
 };
 
 
@@ -122,13 +130,16 @@ public:
     /// Resets flags which cannot be granted.
     void eraseNotGrantable();
 
+    /// For each element checks if the current access type is deprecated and replaces it with the correct one.
+    void replaceDeprecated();
+
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
     String toStringWithoutOptions() const;
-    void formatElementsWithoutOptions(WriteBuffer & buffer, bool hilite) const;
+    void formatElementsWithoutOptions(WriteBuffer & buffer) const;
 };
 
 }

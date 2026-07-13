@@ -6,6 +6,6 @@
 namespace DB
 {
 
-FutureMergedMutatedPartPtr constructFuturePart(const MergeTreeData & data_, const MergeSelectorChoice & choice, MergeTreeData::DataPartStates lookup_statuses);
+FutureMergedMutatedPartPtr constructFuturePart(const MergeTreeData & data, const MergeSelectorChoice & choice, MergeTreeData::DataPartStates lookup_statuses);
 
 }

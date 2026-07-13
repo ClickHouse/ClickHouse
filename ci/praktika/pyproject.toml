@@ -1,0 +1,188 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "praktika"
+version = "0.1.1"
+description = "CI Infrastructure Toolbox"
+requires-python = ">=3.8"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Max Kainov", email = "max.kainov@clickhouse.com"}
+]
+keywords = ["ci", "cd", "continuous-integration", "automation", "github-actions"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Testing",
+]
+
+# Core dependencies - only requests is strictly required
+dependencies = [
+    "requests>=2.25.0",
+]
+
+[project.optional-dependencies]
+# AWS S3 support
+s3 = [
+    "boto3>=1.18.0",
+]
+
+# GitHub authentication with JWT
+github-auth = [
+    "PyJWT>=2.4.0",
+]
+
+# Full installation with all optional features
+all = [
+    "boto3>=1.18.0",
+    "PyJWT>=2.4.0",
+]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "black>=22.0.0",
+    "isort>=5.10.0",
+    "pylint>=2.12.0",
+    "mypy>=0.942",
+]
+
+[project.urls]
+Homepage = "https://github.com/ClickHouse/ClickHouse"
+Repository = "https://github.com/ClickHouse/ClickHouse"
+Issues = "https://github.com/ClickHouse/ClickHouse/issues"
+
+[project.scripts]
+praktika = "praktika.__main__:main"
+
+[tool.setuptools.packages.find]
+where = [".."]
+include = ["praktika*"]
+exclude = ["tests*", "*.tests", "*.tests.*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+praktika = ["*.html", "*.html.gz", "py.typed"]
+
+[tool.black]
+line-length = 88
+target-version = ["py38", "py39", "py310", "py311"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "boto3.*",
+    "botocore.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--showlocals",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["praktika"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[tool.pylint.BASIC]
+max-module-lines = 2000
+max-line-length = 120
+
+[tool.pylint.FORMAT]
+max-line-length = 120
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = [
+    "bare-except",
+    "broad-except",
+    "cell-var-from-loop",
+    "fixme",
+    "invalid-name",
+    "missing-docstring",
+    "redefined-outer-name",
+    "too-few-public-methods",
+    "too-many-arguments",
+    "too-many-instance-attributes",
+    "too-many-locals",
+    "too-many-public-methods",
+    "wildcard-import",
+]
+
+[tool.pylint.SIMILARITIES]
+min-similarity-lines = 1000

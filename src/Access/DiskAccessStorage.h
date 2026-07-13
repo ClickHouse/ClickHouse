@@ -48,8 +48,6 @@ private:
     void writeLists() TSA_REQUIRES(mutex);
     void scheduleWriteLists(AccessEntityType type) TSA_REQUIRES(mutex);
     void reloadAllAndRebuildLists() TSA_REQUIRES(mutex);
-    void setAllInMemory(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities) TSA_REQUIRES(mutex);
-    void removeAllExceptInMemory(const boost::container::flat_set<UUID> & ids_to_keep) TSA_REQUIRES(mutex);
 
     void listsWritingThreadFunc() TSA_NO_THREAD_SAFETY_ANALYSIS;
     void stopListsWritingThread();
@@ -62,23 +60,36 @@ private:
     void writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const;
     void deleteAccessEntityOnDisk(const UUID & id) const;
 
-    using NameToIDMap = std::unordered_map<String, UUID>;
-    struct Entry
+    static bool isNotLoadedFromDisk(const AccessEntityPtr & entity);
+
+    /// Entity that hasn't been loaded yet.
+    struct EntityOnDisk : public IAccessEntity
     {
-        UUID id;
-        String name;
+        EntityOnDisk(String name_, AccessEntityType type_): IAccessEntity(), type(type_) { this->setName(name_); }
+
+        std::shared_ptr<IAccessEntity> clone() const override { return std::make_shared<EntityOnDisk>(name, type); }
+
+        AccessEntityType getType() const override { return type; }
+    protected:
+        bool equal(const IAccessEntity & other) const override
+        {
+            return IAccessEntity::equal(other) && typeid(other) == typeid(EntityOnDisk);
+        }
+
         AccessEntityType type;
-        mutable AccessEntityPtr entity; /// may be nullptr, if the entity hasn't been loaded yet.
     };
 
     String directory_path;
 
-    std::unordered_map<UUID, Entry> entries_by_id TSA_GUARDED_BY(mutex);
-    std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)] TSA_GUARDED_BY(mutex);
     boost::container::flat_set<AccessEntityType> types_of_lists_to_write TSA_GUARDED_BY(mutex);
 
     /// Whether writing of the list files has been failed since the recent restart of the server.
     bool failed_to_write_lists TSA_GUARDED_BY(mutex) = false;
+
+    /// Whether there are stale `<old_id>.sql` files on disk which we couldn't remove.
+    /// If this is true, writeLists() keeps the `need_rebuild_lists.mark` file until
+    /// SYSTEM RELOAD USERS or next startup runs reloadAllAndRebuildLists() and resolves the issues.
+    bool has_stale_files_on_disk TSA_GUARDED_BY(mutex) = false;
 
     /// List files are written in a separate thread.
     std::unique_ptr<ThreadFromGlobalPool> lists_writing_thread;
@@ -88,9 +99,9 @@ private:
 
     bool lists_writing_thread_is_waiting = false;
 
-    AccessChangesNotifier & changes_notifier;
     std::atomic<bool> readonly;
     std::atomic<bool> backup_allowed;
     mutable std::mutex mutex;
+    mutable MemoryAccessStorage memory_storage TSA_GUARDED_BY(mutex);
 };
 }

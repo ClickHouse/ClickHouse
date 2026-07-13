@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
@@ -36,6 +35,7 @@ struct AlterCommand
         DROP_INDEX,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
+        MODIFY_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
         ADD_STATISTICS,
@@ -112,10 +112,10 @@ struct AlterCommand
     /// For ADD/DROP INDEX
     String index_name;
 
-    // For ADD CONSTRAINT
+    // For ADD/MODIFY CONSTRAINT
     ASTPtr constraint_decl = nullptr;
 
-    // For ADD/DROP CONSTRAINT
+    // For ADD/DROP/MODIFY CONSTRAINT
     String constraint_name;
 
     /// For ADD PROJECTION
@@ -156,6 +156,8 @@ struct AlterCommand
     /// For MODIFY_REFRESH
     ASTPtr refresh = nullptr;
 
+    ASTPtr add_enum_values = nullptr;
+
     /// Target column name
     String rename_to;
 
@@ -173,7 +175,7 @@ struct AlterCommand
     /// executed. For example, cast from Date to UInt16 type can be executed
     /// without any data modifications. But column drop or modify from UInt16 to
     /// UInt32 require data modification.
-    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
+    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
 
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
@@ -187,7 +189,8 @@ struct AlterCommand
     /// Command removing some property from column or table
     bool isRemovingProperty() const;
 
-    bool isDropSomething() const;
+    /// Checks that command will drop something or rename column.
+    bool isDropOrRename() const;
 
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
@@ -212,7 +215,7 @@ public:
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default)
-    void prepare(const StorageInMemoryMetadata & metadata);
+    void prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets = true);
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
@@ -236,10 +239,8 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
-    /// Check if commands have any GIN index or a (legacy) full_text or inverted index
-    static bool hasGinIndex(const StorageInMemoryMetadata & metadata);
-    static bool hasLegacyFullTextIndex(const StorageInMemoryMetadata & metadata);
-    static bool hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata);
+    /// Check if commands have a text index
+    static bool hasTextIndex(const StorageInMemoryMetadata & metadata);
 
     /// Check if commands have any vector similarity index
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);

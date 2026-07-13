@@ -24,19 +24,27 @@ if (NOT ENABLE_PARQUET)
     return()
 endif()
 
-# Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
-if (OS_FREEBSD)
-    message (FATAL_ERROR "Using internal parquet library on FreeBSD is not supported")
+# Support C11
+if(NOT DEFINED CMAKE_C_STANDARD)
+  set(CMAKE_C_STANDARD 11)
 endif()
 
-set (CMAKE_CXX_STANDARD 17)
+# This ensures that a standard higher than the minimum can be passed correctly
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 20)
+elseif(${CMAKE_CXX_STANDARD} VERSION_LESS 20)
+  message(FATAL_ERROR "Cannot set a CMAKE_CXX_STANDARD smaller than 20")
+endif()
 
-set(ARROW_VERSION "11.0.0")
+# We require a C++20 compliant compiler
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(ARROW_VERSION "23.0.1")
 string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" ARROW_BASE_VERSION "${ARROW_VERSION}")
 
-set(ARROW_VERSION_MAJOR "11")
+set(ARROW_VERSION_MAJOR "23")
 set(ARROW_VERSION_MINOR "0")
-set(ARROW_VERSION_PATCH "0")
+set(ARROW_VERSION_PATCH "1")
 
 if(ARROW_VERSION_MAJOR STREQUAL "0")
     # Arrow 0.x.y => SO version is "x", full SO version is "x.y.0"
@@ -61,16 +69,20 @@ set(ORC_BUILD_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include")
 set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(ARROW_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 
-set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+    set(PROTOBUF_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
+    set(GRPC_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_cpp_plugin")
+else ()
+    set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
+    set(GRPC_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+endif()
 set(PROTO_DIR "${ORC_SOURCE_DIR}/../proto")
-
 
 add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
         COMMAND ${PROTOBUF_EXECUTABLE}
         -I ${PROTO_DIR}
         --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
         "${PROTO_DIR}/orc_proto.proto")
-
 
 # === flatbuffers
 set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
@@ -84,8 +96,21 @@ set(FLATBUFFERS_SRCS
   ${FLATBUFFERS_SRC_DIR}/src/util.cpp)
 
 add_library(_flatbuffers STATIC ${FLATBUFFERS_SRCS})
-target_include_directories(_flatbuffers PUBLIC ${FLATBUFFERS_INCLUDE_DIR})
+# SYSTEM so the FlatBuffers headers don't trip ClickHouse's -Werror -Weverything (e.g. -Wdocumentation)
+# in consumers that include them directly, such as the native Arrow IPC reader/writer.
+target_include_directories(_flatbuffers SYSTEM PUBLIC ${FLATBUFFERS_INCLUDE_DIR})
 target_compile_definitions(_flatbuffers PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
+
+# Interface target exposing only the FlatBuffers-generated Arrow IPC metadata headers
+# (Message_generated.h, Schema_generated.h, File_generated.h) plus the FlatBuffers library.
+# The native Arrow IPC reader/writer (src/Processors/Formats/Impl/ArrowIPC) links this instead
+# of the Apache Arrow C++ runtime: it parses/builds the IPC metadata with FlatBuffers and decodes
+# the buffers directly to/from ClickHouse columns. The include base ".../cpp/src" lets the code
+# use <generated/Message_generated.h> while the generated headers' own relative includes resolve.
+add_library(_arrow_ipc_metadata INTERFACE)
+target_include_directories(_arrow_ipc_metadata SYSTEM INTERFACE "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
+target_link_libraries(_arrow_ipc_metadata INTERFACE _flatbuffers)
+add_library(ch_contrib::arrow_ipc_metadata ALIAS _arrow_ipc_metadata)
 
 
 # ===  hdfs
@@ -201,6 +226,9 @@ target_link_libraries(_orc PRIVATE
 target_include_directories(_orc SYSTEM BEFORE PUBLIC
     ${ORC_INCLUDE_DIR}
     "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src/orc/c++/include")
+target_compile_options(_orc PRIVATE
+    -include "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/google/protobuf/stubs/port.h"
+)
 target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_BUILD_INCLUDE_DIR})
 target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_SOURCE_SRC_DIR}
@@ -209,10 +237,13 @@ target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_ADDITION_SOURCE_DIR}
     ${ARROW_SRC_DIR})
 
-
 # === arrow
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
+
+set(ARROW_GENERATED_SRC_DIR ${CMAKE_CURRENT_BINARY_DIR}/cpp/src)
+configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${ARROW_GENERATED_SRC_DIR}/arrow/util/config.h" ESCAPE_QUOTES)
+configure_file("${LIBRARY_DIR}/util/config_internal.h.cmake" "${ARROW_GENERATED_SRC_DIR}/arrow/util/config_internal.h" ESCAPE_QUOTES)
 
 # arrow/cpp/src/arrow/CMakeLists.txt (ARROW_SRCS + ARROW_COMPUTE + ARROW_IPC)
 # find . \( -iname \*.cc -o -iname \*.cpp -o -iname \*.c \) | sort | awk '{print "\"${LIBRARY_DIR}" substr($1,2) "\"" }' | grep -v 'test.cc' | grep -v 'json' | grep -v 'flight' \|
@@ -240,6 +271,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/array/concatenate.cc"
         "${LIBRARY_DIR}/array/data.cc"
         "${LIBRARY_DIR}/array/diff.cc"
+        "${LIBRARY_DIR}/array/statistics.cc"
         "${LIBRARY_DIR}/array/util.cc"
         "${LIBRARY_DIR}/array/validate.cc"
         "${LIBRARY_DIR}/buffer.cc"
@@ -266,7 +298,6 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/kernels/codegen_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/hash_aggregate.cc"
         "${LIBRARY_DIR}/compute/kernels/ree_util_internal.cc"
-        "${LIBRARY_DIR}/compute/kernels/row_encoder.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_arithmetic.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_boolean.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_boolean.cc"
@@ -288,6 +319,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/kernels/scalar_temporal_binary.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_temporal_unary.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_validity.cc"
+        "${LIBRARY_DIR}/compute/kernels/temporal_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/util_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_array_sort.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_cumulative_ops.cc"
@@ -303,6 +335,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/kernels/vector_selection_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_selection_take_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_sort.cc"
+        "${LIBRARY_DIR}/compute/kernels/vector_swizzle.cc"
         "${LIBRARY_DIR}/compute/key_hash_internal.cc"
         "${LIBRARY_DIR}/compute/key_map_internal.cc"
         "${LIBRARY_DIR}/compute/light_array_internal.cc"
@@ -316,7 +349,11 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/config.cc"
         "${LIBRARY_DIR}/datum.cc"
         "${LIBRARY_DIR}/device.cc"
+        "${LIBRARY_DIR}/device_allocation_type_set.cc"
         "${LIBRARY_DIR}/extension_type.cc"
+        "${LIBRARY_DIR}/extension/bool8.cc"
+        "${LIBRARY_DIR}/extension/json.cc"
+        "${LIBRARY_DIR}/extension/uuid.cc"
         "${LIBRARY_DIR}/integration/c_data_integration_internal.cc"
         "${LIBRARY_DIR}/io/buffered.cc"
         "${LIBRARY_DIR}/io/caching.cc"
@@ -364,7 +401,10 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/bitmap_builders.cc"
         "${LIBRARY_DIR}/util/bitmap_ops.cc"
         "${LIBRARY_DIR}/util/bpacking.cc"
+        "${LIBRARY_DIR}/util/bpacking_scalar.cc"
+        "${LIBRARY_DIR}/util/bpacking_simd_default.cc"
         "${LIBRARY_DIR}/util/byte_size.cc"
+        "${LIBRARY_DIR}/util/byte_stream_split_internal.cc"
         "${LIBRARY_DIR}/util/cancel.cc"
         "${LIBRARY_DIR}/util/compression.cc"
         "${LIBRARY_DIR}/util/counting_semaphore.cc"
@@ -374,20 +414,25 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/decimal.cc"
         "${LIBRARY_DIR}/util/delimiting.cc"
         "${LIBRARY_DIR}/util/dict_util.cc"
+        "${LIBRARY_DIR}/util/fixed_width_internal.cc"
         "${LIBRARY_DIR}/util/float16.cc"
         "${LIBRARY_DIR}/util/formatting.cc"
         "${LIBRARY_DIR}/util/future.cc"
+        "${LIBRARY_DIR}/util/fuzz_internal.cc"
         "${LIBRARY_DIR}/util/hashing.cc"
         "${LIBRARY_DIR}/util/int_util.cc"
         "${LIBRARY_DIR}/util/io_util.cc"
         "${LIBRARY_DIR}/util/key_value_metadata.cc"
         "${LIBRARY_DIR}/util/list_util.cc"
+        "${LIBRARY_DIR}/util/logger.cc"
         "${LIBRARY_DIR}/util/logging.cc"
+        "${LIBRARY_DIR}/util/math_internal.cc"
         "${LIBRARY_DIR}/util/memory.cc"
         "${LIBRARY_DIR}/util/mutex.cc"
         "${LIBRARY_DIR}/util/ree_util.cc"
+        "${LIBRARY_DIR}/util/secure_string.cc"
         "${LIBRARY_DIR}/util/string.cc"
-        "${LIBRARY_DIR}/util/string_builder.cc"
+        "${LIBRARY_DIR}/util/string_util.cc"
         "${LIBRARY_DIR}/util/task_group.cc"
         "${LIBRARY_DIR}/util/tdigest.cc"
         "${LIBRARY_DIR}/util/thread_pool.cc"
@@ -400,7 +445,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/utf8.cc"
         "${LIBRARY_DIR}/util/value_parsing.cc"
         "${LIBRARY_DIR}/vendored/base64.cpp"
-        "${LIBRARY_DIR}/vendored/datetime/tz.cpp"
+        "${LIBRARY_DIR}/vendored/datetime.cpp"
         "${LIBRARY_DIR}/vendored/double-conversion/bignum-dtoa.cc"
         "${LIBRARY_DIR}/vendored/double-conversion/bignum.cc"
         "${LIBRARY_DIR}/vendored/double-conversion/cached-powers.cc"
@@ -432,6 +477,12 @@ set(ARROW_SRCS
         "${ARROW_SRC_DIR}/arrow/adapters/orc/options.cc"
         )
 
+add_definitions(-DARROW_WITH_BROTLI)
+SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_brotli.cc" ${ARROW_SRCS})
+
+add_definitions(-DARROW_WITH_BZ2)
+SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_bz2.cc" ${ARROW_SRCS})
+
 add_definitions(-DARROW_WITH_LZ4)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_lz4.cc" ${ARROW_SRCS})
 
@@ -444,11 +495,39 @@ SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zlib.cc" ${ARROW_SRCS})
 add_definitions(-DARROW_WITH_ZSTD)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zstd.cc" ${ARROW_SRCS})
 
-add_definitions(-DARROW_WITH_BROTLI)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_brotli.cc" ${ARROW_SRCS})
+
+# Enable Arrow's SIMD codepaths (bit unpacking, byte stream split, UTF-8 validation); otherwise they fall back
+# to scalar. These headers include <xsimd/xsimd.hpp>, hence the xsimd dependency. Our production target is ARM,
+# where NEON is part of the aarch64 baseline. On x86 we follow X86_ARCH_LEVEL: the build already targets
+# x86-64-v${X86_ARCH_LEVEL}, so when it is >= 3 (AVX2/BMI2 guaranteed) the AVX2 sources compile under the base
+# -march with no extra flags. Lower levels keep the scalar path.
+#
+# The defines are applied with target_compile_definitions(... PUBLIC) below rather than add_definitions(),
+# because Arrow's SIMD entry points are inline in headers: ClickHouse code that includes them (e.g. the native
+# Parquet decoder calling ByteStreamSplitDecode) must see the same defines to pick the SIMD path.
+set(ARROW_SIMD_DEFS "")
+if (ARCH_AARCH64)
+    set(ARROW_SIMD_DEFS ARROW_HAVE_NEON)
+elseif (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
+    set(ARROW_SIMD_DEFS
+        ARROW_HAVE_SSE4_2 ARROW_HAVE_AVX2 ARROW_HAVE_BMI2
+        ARROW_HAVE_RUNTIME_SSE4_2 ARROW_HAVE_RUNTIME_AVX2 ARROW_HAVE_RUNTIME_BMI2)
+    # bpacking's unpack() has no compile-time AVX2 path, only a runtime-dispatched one, so its source is needed.
+    SET(ARROW_SRCS ${ARROW_SRCS}
+        "${LIBRARY_DIR}/util/bpacking_simd_avx2.cc"
+        "${LIBRARY_DIR}/util/byte_stream_split_internal_avx2.cc")
+    if (X86_ARCH_LEVEL VERSION_GREATER_EQUAL 4)
+        list (APPEND ARROW_SIMD_DEFS ARROW_HAVE_AVX512 ARROW_HAVE_RUNTIME_AVX512)
+        SET(ARROW_SRCS ${ARROW_SRCS} "${LIBRARY_DIR}/util/bpacking_simd_avx512.cc")
+    endif ()
+endif ()
 
 
 add_library(_arrow ${ARROW_SRCS})
+if (ARROW_SIMD_DEFS)
+    target_compile_definitions(_arrow PUBLIC ${ARROW_SIMD_DEFS})
+endif ()
+add_library(ch_contrib::arrow ALIAS _arrow)
 
 target_link_libraries(_arrow PRIVATE
     boost::filesystem
@@ -462,16 +541,22 @@ target_link_libraries(_arrow PRIVATE
     ch_contrib::zlib
     ch_contrib::zstd
     ch_contrib::brotli
+    ch_contrib::bzip2
 )
 target_link_libraries(_arrow PUBLIC _orc)
+# PUBLIC so the xsimd headers are visible to _parquet too (it links _arrow PUBLIC).
+target_link_libraries(_arrow PUBLIC ch_contrib::xsimd)
 
 add_dependencies(_arrow protoc)
 
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
 
-target_include_directories(_arrow SYSTEM PRIVATE ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
+
+# === arrow flight
+
+include(flight.cmake)
 
 # === parquet
 
@@ -479,19 +564,23 @@ set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet")
 set(GEN_LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/generated")
 # arrow/cpp/src/parquet/CMakeLists.txt
 set(PARQUET_SRCS
+        "${LIBRARY_DIR}/arrow/fuzz_internal.cc"
         "${LIBRARY_DIR}/arrow/path_internal.cc"
         "${LIBRARY_DIR}/arrow/reader.cc"
         "${LIBRARY_DIR}/arrow/reader_internal.cc"
         "${LIBRARY_DIR}/arrow/schema.cc"
         "${LIBRARY_DIR}/arrow/schema_internal.cc"
+        "${LIBRARY_DIR}/arrow/variant_internal.cc"
         "${LIBRARY_DIR}/arrow/writer.cc"
         "${LIBRARY_DIR}/benchmark_util.cc"
         "${LIBRARY_DIR}/bloom_filter.cc"
         "${LIBRARY_DIR}/bloom_filter_reader.cc"
+        "${LIBRARY_DIR}/chunker_internal.cc"
         "${LIBRARY_DIR}/column_reader.cc"
         "${LIBRARY_DIR}/column_scanner.cc"
         "${LIBRARY_DIR}/column_writer.cc"
-        "${LIBRARY_DIR}/encoding.cc"
+        "${LIBRARY_DIR}/decoder.cc"
+        "${LIBRARY_DIR}/encoder.cc"
         "${LIBRARY_DIR}/encryption/crypto_factory.cc"
         "${LIBRARY_DIR}/encryption/encryption.cc"
         "${LIBRARY_DIR}/encryption/encryption_internal.cc"
@@ -511,6 +600,9 @@ set(PARQUET_SRCS
         "${LIBRARY_DIR}/exception.cc"
         "${LIBRARY_DIR}/file_reader.cc"
         "${LIBRARY_DIR}/file_writer.cc"
+        "${LIBRARY_DIR}/geospatial/statistics.cc"
+        "${LIBRARY_DIR}/geospatial/util_internal.cc"
+        "${LIBRARY_DIR}/geospatial/util_json_internal.cc"
         "${LIBRARY_DIR}/level_comparison.cc"
         "${LIBRARY_DIR}/level_comparison_avx2.cc"
         "${LIBRARY_DIR}/level_conversion.cc"
@@ -521,13 +613,13 @@ set(PARQUET_SRCS
         "${LIBRARY_DIR}/printer.cc"
         "${LIBRARY_DIR}/properties.cc"
         "${LIBRARY_DIR}/schema.cc"
+        "${LIBRARY_DIR}/size_statistics.cc"
         "${LIBRARY_DIR}/statistics.cc"
         "${LIBRARY_DIR}/stream_reader.cc"
         "${LIBRARY_DIR}/stream_writer.cc"
         "${LIBRARY_DIR}/types.cc"
         "${LIBRARY_DIR}/xxhasher.cc"
 
-        "${GEN_LIBRARY_DIR}/parquet_constants.cpp"
         "${GEN_LIBRARY_DIR}/parquet_types.cpp"
         )
 #list(TRANSFORM PARQUET_SRCS PREPEND "${LIBRARY_DIR}/") # cmake 3.12
@@ -544,9 +636,10 @@ target_link_libraries(_parquet
     PRIVATE
         boost::headers_only
         boost::regex
-        OpenSSL::Crypto OpenSSL::SSL)
+        OpenSSL::Crypto OpenSSL::SSL
+        ch_contrib::rapidjson)
 
-if (SANITIZE STREQUAL "undefined")
+if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     target_compile_options(_parquet PRIVATE -fno-sanitize=undefined)
     target_compile_options(_arrow PRIVATE -fno-sanitize=undefined)
 endif ()
@@ -569,6 +662,6 @@ endforeach ()
 
 # The library is large - avoid bloat.
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_arrow PRIVATE -g0)
-    target_compile_options (_parquet PRIVATE -g0)
+    target_compile_options (_arrow PRIVATE -g1)
+    target_compile_options (_parquet PRIVATE -g1)
 endif()

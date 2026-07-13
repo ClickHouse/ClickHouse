@@ -5,7 +5,6 @@
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/WeakHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -72,9 +71,9 @@ void ColumnLazy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get is not supported for {}", getName());
 }
 
-std::pair<String, DataTypePtr> ColumnLazy::getValueNameAndType(size_t) const
+void ColumnLazy::getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getValueNameAndType is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getValueName is not supported for {}", getName());
 }
 
 bool ColumnLazy::isDefaultAt(size_t) const
@@ -82,7 +81,7 @@ bool ColumnLazy::isDefaultAt(size_t) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for {}", getName());
 }
 
-StringRef ColumnLazy::getDataAt(size_t) const
+std::string_view ColumnLazy::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -152,12 +151,12 @@ void ColumnLazy::popBack(size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method popBack is not supported for {}", getName());
 }
 
-const char * ColumnLazy::deserializeAndInsertFromArena(const char *)
+void ColumnLazy::deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for {}", getName());
 }
 
-const char * ColumnLazy::skipSerializedInArena(const char *) const
+void ColumnLazy::skipSerializedInArena(ReadBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
 }
@@ -167,9 +166,9 @@ void ColumnLazy::updateHashWithValue(size_t, SipHash &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateHashWithValue is not supported for {}", getName());
 }
 
-WeakHash32 ColumnLazy::getWeakHash32() const
+void ColumnLazy::computeHashInto(size_t, size_t, UInt32 *, bool) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getWeakHash32 is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method computeHashInto is not supported for {}", getName());
 }
 
 void ColumnLazy::updateHashFast(SipHash &) const
@@ -211,6 +210,19 @@ ColumnPtr ColumnLazy::filter(const Filter & filt, ssize_t result_size_hint) cons
         new_columns[i] = captured_columns[i]->filter(filt, result_size_hint);
 
     return ColumnLazy::create(new_columns);
+}
+
+void ColumnLazy::filter(const Filter & filt)
+{
+    if (captured_columns.empty())
+    {
+        s = countBytesInFilter(filt);
+        return;
+    }
+
+    const size_t column_size = captured_columns.size();
+    for (size_t i = 0; i < column_size; ++i)
+        captured_columns[i]->filter(filt);
 }
 
 void ColumnLazy::expand(const Filter &, bool)
@@ -258,7 +270,7 @@ ColumnPtr ColumnLazy::replicate(const Offsets &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method replicate is not supported for {}", getName());
 }
 
-MutableColumns ColumnLazy::scatter(ColumnIndex, const Selector &) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnLazy::scatter(size_t, const Selector &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scatter is not supported for {}", getName());
 }
@@ -360,7 +372,7 @@ void ColumnLazy::protect()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method protect is not supported for {}", getName());
 }
 
-void ColumnLazy::getExtremes(Field &, Field &) const
+void ColumnLazy::getExtremes(Field &, Field &, size_t, size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getExtremes is not supported for {}", getName());
 }
@@ -384,6 +396,16 @@ bool ColumnLazy::isCollationSupported() const
 ColumnPtr ColumnLazy::compress(bool) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compress is not supported for {}", getName());
+}
+
+ColumnPtr ColumnLazy::updateFrom(const Patch &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateFrom is not supported for {}", getName());
+}
+
+void ColumnLazy::updateInplaceFrom(const Patch &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateInplaceFrom is not supported for {}", getName());
 }
 
 double ColumnLazy::getRatioOfDefaultRows(double) const

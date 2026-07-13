@@ -1,0 +1,1 @@
+CREATE TABLE default.`03593_t`\n(\n    `s` String,\n    `n` UInt64\n)\nENGINE = MergeTree\nORDER BY n\nSETTINGS allow_part_offset_column_in_projections = 0, index_granularity = 8192

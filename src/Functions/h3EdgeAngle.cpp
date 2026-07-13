@@ -25,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3EdgeAngle : public IFunction
+class FunctionH3EdgeAngle final : public IFunction
 {
 public:
     static constexpr auto name = "h3EdgeAngle";
@@ -88,7 +88,9 @@ public:
                     MAX_H3_RES);
 
             // Numerical constant is 180 degrees / pi / Earth radius, Earth radius is from h3 sources
-            Float64 res = 8.99320592271288084e-6 * getHexagonEdgeLengthAvgM(resolution);
+            double edge_length = 0;
+            getHexagonEdgeLengthAvgM(resolution, &edge_length);
+            Float64 res = 8.99320592271288084e-6 * edge_length;
 
             dst_data[row] = res;
         }
@@ -101,7 +103,32 @@ public:
 
 REGISTER_FUNCTION(H3EdgeAngle)
 {
-    factory.registerFunction<FunctionH3EdgeAngle>();
+    FunctionDocumentation::Description description = R"(
+Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3Indexing/) hexagon edge in grades.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3EdgeAngle(resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"resolution", "Index resolution. Range: `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the average length of an [H3](#h3-index) hexagon edge in grades.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get edge angle for resolution 10",
+            "SELECT h3EdgeAngle(10) AS edgeAngle",
+            R"(
+┌───────h3EdgeAngle(10)─┐
+│ 0.0005927224846720883 │
+└───────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3EdgeAngle>(documentation);
 }
 
 }

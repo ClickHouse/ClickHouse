@@ -43,7 +43,7 @@ String ASTPartition::getID(char delim) const
 
 ASTPtr ASTPartition::clone() const
 {
-    auto res = std::make_shared<ASTPartition>(*this);
+    auto res = make_intrusive<ASTPartition>(*this);
     res->children.clear();
 
     if (value)
@@ -73,7 +73,7 @@ void ASTPartition::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
     }
     else
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "ID " << (settings.hilite ? hilite_none : "");
+        ostr << "ID ";
         id->format(ostr, settings, state, frame);
     }
 }

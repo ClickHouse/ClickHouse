@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 
+#include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -11,6 +12,9 @@
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/transformTypesRecursively.h>
+#include <Common/FieldVisitorToCastedLiteral.h>
+#include <Parsers/parseFieldFromCastedLiteral.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -28,7 +32,6 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
@@ -102,11 +105,25 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (!parameters.empty())
     {
         stream << '(';
-        for (size_t i = 0, size = parameters.size(); i < size; ++i)
+        if (function->shouldPrintParametersWithTypes())
         {
-            if (i)
-                stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+            FieldVisitorToCastedLiteral visitor;
+            for (size_t i = 0, size = parameters.size(); i < size; ++i)
+            {
+                if (i)
+                    stream << ", ";
+                stream << applyVisitor(visitor, parameters[i]);
+            }
+        }
+        else
+        {
+            FieldVisitorToString visitor;
+            for (size_t i = 0, size = parameters.size(); i < size; ++i)
+            {
+                if (i)
+                    stream << ", ";
+                stream << applyVisitor(visitor, parameters[i]);
+            }
         }
         stream << ')';
     }
@@ -152,12 +169,15 @@ Field DataTypeAggregateFunction::getDefault() const
     return field;
 }
 
-bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type)
+bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant)
 {
     const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get());
     const auto * rhs_state = typeid_cast<const DataTypeAggregateFunction *>(rhs_state_type.get());
 
     if (!lhs_state || !rhs_state)
+        return false;
+
+    if (!ignore_variant && lhs_state->function->getStateVariant() != rhs_state->function->getStateVariant())
         return false;
 
     if (lhs_state->function->getName() != rhs_state->function->getName())
@@ -180,6 +200,31 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
     return true;
 }
 
+void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
+{
+    hash.update(getFunctionName());
+    hash.update(parameters.size());
+    for (const auto & param : parameters)
+        hash.update(param.getType());
+    hash.update(argument_types.size());
+    for (const auto & arg_type : argument_types)
+        arg_type->updateHash(hash);
+    if (version)
+        hash.update(*version);
+    hash.update(static_cast<UInt8>(function->getStateVariant()));
+}
+
+bool DataTypeAggregateFunction::equalsIgnoringVariant(const IDataType & rhs) const
+{
+    if (typeid(rhs) != typeid(*this))
+        return false;
+
+    auto lhs_state_type = function->getNormalizedStateType();
+    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
+
+    return strictEquals(lhs_state_type, rhs_state_type, /*ignore_variant=*/ true);
+}
+
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))
@@ -192,11 +237,30 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 }
 
 
-SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
+SerializationPtr DataTypeAggregateFunction::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return std::make_shared<SerializationAggregateFunction>(function, getName(), getVersion());
+    return SerializationAggregateFunction::create(function, getName(), getVersion());
 }
 
+
+namespace
+{
+
+/// Extract a single AggregateFunction parameter value from its AST node.
+Field parseAggregateFunctionParameter(const ASTPtr & param_ast, const String & function_name)
+{
+    try
+    {
+        return parseFieldFromCastedLiteral(param_ast);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while parsing aggregate function '{}'", function_name);
+        throw;
+    }
+}
+
+}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
@@ -234,7 +298,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected level of parameters to aggregate function");
 
         function_name = parametric->name;
-        action = parametric->nulls_action;
+        action = parametric->getNullsAction();
 
         if (parametric->arguments)
         {
@@ -242,17 +306,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             params_row.resize(parameters.size());
 
             for (size_t i = 0; i < parameters.size(); ++i)
-            {
-                const auto * literal = parameters[i]->as<ASTLiteral>();
-                if (!literal)
-                    throw Exception(
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
-                        "Parameters to aggregate functions must be literals. "
-                        "Got parameter '{}' for function '{}'",
-                        parameters[i]->formatForErrorMessage(), function_name);
-
-                params_row[i] = literal->value;
-            }
+                params_row[i] = parseAggregateFunctionParameter(parameters[i], function_name);
         }
     }
     else if (auto opt_name = tryGetIdentifierName(data_type_ast))
@@ -301,7 +355,127 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
 
 void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 {
-    factory.registerDataType("AggregateFunction", create);
+    factory.registerDataType("AggregateFunction", create, DataTypeFactory::Case::Sensitive, Documentation{
+            .description = R"DOCS_MD(
+## Description {#description}
+
+All [Aggregate functions](/sql-reference/aggregate-functions) in ClickHouse have
+an implementation-specific intermediate state that can be serialized to an
+`AggregateFunction` data type and stored in a table. This is usually done by
+means of a [materialized view](../../sql-reference/statements/create/view.md).
+
+There are two aggregate function [combinators](/sql-reference/aggregate-functions/combinators)
+commonly used with the `AggregateFunction` type:
+
+- The [`-State`](/sql-reference/aggregate-functions/combinators#-state) aggregate function combinator, which when appended to an aggregate
+function name, produces `AggregateFunction` intermediate states.
+- The [`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) aggregate
+function combinator, which is used to get the final result of an aggregation
+from the intermediate states.
+
+## Syntax {#syntax}
+
+```sql
+AggregateFunction(aggregate_function_name, types_of_arguments...)
+```
+
+**Parameters**
+
+- `aggregate_function_name` - The name of an aggregate function. If the function
+is parametric, then its parameters should be specified too.
+- `types_of_arguments` - The types of the aggregate function arguments.
+
+for example:
+
+```sql
+CREATE TABLE t
+(
+    column1 AggregateFunction(uniq, UInt64),
+    column2 AggregateFunction(anyIf, String, UInt8),
+    column3 AggregateFunction(quantiles(0.5, 0.9), UInt64)
+) ENGINE = ...
+```
+
+## Usage {#usage}
+
+### Data Insertion {#data-insertion}
+
+To insert data into a table with columns of type `AggregateFunction`, you can
+use `INSERT SELECT` with aggregate functions and the
+[`-State`](/sql-reference/aggregate-functions/combinators#-state) aggregate
+function combinator.
+
+For example, to insert into columns of type `AggregateFunction(uniq, UInt64)` and
+`AggregateFunction(quantiles(0.5, 0.9), UInt64)` you would use the following
+aggregate functions with combinators.
+
+```sql
+uniqState(UserID)
+quantilesState(0.5, 0.9)(SendTiming)
+```
+
+In contrast to functions `uniq` and `quantiles`, `uniqState` and `quantilesState`
+(with `-State` combinator appended) return the state, rather than the final value.
+In other words, they return a value of `AggregateFunction` type.
+
+In the results of the `SELECT` query, values of type `AggregateFunction` have
+implementation-specific binary representations for all of the ClickHouse output
+formats.
+
+There is a special Session level setting `aggregate_function_input_format` that allows to build state from the input values.
+It supports the following formats:
+
+- `state` - binary string with the serialized state (the default).
+If you dump data into, for example, the `TabSeparated` format with a `SELECT`
+query, then this dump can be loaded back using the `INSERT` query.
+- `value` - the format will expect a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them; that will be deserialized to form the relevant state
+- `array` - the format will expect an Array of values, as described in the values option above; all the elements of the array will be aggregated to form the state
+
+### Data Selection {#data-selection}
+
+When selecting data from `AggregatingMergeTree` table, use the `GROUP BY` clause
+and the same aggregate functions as for when you inserted the data, but use the
+[`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) combinator.
+
+An aggregate function with the `-Merge` combinator appended to it takes a set of
+states, combines them, and returns the result of the complete data aggregation.
+
+For example, the following two queries return the same result:
+
+```sql
+SELECT uniq(UserID) FROM table
+
+SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
+```
+
+## Usage Example {#usage-example}
+
+See [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) engine description.
+
+## Related Content {#related-content}
+
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+- [MergeState](/sql-reference/aggregate-functions/combinators#-mergestate)
+combinator.
+- [State](/sql-reference/aggregate-functions/combinators#-state) combinator.
+)DOCS_MD",
+            .syntax = "AggregateFunction(name, types...)",
+            .examples = {},
+            .related = {"SimpleAggregateFunction"},
+        });
+}
+
+bool hasAggregateFunctionType(const DataTypePtr & type)
+{
+    auto result = false;
+    auto check = [&](const IDataType & t)
+    {
+        result |= WhichDataType(t).isAggregateFunction();
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
 }
 
 }

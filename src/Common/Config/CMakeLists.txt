@@ -6,6 +6,7 @@ set (SRCS
     ConfigReloader.cpp
     YAMLParser.cpp
     ConfigHelper.cpp
+    parseConnectionCredentials.cpp
 )
 
 add_library(clickhouse_common_config ${SRCS})

@@ -2,7 +2,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <algorithm>
-#include <cassert>
 
 
 namespace DB
@@ -57,7 +56,7 @@ void ActiveDataPartSet::checkIntersectingParts(const MergeTreePartInfo & part_in
     /// Let's go to the right.
     while (it != part_info_to_name.end() && part_info.contains(it->first))
     {
-        assert(part_info != it->first);
+        chassert(part_info != it->first);
         ++it;
     }
 
@@ -84,6 +83,12 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
     }
 
     return outcome == AddPartOutcome::Added;
+}
+
+ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::tryAdd(const String & name, String * out_reason)
+{
+    auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
+    return addImpl(part_info, name, nullptr, out_reason);
 }
 
 
@@ -131,7 +136,7 @@ ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::addImpl(const MergeTreePart
     /// Let's go to the right.
     while (it != part_info_to_name.end() && part_info.contains(it->first))
     {
-        assert(part_info != it->first);
+        chassert(part_info != it->first);
         if (out_replaced_parts)
             out_replaced_parts->push_back(it->second);
         it = part_info_to_name.erase(it);
@@ -298,9 +303,46 @@ std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfos() const
     return res;
 }
 
+std::vector<MergeTreePartInfo> ActiveDataPartSet::getPatchPartInfos() const
+{
+    std::vector<MergeTreePartInfo> res;
+    res.reserve(part_info_to_name.size());
+
+    for (const auto & kv : part_info_to_name)
+    {
+        if (kv.first.isPatch())
+            res.push_back(kv.first);
+    }
+
+    return res;
+}
+
+bool ActiveDataPartSet::isEmpty() const
+{
+    return part_info_to_name.empty();
+}
+
+bool ActiveDataPartSet::hasSome() const
+{
+    return !isEmpty();
+}
+
 size_t ActiveDataPartSet::size() const
 {
     return part_info_to_name.size();
+}
+
+bool ActiveDataPartSet::hasPartitionId(const String & partition_id) const
+{
+    MergeTreePartInfo info;
+    info.setPartitionId(partition_id);
+
+    if (auto it = part_info_to_name.lower_bound(info); it == part_info_to_name.end())
+        return false;
+    else if (it->first.getPartitionId() != partition_id)
+        return false;
+    else
+        return true;
 }
 
 }

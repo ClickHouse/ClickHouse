@@ -1,0 +1,45 @@
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_bash</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>String</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input.sh</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_bash</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>String</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input.sh</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>String</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>String</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input.py</command>
+    </function>
+</functions>

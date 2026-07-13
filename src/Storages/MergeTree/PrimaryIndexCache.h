@@ -36,10 +36,7 @@ private:
     using Base = CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndexWeightFunction>;
 
 public:
-    PrimaryIndexCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-        : Base(cache_policy, max_size_in_bytes, 0, size_ratio)
-    {
-    }
+    PrimaryIndexCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & part_path);

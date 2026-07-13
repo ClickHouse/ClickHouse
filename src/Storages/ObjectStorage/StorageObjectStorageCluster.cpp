@@ -1,26 +1,34 @@
-#include "Storages/ObjectStorage/StorageObjectStorageCluster.h"
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Interpreters/Context.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Storages/IPartitionStrategy.h>
 
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
-
+#include <Common/FailPoint.h>
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
+    extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
 }
 
 namespace ErrorCodes
@@ -28,7 +36,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metadata, ContextPtr context)
+namespace FailPoints
+{
+    extern const char storage_cluster_read_sleep[];
+}
+
+String StorageObjectStorageCluster::getPathSample(ContextPtr context)
 {
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
@@ -37,11 +50,13 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
         configuration,
         query_settings,
         object_storage,
+        nullptr, // storage_metadata
         false, // distributed_processing
         context,
         {}, // predicate
         {},
-        metadata.getColumns().getAll(), // virtual_columns
+        {}, // virtual_columns
+        {}, // hive_columns
         nullptr, // read_keys
         {} // file_progress_callback
     );
@@ -53,36 +68,93 @@ String StorageObjectStorageCluster::getPathSample(StorageInMemoryMetadata metada
 
 StorageObjectStorageCluster::StorageObjectStorageCluster(
     const String & cluster_name_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
     const StorageID & table_id_,
-    const ColumnsDescription & columns_,
+    const ColumnsDescription & columns_in_table_or_function_definition,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_)
+    const ASTPtr & partition_by,
+    ContextPtr context_,
+    bool is_table_function)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
 {
-    ColumnsDescription columns{columns_};
+    configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
+    /// We allow exceptions to be thrown on update(),
+    /// because Cluster engine can only be used as table function,
+    /// so no lazy initialization is allowed.
+    configuration->update(object_storage, context_);
+
+    ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
 
+    if (sample_path.empty()
+        && context_->getSettingsRef()[Setting::use_hive_partitioning]
+        && !configuration->isDataLakeConfiguration()
+        && !configuration->partition_strategy)
+        sample_path = getPathSample(context_);
+
+    /// Not grabbing the file_columns because it is not necessary to do it here.
+    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+        columns,
+        configuration,
+        sample_path,
+        columns_in_table_or_function_definition.empty(),
+        std::nullopt,
+        context_);
+
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
+    if (is_table_function && configuration->isDataLakeConfiguration())
+    {
+        /// For datalake table functions, always pin the current snapshot version so that
+        /// query execution uses the same snapshot as query analysis (logical-race fix).
+        /// Additionally reload columns from the snapshot when the per-format setting is enabled.
+        if (auto state = configuration->getTableStateSnapshot(context_))
+        {
+            metadata.setDataLakeTableState(*state);
+            if (configuration->shouldReloadSchemaForConsistency(context_))
+            {
+                if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, context_))
+                    metadata = *metadata_snapshot;
+            }
+        }
+    }
+
     metadata.setConstraints(constraints_);
+    metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns,
+        context_,
+        /* format_settings */std::nullopt,
+        configuration->partition_strategy_type,
+        sample_path));
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
-        sample_path = getPathSample(metadata, context_);
-
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));
     setInMemoryMetadata(metadata);
 }
 
 std::string StorageObjectStorageCluster::getName() const
 {
     return configuration->getEngineName();
+}
+
+std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
+{
+    configuration->lazyInitializeIfNeeded(
+        object_storage,
+        query_context);
+    return configuration->totalRows(query_context);
+}
+
+std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
+{
+    configuration->lazyInitializeIfNeeded(
+        object_storage,
+        query_context);
+    return configuration->totalBytes(query_context);
 }
 
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
@@ -92,13 +164,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), query->formatForErrorMessage());
-    }
-
+        return;
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
     if (!expression_list)
     {
@@ -119,7 +185,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     ASTPtr settings_temporary_storage = nullptr;
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
@@ -131,7 +197,24 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     if (!endsWith(table_function->name, "Cluster"))
+    {
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+
+        /// When a non-cluster table function (e.g. `s3`) was auto-converted to cluster mode
+        /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
+        /// (e.g. `s3Cluster`) and prepend the cluster name argument. This ensures that on the shard,
+        /// `TableFunctionObjectStorageCluster::executeImpl` is called, which correctly handles
+        /// `distributed_processing` for task-based file distribution from the initiator.
+        ///
+        /// Some table functions (e.g. `paimonLocal`, `deltaLakeLocal`) do not have a Cluster variant,
+        /// so we only rename when the target function actually exists.
+        const String cluster_function_name = table_function->name + "Cluster";
+        if (TableFunctionFactory::instance().isTableFunctionName(cluster_function_name))
+        {
+            args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
+            table_function->name = cluster_function_name;
+        }
+    }
     else
     {
         ASTPtr cluster_name_arg = args.front();
@@ -145,21 +228,106 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 }
 
+void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+{
+    if (!configuration->isDataLakeConfiguration())
+        return;
+
+    /// Always force an update to pick up the latest snapshot version.
+    /// Using if_not_updated_before=true would leave latest_snapshot_version
+    /// stale from the first query and silently omit new files.
+    configuration->update(
+        object_storage,
+        query_context);
+
+    auto state = configuration->getTableStateSnapshot(query_context);
+    if (!state)
+        return;
+
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *current_metadata;
+    new_metadata.setDataLakeTableState(*state);
+
+    if (configuration->shouldReloadSchemaForConsistency(query_context))
+    {
+        if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
+            new_metadata = *metadata_snapshot;
+    }
+
+    setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        new_metadata.columns,
+        query_context,
+        /* format_settings */ std::nullopt,
+        configuration->partition_strategy_type)));
+}
+
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate, const ContextPtr & local_context, const size_t number_of_replicas) const
+    const ActionsDAG::Node * predicate,
+    const ActionsDAG * filter,
+    const ContextPtr & local_context,
+    ClusterPtr cluster,
+    StorageMetadataPtr storage_metadata_snapshot) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, {}, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true, /*skip_object_metadata=*/true);
+        configuration,
+        configuration->getQuerySettings(local_context),
+        object_storage,
+        storage_metadata_snapshot,
+        /* distributed_processing */ false,
+        local_context,
+        predicate,
+        filter,
+        storage_metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        hive_partition_columns_to_read_from_file_path,
+        nullptr,
+        local_context->getFileProgressCallback(),
+        /*ignore_archive_globs=*/false,
+        /*skip_object_metadata=*/true);
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, number_of_replicas);
+    if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
+    {
+        iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
+            std::move(iterator),
+            configuration->format,
+            object_storage,
+            local_context
+        );
+    }
+
+    std::vector<std::string> ids_of_hosts;
+    for (const auto & shard : cluster->getShardsInfo())
+    {
+        if (shard.per_replica_pools.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {} with empty shard {}", cluster->getName(), shard.shard_num);
+        for (const auto & replica : shard.per_replica_pools)
+        {
+            if (!replica)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {}, shard {} with empty node", cluster->getName(), shard.shard_num);
+            ids_of_hosts.push_back(replica->getAddress());
+        }
+    }
+
+    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
+        iterator,
+        std::move(ids_of_hosts),
+        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
 
     auto callback = std::make_shared<TaskIterator>(
-        [task_distributor](size_t number_of_current_replica) mutable -> String {
-            return task_distributor->getNextTask(number_of_current_replica).value_or("");
+        [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
+        {
+            fiu_do_on(FailPoints::storage_cluster_read_sleep,
+            {
+                sleepForSeconds(10);
+            });
+
+            auto task = task_distributor->getNextTask(number_of_current_replica);
+            if (task)
+                return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
+            return std::make_shared<ClusterFunctionReadTaskResponse>();
         });
 
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
 }
+

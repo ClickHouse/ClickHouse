@@ -1,9 +1,10 @@
 #pragma once
 #include <cstddef>
 #include <Compression/ICompressionCodec.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
-
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -11,9 +12,15 @@ namespace DB
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 struct Settings;
+class IMergeTreeDataPart;
+using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 class MMappedFileCache;
 using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
+
+struct SelectQueryInfo;
+
+class PackedFilesWriter;
 
 enum class CompactPartsReadMethod : uint8_t
 {
@@ -36,10 +43,8 @@ struct MergeTreeReaderSettings
     CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
     /// True if we read stream for dictionary of LowCardinality type.
     bool is_low_cardinality_dictionary = false;
-    /// True if we read stream for structure of Dynamic/Object type.
-    bool is_dynamic_or_object_structure = false;
-    /// True if data may be compressed by different codecs in one stream.
-    bool allow_different_codecs = false;
+    /// True if we read stream that contains some metadata and will be read as a whole at once.
+    bool is_metadata_file = false;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
     bool apply_deleted_mask = true;
     /// Put reading task in a common I/O pool, return Async state on prepare()
@@ -52,11 +57,40 @@ struct MergeTreeReaderSettings
     bool adjust_read_buffer_size = true;
     /// If true, it's allowed to read the whole part without reading marks.
     bool can_read_part_without_marks = false;
+    /// If true, the data stream is compressed.
+    bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
-    bool query_condition_cache_store_conditions_as_plaintext = false;
+    /// Force reading complete granules, even when the readers could read incomplete granules.
+    bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
+    bool secondary_indices_enable_bulk_filtering = true;
+    UInt64 merge_tree_min_bytes_for_seek = 0;
+    UInt64 merge_tree_min_rows_for_seek = 0;
+    size_t filesystem_prefetches_limit = 0;
+    bool enable_analyzer = false;
+    bool load_marks_asynchronously = false;
+    /// If true, compress marks into the in-memory representation one block at a time
+    /// instead of materializing the full plain marks array.
+    bool use_streaming_marks_compression = false;
+    /// If true, only column sample with 0 rows will be read.
+    /// This information can be used for more optimal reading of
+    /// columns prefixes.
+    bool read_only_column_sample = false;
+    /// True when predicate_statistics_sample_rate > 0, i.e. the read steps must
+    /// maintain selectivity counters for system.predicate_statistics_log. When
+    /// false (the default), the readers skip the per-granule counter work.
+    bool collect_predicate_statistics = false;
+
+    static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
+    /// Note storage_settings used only in private, do not remove
+    static MergeTreeReaderSettings createForQuery(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);
+    static MergeTreeReaderSettings createForMergeMutation(ReadSettings read_settings);
+    static MergeTreeReaderSettings createFromSettings(ReadSettings read_settings = {});
+
+private:
+    MergeTreeReaderSettings() = default;
 };
 
 struct MergeTreeWriterSettings
@@ -67,35 +101,57 @@ struct MergeTreeWriterSettings
         const Settings & global_settings,
         const WriteSettings & query_write_settings_,
         const MergeTreeSettingsPtr & storage_settings,
+        const MergeTreeDataPartPtr & data_part,
         bool can_use_adaptive_granularity_,
         bool rewrite_primary_key_,
         bool save_marks_in_cache_,
         bool save_primary_index_in_memory_,
         bool blocks_are_granules_size_);
 
-    size_t min_compress_block_size;
-    size_t max_compress_block_size;
+    /// Maximum allowed value for compression block size settings.
+    /// Prevents absurd memory allocations from fuzzed or misconfigured settings.
+    static constexpr size_t MAX_COMPRESS_BLOCK_SIZE = 256ULL * 1024 * 1024; /// 256 MiB
+
+    size_t min_compress_block_size{};
+    size_t max_compress_block_size{};
 
     String marks_compression_codec;
-    size_t marks_compress_block_size;
+    size_t marks_compress_block_size{};
 
-    bool compress_primary_key;
+    bool compress_primary_key{};
     String primary_key_compression_codec;
-    size_t primary_key_compress_block_size;
+    size_t primary_key_compress_block_size{};
 
-    bool can_use_adaptive_granularity;
-    bool rewrite_primary_key;
-    bool save_marks_in_cache;
-    bool save_primary_index_in_memory;
-    bool blocks_are_granules_size;
+    bool can_use_adaptive_granularity{};
+    bool rewrite_primary_key{};
+    bool save_marks_in_cache{};
+    bool save_primary_index_in_memory{};
+    bool blocks_are_granules_size{};
     WriteSettings query_write_settings;
 
-    size_t low_cardinality_max_dictionary_size;
-    bool low_cardinality_use_single_dictionary_for_part;
-    bool use_compact_variant_discriminators_serialization;
-    bool use_v1_object_and_dynamic_serialization;
-    bool use_adaptive_write_buffer_for_dynamic_subcolumns;
-    size_t adaptive_write_buffer_initial_size;
+    size_t low_cardinality_max_dictionary_size{};
+    bool low_cardinality_use_single_dictionary_for_part{};
+    bool use_compact_variant_discriminators_serialization{};
+    MergeTreeDynamicSerializationVersion dynamic_serialization_version{};
+    MergeTreeObjectSerializationVersion object_serialization_version{};
+    MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version{};
+    size_t object_shared_data_buckets = 1;
+    size_t max_buckets_in_map = 1;
+    MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
+    double map_buckets_coefficient = 1.0;
+    size_t map_buckets_min_avg_size = 0;
+
+    /// When non-null, the writer borrows this `PackedFilesWriter` from an outer writer instead
+    /// of creating its own. The borrower contributes its packed substreams to the shared
+    /// archive but never writes `skp_idx.packed` to disk; that is the owner's responsibility
+    /// (so two writers don't race over the same archive file). Used by the vertical-merge
+    /// per-column `MergedColumnOnlyOutputStream`, which shares the horizontal
+    /// `MergedBlockOutputStream`'s archive.
+    PackedFilesWriter * external_packed_skip_indices_writer = nullptr;
+    bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
+    size_t min_columns_to_activate_adaptive_write_buffer{};
+    size_t adaptive_write_buffer_initial_size{};
+    bool compress_per_column_in_compact_parts{};
 };
 
 }

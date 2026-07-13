@@ -19,6 +19,13 @@ public:
         return disks[0]->reserve(bytes);
     }
 
+    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override
+    {
+        if (disks[0]->isReadOnly())
+            return {};
+        return disks[0]->reserve(bytes, constraints);
+    }
+
     VolumeType getType() const override { return VolumeType::SINGLE_DISK; }
 
 };

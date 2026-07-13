@@ -1,6 +1,8 @@
 <clickhouse>
+    <interserver_http_port>9009</interserver_http_port>
     <remote_servers>
         <test_ldap_cluster>
+            <secret>my_secret</secret>
             <shard>
                 <replica>
                     <host>instance1</host>

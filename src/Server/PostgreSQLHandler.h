@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
-#include "config.h"
+#include <Common/ProfileEvents.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
-#include "IServer.h"
+#include <Server/IServer.h>
+
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
@@ -31,13 +33,14 @@ public:
     PostgreSQLHandler(
         const Poco::Net::StreamSocket & socket_,
 #if USE_SSL
-        const std::string & prefix_,
+        const String & prefix_,
 #endif
         IServer & server_,
         TCPServer & tcp_server_,
         bool ssl_enabled_,
+        bool secure_required_,
         Int32 connection_id_,
-        std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+        VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -55,13 +58,14 @@ private:
     bool extended_verification = false;
     bool prefer_server_ciphers = false;
     const Poco::Util::LayeredConfiguration & config [[maybe_unused]];
-    std::string prefix [[maybe_unused]];
+    String prefix [[maybe_unused]];
 #endif
 
     IServer & server;
     TCPServer & tcp_server;
     std::unique_ptr<Session> session;
     bool ssl_enabled = false;
+    bool secure_required = false;
     Int32 connection_id = 0;
     Int32 secret_key = 0;
 
@@ -98,6 +102,7 @@ private:
     bool processPrepareStatement(const String & query);
     bool processExecute(const String & query, ContextMutablePtr query_context);
     bool processDeallocate(const String & query);
+    bool processCopyQuery(const String & query);
 
     void processParseQuery();
     void processDescribeQuery();
@@ -106,7 +111,21 @@ private:
     void processCloseQuery();
     void processSyncQuery();
 
+    std::function<void(const Progress&)> createProgressCallback(
+        ContextMutablePtr query_context,
+        std::atomic<UInt64>& result_rows,
+        std::atomic<UInt64>& written_rows);
+
+    UInt64 executeQueryWithTracking(
+        String && sql_query,
+        ContextMutablePtr query_context,
+        PostgreSQLProtocol::Messaging::CommandComplete::Command command);
+
     static bool isEmptyQuery(const String & query);
+    static Int32 parseNumberColumns(const std::vector<char> & output);
+
+    void initializeSystemTables(ContextMutablePtr query_context);
+    bool should_init_system_tables = true;
 };
 
 }

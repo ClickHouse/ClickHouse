@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Core/Defines.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -17,8 +18,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct JoinOnKeyColumns
 {
-    const ScatteredBlock & block;
-
     Names key_names;
 
     Columns materialized_keys_holder;
@@ -33,7 +32,8 @@ struct JoinOnKeyColumns
     Sizes key_sizes;
 
     JoinOnKeyColumns(
-        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_);
+        const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_,
+        bool keep_lowcardinality = false);
 
     bool isRowFiltered(size_t i) const
     {
@@ -41,51 +41,89 @@ struct JoinOnKeyColumns
     }
 };
 
+struct LazyOutput
+{
+    /// Entries share the encoding of the join hash map cell values (see RowRefs.h):
+    ///   0 - default row; bit 63 set - inline encoded RowRef; otherwise - a RowRefList
+    ///   list word (pointer to a Batch node in the low 48 bits + row count).
+    /// ASOF matches are inline encoded RowRef words too (the leaf of the sorted lookup vector).
+    PaddedPODArray<UInt64> row_refs;
+    size_t row_count = 0;   /// Total number of rows in all refs and ref lists
+
+    /// Resolves RowRef::block_no at emit time; points into the join's StoredColumnsIndex,
+    /// which is immutable once the build phase is finished. Used by the cold paths
+    /// (joinGet / ColumnsWithRowNumbers / ASOF). These keep the raw `StoredBlock *` rather than
+    /// the hot-path emit table below because they need the whole block, not just a resolved column:
+    /// per-row `byteSizeAt` accounting (`buildOutputFromBlocksLimitAndOffset`), nullable-column
+    /// dispatch (`buildJoinGetOutput`), and feeding `ColumnsWithRowNumbers` (`buildOutputFromBlocks`).
+    const StoredBlock * const * stored_columns = nullptr;
+
+    /// Per output column (parallel to `right_indexes`): the StoredColumnsIndex emit table base pointers,
+    /// i.e. the resolved source `const IColumn *` per block and its `ColumnReplicated *` counterpart.
+    /// Filled in the AddedColumns ctor for the hot `fillFromRowRefs` path; empty for joinGet / ASOF.
+    std::vector<const IColumn * const *> emit_block_columns;
+    std::vector<const ColumnReplicated * const *> emit_block_replicated;
+
+    std::vector<size_t> right_indexes;
+    NamesAndTypes type_name;
+
+    bool join_data_sorted = false;
+    bool output_by_row_list = false;
+    size_t output_by_row_list_threshold = 0;
+    size_t join_data_avg_perkey_rows = 0;
+
+    const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
+    size_t getRowCount() const { return row_count; }
+
+    void reserve(size_t size) { row_refs.reserve(size); }
+
+    /// `ref_word` is either an inline single ref or a RowRefList list word (pointer + count).
+    void addRef(UInt64 ref_word)
+    {
+        chassert(ref_word != 0);
+        row_refs.emplace_back(ref_word);
+        row_count += refWordRows(ref_word);
+    }
+
+    void addDefault()
+    {
+        row_refs.emplace_back(0);
+        ++row_count;
+    }
+
+    [[nodiscard]] size_t buildOutput(
+        size_t size_to_reserve,
+        const Block & left_block,
+        const IColumn::Offsets & left_offsets,
+        MutableColumns & columns,
+        const UInt64 * row_refs_begin,
+        const UInt64 * row_refs_end,
+        size_t rows_offset,
+        size_t rows_limit,
+        size_t bytes_limit) const;
+
+    void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
+
+    /** Build output from the blocks that extract from the encoded refs, to avoid block cache miss which may cause performance slow down.
+     *  And This problem would happen it we directly build output from the encoded refs.
+     */
+    template<bool from_row_list>
+    void buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
+
+    void buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
+
+    [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
+        MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
+        const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
+        size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
+
+private:
+};
+
 template <bool lazy>
 class AddedColumns
 {
 public:
-    struct TypeAndName
-    {
-        DataTypePtr type;
-        String name;
-        String qualified_name;
-
-        TypeAndName(DataTypePtr type_, const String & name_, const String & qualified_name_)
-            : type(type_), name(name_), qualified_name(qualified_name_)
-        {
-        }
-    };
-
-    class LazyOutput
-    {
-        PaddedPODArray<UInt64> row_refs;
-        size_t row_count = 0;   /// Total number of rows in all RowRef-s and RowRefList-s
-
-    public:
-        const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
-        size_t getRowCount() const { return row_count; }
-
-        void reserve(size_t size) { row_refs.reserve(size); }
-
-        void addRowRef(const RowRef * row_ref)
-        {
-            row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref));
-            ++row_count;
-        }
-
-        void addRowRefList(const RowRefList * row_ref_list)
-        {
-            row_refs.emplace_back(reinterpret_cast<UInt64>(row_ref_list));
-            row_count += row_ref_list->rows;
-        }
-
-        void addDefault()
-        {
-            row_refs.emplace_back(0);
-            ++row_count;
-        }
-    };
 
     AddedColumns(
         const ScatteredBlock & left_block_,
@@ -94,16 +132,15 @@ public:
         const HashJoin & join,
         std::vector<JoinOnKeyColumns> && join_on_keys_,
         ExpressionActionsPtr additional_filter_expression_,
+        const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos_,
         bool is_asof_join,
         bool is_join_get_)
-        : src_block(left_block_)
-        , left_block(left_block_.getSourceBlock())
+        : left_block(left_block_.getSourceBlock())
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
+        , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
-        , join_data_avg_perkey_rows(join.getJoinedData()->avgPerKeyRows())
-        , output_by_row_list_threshold(join.getTableJoin().outputByRowListPerkeyRowsThreshold())
-        , join_data_sorted(join.getJoinedData()->sorted)
+        , enable_prefetch(join.enableSoftwarePrefetch())
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -117,8 +154,13 @@ public:
         }
 
         columns.reserve(num_columns_to_add);
-        type_name.reserve(num_columns_to_add);
-        right_indexes.reserve(num_columns_to_add);
+        lazy_output.type_name.reserve(num_columns_to_add);
+        lazy_output.right_indexes.reserve(num_columns_to_add);
+
+        lazy_output.output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
+        lazy_output.join_data_sorted = join.getJoinedData()->sorted;
+        lazy_output.join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
+        lazy_output.stored_columns = join.getJoinedData()->stored_columns_index->blocksData();
 
         for (const auto & src_column : block_with_columns_to_add)
         {
@@ -127,47 +169,71 @@ public:
             auto qualified_name = join.getTableJoin().renamedRightColumnName(src_column.name);
             /// Don't insert column if it's in left block
             if (!left_block.has(qualified_name))
-                addColumn(src_column, qualified_name);
+                addColumn(src_column);
         }
 
         if (is_asof_join)
         {
-            assert(join_on_keys.size() == 1);
+            chassert(join_on_keys.size() == 1);
             const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
-            addColumn(right_asof_column, right_asof_column.name);
+            addColumn(right_asof_column);
             left_asof_key = join_on_keys[0].key_columns.back();
         }
 
-        for (auto & tn : type_name)
-            right_indexes.push_back(saved_block_sample.getPositionByName(tn.name));
+        for (auto & tn : lazy_output.type_name)
+            lazy_output.right_indexes.push_back(saved_block_sample.getPositionByName(tn.name));
 
-        nullable_column_ptrs.resize(right_indexes.size(), nullptr);
-        for (size_t j = 0; j < right_indexes.size(); ++j)
+        nullable_column_ptrs.resize(lazy_output.right_indexes.size(), nullptr);
+        for (size_t j = 0; j < lazy_output.right_indexes.size(); ++j)
         {
             /** If it's joinGetOrNull, we will have nullable columns in result block
               * even if right column is not nullable in storage (saved_block_sample).
               */
-            const auto & saved_column = saved_block_sample.getByPosition(right_indexes[j]).column;
+            const auto & saved_column = saved_block_sample.getByPosition(lazy_output.right_indexes[j]).column;
             if (columns[j]->isNullable() && !saved_column->isNullable())
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
+        }
+
+        /// Resolve the StoredColumnsIndex emit table for the hot `fillFromRowRefs` path: cache, per output
+        /// column, the per-block base pointers it hands to `fillFromRowRefs`. Only normal joins reach it
+        /// (joinGet and ASOF use the cold per-block paths). `resolveEmitColumns` builds exactly the
+        /// requested positions (this query's `right_indexes`) under the index mutex, so StorageJoin queries
+        /// selecting different right-column subsets each get their columns built rather than reusing a
+        /// table scoped to some other query's columns.
+        if constexpr (lazy)
+        {
+            if (!is_join_get && !is_asof_join)
+                join.getJoinedData()->stored_columns_index->resolveEmitColumns(
+                    saved_block_sample.columns(),
+                    lazy_output.right_indexes,
+                    lazy_output.emit_block_columns,
+                    lazy_output.emit_block_replicated);
         }
     }
 
     size_t size() const { return columns.size(); }
 
-    void buildOutput();
-
-    void buildJoinGetOutput();
-
     ColumnWithTypeAndName moveColumn(size_t i)
     {
-        return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
+        return ColumnWithTypeAndName(std::move(columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
     }
 
-    void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
-    void appendFromBlock(const RowRef * row_ref, bool has_default);
+    /// Encoded RowRef word (inline single ref, including an ASOF match) or a RowRefList
+    /// list word (pointer + count).
+    void appendFromBlock(UInt64 ref_word, bool has_default);
 
-    void appendDefaultRow();
+    void appendDefaultRow()
+    {
+        if constexpr (!lazy)
+        {
+            ++lazy_defaults_count;
+        }
+        else
+        {
+            if (has_columns_to_add)
+                lazy_output.addDefault();
+        }
+    }
 
     void applyLazyDefaults();
 
@@ -175,23 +241,34 @@ public:
 
     static constexpr bool isLazy() { return lazy; }
 
-    const ScatteredBlock & src_block;
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;
     ExpressionActionsPtr additional_filter_expression;
+    const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos;
 
     size_t max_joined_block_rows = 0;
     size_t rows_to_add;
-    std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
-    bool output_by_row_list = false;
-    size_t join_data_avg_perkey_rows = 0;
-    size_t output_by_row_list_threshold = 0;
-    bool join_data_sorted = false;
+    bool enable_prefetch = true;
+
+    MutableColumns columns;
+    IColumn::Offsets offsets_to_replicate;
     IColumn::Filter filter;
+    /// For every row with a match, if we set filter[row] = 1, we also add this row to `matched_rows` for faster ScatteredBlock::filter().
+    IColumn::Offsets matched_rows;
+
+    /// for lazy
+    // The default row is represented by a zero ref word, so that fixed-size blocks can be generated sequentially,
+    // default_count cannot represent the position of the row
+    LazyOutput lazy_output;
+    bool has_columns_to_add;
 
     void reserve(bool need_replicate)
     {
+        /// If lazy, we will reserve right after actual insertion into columns, because at that moment we will know the exact number of rows to add.
+        if constexpr (lazy)
+            return;
+
         if (!max_joined_block_rows)
             return;
 
@@ -200,7 +277,7 @@ public:
 
         if (need_replicate)
             /// Reserve 10% more space for columns, because some rows can be repeated
-            reserve_size = static_cast<size_t>(1.1 * reserve_size);
+            reserve_size = static_cast<size_t>(1.1 * static_cast<double>(reserve_size));
 
         for (auto & column : columns)
             column->reserve(reserve_size);
@@ -208,11 +285,11 @@ public:
 
 private:
 
-    void checkBlock(const Block & block)
+    void checkColumns(const Columns & to_check)
     {
-        for (size_t j = 0; j < right_indexes.size(); ++j)
+        for (size_t j = 0; j < lazy_output.right_indexes.size(); ++j)
         {
-            const auto * column_from_block = block.getByPosition(right_indexes[j]).column.get();
+            const auto * column_from_block = to_check.at(lazy_output.right_indexes[j]).get();
             const auto * dest_column = columns[j].get();
             if (auto * nullable_col = nullable_column_ptrs[j])
             {
@@ -222,6 +299,12 @@ private:
                                     dest_column->getName(), column_from_block->getName());
                 dest_column = nullable_col->getNestedColumnPtr().get();
             }
+
+            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column_from_block))
+                column_from_block = column_replicated->getNestedColumn().get();
+            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(dest_column))
+                dest_column = column_replicated->getNestedColumn().get();
+
             /** Using dest_column->structureEquals(*column_from_block) will not work for low cardinality columns,
               * because dictionaries can be different, while calling insertFrom on them is safe, for example:
               * ColumnLowCardinality(size = 0, UInt8(size = 0), ColumnUnique(size = 1, String(size = 1)))
@@ -235,47 +318,23 @@ private:
         }
     }
 
-    MutableColumns columns;
     bool is_join_get;
-    std::vector<size_t> right_indexes;
-    std::vector<TypeAndName> type_name;
     std::vector<ColumnNullable *> nullable_column_ptrs;
     size_t lazy_defaults_count = 0;
-
-    /// for lazy
-    // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,
-    // default_count cannot represent the position of the row
-    LazyOutput lazy_output;
-    bool has_columns_to_add;
 
     /// for ASOF
     const IColumn * left_asof_key = nullptr;
 
-
-    void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
+    void addColumn(const ColumnWithTypeAndName & src_column)
     {
         columns.push_back(src_column.column->cloneEmpty());
-        columns.back()->reserve(rows_to_add);
-        type_name.emplace_back(src_column.type, src_column.name, qualified_name);
+        /// If lazy, we will reserve right after actual insertion into columns, because at that moment we will know the exact number of rows to add.
+        if constexpr (!lazy)
+            columns.back()->reserve(rows_to_add);
+        lazy_output.type_name.emplace_back(src_column.name, src_column.type);
     }
-
-    /** Build output from the blocks that extract from `RowRef` or `RowRefList`, to avoid block cache miss which may cause performance slow down.
-     *  And This problem would happen it we directly build output from `RowRef` or `RowRefList`.
-     */
-    template<bool from_row_list>
-    void buildOutputFromBlocks();
-
-    void buildOutputFromRowRefLists();
 };
 
-/// Adapter class to pass into addFoundRowAll
-/// In joinRightColumnsWithAdditionalFilter we don't want to add rows directly into AddedColumns,
-/// because they need to be filtered by additional_filter_expression.
-class PreSelectedRows : public std::vector<const RowRef *>
-{
-public:
-    void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
-    static constexpr bool isLazy() { return false; }
-};
+std::pair<const IColumn *, size_t> getBlockColumnAndRow(const StoredBlock * block, size_t row_num, size_t column_index);
 
 }

@@ -283,7 +283,7 @@ iPhone
 [75,117,115,116,111]
 -- base64_decode_toguid()
 10e99626-bc2b-4c75-bb3e-fe606de25700
-1
+true
 -- base64_encode_tostring
 
 S3VzdG8x
@@ -297,7 +297,7 @@ Kusto1
 -- strcmp()
 0	1	-1	1
 -- substring()
-CD
+AB
 -- translate()
 kusto		xxx
 -- trim()
@@ -338,7 +338,7 @@ Number was: 1
 1000000000000000000000000
 -- parse_json()
 [1,2,3]
-[{"a":123.5,"b":"{\\"c\\":456}"}]
+{"a":123.5,"b":"{\\"c\\":456}"}
 -- parse_command_line()
 [NULL]
 [NULL]
@@ -350,7 +350,7 @@ dsa
 ][
 ]3,2,1[
 ]\'redaV\',\'htraD\'[
-000000000.00:00:21 51-01-7102
+0000000.00:00:21T51-01-7102
 Peter	Nara	Skilled Manual	Graduate Degree	26
 Latoya	Shen	Professional	Graduate Degree	25
 -- parse_csv()

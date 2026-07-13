@@ -1,4 +1,4 @@
-#include "HDFSCommon.h"
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>

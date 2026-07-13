@@ -1,9 +1,11 @@
 #pragma once
 
-#include "IAggregateFunctionCombinator.h"
+#include <AggregateFunctions/Combinators/IAggregateFunctionCombinator.h>
+
+#include <Common/Documentation.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <string>
-#include <unordered_map>
 
 
 namespace DB
@@ -19,13 +21,14 @@ private:
     {
         std::string name;
         AggregateFunctionCombinatorPtr combinator_ptr;
+        Documentation documentation;
 
         bool operator==(const CombinatorPair & rhs) const { return name == rhs.name; }
         /// Sort by the length of the combinator name for proper tryFindSuffix()
         /// for combiners with common prefix (i.e. "State" and "SimpleState").
         bool operator<(const CombinatorPair & rhs) const { return name.length() > rhs.name.length(); }
     };
-    using Dict = std::vector<CombinatorPair>;
+    using Dict = VectorWithMemoryTracking<CombinatorPair>;
     Dict dict;
 
 public:
@@ -33,7 +36,7 @@ public:
     static AggregateFunctionCombinatorFactory & instance();
 
     /// Not thread safe. You must register before using tryGet.
-    void registerCombinator(const AggregateFunctionCombinatorPtr & value);
+    void registerCombinator(const AggregateFunctionCombinatorPtr & value, Documentation documentation = {});
 
     /// Example: if the name is 'avgIf', it will return combinator -If.
     AggregateFunctionCombinatorPtr tryFindSuffix(const std::string & name) const;

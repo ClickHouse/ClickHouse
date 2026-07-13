@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Field.h>
 
@@ -44,7 +45,9 @@ public:
     bool haveSubtypes() const override { return false; }
     bool cannotBeStoredInTables() const override { return true; }
 
-    SerializationPtr doGetDefaultSerialization() const override { throwNoSerialization(); }
+    void updateHashImpl(SipHash &) const override {}
+
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { throwNoSerialization(); }
 };
 
 }

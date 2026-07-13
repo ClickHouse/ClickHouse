@@ -6,6 +6,7 @@ INSERT INTO merge_tree_in_subqueries VALUES(3, 'test3', 8);
 INSERT INTO merge_tree_in_subqueries VALUES(4, 'test4', 1985);
 INSERT INTO merge_tree_in_subqueries VALUES(5, 'test5', 0);
 
+SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 
 SET max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree=1;

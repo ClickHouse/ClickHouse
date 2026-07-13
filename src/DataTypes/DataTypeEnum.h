@@ -1,10 +1,10 @@
 #pragma once
 
+#include <vector>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
-#include <Common/HashTable/HashMap.h>
-#include <vector>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -27,6 +27,7 @@ public:
     bool isComparable() const override { return true; }
 
     virtual bool contains(const IDataType & rhs) const = 0;
+    virtual bool isAdd() const = 0;
 };
 
 
@@ -38,15 +39,22 @@ public:
     using ColumnType = ColumnVector<FieldType>;
     static constexpr auto type_id = sizeof(FieldType) == 1 ? TypeIndex::Enum8 : TypeIndex::Enum16;
     using typename EnumValues<Type>::Values;
+    using RelativeFlags = std::vector<UInt8>;
 
     static constexpr bool is_parametric = true;
 
 private:
     std::string type_name;
     static std::string generateName(const Values & values);
+    bool is_add; // created by ALTER ... ADD ENUM VALUES
+    /// Aligned with temporary `ADD ENUM VALUES` elements in parser order.
+    /// Whenever this vector is populated, the base `EnumValues` must use
+    /// `ValidationMode::TemporaryAdd` so the element order stays unchanged.
+    /// `1` marks shorthand values remapped relative to the base enum.
+    RelativeFlags relative_flags;
 
 public:
-    explicit DataTypeEnum(const Values & values_);
+    explicit DataTypeEnum(const Values & values_, bool is_add_ = false, RelativeFlags relative_flags_ = {});
 
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
@@ -54,19 +62,13 @@ public:
     TypeIndex getTypeId() const override { return type_id; }
     TypeIndex getColumnType() const override { return sizeof(FieldType) == 1 ? TypeIndex::Int8 : TypeIndex::Int16; }
 
-    FieldType readValue(ReadBuffer & istr) const
-    {
-        FieldType x;
-        readText(x, istr);
-        return this->findByValue(x)->first;
-    }
-
     Field castToName(const Field & value_or_name) const override;
     Field castToValue(const Field & value_or_name) const override;
 
     MutableColumnPtr createColumn() const override { return ColumnType::create(); }
 
     Field getDefault() const override;
+    Type getDefaultValue() const;
     void insertDefaultInto(IColumn & column) const override;
 
     bool equals(const IDataType & rhs) const override;
@@ -80,9 +82,19 @@ public:
     /// Enum('a' = 1, 'b' = 2) -> Enum('a' = 2, 'b' = 1) NOT OK
     bool contains(const IDataType & rhs) const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+
+    void updateHashImpl(SipHash & hash) const override;
+
+    bool isAdd() const override  { return is_add; }
+    bool isRelativeAt(size_t index) const { return index < relative_flags.size() && relative_flags[index]; }
+    size_t getRelativeFlagsSize() const { return relative_flags.size(); }
 };
 
+template <typename TypeBase>
+DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeBase> & add);
+
+DataTypePtr createEnumAdd(const ASTPtr & arguments, bool is_enum16);
 
 using DataTypeEnum8 = DataTypeEnum<Int8>;
 using DataTypeEnum16 = DataTypeEnum<Int16>;

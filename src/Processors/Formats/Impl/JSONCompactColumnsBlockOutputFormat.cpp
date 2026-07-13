@@ -7,8 +7,8 @@
 namespace DB
 {
 
-JSONCompactColumnsBlockOutputFormat::JSONCompactColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : JSONColumnsBlockOutputFormatBase(out_, header_, format_settings_, format_settings_.json.validate_utf8), column_names(header_.getNames())
+JSONCompactColumnsBlockOutputFormat::JSONCompactColumnsBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : JSONColumnsBlockOutputFormatBase(out_, header_, format_settings_, format_settings_.json.validate_utf8), column_names(header_->getNames())
 {
 }
 
@@ -28,15 +28,18 @@ void JSONCompactColumnsBlockOutputFormat::writeChunkEnd()
     writeChar('\n', *ostr);
 }
 
+void registerOutputFormatJSONCompactColumns(FormatFactory & factory);
 void registerOutputFormatJSONCompactColumns(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONCompactColumns", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings)
+        const FormatSettings & format_settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<JSONCompactColumnsBlockOutputFormat>(buf, sample, format_settings);
+        return std::make_shared<JSONCompactColumnsBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
     });
+    factory.setContentType("JSONCompactColumns", "application/json; charset=UTF-8");
 }
 
 }

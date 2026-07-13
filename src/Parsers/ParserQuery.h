@@ -13,6 +13,7 @@ private:
     bool allow_settings_after_format_in_insert = false;
     bool implicit_select = false;
 
+    bool allow_execute_as = true;
     bool allow_in_parallel_with = true;
 
     const char * getName() const override { return "Query"; }

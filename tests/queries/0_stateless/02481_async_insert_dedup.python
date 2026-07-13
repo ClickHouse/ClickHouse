@@ -164,14 +164,13 @@ while True:
             if expect != real:
                 err = True
                 errMsg = f"error, real value {real} is not equal to expect value {expect} for {i}-th elements"
-                break
     # retry several times to get stable results.
     if err and retry >= 5:
         raise Exception(errMsg)
-    elif err:
+    if err:
         retry += 1
-        continue
-    break
+    else:
+        break
 
 result = client.query(
     "SELECT value FROM system.metrics where metric = 'AsyncInsertCacheSize'"
@@ -188,4 +187,3 @@ if result <= 0:
     raise Exception(f"AsyncInsertCacheHits should > 0, but got {result}")
 
 client.query("DROP TABLE IF EXISTS t_async_insert_dedup SYNC")
-

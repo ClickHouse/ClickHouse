@@ -15,7 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 #include <Databases/MySQL/DatabaseMySQL.h>
 #include <Common/parseRemoteDescription.h>
@@ -38,6 +38,7 @@ namespace MySQLSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -55,9 +56,14 @@ public:
     {
         return name;
     }
+
+    /// The 3rd argument may be a query passed to MySQL as is - a subquery `(SELECT ...)` or `query('SELECT ...')`.
+    /// Such an argument must not be analyzed as an ordinary expression.
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const override { return {2}; }
+
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageTypeName() const override { return "MySQL"; }
+    const char * getStorageEngineName() const override { return "MySQL"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -81,7 +87,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     mysql_settings[MySQLSetting::connect_timeout] = settings[Setting::external_storage_connect_timeout_sec];
     mysql_settings[MySQLSetting::read_write_timeout] = settings[Setting::external_storage_rw_timeout_sec];
 
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         const ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
@@ -98,7 +104,11 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table, context);
+    /// A query-backed insert is rejected in executeImpl, which is the only path taken by INSERT INTO TABLE
+    /// FUNCTION (it is called with empty cached columns, before any external contact). It must not be rejected
+    /// here, because DESCRIBE TABLE also calls getActualTableStructure with is_insert_query = true and must
+    /// keep returning the inferred structure.
+    return StorageMySQL::getTableStructureFromData(*pool, configuration->database, configuration->table_or_query, context);
 }
 
 StoragePtr TableFunctionMySQL::executeImpl(
@@ -106,13 +116,19 @@ StoragePtr TableFunctionMySQL::executeImpl(
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription cached_columns,
-    bool /*is_insert_query*/) const
+    bool is_insert_query) const
 {
+    /// Reject the insert before constructing the storage, so that read-only query-backed sources do not contact
+    /// the external database for schema inference (which could run an expensive or volatile query) only to fail.
+    if (is_insert_query && configuration->table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Cannot INSERT into the 'mysql' table function: it represents the result of a query passed to MySQL, which is read-only");
+
     auto res = std::make_shared<StorageMySQL>(
         StorageID(getDatabaseName(), table_name),
         std::move(*pool),
         configuration->database,
-        configuration->table,
+        configuration->table_or_query,
         configuration->replace_query,
         configuration->on_duplicate_clause,
         cached_columns,
@@ -132,7 +148,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
 
 void registerTableFunctionMySQL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionMySQL>();
+    factory.registerFunction<TableFunctionMySQL>({});
 }
 
 }

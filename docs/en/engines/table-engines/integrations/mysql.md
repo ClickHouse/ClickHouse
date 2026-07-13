@@ -3,21 +3,19 @@ description: 'Documentation for MySQL Table Engine'
 sidebar_label: 'MySQL'
 sidebar_position: 138
 slug: /engines/table-engines/integrations/mysql
-title: 'The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data
-  that is stored on a remote MySQL server.'
+title: 'MySQL table engine'
+doc_type: 'reference'
 ---
-
-# MySQL Table Engine
 
 The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = MySQL({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 SETTINGS
@@ -26,7 +24,8 @@ SETTINGS
     [ connection_wait_timeout=5, ]
     [ connection_auto_close=true, ]
     [ connect_timeout=10, ]
-    [ read_write_timeout=300 ]
+    [ read_write_timeout=300, ]
+    [ enable_compression=false ]
 ;
 ```
 
@@ -38,15 +37,11 @@ The table structure can differ from the original MySQL table structure:
 - Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
 - The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
-:::note
-The MySQL Table Engine is currently not available on the ClickHouse builds for MacOS ([issue](https://github.com/ClickHouse/ClickHouse/issues/21191))
-:::
-
 **Engine Parameters**
 
 - `host:port` — MySQL server address.
 - `database` — Remote database name.
-- `table` — Remote table name.
+- `table` — Remote table name, or a query passed to MySQL as is (see [Passing a query instead of a table name](#passing-a-query)).
 - `user` — MySQL user.
 - `password` — User password.
 - `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is substituted.
@@ -60,13 +55,30 @@ Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL s
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
 
+## Passing a query instead of a table name {#passing-a-query}
+
+Instead of a table name, the `table` argument can be a `SELECT` query that is passed to MySQL as is. The structure of the table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+
+```sql
+CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/sql-reference/table-functions/mysql) table function.
+
+:::note
+The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the MySQL dialect (backtick identifier quoting) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass MySQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to MySQL verbatim.
+
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+:::
+
 Supports multiple replicas that must be listed by `|`. For example:
 
 ```sql
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-## Usage Example {#usage-example}
+## Usage example {#usage-example}
 
 Create table in MySQL:
 
@@ -135,7 +147,7 @@ SELECT * FROM mysql_table
 
 Default settings are not very efficient, since they do not even reuse connections. These settings allow you to increase the number of queries run by the server per second.
 
-### connection_auto_close {#connection-auto-close}
+### `connection_auto_close` {#connection-auto-close}
 
 Allows to automatically close the connection after query execution, i.e. disable connection reuse.
 
@@ -146,7 +158,7 @@ Possible values:
 
 Default value: `1`.
 
-### connection_max_tries {#connection-max-tries}
+### `connection_max_tries` {#connection-max-tries}
 
 Sets the number of retries for pool with failover.
 
@@ -157,7 +169,7 @@ Possible values:
 
 Default value: `3`.
 
-### connection_pool_size {#connection-pool-size}
+### `connection_pool_size` {#connection-pool-size}
 
 Size of connection pool (if all connections are in use, the query will wait until some connection will be freed).
 
@@ -167,7 +179,7 @@ Possible values:
 
 Default value: `16`.
 
-### connection_wait_timeout {#connection-wait-timeout}
+### `connection_wait_timeout` {#connection-wait-timeout}
 
 Timeout (in seconds) for waiting for free connection (in case of there is already connection_pool_size active connections), 0 - do not wait.
 
@@ -177,7 +189,7 @@ Possible values:
 
 Default value: `5`.
 
-### connect_timeout {#connect-timeout}
+### `connect_timeout` {#connect-timeout}
 
 Connect timeout (in seconds).
 
@@ -187,7 +199,7 @@ Possible values:
 
 Default value: `10`.
 
-### read_write_timeout {#read-write-timeout}
+### `read_write_timeout` {#read-write-timeout}
 
 Read/write timeout (in seconds).
 
@@ -197,7 +209,36 @@ Possible values:
 
 Default value: `300`.
 
-## See Also {#see-also}
+### `enable_compression` {#enable-compression}
+
+Enables compression for the MySQL protocol connection.
+
+Default value: `false`.
+
+This setting applies to:
+
+- the `MySQL` table engine;
+- the `MySQL` database engine;
+- the `mysql` table function;
+- named collections used by MySQL integrations.
+
+When enabled, ClickHouse requests compression for the connection.
+
+Example:
+
+```sql
+CREATE TABLE mysql_engine_compression
+(
+    id UInt32,
+    name String,
+    age UInt32,
+    money UInt32
+)
+ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
+SETTINGS enable_compression = 1;
+```
+
+## See also {#see-also}
 
 - [The mysql table function](../../../sql-reference/table-functions/mysql.md)
-- [Using MySQL as a dictionary source](/sql-reference/dictionaries#mysql)
+- [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)

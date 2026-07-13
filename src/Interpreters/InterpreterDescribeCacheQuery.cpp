@@ -9,8 +9,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
 #include <Access/Common/AccessFlags.h>
 #include <Core/Block.h>
 
@@ -44,12 +44,13 @@ BlockIO InterpreterDescribeCacheQuery::execute()
 
     BlockIO res;
     size_t num_rows = res_columns[0]->size();
-    auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+    auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
     res.pipeline = QueryPipeline(std::move(source));
 
     return res;
 }
 
+void registerInterpreterDescribeCacheQuery(InterpreterFactory & factory);
 void registerInterpreterDescribeCacheQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

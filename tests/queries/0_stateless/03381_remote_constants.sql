@@ -1,6 +1,3 @@
-set allow_experimental_json_type=1;
-set allow_experimental_variant_type=1;
-set allow_experimental_dynamic_type=1;
 set enable_analyzer=1;
 set session_timezone='UTC';
 
@@ -28,4 +25,3 @@ select '{"a" : [{"aa" : [42]}]}'::JSON as json, JSONAllPathsWithTypes(arrayJoin(
 select '{"a" : [{"aa" : ["1970-01-01"]}]}'::JSON as json, JSONAllPathsWithTypes(arrayJoin(json.a[])) from remote('127.0.0.{1,2}', 'system.one');
 select '{"a" : [{"aa" : ["1970-01-01 00:00:01"]}]}'::JSON as json, JSONAllPathsWithTypes(arrayJoin(json.a[])) from remote('127.0.0.{1,2}', 'system.one');
 select '{"a" : [{"aa" : ["1970-01-01 00:00:01.000"]}]}'::JSON as json, JSONAllPathsWithTypes(arrayJoin(json.a[])) from remote('127.0.0.{1,2}', 'system.one');
-

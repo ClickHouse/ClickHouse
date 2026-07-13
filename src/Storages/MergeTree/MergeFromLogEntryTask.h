@@ -28,6 +28,9 @@ public:
     {
         if (merge_task)
             merge_task->cancel();
+
+        if (part)
+            part->removeIfNeeded();
     }
 
 protected:
@@ -44,6 +47,7 @@ private:
     TableLockHolder table_lock_holder{nullptr};
 
     MergeTreeData::DataPartsVector parts;
+    MergeTreeData::DataPartsVector patch_parts;
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     std::optional<ZeroCopyLock> zero_copy_lock;
 
@@ -53,6 +57,8 @@ private:
     Priority priority;
 
     MergeTaskPtr merge_task;
+
+    std::map<String, UInt64> projections_merge_time;
 };
 
 

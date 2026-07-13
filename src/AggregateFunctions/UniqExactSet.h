@@ -1,11 +1,16 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/VectorWithMemoryTracking.h>
+
+#include <atomic>
+#include <memory>
+#include <utility>
 
 namespace DB
 {
@@ -27,6 +32,21 @@ class UniqExactSet
 {
     static_assert(std::is_same_v<typename SingleLevelSet::value_type, typename TwoLevelSet::value_type>);
     static_assert(std::is_same_v<typename SingleLevelSet::Cell::State, HashTableNoState>);
+
+    /// Two-level set plus a flag marking whether it has been handed out to another `UniqExactSet`.
+    /// `getTwoLevelSet` sets it before the pointee escapes; `doDeepCopyIfNeeded` forks when it is set instead of
+    /// using `shared_ptr::use_count()`, which is not a cross-thread synchronization primitive (a holder dropping
+    /// its reference 2 -> 1 establishes no happens-before, so an in-place writer could race a concurrent reader).
+    struct SharedTwoLevelSet
+    {
+        TwoLevelSet set;
+        std::atomic<bool> is_shared{false};
+
+        SharedTwoLevelSet() = default;
+        explicit SharedTwoLevelSet(size_t size_hint) : set(size_hint) {}
+        template <typename Source>
+        explicit SharedTwoLevelSet(const Source & src) : set(src) {}
+    };
 
 public:
     using value_type = typename SingleLevelSet::value_type;
@@ -60,35 +80,38 @@ public:
     /// In merge, if one of the lhs and rhs is twolevelset and the other is singlelevelset, then the singlelevelset will need to convertToTwoLevel().
     /// It's not in parallel and will cost extra large time if the thread_num is large.
     /// This method will convert all the SingleLevelSet to TwoLevelSet in parallel if the hashsets are not all singlelevel or not all twolevel.
-    static void parallelizeMergePrepare(const std::vector<UniqExactSet *> & data_vec, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled)
+    /// Accepts a container of places and an accessor that returns `UniqExactSet *` for each element.
+    /// This avoids building an intermediate vector of pointers.
+    template <typename Places, typename Accessor>
+    static void parallelizeMergePrepare(const Places & places, Accessor && accessor, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled)
     {
         UInt64 single_level_set_num = 0;
         UInt64 all_single_hash_size = 0;
 
-        for (auto ele : data_vec)
+        for (size_t i = 0; i < places.size(); ++i)
         {
-            if (ele->isSingleLevel())
+            if (accessor(places[i])->isSingleLevel())
                 single_level_set_num ++;
         }
 
-        if (single_level_set_num == data_vec.size())
+        if (single_level_set_num == places.size())
         {
-            for (auto ele : data_vec)
-                all_single_hash_size += ele->size();
+            for (size_t i = 0; i < places.size(); ++i)
+                all_single_hash_size += accessor(places[i])->size();
         }
 
         /// If all the hashtables are mixed by singleLevel and twoLevel, or all singleLevel (larger than 6000 for average value), they could be converted into
         /// twoLevel hashtables in parallel and then merge together. please refer to the following PR for more details.
         /// https://github.com/ClickHouse/ClickHouse/pull/50748
         /// https://github.com/ClickHouse/ClickHouse/pull/52973
-        if ((single_level_set_num > 0 && single_level_set_num < data_vec.size()) || ((all_single_hash_size/data_vec.size()) > 6000))
+        if ((single_level_set_num > 0 && single_level_set_num < places.size()) || ((all_single_hash_size/places.size()) > 6000))
         {
             try
             {
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
-                auto thread_func = [data_vec, data_vec_atomic_index, &is_cancelled, thread_group = CurrentThread::getGroup()]()
+                auto thread_func = [&places, &accessor, data_vec_atomic_index, &is_cancelled, thread_group = getCurrentThreadGroup()]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, "UniqExaConvert");
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::UNIQ_EXACT_CONVERT);
 
                     while (true)
                     {
@@ -96,10 +119,10 @@ public:
                             return;
 
                         const auto i = data_vec_atomic_index->fetch_add(1);
-                        if (i >= data_vec.size())
+                        if (i >= places.size())
                             return;
-                        if (data_vec[i]->isSingleLevel())
-                            data_vec[i]->convertToTwoLevel();
+                        if (accessor(places[i])->isSingleLevel())
+                            accessor(places[i])->convertToTwoLevel();
                     }
                 };
                 for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
@@ -115,8 +138,97 @@ public:
         }
     }
 
+    /// Batch merge multiple UniqExactSet into the first one in parallel.
+    /// Each thread processes one bucket at a time across all hash tables,
+    /// reducing thread pool overhead from O(N) to O(1) compared to pairwise merge.
+    /// Accepts a container of places and an accessor that returns `UniqExactSet *` for each element.
+    template <typename Places, typename Accessor>
+    static void parallelizeMergeMulti(const Places & places, Accessor && accessor, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled)
+    {
+        if (places.size() <= 1)
+            return;
+
+        auto * first = accessor(places[0]);
+
+        /// If not all are two-level, fall back to pairwise merge with thread pool.
+        bool all_two_level = true;
+        for (size_t i = 0; i < places.size(); ++i)
+        {
+            if (!accessor(places[i])->isTwoLevel())
+            {
+                all_two_level = false;
+                break;
+            }
+        }
+
+        if (!all_two_level)
+        {
+            for (size_t j = 1; j < places.size(); ++j)
+            {
+                if (is_cancelled.load(std::memory_order_seq_cst))
+                    return;
+                first->merge(*accessor(places[j]), &thread_pool, &is_cancelled);
+            }
+            return;
+        }
+
+        /// All sets are two-level, perform parallel bucket-wise merge.
+        auto & first_two_level = first->asTwoLevelChecked();
+        constexpr size_t NUM_BUCKETS = TwoLevelSet::NUM_BUCKETS;
+
+        /// Pre-fetch all two-level set pointers to avoid concurrent access to getTwoLevelSet().
+        VectorWithMemoryTracking<TwoLevelSet *> two_level_ptrs;
+        two_level_ptrs.reserve(places.size());
+        for (size_t i = 0; i < places.size(); ++i)
+            two_level_ptrs.emplace_back(&accessor(places[i])->asTwoLevelChecked());
+
+        ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::UNIQ_EXACT_MERGER);
+        try
+        {
+            auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
+
+            auto thread_func = [&two_level_ptrs, &first_two_level, next_bucket_to_merge, &is_cancelled]()
+            {
+                while (true)
+                {
+                    if (is_cancelled.load(std::memory_order_seq_cst))
+                        return;
+
+                    const auto bucket = next_bucket_to_merge->fetch_add(1);
+                    if (bucket >= NUM_BUCKETS)
+                        return;
+
+                    for (size_t j = 1; j < two_level_ptrs.size(); ++j)
+                    {
+                        if (is_cancelled.load(std::memory_order_seq_cst))
+                            return;
+
+                        first_two_level.impls[bucket].merge(two_level_ptrs[j]->impls[bucket]);
+                    }
+                }
+            };
+
+            const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool.getMaxThreads(), NUM_BUCKETS);
+            for (size_t i = 0; i < max_threads_to_enqueue
+                 && next_bucket_to_merge->load(std::memory_order_relaxed) < NUM_BUCKETS; ++i)
+                runner.enqueueAndKeepTrack(thread_func, Priority{});
+        }
+        catch (...)
+        {
+            is_cancelled.store(true);
+            throw;
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr, std::atomic<bool> * is_cancelled = nullptr)
     {
+        if (size() == 0 && worthConvertingToTwoLevel(other.size()))
+        {
+            two_level_set = other.getTwoLevelSet();
+            return;
+        }
+
         if (isSingleLevel() && other.isTwoLevel())
             convertToTwoLevel();
 
@@ -126,9 +238,14 @@ public:
         }
         else
         {
-            auto & lhs = asTwoLevel();
+            auto & lhs = asTwoLevelChecked();
+
+            if (other.isSingleLevel())
+                return lhs.merge(other.asSingleLevel());
+
+            /// `getTwoLevelSet` marked the pointee shared, so no other holder mutates it in place while we read it.
             const auto rhs_ptr = other.getTwoLevelSet();
-            const auto & rhs = *rhs_ptr;
+            const auto & rhs = rhs_ptr->set;
             if (!thread_pool)
             {
                 for (size_t i = 0; i < rhs.NUM_BUCKETS; ++i)
@@ -138,12 +255,14 @@ public:
             }
             else
             {
-                ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, "UniqExactMerger");
+
+                /// Usage of lhs and rhs is fine. The references belong to *this and will outlive `runner`, so the order of destruction is ok
+                ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::UNIQ_EXACT_MERGER);
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, thread_group = CurrentThread::getGroup()]()
+                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled]()
                     {
                         while (true)
                         {
@@ -157,15 +276,17 @@ public:
                         }
                     };
 
-                    for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
-                        runner(thread_func, Priority{});
-                    runner.waitForAllToFinishAndRethrowFirstError();
+                    const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
+                    for (size_t i = 0; i < max_threads_to_enqueue
+                         && next_bucket_to_merge->load(std::memory_order_relaxed) < rhs.NUM_BUCKETS; ++i)
+                        runner.enqueueAndKeepTrack(thread_func, Priority{});
                 }
                 catch (...)
                 {
                     is_cancelled->store(true);
-                    runner.waitForAllToFinishAndRethrowFirstError();
+                    throw;
                 }
+                runner.waitForAllToFinishAndRethrowFirstError();
             }
         }
     }
@@ -180,7 +301,7 @@ public:
 
         if (worthConvertingToTwoLevel(new_size))
         {
-            two_level_set = std::make_shared<TwoLevelSet>(new_size);
+            two_level_set = std::make_shared<SharedTwoLevelSet>(new_size);
             for (size_t i = 0; i < new_size; ++i)
             {
                 typename SingleLevelSet::Cell x;
@@ -212,17 +333,29 @@ public:
 
     size_t size() const { return isSingleLevel() ? asSingleLevel().size() : asTwoLevel().size(); }
 
-    /// To convert set to two level before merging (we cannot just call convertToTwoLevel() on right hand side set, because it is declared const).
-    std::shared_ptr<TwoLevelSet> getTwoLevelSet() const
+    /// Hand out the two-level pointee for reading or merging. It is `const` and may run concurrently for the same
+    /// source (ROLLUP/CUBE/GROUPING SETS merge one state into several destinations at once), so it must not mutate the
+    /// buckets. Marking the pointee shared before it escapes lets `doDeepCopyIfNeeded` fork before any later in-place
+    /// mutation, keeping the shared instance read-only. A freshly built pointee is solely owned by the caller, so it
+    /// stays unshared and mutable in place.
+    std::shared_ptr<SharedTwoLevelSet> getTwoLevelSet() const
     {
-        return two_level_set ? two_level_set : std::make_shared<TwoLevelSet>(asSingleLevel());
+        if (two_level_set)
+        {
+            two_level_set->is_shared.store(true, std::memory_order_release);
+            return two_level_set;
+        }
+        return std::make_shared<SharedTwoLevelSet>(asSingleLevel());
     }
 
     static bool worthConvertingToTwoLevel(size_t size) { return size > 100'000; }
 
     void convertToTwoLevel()
     {
-        two_level_set = getTwoLevelSet();
+        /// Already two-level: rebuilding from the cleared single-level set would drop the data.
+        if (two_level_set)
+            return;
+        two_level_set = std::make_shared<SharedTwoLevelSet>(asSingleLevel());
         single_level_set.clear();
     }
 
@@ -233,10 +366,31 @@ private:
     SingleLevelSet & asSingleLevel() { return single_level_set; }
     const SingleLevelSet & asSingleLevel() const { return single_level_set; }
 
-    TwoLevelSet & asTwoLevel() { return *two_level_set; }
-    const TwoLevelSet & asTwoLevel() const { return *two_level_set; }
+    TwoLevelSet & asTwoLevelChecked()
+    {
+        doDeepCopyIfNeeded();
+        return two_level_set->set;
+    }
+
+    TwoLevelSet & asTwoLevel() { return two_level_set->set; }
+    const TwoLevelSet & asTwoLevel() const { return two_level_set->set; }
+
+    /// Fork a private copy before mutating a pointee that may be shared (adopted by another `UniqExactSet` via the fast
+    /// path in `merge`, or handed out for reading). Forks on the pointee's `is_shared` flag, not `shared_ptr::use_count()`,
+    /// which is not a cross-thread synchronization primitive. The fork is solely owned, so later mutations stay in place.
+    void doDeepCopyIfNeeded()
+    {
+        if (two_level_set && two_level_set->is_shared.load(std::memory_order_acquire))
+        {
+            const auto & src = two_level_set->set;
+            auto copy = std::make_shared<SharedTwoLevelSet>(src.size());
+            for (size_t i = 0; i < TwoLevelSet::NUM_BUCKETS; ++i)
+                copy->set.impls[i].merge(src.impls[i]);
+            two_level_set = std::move(copy);
+        }
+    }
 
     SingleLevelSet single_level_set;
-    std::shared_ptr<TwoLevelSet> two_level_set;
+    std::shared_ptr<SharedTwoLevelSet> two_level_set;
 };
 }

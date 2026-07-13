@@ -1,17 +1,36 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
+#include <Interpreters/castColumn.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
+#include <Common/Exception.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/MapToRange.h>
 #include <Common/PODArray.h>
 
 namespace DB
 {
-ScatterByPartitionTransform::ScatterByPartitionTransform(Block header, size_t output_size_, ColumnNumbers key_columns_)
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+ScatterByPartitionTransform::ScatterByPartitionTransform(SharedHeader header, size_t output_size_, ColumnNumbers key_columns_, DataTypes hash_cast_types_)
     : IProcessor(InputPorts{header}, OutputPorts{output_size_, header})
     , output_size(output_size_)
     , key_columns(std::move(key_columns_))
+    , hash_cast_types(std::move(hash_cast_types_))
     , hash(0)
-{}
+{
+    if (!hash_cast_types.empty() && hash_cast_types.size() != key_columns.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "ScatterByPartitionTransform: hash_cast_types size ({}) does not match key columns size ({})",
+            hash_cast_types.size(), key_columns.size());
+
+    hash_input_types.reserve(key_columns.size());
+    for (const auto & column_number : key_columns)
+        hash_input_types.push_back(header->getByPosition(column_number).type);
+}
 
 IProcessor::Status ScatterByPartitionTransform::prepare()
 {
@@ -85,6 +104,13 @@ void ScatterByPartitionTransform::work()
         if (output.isFinished())
             continue;
 
+        if (output_chunk.getNumRows() == 0 && output_chunk.getChunkInfos().empty())
+        {
+            /// Avoid pushing empty data chunks downstream.
+            was_processed = true;
+            continue;
+        }
+
         if (!output.canPush())
         {
             all_outputs_processed = false;
@@ -107,18 +133,48 @@ void ScatterByPartitionTransform::generateOutputChunks()
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
 
-    hash.reset(num_rows);
-
-    for (const auto & column_number : key_columns)
-        hash.update(columns[column_number]->getWeakHash32());
-
-    const auto & hash_data = hash.getData();
-    IColumn::Selector selector(num_rows);
-
-    for (size_t row = 0; row < num_rows; ++row)
-        selector[row] = hash_data[row] % output_size;
-
     output_chunks.resize(output_size);
+
+    /// Special case for 0 key columns. It is an unlikely but still valid case.
+    if (key_columns.empty())
+    {
+        /// Put all rows into the first bucket
+        if (output_size > 0)
+            output_chunks[0] = Chunk(columns, num_rows);
+        /// All other buckets are empty
+        if (output_size > 1)
+        {
+            Chunk empty_chunk(chunk.cloneEmptyColumns(), 0);
+            for (size_t i = 1; i < output_size; ++i)
+                output_chunks[i] = Chunk(empty_chunk.getColumns(), 0);
+        }
+
+        return;
+    }
+
+    chassert(!columns.empty());
+
+    /// Cast to size_t to select the (count, value) overload of `assign`: on Darwin `UInt64` is
+    /// `unsigned long long` while `size_t` is `unsigned long`, so without the cast the iterator-pair
+    /// overload would be deduced and fail to compile.
+    hash.assign(static_cast<size_t>(num_rows), WEAK_HASH32_INITIAL_VALUE);
+
+    for (size_t i = 0; i < key_columns.size(); ++i)
+    {
+        const auto & column = columns[key_columns[i]];
+        const auto & cast_type = hash_cast_types.empty() ? nullptr : hash_cast_types[i];
+        if (cast_type && !cast_type->equals(*hash_input_types[i]))
+        {
+            auto casted = castColumn({column, hash_input_types[i], ""}, cast_type);
+            casted->computeHashInto(0, num_rows, hash.data(), false);
+        }
+        else
+            column->computeHashInto(0, num_rows, hash.data(), false);
+    }
+
+    selector.resize(num_rows);
+    mapToRange(hash.data(), num_rows, static_cast<UInt32>(output_size), selector.data());
+
     for (const auto & column : columns)
     {
         auto filtered_columns = column->scatter(output_size, selector);

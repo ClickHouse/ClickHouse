@@ -1,0 +1,11 @@
+Check behavior with THROW
+Check behavior with COMPATIBILITY
+Check behavior with REBUILD
+test_compact	idx_minmax	Emtpy : false
+test_wide	idx_minmax	Emtpy : false
+Check behavior with DROP
+test_compact	idx_minmax	Emtpy : true
+test_wide	idx_minmax	Emtpy : true
+Check REBUILD after DROP (parts without index)
+test_compact	idx_minmax	Emtpy : false
+test_wide	idx_minmax	Emtpy : false

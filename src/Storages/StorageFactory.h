@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
@@ -73,7 +74,12 @@ public:
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
         bool supports_schema_inference = false;
-        AccessType source_access_type = AccessType::NONE;
+        /// Whether `UNIQUE KEY` is accepted at CREATE time. Currently set only on
+        /// non-replicated MergeTree variants — replicated metadata does not yet
+        /// serialize `unique_key`, which would allow replicas to diverge silently.
+        bool supports_unique_key = false;
+        bool supports_sql_security = false;
+        std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
     };
@@ -83,6 +89,7 @@ public:
     {
         CreatorFn creator_fn;
         StorageFeatures features;
+        Documentation documentation;
     };
 
     using Storages = std::unordered_map<std::string, Creator>;
@@ -109,18 +116,20 @@ public:
         .supports_deduplication = false,
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
-        .source_access_type = AccessType::NONE,
+        .supports_unique_key = false,
+        .supports_sql_security = false,
+        .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
-    });
+    }, Documentation documentation = {});
 
     const Storages & getAllStorages() const
     {
         return storages;
     }
 
-    std::vector<String> getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
-        std::vector<String> result;
+        VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(storages.begin(), storages.end(), std::back_inserter(result), getter);
         return result;
@@ -136,7 +145,7 @@ public:
         return result;
     }
 
-    AccessType getSourceAccessType(const String & table_engine) const;
+    std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
 

@@ -1,5 +1,7 @@
 #include <Storages/StorageBuffer.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Columns/ColumnConst.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Interpreters/Context.h>
@@ -29,17 +31,23 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
+#include <Columns/IColumn.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -94,7 +102,6 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
-
 std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForReading() const
 {
     return lockImpl(/* read= */true);
@@ -138,6 +145,11 @@ StoragePtr StorageBuffer::getDestinationTable() const
 }
 
 
+std::string StorageBuffer::Thresholds::toString() const
+{
+    return fmt::format("time={}, rows={}, bytes={}", time, rows, bytes);
+}
+
 StorageBuffer::StorageBuffer(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
@@ -166,13 +178,15 @@ StorageBuffer::StorageBuffer(
     if (columns_.empty())
     {
         auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr()->getColumns());
+        auto dest_table_metadata = dest_table->getInMemoryMetadataPtr(context_, false);
+        storage_metadata.setColumns(dest_table_metadata->getColumns());
     }
     else
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     if (num_shards > 1)
@@ -181,19 +195,39 @@ StorageBuffer::StorageBuffer(
             CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
             num_shards, 0, num_shards);
     }
-    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
+    flush_handle = bg_pool.createTask(getStorageID(), log->name() + "/Bg", [this]{ backgroundFlush(); });
+
+    LOG_TRACE(log, "Buffer(flush: ({}), min: ({}), max: ({}))", flush_thresholds.toString(), min_thresholds.toString(), max_thresholds.toString());
 }
 
+VirtualColumnsDescription StorageBuffer::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    return desc;
+}
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferSource : public ISource
+class BufferSource final : public ISource
 {
+    ColumnPtr fillVirtualColumn(const String & name, const DataTypePtr & type, size_t num_rows) const
+    {
+        if (name == "_table")
+            return type->createColumnConst(num_rows, storage_id.getTableName())->convertToFullColumnIfConst();
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual column: '{}'", name);
+    }
+
 public:
-    BufferSource(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageSnapshotPtr & storage_snapshot)
-        : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
-        , column_names_and_types(storage_snapshot->getColumnsByNames(
-            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
+    BufferSource(
+        const Names & column_names_,
+        StorageBuffer::Buffer & buffer_,
+        const StorageSnapshotPtr & storage_snapshot,
+        const StorageID & storage_id_)
+        : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
         , buffer(buffer_)
+        , storage_id(storage_id_)
+        , metadata(storage_snapshot->metadata)
         , metadata_version(storage_snapshot->metadata->metadata_version) {}
 
     String getName() const override { return "Buffer"; }
@@ -213,20 +247,27 @@ protected:
             return res;
 
         Columns columns;
-        columns.reserve(column_names_and_types.size());
+        columns.reserve(getPort().getHeader().columns());
+        for (const auto & packed : getPort().getHeader().getNamesAndTypes())
+        {
+            const auto & [name, type] = packed;
 
-        for (const auto & elem : column_names_and_types)
-            columns.emplace_back(getColumnFromBlock(buffer.data, elem));
+            if (metadata->isVirtualColumn(name))
+                columns.push_back(fillVirtualColumn(name, type, buffer.data.rows()));
+            else if (auto physical_column = tryGetColumnFromBlock(buffer.data, metadata->columns.getColumnOrSubcolumn(GetColumnsOptions::All, name)))
+                columns.push_back(std::move(physical_column));
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column or subcolumn '{}' not found in Buffer table", name);
+        }
 
-        UInt64 size = columns.at(0)->size();
-        res.setColumns(std::move(columns), size);
-
+        res.setColumns(std::move(columns), buffer.data.rows());
         return res;
     }
 
 private:
-    NamesAndTypesList column_names_and_types;
     StorageBuffer::Buffer & buffer;
+    StorageID storage_id;
+    StorageMetadataPtr metadata;
     int32_t metadata_version;
     bool has_been_read = false;
 };
@@ -240,7 +281,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
-        const auto & destination_metadata = destination->getInMemoryMetadataPtr();
+        const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
         return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
     }
 
@@ -263,8 +304,9 @@ void StorageBuffer::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    bool enable_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    storage_snapshot->check(column_names);
 
+    bool enable_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
     if (enable_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
     {
         /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
@@ -290,18 +332,19 @@ void StorageBuffer::read(
 
     if (auto destination = getDestinationTable())
     {
+        local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), column_names);
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
+        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
+        auto destination_columns = destination_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+        auto our_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
 
-        const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [metadata_snapshot, destination_metadata_snapshot](const String& column_name)
+        const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [&](const String & column_name)
         {
-            const auto & dest_columns = destination_metadata_snapshot->getColumns();
-            const auto & our_columns = metadata_snapshot->getColumns();
-            auto dest_columm = dest_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
-            return dest_columm && dest_columm->type->equals(*our_columns.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name).type);
+            auto dest_column = destination_columns.tryGetByName(column_name);
+            return dest_column && dest_column->type->equals(*our_columns.tryGetByName(column_name)->type);
         });
 
         if (dst_has_same_structure)
@@ -320,22 +363,20 @@ void StorageBuffer::read(
             const Block header = metadata_snapshot->getSampleBlock();
             Names columns_intersection = column_names;
             Block header_after_adding_defaults = header;
-            const auto & dest_columns = destination_metadata_snapshot->getColumns();
-            const auto & our_columns = metadata_snapshot->getColumns();
             for (const String & column_name : column_names)
             {
-                if (!dest_columns.hasPhysical(column_name))
+                auto dest_column = destination_columns.tryGetByName(column_name);
+                if (!dest_column)
                 {
                     LOG_WARNING(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
                     std::erase(columns_intersection, column_name);
                     continue;
                 }
-                const auto & dst_col = dest_columns.getPhysical(column_name);
-                const auto & col = our_columns.getPhysical(column_name);
-                if (!dst_col.type->equals(*col.type))
+                auto our_column = our_columns.tryGetByName(column_name);
+                if (!dest_column->type->equals(*our_column->type))
                 {
-                    LOG_WARNING(log, "Destination table {} has different type of column {} ({} != {}). Data from destination table are converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name), dst_col.type->getName(), col.type->getName());
-                    header_after_adding_defaults.getByName(column_name) = ColumnWithTypeAndName(dst_col.type, column_name);
+                    LOG_WARNING(log, "Destination table {} has different type of column {} ({} != {}). Data from destination table are converted.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name), dest_column->type->getName(), our_column->type->getName());
+                    header_after_adding_defaults.getByName(column_name) = ColumnWithTypeAndName(dest_column->type, column_name);
                 }
             }
 
@@ -346,27 +387,36 @@ void StorageBuffer::read(
             else
             {
                 auto src_table_query_info = query_info;
+                ActionsDAG converting_dag;
+                if (src_table_query_info.prewhere_info || src_table_query_info.row_level_filter)
+                {
+                    converting_dag = ActionsDAG::makeConvertingActions(
+                        header_after_adding_defaults.getColumnsWithTypeAndName(),
+                        header.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Name,
+                        local_context);
+                }
+
+                if (src_table_query_info.row_level_filter)
+                {
+                    auto row_level_filter = std::make_shared<FilterDAGInfo>();
+                    row_level_filter->column_name = src_table_query_info.row_level_filter->column_name;
+                    row_level_filter->do_remove_column = src_table_query_info.row_level_filter->do_remove_column;
+
+                    row_level_filter->actions = ActionsDAG::merge(
+                        converting_dag.clone(),
+                        src_table_query_info.row_level_filter->actions.clone());
+
+                    row_level_filter->actions.removeUnusedActions();
+                    src_table_query_info.row_level_filter = std::move(row_level_filter);
+                }
+
                 if (src_table_query_info.prewhere_info)
                 {
-                    src_table_query_info.prewhere_info = src_table_query_info.prewhere_info->clone();
-
-                    auto actions_dag = ActionsDAG::makeConvertingActions(
-                            header_after_adding_defaults.getColumnsWithTypeAndName(),
-                            header.getColumnsWithTypeAndName(),
-                            ActionsDAG::MatchColumnsMode::Name);
-
-                    if (src_table_query_info.prewhere_info->row_level_filter)
-                    {
-                        src_table_query_info.prewhere_info->row_level_filter = ActionsDAG::merge(
-                            actions_dag.clone(),
-                            std::move(*src_table_query_info.prewhere_info->row_level_filter));
-
-                        src_table_query_info.prewhere_info->row_level_filter->removeUnusedActions();
-                    }
-
+                    src_table_query_info.prewhere_info = std::make_shared<PrewhereInfo>(src_table_query_info.prewhere_info->clone());
                     {
                         src_table_query_info.prewhere_info->prewhere_actions = ActionsDAG::merge(
-                            actions_dag.clone(),
+                            converting_dag.clone(),
                             std::move(src_table_query_info.prewhere_info->prewhere_actions));
 
                         src_table_query_info.prewhere_info->prewhere_actions.removeUnusedActions();
@@ -385,7 +435,7 @@ void StorageBuffer::read(
                       * Instead, we rely on the converting actions at the end of this function.
                       */
                     auto actions = addMissingDefaults(
-                            query_plan.getCurrentHeader(),
+                            *query_plan.getCurrentHeader(),
                             header_after_adding_defaults.getNamesAndTypesList(),
                             metadata_snapshot->getColumns(),
                             local_context);
@@ -398,9 +448,10 @@ void StorageBuffer::read(
                     query_plan.addStep(std::move(adding_missed));
 
                     auto actions_dag = ActionsDAG::makeConvertingActions(
-                            query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
+                            query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
-                            ActionsDAG::MatchColumnsMode::Name);
+                            ActionsDAG::MatchColumnsMode::Name,
+                            local_context);
 
                     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
 
@@ -422,13 +473,13 @@ void StorageBuffer::read(
         Pipes pipes_from_buffers;
         pipes_from_buffers.reserve(num_shards);
         for (auto & buf : buffers)
-            pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
+            pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot, getStorageID()));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
         if (query_info.input_order_info)
         {
             /// Each buffer has one block, and it not guaranteed that rows in each block are sorted by order keys
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
+            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<PartialSortingTransform>(header, query_info.input_order_info->sort_description_for_merging, 0);
             });
@@ -452,11 +503,10 @@ void StorageBuffer::read(
                     getStorageID(),
                     storage_snapshot->getAllColumnsDescription(),
                     std::move(pipe_from_buffers),
-                    *getVirtualsPtr());
+                    storage_snapshot->metadata->virtuals);
 
-            auto interpreter = InterpreterSelectQueryAnalyzer(
-                    query_info.query, local_context, storage,
-                    SelectQueryOptions(processed_stage));
+            auto interpreter
+                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
             interpreter.addStorageLimits(*query_info.storage_limits);
             buffers_plan = std::move(interpreter).extractQueryPlan();
         }
@@ -471,25 +521,25 @@ void StorageBuffer::read(
     }
     else
     {
+        if (query_info.row_level_filter)
+        {
+            ExpressionActionsSettings actions_settings(local_context);
+            auto actions = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone(), actions_settings);
+            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(
+                        header,
+                        actions,
+                        query_info.row_level_filter->column_name,
+                        query_info.row_level_filter->do_remove_column);
+            });
+        }
+
         if (query_info.prewhere_info)
         {
             ExpressionActionsSettings actions_settings(local_context);
-
-            if (query_info.prewhere_info->row_level_filter)
-            {
-                auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->row_level_filter->clone(), actions_settings);
-                pipe_from_buffers.addSimpleTransform([&](const Block & header)
-                {
-                    return std::make_shared<FilterTransform>(
-                            header,
-                            actions,
-                            query_info.prewhere_info->row_level_column_name,
-                            false);
-                });
-            }
-
             auto actions = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone(), actions_settings);
-            pipe_from_buffers.addSimpleTransform([&](const Block & header)
+            pipe_from_buffers.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FilterTransform>(
                         header,
@@ -516,18 +566,19 @@ void StorageBuffer::read(
     auto result_header = buffers_plan.getCurrentHeader();
 
     /// Convert structure from table to structure from buffer.
-    if (!blocksHaveEqualStructure(query_plan.getCurrentHeader(), result_header))
+    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
-                result_header.getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
+                query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+                result_header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                local_context);
 
         auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
         query_plan.addStep(std::move(converting));
     }
 
-    Headers input_headers;
+    SharedHeaders input_headers;
     input_headers.emplace_back(query_plan.getCurrentHeader());
     input_headers.emplace_back(buffers_plan.getCurrentHeader());
 
@@ -545,10 +596,9 @@ void StorageBuffer::read(
 static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 {
     size_t rows = from.rows();
-    size_t old_rows = to.rows();
     size_t old_bytes = to.bytes();
 
-    if (!to)
+    if (to.empty())
         to = from.cloneEmpty();
 
     assertBlocksHaveEqualStructure(from, to, "Buffer");
@@ -556,7 +606,15 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
     from.checkNumberOfRows();
     to.checkNumberOfRows();
 
+    /// Take checkpoints of all destination columns before any modifications
+    /// to be able to rollback in case of an exception in the middle of insertion.
+    ColumnCheckpoints checkpoints;
+    checkpoints.reserve(to.columns());
+    for (size_t column_no = 0; column_no < to.columns(); ++column_no)
+        checkpoints.push_back(to.getByPosition(column_no).column->getCheckpoint());
+
     MutableColumnPtr last_col;
+    size_t mutated_columns = 0;
     try
     {
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
@@ -582,6 +640,7 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
                 LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
                 last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
             }
+            ++mutated_columns;
 
             /// In case of ColumnAggregateFunction aggregate states will
             /// be allocated from the query context but can be destroyed from the
@@ -614,10 +673,11 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 
         try
         {
-            for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+            for (size_t column_no = 0; column_no < mutated_columns; ++column_no)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
-                /// If there is no column, then the exception was thrown in the middle of append, in the insertRangeFrom()
+                /// If there is no column, the exception was thrown in the middle of append,
+                /// during insertRangeFrom() — move last_col back so we can roll it back.
                 if (!col_to)
                 {
                     col_to = std::move(last_col);
@@ -627,8 +687,11 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
                 /// But if there is still nothing, abort
                 if (!col_to)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "No column to rollback");
-                if (col_to->size() != old_rows)
-                    col_to = col_to->cut(0, old_rows);
+
+                /// Rollback to the state before the exception.
+                auto mutable_col = IColumn::mutate(std::move(col_to));
+                mutable_col->rollback(*checkpoints[column_no]);
+                col_to = std::move(mutable_col);
             }
         }
         catch (...)
@@ -642,13 +705,14 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 }
 
 
-class BufferSink : public SinkToStorage
+class BufferSink final : public SinkToStorage, WithContext
 {
 public:
     explicit BufferSink(
         StorageBuffer & storage_,
-        const StorageMetadataPtr & metadata_snapshot_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        const StorageMetadataPtr & metadata_snapshot_,
+        const ContextPtr & context_)
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
     {
@@ -669,6 +733,7 @@ public:
         StoragePtr destination = storage.getDestinationTable();
         if (destination)
         {
+            getContext()->checkAccess(AccessType::INSERT, destination->getStorageID());
             destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.getContext());
             if (destination.get() == &storage)
                 throw Exception(ErrorCodes::INFINITE_LOOP, "Destination table is myself. Write will cause infinite loop.");
@@ -727,7 +792,7 @@ public:
         insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version);
         least_busy_lock.unlock();
 
-        storage.reschedule();
+        storage.reschedule(0);
     }
 private:
     StorageBuffer & storage;
@@ -748,6 +813,7 @@ private:
               *  an exception will be thrown, and new data will not be added to the buffer.
               */
 
+            LOG_DEBUG(storage.log, "Flush buffer by threshold");
             storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
             buffer.metadata_version = metadata_version;
         }
@@ -766,9 +832,9 @@ private:
 };
 
 
-SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
+SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
-    return std::make_shared<BufferSink>(*this, metadata_snapshot);
+    return std::make_shared<BufferSink>(*this, metadata_snapshot, local_context);
 }
 
 
@@ -792,7 +858,8 @@ void StorageBuffer::flushAndPrepareForShutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
+        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        optimize(nullptr /*query*/, metadata_snapshot, {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
     }
     catch (...)
     {
@@ -833,6 +900,7 @@ bool StorageBuffer::optimize(
     if (cleanup)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type Buffer");
 
+    LOG_DEBUG(log, "Running optimize of buffers.");
     flushAllBuffers(false);
     return true;
 }
@@ -841,6 +909,13 @@ bool StorageBuffer::supportsPrewhere() const
 {
     if (auto destination = getDestinationTable())
         return destination->supportsPrewhere();
+    return false;
+}
+
+bool StorageBuffer::supportsOptimizationToSubcolumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportsOptimizationToSubcolumns();
     return false;
 }
 
@@ -912,12 +987,13 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
     if (flush_pool)
-        runner.emplace(*flush_pool, "BufferFlush");
+        runner.emplace(*flush_pool, ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
     for (auto & buf : buffers)
     {
         if (runner)
         {
-            (*runner)([&]()
+            /// Passing buf as a reference is fine since it's a reference to this, which outlives the runner
+            runner->enqueueAndKeepTrack([this, &buf, check_thresholds]()
             {
                 flushBuffer(buf, check_thresholds, false);
             });
@@ -1015,7 +1091,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
 void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
 {
-    if (!destination_id || !block)
+    if (!destination_id || block.empty())
         return;
 
     if (!table)
@@ -1023,11 +1099,11 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         LOG_ERROR(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
-    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
 
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = destination_id;
 
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
@@ -1062,11 +1138,11 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     if (block_to_write.columns() != block.columns())
         LOG_WARNING(log, "Not all columns from block in buffer exist in destination table {}. Some columns are discarded.", destination_id.getNameForLogs());
 
-    auto list_of_columns = std::make_shared<ASTExpressionList>();
+    auto list_of_columns = make_intrusive<ASTExpressionList>();
     insert->columns = list_of_columns;
     list_of_columns->children.reserve(block_to_write.columns());
     for (const auto & column : block_to_write)
-        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
+        list_of_columns->children.push_back(make_intrusive<ASTIdentifier>(column.name));
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
@@ -1091,6 +1167,7 @@ void StorageBuffer::backgroundFlush()
 {
     try
     {
+        LOG_DEBUG(log, "Running background flush of buffers.");
         flushAllBuffers(true);
     }
     catch (...)
@@ -1098,13 +1175,14 @@ void StorageBuffer::backgroundFlush()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    reschedule();
+    reschedule(BACKGROUND_RESCHEDULE_MIN_DELAY);
 }
 
-void StorageBuffer::reschedule()
+void StorageBuffer::reschedule(size_t min_delay)
 {
     time_t min_first_write_time = std::numeric_limits<time_t>::max();
-    time_t rows = 0;
+    size_t rows = 0;
+    size_t processed_buffers = 0;
 
     for (auto & buffer : buffers)
     {
@@ -1120,7 +1198,8 @@ void StorageBuffer::reschedule()
         std::unique_lock lock(buffer.tryLock());
         if (lock.owns_lock())
         {
-            if (buffer.data)
+            ++processed_buffers;
+            if (!buffer.data.empty())
             {
                 min_first_write_time = std::min(min_first_write_time, buffer.first_write_time);
                 rows += buffer.data.rows();
@@ -1130,15 +1209,37 @@ void StorageBuffer::reschedule()
 
     /// will be rescheduled via INSERT
     if (!rows)
+    {
+        LOG_TRACE(log, "Skipping reschedule (processed buffers: {})", processed_buffers);
         return;
+    }
 
     time_t current_time = time(nullptr);
     time_t time_passed = current_time - min_first_write_time;
 
-    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 1);
-    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 1);
-    size_t flush = std::max<ssize_t>(flush_thresholds.time - time_passed, 1);
-    flush_handle->scheduleAfter(std::min({min, max, flush}) * 1000);
+    /// checkThresholdsImpl() uses strict comparison (> not >=), so we need to add offset to original time values
+    static constexpr time_t THRESHOLD_COMPARISON_OFFSET = 1;
+
+    /// For minimal threshold min_delay is ignored, since otherwise it will be triggered too frequently, once it is reached
+    /// (while the Buffer cannot be flushed due to other min thresholds).
+    size_t min = std::max<ssize_t>(min_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, 1);
+    size_t max = std::max<ssize_t>(max_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, min_delay);
+    size_t reschedule_sec = 0;
+    if (flush_thresholds.time)
+    {
+        size_t flush = std::max<ssize_t>(flush_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, min_delay);
+        reschedule_sec = std::min({min, max, flush});
+    }
+    else
+    {
+        reschedule_sec = std::min({min, max});
+    }
+    /// Schedule flush in background immediately, otherwise in case of frequent INSERTs we will never schedule the background flush
+    if (reschedule_sec == 0)
+        flush_handle->schedule();
+    else
+        flush_handle->scheduleAfter(reschedule_sec * 1000);
+    LOG_TRACE(log, "Reschedule in {} sec (processed buffers: {}, rows in processed buffers: {}, time passed: {})", reschedule_sec, processed_buffers, rows, time_passed);
 }
 
 void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
@@ -1185,7 +1286,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
 {
     auto table_id = getStorageID();
     checkAlterIsPossible(params, local_context);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
     optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
@@ -1193,11 +1294,11 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
     new_metadata.metadata_version += 1;
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, true);
     setInMemoryMetadata(new_metadata);
 }
 
-UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
+static UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
 {
     /**
       * Do not force UInt64 type for args, otherwise it'll be backward incompatible,
@@ -1219,6 +1320,7 @@ UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
     return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value);
 }
 
+void registerStorageBuffer(StorageFactory & factory);
 void registerStorageBuffer(StorageFactory & factory)
 {
     /** Buffer(db, table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
@@ -1308,7 +1410,110 @@ void registerStorageBuffer(StorageFactory & factory)
     {
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
-    });
+    },
+    Documentation{
+        .description = R"DOCS_MD(
+Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
+
+:::note
+A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/guides/best-practices/asyncinserts.md).
+:::
+
+```sql
+Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes [,flush_time [,flush_rows [,flush_bytes]]])
+```
+
+### Engine parameters {#engine-parameters}
+
+#### `database` {#database}
+
+`database` – Database name. You can use `currentDatabase()` or another constant expression that returns a string.
+
+#### `table` {#table}
+
+`table` – Table to flush data to.
+
+#### `num_layers` {#num_layers}
+
+`num_layers` – Parallelism layer. Physically, the table will be represented as `num_layers` of independent buffers.
+
+#### `min_time`, `max_time`, `min_rows`, `max_rows`, `min_bytes`, and `max_bytes` {#min_time-max_time-min_rows-max_rows-min_bytes-and-max_bytes}
+
+Conditions for flushing data from the buffer.
+
+### Optional engine parameters {#optional-engine-parameters}
+
+#### `flush_time`, `flush_rows`, and `flush_bytes` {#flush_time-flush_rows-and-flush_bytes}
+
+Conditions for flushing data from the buffer in the background (omitted or zero means no `flush*` parameters).
+
+Data is flushed from the buffer and written to the destination table if all the `min*` conditions or at least one `max*` condition are met.
+
+Also, if at least one `flush*` condition is met, a flush is initiated in the background. This differs from `max*` since `flush*` allows you to configure background flushes separately to avoid adding latency for `INSERT` queries into Buffer tables.
+
+#### `min_time`, `max_time`, and `flush_time` {#min_time-max_time-and-flush_time}
+
+Condition for the time in seconds from the moment of the first write to the buffer.
+
+#### `min_rows`, `max_rows`, and `flush_rows` {#min_rows-max_rows-and-flush_rows}
+
+Condition for the number of rows in the buffer.
+
+#### `min_bytes`, `max_bytes`, and `flush_bytes` {#min_bytes-max_bytes-and-flush_bytes}
+
+Condition for the number of bytes in the buffer.
+
+During the write operation, data is inserted into one or more random buffers (configured with `num_layers`). Or, if the data part to insert is large enough (greater than `max_rows` or `max_bytes`), it is written directly to the destination table, omitting the buffer.
+
+The conditions for flushing the data are calculated separately for each of the `num_layers` buffers. For example, if `num_layers = 16` and `max_bytes = 100000000`, the maximum RAM consumption is 1.6 GB.
+
+Example:
+
+```sql
+CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 1, 10, 100, 10000, 1000000, 10000000, 100000000)
+```
+
+Creating a `merge.hits_buffer` table with the same structure as `merge.hits` and using the Buffer engine. When writing to this table, data is buffered in RAM and later written to the 'merge.hits' table. A single buffer is created and the data is flushed if either:
+- 100 seconds have passed since the last flush (`max_time`) or
+- 1 million rows have been written (`max_rows`) or
+- 100 MB of data have been written (`max_bytes`) or
+- 10 seconds have passed (`min_time`) and 10,000 rows (`min_rows`) and 10 MB (`min_bytes`) of data have been written
+
+For example, if just one row has been written, after 100 seconds, it will be flushed, no matter what. But if many rows have been written, the data will be flushed sooner.
+
+When the server is stopped, with `DROP TABLE` or `DETACH TABLE`, buffered data is also flushed to the destination table.
+
+You can set empty strings in single quotation marks for the database and table name. This indicates the absence of a destination table. In this case, when the data flush conditions are reached, the buffer is simply cleared. This may be useful for keeping a window of data in memory.
+
+When reading from a Buffer table, data is processed both from the buffer and from the destination table (if there is one).
+Note that the Buffer table does not support an index. In other words, data in the buffer is fully scanned, which might be slow for large buffers. (For data in a subordinate table, the index that it supports will be used.)
+
+If the set of columns in the Buffer table does not match the set of columns in a subordinate table, a subset of columns that exist in both tables is inserted.
+
+If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
+The same happens if the subordinate table does not exist when the buffer is flushed.
+
+:::note
+Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. Check that this error is fixed in your release before trying to run ALTER on the Buffer table.
+:::
+
+If the server is restarted abnormally, the data in the buffer is lost.
+
+`FINAL` and `SAMPLE` do not work correctly for Buffer tables. These conditions are passed to the destination table but are not used for processing data in the buffer. If these features are required, we recommend only using the Buffer table for writing while reading from the destination table.
+
+When adding data to a Buffer table, one of the buffers is locked. This causes delays if a read operation is simultaneously being performed from the table.
+
+Data that is inserted into a Buffer table may end up in the subordinate table in a different order and in different blocks. Because of this, a Buffer table is difficult to use for writing to a CollapsingMergeTree correctly. To avoid problems, you can set `num_layers` to 1.
+
+If the destination table is replicated, some expected characteristics of replicated tables are lost when writing to a Buffer table. The random changes to the order of rows and sizes of data parts cause data deduplication to quit working, which means it is not possible to have a reliable 'exactly once' write to replicated tables.
+
+Due to these disadvantages, we can only recommend using a Buffer table in rare cases.
+
+A Buffer table is used when too many INSERTs are received from a large number of servers over a unit of time, and data can't be buffered before insertion, which means the INSERTs can't run fast enough.
+
+Note that it does not make sense to insert data one row at a time, even for Buffer tables. This will only produce a speed of a few thousand rows per second while inserting larger blocks of data can produce over a million rows per second.
+)DOCS_MD",
+        .syntax = "ENGINE = Buffer(database, table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes])"});
 }
 
 }

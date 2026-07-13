@@ -15,7 +15,7 @@ class LazyOutputFormat : public IOutputFormat
 {
 
 public:
-    explicit LazyOutputFormat(const Block & header);
+    explicit LazyOutputFormat(SharedHeader header);
 
     String getName() const override { return "LazyOutputFormat"; }
 
@@ -41,6 +41,7 @@ public:
     }
 
     bool expectMaterializedColumns() const override { return false; }
+    bool supportsSpecialSerializationKinds() const override { return true; }
 
 protected:
     void consume(Chunk chunk) override

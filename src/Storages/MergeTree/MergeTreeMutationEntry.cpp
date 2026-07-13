@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
+#include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -20,7 +21,7 @@ namespace ErrorCodes
 
 String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
 {
-    assert(block_number_);
+    chassert(block_number_);
     return fmt::format("mutation_{}.txt", block_number_);
 }
 
@@ -34,7 +35,7 @@ UInt64 MergeTreeMutationEntry::tryParseFileName(const String & file_name_)
         return 0;
     if (!checkString(".txt", file_name_buf))
         return 0;
-    assert(maybe_block_number);
+    chassert(maybe_block_number);
     return maybe_block_number;
 }
 
@@ -65,9 +66,9 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
-        if (tid.isPrehistoric())
+        if (tid.isNonTransactional())
         {
-            csn = Tx::PrehistoricCSN;
+            csn = Tx::NonTransactionalCSN;
         }
         else
         {
@@ -87,7 +88,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
 
 void MergeTreeMutationEntry::commit(UInt64 block_number_)
 {
-    assert(block_number_);
+    chassert(block_number_);
     block_number = block_number_;
     String new_file_name = versionToFileName(block_number);
     disk->moveFile(path_prefix + file_name, path_prefix + new_file_name);
@@ -121,6 +122,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     , path_prefix(path_prefix_)
     , file_name(file_name_)
     , is_temp(false)
+    , is_registered(true)
 {
     block_number = parseFileName(file_name);
     auto buf = disk->readFile(path_prefix + file_name, getReadSettings());
@@ -134,13 +136,13 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 
     *buf >> "commands: ";
-    commands->readText(*buf);
+    commands->readText(*buf, false);
     *buf >> "\n";
 
     if (buf->eof())
     {
-        tid = Tx::PrehistoricTID;
-        csn = Tx::PrehistoricCSN;
+        tid = Tx::NonTransactionalTID;
+        csn = Tx::NonTransactionalCSN;
     }
     else
     {
@@ -157,12 +159,55 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     assertEOF(*buf);
 }
 
+MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) noexcept
+    : create_time(other.create_time)
+    , commands(std::move(other.commands))
+    , disk(std::move(other.disk))
+    , path_prefix(std::move(other.path_prefix))
+    , file_name(std::exchange(other.file_name, {}))
+    , is_temp(std::exchange(other.is_temp, false))
+    , is_registered(std::exchange(other.is_registered, false))
+    , is_done(other.is_done)
+    , block_number(other.block_number)
+    , latest_failed_part(std::move(other.latest_failed_part))
+    , latest_failed_part_info(std::move(other.latest_failed_part_info))
+    , latest_fail_time(other.latest_fail_time)
+    , latest_fail_reason(std::move(other.latest_fail_reason))
+    , latest_fail_error_code_name(std::move(other.latest_fail_error_code_name))
+    , tid(other.tid)
+    , csn(other.csn)
+{
+}
+
 MergeTreeMutationEntry::~MergeTreeMutationEntry()
 {
+    if (file_name.empty())
+        return;
+
     if (is_temp && startsWith(file_name, "tmp_"))
     {
         try
         {
+            removeFile();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        return;
+    }
+
+    /// Committed to disk but never registered in `current_mutations_by_version`.
+    /// Remove the orphaned `mutation_*.txt` so it is not replayed on restart.
+    /// Mirrors the visibility of `killMutation` and `clearOldMutations`, which
+    /// log permanent mutation-file removals from their callers. See #80648.
+    if (!is_temp && !is_registered)
+    {
+        try
+        {
+            LOG_INFO(getLogger("MergeTreeMutationEntry"),
+                "Removing orphaned mutation file {} (block number {}); registration was not completed",
+                path_prefix + file_name, block_number);
             removeFile();
         }
         catch (...)

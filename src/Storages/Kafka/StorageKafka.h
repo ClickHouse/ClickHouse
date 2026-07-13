@@ -20,9 +20,10 @@
 namespace DB
 {
 
+namespace AWSMSKIAMAuth { struct OAuthBearerTokenRefreshContext; }
+
 struct KafkaSettings;
 class ReadFromStorageKafka;
-class StorageSystemKafkaConsumers;
 class ThreadStatus;
 
 template <typename TStorageKafka>
@@ -52,10 +53,14 @@ public:
 
     std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
-    bool noPushingToViews() const override { return true; }
+    bool isMessageQueue() const override { return true; }
+
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
+
+    void renameInMemory(const StorageID & new_table_id) override;
 
     void read(
         QueryPlan & query_plan,
@@ -77,7 +82,6 @@ public:
     bool prefersLargeBlocks() const override { return false; }
 
     void pushConsumer(KafkaConsumerPtr consumer);
-    KafkaConsumerPtr popConsumer();
     KafkaConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const auto & getFormatName() const { return format_name; }
@@ -93,10 +97,20 @@ public:
 
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
+
+    /// Returns the existing OAuth context, or installs `candidate` if none exists yet. Thread-safe.
+    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext>
+    ensureOAuthContext(std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> candidate)
+    {
+        std::lock_guard lock(oauth_context_mutex);
+        if (!oauth_context)
+            oauth_context = std::move(candidate);
+        return oauth_context;
+    }
 
 private:
     friend class ReadFromStorageKafka;
@@ -117,6 +131,8 @@ private:
     const SettingsChanges settings_adjustments;
 
     std::atomic<bool> mv_attached = false;
+    mutable std::mutex oauth_context_mutex;
+    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> oauth_context TSA_GUARDED_BY(oauth_context_mutex);
 
     std::vector<KafkaConsumerPtr> consumers;
 
@@ -161,9 +177,11 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
+    size_t getSchemaRegistrySkipBytes() const;
 
     bool streamToViews();
 
+    void cleanConsumersByTTL();
     void cleanConsumers();
 };
 

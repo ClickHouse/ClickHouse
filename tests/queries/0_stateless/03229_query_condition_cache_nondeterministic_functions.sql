@@ -13,7 +13,7 @@ INSERT INTO tab SELECT number, number FROM numbers(1_000_000); -- 1 mio rows sou
 SELECT '--- with move to PREWHERE';
 SET optimize_move_to_prewhere = true;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'Query conditions with non-deterministic functions must not be cached.';
 SELECT count(*) FROM tab WHERE b = rand64() SETTINGS use_query_condition_cache = true FORMAT Null;
@@ -22,7 +22,7 @@ SELECT count(*) FROM system.query_condition_cache;
 SELECT '--- without move to PREWHERE';
 SET optimize_move_to_prewhere = false;
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'Query conditions with non-deterministic functions must not be cached.';
 SELECT count(*) FROM tab WHERE b = rand64() SETTINGS use_query_condition_cache = true FORMAT Null;

@@ -30,6 +30,11 @@ public:
         READING_QUOTED_VALUE,
         // In this state, both key and value have already been collected and should be flushed. Might jump to WAITING_KEY or END.
         FLUSH_PAIR,
+        // The `READING_QUOTED_VALUE` will assert the closing quoting character is found and then flush the pair. In this case, we should not
+        // move from `FLUSH_PAIR` directly to `WAITING_FOR_KEY` because a pair delimiter has not been found. Might jump to WAITING_FOR_PAIR_DELIMITER or END
+        FLUSH_PAIR_AFTER_QUOTED_VALUE,
+        // Might jump to WAITING_KEY or END.
+        WAITING_PAIR_DELIMITER,
         END
     };
 

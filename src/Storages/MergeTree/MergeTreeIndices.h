@@ -1,18 +1,23 @@
 #pragma once
 #include "config.h"
 
+#include <Common/Documentation.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
-
 namespace DB
 {
+
+class IDataPartStorage;
 
 namespace Internal
 {
@@ -70,39 +75,14 @@ evalOrRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUs
 
 class ActionsDAG;
 class Block;
-class IDataPartStorage;
 struct MergeTreeWriterSettings;
-struct SelectQueryInfo;
-
-class GinIndexStore;
-using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
-
-struct StorageInMemoryMetadata;
-using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct MergeTreeDataPartChecksums;
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
-
-using MergeTreeIndexVersion = uint8_t;
-struct MergeTreeIndexFormat
-{
-    MergeTreeIndexVersion version;
-    const char* extension;
-
-    explicit operator bool() const { return version != 0; }
-};
-
-/// A vehicle which transports elements of the SELECT query to the vector similarity index.
-struct VectorSearchParameters
-{
-    String column;
-    String distance_function;
-    size_t limit;
-    std::vector<Float64> reference_vector;
-};
 
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
@@ -111,6 +91,10 @@ struct IMergeTreeIndexGranule
 
     /// Serialize always last version.
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
+
+    /// Serialize with multiple streams.
+    /// By analogy with ISerialization::serializeBinaryBulkWithMultipleStreams.
+    virtual void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const;
 
     /// Version of the index to deserialize:
     ///
@@ -121,11 +105,15 @@ struct IMergeTreeIndexGranule
     /// and throws LOGICAL_ERROR in case of unsupported version.
     ///
     /// See also:
-    /// - IMergeTreeIndex::getSerializedFileExtension()
+    /// - IMergeTreeIndex::getSubstreams()
     /// - IMergeTreeIndex::getDeserializedFormat()
     /// - MergeTreeDataMergerMutator::collectFilesToSkip()
     /// - MergeTreeDataMergerMutator::collectFilesForRenames()
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
+
+    /// Deserialize with multiple streams.
+    /// By analogy with ISerialization::deserializeBinaryBulkWithMultipleStreams.
+    virtual void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state);
 
     virtual bool empty() const = 0;
 
@@ -173,7 +161,8 @@ public:
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
-    virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
+    using UpdatePartialDisjunctionResultFn = KeyCondition::UpdatePartialDisjunctionResultFn;
+    virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const = 0;
 
     using FilteredGranules = std::vector<size_t>;
     virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
@@ -182,9 +171,10 @@ public:
     }
 
     /// Special method for vector similarity indexes:
-    /// Returns the row positions of the N nearest neighbors in the index granule
-    /// The returned row numbers are guaranteed to be sorted and unique.
-    virtual std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
+    /// Returns the N nearest neighbors of a reference vector in the index granule.
+    /// The nearest neighbors are returned as row positions.
+    /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
+    virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
@@ -243,6 +233,8 @@ public:
          */
         return rpn_stack.front() != Internal::RPNEvaluationIndexUsefulnessState::TRUE;
     }
+
+    virtual std::string getDescription() const = 0;
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
@@ -251,77 +243,48 @@ struct IMergeTreeIndex;
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
 
 
-/// IndexCondition that checks several indexes at the same time.
-class IMergeTreeIndexMergedCondition
-{
-public:
-    explicit IMergeTreeIndexMergedCondition(size_t granularity_)
-        : granularity(granularity_)
-    {
-    }
-
-    virtual ~IMergeTreeIndexMergedCondition() = default;
-
-    virtual void addIndex(const MergeTreeIndexPtr & index) = 0;
-    virtual bool alwaysUnknownOrTrue() const = 0;
-    virtual bool mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const = 0;
-
-protected:
-    const size_t granularity;
-};
-
-using MergeTreeIndexMergedConditionPtr = std::shared_ptr<IMergeTreeIndexMergedCondition>;
-
-
 struct IMergeTreeIndex
 {
-    explicit IMergeTreeIndex(const IndexDescription & index_)
-        : index(index_)
+    IMergeTreeIndex(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_)
+        : metadata_snapshot(std::move(metadata_snapshot_))
+        , index(index_)
     {
     }
 
     virtual ~IMergeTreeIndex() = default;
 
-    /// Returns filename without extension.
-    String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
+    /// Returns the filename without extension. If escape_filenames is set (default since 26.1), the name is escaped.
+    String getFileName() const;
     size_t getGranularity() const { return index.granularity; }
 
-    virtual bool isMergeable() const { return false; }
-
-    /// Returns extension for serialization.
+    /// Returns substreams for serialization.
     /// Reimplement if you want new index format.
     ///
-    /// NOTE: In case getSerializedFileExtension() is reimplemented,
+    /// NOTE: In case getSubstreams() is reimplemented,
     /// getDeserializedFormat() should be reimplemented too,
-    /// and check all previous extensions too
+    /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
-    virtual const char* getSerializedFileExtension() const { return ".idx"; }
+    virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
-    /// Returns extension for deserialization.
-    ///
-    /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat
-    getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const;
+    /// Returns substreams and version for deserialization. @storage is consulted so that packed
+    /// substreams (whose virtual filenames are not in @checksums) can still be discovered via
+    /// the skp_idx.packed overlay. Passing null disables the archive check.
+    virtual MergeTreeIndexFormat getDeserializedFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const std::string & relative_path_prefix,
+        const IDataPartStorage * storage) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
     /// A more optimal filtering method
-    virtual bool supportsBulkFiltering() const
-    {
-        return false;
-    }
+    virtual bool supportsBulkFiltering() const { return false; }
 
     virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
     }
 
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
-
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & /*store*/, const MergeTreeWriterSettings & settings) const
-    {
-        return createIndexAggregator(settings);
-    }
+    virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const = 0;
@@ -336,40 +299,58 @@ struct IMergeTreeIndex
     }
 
     virtual bool isVectorSimilarityIndex() const { return false; }
+    virtual bool isTextIndex() const { return false; }
 
-    virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
-        const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "MergedCondition is not implemented for index of type {}", index.type);
-    }
+    /// An inert index holds no on-disk data and cannot be (re)computed. It exists only so old
+    /// tables that still reference a removed index type stay attachable. Merge and mutation must
+    /// never schedule it for recalculation, otherwise those operations get wedged.
+    virtual bool isInert() const { return false; }
 
     Names getColumnsRequiredForIndexCalc() const;
 
+    StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
 };
 
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
 using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
 
+struct MergeTreeIndexWithCondition
+{
+    MergeTreeIndexPtr index;
+    ConditionTemplate<MergeTreeIndexConditionPtr>::Ptr condition_template;
+
+    MergeTreeIndexWithCondition(
+        MergeTreeIndexPtr index_,
+        ConditionTemplate<MergeTreeIndexConditionPtr>::Ptr condition_template_)
+        : index(std::move(index_)), condition_template(std::move(condition_template_))
+    {
+    }
+
+    MergeTreeIndexWithCondition() = default;
+};
+
+struct MergeTreeSettings;
 
 class MergeTreeIndexFactory : private boost::noncopyable
 {
 public:
     static MergeTreeIndexFactory & instance();
 
-    using Creator = std::function<MergeTreeIndexPtr(const IndexDescription & index)>;
+    using Validator = std::function<void(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)>;
+    void validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const;
 
-    using Validator = std::function<void(const IndexDescription & index, bool attach)>;
+    using Creator = std::function<MergeTreeIndexPtr(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)>;
+    MergeTreeIndexPtr get(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const;
+    MergeTreeIndices getMany(StorageMetadataPtr metadata_snapshot, const std::vector<IndexDescription> & indices, const MergeTreeSettings & settings) const;
 
-    void validate(const IndexDescription & index, bool attach) const;
-
-    MergeTreeIndexPtr get(const IndexDescription & index) const;
-
-    MergeTreeIndices getMany(const std::vector<IndexDescription> & indices) const;
-
-    void registerCreator(const std::string & index_type, Creator creator);
+    void registerCreator(const std::string & index_type, Creator creator, Documentation documentation = {});
     void registerValidator(const std::string & index_type, Validator validator);
+
+    std::vector<String> getAllRegisteredNames() const;
+
+    /// Returns the embedded documentation for a data skipping index type (empty if none was registered).
+    Documentation getDocumentation(const std::string & index_type) const;
 
 protected:
     MergeTreeIndexFactory();
@@ -377,31 +358,44 @@ protected:
 private:
     using Creators = std::unordered_map<std::string, Creator>;
     using Validators = std::unordered_map<std::string, Validator>;
+    using Documentations = std::unordered_map<std::string, Documentation>;
     Creators creators;
     Validators validators;
+    Documentations documentations;
 };
 
-MergeTreeIndexPtr minmaxIndexCreator(const IndexDescription & index);
-void minmaxIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr minmaxIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-MergeTreeIndexPtr setIndexCreator(const IndexDescription & index);
-void setIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void setIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index);
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
-
-MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
-void hypothesisIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 #if USE_USEARCH
-MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 #endif
 
-MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);
-void ginIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr ginIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void ginIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
+MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+
+String getIndexFileName(const String & index_name, bool escape_filename);
+
+/// Check if an index substream file exists for the part. Returns true if the file is listed
+/// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
+/// skp_idx.packed (resolved through the storage overlay). Passing a null @storage skips
+/// the archive check, which is fine for callers that only see standalone per-file layouts.
+bool indexFileExistsInChecksums(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & path_prefix,
+    const std::string & extension,
+    const IDataPartStorage * storage = nullptr);
 }

@@ -7,7 +7,9 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <exception>
@@ -21,6 +23,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int UNKNOWN_EXCEPTION;
+}
+
+namespace FailPoints
+{
+    extern const char prepared_sets_build_ordered_set_inplace_fail[];
 }
 
 CreatingSetsTransform::~CreatingSetsTransform()
@@ -53,15 +60,13 @@ CreatingSetsTransform::~CreatingSetsTransform()
 }
 
 CreatingSetsTransform::CreatingSetsTransform(
-    Block in_header_,
-    Block out_header_,
+    SharedHeader in_header_,
+    SharedHeader out_header_,
     SetAndKeyPtr set_and_key_,
-    StoragePtr external_table_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_)
     : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
     , set_and_key(std::move(set_and_key_))
-    , external_table(std::move(external_table_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
 {
@@ -104,7 +109,7 @@ void CreatingSetsTransform::work()
 void CreatingSetsTransform::startSubquery()
 {
     /// Lookup the set in the cache if we don't need to build table.
-    if (prepared_sets_cache && !external_table)
+    if (prepared_sets_cache && !set_and_key->external_table)
     {
         /// Try to find the set in the cache and wait for it to be built.
         /// Retry if the set from cache fails to be built.
@@ -152,15 +157,18 @@ void CreatingSetsTransform::startSubquery()
 
     if (set_and_key->set && !set_from_cache)
         LOG_TRACE(log, "Creating set, key: {}", set_and_key->key);
-    if (external_table)
+    if (set_and_key->external_table)
         LOG_TRACE(log, "Filling temporary table.");
 
-    if (external_table)
+    if (set_and_key->external_table)
+    {
         /// TODO: make via port
-        table_out = QueryPipeline(external_table->write({}, external_table->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
+        const auto metadata_snapshot = set_and_key->external_table->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        table_out = QueryPipeline(set_and_key->external_table->write({}, metadata_snapshot, nullptr, /*async_insert=*/false));
+    }
 
     done_with_set = !set_and_key->set || set_from_cache;
-    done_with_table = !external_table;
+    done_with_table = !set_and_key->external_table;
 
     if ((done_with_set && !set_from_cache) && done_with_table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to do with subquery");
@@ -174,7 +182,7 @@ void CreatingSetsTransform::startSubquery()
 
 void CreatingSetsTransform::finishSubquery()
 {
-    auto seconds = watch.elapsedNanoseconds() / 1e9;
+    auto seconds = static_cast<double>(watch.elapsedNanoseconds()) / 1e9;
 
     if (set_from_cache)
     {
@@ -184,7 +192,7 @@ void CreatingSetsTransform::finishSubquery()
     {
         if (set_and_key->set)
             LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
-        if (external_table)
+        if (set_and_key->external_table)
             LOG_DEBUG(log, "Created Table with {} rows in {} sec.", read_rows, seconds);
     }
     else
@@ -233,6 +241,15 @@ Chunk CreatingSetsTransform::generate()
 {
     if (set_and_key->set && !set_from_cache)
     {
+        /// Simulate a silent in-place build failure: skip `finishInsert`, leaving the set not created
+        /// (the same observable state as a subquery timeout with `overflow_mode = 'break'`). Fires once,
+        /// so the in-place build during primary key analysis fails while the deferred build succeeds.
+        fiu_do_on(FailPoints::prepared_sets_build_ordered_set_inplace_fail,
+        {
+            finishSubquery();
+            return {};
+        });
+
         set_and_key->set->finishInsert();
         if (promise_to_build)
         {

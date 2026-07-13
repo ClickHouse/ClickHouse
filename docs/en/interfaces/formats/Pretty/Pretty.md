@@ -6,6 +6,7 @@ keywords: ['Pretty']
 output_format: true
 slug: /interfaces/formats/Pretty
 title: 'Pretty'
+doc_type: 'reference'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -24,7 +25,7 @@ This is necessary so that blocks can be output without buffering results (buffer
 
 [NULL](/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 Example (shown for the [`PrettyCompact`](./PrettyCompact.md) format):
 
@@ -93,7 +94,6 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 <PrettyFormatSettings/>
-

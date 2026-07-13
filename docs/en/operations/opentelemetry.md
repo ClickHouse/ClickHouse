@@ -5,23 +5,73 @@ sidebar_label: 'Tracing ClickHouse with OpenTelemetry'
 sidebar_position: 62
 slug: /operations/opentelemetry
 title: 'Tracing ClickHouse with OpenTelemetry'
+doc_type: 'guide'
 ---
 
 [OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting traces and metrics from the distributed application. ClickHouse has some support for OpenTelemetry.
 
-## Supplying Trace Context to ClickHouse {#supplying-trace-context-to-clickhouse}
+## Supplying trace context to ClickHouse {#supplying-trace-context-to-clickhouse}
 
 ClickHouse accepts trace context HTTP headers, as described by the [W3C recommendation](https://www.w3.org/TR/trace-context/). It also accepts trace context over a native protocol that is used for communication between ClickHouse servers or between the client and server. For manual testing, trace context headers conforming to the Trace Context recommendation can be supplied to `clickhouse-client` using `--opentelemetry-traceparent` and `--opentelemetry-tracestate` flags.
 
 If no parent trace context is supplied or the provided trace context does not comply with W3C standard above, ClickHouse can start a new trace, with probability controlled by the [opentelemetry_start_trace_probability](/operations/settings/settings#opentelemetry_start_trace_probability) setting.
 
-## Propagating the Trace Context {#propagating-the-trace-context}
+## Propagating the trace context {#propagating-the-trace-context}
 
 The trace context is propagated to downstream services in the following cases:
 
 * Queries to remote ClickHouse servers, such as when using [Distributed](../engines/table-engines/special/distributed.md) table engine.
 
 * [url](../sql-reference/table-functions/url.md) table function. Trace context information is sent in HTTP headers.
+
+## Tracing ClickHouse Keeper Requests {#tracing-clickhouse-keeper-requests}
+
+ClickHouse supports OpenTelemetry tracing for [ClickHouse Keeper](../guides/sre/keeper/index.md) requests (ZooKeeper-compatible coordination service). This feature provides detailed visibility into the lifecycle of Keeper operations, from client request submission through server-side processing.
+
+### Enabling Keeper Tracing {#enabling-keeper-tracing}
+
+To enable tracing for Keeper requests, configure the following settings in your ZooKeeper/Keeper client configuration:
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <node>
+            <host>keeper1</host>
+            <port>9181</port>
+        </node>
+        <!-- Enable OpenTelemetry tracing context propagation -->
+        <pass_opentelemetry_tracing_context>true</pass_opentelemetry_tracing_context>
+    </zookeeper>
+</clickhouse>
+```
+
+### Keeper Span Types {#keeper-span-types}
+
+When tracing is enabled, ClickHouse creates spans for both client-side and server-side Keeper operations:
+
+**Client-side spans:**
+- `zookeeper.create` — Create a new node
+- `zookeeper.get` — Get node data
+- `zookeeper.set` — Set node data
+- `zookeeper.remove` — Remove a node
+- `zookeeper.list` — List child nodes
+- `zookeeper.exists` — Check if a node exists
+- `zookeeper.multi` — Execute multiple operations atomically
+- `zookeeper.client.requests_queue` — Time spent queueing requests before sending
+
+**Server-side spans (Keeper):**
+- `keeper.receive_request` — Receiving and parsing the request from the client
+- `keeper.dispatcher.requests_queue` — Request queuing in the dispatcher
+- `keeper.write.pre_commit` — Preprocessing write requests before Raft commit
+- `keeper.write.commit` — Processing write requests after Raft commit
+- `keeper.read.wait_for_write` — Read requests waiting for dependent writes
+- `keeper.read.process` — Processing read requests
+- `keeper.dispatcher.responses_queue` — Response queuing in the dispatcher
+- `keeper.send_response` — Sending the response to the client
+
+### Sampling and Performance {#sampling-and-performance}
+
+To manage tracing overhead, Keeper implements dynamic sampling. Sampling rate automatically adjusts between 1/10,000 and 1/10 based on request size. All requests (sampled and unsampled) have their durations recorded to histogram metrics for performance monitoring.
 
 ## Tracing the ClickHouse Itself {#tracing-the-clickhouse-itself}
 
@@ -50,7 +100,7 @@ SETTINGS output_format_json_named_tuples_as_objects = 1,
     output_format_json_array_of_rows = 1 AS
 SELECT
     lower(hex(trace_id)) AS traceId,
-    case when parent_span_id = 0 then '' else lower(hex(parent_span_id)) end AS parentId,
+    CASE WHEN parent_span_id = 0 THEN '' ELSE lower(hex(parent_span_id)) END AS parentId,
     lower(hex(span_id)) AS id,
     operation_name AS name,
     start_time_us AS timestamp,
@@ -64,6 +114,6 @@ FROM system.opentelemetry_span_log
 
 In case of any errors, the part of the log data for which the error has occurred will be silently lost. Check the server log for error messages if the data does not arrive.
 
-## Related Content {#related-content}
+## Related content {#related-content}
 
 - Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

@@ -43,7 +43,7 @@ public:
 
 protected:
     bool isTTLExpired(time_t ttl) const;
-    UInt32 getTimestampByIndex(const IColumn * column, size_t index) const;
+    Int64 getTimestampByIndex(const IColumn * column, size_t index) const;
 
     const TTLExpressions ttl_expressions;
     const TTLDescription description;

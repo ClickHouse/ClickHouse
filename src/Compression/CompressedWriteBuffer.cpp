@@ -1,5 +1,6 @@
 #include <city.h>
 #include <cstring>
+#include <algorithm>
 
 #include <base/types.h>
 #include <base/defines.h>
@@ -12,6 +13,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 void CompressedWriteBuffer::nextImpl()
 {
@@ -73,7 +79,9 @@ void CompressedWriteBuffer::finalizeImpl()
 
 CompressedWriteBuffer::CompressedWriteBuffer(
     WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size, bool use_adaptive_buffer_size_, size_t adaptive_buffer_initial_size)
-    : BufferWithOwnMemory<WriteBuffer>(use_adaptive_buffer_size_ ? adaptive_buffer_initial_size : buf_size)
+    /// The adaptive buffer grows from the initial size up to buf_size (the max), so the
+    /// initial allocation must not exceed it (see WriteBufferFromFileDescriptor for details).
+    : BufferWithOwnMemory<WriteBuffer>(use_adaptive_buffer_size_ ? std::min(adaptive_buffer_initial_size, buf_size) : buf_size)
     , out(out_)
     , codec(std::move(codec_))
     , use_adaptive_buffer_size(use_adaptive_buffer_size_)
@@ -89,4 +97,14 @@ void CompressedWriteBuffer::cancelImpl() noexcept
     out.cancel();
 }
 
+void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)
+{
+    // Flush all the pending data that was supposed to be compressed with the old codec.
+    next();
+    if (offset() != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedWriteBuffer: offset() is not zero");
+
+    chassert(codec_);
+    codec = std::move(codec_);
+}
 }

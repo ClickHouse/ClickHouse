@@ -3,6 +3,7 @@
 2000-01-01	1	test string 1	1	1
 1
 -------FORCE PRIMARY KEY-------
+1
 -------CHECK STATEFUL FUNCTIONS-------
 1	a	0
 2	b	0
@@ -15,15 +16,12 @@
 3	87
 4	112
 5	137
-SELECT
-    n,
-    `finalizeAggregation(s)`
+SELECT *
 FROM
 (
     SELECT
         n,
         finalizeAggregation(s)
     FROM test_00808_push_down_with_finalizeAggregation
-    WHERE (n <= 5) AND (n >= 2)
 )
-WHERE (n >= 2) AND (n <= 5)
+WHERE and(greaterOrEquals(n, 2), lessOrEquals(n, 5))

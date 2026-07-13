@@ -7,6 +7,7 @@
 #include <base/find_symbols.h>
 #include <base/sort.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 
 #include <string_view>
 #include <vector>
@@ -50,7 +51,7 @@ const String & ruleTypeStr(RuleType rule_type)
     }
 }
 
-RuleType ruleType(const String & s)
+static RuleType ruleType(const String & s)
 {
     if (s == "all")
         return RuleTypeAll;
@@ -71,7 +72,7 @@ void Pattern::updateHash(SipHash & hash) const
     {
         hash.update(function->getName());
         for (const auto & p : function->getParameters())
-            hash.update(toString(p));
+            hash.update(fieldToString(p));
     }
     for (const auto & r : retentions)
     {
@@ -218,12 +219,26 @@ bool operator==(const Pattern & a, const Pattern & b)
     {
         return false;
     }
-    else if (a.function->getName() != b.function->getName())
+    else if (a.function->getName() != b.function->getName()
+        || a.function->getParameters() != b.function->getParameters())
     {
+        /// Keep in lockstep with Pattern::updateHash, which hashes both the name and the parameters.
         return false;
     }
 
     return a.retentions == b.retentions;
+}
+
+bool operator==(const Params & a, const Params & b)
+{
+    return a.path_column_name == b.path_column_name
+        && a.time_column_name == b.time_column_name
+        && a.value_column_name == b.value_column_name
+        && a.version_column_name == b.version_column_name
+        && a.patterns_typed == b.patterns_typed
+        && a.patterns == b.patterns
+        && a.patterns_plain == b.patterns_plain
+        && a.patterns_tagged == b.patterns_tagged;
 }
 
 std::ostream & operator<<(std::ostream & stream, const Pattern & a)

@@ -1,0 +1,173 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/llamaindex
+sidebarTitle: 'Integrar LlamaIndex'
+title: 'Cómo crear un agente de IA con LlamaIndex usando el servidor MCP de ClickHouse.'
+description: 'Aprende a crear un agente de IA con LlamaIndex que pueda interactuar con el servidor MCP de ClickHouse.'
+keywords: ['ClickHouse', 'MCP', 'LlamaIndex']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+En esta guía, aprenderás a crear un [LlamaIndex](https://docs.llamaindex.ai) agente de IA que
+pueda interactuar con el [Playground de SQL de ClickHouse](https://sql.clickhouse.com/) usando el [servidor MCP de ClickHouse](https://github.com/ClickHouse/mcp-clickhouse).
+
+<Info>
+  **Notebook de ejemplo**
+
+  Este ejemplo está disponible como notebook en el [repositorio examples](https://github.com/ClickHouse/examples/blob/main/ai/mcp/llamaindex/llamaindex.ipynb).
+</Info>
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Debes tener Python instalado en tu sistema.
+* Debes tener `pip` instalado en tu sistema.
+* Necesitarás una API key de Anthropic o una API key de otro proveedor de LLM
+
+Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un script.
+
+<Steps>
+  <Step>
+    ## Instalar librerías
+
+    Instala las librerías necesarias ejecutando los siguientes comandos:
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q llama-index clickhouse-connect llama-index-llms-anthropic llama-index-tools-mcp
+    ```
+  </Step>
+
+  <Step>
+    ## Configura las credenciales
+
+    A continuación, deberás proporcionar tu clave de API de Anthropic:
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="Response"
+    Enter Anthropic API Key: ········
+    ```
+
+    <Info>
+      **Usar otro proveedor de LLM**
+
+      Si no tienes una API key de Anthropic y quieres usar otro proveedor de LLM,
+      puedes consultar las instrucciones para configurar tus credenciales en la [documentación de LlamaIndex sobre &quot;LLMs&quot;](https://docs.llamaindex.ai/en/stable/examples/)
+    </Info>
+  </Step>
+
+  <Step>
+    ## Inicializar el servidor MCP
+
+    Ahora configure el servidor MCP de ClickHouse para que apunte al Playground de SQL de ClickHouse.
+    Tendrá que convertirlas de funciones de Python a herramientas de Llama Index:
+
+    ```python
+    from llama_index.tools.mcp import BasicMCPClient, McpToolSpec
+
+    mcp_client = BasicMCPClient(
+        "uv",
+        args=[
+            "run",
+            "--with", "mcp-clickhouse",
+            "--python", "3.13",
+            "mcp-clickhouse"
+        ],
+        env={
+            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+            "CLICKHOUSE_PORT": "8443",
+            "CLICKHOUSE_USER": "demo",
+            "CLICKHOUSE_PASSWORD": "",
+            "CLICKHOUSE_SECURE": "true"
+        }
+    )
+
+    mcp_tool_spec = McpToolSpec(
+        client=mcp_client,
+    )
+
+    tools = await mcp_tool_spec.to_tool_list_async()
+    ```
+  </Step>
+
+  <Step>
+    ## Crear un agente
+
+    Ahora ya estás listo para crear un agente que tenga acceso a esas herramientas. Establece en 10 el número máximo
+    de invocaciones de herramientas en una sola ejecución. Puedes modificar este parámetro si quieres:
+
+    ```python
+    from llama_index.core.agent import AgentRunner, FunctionCallingAgentWorker
+
+    agent_worker = FunctionCallingAgentWorker.from_tools(
+        tools=tools,
+        llm=llm, verbose=True, max_function_calls=10
+    )
+    agent = AgentRunner(agent_worker)
+    ```
+  </Step>
+
+  <Step>
+    ## Inicializar el LLM
+
+    Inicializa el modelo Claude Sonnet 4.0 con el código siguiente:
+
+    ```python
+    from llama_index.llms.anthropic import Anthropic
+    llm = Anthropic(model="claude-sonnet-4-0")
+    ```
+  </Step>
+
+  <Step>
+    ## Ejecuta el agente
+
+    Por último, puedes hacerle una pregunta al agente:
+
+    ```python
+    response = agent.query("What's the most popular repository?")
+    ```
+
+    La respuesta es extensa, por lo que se ha truncado en la
+    respuesta de ejemplo a continuación:
+
+    ```response title="Response"
+    Added user message to memory: What's the most popular repository?
+    === LLM Response ===
+    I'll help you find the most popular repository. Let me first explore the available databases and tables to understand the data structure.
+    === Calling Function ===
+    Calling function: list_databases with args: {}
+    === Function Output ===
+    meta=None content=[TextContent(type='text', text='amazon\nbluesky\ncountry\ncovid\ndefault\ndns\nenvironmental\nfood\nforex\ngeo\ngit\ngithub\nhackernews\nimdb\nlogs\nmetrica\nmgbench\nmta\nnoaa\nnyc_taxi\nnypd\nontime\nopensky\notel\notel_v2\npypi\nrandom\nreddit\nrubygems\nstackoverflow\nstar_schema\nstock\nsystem\ntw_weather\ntwitter\nuk\nwiki\nwords\nyoutube', annotations=None)] isError=False
+    === LLM Response ===
+    I can see there's a `github` database which likely contains repository data. Let me explore the tables in that database.
+    === Calling Function ===
+    Calling function: list_tables with args: {"database": "github"}
+    === Function Output ===
+    ...
+    ...
+    ...
+    === LLM Response ===
+    Based on the GitHub data, **the most popular repository is `sindresorhus/awesome`** with **402,292 stars**.
+
+    Here are the top 10 most popular repositories by star count:
+
+    1. **sindresorhus/awesome** - 402,292 stars
+    2. **996icu/996.ICU** - 388,413 stars  
+    3. **kamranahmedse/developer-roadmap** - 349,097 stars
+    4. **donnemartin/system-design-primer** - 316,524 stars
+    5. **jwasham/coding-interview-university** - 313,767 stars
+    6. **public-apis/public-apis** - 307,227 stars
+    7. **EbookFoundation/free-programming-books** - 298,890 stars
+    8. **facebook/react** - 286,034 stars
+    9. **vinta/awesome-python** - 269,320 stars
+    10. **freeCodeCamp/freeCodeCamp** - 261,824 stars
+
+    The `sindresorhus/awesome` repository is a curated list of awesome lists, which explains its popularity as it serves as a comprehensive directory of resources across many different topics in software development.
+    ```
+  </Step>
+</Steps>

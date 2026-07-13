@@ -6,6 +6,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/Pipe.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -14,14 +15,14 @@ namespace DB
 StorageValues::StorageValues(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
-    const Block & res_block_,
+    Block res_block_,
     VirtualColumnsDescription virtuals_)
-    : IStorage(table_id_), res_block(res_block_)
+    : IStorage(table_id_), res_block(std::move(res_block_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(std::move(virtuals_));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(std::move(virtuals_));
 }
 
 StorageValues::StorageValues(
@@ -33,8 +34,8 @@ StorageValues::StorageValues(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(std::move(virtuals_));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(std::move(virtuals_));
 }
 
 Pipe StorageValues::read(
@@ -59,7 +60,7 @@ Pipe StorageValues::read(
         dag.getOutputs().swap(outputs);
         auto expression = std::make_shared<ExpressionActions>(std::move(dag));
 
-        prepared_pipe.addSimpleTransform([&](const Block & header)
+        prepared_pipe.addSimpleTransform([&](const SharedHeader & header)
         {
             return std::make_shared<ExpressionTransform>(header, expression);
         });
@@ -73,7 +74,7 @@ Pipe StorageValues::read(
         block.insert(res_block.getColumnOrSubcolumnByName(name));
 
     Chunk chunk(block.getColumns(), block.rows());
-    return Pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk)));
+    return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(block.cloneEmpty()), std::move(chunk)));
 }
 
 }

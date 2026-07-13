@@ -1,4 +1,4 @@
-#include "MetricsTransmitter.h"
+#include <MetricsTransmitter.h>
 
 #include <Common/AsynchronousMetrics.h>
 
@@ -51,8 +51,7 @@ MetricsTransmitter::~MetricsTransmitter()
 
 void MetricsTransmitter::run()
 {
-    const std::string thread_name = "MetrTx" + std::to_string(interval_seconds);
-    setThreadName(thread_name.c_str());
+    setThreadName(ThreadName::METRICS_TRANSMITTER);
 
     const auto get_next_time = [](size_t seconds)
     {
@@ -89,7 +88,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
     {
         for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
-            const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+            const auto counter = ProfileEvents::global_counters[i];
             const auto counter_increment = counter - prev_counters[i];
             prev_counters[i] = counter;
 
@@ -102,7 +101,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
     {
         for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
-            const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+            const auto counter = ProfileEvents::global_counters[i];
             std::string key{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
             key_vals.emplace_back(profile_events_cumulative_path_prefix + key, counter);
         }

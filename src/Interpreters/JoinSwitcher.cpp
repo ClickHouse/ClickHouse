@@ -7,13 +7,18 @@
 namespace DB
 {
 
-JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+JoinSwitcher::JoinSwitcher(
+    std::shared_ptr<TableJoin> table_join_,
+    SharedHeader right_sample_block_,
+    const StatsCollectingParams & stats_collecting_params_)
     : limits(table_join_->sizeLimits())
     , switched(false)
     , table_join(table_join_)
-    , right_sample_block(right_sample_block_.cloneEmpty())
+    , right_sample_block(right_sample_block_->cloneEmpty())
 {
-    join = std::make_shared<HashJoin>(table_join, right_sample_block);
+    join = std::make_shared<HashJoin>(
+        table_join, right_sample_block_, /*any_take_last_row_=*/false, /*reserve_num_=*/0, /*instance_id_=*/"",
+        /*use_two_level_maps_=*/false, stats_collecting_params_);
 
     if (!limits.hasLimits())
         limits.max_bytes = table_join->defaultMaxBytes();
@@ -44,7 +49,7 @@ bool JoinSwitcher::switchJoin()
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
 
     /// Destroy old join & create new one.
-    join = std::make_shared<MergeJoin>(table_join, right_sample_block);
+    join = std::make_shared<MergeJoin>(table_join, std::make_shared<const Block>(right_sample_block));
 
     bool success = true;
     for (const Block & saved_block : right_blocks)

@@ -1,18 +1,7 @@
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
-
-
 #include <Common/StringUtils.h>
+#include <Common/re2.h>
 #include <base/find_symbols.h>
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#pragma clang diagnostic ignored "-Wnested-anon-types"
-#pragma clang diagnostic ignored "-Wunused-parameter"
-#pragma clang diagnostic ignored "-Wshadow-field-in-constructor"
-#pragma clang diagnostic ignored "-Wdtor-name"
-#include <re2/re2.h>
-#pragma clang diagnostic pop
 
 namespace DB
 {

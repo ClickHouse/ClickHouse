@@ -3,7 +3,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
-
 namespace DB
 {
 
@@ -17,8 +16,16 @@ namespace ErrorCodes
 /// this class will be responsible for reading sub-object a.b and will read JSON column with data {"c" : 43, "d" : "Hello"}.
 class SerializationSubObject final : public SimpleTextSerialization
 {
+private:
+    SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization);
+
 public:
-    SerializationSubObject(const String & path_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_);
+    static UInt128 getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_);
+
+    static SerializationPtr create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization);
+
+    size_t allocatedBytes() const override;
+    bool supportsPooling() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -68,10 +75,10 @@ private:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Text/binary serialization is not implemented for object sub-object subcolumn");
     }
 
-    String path_prefix;
+    String paths_prefix;
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
+    DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
-    SerializationPtr shared_data_serialization;
 };
 
 }

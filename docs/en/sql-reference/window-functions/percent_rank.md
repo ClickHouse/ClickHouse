@@ -4,9 +4,8 @@ sidebar_label: 'percent_rank'
 sidebar_position: 8
 slug: /sql-reference/window-functions/percent_rank
 title: 'percent_rank'
+doc_type: 'reference'
 ---
-
-# percent_rank
 
 returns the relative rank (i.e. percentile) of rows within a window partition.
 
@@ -28,10 +27,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 **Example**
 
-
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE salaries
 (
     `team` String,
@@ -51,15 +47,13 @@ INSERT INTO salaries FORMAT Values
     ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
 ```
 
-```sql
+```sql title="Query"
 SELECT player, salary,
        percent_rank() OVER (ORDER BY salary DESC) AS percent_rank
 FROM salaries;
 ```
 
-Result:
-
-```response
+```response title="Response"
 
    ┌─player──────────┬─salary─┬───────percent_rank─┐
 1. │ Gary Chen       │ 195000 │                  0 │

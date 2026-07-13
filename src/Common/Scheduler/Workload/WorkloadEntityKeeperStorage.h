@@ -16,13 +16,15 @@ namespace DB
 class WorkloadEntityKeeperStorage : public WorkloadEntityStorageBase
 {
 public:
-    WorkloadEntityKeeperStorage(const ContextPtr & global_context_, const String & zookeeper_path_);
+    WorkloadEntityKeeperStorage(const ContextPtr & global_context_, const String & zookeeper_path_, std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {});
     ~WorkloadEntityKeeperStorage() override;
+
+    std::string_view getName() const override { return "keeper"; }
 
     bool isReplicated() const override { return true; }
     String getReplicationID() const override { return zookeeper_path; }
 
-    void loadEntities() override;
+    void loadEntities(const Poco::Util::AbstractConfiguration & config) override;
     void stopWatching() override;
 
 private:
@@ -66,6 +68,7 @@ private:
         UInt64 triggered = 0;
     };
     std::shared_ptr<WatchEvent> watch;
+    Coordination::WatchCallbackPtr zookeeper_watch;
 };
 
 }

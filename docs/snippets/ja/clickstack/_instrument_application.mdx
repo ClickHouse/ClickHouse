@@ -1,0 +1,133 @@
+---
+title: アプリケーションをインストルメントする
+---
+
+<Steps>
+  <Step>
+    ## アプリケーションをクローンして実行する
+
+    リポジトリをクローンし、依存関係をインストールして、`.env` ファイルを作成します。
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    ClickHouse データソースは、デフォルトで公開の読み取り専用デモクラスターを使用するため、追加設定なしでアプリを動かせます。起動します:
+
+    ```bash
+    ./run.sh
+    ```
+
+    [http://localhost:5001](http://localhost:5001) を開きます。年セレクター、サマリー統計、アクティビティチャート、上位ユーザーとドメインのテーブル、検索ボックスが表示されます。実際に操作して、年を切り替えたり、ストーリーの詳細を確認したりしてみてください。
+
+    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="ローカルで実行中の HackerNews アナライザ アプリケーション" />
+
+    この時点ではアプリケーションは実行されていますが、まだインストルメントされていません。ClickStack にはデータが表示されません。テレメトリーの受信待ちであるためです。これが「before」の状態です。
+  </Step>
+
+  <Step>
+    ## 接続情報を取得する
+
+    アプリケーションがcollectorに到達するには、2 つの値が必要です。
+
+    * `OTEL_EXPORTER_OTLP_ENDPOINT`: collector が公開する OTLP endpoint (通常、HTTP 経由の OTLP ではポート `4318`) 。
+    * `OTEL_EXPORTER_OTLP_HEADERS`: インジェスト用トークンを含む認可ヘッダー。形式は `authorization=<token>` です。
+
+    `.env` を開いて、これらを設定します。
+
+    ```bash
+    OTEL_SERVICE_NAME=hn-analyzer-api
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-collector-endpoint>:4318
+    OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-ingestion-token>
+    ```
+
+    SDK は、3 つすべてのシグナル (トレース、メトリクス、ログ) の認証ヘッダーを設定するために `OTEL_EXPORTER_OTLP_HEADERS` を使用します。collector がローカルで実行されており、認証を必須としていない場合は、値を空のままにできます (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`) 。ただし、この変数自体は必ず指定されている必要があります。未設定、または完全に空の場合、SDK は初期化自体を完全にスキップします。
+  </Step>
+
+  <Step>
+    ## アプリケーションをインストルメントする
+
+    インストルメンテーションは3つの要素で構成されます。SDKsのインストール、起動コマンドの切り替え、ブラウザ SDK の有効化です。いずれもアプリケーションのビジネスロジックを変更するものではありません。
+
+    ### SDKsをインストールする
+
+    バックエンド用とブラウザ用の両方のOpenTelemetry SDKsをインストールします。
+
+    ```bash
+    npm install @hyperdx/node-opentelemetry @hyperdx/browser
+    ```
+
+    ### opentelemetry-instrument CLI を使用する
+
+    アプリケーションは `run.sh` から起動されます。このファイルの末尾には `exec` 行が 2 つあり、1 つは有効、もう 1 つはコメントアウトされています。Node が `opentelemetry-instrument` でラップされるように、有効にする行を切り替えてください:
+
+    ```diff
+     # BEFORE: plain node, no instrumentation, collector stays silent:
+    -exec node scripts/entrypoint.js
+    +# exec node scripts/entrypoint.js
+
+     # AFTER: same source, wrapped by opentelemetry-instrument CLI.
+    -# exec npx opentelemetry-instrument scripts/entrypoint.js
+    +exec npx opentelemetry-instrument scripts/entrypoint.js
+    ```
+
+    これでバックエンド側の変更は完了です。auto-instrumentation は、プロセス起動時に `opentelemetry-instrument` によって読み込まれます。
+
+    ### ブラウザ SDK を有効にする
+
+    分散トレース (ブラウザからバックエンドまで) とセッションリプレイを取得するには、`src/web/telemetry.ts` でブラウザ SDK を有効にします。import と `HyperDX.init({...})` ブロックのコメントアウトを外してください。
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    export function initTelemetry(): void {
+      HyperDX.init({
+        url: __OTLP_ENDPOINT__,
+        apiKey: __OTLP_AUTH_TOKEN__,
+        service: 'hn-analyzer-web',
+        tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        consoleCapture: true,
+        advancedNetworkCapture: true,
+      });
+    }
+    ```
+
+    追加の `.env` 編集は不要です。`__OTLP_ENDPOINT__` と `__OTLP_AUTH_TOKEN__` は、`vite.config.ts` によって注入されるコンパイル時定数です。エンドポイントは `OTEL_EXPORTER_OTLP_ENDPOINT`、トークンは `OTEL_EXPORTER_OTLP_HEADERS` から解析して取り出されるもので、どちらもバックエンドが使用する値と同じです。
+
+    <Warning>
+      インジェスト用トークンは公開されるブラウザバンドルに埋め込まれるため、ネットワーク タブを確認すれば誰でも読み取れます。
+    </Warning>
+  </Step>
+
+  <Step>
+    ## トラフィックを発生させてテレメトリーを確認する
+
+    新しい起動コマンドと新たにビルドしたブラウザバンドルを反映するため、アプリケーションを再起動します。
+
+    ```bash
+    # Ctrl-C the previous run, then:
+    ./run.sh
+    ```
+
+    Vite が更新後のバンドルを配信するようにブラウザタブを再読み込みし、その後アプリを数回更新して、年を切り替え、ストーリーをクリックしてトラフィックを発生させます。
+
+    ClickStack UI を開きます:
+
+    1. **Search** に移動し、過去 5 分で絞り込みます。`hn-analyzer-api` のログが次々に表示されます。
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack ログ" />
+
+    2. リクエストをクリックし、トレースを親方向にたどります。Express のハンドラースパン、ClickHouse クラスターを指す子 HTTP スパン (実際のネットワーク所要時間付き) 、および同じトレース上で相関付けられた `console.log` レコードが表示されます。
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack トレース" />
+
+    3. **Session Replay** を開くと、トレースのタイムラインに同期した、シーク可能なブラウザセッションのビデオを再生できます。
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack セッション" />
+
+    ログ、メトリクス、トレース、セッションリプレイはすべて同じ UI に集約され、同じクエリ言語を共有し、自動的に相関付けられます。
+  </Step>
+</Steps>

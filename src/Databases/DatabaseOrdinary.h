@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -14,10 +14,18 @@ namespace DB
 class DatabaseOrdinary : public DatabaseOnDisk
 {
 public:
-    DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context);
     DatabaseOrdinary(
-        const String & name_, const String & metadata_path_, const String & data_path_,
-        const String & logger, ContextPtr context_);
+        const String & name_,
+        const String & metadata_path_,
+        ContextPtr context,
+        DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
+    DatabaseOrdinary(
+        const String & name_,
+        const String & metadata_path_,
+        const String & data_path_,
+        const String & logger,
+        ContextPtr context_,
+        DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
 
     String getEngineName() const override { return "Ordinary"; }
 
@@ -60,12 +68,15 @@ public:
     DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
         ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
-    Strings getAllTableNames(ContextPtr context) const override;
+    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
+
+    StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex) override;
 
     void alterTable(
         ContextPtr context,
         const StorageID & table_id,
-        const StorageInMemoryMetadata & metadata) override;
+        const StorageInMemoryMetadata & metadata,
+        bool validate_new_create_query) override;
 
     Strings getNamesOfPermanentlyDetachedTables() const override
     {
@@ -73,9 +84,15 @@ public:
         return permanently_detached_tables;
     }
 
+    DiskPtr getDisk() const override { return metadata_disk_ptr; }
+
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
 protected:
+    /// Erase pending async load/startup task references for a table. Must hold `mutex`.
+    /// Shared by detachTableUnlocked and the Atomic rename detach path (issue #91777).
+    void eraseAsyncLoadState(const String & table_name) TSA_REQUIRES(mutex);
+
     virtual void commitAlterTable(
         const StorageID & table_id,
         const String & table_metadata_tmp_path,
@@ -92,7 +109,17 @@ protected:
     std::atomic<size_t> tables_started{0};
     AtomicStopwatch startup_watch;
 
+    DatabaseMetadataDiskSettings database_metadata_disk_settings;
+    DiskPtr metadata_disk_ptr;
+
 private:
+    bool shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const;
+    void loadTableLazy(
+        ContextMutablePtr local_context,
+        const QualifiedTableName & name,
+        const ASTPtr & ast,
+        LoadingStrictnessLevel mode);
+
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
     String getConvertToReplicatedFlagPath(const String & name, bool tableStarted);

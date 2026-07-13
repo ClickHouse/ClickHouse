@@ -1,0 +1,198 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "appearance": {
+    "default": "dark"
+  },
+  "background": {
+    "color": {
+      "dark": "#151515",
+      "light": "#FFFFFF"
+    }
+  },
+  "colors": {
+    "dark": "#fdff75",
+    "light": "#333431",
+    "primary": "#1c1c1c"
+  },
+  "contextual": {
+    "display": "toc",
+    "options": [
+      "copy",
+      "view",
+      "download-pdf",
+      {
+        "description": "Setup instructions for docs MCP server",
+        "href": "https://clickhouse.com/docs#claude-code",
+        "icon": "/images/icons/icon-mcp.svg",
+        "title": "Set up docs MCP server"
+      }
+    ]
+  },
+  "favicon": "/_site/favicon.svg",
+  "fonts": {
+    "family": "Inter"
+  },
+  "interaction": {
+    "drilldown": false
+  },
+  "logo": {
+    "dark": "/_site/logo/dark.svg",
+    "light": "/_site/logo/light.svg"
+  },
+  "metadata": {
+    "timestamp": true
+  },
+  "name": "ClickHouse Documentation",
+  "navbar": {},
+  "navigation": {
+    "languages": [
+      {
+        "language": "en",
+        "tabs": [
+          {
+            "pages": [
+              "index"
+            ],
+            "tab": "Home"
+          },
+          {
+            "menu": [
+              { "$ref": "./get-started/navigation.json" },
+              { "$ref": "./concepts/navigation.json" },
+              { "$ref": "./guides/navigation.json" },
+              { "$ref": "./reference/navigation.json" }
+            ],
+            "tab": "Database"
+          },
+          {
+            "menu": [
+              {
+                "href": "#",
+                "icon": "/images/icons/section-header.svg",
+                "item": "ClickHouse Cloud"
+              },
+              { "$ref": "./products/cloud/navigation.json" },
+              { "$ref": "./products/managed-postgres/navigation.json" },
+              { "$ref": "./clickstack/navigation.json" },
+              {
+                "href": "https://langfuse.com/docs",
+                "icon": "/images/icons/logo-langfuse.svg",
+                "item": "Langfuse"
+              },
+              {
+                "href": "#",
+                "icon": "/images/icons/section-header.svg",
+                "item": "Open source"
+              },
+              { "$ref": "./products/agentic-data-stack/navigation.json" },
+              { "$ref": "./chdb/navigation.json" },
+              { "$ref": "./products/kubernetes-operator/navigation.json" },
+              { "$ref": "./products/clickhouse-private/navigation.json" }
+            ],
+            "tab": "Solutions"
+          },
+          {
+            "menu": [
+              {
+                "item": "Ecosystem",
+                "pages": [
+                  "integrations/home"
+                ]
+              },
+              { "$ref": "./integrations/clickpipes/navigation.json" },
+              { "$ref": "./integrations/language-clients/navigation.json" },
+              { "$ref": "./integrations/connectors/navigation.json" }
+            ],
+            "tab": "Integrations"
+          },
+          {
+            "menu": [
+              { "$ref": "./resources/support-center/navigation.json" },
+              { "$ref": "./resources/develop-contribute/navigation.json" },
+              { "$ref": "./resources/changelogs/navigation.json" },
+              { "$ref": "./resources/about/navigation.json" }
+            ],
+            "tab": "Resources"
+          }
+        ]
+      },
+      {
+        "language": "ar",
+        "$ref": "./ar/docs.json"
+      },
+      {
+        "language": "es",
+        "$ref": "./es/docs.json"
+      },
+      {
+        "language": "fr",
+        "$ref": "./fr/docs.json"
+      },
+      {
+        "language": "ja",
+        "$ref": "./ja/docs.json"
+      },
+      {
+        "language": "ko",
+        "$ref": "./ko/docs.json"
+      },
+      {
+        "language": "pt-BR",
+        "$ref": "./pt-BR/docs.json"
+      },
+      {
+        "language": "ru",
+        "$ref": "./ru/docs.json"
+      },
+      {
+        "language": "zh",
+        "$ref": "./zh/docs.json"
+      }
+    ]
+  },
+  "redirects": { "$ref": "./_site/redirects.json" },
+  "scripts": [
+    {
+      "src": "/_site/customizations/galaxy.js"
+    },
+    {
+      "src": "/_site/customizations/scroll-reset.js"
+    },
+    {
+      "src": "/_site/customizations/custom-footer.js"
+    },
+    {
+      "src": "/_site/customizations/navbar-cta.js"
+    },
+    {
+      "src": "/_site/customizations/tab-nav.js"
+    },
+    {
+      "src": "/_site/customizations/kapa-init.js"
+    },
+    {
+      "src": "/_site/customizations/ask-ai-button.js"
+    },
+    {
+      "src": "/_site/customizations/inkeep-init.js"
+    },
+    {
+      "src": "/_site/customizations/clickhouse-sql-lexer-wasm.js"
+    },
+    {
+      "src": "/_site/customizations/clickhouse-sql-highlight.js"
+    },
+    {
+      "src": "/_site/customizations/raise-issue-link.js"
+    }
+  ],
+  "styling": {
+    "eyebrows": "breadcrumbs"
+  },
+  "integrations": {
+    "clarity": {
+      "projectId": "xgummrwgj9"
+    }
+  },
+  "theme": "maple"
+}

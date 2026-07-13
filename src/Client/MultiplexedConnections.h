@@ -41,17 +41,15 @@ public:
 
     void sendQueryPlan(const QueryPlan & query_plan) override;
 
-    void sendReadTaskResponse(const String &) override;
+    void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
 
     Packet receivePacket() override;
 
     void disconnect() override;
 
     void sendCancel() override;
-
-    /// Send parts' uuids to replicas to exclude them from query processing
-    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) override;
 
     Packet drain() override;
 
@@ -64,6 +62,8 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
+
+    void setDistributedFanout(size_t total_connections) override { distributed_fanout = total_connections; }
 
     void setAsyncCallback(AsyncCallback async_callback) override;
 
@@ -107,6 +107,10 @@ private:
 
     /// std::nullopt if parallel reading from replicas is not used
     std::optional<ReplicaInfo> replica_info;
+
+    /// Total number of remote connections across all shards in the distributed query.
+    /// Used to scale interactive_delay to reduce progress/profile event traffic.
+    size_t distributed_fanout = 0;
 
     /// A mutex for the sendCancel function to execute safely in separate thread.
     mutable std::mutex cancel_mutex;

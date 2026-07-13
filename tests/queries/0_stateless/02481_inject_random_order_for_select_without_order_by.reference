@@ -1,0 +1,8 @@
+Simple SELECT: expect a Sorting step injected
+1
+Simple SELECT with ORDER BY: no 2nd ORDER BY injected
+1
+UNION: expect ORDER BY injected into each child
+2
+Simple SELECT: no ORDER BY injected
+0

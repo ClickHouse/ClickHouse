@@ -6,12 +6,11 @@ description: 'Replaces all rows with the same primary key (or more accurately, w
 sidebar_label: 'AggregatingMergeTree'
 sidebar_position: 60
 slug: /engines/table-engines/mergetree-family/aggregatingmergetree
-title: 'AggregatingMergeTree'
+title: 'AggregatingMergeTree table engine'
+doc_type: 'reference'
 ---
 
-# AggregatingMergeTree
-
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
 You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
 
@@ -22,12 +21,12 @@ You can see an example of how to use the AggregatingMergeTree and Aggregate func
 
 The engine processes all columns with the following types:
 
-## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) {#aggregatefunction}
-## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md) {#simpleaggregatefunction}
+- [`AggregateFunction`](../../../sql-reference/data-types/aggregatefunction.md)
+- [`SimpleAggregateFunction`](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -76,9 +75,9 @@ When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and
 
 In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. For example, if you dump data into `TabSeparated` format with a `SELECT` query, then this dump can be loaded back using an `INSERT` query.
 
-## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
+## Example of an aggregated materialized view {#example-of-an-aggregated-materialized-view}
 
-The following example assumes that you have a database named `test`, so create it if it doesn't already exist:
+The following example assumes that you have a database named `test`. Create it if it doesn't already exist using the command below:
 
 ```sql
 CREATE DATABASE test;
@@ -98,7 +97,7 @@ CREATE TABLE test.visits
 
 Next, you need an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users. 
 
-Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the `AggregateFunction` type:
+Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the [`AggregateFunction`](/sql-reference/data-types/aggregatefunction) type:
 
 ```sql
 CREATE TABLE test.agg_visits (
@@ -166,6 +165,68 @@ Run the `SELECT` query again, which will return the following output:
 └─────────────────────────┴────────┴───────┘
 ```
 
-## Related Content {#related-content}
+In some cases, you might want to avoid pre-aggregating rows at insert time to shift the cost of aggregation from insert time
+to merge time. Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY` 
+clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeAggregation) 
+function with setting `optimize_on_insert = 0` (it is turned on by default) to achieve this. Use of `GROUP BY` 
+is no longer required in this case:
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    initializeAggregation('sumState', Sign) AS Visits,
+    initializeAggregation('uniqState', UserID) AS Users
+FROM test.visits;
+```
+
+:::note
+When using `initializeAggregation`, an aggregate state is created for each individual row without grouping.
+Each source row produces one row in the materialized view, and the actual aggregation happens later when the
+`AggregatingMergeTree` merges parts. This is only true if `optimize_on_insert = 0`.
+:::
+
+## Tuple element aggregation {#tuple-element-aggregation}
+
+When the `allow_tuple_element_aggregation` setting is enabled, `Tuple` columns are recursively flattened so that each leaf element participates in aggregation independently. This means that `AggregateFunction` or `SimpleAggregateFunction` sub-columns inside a `Tuple` are aggregated according to their respective functions, just as if they were top-level columns.
+
+Sub-columns that belong to a `Tuple` in the sorting key are excluded from aggregation. Non-aggregate sub-columns are treated as ordinary columns (their first value is kept).
+
+:::note
+This setting is immutable and must be specified at table creation time.
+:::
+
+```sql
+CREATE TABLE agg_tuples
+(
+    key UInt32,
+    metrics Tuple(
+        total_visits SimpleAggregateFunction(sum, UInt64),
+        unique_users SimpleAggregateFunction(max, UInt64)
+    )
+) ENGINE = AggregatingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO agg_tuples VALUES (1, (100, 5));
+INSERT INTO agg_tuples VALUES (1, (200, 8));
+INSERT INTO agg_tuples VALUES (2, (50, 3));
+
+OPTIMIZE TABLE agg_tuples FINAL;
+
+SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY key;
+```
+
+```text
+┌─key─┬─metrics.total_visits─┬─metrics.unique_users─┐
+│   1 │                  300 │                    8 │
+│   2 │                   50 │                    3 │
+└─────┴──────────────────────┴──────────────────────┘
+```
+
+`total_visits` is aggregated with `sum` (100 + 200 = 300), while `unique_users` is aggregated with `max` (max(5, 8) = 8).
+
+## Related content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

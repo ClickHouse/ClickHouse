@@ -8,15 +8,6 @@ if [[ "${CLICKHOUSE_RUN_AS_ROOT:=0}" = "1" || "${CLICKHOUSE_DO_NOT_CHOWN:-0}" = 
     DO_CHOWN=0
 fi
 
-# CLICKHOUSE_UID and CLICKHOUSE_GID are kept for backward compatibility, but deprecated
-# One must use either "docker run --user" or CLICKHOUSE_RUN_AS_ROOT=1 to run the process as
-# FIXME: Remove ALL CLICKHOUSE_UID CLICKHOUSE_GID before 25.3
-if [[ "${CLICKHOUSE_UID:-}" || "${CLICKHOUSE_GID:-}" ]]; then
-    echo 'WARNING: Support for CLICKHOUSE_UID/CLICKHOUSE_GID will be removed in a couple of releases.' >&2
-    echo 'WARNING: Either use a proper "docker run --user=xxx:xxxx" argument instead of CLICKHOUSE_UID/CLICKHOUSE_GID' >&2
-    echo 'WARNING: or set "CLICKHOUSE_RUN_AS_ROOT=1" ENV to run the clickhouse-server as root:root' >&2
-fi
-
 # support `docker run --user=xxx:xxxx`
 if [[ "$(id -u)" = "0" ]]; then
     if [[ "$CLICKHOUSE_RUN_AS_ROOT" = 1 ]]; then

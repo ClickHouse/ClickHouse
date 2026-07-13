@@ -1,0 +1,77 @@
+---
+description: 'يمكنك مراقبة استخدام موارد الأجهزة، وكذلك مقاييس خادم ClickHouse.'
+keywords: ['المراقبة', 'Observability', 'لوحة معلومات متقدمة', 'لوحة معلومات', 'لوحة معلومات Observability']
+sidebarTitle: 'المراقبة'
+slug: /operations/monitoring
+title: 'المراقبة'
+doc_type: 'مرجع'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<Note>
+  بيانات المراقبة الموضَّحة في هذا الدليل متاحة في ClickHouse Cloud. وإلى جانب عرضها عبر لوحة المعلومات المدمجة الموضحة أدناه، يمكن أيضًا عرض مقاييس الأداء الأساسية والمتقدمة مباشرةً في وحدة تحكم الخدمة الرئيسية.
+</Note>
+
+يمكنك مراقبة:
+
+* استخدام موارد الأجهزة.
+* مقاييس خادم ClickHouse.
+
+<div id="built-in-advanced-observability-dashboard">
+  ## لوحة معلومات observability المتقدمة المضمّنة
+</div>
+
+<Image img="https://github.com/ClickHouse/ClickHouse/assets/3936029/2bd10011-4a47-4b94-b836-d44557c7fdc1" alt="لقطة شاشة 2023-11-12 الساعة 6 08 58 مساءً" size="md" />
+
+يأتي ClickHouse مزودًا بميزة لوحة معلومات observability متقدمة مضمّنة يمكن الوصول إليها عبر `$HOST:$PORT/dashboard` (يتطلب اسم مستخدم وكلمة مرور)، وتعرض المقاييس التالية:
+
+* الاستعلامات/الثانية
+* استخدام CPU (الأنوية)
+* الاستعلامات قيد التشغيل
+* عمليات الدمج قيد التشغيل
+* البايتات المقروءة/الثانية
+* انتظار IO
+* انتظار CPU
+* استخدام CPU لنظام التشغيل (userspace)
+* استخدام CPU لنظام التشغيل (kernel)
+* القراءة من القرص
+* القراءة من نظام الملفات
+* الذاكرة (المتتبعة)
+* الصفوف المُدرجة/الثانية
+* إجمالي أجزاء MergeTree
+* الحد الأقصى لعدد الأجزاء لكل partition
+
+<div id="resource-utilization">
+  ## استخدام الموارد
+</div>
+
+يراقب ClickHouse أيضًا حالة موارد الأجهزة بنفسه، مثل:
+
+* الحمل ودرجة الحرارة على المعالجات.
+* مدى استخدام نظام التخزين وRAM والشبكة.
+
+تُجمَع هذه البيانات في جدول `system.asynchronous_metric_log`.
+
+<div id="clickhouse-server-metrics">
+  ## مقاييس خادم ClickHouse
+</div>
+
+يحتوي خادم ClickHouse على أدوات مضمّنة لمراقبة حالته ذاتيًا.
+
+لتتبّع أحداث الخادم، استخدم سجلات الخادم. راجع قسم [logger](/ar/reference/settings/server-settings/settings#logger) في ملف الإعداد.
+
+يجمع ClickHouse ما يلي:
+
+* مقاييس مختلفة توضّح كيفية استخدام الخادم للموارد الحاسوبية.
+* إحصاءات شائعة حول معالجة الاستعلامات.
+
+يمكنك العثور على المقاييس في جداول [system.metrics](/ar/reference/system-tables/metrics) و[system.events](/ar/reference/system-tables/events) و[system.asynchronous&#95;metrics](/ar/reference/system-tables/asynchronous_metrics).
+
+يمكنك تهيئة ClickHouse لتصدير المقاييس إلى [Graphite](https://github.com/graphite-project). راجع [قسم Graphite](/ar/reference/settings/server-settings/settings#graphite) في ملف إعداد خادم ClickHouse. قبل تهيئة تصدير المقاييس، ينبغي إعداد Graphite باتباع [دليله](https://graphite.readthedocs.io/en/latest/install.html) الرسمي.
+
+يمكنك تهيئة ClickHouse لتصدير المقاييس إلى [Prometheus](https://prometheus.io). راجع [قسم Prometheus](/ar/reference/settings/server-settings/settings#prometheus) في ملف إعداد خادم ClickHouse. قبل تهيئة تصدير المقاييس، ينبغي إعداد Prometheus باتباع [دليله](https://prometheus.io/docs/prometheus/latest/installation/) الرسمي.
+
+بالإضافة إلى ذلك، يمكنك مراقبة مدى توفّر الخادم عبر واجهة برمجة تطبيقات HTTP. أرسل طلب `HTTP GET` إلى `/ping`. إذا كان الخادم متاحًا، فسيستجيب بـ `200 OK`.
+
+لمراقبة الخوادم في إعداد عنقود، ينبغي ضبط المعلَمة [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ar/reference/settings/session-settings#max_replica_delay_for_distributed_queries) واستخدام مورد HTTP ‏`/replicas_status`. يعيد الطلب إلى `/replicas_status` القيمة `200 OK` إذا كانت النسخة المتماثلة متاحة ولم تتأخر عن النسخ المتماثلة الأخرى. وإذا كانت النسخة المتماثلة متأخرة، فسيعيد `503 HTTP_SERVICE_UNAVAILABLE` مع معلومات عن الفجوة.

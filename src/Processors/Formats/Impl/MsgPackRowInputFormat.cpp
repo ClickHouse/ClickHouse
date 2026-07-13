@@ -1,5 +1,6 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/MsgPackRowInputFormat.h>
+#include <Core/UUID.h>
 
 #if USE_MSGPACK
 
@@ -14,6 +15,8 @@
 
 #include <cstdlib>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
+#include <Core/Defines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -46,13 +49,14 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int UNEXPECTED_END_OF_FILE;
+    extern const int TOO_DEEP_RECURSION;
 }
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
+MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
     : MsgPackRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, settings) {}
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
-    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_.getDataTypes())  {}
+MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
+    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_->getDataTypes())  {}
 
 void MsgPackRowInputFormat::resetParser()
 {
@@ -131,13 +135,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
     {
         case TypeIndex::UInt8:
         {
-            assert_cast<ColumnUInt8 &>(column).insertValue(value);
+            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
             break;
         }
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            assert_cast<ColumnUInt16 &>(column).insertValue(value);
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
             break;
         }
         case TypeIndex::DateTime: [[fallthrough]];
@@ -154,13 +158,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
-            assert_cast<ColumnInt8 &>(column).insertValue(value);
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
             break;
         }
         case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
-            assert_cast<ColumnInt16 &>(column).insertValue(value);
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
             break;
         }
         case TypeIndex::Date32: [[fallthrough]];
@@ -398,17 +402,34 @@ bool MsgPackVisitor::start_array(size_t size) // NOLINT
         if (size > 0)
             info_stack.push(Info{nested_column, nested_type, false, size, nullptr});
     }
-    else if (isTuple(info_stack.top().type))
+    else if (isTuple(removeNullable(info_stack.top().type)))
     {
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*info_stack.top().type);
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(info_stack.top().type));
         const auto & nested_types = tuple_type.getElements();
         if (size != nested_types.size())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack array with size {} into Tuple column with {} elements", size, nested_types.size());
 
-        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(info_stack.top().column);
+        /// If the type is Nullable, reaching start_array means the value
+        /// is non-null (for nulls, the parser calls visit_nil instead).
+        /// So we can safely unwrap the Nullable to work with the inner
+        /// ColumnTuple directly.
+        IColumn * column_ptr = &info_stack.top().column;
+        if (info_stack.top().type->isNullable())
+        {
+            auto & nullable_column = assert_cast<ColumnNullable &>(*column_ptr);
+            nullable_column.getNullMapColumn().insertValue(0);
+            column_ptr = &nullable_column.getNestedColumn();
+        }
+
+        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*column_ptr);
         /// Push nested columns into stack in reverse order.
-        for (ssize_t i = nested_types.size() - 1; i >= 0; --i)
+        for (ssize_t i = static_cast<ssize_t>(nested_types.size()) - 1; i >= 0; --i)
             info_stack.push(Info{column_tuple.getColumn(i), nested_types[i], true, std::nullopt, nullptr});
+
+        /// There are no nested columns to grow, so we must explicitly increment the column size.
+        /// Otherwise, `column.size()` will return 0 for empty tuples columns.
+        if (nested_types.empty())
+            column_tuple.addSize(1);
     }
     else
     {
@@ -425,7 +446,7 @@ bool MsgPackVisitor::end_array_item() // NOLINT
         info_stack.pop();
     else
     {
-        assert(info_stack.top().array_size.has_value());
+        chassert(info_stack.top().array_size.has_value());
         auto & current_array_size = *info_stack.top().array_size;
         --current_array_size;
         if (current_array_size == 0)
@@ -562,8 +583,25 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "You must specify setting input_format_msgpack_number_of_columns "
                         "to extract table schema from MsgPack data");
+
+    /// Guard against absurdly large values that would cause std::length_error
+    /// or trigger sanitizer OOM aborts in vector::reserve() below.
+    /// Uses the same limit as Native format readers (see Core/Defines.h).
+    if (number_of_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "input_format_msgpack_number_of_columns = {} is too large "
+                        "(maximum: {})",
+                        number_of_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
 }
 
+
+/// Reference (don't copy) zero-length STR/BIN payloads: msgpack copies them via
+/// memcpy(dst, null, 0), which is UB under the nonnull attribute. The empty payload
+/// is never dereferenced during schema inference.
+static bool msgpackReferenceEmptyData(msgpack::type::object_type, size_t size, void *)
+{
+    return size == 0;
+}
 
 msgpack::object_handle MsgPackSchemaReader::readObject()
 {
@@ -574,30 +612,92 @@ msgpack::object_handle MsgPackSchemaReader::readObject()
     size_t offset = 0;
     bool need_more_data = true;
     msgpack::object_handle object_handle;
+
+    /// Pull the next chunk into the peekable window and retry, or reject at end of input.
+    auto grow_or_reject = [&]
+    {
+        buf.position() = buf.buffer().end();
+        if (buf.eof())
+            throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of file while parsing msgpack object");
+        buf.position() = buf.buffer().end();
+        buf.makeContinuousMemoryFromCheckpointToPos();
+        buf.rollbackToCheckpoint();
+    };
+
     while (need_more_data)
     {
         offset = 0;
+        /// msgpack::unpack builds the whole object tree up front: for every array/map/str/bin/ext it
+        /// eagerly allocates storage sized by the count/length declared in the header, before reading the
+        /// payload. A corrupted or fuzzed header can declare up to 0xffffffff elements, driving a single
+        /// multi-gigabyte allocation that bypasses the query memory tracker and aborts under a sanitizer
+        /// (allocation-size-too-big) or throws std::bad_alloc in release. Bound every container by the
+        /// bytes currently buffered: a valid element occupies at least one encoded byte, so a fully
+        /// buffered object never trips the bound, while an over-declaration throws msgpack::size_overflow,
+        /// handled below exactly like insufficient_bytes (grow and retry, reject once the whole input is
+        /// buffered and it still does not fit).
+        const size_t available = buf.buffer().end() - buf.position();
+        /// A map is the exception: msgpack allocates sizeof(object_kv) (a key plus a value) per declared
+        /// pair, but a valid pair is two encoded objects and so occupies at least two bytes. Bounding the
+        /// pair count by the byte count (like arrays/str/bin) would let a malformed map32 over-declare by
+        /// almost 2x and still drive a large allocation before the payload is found short. Cap map pairs by
+        /// available / 2 instead: a fully buffered valid map has payload >= 2 * pairs, so it never trips the
+        /// bound, while an over-declaration is rejected before the allocation.
+        const size_t map_available = available / 2;
+        /// Also bound the nesting depth. msgpack::unpack builds the DOM tree eagerly, so a deeply nested
+        /// header (arrays/maps nested many levels deep) would allocate the whole deep tree before
+        /// getDataType gets to enforce max_parser_depth. Thread the setting through so unpack rejects it
+        /// while building. max_parser_depth == 0 means unlimited (matching getDataType and the SQL parser);
+        /// msgpack spells unlimited as 0xffffffff.
+        const size_t depth_limit = format_settings.max_parser_depth ? format_settings.max_parser_depth : 0xffffffff;
+        const msgpack::unpack_limit limit(available, map_available, available, available, available, depth_limit);
         try
         {
-            object_handle = msgpack::unpack(buf.position(), buf.buffer().end() - buf.position(), offset);
+            object_handle = msgpack::unpack(
+                buf.position(), available, offset,
+                msgpackReferenceEmptyData, nullptr, limit);
             need_more_data = false;
+        }
+        catch (msgpack::depth_size_overflow &)
+        {
+            /// depth_size_overflow derives from size_overflow, so this catch must precede it. Deep nesting
+            /// is not a "need more data" condition: reject with the same message getDataType uses.
+            throw Exception(
+                ErrorCodes::TOO_DEEP_RECURSION,
+                "Too deep recursion while inferring the MsgPack schema: the nesting depth exceeds the limit ({}). "
+                "It can be raised with the setting 'max_parser_depth', but a very deep schema is rarely intentional",
+                format_settings.max_parser_depth);
         }
         catch (msgpack::insufficient_bytes &)
         {
-            buf.position() = buf.buffer().end();
-            if (buf.eof())
-                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of file while parsing msgpack object");
-            buf.position() = buf.buffer().end();
-            buf.makeContinuousMemoryFromCheckpointToPos();
-            buf.rollbackToCheckpoint();
+            grow_or_reject();
+        }
+        catch (msgpack::size_overflow &)
+        {
+            grow_or_reject();
         }
     }
     buf.position() += offset;
     return object_handle;
 }
 
-DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
+DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object, size_t depth)
 {
+    /// MsgPack arrays and maps can be nested arbitrarily deep, and msgpack::unpack builds the
+    /// whole object tree iteratively (heap), so a deeply nested object would overflow the native
+    /// stack during this recursive descent. Reject deep nesting early (before building the type)
+    /// with an explicit limit: this keeps inference cheap and interruptible instead of walking and
+    /// allocating a pathologically deep type that later code (e.g. makeNullableRecursively) would
+    /// also recurse over. checkStackSize is a last-resort backstop if max_parser_depth is raised.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Too deep recursion while inferring the MsgPack schema: the nesting depth exceeds the limit ({}). "
+            "It can be raised with the setting 'max_parser_depth', but a very deep schema is rarely intentional",
+            format_settings.max_parser_depth);
+    checkStackSize();
+
     switch (object.type)
     {
         case msgpack::type::object_type::POSITIVE_INTEGER: [[fallthrough]];
@@ -623,12 +723,16 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             bool nested_types_are_equal = true;
             for (size_t i = 0; i != object_array.size; ++i)
             {
-                auto nested_type = getDataType(object_array.ptr[i]);
+                auto nested_type = getDataType(object_array.ptr[i], depth + 1);
                 if (!nested_type)
                     return nullptr;
 
+                /// Compare only against the first element. Comparing the first element to itself is
+                /// pointless and would recurse through the whole (possibly deeply nested) type via
+                /// DataTypeArray::equals, which is itself unguarded recursion.
+                if (!nested_types.empty())
+                    nested_types_are_equal &= nested_type->equals(*nested_types[0]);
                 nested_types.push_back(nested_type);
-                nested_types_are_equal &= nested_type->equals(*nested_types[0]);
             }
 
             if (nested_types_are_equal)
@@ -641,8 +745,8 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             msgpack::object_map object_map = object.via.map;
             if (object_map.size)
             {
-                auto key_type = removeNullable(getDataType(object_map.ptr[0].key));
-                auto value_type = getDataType(object_map.ptr[0].val);
+                auto key_type = removeNullable(getDataType(object_map.ptr[0].key, depth + 1));
+                auto value_type = getDataType(object_map.ptr[0].val, depth + 1);
                 if (key_type && value_type)
                     return std::make_shared<DataTypeMap>(key_type, value_type);
             }
@@ -670,12 +774,13 @@ std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
     for (size_t i = 0; i != number_of_columns; ++i)
     {
         auto object_handle = readObject();
-        data_types.push_back(getDataType(object_handle.get()));
+        data_types.push_back(getDataType(object_handle.get(), 1));
     }
 
     return data_types;
 }
 
+void registerInputFormatMsgPack(FormatFactory & factory);
 void registerInputFormatMsgPack(FormatFactory & factory)
 {
     factory.registerInputFormat("MsgPack", [](
@@ -684,11 +789,65 @@ void registerInputFormatMsgPack(FormatFactory & factory)
             const RowInputFormatParams & params,
             const FormatSettings & settings)
     {
-        return std::make_shared<MsgPackRowInputFormat>(sample, buf, params, settings);
+        return std::make_shared<MsgPackRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
     });
     factory.registerFileExtension("messagepack", "MsgPack");
+
+    factory.setDocumentation("MsgPack", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data files.
+
+## Data types matching {#data-types-matching}
+
+| MessagePack data type (`INSERT`)                                   | ClickHouse data type                                                                                    | MessagePack data type (`SELECT`) |
+|--------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|----------------------------------|
+| `uint N`, `positive fixint`                                        | [`UIntN`](/sql-reference/data-types/int-uint.md)                                                  | `uint N`                         |
+| `int N`, `negative fixint`                                         | [`IntN`](/sql-reference/data-types/int-uint.md)                                                   | `int N`                          |
+| `bool`                                                             | [`UInt8`](/sql-reference/data-types/int-uint.md)                                                  | `uint 8`                         |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`String`](/sql-reference/data-types/string.md)                                                   | `bin 8`, `bin 16`, `bin 32`      |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`FixedString`](/sql-reference/data-types/fixedstring.md)                                         | `bin 8`, `bin 16`, `bin 32`      |
+| `float 32`                                                         | [`Float32`](/sql-reference/data-types/float.md)                                                   | `float 32`                       |
+| `float 64`                                                         | [`Float64`](/sql-reference/data-types/float.md)                                                   | `float 64`                       |
+| `uint 16`                                                          | [`Date`](/sql-reference/data-types/date.md)                                                       | `uint 16`                        |
+| `int 32`                                                           | [`Date32`](/sql-reference/data-types/date32.md)                                                   | `int 32`                         |
+| `uint 32`                                                          | [`DateTime`](/sql-reference/data-types/datetime.md)                                               | `uint 32`                        |
+| `uint 64`                                                          | [`DateTime64`](/sql-reference/data-types/datetime.md)                                             | `uint 64`                        |
+| `fixarray`, `array 16`, `array 32`                                 | [`Array`](/sql-reference/data-types/array.md)/[`Tuple`](/sql-reference/data-types/tuple.md) | `fixarray`, `array 16`, `array 32` |
+| `fixmap`, `map 16`, `map 32`                                       | [`Map`](/sql-reference/data-types/map.md)                                                         | `fixmap`, `map 16`, `map 32`     |
+| `uint 32`                                                          | [`IPv4`](/sql-reference/data-types/ipv4.md)                                                       | `uint 32`                        |
+| `bin 8`                                                            | [`String`](/sql-reference/data-types/string.md)                                                   | `bin 8`                          |
+| `int 8`                                                            | [`Enum8`](/sql-reference/data-types/enum.md)                                                      | `int 8`                          |
+| `bin 8`                                                            | [`(U)Int128`/`(U)Int256`](/sql-reference/data-types/int-uint.md)                                    | `bin 8`                          |
+| `int 32`                                                           | [`Decimal32`](/sql-reference/data-types/decimal.md)                                               | `int 32`                         |
+| `int 64`                                                           | [`Decimal64`](/sql-reference/data-types/decimal.md)                                               | `int 64`                         |
+| `bin 8`                                                            | [`Decimal128`/`Decimal256`](/sql-reference/data-types/decimal.md)                                   | `bin 8 `                         |
+
+## Example usage {#example-usage}
+
+Writing to a file ".msgpk":
+
+```bash
+$ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
+$ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
+$ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
+```
+
+## Format settings {#format-settings}
+
+| Setting                                                                                                                                    | Description                                                                                    | Default |
+|--------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|---------|
+| [`input_format_msgpack_number_of_columns`](/operations/settings/settings-formats.md/#input_format_msgpack_number_of_columns)       | the number of columns in inserted MsgPack data. Used for automatic schema inference from data. | `0`     |
+| [`output_format_msgpack_uuid_representation`](/operations/settings/settings-formats.md/#output_format_msgpack_uuid_representation) | the way how to output UUID in MsgPack format.                                                  | `EXT`   |
+)DOCS_MD"});
 }
 
+void registerMsgPackSchemaReader(FormatFactory & factory);
 void registerMsgPackSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("MsgPack", [](ReadBuffer & buf, const FormatSettings & settings)
@@ -711,6 +870,8 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatMsgPack(FormatFactory &);
+void registerMsgPackSchemaReader(FormatFactory &);
 void registerInputFormatMsgPack(FormatFactory &)
 {
 }

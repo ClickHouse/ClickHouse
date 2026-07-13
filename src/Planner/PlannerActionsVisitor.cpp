@@ -48,6 +48,7 @@ namespace Setting
 {
     extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
+    extern const SettingsInt64 optimize_const_name_size;
 }
 
 namespace ErrorCodes
@@ -66,10 +67,15 @@ namespace
  * If converting to AST will add a '_CAST' function call,
  * the result action name will also include it.
  */
-String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node)
+String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node, Int64 optimize_const_name_size)
 {
-    const auto & [name, type] = constant_node.getValueNameAndType();
-    bool requires_cast_call = constant_node.hasSourceExpression() || ConstantNode::requiresCastCall(type, constant_node.getResultType());
+    const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
+    bool requires_cast_call = constant_node.hasSourceExpression();
+    if (!requires_cast_call)
+    {
+        auto field_type = applyVisitor(FieldToDataType(), constant_node.getValue());
+        requires_cast_call = ConstantNode::requiresCastCall(field_type, constant_node.getResultType());
+    }
 
     WriteBufferFromOwnString buffer;
     if (requires_cast_call)
@@ -130,6 +136,13 @@ public:
             case QueryTreeNodeType::CONSTANT:
             {
                 const auto & constant_node = node->as<ConstantNode &>();
+                /// A masked secret must be named by its placeholder, never by its value or source expression,
+                /// identically on initiator and secondary servers so distributed headers still match.
+                if (constant_node.isMasked())
+                {
+                    result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+                    break;
+                }
                 /* To ensure that headers match during distributed query we need to simulate action node naming on
                 * secondary servers. If we don't do that headers will mismatch due to constant folding.
                 *
@@ -158,20 +171,22 @@ public:
                 */
                 if (planner_context.isASTLevelOptimizationAllowed())
                 {
-                    result = calculateActionNodeNameWithCastIfNeeded(constant_node);
+                    result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
                 }
                 else
                 {
-                    // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-                    if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+                    // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+                    if (constant_node.hasSourceExpression()
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
                     {
                         if (constant_node.receivedFromInitiatorServer())
-                            result = calculateActionNodeNameWithCastIfNeeded(constant_node);
+                            result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
                         else
                             result = calculateActionNodeName(constant_node.getSourceExpression());
                     }
                     else
-                        result = calculateConstantActionNodeName(constant_node);
+                        result = calculateConstantActionNodeName(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
                 }
                 break;
             }
@@ -185,7 +200,7 @@ public:
                     if (function_argument_nodes.size() == 2)
                     {
                         if (const auto * second_argument = function_argument_nodes.at(1)->as<ConstantNode>())
-                            result = toString(second_argument->getValue());
+                            result = fieldToString(second_argument->getValue());
                     }
 
                     /// Empty node name is not allowed and leads to logical errors
@@ -202,9 +217,34 @@ public:
                     chassert(exists_argument != nullptr);
 
                     const auto & table_alias = exists_argument->getAlias();
-                    chassert(!table_alias.empty());
+                    if (!table_alias.empty())
+                    {
+                        result = fmt::format("exists({})", table_alias);
+                    }
+                    else
+                    {
+                        /// The alias may be empty when EXISTS was constant-folded into a ConstantNode
+                        /// and its source expression is being traversed to reconstruct the action node name.
+                        /// In this case, createUniqueAliasesIfNecessary did not visit the subquery argument
+                        /// because it is not a child of ConstantNode. Use the tree hash as a stable identifier.
+                        auto hash = exists_argument->getTreeHash();
+                        result = fmt::format("exists({}_{})", hash.low64, hash.high64);
+                    }
+                    break;
+                }
+                else if (function_node.getFunctionName() == "__getScalar")
+                {
+                    const auto & arguments = function_node.getArguments().getNodes();
+                    chassert(arguments.size() == 1);
 
-                    result = fmt::format("exists({})", table_alias);
+                    const auto & argument = arguments.front();
+                    chassert(argument != nullptr);
+
+                    const auto * argument_node = argument->as<ConstantNode>();
+                    if (!argument_node || !isString(argument_node->getResultType()))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __getScalar is internal and should not be used directly");
+
+                    result = fmt::format("__getScalar('{}'_String)", argument_node->getValue().safeGet<String>());
                     break;
                 }
 
@@ -215,7 +255,7 @@ public:
                     {
                         if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
                         {
-                            if (type_tuple->haveExplicitNames())
+                            if (type_tuple->hasExplicitNames())
                             {
                                 const auto & names = type_tuple->getElementNames();
                                 size_t size = names.size();
@@ -368,9 +408,9 @@ public:
         return calculateConstantActionNodeName(constant_literal, applyVisitor(FieldToDataType(), constant_literal));
     }
 
-    static String calculateConstantActionNodeName(const ConstantNode & constant_node)
+    static String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64 optimize_const_name_size)
     {
-        const auto & [name, type] = constant_node.getValueNameAndType();
+        const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
         return name + "_" + constant_node.getResultType()->getName();
     }
 
@@ -484,15 +524,41 @@ public:
         return scope_node;
     }
 
-    [[maybe_unused]] bool containsNode(const std::string & node_name)
+    bool containsNode(const std::string & node_name)
     {
-        return node_name_to_node.find(node_name) != node_name_to_node.end();
+        return node_name_to_node.contains(node_name);
+    }
+
+    /// Add a DAG ALIAS node so that `alias_name` resolves to `child`.
+    /// Used when a table column inside a lambda body was given a disambiguated
+    /// name at the lambda scope; other scopes still have the column under its
+    /// original name and need this alias for expression building and capture.
+    const ActionsDAG::Node * addAliasIfNecessary(const std::string & alias_name, const ActionsDAG::Node * child)
+    {
+        auto it = node_name_to_node.find(alias_name);
+        if (it != node_name_to_node.end())
+            return it->second;
+
+        const auto * node = &actions_dag.addAlias(*child, alias_name);
+        node_name_to_node[node->result_name] = node;
+        return node;
     }
 
     [[maybe_unused]] bool containsInputNode(const std::string & node_name)
     {
         const auto * node = tryGetNode(node_name);
         if (node && node->type == ActionsDAG::ActionType::INPUT)
+            return true;
+
+        return false;
+    }
+
+    /// Returns true if the node exists and is a source node: an INPUT, or a constant COLUMN
+    /// (for example, a constant input duplicated as a COLUMN node by the ActionsDAG constructor).
+    [[maybe_unused]] bool containsInputOrConstantNode(const std::string & node_name)
+    {
+        const auto * node = tryGetNode(node_name);
+        if (node && (node->type == ActionsDAG::ActionType::INPUT || node->type == ActionsDAG::ActionType::COLUMN))
             return true;
 
         return false;
@@ -555,14 +621,15 @@ public:
         return node;
     }
 
-    const ActionsDAG::Node * addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column)
+    const ActionsDAG::Node * addConstantIfNecessary(
+        const std::string & node_name, ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
         {
             /// It is possible that ActionsDAG already has an input with the same name as constant.
             /// In this case, prefer constant to input.
-            /// Constatns affect function return type, which should be consistent with QueryTree.
+            /// Constants affect function return type, which should be consistent with QueryTree.
             /// Query example:
             /// SELECT materialize(toLowCardinality('b')) || 'a' FROM remote('127.0.0.{1,2}', system, one) GROUP BY 'a'
             bool materialized_input = it->second->type == ActionsDAG::ActionType::INPUT && !it->second->column;
@@ -570,7 +637,7 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(column);
+        const auto * node = &actions_dag.addColumn(std::move(column), std::move(type), std::move(name), is_deterministic);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -745,7 +812,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & column_node = node->as<ColumnNode &>();
 
     const auto & column_node_ptr = static_pointer_cast<ColumnNode>(node);
-    if (correlated_columns_set.contains(column_node_ptr))
+    if (!correlated_columns_set.empty() && correlated_columns_set.contains(column_node_ptr))
         return visitCorrelatedColumn(column_node_ptr);
 
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
@@ -773,6 +840,75 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         {
             return {column_node_name, Levels(i)};
         }
+
+        /// When a table column's name collides with a lambda argument name (possible
+        /// when use_column_identifier_as_action_node_name = false, e.g. in PREWHERE),
+        /// the INPUT "x" added above is indistinguishable from the lambda argument in
+        /// the capture loop, so the table column would never be captured.  Add a second
+        /// INPUT with a disambiguated name at the lambda scope, and register aliases at
+        /// every outer scope so the capture loop can find the node by that name.
+        ///
+        /// We use the column identifier (e.g. `__table1.x`) as the disambiguated name.
+        /// It is deterministic (same for the same query) and guaranteed to differ from
+        /// any lambda argument name because `createUniqueAliasesIfNecessary` assigns
+        /// a unique alias like `__table1` to every table expression before the planner runs.
+        const auto & scope = actions_stack[i].getScopeNode();
+        if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
+        {
+            const auto & lambda_node = scope->as<LambdaNode &>();
+            const auto & arg_names = lambda_node.getArgumentNames();
+            if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
+            {
+                const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
+
+                actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
+
+                /// Inner scopes (above i) were already visited by the main loop
+                /// and have "x" under its original name.  Add a DAG ALIAS node so
+                /// the expression builder and removeUnusedActions can find a node
+                /// with result_name equal to the disambiguated name.
+                for (Int64 k = actions_stack_size; k > i; --k)
+                    actions_stack[k].addAliasIfNecessary(disambiguated, actions_stack[k].getNodeOrThrow(column_node_name));
+
+                /// Outer scopes (below i) haven't been visited yet.
+                /// Add the column under its original name and register an alias.
+                ///
+                /// However, if an outer scope is also a lambda whose argument has
+                /// the same name, addInputColumnIfNecessary would return the lambda
+                /// argument node (already registered) instead of a new table-column
+                /// INPUT. Aliasing disambiguated to the lambda argument would be
+                /// incorrect: the inner lambda would capture the outer lambda's
+                /// argument instead of the table column. In that case, add
+                /// disambiguated as a direct INPUT so the capture mechanism provides
+                /// its value from the parent scope.
+                for (Int64 j = i - 1; j >= 0; --j)
+                {
+                    bool outer_lambda_shadows = false;
+                    const auto & outer_scope = actions_stack[j].getScopeNode();
+                    if (outer_scope && outer_scope->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    {
+                        const auto & outer_lambda = outer_scope->as<LambdaNode &>();
+                        const auto & outer_arg_names = outer_lambda.getArgumentNames();
+                        outer_lambda_shadows = std::find(outer_arg_names.begin(), outer_arg_names.end(), column_node_name) != outer_arg_names.end();
+                    }
+
+                    if (outer_lambda_shadows)
+                    {
+                        /// This scope has a lambda argument with the same name.
+                        /// Add disambiguated as a direct INPUT; it will be captured
+                        /// from the parent scope where the table column is available.
+                        actions_stack[j].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
+                    }
+                    else
+                    {
+                        const auto * input_node = actions_stack[j].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
+                        actions_stack[j].addAliasIfNecessary(disambiguated, input_node);
+                    }
+                }
+
+                return {disambiguated, Levels(0)};
+            }
+        }
     }
 
     return {column_node_name, Levels(0)};
@@ -782,8 +918,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 {
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
 
-    for (auto & action_scope_node : actions_stack)
-        action_scope_node.addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+    /// Add PLACEHOLDER only to the outermost scope (will be decorrelated later).
+    /// Inner scopes (e.g. lambda scopes) get INPUT so the lambda capture mechanism
+    /// can properly capture the correlated column value from the outer scope.
+    actions_stack[0].addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+
+    for (size_t i = 1; i < actions_stack.size(); ++i)
+        actions_stack[i].addInputColumnIfNecessary(column_node_name, node->getColumnType());
 
     return {column_node_name, Levels(0)};
 }
@@ -795,6 +936,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto constant_node_name = !override_column_name.empty() ? override_column_name : [&]()
     {
+        /// A masked secret must be named by its placeholder, never by its value or source expression,
+        /// identically on initiator and secondary servers so distributed headers still match.
+        if (constant_node.isMasked())
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+
         /* To ensure that headers match during distributed query we need to simulate action node naming on
          * secondary servers. If we don't do that headers will mismatch due to constant folding.
          *
@@ -823,31 +969,30 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
          */
         if (planner_context->isASTLevelOptimizationAllowed())
         {
-            return calculateActionNodeNameWithCastIfNeeded(constant_node);
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
         }
 
-        // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-        if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+        // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+        if (constant_node.hasSourceExpression()
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
         {
             if (constant_node.receivedFromInitiatorServer())
-                return calculateActionNodeNameWithCastIfNeeded(constant_node);
+                return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
             return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
-        return calculateConstantActionNodeName(constant_node);
+        return calculateConstantActionNodeName(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
     }();
 
-    ColumnWithTypeAndName column;
-    column.name = constant_node_name;
-    column.type = constant_type;
-    column.column = constant_node.getColumn();
-
-    actions_stack[0].addConstantIfNecessary(constant_node_name, column);
+    actions_stack[0].addConstantIfNecessary(
+        constant_node_name, constant_node.getColumn(), constant_type, constant_node_name, constant_node.isDeterministic());
 
     size_t actions_stack_size = actions_stack.size();
-    for (size_t i = 1; i < actions_stack_size; ++i)
+    if (actions_stack_size > 1)
     {
-        auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(constant_node_name, column);
+        ColumnWithTypeAndName column{constant_node.getColumn(), constant_type, constant_node_name};
+        for (size_t i = 1; i < actions_stack_size; ++i)
+            actions_stack[i].addInputConstantColumnIfNecessary(constant_node_name, column);
     }
 
     return {constant_node_name, Levels(0)};
@@ -940,14 +1085,20 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         in_second_argument_node_type == QueryTreeNodeType::UNION ||
         in_second_argument_node_type == QueryTreeNodeType::TABLE;
 
+    bool in_second_is_deterministic = false;
+    if (const auto * const_node = in_second_argument->as<const ConstantNode>())
+        in_second_is_deterministic = const_node->isDeterministic();
+
     FutureSetPtr set;
-    auto set_key = in_second_argument->getTreeHash();
+    auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
 
     if (!subquery_or_table)
     {
         set_element_types = {in_first_argument->getResultType()};
         const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
-        if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+
+        /// Do not unpack if empty tuple or single element tuple
+        if (left_tuple_type && left_tuple_type->getElements().size() > 1)
             set_element_types = left_tuple_type->getElements();
 
         set_element_types
@@ -966,28 +1117,21 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             "No set is registered for key {}",
             PreparedSets::toString(set_key, set_element_types));
 
-    ColumnWithTypeAndName column;
-    column.name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
-    column.type = std::make_shared<DataTypeSet>();
+    auto name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
+    auto type = std::make_shared<DataTypeSet>();
+    ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 0);
 
-    bool set_is_created = set->get() != nullptr;
-    auto column_set = ColumnSet::create(1, std::move(set));
-
-    if (set_is_created)
-        column.column = ColumnConst::create(std::move(column_set), 1);
-    else
-        column.column = std::move(column_set);
-
-    actions_stack[0].addConstantIfNecessary(column.name, column);
+    actions_stack[0].addConstantIfNecessary(name, column, type, name, in_second_is_deterministic);
 
     size_t actions_stack_size = actions_stack.size();
-    for (size_t i = 1; i < actions_stack_size; ++i)
+    if (actions_stack_size > 1)
     {
-        auto & actions_stack_node = actions_stack[i];
-        actions_stack_node.addInputConstantColumnIfNecessary(column.name, column);
+        ColumnWithTypeAndName column_with_name_and_type{column, type, name};
+        for (size_t i = 1; i < actions_stack_size; ++i)
+            actions_stack[i].addInputConstantColumnIfNecessary(name, column_with_name_and_type);
     }
 
-    return {column.name, Levels(0)};
+    return {name, Levels(0)};
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitIndexHintFunction(const QueryTreeNodePtr & node)
@@ -1065,12 +1209,22 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (function_node.getFunctionName() == "exists")
         return visitExistsFunction(node);
 
+    auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
+
+    /// Fast path for the no-lambda case: when there is a single actions scope, an expression that
+    /// has already been built can be reused as-is instead of re-traversing it. With the analyzer,
+    /// WITH-aliases are shared by pointer in the query tree (a DAG), so without this we would
+    /// re-visit shared subtrees once per reference, which is exponential for deeply nested aliases.
+    /// Keying on the action node name also reuses identical repeated subexpressions that are not
+    /// aliased. Lambda scopes (actions_stack.size() > 1) are intentionally excluded, because the
+    /// captured Levels must be recomputed per scope.
+    if (actions_stack.size() == 1 && actions_stack.front().containsNode(function_node_name))
+        return {function_node_name, Levels(0)};
+
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
     if (isNameOfInFunction(function_node.getFunctionName()))
         in_function_second_argument_node_name_with_level = makeSetForInFunction(node);
-
-    auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
     /* Aggregate functions, window functions, and GROUP BY expressions were already analyzed in the previous steps.
      * If we have already visited some expression, we don't need to revisit it or its arguments again.
@@ -1078,9 +1232,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
      *    SELECT foo(a, b, c) as x FROM table GROUP BY foo(a, b, c)
      * In this case we should not analyze `a`, `b`, `c` again.
      * Moreover, it can lead to an error if we have arrayJoin in the arguments because it will be calculated twice.
+     *
+     * The expression can also be present as a constant COLUMN node: when a GROUP BY key expression
+     * is constant-foldable, the aggregation step exposes it as a constant column, and the ActionsDAG
+     * constructor duplicates constant inputs as COLUMN nodes. Visiting the arguments in this case can
+     * lead to an error: for example, after aggregation with group_by_use_nulls, GROUP BY key constants
+     * are wrapped into Nullable but keep their names, and a lambda capture built over such a constant
+     * fails with a type mismatch.
      */
     bool is_input_node = function_node.isAggregateFunction() || function_node.isWindowFunction()
-        || actions_stack.front().containsInputNode(function_node_name);
+        || actions_stack.front().containsInputOrConstantNode(function_node_name);
     if (is_input_node)
     {
         size_t actions_stack_size = actions_stack.size();
@@ -1144,7 +1305,31 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
     else
     {
-        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        /// When group_by_use_nulls wraps GROUP BY key constants in Nullable after aggregation,
+        /// the ActionsDAG may contain Nullable nodes where the query tree function expects
+        /// non-Nullable arguments (because the function was resolved with pre-aggregation types).
+        /// In this case, rebuild the function via FunctionFactory with the actual argument types
+        /// so that the result type is correct.
+        bool argument_types_match = true;
+        if (auto function_base = function_node.getFunction())
+        {
+            const auto & expected_types = function_base->getArgumentTypes();
+            for (size_t i = 0; argument_types_match && i < children.size() && i < expected_types.size(); ++i)
+                argument_types_match = children[i]->result_type->equals(*expected_types[i]);
+        }
+
+        if (!argument_types_match)
+        {
+            if (auto resolver = FunctionFactory::instance().tryGet(
+                    function_node.getFunctionName(), planner_context->getQueryContext()))
+                actions_stack[level].addFunctionIfNecessary(function_node_name, children, resolver);
+            else
+                actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        }
+        else
+        {
+            actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        }
     }
 
     size_t actions_stack_size = actions_stack.size();
@@ -1175,6 +1360,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     {
         auto & actions_stack_node = actions_stack[i];
         actions_stack_node.addInputColumnIfNecessary(correlated_subquery_name, query_node.getResultType());
+    }
+
+    /// The same correlated subquery can be referenced multiple times in the projection,
+    /// for example when `untuple` expands into multiple `tupleElement` calls sharing
+    /// the same argument.
+    for (const auto & existing : correlated_subtrees.subqueries)
+    {
+        if (existing.action_node_name == correlated_subquery_name)
+            return {correlated_subquery_name, levels};
     }
 
     const auto & correlated_columns = query_node.getCorrelatedColumns().getNodes();
@@ -1237,9 +1431,9 @@ String calculateConstantActionNodeName(const Field & constant_literal, const Dat
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal, constant_type);
 }
 
-String calculateConstantActionNodeName(const ConstantNode & constant_node)
+String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64 optimize_const_name_size)
 {
-    return ActionNodeNameHelper::calculateConstantActionNodeName(constant_node);
+    return ActionNodeNameHelper::calculateConstantActionNodeName(constant_node, optimize_const_name_size);
 }
 
 String calculateConstantActionNodeName(const Field & constant_literal)

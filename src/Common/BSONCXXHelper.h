@@ -131,28 +131,27 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
     }
 }
 
-template <typename T>
-static JSONBuilder::ItemPtr BSONElementAsJSON(const T & value)
+static JSONBuilder::ItemPtr BSONElementAsJSON(const bsoncxx::types::bson_value::view & value)
 {
     switch (value.type())
     {
         case bsoncxx::type::k_string:
-            return std::make_unique<JSONBuilder::JSONString>(std::string(value.get_string().value));
+            return std::make_unique<JSONBuilder::JSONString>(std::string_view(value.get_string().value));
         case bsoncxx::type::k_symbol:
-            return std::make_unique<JSONBuilder::JSONString>(std::string(value.get_string().value));
+            return std::make_unique<JSONBuilder::JSONString>(std::string_view(value.get_string().value));
         case bsoncxx::type::k_oid:
-            return std::make_unique<JSONBuilder::JSONString>(value.get_oid().value.to_string());
+            return std::make_unique<JSONBuilder::JSONString>(std::string_view(value.get_oid().value.to_string()));
         case bsoncxx::type::k_binary:
             return std::make_unique<JSONBuilder::JSONString>(
                 base64Encode(std::string(reinterpret_cast<const char *>(value.get_binary().bytes), value.get_binary().size)));
         case bsoncxx::type::k_bool:
-            return std::make_unique<JSONBuilder::JSONBool>(value.get_bool());
+            return std::make_unique<JSONBuilder::JSONBool>(value.get_bool().value);
         case bsoncxx::type::k_int32:
-            return std::make_unique<JSONBuilder::JSONNumber<Int32>>(value.get_int32());
+            return std::make_unique<JSONBuilder::JSONNumber<Int32>>(value.get_int32().value);
         case bsoncxx::type::k_int64:
-            return std::make_unique<JSONBuilder::JSONNumber<Int64>>(value.get_int64());
+            return std::make_unique<JSONBuilder::JSONNumber<Int64>>(value.get_int64().value);
         case bsoncxx::type::k_double:
-            return std::make_unique<JSONBuilder::JSONNumber<Float64>>(value.get_double());
+            return std::make_unique<JSONBuilder::JSONNumber<Float64>>(value.get_double().value);
         case bsoncxx::type::k_date:
             return std::make_unique<JSONBuilder::JSONString>(DateLUT::instance().timeToString(value.get_date().to_int64() / 1000));
         case bsoncxx::type::k_timestamp:
@@ -161,14 +160,14 @@ static JSONBuilder::ItemPtr BSONElementAsJSON(const T & value)
         {
             auto doc = std::make_unique<JSONBuilder::JSONMap>();
             for (const auto & elem : value.get_document().value)
-                doc->add(std::string(elem.key()), BSONElementAsJSON(elem));
+                doc->add(std::string(elem.key()), BSONElementAsJSON(elem.get_value()));
             return doc;
         }
         case bsoncxx::type::k_array:
         {
             auto arr = std::make_unique<JSONBuilder::JSONArray>();
             for (const auto & elem : value.get_array().value)
-                arr->add(BSONElementAsJSON(elem));
+                arr->add(BSONElementAsJSON(elem.get_value()));
             return arr;
         }
         case bsoncxx::type::k_regex:
@@ -191,8 +190,7 @@ static JSONBuilder::ItemPtr BSONElementAsJSON(const T & value)
     }
 }
 
-template <typename T>
-static std::string BSONElementAsString(const T & value, const JSONBuilder::FormatSettings & json_format_settings)
+static std::string BSONElementAsString(const bsoncxx::types::bson_value::view & value, const JSONBuilder::FormatSettings & json_format_settings)
 {
     switch (value.type())
     {
@@ -238,19 +236,21 @@ static std::string BSONElementAsString(const T & value, const JSONBuilder::Forma
     }
 }
 
-template <typename T, typename T2>
-static T BSONElementAsNumber(const T2 & value, const std::string & name)
+template <typename T>
+static T BSONElementAsNumber(const bsoncxx::types::bson_value::view & value, const std::string & name)
 {
     switch (value.type())
     {
         case bsoncxx::type::k_bool:
-            return static_cast<T>(value.get_bool());
+            return static_cast<T>(value.get_bool().value);
         case bsoncxx::type::k_int32:
-            return static_cast<T>(value.get_int32());
+            return static_cast<T>(value.get_int32().value);
         case bsoncxx::type::k_int64:
-            return static_cast<T>(value.get_int64());
+            return static_cast<T>(value.get_int64().value);
         case bsoncxx::type::k_double:
-            return static_cast<T>(value.get_double());
+            return static_cast<T>(value.get_double().value);
+        case bsoncxx::type::k_string:
+            return parse<T>(std::string_view(value.get_string().value));
         default:
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -291,46 +291,46 @@ static Array BSONArrayAsArray(
                 switch (type->getTypeId())
                 {
                     case TypeIndex::Int8:
-                        arr.emplace_back(BSONElementAsNumber<Int8, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<Int8>(value.get_value(), name));
                         break;
                     case TypeIndex::UInt8:
-                        arr.emplace_back(BSONElementAsNumber<UInt8, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<UInt8>(value.get_value(), name));
                         break;
                     case TypeIndex::Int16:
-                        arr.emplace_back(BSONElementAsNumber<Int16, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<Int16>(value.get_value(), name));
                         break;
                     case TypeIndex::UInt16:
-                        arr.emplace_back(BSONElementAsNumber<UInt16, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<UInt16>(value.get_value(), name));
                         break;
                     case TypeIndex::Int32:
-                        arr.emplace_back(BSONElementAsNumber<Int32, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<Int32>(value.get_value(), name));
                         break;
                     case TypeIndex::UInt32:
-                        arr.emplace_back(BSONElementAsNumber<UInt32, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<UInt32>(value.get_value(), name));
                         break;
                     case TypeIndex::Int64:
-                        arr.emplace_back(BSONElementAsNumber<Int64, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<Int64>(value.get_value(), name));
                         break;
                     case TypeIndex::UInt64:
-                        arr.emplace_back(BSONElementAsNumber<UInt64, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<UInt64>(value.get_value(), name));
                         break;
                     case TypeIndex::Int128:
-                        arr.emplace_back(BSONElementAsNumber<Int128, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<Int128>(value.get_value(), name));
                         break;
                     case TypeIndex::UInt128:
-                        arr.emplace_back(BSONElementAsNumber<UInt128, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<UInt128>(value.get_value(), name));
                         break;
                     case TypeIndex::Int256:
-                        arr.emplace_back(BSONElementAsNumber<Int256, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<Int256>(value.get_value(), name));
                         break;
                     case TypeIndex::UInt256:
-                        arr.emplace_back(BSONElementAsNumber<UInt256, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<UInt256>(value.get_value(), name));
                         break;
                     case TypeIndex::Float32:
-                        arr.emplace_back(BSONElementAsNumber<Float32, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<Float32>(value.get_value(), name));
                         break;
                     case TypeIndex::Float64:
-                        arr.emplace_back(BSONElementAsNumber<Float64, bsoncxx::array::element>(value, name));
+                        arr.emplace_back(BSONElementAsNumber<Float64>(value.get_value(), name));
                         break;
                     case TypeIndex::Date:
                     {
@@ -398,7 +398,7 @@ static Array BSONArrayAsArray(
                         break;
                     }
                     case TypeIndex::String:
-                        arr.emplace_back(BSONElementAsString(value, json_format_settings));
+                        arr.emplace_back(BSONElementAsString(value.get_value(), json_format_settings));
                         break;
                     default:
                         throw Exception(

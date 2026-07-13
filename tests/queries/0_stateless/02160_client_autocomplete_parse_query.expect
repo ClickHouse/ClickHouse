@@ -31,11 +31,15 @@ expect "set max_distributed"
 # Wait for suggestions to load, they are loaded in background
 set is_done 0
 set timeout 1
-while {$is_done == 0} {
+set total_wait 0
+while {$is_done == 0 && $total_wait < 60} {
     send -- "\t"
     expect {
         "_" {
             set is_done 1
+        }
+        timeout {
+            incr total_wait 1
         }
         default {
             # Reset the expect_after

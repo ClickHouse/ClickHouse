@@ -1,0 +1,6 @@
+-- Before ALTER:
+local:	`k` UInt64
+keeper:	`k` UInt64
+-- After ALTER:
+local:	`k` UInt64 COMMENT \'some comment\'
+keeper:	`k` UInt64 COMMENT \'some comment\'

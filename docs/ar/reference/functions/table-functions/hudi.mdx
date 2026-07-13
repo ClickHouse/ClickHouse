@@ -1,0 +1,54 @@
+---
+description: 'يوفر واجهة شبيهة بالجدول للقراءة فقط لجداول Apache Hudi في Amazon
+  S3.'
+sidebarTitle: 'hudi'
+slug: /sql-reference/table-functions/hudi
+title: 'hudi'
+doc_type: 'reference'
+---
+
+يوفر واجهة شبيهة بالجدول للقراءة فقط لجداول Apache [Hudi](https://hudi.apache.org/) في Amazon S3.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+```
+
+<div id="arguments">
+  ## المعاملات
+</div>
+
+| Argument                                     | Description                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                                        | عنوان URL للحاوية مع المسار إلى جدول Hudi موجود في S3.                                                                                                                                                                                                                                                                                                                |
+| `aws_access_key_id`, `aws_secret_access_key` | بيانات اعتماد طويلة الأمد لمستخدم حساب [AWS](https://aws.amazon.com/). يمكنك استخدامها للمصادقة على طلباتك. هذه المعلمات اختيارية. إذا لم تُحدَّد بيانات الاعتماد، فسيتم استخدام بيانات الاعتماد من إعدادات ClickHouse. لمزيد من المعلومات، راجع [استخدام S3 لتخزين البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3). |
+| `format`                                     | [تنسيق](/ar/reference/formats/index) الملف.                                                                                                                                                                                                                                                                                                                              |
+| `structure`                                  | بنية الجدول. التنسيق: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                  |
+| `compression`                                | هذه المعلمة اختيارية. القيم المدعومة: `none`، `gzip/gz`، `brotli/br`، `xz/LZMA`، `zstd/zst`. افتراضيًا، سيُكتشف الضغط تلقائيًا من امتداد الملف.                                                                                                                                                                                                                       |
+| `extra_credentials`                          | هذه المعلمة اختيارية. تُستخدم لتمرير `role_arn` للوصول المستند إلى الأدوار في ClickHouse Cloud. راجع [Secure S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات الإعداد.                                                                                                                                                           |
+
+<div id="returned_value">
+  ## القيمة المُعادة
+</div>
+
+جدول ذو البنية المحددة لقراءة البيانات من جدول Hudi المحدد في S3.
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — مسار الملف. النوع: `LowCardinality(String)`.
+* `_file` — اسم الملف. النوع: `LowCardinality(String)`.
+* `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، فستكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، فستكون القيمة `NULL`.
+* `_etag` — قيمة etag الخاصة بالملف. النوع: `LowCardinality(String)`. إذا كانت قيمة etag غير معروفة، فستكون القيمة `NULL`.
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [محرك Hudi](/ar/reference/engines/table-engines/integrations/hudi)
+* [دالة الجدول العنقودية لـ Hudi](/ar/reference/functions/table-functions/hudiCluster)

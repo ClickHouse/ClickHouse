@@ -5,11 +5,12 @@ sidebar_label: 'MySQL'
 sidebar_position: 50
 slug: /engines/database-engines/mysql
 title: 'MySQL'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# MySQL Database Engine
+# MySQL database engine
 
 <CloudNotSupportedBadge />
 
@@ -23,11 +24,12 @@ You cannot perform the following queries:
 - `CREATE TABLE`
 - `ALTER`
 
-## Creating a Database {#creating-a-database}
+## Creating a database {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
+[SETTINGS enable_compression=0]
 ```
 
 **Engine Parameters**
@@ -37,7 +39,23 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 - `user` — MySQL user.
 - `password` — User password.
 
-## Data Types Support {#data_types-support}
+**Settings**
+
+### `enable_compression` {#enable-compression}
+
+Enables zlib compression for the MySQL protocol connection. When set to `1`, ClickHouse requests protocol-level compression from the MySQL server.
+
+Default value: `0`.
+
+Example:
+
+```sql
+CREATE DATABASE mysql_db
+ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
+SETTINGS enable_compression = 1;
+```
+
+## Data types support {#data_types-support}
 
 | MySQL                            | ClickHouse                                                   |
 |----------------------------------|--------------------------------------------------------------|
@@ -59,7 +77,7 @@ All other MySQL data types are converted into [String](../../sql-reference/data-
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
-## Global Variables Support {#global-variables-support}
+## Global variables support {#global-variables-support}
 
 For better compatibility you may address global variables in MySQL style, as `@@identifier`.
 
@@ -77,7 +95,7 @@ Example:
 SELECT @@version;
 ```
 
-## Examples of Use {#examples-of-use}
+## Examples of use {#examples-of-use}
 
 Table in MySQL:
 

@@ -1,0 +1,378 @@
+---
+position: 4
+slug: /clickhouse-operator/guides/monitoring
+title: Monitoring the ClickHouse Operator
+keywords: ['kubernetes', 'prometheus', 'monitoring', 'metrics']
+description: 'How to scrape, secure, and use the operator metrics and health endpoints.'
+doc_type: 'guide'
+---
+
+The operator exposes Prometheus-compatible metrics and Kubernetes health probes so that you can observe its reconciliation activity, detect stalled controllers, and alert on failures.
+
+This guide covers what the operator exposes, how to scrape it, and which queries are useful day to day.
+
+<Note>
+This guide is about the **operator process itself** (the controller manager). For ClickHouse server metrics (queries, parts, replication lag), use the [Prometheus endpoint in ClickHouse](/reference/settings/server-settings/settings#prometheus) to scrape it separately.
+</Note>
+
+## Endpoints {#endpoints}
+
+The operator process exposes two HTTP endpoints inside the manager pod:
+
+| Endpoint | Default port | Path | Purpose |
+|---|---|---|---|
+| Metrics | `8080` (Helm) / `0` disabled (binary default) | `/metrics` | Prometheus exposition format |
+| Health probe | `8081` | `/healthz`, `/readyz` | Kubernetes liveness and readiness |
+
+The metrics endpoint is **off by default** when running the operator binary directly (`--metrics-bind-address=0`). The Helm chart turns it on with `metrics.enable: true` and `metrics.port: 8080`.
+
+The health probe endpoint is always on; the deployment template wires `/healthz` and `/readyz` to the pod's liveness and readiness probes on port `8081`.
+
+## Operator binary flags {#operator-binary-flags}
+
+The relevant `manager` flags (defined in [`cmd/main.go`](https://github.com/ClickHouse/clickhouse-operator/blob/main/cmd/main.go)):
+
+| Flag | Default | Description |
+|---|---|---|
+| `--metrics-bind-address` | `0` (disabled) | Bind address for the metrics endpoint. Set to `:8443` for HTTPS or `:8080` for HTTP. Leave as `0` to disable the metrics server. |
+| `--metrics-secure` | `true` | Serve metrics over HTTPS with authn/authz. Set to `false` for plain HTTP. |
+| `--metrics-cert-path` | empty | Directory containing TLS cert files (`tls.crt`, `tls.key`) for the metrics server. |
+| `--metrics-cert-name` | `tls.crt` | Cert file name inside `--metrics-cert-path`. |
+| `--metrics-cert-key` | `tls.key` | Key file name inside `--metrics-cert-path`. |
+| `--enable-http2` | `false` | Enable HTTP/2 for the metrics **and webhook** servers. Off by default to mitigate CVE-2023-44487 / CVE-2023-39325. |
+| `--leader-elect` | `false` (binary) / `true` (Helm chart) | Enable leader election so only one replica reconciles at a time. The Helm chart sets this flag in `manager.args` by default. |
+| `--health-probe-bind-address` | `:8081` | Bind address for `/healthz` and `/readyz`. |
+
+<Note>
+The `8443` (HTTPS) / `8080` (HTTP) convention in the flag's help text is only a hint. The Helm chart serves HTTPS on `8080` because it sets both `metrics.port: 8080` and `metrics.secure: true`. There is no port-based mode detection — `--metrics-secure` is what selects HTTPS or HTTP.
+</Note>
+
+## Enable metrics via Helm {#enable-metrics-via-helm}
+
+The chart already creates a `Service` for the metrics port and, optionally, a `ServiceMonitor` for prometheus-operator.
+
+The metrics endpoint itself is on by default (`metrics.enable: true`, port `8080`, served over HTTPS via `metrics.secure: true`). The only setting you typically need to flip is `prometheus.enable` to have the chart create a `ServiceMonitor` for you:
+
+```yaml
+# values.yaml — minimal override
+prometheus:
+  enable: true
+```
+
+If you do not use cert-manager, additionally set `certManager.enable: false` and the ServiceMonitor will scrape with `insecureSkipVerify: true`, relying on bearer-token authentication only.
+
+The full set of metrics-related defaults is:
+
+```yaml
+metrics:
+  enable: true
+  port: 8080
+  secure: true            # HTTPS with authn/authz enforced on every scrape
+
+certManager:
+  enable: true            # Issues the metrics server certificate
+
+prometheus:
+  enable: false           # Set to true to render the ServiceMonitor
+  scraping_annotations: false   # Alternative: prometheus.io/scrape pod annotations
+```
+
+Apply:
+
+```bash
+helm upgrade --install clickhouse-operator \
+  oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+  -n clickhouse-operator-system --create-namespace \
+  -f values.yaml
+```
+
+After install the chart creates:
+
+- `Service/<resource-prefix>-metrics-service` — exposes port `8080` (HTTPS when `metrics.secure: true`).
+- `ServiceMonitor/<resource-prefix>-controller-manager-metrics-monitor` — when `prometheus.enable: true`.
+- `ClusterRole/<resource-prefix>-metrics-reader` — non-resource URL `/metrics` with `get` verb.
+
+## Securing the metrics endpoint {#securing-the-metrics-endpoint}
+
+When `metrics.secure: true` the metrics server enforces TLS **and** Kubernetes authentication/authorization on every scrape. Scrapers must:
+
+1. Present a valid Kubernetes bearer token.
+2. Belong to a ServiceAccount bound to a ClusterRole granting `get` on the non-resource URL `/metrics`.
+
+The chart ships such a ClusterRole:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: clickhouse-operator-metrics-reader
+rules:
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get
+```
+
+Bind it to the ServiceAccount used by your scraper (typically Prometheus):
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-clickhouse-operator-metrics-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: clickhouse-operator-metrics-reader
+subjects:
+  - kind: ServiceAccount
+    name: <prometheus-sa>
+    namespace: <prometheus-namespace>
+```
+
+<Warning>
+If you see `401 Unauthorized` or `403 Forbidden` from the metrics endpoint, the scraper is using HTTPS but is missing/unauthorized for a Kubernetes bearer token, or its ServiceAccount lacks the binding above. Disabling security by setting `metrics.secure: false` is **not recommended** in shared clusters because anyone with network reachability to the pod could scrape the endpoint.
+</Warning>
+
+## ServiceMonitor reference {#servicemonitor-reference}
+
+The chart renders a ServiceMonitor of this shape when `prometheus.enable: true`:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: <release>-controller-manager-metrics-monitor
+  namespace: <operator-namespace>
+  labels:
+    control-plane: controller-manager
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  endpoints:
+    - path: /metrics
+      port: https           # "http" when metrics.secure: false
+      scheme: https
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        serverName: <release>-metrics-service.<operator-namespace>.svc
+        ca:
+          secret:
+            name: metrics-server-cert
+            key: ca.crt
+        cert:
+          secret:
+            name: metrics-server-cert
+            key: tls.crt
+        keySecret:
+          name: metrics-server-cert
+          key: tls.key
+```
+
+If your Prometheus instance does not run cert-manager, set `tlsConfig.insecureSkipVerify: true` and rely on bearer-token authentication only — the chart already does this when `certManager.enable: false`.
+
+## Standalone Prometheus example {#standalone-prometheus-example}
+
+If you do not use kube-prometheus-stack, the repository ships a self-contained example at [`examples/prometheus_secure_metrics_scraper.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/prometheus_secure_metrics_scraper.yaml). It creates a ServiceAccount, the necessary RBAC, and a `Prometheus` CR that selects the operator's ServiceMonitor.
+
+## Health probe endpoints {#health-probe-endpoints}
+
+| Path | Used by | Returns |
+|---|---|---|
+| `/healthz` | Kubernetes liveness probe | `200 OK` as long as the probe server is listening. |
+| `/readyz` | Kubernetes readiness probe | `200 OK` as long as the probe server is listening. |
+
+Both endpoints are registered with the same trivial ping check (`healthz.Ping` from `sigs.k8s.io/controller-runtime`). A failing probe therefore means "the manager process is not serving HTTP on `:8081`" — not "controllers are unhealthy". To detect controller-level problems, use the [reconciliation metrics](#reconciliation-activity) instead.
+
+Both endpoints are served on port `8081` by default. They are wired to the deployment as:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 15
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
+```
+
+A repeatedly failing probe usually means the probe server itself never came up — for example, the manager exited early during startup. Check the manager logs for `unable to start manager`, RBAC failures, or `cache did not sync` errors.
+
+## Metrics catalog {#metrics-catalog}
+
+The operator does not register custom Prometheus collectors. Everything below is exposed by the underlying `controller-runtime` and `client-go` libraries. The most useful series, grouped by purpose:
+
+### Reconciliation activity {#reconciliation-activity}
+
+| Metric | Type | Labels |
+|---|---|---|
+| `controller_runtime_reconcile_total` | counter | `controller`, `result` (`success` / `error` / `requeue` / `requeue_after`) |
+| `controller_runtime_reconcile_errors_total` | counter | `controller` |
+| `controller_runtime_reconcile_time_seconds_bucket` | histogram | `controller` |
+| `controller_runtime_active_workers` | gauge | `controller` |
+| `controller_runtime_max_concurrent_reconciles` | gauge | `controller` |
+
+The `controller` label is derived by `controller-runtime` from the resource type registered with `For(...)`. With the current code in `internal/controller/clickhouse` and `internal/controller/keeper` this resolves to `clickhousecluster` and `keepercluster` respectively. If you have customized the operator, verify with a one-time scrape of `/metrics`.
+
+### Work queue {#work-queue}
+
+| Metric | Type | Labels |
+|---|---|---|
+| `workqueue_depth` | gauge | `name`, `controller`, `priority` |
+| `workqueue_adds_total` | counter | `name`, `controller` |
+| `workqueue_retries_total` | counter | `name`, `controller` |
+| `workqueue_unfinished_work_seconds` | gauge | `name`, `controller` |
+| `workqueue_longest_running_processor_seconds` | gauge | `name`, `controller` |
+| `workqueue_queue_duration_seconds_bucket` | histogram | `name`, `controller` |
+| `workqueue_work_duration_seconds_bucket` | histogram | `name`, `controller` |
+
+The `name` and `controller` labels carry the same value (the controller name).
+
+### API server traffic {#api-server-traffic}
+
+| Metric | Type | Labels |
+|---|---|---|
+| `rest_client_requests_total` | counter | `code`, `method`, `host` |
+
+### Leader election {#leader-election}
+
+| Metric | Type | Labels |
+|---|---|---|
+| `leader_election_master_status` | gauge | `name` (= `d4ceba06.clickhouse.com`) |
+
+The Helm chart enables `--leader-elect` by default, so this metric is present in standard Helm installs. When running the binary directly without the flag, the metric is absent.
+
+### Runtime {#runtime}
+
+Standard Go process and runtime collectors — `go_goroutines`, `go_memstats_*`, `process_cpu_seconds_total`, `process_resident_memory_bytes`, etc.
+
+## Useful PromQL queries {#useful-promql-queries}
+
+### Health overview
+
+```promql
+# Reconciliation rate per controller
+sum by (controller) (rate(controller_runtime_reconcile_total[5m]))
+
+# Error rate per controller (alert if > 0 sustained)
+sum by (controller) (rate(controller_runtime_reconcile_errors_total[5m]))
+
+# p99 reconcile latency
+histogram_quantile(
+  0.99,
+  sum by (le, controller) (rate(controller_runtime_reconcile_time_seconds_bucket[5m]))
+)
+```
+
+### Backlog detection
+
+```promql
+# Pending items in the work queue — a sustained value > 0 indicates a backlog,
+# but short spikes during large reconciles are normal.
+avg_over_time(workqueue_depth[10m])
+
+# Reconciles that have been running for a long time
+workqueue_longest_running_processor_seconds > 60
+```
+
+### Throttling and API pressure
+
+```promql
+# Throttled requests to the API server
+sum by (code, host) (rate(rest_client_requests_total{code=~"4..|5.."}[5m]))
+```
+
+### Leader status (HA deployment)
+
+```promql
+# Should be exactly 1 across the replica set (Helm install enables --leader-elect by default)
+sum(leader_election_master_status{name="d4ceba06.clickhouse.com"})
+```
+
+## Suggested alerts {#suggested-alerts}
+
+Starting point for a PrometheusRule (tune thresholds for your environment):
+
+```yaml
+groups:
+  - name: clickhouse-operator
+    rules:
+      - alert: ClickHouseOperatorReconcileErrors
+        # > 0.1 errors/s sustained = > ~6 errors/min, filters transient conflicts.
+        expr: sum by (controller) (rate(controller_runtime_reconcile_errors_total[5m])) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'ClickHouse operator is failing to reconcile {{ $labels.controller }}'
+
+      - alert: ClickHouseOperatorWorkqueueBacklog
+        # avg_over_time avoids alerting on transient bursts during large reconciles.
+        expr: avg_over_time(workqueue_depth[10m]) > 5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Operator work queue backlog sustained for 30m'
+
+      - alert: ClickHouseOperatorReconcileSlow
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le, controller) (rate(controller_runtime_reconcile_time_seconds_bucket[10m]))
+          ) > 30
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'p99 reconcile latency for {{ $labels.controller }} > 30s'
+
+      - alert: ClickHouseOperatorNoLeader
+        expr: absent(leader_election_master_status{name="d4ceba06.clickhouse.com"}) == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'No leader for the ClickHouse operator (HA deployment)'
+```
+
+The last rule is only meaningful when leader election is enabled.
+
+## Verifying the setup {#verifying-the-setup}
+
+A quick end-to-end check, assuming the chart was installed in `clickhouse-operator-system`:
+
+```bash
+NS=clickhouse-operator-system
+
+# The metrics Service exists and selects the manager pod
+kubectl -n $NS get svc -l control-plane=controller-manager
+
+# The ServiceMonitor exists (only with prometheus.enable=true)
+kubectl -n $NS get servicemonitor -l control-plane=controller-manager
+
+# Manager pod is Ready (readiness probe answers)
+kubectl -n $NS get pod -l control-plane=controller-manager
+
+# Direct scrape from inside the cluster (with the metrics-reader binding)
+kubectl -n $NS run curl-metrics --rm -it --restart=Never \
+  --image=curlimages/curl:8.10.1 -- sh -c '
+    TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+    curl -sk -H "Authorization: Bearer $TOKEN" \
+      https://<release>-metrics-service.'$NS'.svc:8080/metrics \
+      | head -20
+  '
+```
+
+If the scrape returns metrics in the Prometheus exposition format, the endpoint and RBAC are correctly wired.
+
+## Related guides {#related-guides}
+
+- [Installation](/products/kubernetes-operator/install/helm) — Helm values relevant to monitoring.
+- [Configuration](/products/kubernetes-operator/guides/configuration) — TLS configuration shared with the metrics server.

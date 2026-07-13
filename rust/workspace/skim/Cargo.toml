@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-skim = { version = "0.15.5", default-features = false, features = ["cli"] }
+skim = { version = "0.20.2", default-features = false, features = ["cli"] }
 cxx = "1.0.83"
 term = "1.0.0"
 clap = "4.5.22"

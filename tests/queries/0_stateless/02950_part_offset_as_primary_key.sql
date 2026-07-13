@@ -5,6 +5,9 @@ drop table if exists a;
 create table a (i int) engine MergeTree order by i settings index_granularity = 2;
 insert into a select -number from numbers(5);
 
+-- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
+SET parallel_replicas_index_analysis_only_on_coordinator = 0;
+
 -- nothing to read
 select i from a where _part_offset >= 5 order by i settings max_bytes_to_read = 1;
 

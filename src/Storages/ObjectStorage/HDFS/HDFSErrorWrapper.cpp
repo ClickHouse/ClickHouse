@@ -1,4 +1,4 @@
-#include "HDFSErrorWrapper.h"
+#include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
 
 #if USE_HDFS
 

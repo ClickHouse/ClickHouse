@@ -63,6 +63,18 @@ void SecureStreamSocketImpl::setReceiveTimeout(const Poco::Timespan& timeout)
     _recvTimeout = underlying_socket->getReceiveTimeout();
 }
 
+void SecureStreamSocketImpl::setSendThrottler(const Poco::Net::ThrottlerPtr& throttler)
+{
+	_sndThrottler = throttler;
+	underlying_socket->setSendThrottler(throttler);
+}
+
+void SecureStreamSocketImpl::setReceiveThrottler(const Poco::Net::ThrottlerPtr& throttler)
+{
+	_recvThrottler = throttler;
+	underlying_socket->setReceiveThrottler(throttler);
+}
+
 SocketImpl* SecureStreamSocketImpl::acceptConnection(SocketAddress& clientAddr)
 {
 	throw Poco::InvalidAccessException("Cannot acceptConnection() on a SecureStreamSocketImpl");
@@ -246,6 +258,18 @@ bool SecureStreamSocketImpl::getBlocking() const
 void SecureStreamSocketImpl::setBlocking(bool flag)
 {
     _impl.setBlocking(flag);
+}
+
+
+void SecureStreamSocketImpl::setBioMethod(const BIO_METHOD * method)
+{
+    _impl.setBioMethod(method);
+}
+
+
+void SecureStreamSocketImpl::setMutex(std::unique_ptr<SecureSocketImpl::RecursiveMutex> mutex)
+{
+    _impl.setMutex(std::move(mutex));
 }
 
 

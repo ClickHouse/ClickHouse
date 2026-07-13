@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BlockNameMap.h>
+#include <Core/CaseAwareBlockNameMap.h>
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -35,7 +35,7 @@ protected:
       * with_types - in the second line the header with column names
       */
     RowInputFormatWithNamesAndTypes(
-        const Block & header_,
+        SharedHeader header_,
         ReadBuffer & in_,
         const Params & params_,
         bool is_binary_,
@@ -71,7 +71,7 @@ protected:
     bool with_types;
 
     std::unique_ptr<FormatReaderImpl> format_reader;
-    BlockNameMap column_indexes_by_names;
+    CaseAwareBlockNameMap column_indexes_by_names;
 
 private:
     bool is_binary;

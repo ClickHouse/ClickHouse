@@ -40,6 +40,10 @@ public:
         return offset();
     }
 
+    CompressionCodecPtr getCodec() const { return codec; }
+
+    void setCodec(CompressionCodecPtr codec_);
+
 private:
     void nextImpl() override;
     /// finalize call does not affect the out buffer.

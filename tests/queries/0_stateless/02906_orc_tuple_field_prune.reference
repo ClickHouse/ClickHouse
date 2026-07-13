@@ -6,7 +6,7 @@ array_tuple_column	Array(Tuple(\n    a Nullable(String),\n    b Nullable(Float64
 map_tuple_column	Map(String, Tuple(\n    a Nullable(String),\n    b Nullable(Float64),\n    c Nullable(Int64)))					
 -- { echoOn }
 -- Test primitive types
-select int64_column, string_column, float64_column from file('02906.orc') where int64_column % 15 = 0;
+select int64_column, string_column, float64_column from file(currentDatabase() || '_02906.orc') where int64_column % 15 = 0;
 0	0	0
 15	15	15
 30	30	30
@@ -15,7 +15,7 @@ select int64_column, string_column, float64_column from file('02906.orc') where 
 75	75	75
 90	90	90
 -- Test tuple type with names
-select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64))') where int64_column % 15 = 0;
+select tuple_column from file(currentDatabase() || '_02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64))') where int64_column % 15 = 0;
 (NULL,NULL,NULL)
 ('15',15,15)
 (NULL,NULL,NULL)
@@ -23,7 +23,7 @@ select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_col
 (NULL,NULL,NULL)
 ('75',75,75)
 (NULL,NULL,NULL)
-select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(c Nullable(Int64))') where int64_column % 15 = 0;
+select tuple_column from file(currentDatabase() || '_02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(c Nullable(Int64))') where int64_column % 15 = 0;
 (NULL)
 (15)
 (NULL)
@@ -31,7 +31,7 @@ select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_col
 (NULL)
 (75)
 (NULL)
-select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(c Nullable(Int64), d Nullable(String))') where int64_column % 15 = 0;
+select tuple_column from file(currentDatabase() || '_02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(c Nullable(Int64), d Nullable(String))') where int64_column % 15 = 0;
 (NULL,NULL)
 (15,NULL)
 (NULL,NULL)
@@ -40,7 +40,7 @@ select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_col
 (75,NULL)
 (NULL,NULL)
 -- Test tuple type without names
-select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(Nullable(String), Nullable(Float64), Nullable(Int64))') where int64_column % 15 = 0;
+select tuple_column from file(currentDatabase() || '_02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(Nullable(String), Nullable(Float64), Nullable(Int64))') where int64_column % 15 = 0;
 (NULL,NULL,NULL)
 ('15',15,15)
 (NULL,NULL,NULL)
@@ -48,7 +48,7 @@ select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_col
 (NULL,NULL,NULL)
 ('75',75,75)
 (NULL,NULL,NULL)
-select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(Nullable(String), Nullable(Float64))') where int64_column % 15 = 0;
+select tuple_column from file(currentDatabase() || '_02906.orc', 'ORC', 'int64_column Int64, tuple_column Tuple(Nullable(String), Nullable(Float64))') where int64_column % 15 = 0;
 (NULL,NULL)
 ('15',15)
 (NULL,NULL)
@@ -57,7 +57,7 @@ select tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, tuple_col
 ('75',75)
 (NULL,NULL)
 -- Test tuple nested in array
-select array_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, array_tuple_column Array(Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
+select array_tuple_column from file(currentDatabase() || '_02906.orc', 'ORC', 'int64_column Int64, array_tuple_column Array(Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
 [(NULL,NULL,NULL)]
 [('15',15,15)]
 [(NULL,NULL,NULL)]
@@ -65,7 +65,7 @@ select array_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, arr
 [(NULL,NULL,NULL)]
 [('75',75,75)]
 [(NULL,NULL,NULL)]
-select array_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, array_tuple_column Array(Tuple(b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
+select array_tuple_column from file(currentDatabase() || '_02906.orc', 'ORC', 'int64_column Int64, array_tuple_column Array(Tuple(b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
 [(NULL,NULL)]
 [(15,15)]
 [(NULL,NULL)]
@@ -73,7 +73,7 @@ select array_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, arr
 [(NULL,NULL)]
 [(75,75)]
 [(NULL,NULL)]
-select array_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, array_tuple_column Array(Tuple(b Nullable(Float64), c Nullable(Int64), d Nullable(String)))') where int64_column % 15 = 0;
+select array_tuple_column from file(currentDatabase() || '_02906.orc', 'ORC', 'int64_column Int64, array_tuple_column Array(Tuple(b Nullable(Float64), c Nullable(Int64), d Nullable(String)))') where int64_column % 15 = 0;
 [(NULL,NULL,NULL)]
 [(15,15,NULL)]
 [(NULL,NULL,NULL)]
@@ -82,7 +82,7 @@ select array_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, arr
 [(75,75,NULL)]
 [(NULL,NULL,NULL)]
 -- Test tuple nested in map
-select map_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, map_tuple_column Map(String, Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
+select map_tuple_column from file(currentDatabase() || '_02906.orc', 'ORC', 'int64_column Int64, map_tuple_column Map(String, Tuple(a Nullable(String), b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
 {'0':(NULL,NULL,NULL)}
 {'15':('15',15,15)}
 {'30':(NULL,NULL,NULL)}
@@ -90,7 +90,7 @@ select map_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, map_t
 {'60':(NULL,NULL,NULL)}
 {'75':('75',75,75)}
 {'90':(NULL,NULL,NULL)}
-select map_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, map_tuple_column Map(String, Tuple(b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
+select map_tuple_column from file(currentDatabase() || '_02906.orc', 'ORC', 'int64_column Int64, map_tuple_column Map(String, Tuple(b Nullable(Float64), c Nullable(Int64)))') where int64_column % 15 = 0;
 {'0':(NULL,NULL)}
 {'15':(15,15)}
 {'30':(NULL,NULL)}
@@ -98,7 +98,7 @@ select map_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, map_t
 {'60':(NULL,NULL)}
 {'75':(75,75)}
 {'90':(NULL,NULL)}
-select map_tuple_column from file('02906.orc', 'ORC', 'int64_column Int64, map_tuple_column Map(String, Tuple(b Nullable(Float64), c Nullable(Int64), d Nullable(String)))') where int64_column % 15 = 0;
+select map_tuple_column from file(currentDatabase() || '_02906.orc', 'ORC', 'int64_column Int64, map_tuple_column Map(String, Tuple(b Nullable(Float64), c Nullable(Int64), d Nullable(String)))') where int64_column % 15 = 0;
 {'0':(NULL,NULL,NULL)}
 {'15':(15,15,NULL)}
 {'30':(NULL,NULL,NULL)}

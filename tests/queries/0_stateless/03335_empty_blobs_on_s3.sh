@@ -8,8 +8,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-config="${BASH_SOURCE[0]/.sh/.xml}"
-
 # Create a table on S3 disk with Array column and wide parts
 # Insert a row with empty Array-s so that arr.bin file is empty
 $CLICKHOUSE_CLIENT -m -q "
@@ -42,7 +40,8 @@ $CLICKHOUSE_CLIENT -m -q "
     -- Check logs for skipping empty blob
     SELECT 'Skipped empty blobs after 1 insert:',  count() FROM system.text_log
     WHERE message LIKE 'Skipping writing empty blob for path %$UUID/tmp_insert_all_1_1_0/arr.bin%' AND
-        event_date >= yesterday() AND event_time > now() - interval 10 minute;
+        event_date >= yesterday() AND event_time > now() - interval 10 minute
+    SETTINGS max_rows_to_read = 0; -- system.text_log can be really big
 
     -- Check that there are several non-empty blobs in part dir
     SELECT if (count() > 4, 'Non-empty blobs present', 'Test error: no blobs found') FROM system.blob_storage_log
@@ -82,8 +81,9 @@ $CLICKHOUSE_CLIENT -m -q "
 
     -- Check logs for skipping empty blob
     SYSTEM FLUSH LOGS text_log;
-    SELECT 'Skipped empty blobs after 2 inserts and merge:',  count() FROM system.text_log WHERE 
+    SELECT 'Skipped empty blobs after 2 inserts and merge:',  count() FROM system.text_log WHERE
         message LIKE 'Skipping writing empty blob for path %$UUID/%/arr.bin%' AND
-        event_date >= yesterday() AND event_time > now() - interval 10 minute;
+        event_date >= yesterday() AND event_time > now() - interval 10 minute
+    SETTINGS max_rows_to_read = 0; -- system.text_log can be really big
 ";
 

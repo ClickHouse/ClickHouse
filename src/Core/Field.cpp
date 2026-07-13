@@ -204,7 +204,7 @@ bool Field::operator== (const Field & rhs) const
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Bad type of Field");
 }
 
-Field getBinaryValue(UInt8 type, ReadBuffer & buf)
+static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 {
     switch (static_cast<Field::Types::Which>(type))
     {
@@ -214,7 +214,7 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::UInt64:
         {
-            UInt64 value;
+            UInt64 value = 0;
             readVarUInt(value, buf);
             return value;
         }
@@ -250,7 +250,7 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Int64:
         {
-            Int64 value;
+            Int64 value = 0;
             readVarInt(value, buf);
             return value;
         }
@@ -268,7 +268,7 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Float64:
         {
-            Float64 value;
+            Float64 value = 0;
             readFloatBinary(value, buf);
             return value;
         }
@@ -311,14 +311,42 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         }
         case Field::Types::Bool:
         {
-            UInt8 value;
+            UInt8 value = 0;
             readBinary(value, buf);
             return bool(value);
         }
         case Field::Types::Decimal32:
+        {
+            Decimal<Int32> value{};
+            readBinary(value, buf);
+            UInt32 scale = 0 ;
+            readBinary(scale, buf);
+            return DecimalField<Decimal32>(value, scale);
+        }
         case Field::Types::Decimal64:
+        {
+            Decimal<Int64> value{};
+            readBinary(value, buf);
+            UInt32 scale = 0;
+            readBinary(scale, buf);
+            return DecimalField<Decimal64>(value, scale);
+        }
         case Field::Types::Decimal128:
+        {
+            Decimal<Int128> value{};
+            readBinary(value, buf);
+            UInt32 scale = 0;
+            readBinary(scale, buf);
+            return DecimalField<Decimal128>(value, scale);
+        }
         case Field::Types::Decimal256:
+        {
+            Decimal<Int256> value{};
+            readBinary(value, buf);
+            UInt32 scale = 0;
+            readBinary(scale, buf);
+            return DecimalField<Decimal256>(value, scale);
+        }
         case Field::Types::CustomType:
             return Field();
     }
@@ -327,7 +355,7 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
 
 void readBinaryArray(Array & x, ReadBuffer & buf)
 {
-    size_t size;
+    size_t size = 0;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
@@ -351,7 +379,7 @@ void writeText(const Array & x, WriteBuffer & buf)
 
 void readBinary(Tuple & x, ReadBuffer & buf)
 {
-    size_t size;
+    size_t size = 0;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
@@ -374,7 +402,7 @@ void writeText(const Tuple & x, WriteBuffer & buf)
 
 void readBinary(Map & x, ReadBuffer & buf)
 {
-    size_t size;
+    size_t size = 0;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
@@ -397,12 +425,12 @@ void writeText(const Map & x, WriteBuffer & buf)
 
 void readBinary(Object & x, ReadBuffer & buf)
 {
-    size_t size;
+    size_t size = 0;
     readBinary(size, buf);
 
     for (size_t index = 0; index < size; ++index)
     {
-        UInt8 type;
+        UInt8 type = 0;
         String key;
         readBinary(type, buf);
         readBinary(key, buf);
@@ -444,9 +472,9 @@ template <typename T>
 void readQuoted(DecimalField<T> & x, ReadBuffer & buf)
 {
     assertChar('\'', buf);
-    T value;
-    UInt32 scale;
-    int32_t exponent;
+    T value{};
+    UInt32 scale = 0;
+    int32_t exponent = 0;
     uint32_t max_digits = static_cast<uint32_t>(-1);
     readDigits<true>(buf, value, max_digits, exponent, true);
     if (exponent > 0)
@@ -501,7 +529,7 @@ void writeFieldBinary(const Field & x, WriteBuffer & buf)
 
 Field readFieldBinary(ReadBuffer & buf)
 {
-    UInt8 type;
+    UInt8 type = 0;
     readBinary(type, buf);
     return getBinaryValue(type, buf);
 }
@@ -751,21 +779,24 @@ template bool decimalEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, 
 template bool decimalEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalEqual<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
 template bool decimalLess<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLess<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLess<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
 template bool decimalLessOrEqual<Decimal32>(Decimal32 x, Decimal32 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Decimal64>(Decimal64 x, Decimal64 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Decimal128>(Decimal128 x, Decimal128 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<Decimal256>(Decimal256 x, Decimal256 y, UInt32 x_scale, UInt32 y_scale);
 template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 x_scale, UInt32 y_scale);
+template bool decimalLessOrEqual<Time64>(Time64 x, Time64 y, UInt32 x_scale, UInt32 y_scale);
 
 
-void writeText(const Null & x, WriteBuffer & buf)
+static void writeText(const Null & x, WriteBuffer & buf)
 {
     if (x.isNegativeInfinity())
         writeText("-Inf", buf);
@@ -775,14 +806,12 @@ void writeText(const Null & x, WriteBuffer & buf)
         writeText("NULL", buf);
 }
 
-String toString(const Field & x)
+String fieldToString(const Field & x)
 {
     return Field::dispatch(
         [] (const auto & value)
         {
-            // Use explicit type to prevent implicit construction of Field and
-            // infinite recursion into toString<Field>.
-            return toString<decltype(value)>(value);
+            return toString(value);
         },
         x);
 }
@@ -828,6 +857,7 @@ template class DecimalField<Decimal64>;
 template class DecimalField<Decimal128>;
 template class DecimalField<Decimal256>;
 template class DecimalField<DateTime64>;
+template class DecimalField<Time64>;
 
 template <typename T>
 NearestFieldType<std::decay_t<T>> & Field::safeGet() &
@@ -869,11 +899,13 @@ template NearestFieldType<std::decay_t<Decimal64>> & Field::safeGet<Decimal64>()
 template NearestFieldType<std::decay_t<Decimal128>> & Field::safeGet<Decimal128>() &;
 template NearestFieldType<std::decay_t<Decimal256>> & Field::safeGet<Decimal256>() &;
 template NearestFieldType<std::decay_t<DateTime64>> & Field::safeGet<DateTime64>() &;
+template NearestFieldType<std::decay_t<Time64>> & Field::safeGet<Time64>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal32>>> & Field::safeGet<DecimalField<Decimal32>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal64>>> & Field::safeGet<DecimalField<Decimal64>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal128>>> & Field::safeGet<DecimalField<Decimal128>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal256>>> & Field::safeGet<DecimalField<Decimal256>>() &;
 template NearestFieldType<std::decay_t<DecimalField<DateTime64>>> & Field::safeGet<DecimalField<DateTime64>>() &;
+template NearestFieldType<std::decay_t<DecimalField<Time64>>> & Field::safeGet<DecimalField<Time64>>() &;
 template NearestFieldType<std::decay_t<AggregateFunctionStateData>> & Field::safeGet<AggregateFunctionStateData>() &;
 template NearestFieldType<std::decay_t<Array>> & Field::safeGet<Array>() &;
 template NearestFieldType<std::decay_t<Map>> & Field::safeGet<Map>() &;

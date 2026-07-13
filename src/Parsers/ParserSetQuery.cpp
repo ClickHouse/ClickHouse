@@ -10,12 +10,14 @@
 #include <Parsers/FieldFromAST.h>
 
 #include <Core/Names.h>
+#include <Core/Settings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -39,6 +41,7 @@ public:
 
     String operator() (const Array & x) const
     {
+        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '[';
@@ -55,6 +58,7 @@ public:
 
     String operator() (const Map & x) const
     {
+        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '{';
@@ -81,6 +85,7 @@ public:
 
     String operator() (const Tuple & x) const
     {
+        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '(';
@@ -144,13 +149,13 @@ protected:
             map.push_back(std::move(tuple));
         }
 
-        node = std::make_shared<ASTLiteral>(std::move(map));
+        node = make_intrusive<ASTLiteral>(std::move(map));
         return true;
     }
 };
 
 /// Parse Identifier, Literal, Array/Tuple/Map of literals
-bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
+static bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
 {
     ASTPtr node;
 
@@ -211,12 +216,16 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
         return false;
 
     /// for SETTINGS disk=disk(type='s3', path='', ...)
-    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        tryGetIdentifierNameInto(name, change.name);
-        change.value = createFieldFromAST(function_ast);
+        auto pos_before_func = pos;
+        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+        {
+            tryGetIdentifierNameInto(name, change.name);
+            change.value = createFieldFromAST(function_ast);
 
-        return true;
+            return true;
+        }
+        pos = pos_before_func;
     }
     if (!literal_or_map_p.parse(pos, value, expected))
         return false;
@@ -228,7 +237,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
 }
 
 bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
-    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected)
+    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected, bool enable_shorthand_syntax)
 {
     ParserCompoundIdentifier name_p;
     ParserLiteralOrMap value_p;
@@ -238,11 +247,14 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
+    bool have_eq = false;
 
     if (!name_p.parse(pos, node, expected))
         return false;
 
-    if (!s_eq.ignore(pos, expected))
+    have_eq = s_eq.ignore(pos, expected);
+
+    if (!enable_shorthand_syntax && !have_eq)
         return false;
 
     tryGetIdentifierNameInto(node, name);
@@ -250,6 +262,9 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     /// Parameter
     if (name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
     {
+        if (!have_eq)
+            return false;
+
         name = name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
         if (name.empty())
@@ -264,23 +279,62 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         return true;
     }
 
-    /// Default
-    if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
+    if (have_eq)
     {
-        default_settings = name;
-        return true;
-    }
+        /// Default
+        if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
+        {
+            default_settings = name;
+            return true;
+        }
 
-    /// Setting
-    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+        /// Setting
+        {
+            auto pos_before_func = pos;
+            if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+            {
+                change.name = name;
+                change.value = createFieldFromAST(function_ast);
+
+                return true;
+            }
+            pos = pos_before_func;
+        }
+
+        /// Query parameter as a setting value, e.g. `SET max_threads = {threads:UInt64}`
+        /// or `SELECT ... SETTINGS max_threads = {threads:UInt64}`.
+        /// Keep it as an ASTQueryParameter wrapped into a Field (same mechanism as disk(...) above);
+        /// it is resolved later by ReplaceQueryParameterVisitor once parameter values are known.
+        {
+            ParserSubstitution substitution_p;
+            ASTPtr substitution;
+            if (substitution_p.parse(pos, substitution, expected))
+            {
+                change.name = name;
+                change.value = createFieldFromAST(substitution);
+
+                return true;
+            }
+        }
+
+        if (!value_p.parse(pos, node, expected))
+            return false;
+    }
+    else
     {
-        change.name = name;
-        change.value = createFieldFromAST(function_ast);
-
-        return true;
+        try
+        {
+            Field type_test = Settings::castValueUtil(name, true);
+            if (type_test.getType() == Field::Types::Which::Bool)
+                node = make_intrusive<ASTLiteral>(Field(true));
+            else
+                return false;
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
     }
-    if (!value_p.parse(pos, node, expected))
-        return false;
 
     change.name = name;
     change.value = node->as<ASTLiteral &>().value;
@@ -303,6 +357,30 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Parse SET TRANSACTION ... queries using ParserTransactionControl
         if (ParserKeyword{Keyword::TRANSACTION}.check(pos, expected))
             return false;
+
+        /// Parse SET TIME ZONE 'tz' as an alias for SET session_timezone = 'tz'
+        if (ParserKeyword{Keyword::TIME_ZONE}.ignore(pos, expected))
+        {
+            ParserToken eq(TokenType::Equals);
+            eq.ignore(pos, expected); // optional, for PostgreSQL compatibility
+            ASTPtr value_node;
+            ParserLiteralOrMap literal_parser;
+
+            if (!literal_parser.parse(pos, value_node, expected))
+                return false;
+
+            auto query = make_intrusive<ASTSetQuery>();
+            node = query;
+
+            query->is_standalone = !parse_only_internals;
+
+            SettingChange change;
+            change.name = "session_timezone";
+            change.value = value_node->as<ASTLiteral &>().value;
+            query->changes.push_back(std::move(change));
+
+            return true;
+        }
     }
 
     SettingsChanges changes;
@@ -318,7 +396,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         String name_of_default_setting;
         Parameter parameter;
 
-        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected))
+        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected, shorthand_syntax))
             return false;
 
         if (!parameter.first.empty())
@@ -329,7 +407,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             changes.push_back(std::move(setting));
     }
 
-    auto query = std::make_shared<ASTSetQuery>();
+    auto query = make_intrusive<ASTSetQuery>();
     node = query;
 
     query->is_standalone = !parse_only_internals;

@@ -1,21 +1,22 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Core/Names.h>
-#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Parsers/IAST_fwd.h>
 
 #include <list>
 #include <memory>
+#include <unordered_map>
 #include <vector>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
-
-class Block;
-using Header = Block;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -58,13 +59,25 @@ struct ExplainPlanOptions
     bool actions = false;
     /// Add information about indexes actions.
     bool indexes = false;
+    /// Add information about projections.
+    bool projections = false;
     /// Add information about sorting
     bool sorting = false;
     /// Show remote plans for distributed query.
     bool distributed = false;
+    /// Add input headers to step.
+    bool input_headers = false;
+    /// Print structure of columns instead of just their names and types.
+    bool column_structure = false;
+    /// Hide expression steps and detailed action info
+    bool compact = false;
+    /// Print query plan with pretty formatting
+    bool pretty = false;
+
 
     SettingsChanges toSettingsChanges() const;
 };
+struct DistributedQueryPlan;
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -75,22 +88,39 @@ public:
     QueryPlan();
     ~QueryPlan();
     QueryPlan(QueryPlan &&) noexcept;
-    QueryPlan & operator=(QueryPlan &&) noexcept;
+    /// Not noexcept: move-assignment appends the QueryPlanResourceHolder, which allocates and can
+    /// throw. The move constructor stays noexcept because it steals the holder instead of appending.
+    QueryPlan & operator=(QueryPlan &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
-    const Header & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
+    const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
+    /// max_type_complexity guards binary type decoding of the plan (0 == unlimited). Client QueryPlan packets
+    /// (TCPHandler::receiveQueryPlan) pass the effective input_format_binary_max_type_complexity; trusted
+    /// server-to-server plans pass 0.
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
+
+    /// Serializes the query plan and store the result
+    void ensureSerialized(size_t max_supported_version) const;
+
+    /// Get cached serialized data
+    std::string_view getSerializedData() const;
+
+    /// Check if already serialized
+    bool isSerialized() const;
 
     void resolveStorages(const ContextPtr & context);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
+    /// Converts the original plan to distributed plan and replaces the original plan with a plan that
+    /// contains a step that executes the distributed plan and a step that receives the result.
+    void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
@@ -101,16 +131,27 @@ public:
     {
         /// Show header of output ports.
         bool header = false;
+        /// Show remote pipelines for distributed query.
+        bool distributed = false;
+        /// Compact repeated processor chains.
+        bool compact_repeated_processor_chains = false;
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent = 0) const;
+    void explainPlan(
+        WriteBuffer & buffer,
+        const ExplainPlanOptions & options,
+        size_t offset = 0,
+        size_t max_description_length = 0,
+        const std::string & parent_tree_prefix = "",
+        bool is_last_child_plan = true) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
     /// Do not allow to change the table while the pipeline alive.
     void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }
     void addInterpreterContext(std::shared_ptr<const Context> context) { resources.interpreter_context.emplace_back(std::move(context)); }
+    auto getInterpretersContexts() const { return resources.interpreter_context; }
     void addStorageHolder(StoragePtr storage) { resources.storage_holders.emplace_back(std::move(storage)); }
 
     void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
@@ -137,19 +178,25 @@ public:
     static QueryPlan extractSubplan(Node * root, Nodes & nodes);
 
     Node * getRootNode() const { return root; }
+    void replaceRootNode(Node * new_root) { root = new_root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
+    void replaceNodeWithPlan(Node * node, QueryPlan plan);
+    void replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader expected_header);
 
     QueryPlan extractSubplan(Node * subplan_root);
+    void cloneInplace(Node * node_to_replace, Node * subplan_root);
     QueryPlan clone() const;
+
+    static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
 private:
     struct SerializationFlags;
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags);
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
-    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context);
+    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
 
     QueryPlanResourceHolder resources;
     Nodes nodes;
@@ -161,6 +208,10 @@ private:
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
     bool concurrency_control = false;
+
+    /// Cached serialized representation
+    /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
+    mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
 };
 
 /// This is a structure which contains a query plan and a list of sets.
@@ -187,6 +238,61 @@ struct QueryPlanAndSets
     std::list<SetFromSubquery> sets_from_subquery;
 };
 
-std::string debugExplainStep(const IQueryPlanStep & step);
+std::string debugExplainStep(IQueryPlanStep & step);
+std::string debugExplainPlan(const QueryPlan & plan);
+
+
+struct ExchangeDescription
+{
+    enum class Kind
+    {
+        Persisted = 1,  /// Exchange data between tasks using temporary files
+        Streaming = 2,  /// Exchange data between tasks using network
+    };
+
+    String name;
+    Kind kind = Kind::Persisted;
+    size_t source_bucket_count = 0;
+    size_t destination_bucket_count = 0;
+};
+
+using ExchangeDescriptions = std::unordered_map<String, ExchangeDescription>;
+
+
+/// Stores named parameters for query plan.
+/// This is aimed to share the same plan with different values of parameters like bucket id for shuffle.
+struct QueryPlanParameters
+{
+    std::unordered_map<String, Field> parameters;
+};
+
+/// Represents a single local task in a distributed query plan
+struct DistributedQueryTask
+{
+    String task_id;
+    QueryPlanParameters parameters;
+    std::vector<ExchangeStreamId> input_exchange_streams;
+    std::vector<ExchangeStreamId> output_exchange_streams;
+};
+
+/// A group of tasks with the same plan fragment and differenet parameters
+/// Tasks can be executed in parallel on different partitions of data
+struct DistributedQueryStage
+{
+    QueryPlan query_plan_fragment;   /// Common for all tasks
+    std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
+};
+
+/// Represents a graph of stages
+/// A stage typically contains a fragment of the query plan that can be executed by multiple workers in parallel on different partitions of data
+struct DistributedQueryPlan
+{
+    std::unordered_map<String, DistributedQueryStage> stages;
+    /// Maps stage name to stages it depends on and the corresponding exchange_id
+    std::unordered_map<String, std::unordered_map<String, String>> stage_depends_on;
+    /// Maps exchange_id to exchange description
+    ExchangeDescriptions exchange_descriptions;
+    String final_result_stream_name;
+};
 
 }

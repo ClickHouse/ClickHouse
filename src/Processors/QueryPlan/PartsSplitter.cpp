@@ -1,10 +1,5 @@
-#include <algorithm>
-#include <limits>
-#include <memory>
-#include <numeric>
-#include <queue>
-#include <unordered_map>
-#include <vector>
+#include <Processors/QueryPlan/PartsSplitter.h>
+#include <base/sort.h>
 
 #include <Core/Field.h>
 #include <Common/logger_useful.h>
@@ -20,7 +15,6 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -58,7 +52,6 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Float64:
         case TypeIndex::BFloat16:
         case TypeIndex::Nullable:
-        case TypeIndex::ObjectDeprecated:
         case TypeIndex::Object:
         case TypeIndex::Variant:
         case TypeIndex::Dynamic:
@@ -97,6 +90,11 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
     return true;
 }
 
+} /// end anonymous namespace
+
+namespace DB
+{
+
 bool isSafePrimaryKey(const KeyDescription & primary_key)
 {
     for (const auto & type : primary_key.data_types)
@@ -107,6 +105,11 @@ bool isSafePrimaryKey(const KeyDescription & primary_key)
 
     return true;
 }
+
+}
+
+namespace
+{
 
 int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
 {
@@ -250,9 +253,11 @@ public:
         {
             ranges_in_data_parts.emplace_back(
                 initial_ranges_in_data_parts[part_index].data_part,
+                initial_ranges_in_data_parts[part_index].parent_part,
                 initial_ranges_in_data_parts[part_index].part_index_in_query,
                 initial_ranges_in_data_parts[part_index].part_starting_offset_in_query,
-                MarkRanges{mark_range});
+                MarkRanges{mark_range},
+                initial_ranges_in_data_parts[part_index].read_hints);
             part_index_to_initial_ranges_in_data_parts_index[it->second] = part_index;
             return;
         }
@@ -351,11 +356,11 @@ struct PartsRangesIterator
     }
 
     Values value;
-    bool in_reverse_order;
-    MarkRange range;
-    size_t part_index;
-    EventType event;
-    bool selected; /// Whether this range was selected or rejected in skip index filtering
+    bool in_reverse_order{};
+    MarkRange range{};
+    size_t part_index{};
+    EventType event{};
+    bool selected{}; /// Whether this range was selected or rejected in skip index filtering
 };
 
 struct PartRangeIndex
@@ -393,11 +398,6 @@ struct PartRangeIndexHash
     }
 };
 
-struct SplitPartsRangesResult
-{
-    RangesInDataParts non_intersecting_parts_ranges;
-    RangesInDataParts intersecting_parts_ranges;
-};
 
 void dump(const std::vector<PartsRangesIterator> & ranges_iterators, WriteBuffer & buffer)
 {
@@ -412,7 +412,7 @@ String toString(const std::vector<PartsRangesIterator> & ranges_iterators)
     return buffer.str();
 }
 
-SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
+SplitPartsRangesResult splitPartsRangesImpl(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
 {
     /** Split ranges in data parts into intersecting ranges in data parts and non intersecting ranges in data parts.
       *
@@ -669,12 +669,12 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
     auto && non_intersecting_ranges_in_data_parts = std::move(non_intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
     auto && intersecting_ranges_in_data_parts = std::move(intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
 
-    std::stable_sort(
+    ::stableSort(
         non_intersecting_ranges_in_data_parts.begin(),
         non_intersecting_ranges_in_data_parts.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
 
-    std::stable_sort(
+    ::stableSort(
         intersecting_ranges_in_data_parts.begin(),
         intersecting_ranges_in_data_parts.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
@@ -688,6 +688,12 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
 
 namespace DB
 {
+
+SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
+{
+    return splitPartsRangesImpl(std::move(ranges_in_data_parts), in_reverse_order, logger);
+}
+
 
 namespace ErrorCodes
 {
@@ -847,13 +853,13 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
                 i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
         }
 
-        std::stable_sort(
+        ::stableSort(
             layer.begin(),
             layer.end(),
             [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
     }
 
-    return {std::move(result_layers), std::move(borders)};
+    return {std::move(result_layers), std::move(borders), in_reverse_order};
 }
 
 
@@ -882,7 +888,7 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
             if (type->isNullable())
             {
                 pks_ast.push_back(makeASTFunction("isNull", pk_ast));
-                values_ast.push_back(std::make_shared<ASTLiteral>(values[i].isNull() ? 1 : 0));
+                values_ast.push_back(make_intrusive<ASTLiteral>(values[i].isNull() ? 1 : 0));
                 pk_ast = makeASTFunction("assumeNotNull", pk_ast);
             }
 
@@ -896,12 +902,12 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
             }
             else
             {
-                ASTPtr component_ast = std::make_shared<ASTLiteral>(values[i]);
+                ASTPtr component_ast = make_intrusive<ASTLiteral>(values[i]);
                 auto decayed_type = removeNullable(removeLowCardinality(primary_key.data_types.at(i)));
 
                 // Values of some types (e.g. Date, DateTime) are stored in columns as numbers and we get them as just numbers from the index.
                 // So we need an explicit Cast for them.
-                component_ast = makeASTFunction("cast", std::move(component_ast), std::make_shared<ASTLiteral>(decayed_type->getName()));
+                component_ast = makeASTFunction("cast", std::move(component_ast), make_intrusive<ASTLiteral>(decayed_type->getName()));
 
                 values_ast.push_back(std::move(component_ast));
             }
@@ -924,7 +930,7 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
     return filters;
 }
 
-RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
+static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
     std::vector<PartsRangesIterator> selected_ranges;
@@ -948,10 +954,21 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         return skip_and_return_all_part_ranges();
     }
 
+    PartsRangesIterator selected_upper_bound;
+    std::vector<std::vector<size_t>> part_selected_ranges(ranges_in_data_parts.size(), std::vector<size_t>());
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
-        std::vector<bool> is_selected_range(index_granularity->getMarksCountWithoutFinal(), false);
+
+        /// The optimization's logic needs the final mark to get the primary key upper bound of this part.
+        /// The final mark may not be written under some situations e.g index_granularity_bytes = 0.
+        if (!index_granularity->hasFinalMark())
+        {
+            LOG_TRACE(logger, "use_skip_indexes_if_final_exact_mode processing is not applied, because {} does not have the final mark",
+                        ranges_in_data_parts[part_index].data_part->name);
+            return skip_and_return_all_part_ranges();
+        }
+
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
         {
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
@@ -961,32 +978,74 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
             }
 
             selected_ranges.push_back(
-                {index_access.getValue(part_index, range.begin), false, range, part_index, PartsRangesIterator::EventType::RangeStart, true});
-            for (auto i = range.begin; i < range.end;i++)
-               is_selected_range[i] = true;
-        }
+                {index_access.getValue(part_index, range.begin), false, range, part_index,
+                    PartsRangesIterator::EventType::RangeStart, true});
 
-        for (size_t range_begin = 0; range_begin < is_selected_range.size(); range_begin++)
-        {
-            const bool value_is_defined_at_end_mark = ((range_begin + 1) < index_granularity->getMarksCount());
-            if (!value_is_defined_at_end_mark)
-            {
-                return skip_and_return_all_part_ranges();
-            }
+            const auto & range_end_value = index_access.getValue(part_index, range.end);
+            if (selected_upper_bound.value.empty() || (compareValues(range_end_value, selected_upper_bound.value, false) > 0))
+                selected_upper_bound = {range_end_value, false, range, part_index, PartsRangesIterator::EventType::RangeStart, true};
 
-            if (is_selected_range[range_begin])
-                continue;
-            MarkRange rejected_range(range_begin, range_begin + 1);
-            rejected_ranges.push_back(
-                {index_access.getValue(part_index, rejected_range.begin), false, rejected_range, part_index, PartsRangesIterator::EventType::RangeStart, false});
+            for (auto i = range.begin; i < range.end; ++i)
+               part_selected_ranges[part_index].push_back(i);
         }
     }
 
+    if (selected_ranges.empty())
+        return result.getCurrentRangesInDataParts();
+
     ::sort(selected_ranges.begin(), selected_ranges.end());
 
-    ::sort(rejected_ranges.begin(), rejected_ranges.end());
+    const PartsRangesIterator selected_lower_bound = selected_ranges[0];
 
-    LOG_TRACE(logger, "findPKRangesForFinalAfterSkipIndex : sorting phase complete");
+    /// Find the ranges that were rejected in each part. We use the 'ranges_snapshot_after_pk_analysis'
+    /// member because ranges already rejected by pk analysis don't need to be checked again for intersection.
+    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    {
+        if (!ranges_in_data_parts[part_index].ranges_snapshot_after_pk_analysis)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ranges selected by primary key for part {}",
+                    ranges_in_data_parts[part_index].data_part->name);
+
+        const auto & ranges = *ranges_in_data_parts[part_index].ranges_snapshot_after_pk_analysis;
+        const auto part_ranges_after_pk_analysis_begin = ranges.front().begin;
+        const auto part_ranges_after_pk_analysis_end = ranges.back().end;
+        const auto & part_lower_bound = index_access.getValue(part_index, part_ranges_after_pk_analysis_begin);
+        const auto & part_upper_bound = index_access.getValue(part_index, part_ranges_after_pk_analysis_end);
+
+        if ((compareValues(selected_lower_bound.value, part_upper_bound, false) > 0) ||
+            (compareValues(selected_upper_bound.value, part_lower_bound, false) < 0))
+        {
+            continue; /// early exit, intersection infeasible in this part
+        }
+
+        /// The selected lower bound could be 'fqrst' and granule PK ranges could be -
+        ///      abcde,...,fcedr, ffagj, fqrst, fqrst, fqrst, ghyrw ....
+        /// candidates_start needs to point to granule starting at "ffagj"
+        auto candidates_start = index_access.findRightmostMarkLessThanValueInRange(part_index, selected_lower_bound.value, MarkRange{part_ranges_after_pk_analysis_begin, part_ranges_after_pk_analysis_end + 1}, false);
+        if (!candidates_start)
+            candidates_start = 0;
+
+        auto candidates_end = index_access.findLeftmostMarkGreaterThanValueInRange(part_index, selected_upper_bound.value, MarkRange{part_ranges_after_pk_analysis_begin, part_ranges_after_pk_analysis_end + 1}, false);
+        if (!candidates_end)
+            candidates_end = part_ranges_after_pk_analysis_end;
+        if (candidates_end != 0) /// Come back by 1 because we are now 1 past the upper bound or at the final mark
+            candidates_end = candidates_end.value() - 1;
+
+        for (const auto & part_candidate_range : ranges)
+        {
+            for (auto range_begin = std::max(part_candidate_range.begin, *candidates_start); range_begin < std::min(part_candidate_range.end, *candidates_end + 1); range_begin++)
+            {
+                if (std::binary_search(part_selected_ranges[part_index].begin(), part_selected_ranges[part_index].end(), range_begin))
+                    continue;
+
+                MarkRange rejected_range(range_begin, range_begin + 1);
+                rejected_ranges.push_back(
+                    {index_access.getValue(part_index, rejected_range.begin), false, rejected_range, part_index,
+                    PartsRangesIterator::EventType::RangeStart, false});
+            }
+        }
+    }
+
+    ::sort(rejected_ranges.begin(), rejected_ranges.end());
 
     std::vector<PartsRangesIterator>::iterator selected_ranges_iter = selected_ranges.begin();
     std::vector<PartsRangesIterator>::iterator rejected_ranges_iter = rejected_ranges.begin();
@@ -1034,7 +1093,7 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     }
 
     auto result_final_ranges = result.getCurrentRangesInDataParts();
-    std::stable_sort(
+    ::stableSort(
         result_final_ranges.begin(),
         result_final_ranges.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
@@ -1074,6 +1133,24 @@ static void reorderColumns(ActionsDAG & dag, const Block & header, const std::st
     dag.getOutputs() = std::move(new_outputs);
 }
 
+std::optional<bool> deriveReverseOrder(const KeyDescription & primary_key, const KeyDescription & sorting_key)
+{
+    if (sorting_key.reverse_flags.empty())
+        return false;
+
+    size_t num_primary_keys = primary_key.expression_list_ast->children.size();
+    chassert(sorting_key.reverse_flags.size() >= num_primary_keys);
+    bool in_reverse_order = sorting_key.reverse_flags[0];
+    for (size_t i = 1; i < num_primary_keys; ++i)
+    {
+        /// Splitting by primary-key ranges is impossible when some key columns are ascending and
+        /// others descending.
+        if (in_reverse_order != sorting_key.reverse_flags[i])
+            return {};
+    }
+    return in_reverse_order;
+}
+
 SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     const KeyDescription & primary_key,
     const KeyDescription & sorting_key,
@@ -1085,6 +1162,9 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     bool split_parts_ranges_into_intersecting_and_non_intersecting_final,
     bool split_intersecting_parts_ranges_into_layers)
 {
+    if (!max_layers)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layers should be greater than 0");
+
     auto logger = getLogger("PartsSplitter");
 
     SplitPartsWithRangesByPrimaryKeyResult result;
@@ -1095,7 +1175,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     {
         auto pipe = in_order_reading_step_getter(ranges);
 
-        pipe.addSimpleTransform([sorting_expr](const Block & header)
+        pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
         {
             return std::make_shared<ExpressionTransform>(header, sorting_expr);
         });
@@ -1110,54 +1190,61 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
         return result;
     }
 
-    bool in_reverse_order = false;
-    size_t num_primary_keys = primary_key.expression_list_ast->children.size();
-    if (!sorting_key.reverse_flags.empty())
+    auto in_reverse_order_opt = deriveReverseOrder(primary_key, sorting_key);
+    if (!in_reverse_order_opt)
     {
-        chassert(sorting_key.reverse_flags.size() >= num_primary_keys);
-        in_reverse_order = sorting_key.reverse_flags[0];
-        for (size_t i = 1; i < num_primary_keys; ++i)
-        {
-            /// It's not possible to split parts when some keys are in ascending
-            /// order while others are in descending order.
-            if (in_reverse_order != sorting_key.reverse_flags[i])
-            {
-                result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
-                return result;
-            }
-        }
+        result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
+        return result;
     }
+    bool in_reverse_order = *in_reverse_order_opt;
 
     if (split_parts_ranges_into_intersecting_and_non_intersecting_final)
     {
-        SplitPartsRangesResult split_result = splitPartsRanges(intersecting_parts_ranges, in_reverse_order, logger);
+        SplitPartsRangesResult split_result = splitPartsRangesImpl(intersecting_parts_ranges, in_reverse_order, logger);
         result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
         intersecting_parts_ranges = std::move(split_result.intersecting_parts_ranges);
     }
 
-    if (!split_intersecting_parts_ranges_into_layers)
+    if (!split_intersecting_parts_ranges_into_layers || max_layers == 1)
     {
         if (!intersecting_parts_ranges.empty())
             result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
         return result;
     }
 
-    if (max_layers <= 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
-
-    auto split_ranges = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
-    result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, in_reverse_order, context);
+    auto split_ranges = splitIntersectingPartsRangesIntoLayers(
+        intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
     return result;
+}
+
+/// Applies a FilterSortedStreamByRange built from a per-layer border predicate AST. No-op when the AST
+/// is null (the open first/last interval). `pipe`'s streams must be sorted by the primary key.
+static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const String & description, const KeyDescription & primary_key, ContextPtr context)
+{
+    if (!filter_function)
+        return;
+
+    auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
+    auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
+    reorderColumns(actions, pipe.getHeader(), filter_function->getColumnName());
+    ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
+    pipe.addSimpleTransform(
+        [&](const SharedHeader & header)
+        {
+            auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
+            step->setDescription(description);
+            return step;
+        });
 }
 
 Pipes readByLayers(
     SplitPartsByRanges split_ranges,
     const KeyDescription & primary_key,
     ReadingInOrderStepGetter && step_getter,
-    bool in_reverse_order,
     ContextPtr context)
 {
-    auto && [layers, borders] = std::move(split_ranges);
+    auto && [layers, borders, in_reverse_order] = std::move(split_ranges);
     auto filters = buildFilters(primary_key, borders, in_reverse_order);
     Pipes merging_pipes(layers.size());
 
@@ -1165,14 +1252,6 @@ Pipes readByLayers(
     {
         merging_pipes[i] = step_getter(layers[i]);
 
-        auto & filter_function = filters[i];
-        if (!filter_function)
-            continue;
-
-        auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
-        auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
-        reorderColumns(actions, merging_pipes[i].getHeader(), filter_function->getColumnName());
-        ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = in_reverse_order ? fmt::format(
                                                   "filter values in [{}, {})",
                                                   i < borders.size() ? ::toString(borders[i]) : "-inf",
@@ -1181,16 +1260,22 @@ Pipes readByLayers(
                                                   "filter values in ({}, {}]",
                                                   i ? ::toString(borders[i - 1]) : "-inf",
                                                   i < borders.size() ? ::toString(borders[i]) : "+inf");
-        merging_pipes[i].addSimpleTransform(
-            [&](const Block & header)
-            {
-                auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
-                step->setDescription(description);
-                return step;
-            });
+        applyRangeFilterFromAST(merging_pipes[i], filters[i], description, primary_key, context);
     }
 
     return merging_pipes;
+}
+
+void addLayerRangeFilterToPipe(
+    Pipe & pipe,
+    const KeyDescription & primary_key,
+    const std::vector<std::vector<Field>> & borders,
+    size_t layer_index,
+    bool in_reverse_order,
+    ContextPtr context)
+{
+    auto filters = buildFilters(primary_key, borders, in_reverse_order);
+    applyRangeFilterFromAST(pipe, filters.at(layer_index), "filter distributed FINAL layer", primary_key, context);
 }
 
 RangesInDataParts findPKRangesForFinalAfterSkipIndex(

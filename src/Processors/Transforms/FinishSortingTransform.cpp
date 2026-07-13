@@ -21,7 +21,7 @@ static bool isPrefix(const SortDescription & pref_descr, const SortDescription &
 }
 
 FinishSortingTransform::FinishSortingTransform(
-    const Block & header,
+    SharedHeader header,
     const SortDescription & description_sorted_,
     const SortDescription & description_to_sort_,
     size_t max_merged_block_size_,
@@ -41,7 +41,7 @@ FinishSortingTransform::FinishSortingTransform(
     size_t num_columns = const_columns_to_remove.size();
     for (const auto & column_description : description_sorted_)
     {
-        auto pos = header.getPositionByName(column_description.column_name);
+        auto pos = header->getPositionByName(column_description.column_name);
 
         if (pos < num_columns && !const_columns_to_remove[pos])
             description_sorted_without_constants.push_back(column_description);
@@ -68,6 +68,17 @@ void FinishSortingTransform::consume(Chunk chunk)
     }
 
     removeConstColumns(chunk);
+
+    /// We don't support sorting by replicated columns because `compareAt` over a full column
+    /// does not accept a `ColumnReplicated`.
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (const auto & desc : description_with_positions)
+        columns[desc.column_number] = columns[desc.column_number]->convertToFullColumnIfReplicated();
+    chunk.setColumns(std::move(columns), num_rows);
+
+    /// Compact the remaining duplicated columns.
+    compactReplicatedColumns(chunk);
 
     /// Find the position of last already read key in current chunk.
     if (!chunks.empty())
@@ -119,7 +130,7 @@ void FinishSortingTransform::generate()
     if (!merge_sorter)
     {
         merge_sorter
-            = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+            = std::make_unique<MergeSorter>(std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit);
         generated_prefix = true;
     }
 

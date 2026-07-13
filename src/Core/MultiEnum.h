@@ -20,7 +20,7 @@ struct MultiEnum
     template <typename ValueType>
     requires std::is_convertible_v<ValueType, StorageType>
     constexpr explicit MultiEnum(ValueType v)
-        : bitset(v)
+        : bitset(static_cast<StorageType>(v))
     {
         static_assert(std::is_unsigned_v<ValueType>);
         static_assert(std::is_unsigned_v<StorageType> && std::is_integral_v<StorageType>);
@@ -100,5 +100,5 @@ struct MultiEnum
 private:
     StorageType bitset = 0;
 
-    static constexpr StorageType toBitFlag(EnumType v) { return StorageType{1} << static_cast<StorageType>(v); }
+    static constexpr StorageType toBitFlag(EnumType v) { return static_cast<StorageType>(StorageType{1} << static_cast<StorageType>(v)); }
 };

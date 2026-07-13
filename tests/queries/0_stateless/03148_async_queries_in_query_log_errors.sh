@@ -20,7 +20,7 @@ function print_flush_query_logs()
               not empty(flush_query_id) as populated_flush_query_id
           FROM system.asynchronous_insert_log
           WHERE
-              event_date >= yesterday()
+              event_date >= yesterday() AND event_time >= now() - 600
           AND query_id = '$1'
           AND database = currentDatabase()
           FORMAT Vertical"
@@ -44,7 +44,7 @@ function print_flush_query_logs()
           exception_code
       FROM system.query_log
       WHERE
-          event_date >= yesterday()
+          event_date >= yesterday() AND event_time >= now() - 600
       AND initial_query_id = (SELECT flush_query_id FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND query_id = '$1')
       -- AND current_database = currentDatabase() -- Just to silence style check: this is not ok for this test since the query uses default values
       ORDER BY type DESC
@@ -56,5 +56,5 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE async_insert_landing (id UInt32) ENGINE = 
 
 query_id="$(random_str 10)"
 ${CLICKHOUSE_CLIENT} --query_id="${query_id}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=0, async_insert=1 values ('Invalid')" 2>/dev/null || true
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE async_insert_landing"
 print_flush_query_logs ${query_id}

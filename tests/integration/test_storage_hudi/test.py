@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import shutil
@@ -7,7 +6,6 @@ from datetime import datetime
 import pyspark
 import pytest
 from pyspark.sql.functions import (
-    current_timestamp,
     monotonically_increasing_id,
     row_number,
 )
@@ -19,26 +17,24 @@ from pyspark.sql.types import (
     StringType,
     StructField,
     StructType,
-    TimestampType,
 )
 from pyspark.sql.window import Window
 
-import helpers.client
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import (
-    get_file_contents,
     prepare_s3_bucket,
     remove_directory,
     upload_directory,
 )
 from helpers.test_tools import TSV
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def get_spark():
+def get_spark(log_dir=None):
     builder = (
-        pyspark.sql.SparkSession.builder.appName("spark_test")
+        pyspark.sql.SparkSession.builder.appName("test_storage_hudi")
         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
         .config(
             "spark.sql.catalog.local", "org.apache.spark.sql.hudi.catalog.HoodieCatalog"
@@ -46,6 +42,14 @@ def get_spark():
         .config("spark.driver.memory", "20g")
         .master("local")
     )
+
+    if log_dir:
+        props_path = write_spark_log_config(log_dir)
+        builder = builder.config(
+            "spark.driver.extraJavaOptions",
+            f"-Dlog4j2.configurationFile=file:{props_path}",
+        )
+
     return builder.getOrCreate()
 
 
@@ -66,7 +70,9 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
 
         yield cluster
 
@@ -319,7 +325,7 @@ def test_types(started_cluster):
             ["a", "Nullable(Int32)"],
             ["b", "Nullable(String)"],
             ["c", "Nullable(Date32)"],
-            ["d", "Array(Nullable(String))"],
+            ["d", "Array(String)"],
             ["e", "Nullable(Bool)"],
         ]
     )

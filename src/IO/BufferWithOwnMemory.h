@@ -3,19 +3,11 @@
 #include <boost/noncopyable.hpp>
 
 #include <Common/Allocator.h>
-#include <Common/ProfileEvents.h>
 
 #include <Common/Exception.h>
 #include <Core/Defines.h>
 
 #include <base/arithmeticOverflow.h>
-
-
-namespace ProfileEvents
-{
-    extern const Event IOBufferAllocs;
-    extern const Event IOBufferAllocBytes;
-}
 
 
 namespace DB
@@ -24,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -76,29 +69,7 @@ struct Memory : boost::noncopyable, Allocator
     const char * data() const { return m_data; }
     char * data() { return m_data; }
 
-    void resize(size_t new_size)
-    {
-        if (!m_data)
-        {
-            alloc(new_size);
-            return;
-        }
-
-        if (new_size <= m_capacity - pad_right)
-        {
-            m_size = new_size;
-            return;
-        }
-
-        size_t new_capacity = withPadding(new_size);
-
-        size_t diff = new_capacity - m_capacity;
-        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, diff);
-
-        m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_capacity, alignment));
-        m_capacity = new_capacity;
-        m_size = new_size;
-    }
+    void resize(size_t new_size, bool deallocate_if_empty = false);
 
 private:
     static size_t withPadding(size_t value)
@@ -111,30 +82,14 @@ private:
         return res;
     }
 
-    void alloc(size_t new_size)
-    {
-        if (!new_size)
-        {
-            m_data = nullptr;
-            return;
-        }
-
-        size_t new_capacity = withPadding(new_size);
-
-        ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
-        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, new_capacity);
-
-        m_data = static_cast<char *>(Allocator::alloc(new_capacity, alignment));
-        m_capacity = new_capacity;
-        m_size = new_size;
-    }
+    void alloc(size_t new_size);
 
     void dealloc()
     {
         if (!m_data)
             return;
 
-        Allocator::free(m_data, m_capacity);
+        Allocator::free(m_data, m_capacity, alignment);
         m_data = nullptr;    /// To avoid double free if next alloc will throw an exception.
     }
 };
@@ -147,14 +102,33 @@ template <typename Base>
 class BufferWithOwnMemory : public Base
 {
 protected:
-    Memory<> memory;
+    Memory<> memory{};
+    const bool use_existing_memory;
+
 public:
-    /// If non-nullptr 'existing_memory' is passed, then buffer will not create its own memory and will use existing_memory without ownership.
-    explicit BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
+    /// If non-nullptr 'existing_memory' is passed,
+    /// then buffer will not create its own memory and will use existing_memory without ownership.
+    explicit BufferWithOwnMemory(
+        size_t size = DBMS_DEFAULT_BUFFER_SIZE,
+        char * existing_memory = nullptr,
+        size_t alignment = 0)
         : Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment)
+        , use_existing_memory(existing_memory != nullptr)
     {
         Base::set(existing_memory ? existing_memory : memory.data(), size);
         Base::padded = !existing_memory;
+    }
+
+    void resize(size_t size, bool deallocate_if_empty = false)
+    {
+        if (use_existing_memory)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Existing memory was used for the buffer, resize is not allowed");
+        }
+        memory.resize(size, deallocate_if_empty);
+        Base::set(memory.data(), size);
     }
 };
 

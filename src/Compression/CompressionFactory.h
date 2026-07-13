@@ -1,11 +1,18 @@
 #pragma once
 
+#include <Core/Types.h>
+#include <Common/Documentation.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Parsers/IAST_fwd.h>
+#include <Columns/IColumn_fwd.h>
 
 #include <functional>
 #include <memory>
 #include <optional>
-#include <unordered_map>
+#include <source_location>
+#include <utility>
 
 #include <boost/noncopyable.hpp>
 
@@ -13,9 +20,6 @@ namespace DB
 {
 
 static constexpr auto DEFAULT_CODEC_NAME = "Default";
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class ICompressionCodec;
 class IDataType;
@@ -33,8 +37,8 @@ protected:
     using Creator = std::function<CompressionCodecPtr(const ASTPtr & parameters)>;
     using CreatorWithType = std::function<CompressionCodecPtr(const ASTPtr & parameters, const IDataType * column_type)>;
     using SimpleCreator = std::function<CompressionCodecPtr()>;
-    using CompressionCodecsDictionary = std::unordered_map<String, CreatorWithType>;
-    using CompressionCodecsCodeDictionary = std::unordered_map<uint8_t, CreatorWithType>;
+    using CompressionCodecsDictionary = UnorderedMapWithMemoryTracking<String, CreatorWithType>;
+    using CompressionCodecsCodeDictionary = UnorderedMapWithMemoryTracking<uint8_t, CreatorWithType>;
 public:
 
     static CompressionCodecFactory & instance();
@@ -43,10 +47,10 @@ public:
     CompressionCodecPtr getDefaultCodec() const;
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)
-    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs, bool enable_deflate_qpl_codec, bool enable_zstd_qat_codec) const;
+    ASTPtr validateCodecAndGetPreprocessedAST(const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const;
 
     /// Validate codecs AST specified by user
-    void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs, bool enable_deflate_qpl_codec, bool enable_zstd_qat_codec) const;
+    void validateCodec(const String & family_name, std::optional<int> level, bool sanity_check, bool allow_experimental_codecs) const;
 
     /// Get codec by AST and possible column_type. Some codecs can use
     /// information about type to improve inner settings, but every codec should
@@ -74,13 +78,24 @@ public:
     /// Get codec by name with optional params. Example: LZ4, ZSTD(3)
     CompressionCodecPtr get(const String & compression_codec) const;
 
-    /// Register codec with parameters and column type
-    void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);
+    /// Insert codec information into MutableColumns to show in the system table
+    void fillCodecDescriptions(MutableColumns & res_columns) const;
+
+    /// The embedded documentation of every registered codec, as a (family name, documentation) pair. The
+    /// description is the codec's `getDescription` and the `source` is the file where the codec was registered.
+    /// Used by `system.documentation`.
+    VectorWithMemoryTracking<std::pair<String, Documentation>> getCodecDocumentations() const;
+
+    /// Register codec with parameters and column type. The `source` is captured automatically at the call site
+    /// (the codec's registration), so it points to the source file that defines the codec; do not pass it explicitly.
+    void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator, std::source_location source = std::source_location::current());
     /// Register codec with parameters
-    void registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator);
+    void registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator, std::source_location source = std::source_location::current());
 
     /// Register codec without parameters
-    void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator);
+    void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator, std::source_location source = std::source_location::current());
+
+    Strings getAllRegisteredNames() const;
 
 protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;
@@ -88,6 +103,8 @@ protected:
 private:
     CompressionCodecsDictionary family_name_with_codec;
     CompressionCodecsCodeDictionary family_code_with_codec;
+    /// The source file where each codec family was registered, keyed by family name. See `getCodecDocumentations`.
+    UnorderedMapWithMemoryTracking<String, const char *> family_name_with_source;
     CompressionCodecPtr default_codec;
 
     CompressionCodecFactory();

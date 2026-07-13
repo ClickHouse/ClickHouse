@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <os_threads_nice_value_query>4</os_threads_nice_value_query>
+        </default>
+    </profiles>
+</clickhouse>

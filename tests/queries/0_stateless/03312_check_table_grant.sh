@@ -12,7 +12,7 @@ DROP TABLE IF EXISTS cheque;
 CREATE TABLE cheque (s String) ORDER BY s;
 INSERT INTO cheque VALUES ('Check how the cheque checks out on the checkerboard.');
 
-CHECK TABLE cheque;
+CHECK TABLE cheque SETTINGS check_query_single_value_result = 1;
 SELECT * FROM cheque;
 
 CREATE USER test_03312;
@@ -24,7 +24,7 @@ SELECT * FROM cheque;
 "
 
 $CLICKHOUSE_CLIENT --user test_03312 "
-CHECK TABLE cheque;
+CHECK TABLE cheque SETTINGS check_query_single_value_result = 1;
 " 2>&1 | grep -o -F 'ACCESS_DENIED'
 
 $CLICKHOUSE_CLIENT "
@@ -32,7 +32,7 @@ GRANT CHECK ON ${CLICKHOUSE_DATABASE}.cheque TO test_03312;
 "
 
 $CLICKHOUSE_CLIENT --user test_03312 "
-CHECK TABLE cheque;
+CHECK TABLE cheque SETTINGS check_query_single_value_result = 1;
 "
 
 $CLICKHOUSE_CLIENT "
