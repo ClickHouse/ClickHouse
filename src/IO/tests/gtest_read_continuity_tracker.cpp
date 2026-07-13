@@ -19,7 +19,7 @@ TEST(ReadContinuityTracker, ContiguousServesExtendRun)
     t.recordReadRange(50, 50);   /// exactly continues the frontier -> checkpoint
     EXPECT_EQ(t.currentRun(), 100u);
     /// The exact continuation checkpointed the run: estimate = 0.5 * 100 = 50;
-    /// frontier(100) + max(0.5 * (run(100) + est(50)), est(50)) = 175.
+    /// frontier(100) + max(0.5 * run(100) + 0.5 * est(50), est(50)) = 175.
     EXPECT_EQ(t.estimate(), 50u);
     EXPECT_EQ(t.predictedEnd(), 175u);
 }
@@ -93,11 +93,11 @@ TEST(ReadContinuityTracker, PredictedEndIsRunAnchored)
     t.recordSeek(1000);   /// estimate 50, run reset
     t.recordReadRange(1000, 20);   /// a small new run of 20
     EXPECT_EQ(t.currentRun(), 20u);
-    /// frontier(1020) + max(0.5*(20+50), 50) = 1070: the estimate dominates early.
+    /// frontier(1020) + max(0.5*20 + 0.5*50 = 35, 50) = 1070: the estimate dominates early.
     EXPECT_EQ(t.predictedEnd(), 1070u);
     t.recordReadRange(1020, 60);   /// exact continuation -> checkpoint: est = 0.5*80 + 0.5*50 = 65
     EXPECT_EQ(t.currentRun(), 80u);
-    /// frontier(1080) + max(0.5*(80+65) = 72, 65) = 1152: the blend overtakes the
+    /// frontier(1080) + max(0.5*80 + 0.5*65 = 72, 65) = 1152: the blend overtakes the
     /// estimate smoothly; growth stays run-proportional, never caller-re-anchored.
     EXPECT_EQ(t.predictedEnd(), 1152u);
 }
@@ -120,7 +120,7 @@ TEST(ReadContinuityTracker, UnbrokenScanWarmsTheEstimate)
     EXPECT_EQ(t.estimate(), 100u);
     t.recordReadRange(200, 100);     /// checkpoint: est = 0.5 * 300 + 0.5 * 100 = 200
     EXPECT_EQ(t.estimate(), 200u);
-    EXPECT_EQ(t.predictedEnd(), 300u + 250u);   /// frontier + 0.5 * (300 + 200)
+    EXPECT_EQ(t.predictedEnd(), 300u + 250u);   /// frontier + max(0.5 * 300 + 0.5 * 200, 200)
 
     /// A gapless seek is the same positive signal.
     auto s = makeTracker(/*bridgeable_gap=*/100, /*alpha=*/0.5);

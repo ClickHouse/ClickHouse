@@ -49,7 +49,8 @@ public:
 
     /// The predicted ABSOLUTE end of the current run, anchored at the run (the
     /// last seek position), not at the caller's offset:
-    /// `frontier + max(ewma_alpha * (currentRun + estimate), estimate)`. The first read of a
+    /// `frontier + max(ewma_alpha * currentRun + (1 - ewma_alpha) * estimate, estimate)`.
+    /// The first read of a
     /// run predicts only the historical estimate; as the run accumulates
     /// evidence the end grows as `run_start + (1 + alpha) * run` - proportional,
     /// and identical for every caller wherever they ask from (anchoring the full

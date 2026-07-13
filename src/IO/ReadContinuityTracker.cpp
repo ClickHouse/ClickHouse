@@ -59,12 +59,13 @@ size_t ReadContinuityTracker::predictedEnd() const
 {
     if (!last_pos)
         return 0;
-    /// `alpha * (run + estimate)` blends the live evidence with history - at a run's
-    /// start this is exactly the estimate (via the max), early on "half of what we saw
-    /// plus half of history", and it overtakes the estimate smoothly once the run
-    /// outgrows it, instead of switching hard at run == estimate.
+    /// `alpha * run + (1 - alpha) * estimate` is the same fold `checkpointRun` applies:
+    /// the prediction is "the estimate as if the live run checkpointed right now",
+    /// floored at the estimate (via the max) so live evidence never talks history
+    /// down before the run outgrows it.
     return *last_pos + std::max<size_t>(
-        static_cast<size_t>(options.ewma_alpha * (static_cast<double>(currentRun()) + expected_run)),
+        static_cast<size_t>(options.ewma_alpha * static_cast<double>(currentRun())
+            + (1.0 - options.ewma_alpha) * expected_run),
         static_cast<size_t>(expected_run));
 }
 

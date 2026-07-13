@@ -5997,7 +5997,8 @@ TEST(ReaderExecutor, ReadContinuityTrackerCapturesFullSequentialRead)
                 est = alpha * static_cast<double>(frontier) + (1 - alpha) * est;
         }
         return frontier + std::max<size_t>(
-            static_cast<size_t>(alpha * (static_cast<double>(frontier) + est)), static_cast<size_t>(est));
+            static_cast<size_t>(alpha * static_cast<double>(frontier) + (1 - alpha) * est),
+            static_cast<size_t>(est));
     };
     EXPECT_EQ(reach_after_1, predicted(1)) << "first plan fed exactly one segment";
     EXPECT_EQ(reach_after_3, predicted(3))
