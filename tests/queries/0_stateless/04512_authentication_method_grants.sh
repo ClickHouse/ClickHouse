@@ -124,6 +124,19 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${user}_bad IDENTIFIED WITH plaintext_passw
 echo "-- A filtered source grant in the GRANTS clause is rejected (ALTER USER)"
 ${CLICKHOUSE_CLIENT} -q "ALTER USER ${user} ADD IDENTIFIED WITH plaintext_password BY 'filtered_token' GRANTS (READ ON S3('s3://bucket/private/.*'))" 2>&1 | grep -m1 -o "NOT_IMPLEMENTED" | head -n 1
 
+# A method verified against an external system (ldap, kerberos, http, jwt) cannot participate in the fail-close
+# ambiguity scan at authentication time, because re-checking a credential there would require an extra probe of the
+# external system. Another method accepting the same credential could then shadow its GRANTS, so the combination
+# is rejected explicitly (fail-close).
+echo "-- A GRANTS clause on an externally verified authentication method is rejected (CREATE USER, ldap)"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user}_bad IDENTIFIED WITH ldap SERVER 'srv' GRANTS (SELECT ON t1)" 2>&1 | grep -m1 -o "NOT_IMPLEMENTED" | head -n 1
+
+echo "-- A GRANTS clause on an externally verified authentication method is rejected (CREATE USER, kerberos)"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user}_bad IDENTIFIED WITH kerberos GRANTS (SELECT ON t1)" 2>&1 | grep -m1 -o "NOT_IMPLEMENTED" | head -n 1
+
+echo "-- A GRANTS clause on an externally verified authentication method is rejected (ALTER USER, http)"
+${CLICKHOUSE_CLIENT} -q "ALTER USER ${user} ADD IDENTIFIED WITH http SERVER 'srv' SCHEME 'basic' GRANTS (SELECT ON t1)" 2>&1 | grep -m1 -o "NOT_IMPLEMENTED" | head -n 1
+
 # The GRANTS clause must be serialized precisely. The backward-compatibility rewrites that widen a grant for the
 # benefit of older replicas must not apply here: they would broaden a narrow token. With the default
 # `enable_read_write_grants = 0`, a plain `GRANT READ ON S3` is dumped as the full `S3` source access, but an

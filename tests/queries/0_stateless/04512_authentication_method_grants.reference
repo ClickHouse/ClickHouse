@@ -43,6 +43,12 @@ ACCESS_DENIED
 NOT_IMPLEMENTED
 -- A filtered source grant in the GRANTS clause is rejected (ALTER USER)
 NOT_IMPLEMENTED
+-- A GRANTS clause on an externally verified authentication method is rejected (CREATE USER, ldap)
+NOT_IMPLEMENTED
+-- A GRANTS clause on an externally verified authentication method is rejected (CREATE USER, kerberos)
+NOT_IMPLEMENTED
+-- A GRANTS clause on an externally verified authentication method is rejected (ALTER USER, http)
+NOT_IMPLEMENTED
 -- A source-level grant keeps its exact access type in the GRANTS clause (not widened to the full source)
 CREATE USER user3 IDENTIFIED WITH plaintext_password GRANTS (READ ON S3)
 ['READ ON S3']

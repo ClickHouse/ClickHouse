@@ -1,5 +1,6 @@
 #include <Access/IAccessStorage.h>
 #include <Access/Authentication.h>
+#include <Access/Common/AuthenticationType.h>
 #include <Access/Credentials.h>
 #include <Access/User.h>
 #include <Access/AccessBackup.h>
@@ -638,24 +639,6 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     const ClientInfo & client_info,
     SettingsChanges & settings);
 
-/// Whether a credential for this authentication type is verified purely locally, with no external side effects.
-/// `LDAP`/`KERBEROS`/`HTTP`/`JWT` contact an external system, so they must not be re-checked during the fail-close
-/// ambiguity scan below: an extra probe with the same credential could fail against a different server and, for
-/// example, trip an account lockout there.
-static bool authenticationTypeIsVerifiedLocally(AuthenticationType type)
-{
-    switch (type)
-    {
-        case AuthenticationType::LDAP:
-        case AuthenticationType::KERBEROS:
-        case AuthenticationType::HTTP:
-        case AuthenticationType::JWT:
-            return false;
-        default:
-            return true;
-    }
-}
-
 /// A `NO_PASSWORD` or `PLAINTEXT_PASSWORD` method is ignored entirely when the corresponding server setting disables it
 /// (`allow_no_password` / `allow_plaintext_password`). Both the primary authentication loop and the fail-close ambiguity
 /// scan below must apply this gate, otherwise a disabled method could still narrow the `GRANTS` or shorten the
@@ -721,8 +704,12 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 /// matching methods and expires at the earliest of their `VALID UNTIL`.
                 ///
                 /// Methods that neither restrict the grants nor set an expiry cannot narrow anything and are skipped without
-                /// an extra credential check. Methods verified against an external system (LDAP/Kerberos/HTTP/JWT) are also
-                /// skipped, so authentication never performs an extra external probe here.
+                /// an extra credential check. Methods verified against an external system (`LDAP`/`KERBEROS`/`HTTP`/`JWT`) are
+                /// also skipped, so authentication never performs an extra external probe here: a probe with the same credential
+                /// could fail against a different server and, for example, trip an account lockout there. This skip cannot lose
+                /// a `GRANTS` narrowing, because a `GRANTS` clause on an externally verified method is rejected at creation
+                /// (see `AuthenticationData::fromAST`); it can only lose a `VALID UNTIL` of such a method, matching the
+                /// pre-existing first-match behavior of per-method `VALID UNTIL`.
                 std::optional<AccessRights> combined_grants;
                 if (!matched_authentication_method->getGrants().structurallyEmpty())
                     combined_grants.emplace(matched_authentication_method->getGrants());

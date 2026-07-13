@@ -68,4 +68,8 @@ inline String toString(AuthenticationType type_)
     return String(toStringView(AuthenticationTypeInfo::get(type_).keyword));
 }
 
+/// Whether a credential for this authentication type is verified purely locally, with no external side effects.
+/// `LDAP`/`KERBEROS`/`HTTP`/`JWT` contact an external system to verify a credential.
+bool authenticationTypeIsVerifiedLocally(AuthenticationType type_);
+
 }

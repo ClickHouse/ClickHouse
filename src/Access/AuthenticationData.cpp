@@ -489,6 +489,23 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
     if (!query.grants.structurallyEmpty())
     {
+        /// The GRANTS clause is enforced with a fail-close ambiguity scan at authentication time: when several methods
+        /// accept the same credential, the session is limited to the intersection of their GRANTS (see
+        /// `IAccessStorage::authenticateImpl`). A method verified against an external system (`LDAP`/`KERBEROS`/`HTTP`/`JWT`)
+        /// cannot participate in that scan, because re-checking a credential there would require an extra probe of the
+        /// external system, which is unsafe (it could, for example, trip an account lockout on a different server).
+        /// Without the scan, another method accepting the same credential could shadow this method's GRANTS and the
+        /// session would silently regain the full rights of the user. Reject the combination explicitly (fail-close).
+        ///
+        /// Like the filter check below, this check runs regardless of `validate`: the GRANTS clause is a new feature,
+        /// so no older server could have stored such a method, and the `ATTACH USER` path must not become a bypass.
+        if (!authenticationTypeIsVerifiedLocally(auth_data.getType()))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The GRANTS clause is not supported for authentication method '{}', which is verified against an external "
+                "system: another authentication method accepting the same credential could bypass the limit",
+                toString(auth_data.getType()));
+
         AccessRightsElements grants = query.grants;
         grants.replaceDeprecated();
 

@@ -224,6 +224,8 @@ Note that the limit is a property of the authentication method, captured at the 
 
 Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported in the clause yet: the intersection compares a source filter as an opaque string and cannot narrow one filter to another, so such a grant is rejected rather than silently granting no access.
 
+The clause is supported only for authentication methods whose credentials are verified locally by the server. For methods verified against an external system (`ldap`, `kerberos`, `http`, `jwt`) the clause is rejected: when several authentication methods accept the same credential, the limit is enforced by re-checking the credential against the other methods, and an extra probe of an external system is unsafe, so another method accepting the same credential could bypass the limit.
+
 ## GRANTEES Clause {#grantees-clause}
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#granting-privilege-syntax). Options of the `GRANTEES` clause:
