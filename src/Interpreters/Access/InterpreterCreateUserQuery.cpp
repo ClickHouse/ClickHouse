@@ -13,6 +13,8 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/ASTDatabaseOrNone.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
@@ -21,6 +23,8 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -261,7 +265,41 @@ BlockIO InterpreterCreateUserQuery::execute()
         getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
+    {
+        /// `VALID FOR <interval>` is a shortcut for `VALID UNTIL now + <interval>`, resolved relative to
+        /// the current time at execution. When the query is distributed `ON CLUSTER`, the AST text is what
+        /// gets sent to every replica, so each of them would re-evaluate `now + interval` against its own
+        /// clock and the resulting deadlines could diverge across the cluster. To keep the deadline
+        /// identical everywhere, we resolve the interval once here (on the initiator) and rewrite the AST
+        /// to an absolute `VALID UNTIL` literal before distributing it.
+        auto cluster_query_ptr = updated_query_ptr->clone();
+        auto & cluster_query = cluster_query_ptr->as<ASTCreateUserQuery &>();
+
+        auto make_absolute_valid_until = [](time_t deadline) -> ASTPtr
+        {
+            WriteBufferFromOwnString out;
+            writeDateTimeText(deadline, out);
+            return make_intrusive<ASTLiteral>(out.str());
+        };
+
+        if (cluster_query.global_valid_until_is_interval)
+        {
+            cluster_query.global_valid_until = make_absolute_valid_until(global_valid_until.value_or(0));
+            cluster_query.global_valid_until_is_interval = false;
+        }
+
+        for (size_t i = 0; i < cluster_query.authentication_methods.size(); ++i)
+        {
+            auto & method = *cluster_query.authentication_methods[i];
+            if (method.valid_until_is_interval)
+            {
+                method.valid_until = make_absolute_valid_until(authentication_methods[i].getValidUntil());
+                method.valid_until_is_interval = false;
+            }
+        }
+
+        return executeDDLQueryOnCluster(cluster_query_ptr, getContext());
+    }
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;

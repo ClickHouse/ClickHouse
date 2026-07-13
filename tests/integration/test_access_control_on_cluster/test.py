@@ -101,3 +101,38 @@ def test_grant_current_database_on_cluster():
     assert ch1.query("SHOW DATABASES", user="test_user") == "user_db\n"
     ch1.query("DROP DATABASE user_db ON CLUSTER 'cluster'")
     ch1.query("DROP USER test_user ON CLUSTER 'cluster'")
+
+
+def test_valid_for_on_cluster():
+    # `VALID FOR <interval>` is a shortcut for `VALID UNTIL now + <interval>`. When distributed
+    # `ON CLUSTER`, the interval must be resolved to an absolute deadline on the initiator, otherwise
+    # every replica would re-evaluate `now + interval` against its own clock (and DDL queue latency),
+    # so the stored `valid_until` would diverge across nodes. Here we assert that `SHOW CREATE USER`
+    # is byte-identical on every replica, which only holds if the deadline was resolved exactly once.
+    ch1.query("DROP USER IF EXISTS valid_for_user ON CLUSTER 'cluster'")
+
+    # User-level `VALID FOR` together with a credential-level `VALID FOR`.
+    ch1.query_with_retry(
+        "CREATE USER valid_for_user ON CLUSTER 'cluster' "
+        "IDENTIFIED WITH plaintext_password BY 'x' VALID FOR INTERVAL 1 YEAR",
+        retry_count=5,
+    )
+    show = ch1.query("SHOW CREATE USER valid_for_user")
+    # The shorthand must have been resolved to an absolute `VALID UNTIL` literal.
+    assert "VALID UNTIL" in show
+    assert "VALID FOR" not in show
+    assert ch2.query("SHOW CREATE USER valid_for_user") == show
+    assert ch3.query("SHOW CREATE USER valid_for_user") == show
+
+    # `ALTER USER ... VALID FOR` must stay consistent across the cluster as well.
+    ch2.query_with_retry(
+        "ALTER USER valid_for_user ON CLUSTER 'cluster' VALID FOR INTERVAL 2 YEAR",
+        retry_count=5,
+    )
+    altered = ch1.query("SHOW CREATE USER valid_for_user")
+    assert "VALID UNTIL" in altered
+    assert "VALID FOR" not in altered
+    assert ch2.query("SHOW CREATE USER valid_for_user") == altered
+    assert ch3.query("SHOW CREATE USER valid_for_user") == altered
+
+    ch1.query("DROP USER valid_for_user ON CLUSTER 'cluster'")
