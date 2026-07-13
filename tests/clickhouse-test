@@ -1021,14 +1021,17 @@ def _ensure_lldb_installed():
 
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
 def get_stacktraces_from_lldb(pid):
-    # 30s ceiling: `thread backtrace all` should finish in seconds even on a
-    # debug build with many threads; anything beyond that means lldb itself
-    # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
-    # leaves the server process untouched.
+    # The ceiling must accommodate attaching to a multi-gigabyte sanitizer
+    # binary: symbol loading alone takes tens of seconds (attaching to an idle
+    # watchdog process of a 6 GB TSan build took ~17s in CI), and
+    # `thread backtrace all` on a hung server with hundreds of threads takes
+    # minutes. Expiry forfeits the only evidence of a server hang, while
+    # killing lldb leaves the server process untouched either way, so err on
+    # the generous side.
     _ensure_lldb_installed()  # TEMPORARY: see _ensure_lldb_installed docstring.
     return shell_get_output(
         f"lldb --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
-        timeout=30,
+        timeout=300,
     )
 
 
