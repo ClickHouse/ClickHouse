@@ -84,7 +84,10 @@ public:
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
-    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash);
+    /// A single logical consultation may probe more than one key (e.g. the bare condition hash and
+    /// a skip-index-profiled hash); pass increment_profile_events = false on the extra probes so the
+    /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
+    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
 
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;

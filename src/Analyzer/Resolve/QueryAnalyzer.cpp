@@ -77,6 +77,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_inline_views;
@@ -1839,10 +1840,16 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
             Identifier explicit_identifier = matched_qualified_identifier;
             explicit_identifier.push_back(matched_column_node_typed.getColumnName());
             auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
-            IdentifierResolveContext explicit_resolve_settings;
-            explicit_resolve_settings.allow_to_check_cte = false;
-            explicit_resolve_settings.allow_to_check_database_catalog = false;
-            auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, scope, explicit_resolve_settings);
+
+            /// The qualifier is a table expression (the matcher already resolved it to one), so any
+            /// type change can only come from the join tree. Resolve against the nearest query scope's
+            /// join tree directly rather than through tryResolveIdentifier: the latter first consults
+            /// expression arguments and aliases, and a non-compound entry sharing the qualifier's name
+            /// throws there before the join tree is ever tried. For a scalar alias (`WITH 0 AS b`) that
+            /// throw is suppressed (the alias path passes can_be_not_found = allow_to_check_join_tree),
+            /// but a lambda argument goes through tryResolveIdentifierFromExpressionArguments, which does
+            /// not, so `arrayMap(b -> b.*, ...) FROM l JOIN r AS b USING (id)` used to fail here.
+            auto explicit_resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(explicit_lookup, *nearest_query_scope);
             if (!explicit_resolve_result.resolved_identifier)
                 continue;
 
@@ -1917,9 +1924,10 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
 /** Resolve qualified tree matcher.
   *
-  * First try to match qualified identifier to expression. If qualified identifier matched expression node then
-  * if expression is compound match it column names using matcher `isMatchingColumn` method, if expression is not compound, throw exception.
-  * If qualified identifier did not match expression in query tree, try to lookup qualified identifier in table context.
+  * First try to match qualified identifier to expression. If qualified identifier matched a compound expression node then
+  * match its column names using matcher `isMatchingColumn` method. If the matched expression is not compound, or the
+  * qualified identifier did not match any expression in the query tree, try to lookup qualified identifier in table context.
+  * Only if neither a compound expression nor a table expression matches, throw an exception.
   */
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
@@ -1930,7 +1938,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
-    /// Try to resolve unqualified matcher for query expression
+    /// Try to resolve unqualified matcher for query expression.
+
+    QueryTreeNodePtr non_compound_expression_node;
 
     if (expression_query_tree_node)
     {
@@ -1950,37 +1960,38 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
         const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
         if (!tuple_data_type)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Qualified matcher {} found a non-compound expression {} with type {}. Expected a tuple or an array of tuples. In scope {}",
-                matcher_node->formatASTForErrorMessage(),
-                expression_query_tree_node->formatASTForErrorMessage(),
-                expression_query_tree_node->getResultType()->getName(),
-                scope.scope_node->formatASTForErrorMessage());
-
-        const auto & element_names = tuple_data_type->getElementNames();
-        QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
-
-        auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
-        for (const auto & element_name : element_names)
         {
-            if (!matcher_node_typed.isMatchingColumn(element_name))
-                continue;
-
-            auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
-            get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
-            get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
-
-            QueryTreeNodePtr function_query_node = get_subcolumn_function;
-            resolveFunction(function_query_node, scope);
-
-            qualified_matcher_element_identifier.push_back(element_name);
-            node_to_projection_name.emplace(function_query_node, qualified_matcher_element_identifier.getFullName());
-            qualified_matcher_element_identifier.pop_back();
-
-            matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
+            /// The qualifier resolved to a non-compound column and cannot be expanded by a matcher.
+            /// Fall through to table-expression resolution, since the same name may also be a table alias.
+            non_compound_expression_node = expression_query_tree_node;
         }
+        else
+        {
+            const auto & element_names = tuple_data_type->getElementNames();
+            QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
-        return matched_expression_nodes_with_column_names;
+            auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
+            for (const auto & element_name : element_names)
+            {
+                if (!matcher_node_typed.isMatchingColumn(element_name))
+                    continue;
+
+                auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+                get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
+                get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
+
+                QueryTreeNodePtr function_query_node = get_subcolumn_function;
+                resolveFunction(function_query_node, scope);
+
+                qualified_matcher_element_identifier.push_back(element_name);
+                node_to_projection_name.emplace(function_query_node, qualified_matcher_element_identifier.getFullName());
+                qualified_matcher_element_identifier.pop_back();
+
+                matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
+            }
+
+            return matched_expression_nodes_with_column_names;
+        }
     }
 
     /// Try to resolve qualified matcher for table expression
@@ -1995,6 +2006,16 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
     if (!table_expression_node)
     {
+        /// The qualifier bound to a non-compound column and there is no table with this name either.
+        /// Emit the precise diagnostic about the non-compound expression rather than "does not find table".
+        if (non_compound_expression_node)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Qualified matcher {} found a non-compound expression {} with type {}. Expected a tuple or an array of tuples. In scope {}",
+                matcher_node->formatASTForErrorMessage(),
+                non_compound_expression_node->formatASTForErrorMessage(),
+                non_compound_expression_node->getResultType()->getName(),
+                scope.scope_node->formatASTForErrorMessage());
+
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
             "Qualified matcher {} does not find table. In scope {}",
             matcher_node->formatASTForErrorMessage(),
@@ -4492,6 +4513,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     const auto & table_function_name = table_function_node_typed.getTableFunctionName();
 
+    /// The `eval` table function executes its argument at analysis time and generates a new query.
+    /// Inside arguments of other table functions (e.g. `remote('host', eval(...))`) the argument
+    /// would have to be resolved on the initiator while the wrapper is resolved on the remote
+    /// server, which requires special handling, so it is disallowed for simplicity.
+    if (nested_table_function && table_function_name == "eval")
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Table function `eval` cannot be used as an argument of another table function");
+
     auto & scope_context = scope.context;
 
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
@@ -5911,6 +5940,193 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 
+namespace
+{
+
+/** Classify a HAVING conjunct subtree for the `HAVING` -> `WHERE` rewrite.
+  *
+  * `AbortRewrite` outranks `KeepInHaving` outranks `Move`:
+  * - any window function or stateful function -> `AbortRewrite` (matches legacy `return false`);
+  * - else any aggregate function -> `KeepInHaving`;
+  * - else any `grouping` function -> `KeepInHaving` (stricter than legacy; required because
+  *   `validateAggregates` rejects `grouping` in `WHERE`);
+  * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
+  * - else -> `Move`.
+  */
+enum class HavingConjunctMoveAction
+{
+    Move,
+    KeepInHaving,
+    AbortRewrite,
+};
+
+HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & node)
+{
+    HavingConjunctMoveAction verdict = HavingConjunctMoveAction::Move;
+
+    QueryTreeNodes nodes_to_visit = {node};
+    while (!nodes_to_visit.empty())
+    {
+        auto current = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        auto current_type = current->getNodeType();
+        if (current_type == QueryTreeNodeType::QUERY || current_type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (auto * function_node = current->as<FunctionNode>())
+        {
+            if (function_node->isWindowFunction())
+                return HavingConjunctMoveAction::AbortRewrite;
+
+            if (function_node->isOrdinaryFunction())
+            {
+                if (auto function_base = function_node->getFunction())
+                {
+                    if (function_base->isStateful())
+                        return HavingConjunctMoveAction::AbortRewrite;
+
+                    if (!function_base->isDeterministicInScopeOfQuery() && verdict == HavingConjunctMoveAction::Move)
+                        verdict = HavingConjunctMoveAction::KeepInHaving;
+                }
+            }
+
+            if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
+                verdict = HavingConjunctMoveAction::KeepInHaving;
+
+            if (function_node->getFunctionName() == "grouping" && verdict == HavingConjunctMoveAction::Move)
+                verdict = HavingConjunctMoveAction::KeepInHaving;
+        }
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                nodes_to_visit.push_back(child);
+    }
+
+    return verdict;
+}
+
+/** Mimic the legacy `tryMovePredicatesFromHavingToWhere` rewrite at the QueryTree level.
+  *
+  * All-or-nothing for stateful and window functions: if any conjunct contains either,
+  * the entire rewrite is skipped (matches legacy `return false`).
+  *
+  * Stricter than legacy for non-determinism: conjuncts containing non-deterministic calls
+  * (e.g. `rand`) stay in `HAVING` instead of moving. Legacy moved them, silently changing
+  * per-group evaluation to per-row; we intentionally keep them in `HAVING`.
+  *
+  * Gated behind `analyzer_compatibility_allow_non_aggregate_in_having`. Skipped for
+  * `WITH CUBE`/`WITH ROLLUP`/`WITH TOTALS`/`GROUPING SETS` and when `group_by_use_nulls`
+  * is in effect.
+  */
+void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_node, const IdentifierResolveScope & scope)
+{
+    auto & query_node_typed = query_node->as<QueryNode &>();
+    if (!query_node_typed.hasHaving())
+        return;
+
+    if (!scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_non_aggregate_in_having])
+        return;
+
+    if (query_node_typed.isGroupByWithCube()
+        || query_node_typed.isGroupByWithRollup()
+        || query_node_typed.isGroupByWithTotals()
+        || query_node_typed.isGroupByWithGroupingSets())
+        return;
+
+    if (scope.group_by_use_nulls)
+        return;
+
+    /// HAVING without aggregation is handled by other validation paths; do not interfere.
+    QueryTreeNodes aggregate_function_nodes;
+    collectAggregateFunctionNodes(query_node, aggregate_function_nodes);
+    if (!query_node_typed.hasGroupBy() && aggregate_function_nodes.empty())
+        return;
+
+    auto & having_node = query_node_typed.getHaving();
+
+    /// The parser builds left-associative binary `and` trees, so `(a AND b) AND c`
+    /// arrives as `and(and(a, b), c)`. Flatten the whole chain into atomic conjuncts,
+    /// mirroring the legacy `splitConjunctionsAst` used by `PredicateExpressionsOptimizer`.
+    /// Without this, a nested `and` containing an aggregate is classified as a single
+    /// `KeepInHaving` conjunct and its non-aggregate siblings stay trapped in `HAVING`.
+    QueryTreeNodes conjuncts;
+    {
+        QueryTreeNodes worklist{having_node};
+        while (!worklist.empty())
+        {
+            auto current = std::move(worklist.back());
+            worklist.pop_back();
+
+            auto * current_function = current->as<FunctionNode>();
+            if (current_function && current_function->getFunctionName() == "and")
+            {
+                const auto & args = current_function->getArguments().getNodes();
+                /// Reverse-iterate into the LIFO worklist to preserve left-to-right order.
+                for (auto it = args.rbegin(); it != args.rend(); ++it)
+                    worklist.push_back(*it);
+            }
+            else
+            {
+                conjuncts.push_back(std::move(current));
+            }
+        }
+    }
+
+    std::vector<HavingConjunctMoveAction> classifications;
+    classifications.reserve(conjuncts.size());
+    for (const auto & conjunct : conjuncts)
+    {
+        auto action = classifyHavingConjunctForMove(conjunct);
+        if (action == HavingConjunctMoveAction::AbortRewrite)
+            return;
+        classifications.push_back(action);
+    }
+
+    QueryTreeNodes keep_in_having;
+    QueryTreeNodes move_to_where;
+    keep_in_having.reserve(conjuncts.size());
+    move_to_where.reserve(conjuncts.size());
+
+    for (size_t i = 0; i < conjuncts.size(); ++i)
+    {
+        if (classifications[i] == HavingConjunctMoveAction::KeepInHaving)
+            keep_in_having.push_back(std::move(conjuncts[i]));
+        else
+            move_to_where.push_back(std::move(conjuncts[i]));
+    }
+
+    if (move_to_where.empty())
+        return;
+
+    auto build_and = [&scope](QueryTreeNodes && args) -> QueryTreeNodePtr
+    {
+        if (args.size() == 1)
+            return std::move(args.front());
+        auto and_function = std::make_shared<FunctionNode>("and");
+        and_function->markAsOperator();
+        and_function->getArguments().getNodes() = std::move(args);
+        and_function->resolveAsFunction(FunctionFactory::instance().get("and", scope.context));
+        return and_function;
+    };
+
+    if (keep_in_having.empty())
+        having_node = nullptr;
+    else
+        having_node = build_and(std::move(keep_in_having));
+
+    QueryTreeNodes new_where_args;
+    new_where_args.reserve(1 + move_to_where.size());
+    if (query_node_typed.hasWhere())
+        new_where_args.push_back(query_node_typed.getWhere());
+    for (auto & moved : move_to_where)
+        new_where_args.push_back(std::move(moved));
+
+    query_node_typed.getWhere() = build_and(std::move(new_where_args));
+}
+
+}
+
 /** Resolve query.
   * This function modifies query node during resolve. It is caller responsibility to clone query node before resolve
   * if it is needed for later use.
@@ -6307,6 +6523,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     expandGroupByAll(query_node_typed);
 
+    tryMoveNonAggregateHavingPredicatesToWhere(query_node, scope);
+
     validateFromClause(query_node);
     validateFilters(query_node);
     validateAggregates(query_node, {.group_by_use_nulls = scope.group_by_use_nulls});
@@ -6373,6 +6591,19 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         else
             resolveUnion(non_recursive_query, non_recursive_subquery_scope);
 
+        /// The seed (non-recursive) term of a recursive CTE cannot be correlated to an outer
+        /// scope either: the whole union is lowered to ReadFromRecursiveCTEStep and re-run with
+        /// only the temporary CTE table injected, so there is no mechanism to supply an outer-scope
+        /// binding to the seed. Reject it here for the same reason as a correlated recursive member.
+        bool non_recursive_query_is_correlated = non_recursive_query_is_query_node
+            ? non_recursive_query->as<QueryNode &>().isCorrelated()
+            : non_recursive_query->as<UnionNode &>().isCorrelated();
+        if (non_recursive_query_is_correlated)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Recursive CTE '{}' cannot be correlated. In scope {}",
+                union_node_typed.getCTEName(),
+                scope.scope_node->formatASTForErrorMessage());
+
         auto temporary_table_columns = non_recursive_query_is_query_node
             ? non_recursive_query->as<QueryNode &>().getProjectionColumns()
             : non_recursive_query->as<UnionNode &>().computeProjectionColumns();
@@ -6420,6 +6651,20 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                         "UNION unsupported node {}. In scope {}",
                         query_node->formatASTForErrorMessage(),
+                        scope.scope_node->formatASTForErrorMessage());
+
+                /// A recursive CTE is planned as a fixed-point over a temporary table, so it has no
+                /// per-call-site substitution mechanism and cannot be correlated to an outer scope.
+                /// If resolution bound an identifier to an outer table expression, the resulting
+                /// ColumnNode's source is not part of this subquery and produces a dangling source
+                /// node later during planning (LOGICAL_ERROR in ColumnNode::getColumnSource).
+                bool is_correlated = query_node->as<QueryNode>()
+                    ? query_node->as<QueryNode>()->isCorrelated()
+                    : query_node->as<UnionNode>()->isCorrelated();
+                if (is_correlated)
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Recursive CTE '{}' cannot be correlated. In scope {}",
+                        union_node_typed.getCTEName(),
                         scope.scope_node->formatASTForErrorMessage());
             }
 
