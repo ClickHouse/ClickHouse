@@ -99,9 +99,12 @@ SELECT 'correctness';
 SELECT sum(key), count() FROM (SELECT key, count() AS c FROM t_concat_merge GROUP BY key SETTINGS optimize_aggregation_in_order = 1);
 SELECT groupArray(key) = arraySort(groupArray(key)) FROM (SELECT DISTINCT key FROM t_concat_merge ORDER BY key SETTINGS optimize_distinct_in_order = 1);
 SELECT 'join_correctness';
+-- Keep the settings on the top-level query (not the subquery): 'enable_analyzer' cannot be
+-- changed inside a subquery when the top-level value differs (INCORRECT_QUERY), which happens
+-- under the old-analyzer configuration where the default is 0. Subqueries inherit these.
 SELECT arraySort(groupArray(key)) FROM (
     SELECT t.key AS key FROM t_concat_merge AS t LEFT JOIN t_concat_merge_join_right AS r ON t.key = r.key
-    ORDER BY t.key LIMIT 10 SETTINGS query_plan_read_in_order_through_join = 1, enable_analyzer = 1);
+    ORDER BY t.key LIMIT 10) SETTINGS query_plan_read_in_order_through_join = 1, enable_analyzer = 1;
 "
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_concat_merge; DROP TABLE t_concat_merge_data; DROP TABLE t_concat_merge_join_right;"
