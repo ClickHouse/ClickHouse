@@ -63,9 +63,10 @@
             --button-active-color: #FE0;
             --button-active-text-color: #000;
             --misc-text-color: #888;
-            /* Theme-varying stops of the progress-line text fill (see #progress-text). In the light
-               theme the text goes smoothly from gray to black across the colored fill: the peak sits
-               at the progress edge (fraction 1) and the peak color is that same black. */
+            /* Intermediate stop of the progress-line text fill (see #progress-text): the fill goes
+               gray -> this peak color (reached at this fraction of the fill), then jumps to black to
+               the progress edge. In the light theme the peak is black at fraction 1, i.e. a plain
+               gray -> black over the whole fill. */
             --progress-text-peak-color: #000;
             --progress-text-peak-fraction: 1;
             --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
@@ -137,7 +138,7 @@
             /* In the dark theme the text fill goes gray -> white over the first quarter of the
                colored fill (peak color white at fraction 0.25), then jumps to black and stays black
                for the remaining three quarters, returning to gray past the progress edge. */
-            --progress-text-peak-color: #fff;
+            --progress-text-peak-color: #FFF;
             --progress-text-peak-fraction: 0.25;
             --error-color: #400;
             --table-header-color: #102020;
@@ -1614,12 +1615,11 @@ class QueryProgressElement extends HTMLElement
                 :host
                 {
                     display: grid;
-                    /* A single row: spinner, the progress bar, and the read stats. The progress bar
-                       holds the rows-in-result/elapsed time and the realtime resource usage, so the
-                       progress-bar gradient renders behind all of them. The read stats are sized to
-                       their content (up to a max width, see #stats); the progress bar takes all the
-                       remaining middle space. */
-                    grid-template-columns: auto minmax(0, 1fr) auto;
+                    /* A single row: the spinner, then one progress area that holds everything else -
+                       the rows-in-result/elapsed time and realtime resource usage on the left and the
+                       read stats on the right - so the progress-bar gradient renders behind all of
+                       them. The progress area takes all the remaining width. */
+                    grid-template-columns: auto minmax(0, 1fr);
                     gap: 1rem;
                     align-items: center;
                 }
@@ -1633,12 +1633,6 @@ class QueryProgressElement extends HTMLElement
                 #progress
                 {
                     grid-column: 2;
-                    grid-row: 1;
-                }
-
-                #stats
-                {
-                    grid-column: 3;
                     grid-row: 1;
                 }
 
@@ -1657,69 +1651,81 @@ class QueryProgressElement extends HTMLElement
                     color: #080;
                 }
 
-                /* The progress bar: the --progress gradient fills left-to-right as the query runs,
-                   behind the rows-in-result/elapsed text and the realtime resource usage, which sit
-                   side by side on this single line. Shown as flex from JS. */
+                /* The progress area: the --progress gradient fills left-to-right as the query runs,
+                   behind everything on this line - the rows-in-result/elapsed text and realtime
+                   resource usage (left) and the read stats (right). Two columns: the left column
+                   fits the elapsed/metrics text (never clipped), the read stats take all the
+                   remaining width in the right column and wrap there when long.
+
+                   Two background layers, both keyed to the same --progress stop over the full width
+                   so they correspond exactly:
+                     1) the text mask - gray -> peak color -> black -> gray - clipped to text, so
+                        every glyph (left metrics and right read stats alike) is tinted by where it
+                        sits over the fill: readable on the bright bar, the usual gray off it;
+                     2) the visible bar - the colored fill - clipped to the box, drawn only one text
+                        line tall (background-size height 1lh, not repeated), so when the read stats
+                        wrap and grow the area the fill stays a single-line strip on the first line
+                        rather than a tall block.
+                   The gradients are declared here (not in a custom property) so that var(--progress)
+                   is substituted against this element's live value, not baked at the theme's :root.
+                   The peak color/fraction vary by theme: light uses black at fraction 1 (a plain
+                   gray -> black), dark uses white at fraction 0.25 (gray -> white over the first
+                   quarter, then a jump to black). The children inherit the transparent text fill, so
+                   their glyphs reveal the masked gradient. Shown as grid from JS. */
                 #progress
                 {
                     display: none;
                     width: 100%;
-                    gap: 0.75rem;
+                    grid-template-columns: auto minmax(0, 1fr);
+                    column-gap: 0.75rem;
                     align-items: baseline;
                     overflow: hidden;
                     white-space: nowrap;
-                    color: var(--misc-text-color);
-                    background: linear-gradient(to right,
-                        transparent 0%,
-                        var(--progress-color) var(--progress, 0%),
-                        transparent var(--progress, 0%));
+                    font-size: 10pt;
+                    background:
+                        linear-gradient(to right,
+                            var(--misc-text-color) 0%,
+                            var(--progress-text-peak-color) calc(var(--progress, 0%) * var(--progress-text-peak-fraction)),
+                            #000 calc(var(--progress, 0%) * var(--progress-text-peak-fraction)),
+                            #000 var(--progress, 0%),
+                            var(--misc-text-color) var(--progress, 0%)),
+                        linear-gradient(to right,
+                            transparent 0%,
+                            var(--progress-color) var(--progress, 0%),
+                            transparent var(--progress, 0%));
+                    -webkit-background-clip: text, border-box;
+                    background-clip: text, border-box;
+                    background-repeat: no-repeat;
+                    background-size: 100% 100%, 100% 1lh;
+                    color: transparent;
+                    -webkit-text-fill-color: transparent;
+                    /* Equal-width digits so numbers do not shift as their digits change; combined
+                       with the figure-space padding in _padMetric (a figure space is one digit wide)
+                       this keeps the metrics from bouncing even in a proportional font. */
+                    font-variant-numeric: tabular-nums;
                 }
 
                 #stats
                 {
-                    /* Sized to the content, but capped so a long read-stats string does not crowd
-                       out the progress bar - it wraps within this width instead. Right-aligned so it
-                       sits next to the download/theme buttons. */
-                    max-width: 28rem;
+                    /* The right column of the progress area, right-aligned, so the read stats sit at
+                       the right end over the bar. Takes all the remaining width and is allowed to wrap
+                       (overriding the area's nowrap), so a long read-stats string wraps within that
+                       width - growing the area's height - instead of crowding the elapsed/metrics
+                       text. Its glyphs are tinted by the container's text mask (see #progress). */
+                    grid-row: 1;
+                    grid-column: 2;
+                    white-space: normal;
                     text-align: right;
-                    color: var(--misc-text-color);
-                }
-
-                #stats b
-                {
-                    color: var(--progress-color);
                 }
 
                 /* The elapsed time and the realtime metrics (CPU, memory, disk - shown like
-                   clickhouse-client does) share this one element, which sits on top of the
-                   progress-bar gradient. To keep the text readable over the colored fill, the glyphs
-                   are filled (via background-clip: text) with a gradient keyed off the same
-                   --progress stop as the bar, so the text darkens only where it overlaps the bright
-                   fill and stays the usual gray elsewhere. The gradient must be declared here (not
-                   in a custom property) so that var(--progress) is substituted against this
-                   element's live value rather than being baked at the theme's :root declaration. The
-                   two theme-varying scalars come in as --progress-text-peak-color and
-                   --progress-text-peak-fraction: light uses black at fraction 1 (a smooth gray->black
-                   over the whole fill), dark uses white at fraction 0.25 (gray->white over the first
-                   quarter, then a jump to black for the rest). The element spans the full width
-                   (flex: 1) so its gradient lines up with the bar behind it. */
+                   clickhouse-client does) share this one element in the left column of the progress
+                   area, over the bar. Its glyphs are tinted by the container's text mask (see
+                   #progress) just like the read stats. */
                 #progress-text
                 {
-                    flex: 1;
-                    background-image: linear-gradient(to right,
-                        var(--misc-text-color) 0%,
-                        var(--progress-text-peak-color) calc(var(--progress, 0%) * var(--progress-text-peak-fraction)),
-                        #000 calc(var(--progress, 0%) * var(--progress-text-peak-fraction)),
-                        #000 var(--progress, 0%),
-                        var(--misc-text-color) var(--progress, 0%));
-                    -webkit-background-clip: text;
-                    background-clip: text;
-                    color: transparent;
-                    -webkit-text-fill-color: transparent;
-                    /* Equal-width digits so numbers do not shift as their digits change; combined
-                       with the figure-space padding in _padMetric (a figure space is one digit
-                       wide) this keeps the metrics from bouncing even in a proportional font. */
-                    font-variant-numeric: tabular-nums;
+                    grid-row: 1;
+                    grid-column: 1;
                 }
 
                 /* Elapsed time, realtime metrics, and rows/bytes progress use a monospace font, so
@@ -1740,8 +1746,7 @@ class QueryProgressElement extends HTMLElement
             </style>
             <span id="hourglass">&#10711;</span>
             <span id="check-mark">&#10004;</span>
-            <div id="progress"><span id="progress-text"></span></div>
-            <span id="stats"></span>
+            <div id="progress"><span id="progress-text"></span><span id="stats"></span></div>
         `;
         this._hourglass = this.shadowRoot.getElementById('hourglass');
         this._checkMark = this.shadowRoot.getElementById('check-mark');
@@ -1889,7 +1894,7 @@ class QueryProgressElement extends HTMLElement
         const separator = (elapsed && metrics) ? '\u2007' : ''; /// a single figure space (does not collapse); metric padding adds any extra
         this._progressText.textContent = elapsed + separator + metrics;
         if (elapsed || metrics)
-            this._progress.style.display = 'flex';
+            this._progress.style.display = 'grid';
     }
 
     /// Left-pad a metric string with non-breaking spaces so its width never shrinks below the widest
