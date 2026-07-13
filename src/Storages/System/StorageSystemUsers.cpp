@@ -378,9 +378,15 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
 
             column_auth_params.insertData(authentication_params_str.data(), authentication_params_str.size());
             column_auth_type.insertValue(static_cast<Int8>(auth_data.getType()));
-            /// The stored deadline can exceed the `DateTime` range (`VALID FOR` with a large interval
-            /// saturates at the `DateTime64` upper bound, year 2299), so clamp instead of wrapping around.
-            column_valid_until.insertValue(static_cast<UInt32>(std::min<time_t>(auth_data.getValidUntil(), std::numeric_limits<UInt32>::max())));
+            /// The stored deadline can exceed the `DateTime` range in both directions (`VALID FOR` with
+            /// a huge interval saturates at the `DateTime64` bounds, year 1900 to year 2299, and year 1900
+            /// is a negative `time_t`), so clamp instead of wrapping around. Zero means "no expiration"
+            /// and is kept as is; the lower clamp bound is 1 rather than 0 so that an expired deadline
+            /// stays distinct from "no expiration".
+            time_t valid_until = auth_data.getValidUntil();
+            if (valid_until)
+                valid_until = std::clamp<time_t>(valid_until, 1, std::numeric_limits<UInt32>::max());
+            column_valid_until.insertValue(static_cast<UInt32>(valid_until));
         }
 
         column_auth_params_offsets.push_back(column_auth_params.size());
