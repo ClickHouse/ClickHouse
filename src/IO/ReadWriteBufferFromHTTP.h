@@ -223,6 +223,7 @@ class BuilderRWBufferFromHTTP
     bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
     bool delay_initialization = true;
+    std::string bearer_token{};
 
 public:
     explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
@@ -252,6 +253,10 @@ public:
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
+    /// Attach the token as an `Authorization: Bearer` header. A bearer token and HTTP
+    /// Basic credentials occupy the same header, so a request carries one or the other:
+    /// a non-empty token takes precedence and `create` does not apply its credentials.
+    setterMember(withBearerToken, bearer_token)
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 
