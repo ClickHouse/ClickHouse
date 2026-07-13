@@ -3984,22 +3984,44 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
     /// same repair here for a kept matching-UUID replica.
     auto zookeeper = getZooKeeper();
 
-    /// The authoritative metadata version is the stat.version of the zookeeper_path/metadata znode: alter()
-    /// does a versioned set on it (using the current metadata version as the expected version), so its
-    /// stat.version always equals the applied in-memory metadata version and the alter_version of the
-    /// latest ALTER. ReplicatedMergeTree has no table-wide /metadata_version node (only per-replica ones).
+    /// Decide whether this replica lags using the PERSISTED replica_path/metadata_version node, not the
+    /// in-memory metadata version. recoverLostReplica runs before this replica's
+    /// ReplicatedMergeTreeRestartingThread finishes startup (the replica is still readonly here), and for a
+    /// table of a Replicated database the in-memory metadata_version can stay 0 for a while regardless of
+    /// the actual structure - see the "metadata_version will be 0 for a while" note in the constructor and
+    /// ReplicatedMergeTreeRestartingThread::fixReplicaMetadataVersionIfNeeded, which restores the in-memory
+    /// version from the persisted node during startup. Keying off getInMemoryMetadataPtr()->
+    /// getMetadataVersion() here would misdetect an already up-to-date replica as stale and inject an
+    /// unnecessary synthetic ALTER_METADATA; because fixReplicaMetadataVersionIfNeeded then keeps the
+    /// in-memory version at 0 while that entry is pending, queued fetch/clone work would write fresh parts
+    /// with metadata_version = 0 and pollute the schema-version tracking that mutations and snapshots rely
+    /// on. The persisted node is the version this replica has actually applied (executeMetadataAlter writes
+    /// it atomically with the structure change and it survives detach/reattach), so it is the authoritative,
+    /// startup-safe signal - the same one fixReplicaMetadataVersionIfNeeded uses.
+    String replica_metadata_version_str;
+    if (!zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version_str))
+    {
+        /// Compatibility with replicas created by versions predating the per-replica metadata_version node
+        /// (same caveat as cloneMetadataIfNeeded); such a replica is not repaired here.
+        LOG_WARNING(log, "Node {} does not exist, will not check metadata consistency after recovery.",
+                    replica_path + "/metadata_version");
+        return false;
+    }
+    Int32 replica_metadata_version = parse<Int32>(replica_metadata_version_str);
+
+    /// The authoritative table-wide metadata version is the stat.version of the zookeeper_path/metadata
+    /// znode: alter() does a versioned set on it (using the current metadata version as the expected
+    /// version), so its stat.version always equals the applied metadata version and the alter_version of
+    /// the latest ALTER. ReplicatedMergeTree has no table-wide /metadata_version node (only per-replica).
     Coordination::Stat metadata_stat;
     if (!zookeeper->exists(zookeeper_path + "/metadata", &metadata_stat))
         return false;
-    {
-        auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-        if (metadata_snapshot->getMetadataVersion() >= metadata_stat.version)
-            return false;
+    if (replica_metadata_version >= metadata_stat.version)
+        return false;
 
-        LOG_WARNING(log, "Local metadata version ({}) is behind the version ({}) in ZooKeeper after recovery. "
-                         "Will force a metadata resync from {}.",
-                    metadata_snapshot->getMetadataVersion(), metadata_stat.version, zookeeper_path);
-    }
+    LOG_WARNING(log, "Persisted replica metadata version ({}) is behind the version ({}) in ZooKeeper after "
+                     "recovery. Will force a metadata resync from {}.",
+                replica_metadata_version, metadata_stat.version, zookeeper_path);
 
     while (true)
     {
@@ -4014,8 +4036,13 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
         String zk_columns = zookeeper->get(zookeeper_path + "/columns", &columns_stat);
         Int32 zk_metadata_version = metadata_stat.version;
 
-        if (auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-            metadata_snapshot->getMetadataVersion() >= zk_metadata_version)
+        /// Re-read the persisted version as well: only our own (still readonly) replica writes it, so it
+        /// does not normally change under us, but if a concurrent apply advanced it the repair is no
+        /// longer needed.
+        if (!zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version_str))
+            return false;
+        replica_metadata_version = parse<Int32>(replica_metadata_version_str);
+        if (replica_metadata_version >= zk_metadata_version)
             return false;
 
         /// Drain the replication log to its head first. If a real ALTER_METADATA entry that reaches
@@ -4040,9 +4067,6 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
                            "it will converge the structure, not forcing a resync.", zk_metadata_version);
             return false;
         }
-        if (auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-            metadata_snapshot->getMetadataVersion() >= zk_metadata_version)
-            return false;
 
         /// Prepend a dummy ALTER_METADATA carrying the whole ZooKeeper snapshot, exactly as
         /// cloneMetadataIfNeeded does for a cloned replica, so normal queue processing applies
