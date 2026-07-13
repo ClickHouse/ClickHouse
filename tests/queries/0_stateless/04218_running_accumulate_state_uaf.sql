@@ -74,9 +74,19 @@ FROM
 )
 ORDER BY g;
 
-SELECT number, finalizeAggregation(runningAccumulate(sumStateOrDefaultState(number)))
-FROM numbers(5)
-GROUP BY 1
+-- The rows must be sorted in a subquery before `runningAccumulate` is
+-- applied: stateful functions are not moved past a same-level `ORDER BY`
+-- (they see the rows in the pre-sort order, which for `GROUP BY` output
+-- is not deterministic), so accumulating over unsorted aggregation output
+-- would produce nondeterministic running sums.
+SELECT number, finalizeAggregation(runningAccumulate(s))
+FROM
+(
+    SELECT number, sumStateOrDefaultState(number) AS s
+    FROM numbers(5)
+    GROUP BY number
+    ORDER BY number
+)
 ORDER BY number;
 
 -- `-ForEach` over a state-returning nested function: the result column is a
@@ -85,9 +95,14 @@ ORDER BY number;
 -- per-element state into the inner column via the nested
 -- `insertMergeResultInto`, which keeps the per-row states independent of
 -- the stack-local accumulator.
-SELECT number, finalizeAggregation(finalizeAggregation(arrayJoin(runningAccumulate(sumStateOrDefaultStateForEachState([number, number + 1])))))
-FROM numbers(5)
-GROUP BY 1
+SELECT number, finalizeAggregation(finalizeAggregation(arrayJoin(runningAccumulate(s))))
+FROM
+(
+    SELECT number, sumStateOrDefaultStateForEachState([number, number + 1]) AS s
+    FROM numbers(5)
+    GROUP BY number
+    ORDER BY number
+)
 ORDER BY number;
 
 -- A column with type `AggregateFunction(sumStateMerge, ...)` keeps the
