@@ -27,10 +27,14 @@ def test_sorted_kill_query(started_cluster):
 
     node1.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
 
-    query = """SELECT DISTINCT number
-FROM numbers(10000)
+    query = """SELECT DISTINCT key, val
+FROM (
+    SELECT number / 1000000 AS key, number AS val
+    FROM numbers(10000000)
+)
+ORDER BY key
 FORMAT Null
-SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"""
+SETTINGS max_block_size=65536, max_threads=1"""
 
     thread_error = [None]
 
