@@ -820,7 +820,7 @@ struct IEJoinPlanDescription
 {
     Names key_names_left;
     Names key_names_right;
-    std::array<JoinConditionOperator, 2> operators;
+    std::array<JoinConditionOperator, 2> operators = {};
 };
 
 /// Try to interpret the JOIN ON expression as exactly two inequality conditions between the two tables

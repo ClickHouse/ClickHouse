@@ -430,7 +430,7 @@ void IEJoinAlgorithm::buildJoinState()
         /// The tie policy is stated in terms of final L1 positions, so it is independent of the
         /// iteration direction; the order within a run of equal keys on one side is irrelevant.
         const Int64 step = l1_descending ? -1 : 1;
-        std::array<Int64, 2> cursor;
+        std::array<Int64, 2> cursor = {0, 0};
         auto in_range = [&](size_t side) { return cursor[side] >= 0 && cursor[side] < static_cast<Int64>(num_side_rows[side]); };
         /// Advance the cursor to a row with non-NULL keys in the iteration direction.
         auto skip_invalid = [&](size_t side)
