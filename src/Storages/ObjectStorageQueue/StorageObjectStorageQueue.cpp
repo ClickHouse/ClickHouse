@@ -922,43 +922,39 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
-        /// Processing nodes and the bucket lock in keeper are considered abandoned
-        /// and cleaned up once `persistent_processing_node_ttl_seconds` passes.
-        /// Stop starting new iterations early enough for the whole execution to finish
-        /// before the TTL is reached, otherwise nodes still in use could be removed.
+        /// Bucket locks in keeper are considered abandoned and cleaned up once
+        /// `persistent_processing_node_ttl_seconds` passes since acquisition.
+        /// They are held by the file iterator, which is shared between streaming tasks
+        /// and can outlive a single streamToViews execution, so the stop condition
+        /// is based on the iterator age (no bucket lock can be held longer than that):
+        /// once it reaches half of the TTL, all streaming tasks stop using the iterator
+        /// within their current iteration, and the next execution starts with
+        /// a fresh iterator, re-acquiring bucket locks.
         const size_t ttl_seconds = files_metadata->getPersistentProcessingNodeTTLSeconds();
-        if (ttl_seconds && watch.elapsedSeconds() >= static_cast<double>(ttl_seconds) / 2)
+        if (ttl_seconds && file_iterator->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 2)
         {
             LOG_TRACE(
                 log,
-                "Stopping streaming to views: elapsed time ({} sec) reached half of "
-                "persistent processing node TTL ({} sec)",
-                watch.elapsedSeconds(), ttl_seconds);
+                "Stopping streaming to views: file iterator age ({} sec) reached half of "
+                "persistent processing node TTL ({} sec), execution elapsed: {} sec",
+                file_iterator->getAgeSeconds(), ttl_seconds, watch.elapsedSeconds());
 
-            std::lock_guard streaming_lock(streaming_mutex);
-            if (streaming_file_iterator == file_iterator)
             {
-                /// While `streaming_mutex` is held, no other streaming task can copy
-                /// the shared iterator, so use_count == 2 (the member + our local copy)
-                /// means we are its only user.
-                if (file_iterator.use_count() == 2)
-                {
-                    /// Release all held buckets, including a non-finished one.
-                    /// The iterator remains cached and will re-acquire buckets
-                    /// (with fresh lock nodes) on the next execution.
-                    file_iterator->releaseFinishedBuckets(/*force_release_unfinished=*/true);
-                }
-                else
-                {
-                    /// Other streaming tasks are still using the iterator,
-                    /// so releasing a non-finished bucket is not safe - they can have
-                    /// in-flight files from it. Drop the shared iterator instead:
-                    /// held buckets are released (in BucketHolder destructors) as soon as
-                    /// the last streaming task stops using it, and the next execution
-                    /// starts with a fresh iterator, re-acquiring bucket locks.
+                std::lock_guard streaming_lock(streaming_mutex);
+                if (streaming_file_iterator == file_iterator)
                     streaming_file_iterator.reset();
-                }
             }
+
+            /// Once the shared iterator is dropped (by us or by another task before us),
+            /// no new user of it can appear, so use_count == 1 means we are the last one:
+            /// release all held buckets, including a non-finished one.
+            /// If other streaming tasks are still using the iterator, releasing
+            /// a non-finished bucket is not safe - they can have in-flight files from it -
+            /// so the buckets are released the same way by the last of them
+            /// (or in BucketHolder destructors in case of a race between last two users).
+            if (file_iterator.use_count() == 1)
+                file_iterator->releaseFinishedBuckets(/*force_release_unfinished=*/true);
+
             break;
         }
 
