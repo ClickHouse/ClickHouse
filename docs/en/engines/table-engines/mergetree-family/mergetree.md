@@ -1293,7 +1293,7 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 - `Basic`
 
     A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
-  - for any column: the number of rows equal to the column type's default value. "Default" here is the type-intrinsic default (`0`, `''`, `[]`, ...), not the column's DDL `DEFAULT` expression. For a `Nullable` / `LowCardinality(Nullable)` column the type default is `NULL`, so this count is exactly the number of `NULL` rows and lets the optimizer discount `NULL` rows and estimate `IS NULL`; for a non-`Nullable` column it is the number of type-default rows and estimates equality against the default (`col = 0`, `col = ''`);
+  - for any column: the number of rows whose stored value is the column's internal storage default — the raw-zero representation identified by `IColumn::isDefaultAt`, not the column's DDL `DEFAULT` expression. For most types this matches the familiar type default: `0` for integers and floats, `''` for `String`, `[]` for `Array`, and so on. Two notable exceptions: for `FixedString(N)` the column default is N zero bytes (a comparison `col = ''` still matches because the empty string is padded to N zeros); for `Enum` types the column default is raw integer `0`, so the fast path fires only when the compared enumerator maps to raw `0` — if no enumerator is declared with value `0` the fast path never fires. For a `Nullable` / `LowCardinality(Nullable)` column the type default is `NULL`, so this count is exactly the number of `NULL` rows and lets the optimizer discount `NULL` rows and estimate `IS NULL`; for a non-`Nullable` column it estimates equality against the default (`col = 0`, `col = ''`);
   - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
   - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived).
 
@@ -1355,8 +1355,12 @@ All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers 
 | TDigest   | ✗                              | ✔ (numeric columns only)       |
 | Uniq      | ✔                              | ✗                              |
 
-`Basic` answers an equality filter exactly only when the compared value is the column type's
-default (`col = 0`, `col = ''`, ...); for other values the optimizer falls back to other statistics.
+`Basic` answers an equality filter exactly only when the compared value matches the column's
+internal storage default (raw integer `0` for numeric types, `''` / N zero bytes for `String` /
+`FixedString`, `NULL` for `Nullable` columns, etc.). For `Enum` types in particular, the fast path
+fires only when the enumerator literal maps to raw integer `0`; if no enumerator has raw value `0`
+the statistic contributes nothing to equality estimation. For other values the optimizer falls back
+to other statistics.
 For `Basic` on `String` / `FixedString` columns the statistic records the total non-NULL byte length
 (used to estimate average string length) plus the default/`NULL` count; range filters and part
 pruning are not driven by it.
