@@ -421,6 +421,36 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 
+    /// MOVE PARTITION TO TABLE and REPLACE PARTITION FROM reference secondary tables: canonicalize
+    /// their spellings once, before access checks and ON CLUSTER dispatch, and pin them to exact matching.
+    auto canonicalize_secondary_table
+        = [&](String & database_name, IdentifierPartQuote & database_quote, String & table_name, IdentifierPartQuote & table_quote)
+    {
+        if (table_name.empty())
+            return;
+        String resolved_database = database_name.empty() ? getContext()->getCurrentDatabase() : database_name;
+        if (resolved_database.empty())
+            return;
+        StorageID secondary_id{resolved_database, table_name};
+        secondary_id.database_name_quote = database_name.empty() ? IdentifierPartQuote::DoubleQuoted : database_quote;
+        secondary_id.table_name_quote = table_quote;
+        secondary_id = DatabaseCatalog::instance().resolveStorageIDNames(secondary_id, getContext());
+        if (!database_name.empty())
+        {
+            database_name = secondary_id.database_name;
+            database_quote = IdentifierPartQuote::DoubleQuoted;
+        }
+        table_name = secondary_id.table_name;
+        table_quote = IdentifierPartQuote::DoubleQuoted;
+    };
+
+    for (const auto & child : alter.command_list->children)
+    {
+        auto & command_ast = child->as<ASTAlterCommand &>();
+        canonicalize_secondary_table(command_ast.to_database, command_ast.to_database_quote, command_ast.to_table, command_ast.to_table_quote);
+        canonicalize_secondary_table(command_ast.from_database, command_ast.from_database_quote, command_ast.from_table, command_ast.from_table_quote);
+    }
+
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (table && table->as<StorageKeeperMap>())

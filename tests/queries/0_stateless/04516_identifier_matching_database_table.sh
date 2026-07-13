@@ -131,3 +131,42 @@ ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "ALTER 
 echo '--- standard: implicit current database stays exact with a case sibling'
 CLIENT_IN_DB_ONE=${CLICKHOUSE_CLIENT/--database=$CLICKHOUSE_DATABASE/--database=$DB_ONE}
 ${CLIENT_IN_DB_ONE} --database_and_table_name_matching=standard --query "SELECT count() FROM NewTable"
+
+echo '--- standard: CREATE TABLE AS folds the source, double-quoted wrong case stays exact'
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB_TWO}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.SrcTable (x Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE_FOLDED}.CopyTable AS ${DB_ONE_FOLDED}.srctable"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${DB_ONE}.CopyTable"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.CopyTwo AS ${DB_ONE_FOLDED}.srctable" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE}.CopyTwo AS \"${DB_ONE_FOLDED}\".srctable" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE}.CopyTwo AS \"${DB_ONE}\".\"srctable\"" 2>&1 | grep -oF "CANNOT_GET_CREATE_TABLE_QUERY" | uniq
+
+echo '--- standard: CREATE TABLE CLONE AS folds the source name'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.CloneSrc (x Int32) ENGINE = MergeTree ORDER BY x"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${DB_ONE}.CloneSrc VALUES (3)"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE_FOLDED}.CloneDst CLONE AS ${DB_ONE_FOLDED}.clonesrc"
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${DB_ONE}.CloneDst"
+
+echo '--- standard: MOVE PARTITION TO TABLE folds, double-quoted wrong case stays exact'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.MoveSrc (x Int32) ENGINE = MergeTree ORDER BY x"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.MoveDst (x Int32) ENGINE = MergeTree ORDER BY x"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${DB_ONE}.MoveSrc VALUES (1)"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "ALTER TABLE ${DB_ONE}.MoveSrc MOVE PARTITION tuple() TO TABLE \"${DB_ONE_FOLDED}\".\"movedst\"" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "ALTER TABLE ${DB_ONE}.MoveSrc MOVE PARTITION tuple() TO TABLE \"${DB_ONE}\".\"movedst\"" 2>&1 | grep -oF "UNKNOWN_TABLE" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "ALTER TABLE ${DB_ONE_FOLDED}.movesrc MOVE PARTITION tuple() TO TABLE ${DB_ONE_FOLDED}.movedst"
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${DB_ONE}.MoveDst"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${DB_ONE}.MoveSrc"
+
+echo '--- standard: REPLACE PARTITION FROM folds, double-quoted wrong case stays exact'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "ALTER TABLE ${DB_ONE_FOLDED}.movesrc REPLACE PARTITION tuple() FROM ${DB_ONE_FOLDED}.movedst"
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${DB_ONE}.MoveSrc"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "ALTER TABLE ${DB_ONE}.MoveSrc REPLACE PARTITION tuple() FROM \"${DB_ONE_FOLDED}\".\"movedst\"" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
+
+echo '--- standard: materialized view TO target folds and is stored canonically'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.MvTarget (x Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE MATERIALIZED VIEW ${DB_ONE_FOLDED}.MvView TO ${DB_ONE_FOLDED}.mvtarget AS SELECT x FROM ${DB_ONE}.SrcTable"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${DB_ONE}.MvView" | grep -c "TO ${DB_ONE}\.MvTarget"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${DB_ONE}.SrcTable VALUES (5)"
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${DB_ONE}.MvTarget"
+${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW ${DB_ONE}.MvBad TO ${DB_ONE_FOLDED}.mvtarget AS SELECT x FROM ${DB_ONE}.SrcTable" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE MATERIALIZED VIEW ${DB_ONE}.MvBad TO \"${DB_ONE_FOLDED}\".mvtarget AS SELECT x FROM ${DB_ONE}.SrcTable" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq

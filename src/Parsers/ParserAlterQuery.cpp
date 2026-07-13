@@ -561,7 +561,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->move_destination_type = DataDestinationType::VOLUME;
                 else if (s_to_table.ignore(pos, expected))
                 {
-                    if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
+                    if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table,
+                            command->to_database_quote, command->to_table_quote))
                         return false;
                     command->move_destination_type = DataDestinationType::TABLE;
                 }
@@ -632,7 +633,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_from.ignore(pos, expected))
                 {
-                    if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
+                    if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table,
+                            command->from_database_quote, command->from_table_quote))
                         return false;
 
                     command->replace = false;
@@ -651,7 +653,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!s_from.ignore(pos, expected))
                     return false;
 
-                if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table))
+                if (!parseDatabaseAndTableName(pos, expected, command->from_database, command->from_table,
+                        command->from_database_quote, command->from_table_quote))
                     return false;
 
                 command->replace = true;

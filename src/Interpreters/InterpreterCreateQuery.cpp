@@ -808,7 +808,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+        StorageID as_table_id{as_database_name, create.as_table};
+        as_table_id.database_name_quote = create.as_database.empty() ? IdentifierPartQuote::DoubleQuoted : create.as_database_quote;
+        as_table_id.table_name_quote = create.as_table_quote;
+        StoragePtr as_storage = DatabaseCatalog::instance().getTable(as_table_id, getContext());
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -2720,6 +2723,54 @@ BlockIO InterpreterCreateQuery::execute()
     if (!is_create_database && create.database)
         create.setDatabase(DatabaseCatalog::instance().resolveDatabaseNameSpelling(
             create.getDatabase(), identifierPartQuoteFromAST(create.database), getContext()));
+
+    /// The AS [db.]table source refers to an existing table: canonicalize its spelling once,
+    /// before access checks and ON CLUSTER dispatch, and pin the result to exact matching.
+    if (!create.as_table.empty())
+    {
+        String as_database_name = create.as_database.empty() ? getContext()->getCurrentDatabase() : create.as_database;
+        if (!as_database_name.empty())
+        {
+            StorageID as_table_id{as_database_name, create.as_table};
+            as_table_id.database_name_quote = create.as_database.empty() ? IdentifierPartQuote::DoubleQuoted : create.as_database_quote;
+            as_table_id.table_name_quote = create.as_table_quote;
+            as_table_id = DatabaseCatalog::instance().resolveStorageIDNames(as_table_id, getContext());
+            if (!create.as_database.empty())
+                create.as_database = as_table_id.database_name;
+            create.as_table = as_table_id.table_name;
+            create.as_database_quote = IdentifierPartQuote::DoubleQuoted;
+            create.as_table_quote = IdentifierPartQuote::DoubleQuoted;
+        }
+    }
+
+    /// Explicit view target tables (TO ..., and the TimeSeries targets) refer to existing tables too.
+    if (create.targets)
+    {
+        for (auto & target : create.targets->targets)
+        {
+            if (!target.table_id)
+                continue;
+            StorageID target_id = target.table_id;
+            const bool implicit_database = target_id.database_name.empty();
+            if (implicit_database)
+            {
+                if (getContext()->getCurrentDatabase().empty())
+                    continue;
+                target_id.database_name = getContext()->getCurrentDatabase();
+                target_id.database_name_quote = IdentifierPartQuote::DoubleQuoted;
+            }
+            target_id = DatabaseCatalog::instance().resolveStorageIDNames(target_id, getContext());
+            if (implicit_database)
+            {
+                target_id.database_name.clear();
+                target_id.database_name_quote = IdentifierPartQuote::Unquoted;
+            }
+            else
+                target_id.database_name_quote = IdentifierPartQuote::DoubleQuoted;
+            target_id.table_name_quote = IdentifierPartQuote::DoubleQuoted;
+            target.table_id = target_id;
+        }
+    }
 
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {

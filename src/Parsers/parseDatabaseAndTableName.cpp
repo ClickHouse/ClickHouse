@@ -1,5 +1,5 @@
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 
@@ -9,6 +9,15 @@ namespace DB
 
 bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String & database_str, String & table_str)
 {
+    IdentifierPartQuote database_quote;
+    IdentifierPartQuote table_quote;
+    return parseDatabaseAndTableName(pos, expected, database_str, table_str, database_quote, table_quote);
+}
+
+bool parseDatabaseAndTableName(
+    IParser::Pos & pos, Expected & expected, String & database_str, String & table_str,
+    IdentifierPartQuote & database_quote, IdentifierPartQuote & table_quote)
+{
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier table_parser;
 
@@ -17,6 +26,8 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
 
     database_str = "";
     table_str = "";
+    database_quote = IdentifierPartQuote::Unquoted;
+    table_quote = IdentifierPartQuote::Unquoted;
 
     if (!table_parser.parse(pos, database, expected))
         return false;
@@ -31,11 +42,14 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
 
         tryGetIdentifierNameInto(database, database_str);
         tryGetIdentifierNameInto(table, table_str);
+        database_quote = identifierPartQuoteFromAST(database);
+        table_quote = identifierPartQuoteFromAST(table);
     }
     else
     {
         database_str = "";
         tryGetIdentifierNameInto(database, table_str);
+        table_quote = identifierPartQuoteFromAST(database);
     }
 
     return true;

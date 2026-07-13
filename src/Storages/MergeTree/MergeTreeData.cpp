@@ -7301,7 +7301,10 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
 void MergeTreeData::movePartitionToTable(const PartitionCommand & command, ContextPtr query_context)
 {
     String dest_database = query_context->resolveDatabase(command.to_database);
-    auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
+    StorageID dest_table_id{dest_database, command.to_table};
+    dest_table_id.database_name_quote = command.to_database.empty() ? IdentifierPartQuote::DoubleQuoted : command.to_database_quote;
+    dest_table_id.table_name_quote = command.to_table_quote;
+    auto dest_storage = DatabaseCatalog::instance().getTable(dest_table_id, query_context);
 
     /// The target table and the source table are the same.
     if (dest_storage->getStorageID() == this->getStorageID())
@@ -7441,7 +7444,10 @@ Pipe MergeTreeData::alterPartition(
                 if (command.replace)
                     checkPartitionCanBeDropped(command.partition, query_context);
 
-                auto resolved = query_context->resolveStorageID({command.from_database, command.from_table});
+                StorageID from_table_id{command.from_database, command.from_table};
+                from_table_id.database_name_quote = command.from_database_quote;
+                from_table_id.table_name_quote = command.from_table_quote;
+                auto resolved = query_context->resolveStorageID(from_table_id);
                 auto from_storage = DatabaseCatalog::instance().getTable(resolved, query_context);
 
                 auto * from_storage_merge_tree = dynamic_cast<MergeTreeData *>(from_storage.get());

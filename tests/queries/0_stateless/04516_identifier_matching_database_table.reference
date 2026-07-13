@@ -63,3 +63,23 @@ folded alter
 AMBIGUOUS_IDENTIFIER
 --- standard: implicit current database stays exact with a case sibling
 0
+--- standard: CREATE TABLE AS folds the source, double-quoted wrong case stays exact
+0
+UNKNOWN_DATABASE
+UNKNOWN_DATABASE
+CANNOT_GET_CREATE_TABLE_QUERY
+--- standard: CREATE TABLE CLONE AS folds the source name
+3
+--- standard: MOVE PARTITION TO TABLE folds, double-quoted wrong case stays exact
+UNKNOWN_DATABASE
+UNKNOWN_TABLE
+1
+0
+--- standard: REPLACE PARTITION FROM folds, double-quoted wrong case stays exact
+1
+UNKNOWN_DATABASE
+--- standard: materialized view TO target folds and is stored canonically
+1
+5
+UNKNOWN_DATABASE
+UNKNOWN_DATABASE
