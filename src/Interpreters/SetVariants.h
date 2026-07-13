@@ -286,6 +286,11 @@ struct CountingSet
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>>>                   keys256;
     std::unique_ptr<SetMethodHashed<HashMap<UInt128, Count, UInt128TrivialHash>>>                    hashed;
 
+    /// Present only to satisfy APPLY_FOR_SET_VARIANTS (the pre-DISTINCT bloom-filter feature added
+    /// `hashed_two_level` to every set variant). INTERSECT ALL / EXCEPT ALL never selects it because
+    /// `SetVariants::chooseMethod` does not return `hashed_two_level`; it mirrors `hashed`.
+    std::unique_ptr<SetMethodHashed<HashMap<UInt128, Count, UInt128TrivialHash>>>                    hashed_two_level;
+
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt128, Count, UInt128HashCRC32>, true>>             nullable_keys128;
     std::unique_ptr<SetMethodKeysFixed<HashMap<UInt256, Count, UInt256HashCRC32>, true>>             nullable_keys256;
 };
