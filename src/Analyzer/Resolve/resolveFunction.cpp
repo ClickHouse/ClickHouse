@@ -1425,10 +1425,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// element. Whether the element types are compatible is a runtime question - an
                     /// incompatible pair (e.g. `(id1, id2) IN (SELECT tuple(id2, id1))` where the
                     /// elements are `Decimal` vs `Date`) surfaces at runtime as `ILLEGAL_COLUMN` /
-                    /// `ILLEGAL_TYPE_OF_ARGUMENT`, not as a column-count mismatch. Probing only the
-                    /// left default value would also wrongly reject a valid query whose default
-                    /// happens not to cast (e.g. a `NULL` in a nullable element cast to a non-nullable
-                    /// right element), so short-circuit on matching arity instead of running the probe.
+                    /// `ILLEGAL_TYPE_OF_ARGUMENT`, not as a column-count mismatch. The structural probe
+                    /// below would instead reject such a same-arity tuple whenever an element cast is
+                    /// impossible (e.g. a nested-tuple element that cannot be cast to the corresponding
+                    /// right element), misreporting it as a column-count mismatch, so short-circuit on
+                    /// matching arity here rather than running the probe.
                     /// Detect the arity on the set key type, i.e. after stripping the wrappers that
                     /// `Set::getElementTypes` removes (`LowCardinality` recursively, and a top-level
                     /// `Nullable` with the default `transform_null_in = 0`); otherwise a single right
@@ -1443,8 +1444,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     }
                     else
                     {
+                        /// The right side is a single non-tuple column (or a tuple of a different
+                        /// arity). The whole left tuple is compared against it as one key, so this is a
+                        /// genuine column-count mismatch only when the left type cannot be cast to the
+                        /// right type at all - i.e. no cast path exists between the two types, as for a
+                        /// `Tuple` to a plain number (`(1, 1) IN (SELECT 1)`). It is *not* a mismatch
+                        /// when the left type can be held as one key by the right type (`String`,
+                        /// `Dynamic`, a `Variant` that lists the tuple type, ...); any per-value
+                        /// incompatibility of such a cast (a `NULL` in a nullable element, a number out
+                        /// of range, a string too long for a `FixedString`) is a runtime question that
+                        /// surfaces at execution as its own error, not a column-count mismatch.
+                        ///
+                        /// So probe castability at the type level only, with an *empty* left column:
+                        /// `castColumnAccurate` builds the cast wrapper before touching any row
+                        /// (`FunctionCast::prepare` -> `createFunctionAdaptor(...).build()`), and that
+                        /// build throws for a structurally impossible cast regardless of the row count,
+                        /// so zero rows are enough to tell "a cast path exists" from "cannot be cast".
+                        /// A populated probe row must be avoided: inserting a default fabricates data
+                        /// the runtime never sees (e.g. a `NULL` for a nullable element) that can fail a
+                        /// per-value check the actual rows would pass, turning a runtime concern into a
+                        /// spurious analysis-time column-count error.
                         auto left_probe_column = in_first_argument_result_type->createColumn();
-                        left_probe_column->insertDefault();
                         try
                         {
                             /// Use a plain accurate cast (not `accurateOrNull`): the latter casts to
@@ -1459,7 +1479,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         }
                         catch (const Exception &)  /// NOLINT(bugprone-empty-catch)
                         {
-                            /// Not castable - fall through and report the mismatch below.
+                            /// No cast path exists - fall through and report the mismatch below.
                         }
                     }
                 }

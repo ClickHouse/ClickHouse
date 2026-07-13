@@ -63,19 +63,29 @@ SELECT (1, 2) IN (SELECT CAST((1, 2), 'String'));
 SELECT (1, 2) IN (SELECT materialize(1)); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 
 -- A single right `Tuple` column of the same arity as the left tuple is always an arity match and
--- must NOT be rejected at analysis: the whole left tuple is compared against it as one key. Probing
--- only the left default value would wrongly reject this valid query - the default has a `NULL` in the
--- nullable element that cannot be cast to the non-nullable right element, yet the actual values
--- compare fine at runtime. Regression for `03989_set_low_cardinality_in_tuple`.
+-- must NOT be rejected at analysis: the whole left tuple is compared against it as one key, element by
+-- element, and element-type compatibility is a runtime question. The check short-circuits on the
+-- matching arity here rather than running the structural cast probe, which would otherwise reject this
+-- valid same-arity comparison (an element cast may be structurally impossible even when the arity is
+-- fine). Regression for `03989_set_low_cardinality_in_tuple`.
 SELECT CAST((1, 2), 'Tuple(Nullable(UInt8), UInt8)') IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
 
 -- The same nullable-element left tuple, but compared against a single `Nullable(Tuple(...))` right column.
 -- The set key type strips the top-level `Nullable` (default `transform_null_in = 0`), so this is a
 -- same-arity one-key comparison and must NOT be rejected at analysis. The arity has to be detected after
--- unwrapping the right column's `Nullable`/`LowCardinality`, not only for a raw `Tuple` - otherwise the
--- probe of the left default `(NULL, 0)` fails to cast to `Nullable(Tuple(UInt8, UInt8))` and is misreported
--- as a column-count mismatch. Regression for the false positive flagged in PR #97540.
+-- unwrapping the right column's `Nullable`/`LowCardinality`, not only for a raw `Tuple` - otherwise a
+-- `Nullable(Tuple(...))` right column would fall through to the structural probe and be misreported as a
+-- column-count mismatch. Regression for the false positive flagged in PR #97540.
 SELECT CAST((1, 2), 'Tuple(Nullable(UInt8), UInt8)') IN (SELECT CAST((1, 2), 'Nullable(Tuple(UInt8, UInt8))'));
+
+-- A single non-tuple right column the whole left tuple cannot be cast to at all is a genuine mismatch
+-- and is still rejected. The check probes castability at the type level with an empty left column, so a
+-- fabricated default value (a `NULL` in a nullable element) is never the reason a query is rejected -
+-- only a structurally impossible cast is. This query is not valid at runtime either: `Set::execute`
+-- runs the same `Tuple(Nullable(UInt8), UInt8)` -> `Variant(UInt8, Tuple(UInt8, UInt8))` cast, which
+-- throws `CANNOT_CONVERT_TYPE` because that tuple type is not one of the Variant's alternatives.
+-- Regression for the probe-oracle concern flagged in PR #97540.
+SELECT CAST((1, 2), 'Tuple(Nullable(UInt8), UInt8)') IN (SELECT CAST((1, 2), 'Variant(UInt8, Tuple(UInt8, UInt8))')); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 
 -- `x IN table` is a documented equivalent of `x IN (SELECT * FROM table)`, so the same column-count
 -- validation must apply to a table (or `Set`) right-hand side. The right columns are the table's
