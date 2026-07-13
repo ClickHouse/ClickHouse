@@ -25,6 +25,12 @@ UUID
 -- Field-level UUID <-> UUID2 coercion swaps halves (convertFieldToType, e.g. IN-set)
 1
 1	1	0
+-- direct UUID <-> UUID2 comparison (least supertype is UUID2)
+1	1	0	1	UUID2	Array(UUID2)
+-- comparison of a UUID2 column against a UUID constant
+1
+-- JOIN between UUID and UUID2 keys (common type is UUID2)
+a	x
 -- setting materializes bare UUID as UUID2 (version 2), leaves UUID1/UUID2 explicit
 a	UUID2
 b	UUID

@@ -42,6 +42,30 @@ SELECT '61f0c404-5cb3-11e7-907b-a6006ad3dba0'::UUID2 IN (toUUID('61f0c404-5cb3-1
        '61f0c404-5cb3-11e7-907b-a6006ad3dba0'::UUID IN ('61f0c404-5cb3-11e7-907b-a6006ad3dba0'::UUID2) AS uuid2_into_uuid,
        '61f0c404-5cb3-11e7-907b-a6006ad3dba0'::UUID2 IN (toUUID('00000000-0000-0000-0000-000000000001')) AS different_value;
 
+SELECT '-- direct UUID <-> UUID2 comparison (least supertype is UUID2)';
+-- `UUID` and `UUID2` denote the same logical values in layouts differing by a half-swap. Their common type
+-- is the correctly-sorting `UUID2`, so `=` / `!=` (and `if` / array literals) reconcile them instead of
+-- throwing during execution because no common type exists.
+WITH '61f0c404-5cb3-11e7-907b-a6006ad3dba0' AS s, '00000000-0000-0000-0000-000000000001' AS s2
+SELECT
+    s::UUID2 = toUUID(s),
+    toUUID2(s) = s::UUID,
+    s::UUID2 = toUUID(s2),
+    s::UUID2 != toUUID(s2),
+    toTypeName(if(1, s::UUID2, toUUID(s))),
+    toTypeName([s::UUID2, toUUID(s)]);
+SELECT '-- comparison of a UUID2 column against a UUID constant';
+SELECT count() FROM t_uuid2 WHERE x = toUUID('00000000-0000-0000-0000-000000000009');
+
+SELECT '-- JOIN between UUID and UUID2 keys (common type is UUID2)';
+DROP TABLE IF EXISTS t_join_uuid;
+DROP TABLE IF EXISTS t_join_uuid2;
+CREATE TABLE t_join_uuid (k UUID, v String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_join_uuid2 (k UUID2, w String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_join_uuid VALUES ('61f0c404-5cb3-11e7-907b-a6006ad3dba0', 'a'), ('00000000-0000-0000-0000-000000000001', 'b');
+INSERT INTO t_join_uuid2 VALUES ('61f0c404-5cb3-11e7-907b-a6006ad3dba0', 'x');
+SELECT v, w FROM t_join_uuid JOIN t_join_uuid2 ON t_join_uuid.k = t_join_uuid2.k ORDER BY v;
+
 SELECT '-- setting materializes bare UUID as UUID2 (version 2), leaves UUID1/UUID2 explicit';
 DROP TABLE IF EXISTS t_mat;
 SET uuid_type_version = 2;
@@ -134,3 +158,5 @@ DROP TABLE t_mat;
 DROP TABLE t_mat1;
 DROP TABLE t_alter;
 DROP TABLE t_bf;
+DROP TABLE t_join_uuid;
+DROP TABLE t_join_uuid2;
