@@ -1,6 +1,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <poll.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -789,5 +790,9 @@ void StorageSystemStackTrace::readImpl(
 }
 
 #pragma clang diagnostic pop
+
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemStackTrace) }
 
 #endif

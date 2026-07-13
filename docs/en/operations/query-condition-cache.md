@@ -15,7 +15,7 @@ Many real-world workloads involve repeated queries against the same or almost th
 ClickHouse provides various optimization techniques to optimize for such query patterns.
 One possibility is to tune the physical data layout using index structures (e.g., primary key indexes, skipping indexes, projections) or pre-calculation (materialized views).
 Another possibility is to use ClickHouse's [query cache](query-cache.md) to avoid repeated query evaluation.
-The downside of the first approach is that that it requires manual intervention and monitoring by a database administrator.
+The downside of the first approach is that it requires manual intervention and monitoring by a database administrator.
 The second approach may return stale results (as the query cache is transactionally not consistent) which may or may not be acceptable, depending on the use case.
 
 The query condition cache provides an elegant solution for both problems.

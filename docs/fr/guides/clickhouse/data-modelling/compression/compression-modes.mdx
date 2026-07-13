@@ -1,0 +1,61 @@
+---
+slug: /data-compression/compression-modes
+title: 'Modes de compression'
+description: 'Modes de compression des colonnes dans ClickHouse'
+keywords: ['compression', 'codec', 'encodage', 'modes']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Le protocole ClickHouse prend en charge la compression des **blocs de données** avec sommes de contrôle.
+Utilisez `LZ4` si vous ne savez pas quel mode choisir.
+&#96;&#96;
+
+<Tip>
+  Pour en savoir plus sur les [codecs de compression des colonnes](/fr/reference/statements/create/table#column_compression_codec) disponibles, et sur la manière de les spécifier lors de la création de vos tables ou ultérieurement.
+</Tip>
+
+<div id="modes">
+  ## Modes
+</div>
+
+| valeur | nom                | description                                           |
+| ------ | ------------------ | ----------------------------------------------------- |
+| `0x02` | [None](#none-mode) | Aucune compression, uniquement des sommes de contrôle |
+| `0x82` | LZ4                | Extrêmement rapide, bonne compression                 |
+| `0x90` | ZSTD               | Zstandard, assez rapide, meilleure compression        |
+
+LZ4 et ZSTD ont tous deux été créés par le même auteur, mais avec des compromis différents.
+D’après les [tests de performance de Facebook](https://facebook.github.io/zstd/#benchmarks) :
+
+| nom               | ratio | compression | décompression |
+| ----------------- | ----- | ----------- | ------------- |
+| **zstd** 1.4.5 -1 | 2.8   | 500 MB/s    | 1660 MB/s     |
+| **lz4** 1.9.2     | 2.1   | 740 MB/s    | 4530 MB/s     |
+
+<div id="block">
+  ## Bloc
+</div>
+
+| champ               | type    | description                                                                                           |
+| ------------------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| checksum            | uint128 | [Somme de contrôle](/fr/resources/develop-contribute/native-protocol/hash) de (header + compressed data) |
+| raw&#95;size        | uint32  | Taille brute sans en-tête                                                                             |
+| data&#95;size       | uint32  | Taille des données non compressées                                                                    |
+| mode                | byte    | Mode de compression                                                                                   |
+| compressed&#95;data | binary  | Bloc de données compressées                                                                           |
+
+<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="Schéma illustrant la structure du bloc de compression de ClickHouse" />
+
+L’en-tête est constitué de (raw&#95;size + data&#95;size + mode), et la taille brute correspond à len(header + compressed&#95;data).
+
+La somme de contrôle est `hash(header + compressed_data)`, à l’aide de [ClickHouse CityHash](/fr/resources/develop-contribute/native-protocol/hash).
+
+<div id="none-mode">
+  ## Mode None
+</div>
+
+Si le mode *None* est utilisé, `compressed_data` est égal aux données d’origine.
+Le mode sans compression est utile pour renforcer l’intégrité des données grâce aux sommes de contrôle, car
+le surcoût du hachage est négligeable.

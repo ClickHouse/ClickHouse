@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "config.h"
 
+#include <atomic>
 #include <filesystem>
 
 #include <IO/Archives/ArchiveUtils.h>
@@ -11,6 +12,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -24,6 +26,7 @@ namespace DB::ErrorCodes
 {
     extern const int CANNOT_PACK_ARCHIVE;
     extern const int CANNOT_UNPACK_ARCHIVE;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -916,6 +919,336 @@ TEST_P(ArchiveReaderAndWriterTest, WriteErrorProducesException)
     out.reset();
     writer->cancel();
 }
+
+
+#if USE_MINIZIP
+
+/// A `SeekableReadBuffer` that wraps another buffer but raises `CANNOT_SEEK_THROUGH_FILE`
+/// on the second seek. This mimics `ReadBufferFromS3` with `restricted_seek = true`,
+/// which throws once a GET stream has been started and a subsequent backward seek is needed.
+class SeekFailingReadBuffer : public SeekableReadBuffer
+{
+public:
+    explicit SeekFailingReadBuffer(const String & data_)
+        : SeekableReadBuffer(nullptr, 0)
+        , data(data_)
+    {
+    }
+
+    off_t seek(off_t off, int whence) override
+    {
+        if (whence != SEEK_SET)
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET allowed");
+
+        ++seek_count;
+        /// Allow the first seek (which precedes any read), then refuse the EOCD-search
+        /// backward seek that follows the first nextImpl().
+        if (seek_count > 1 && read_count > 0)
+            throw Exception(
+                ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
+                "Seek is allowed only before first read attempt from the buffer");
+
+        if (off < 0 || static_cast<size_t>(off) > data.size())
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek out of bounds");
+
+        pos = nullptr;
+        working_buffer = Buffer(nullptr, nullptr);
+        position_in_file = off;
+        return off;
+    }
+
+    off_t getPosition() override
+    {
+        return static_cast<off_t>(position_in_file) - available();
+    }
+
+    bool nextImpl() override
+    {
+        if (position_in_file >= data.size())
+            return false;
+        ++read_count;
+        size_t avail = data.size() - position_in_file;
+        size_t to_read = std::min<size_t>(avail, 1024);
+        buf.resize(to_read);
+        std::copy(data.begin() + position_in_file, data.begin() + position_in_file + to_read, buf.begin());
+        BufferBase::set(buf.data(), to_read, 0);
+        position_in_file += to_read;
+        return true;
+    }
+
+private:
+    const String & data;
+    std::vector<char> buf;
+    size_t position_in_file = 0;
+    size_t seek_count = 0;
+    size_t read_count = 0;
+};
+
+
+/// Reproducer for https://github.com/ClickHouse/ClickHouse/issues/104681.
+///
+/// Before the fix, when a callback throws (here: a backward seek into S3 with
+/// `restricted_seek = true`), `ZipArchiveReader` swallowed the C++ exception inside
+/// the C stream callback, let minizip report `MZ_END_OF_LIST` (-100), and surfaced
+/// the unhelpful `Couldn't unpack zip archive ...: Code = -100` error. After the
+/// fix the original exception (`CANNOT_SEEK_THROUGH_FILE`) is rethrown unchanged.
+TEST(ZipArchiveReaderTest, RethrowsCallbackExceptionOnOpen)
+{
+    /// Build a valid zip in memory. `ManyFilesInMemory` shows this works; we use a
+    /// small number of files here so the EOCD search has to look back further than
+    /// a single read's worth of data.
+    String archive_in_memory;
+    {
+        auto writer = createArchiveWriter("archive.zip", std::make_unique<WriteBufferFromString>(archive_in_memory));
+        for (int i = 0; i < 4; ++i)
+        {
+            auto out = writer->writeFile(fmt::format("file{}.txt", i));
+            writeString(getRandomASCIIString(64), *out);
+            out->finalize();
+        }
+        writer->finalize();
+    }
+
+    auto read_archive_func
+        = [&]() -> std::unique_ptr<SeekableReadBuffer> { return std::make_unique<SeekFailingReadBuffer>(archive_in_memory); };
+
+    try
+    {
+        auto reader = createArchiveReader("archive.zip", read_archive_func, archive_in_memory.size());
+        /// If creation succeeded we must still trigger a failing seek; the EOCD lookup
+        /// is performed lazily on the first `fileExists` / `getFileInfo` call.
+        (void)reader->getAllFiles();
+        FAIL() << "Expected exception was not thrown";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE)
+            << "Underlying CANNOT_SEEK_THROUGH_FILE must surface unchanged, got: " << e.displayText();
+        EXPECT_EQ(e.message().find("Code = -100"), String::npos)
+            << "Cryptic minizip code must not appear in user-visible message: " << e.message();
+    }
+}
+
+
+/// A `SeekableReadBuffer` whose callbacks can be switched into a failing mode AFTER the
+/// archive has been opened. The flag is held by an externally-owned `shared_ptr` so the
+/// test can flip it between the successful open and the first post-open callback.
+class SwitchableFailingReadBuffer : public SeekableReadBuffer
+{
+public:
+    SwitchableFailingReadBuffer(const String & data_, std::shared_ptr<std::atomic<bool>> fail_flag_)
+        : SeekableReadBuffer(nullptr, 0)
+        , data(data_)
+        , fail_flag(std::move(fail_flag_))
+    {
+    }
+
+    off_t seek(off_t off, int whence) override
+    {
+        if (fail_flag->load())
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Forced post-open seek failure");
+        if (whence != SEEK_SET)
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET allowed");
+        if (off < 0 || static_cast<size_t>(off) > data.size())
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek out of bounds");
+
+        pos = nullptr;
+        working_buffer = Buffer(nullptr, nullptr);
+        position_in_file = off;
+        return off;
+    }
+
+    off_t getPosition() override
+    {
+        return static_cast<off_t>(position_in_file) - available();
+    }
+
+    bool nextImpl() override
+    {
+        if (fail_flag->load())
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Forced post-open read failure");
+        if (position_in_file >= data.size())
+            return false;
+        size_t avail = data.size() - position_in_file;
+        size_t to_read = std::min<size_t>(avail, 1024);
+        buf.resize(to_read);
+        std::copy(data.begin() + position_in_file, data.begin() + position_in_file + to_read, buf.begin());
+        BufferBase::set(buf.data(), to_read, 0);
+        position_in_file += to_read;
+        return true;
+    }
+
+private:
+    const String & data;
+    std::shared_ptr<std::atomic<bool>> fail_flag;
+    std::vector<char> buf;
+    size_t position_in_file = 0;
+};
+
+
+/// Targets the dangling-`Opaque` use-after-scope pointed out by `clickhouse-gh[bot]` on
+/// PR #105103: minizip stores the `opaque` pointer internally during `unzOpen2_64` and
+/// dereferences it from every later callback (`readFileFunc`, `seekFunc`, `tellFunc`).
+/// Before the fix, `Opaque` was a stack-local in `StreamFromReadBuffer::open`, so any
+/// post-open callback that took the exception-capture path wrote to freed stack memory.
+/// This test triggers that exact path: open succeeds, then the underlying buffer is
+/// flipped into failure mode, causing the next stream callback to throw. With the fix,
+/// `Opaque` is heap-allocated and pinned for the handle's lifetime, so the post-open
+/// failure surfaces the underlying exception cleanly. Under ASan, this test would
+/// detect the dangling write without the fix.
+TEST(ZipArchiveReaderTest, RethrowsCallbackExceptionAfterOpenSucceeded)
+{
+    String archive_in_memory;
+    {
+        auto writer = createArchiveWriter("archive.zip", std::make_unique<WriteBufferFromString>(archive_in_memory));
+        auto out = writer->writeFile("file.txt");
+        /// Make the content large enough that reading it back requires several callback
+        /// invocations after open has completed.
+        writeString(getRandomASCIIString(16 * 1024), *out);
+        out->finalize();
+        writer->finalize();
+    }
+
+    auto fail_flag = std::make_shared<std::atomic<bool>>(false);
+    auto read_archive_func = [&]() -> std::unique_ptr<SeekableReadBuffer>
+    { return std::make_unique<SwitchableFailingReadBuffer>(archive_in_memory, fail_flag); };
+
+    /// Step 1: open the archive normally. `Opaque` is stored inside the handle; minizip
+    /// has captured a pointer to it.
+    auto reader = createArchiveReader("archive.zip", read_archive_func, archive_in_memory.size());
+    EXPECT_TRUE(reader->fileExists("file.txt"));
+
+    /// Step 2: flip the buffer into failure mode and trigger a post-open callback. With
+    /// the stack-local `Opaque` (pre-fix), the callback's `storeException` write would
+    /// dereference a dangling pointer; with the heap-allocated `Opaque` (post-fix), the
+    /// exception is surfaced cleanly.
+    fail_flag->store(true);
+
+    try
+    {
+        auto in = reader->readFile("file.txt", /*throw_on_not_found=*/true);
+        String content;
+        readStringUntilEOF(content, *in);
+        FAIL() << "Expected exception was not thrown";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE)
+            << "Underlying CANNOT_SEEK_THROUGH_FILE must surface unchanged, got: " << e.displayText();
+        EXPECT_EQ(e.message().find("Code = -100"), String::npos)
+            << "Cryptic minizip code must not appear in user-visible message: " << e.message();
+    }
+}
+
+
+/// A `SeekableReadBuffer` whose seeks always succeed but whose reads fail while a flag is
+/// set. A read failure goes through `ReadBuffer::next()`, which calls `cancel()` on this
+/// buffer (setting the terminal `canceled` flag) and rethrows -- exactly how a mid-stream
+/// read failure poisons the underlying archive buffer in production. `seek()` never sets
+/// `canceled`, so failing on read (not seek) is what reproduces the pooled-handle bug.
+class ReadFailingReadBuffer : public SeekableReadBuffer
+{
+public:
+    ReadFailingReadBuffer(const String & data_, std::shared_ptr<std::atomic<bool>> fail_flag_)
+        : SeekableReadBuffer(nullptr, 0)
+        , data(data_)
+        , fail_flag(std::move(fail_flag_))
+    {
+    }
+
+    off_t seek(off_t off, int whence) override
+    {
+        if (whence != SEEK_SET)
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET allowed");
+        if (off < 0 || static_cast<size_t>(off) > data.size())
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek out of bounds");
+        pos = nullptr;
+        working_buffer = Buffer(nullptr, nullptr);
+        position_in_file = off;
+        return off;
+    }
+
+    off_t getPosition() override { return static_cast<off_t>(position_in_file) - available(); }
+
+    bool nextImpl() override
+    {
+        if (fail_flag->load())
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Forced read failure");
+        if (position_in_file >= data.size())
+            return false;
+        size_t to_read = std::min<size_t>(data.size() - position_in_file, 1024);
+        buf.resize(to_read);
+        std::copy(data.begin() + position_in_file, data.begin() + position_in_file + to_read, buf.begin());
+        BufferBase::set(buf.data(), to_read, 0);
+        position_in_file += to_read;
+        return true;
+    }
+
+private:
+    const String & data;
+    std::shared_ptr<std::atomic<bool>> fail_flag;
+    std::vector<char> buf;
+    size_t position_in_file = 0;
+};
+
+
+/// Reproducer for the BuzzHouse-found `ReadBuffer is canceled. Can't read from it.`
+/// LOGICAL_ERROR (STID 2508-1f27) on the backup-restore zip path.
+///
+/// `ZipArchiveReader` pools its minizip handles in `free_handles` and reuses them for the
+/// next operation. When a read fails mid-stream, `ReadBuffer::next()` calls `cancel()` on
+/// the underlying archive buffer (setting the terminal `canceled` flag) and rethrows. The
+/// `stored_exception` guards added earlier stop the *current* operation, but the poisoned
+/// handle was still returned to the pool. On the next operation minizip re-reads through
+/// that same buffer, and `ReadBuffer::next()` trips `chassert(!isCanceled())`.
+///
+/// The fix closes (rather than pools) a handle whose underlying buffer is canceled, so the
+/// next operation opens a fresh handle. This test poisons a handle with a failing read, then
+/// does a normal read that must succeed rather than abort.
+TEST(ZipArchiveReaderTest, DoesNotReuseCanceledHandle)
+{
+    String archive_in_memory;
+    {
+        auto writer = createArchiveWriter("archive.zip", std::make_unique<WriteBufferFromString>(archive_in_memory));
+        auto out = writer->writeFile("file.txt");
+        writeString(getRandomASCIIString(16 * 1024), *out);
+        out->finalize();
+        writer->finalize();
+    }
+
+    auto fail_flag = std::make_shared<std::atomic<bool>>(false);
+    auto read_archive_func = [&]() -> std::unique_ptr<SeekableReadBuffer>
+    { return std::make_unique<ReadFailingReadBuffer>(archive_in_memory, fail_flag); };
+
+    auto reader = createArchiveReader("archive.zip", read_archive_func, archive_in_memory.size());
+    ASSERT_TRUE(reader->fileExists("file.txt"));
+
+    /// Step 1: a read fails mid-stream, cancelling the underlying buffer of the pooled handle.
+    fail_flag->store(true);
+    try
+    {
+        auto in = reader->readFile("file.txt", /*throw_on_not_found=*/true);
+        String content;
+        readStringUntilEOF(content, *in);
+        FAIL() << "Expected read failure was not thrown";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE) << e.displayText();
+    }
+
+    /// Step 2: recover and read normally. Before the fix this reused the canceled handle and
+    /// aborted with `ReadBuffer is canceled. Can't read from it.`; now a fresh handle is used.
+    fail_flag->store(false);
+    {
+        auto in = reader->readFile("file.txt", /*throw_on_not_found=*/true);
+        String content;
+        readStringUntilEOF(content, *in);
+        EXPECT_EQ(content.size(), 16u * 1024u);
+    }
+}
+
+#endif
 
 
 namespace

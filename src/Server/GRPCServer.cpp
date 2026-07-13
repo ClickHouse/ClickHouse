@@ -1017,7 +1017,8 @@ namespace
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            initializePipeline(input_storage->getInMemoryMetadataPtr(context, false)->getSampleBlock());
+            auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
+            initializePipeline(metadata_snapshot->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block

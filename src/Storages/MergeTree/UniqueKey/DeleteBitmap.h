@@ -20,6 +20,15 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
+/// UNIQUE KEY — monotonic version number of a per-part delete bitmap.
+/// Each install of a new bitmap uses a strictly higher version. Stored
+/// in the on-disk filename and in cache keys; readers pin a version and
+/// receive the bitmap with the highest installed version not above the
+/// pin. The source of the version (e.g., a per-partition commit sequence
+/// number) is the caller's concern; the bitmap layer only relies on
+/// monotonicity.
+using BitmapVersion = UInt64;
+
 /** UNIQUE KEY per-part delete bitmap — row positions (within a part, 0-based)
   * that are logically deleted.
   *
@@ -29,7 +38,7 @@ class WriteBuffer;
   * choice is internal — the public API is uniformly `UInt64`.
   *
   * Persistence: one file per bitmap version, named
-  *   `delete_bitmap_{block_number}.rbm`
+  *   `delete_bitmap_{csn}.rbm`
   * inside the part directory. Format (all little-endian on the wire):
   *   magic(4) "RBM1" | version(4) | body_size(4) | body[body_size] | crc32(4)
   * `version` (`VERSION_R32` / `VERSION_R64`) selects which roaring layout
@@ -102,20 +111,23 @@ public:
     /// throws on mismatch. Returned bitmap is independent of `in`.
     static std::unique_ptr<DeleteBitmap> deserialize(ReadBuffer & in);
 
-    /// File name convention: `delete_bitmap_{block_number}.rbm`.
-    static std::string fileNameForBlockNumber(UInt64 block_number);
+    /// File name convention: `delete_bitmap_{csn}.rbm`.
+    static std::string fileNameForCSN(BitmapVersion csn);
 
-    /// True if `file_name` matches the canonical `delete_bitmap_{N}.rbm` form.
+    /// True if `file_name` matches the canonical `delete_bitmap_{csn}.rbm` form.
     static bool isDeleteBitmapFile(std::string_view file_name);
 
-    /// Extract N from `delete_bitmap_{N}.rbm`. Caller must have screened the
-    /// name via `isDeleteBitmapFile`; throws if `file_name` does not match.
-    static UInt64 parseBlockNumberFromFileName(std::string_view file_name);
+    /// Extract csn from `delete_bitmap_{csn}.rbm`. Caller must have screened
+    /// the name via `isDeleteBitmapFile`; throws if `file_name` does not match.
+    static BitmapVersion parseCSNFromFileName(std::string_view file_name);
 
     /// File-format constants. Exposed so tests can corrupt bytes deterministically.
     static constexpr UInt32 MAGIC = 0x314D4252; /// "RBM1" little-endian
     static constexpr UInt32 VERSION_R32 = 1;
     static constexpr UInt32 VERSION_R64 = 2;
+    /// Fixed 12-byte header (magic | version | body_size); trailing 4-byte CRC.
+    static constexpr size_t HEADER_SIZE = sizeof(UInt32) * 3;
+    static constexpr size_t CRC_SIZE = sizeof(UInt32);
 
 private:
     using R32Ptr = std::unique_ptr<roaring::Roaring>;
@@ -130,5 +142,33 @@ private:
 };
 
 using DeleteBitmapPtr = std::shared_ptr<DeleteBitmap>;
+
+/// Result of a tolerant, non-throwing `.rbm` parse for inspection tooling
+/// (`clickhouse-disk read-bitmap`): a malformed magic / version / CRC / body is
+/// reported via the flags below rather than thrown. A failed stage leaves later
+/// fields at their defaults with the matching `*_ok` / `decoded` flag clear.
+struct DeleteBitmapInspection
+{
+    bool header_read = false; /// the 12-byte header was fully read
+    bool magic_ok = false;
+    UInt32 version = 0;
+    UInt32 body_size = 0;
+    bool body_read = false; /// the declared body bytes were fully present
+    UInt32 crc_stored = 0;
+    UInt32 crc_computed = 0;
+    bool crc_ok = false;
+    bool decoded = false; /// roaring readSafe succeeded
+    std::string decode_error; /// when !decoded because readSafe threw, its message (else empty)
+    UInt64 cardinality = 0; /// number of deleted rows
+    bool has_minmax = false;
+    UInt64 min_row = 0;
+    UInt64 max_row = 0;
+    std::vector<UInt64> sample; /// all set bits (ascending) when collect_values; else empty
+};
+
+/// Tolerantly parse a `.rbm` stream for inspection — never throws; returns what
+/// parsed with the rest of the flags clear. `header_read == false` means too short
+/// for even the 12-byte header. `collect_values` fills `sample` with every set bit.
+DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values);
 
 }

@@ -91,7 +91,7 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
 
     StorageID storage_id(getDatabaseName(), table_name);
     auto res = std::make_shared<StorageFromMergeTreeProjection>(
-        std::move(storage_id), std::move(source_table), std::move(metadata_snapshot), projection);
+        std::move(storage_id), std::move(source_table), metadata_snapshot, projection);
 
     res->startup();
     return res;

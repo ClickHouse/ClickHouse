@@ -1,0 +1,56 @@
+---
+description: 'ClickHouse の組み込み geobase 辞書'
+sidebarTitle: '組み込み辞書'
+slug: /sql-reference/statements/create/dictionary/embedded
+title: '組み込み（geobase）辞書'
+doc_type: 'reference'
+---
+
+import SelfManaged from '/snippets/ja/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+ClickHouse には、geobase を扱うための組み込み機能があります。
+
+これにより、次のことが可能になります。
+
+* 地域の ID を使用して、任意の言語でその名前を取得する。
+* 地域の ID を使用して、都市、地区、連邦管区、国、または大陸の ID を取得する。
+* ある地域が別の地域に含まれているかどうかを確認する。
+* 親地域の chain を取得する。
+
+すべての関数は &quot;translocality&quot; をサポートしています。これは、地域の帰属について異なる見方を同時に扱える機能です。詳細については、&quot;web analytics 辞書を扱う関数&quot; のセクションを参照してください。
+
+内部辞書はデフォルトのパッケージでは無効になっています。
+有効にするには、サーバー設定ファイル内の `path_to_regions_hierarchy_file` および `path_to_regions_names_files` パラメータのコメントを解除してください。
+
+geobase はテキストファイルから読み込まれます。
+
+`regions_hierarchy*.txt` ファイルを `path_to_regions_hierarchy_file` ディレクトリに配置します。この設定パラメータには `regions_hierarchy.txt` ファイル (デフォルトの地域階層) への path を指定する必要があり、その他のファイル (`regions_hierarchy_ua.txt`) も同じディレクトリに配置されている必要があります。
+
+`regions_names_*.txt` ファイルを `path_to_regions_names_files` ディレクトリに配置します。
+
+これらのファイルは自分で作成することもできます。ファイルのフォーマットは次のとおりです。
+
+`regions_hierarchy*.txt`: TabSeparated (ヘッダーなし) 、カラム:
+
+* 地域 ID (`UInt32`) 
+* 親地域 ID (`UInt32`) 
+* 地域 type (`UInt8`) : 1 - 大陸、3 - 国、4 - 連邦管区、5 - 地域、6 - 都市。その他の type には値がありません
+* population (`UInt32`) — オプションのカラム
+
+`regions_names_*.txt`: TabSeparated (ヘッダーなし) 、カラム:
+
+* 地域 ID (`UInt32`) 
+* 地域名 (`String`) — エスケープされたものも含め、タブや改行を含めることはできません。
+
+RAM に格納するためにフラットな配列が使用されます。このため、ID は 100 万以下にする必要があります。
+
+サーバーを再起動せずに辞書を更新できます。ただし、利用可能な辞書のセットは更新されません。
+更新時にはファイルの更新時刻が確認され、ファイルが変更されていれば辞書が更新されます。
+変更を確認する interval は、`builtin_dictionaries_reload_interval` パラメータで設定します。
+辞書の更新 (初回使用時の読み込みを除く) で queries がブロックされることはありません。更新中は、queries は辞書の古いバージョンを使用します。更新中に error が発生した場合、その error は server log に書き込まれ、queries は引き続き辞書の古いバージョンを使用します。
+
+geobase に合わせて辞書を定期的に更新することを推奨します。更新時には、新しいファイルを生成して別の場所に書き込みます。すべての準備が整ったら、サーバーが使用するファイル名にリネームしてください。
+
+OS 識別子や search engines を扱うための関数もありますが、それらは使用すべきではありません。

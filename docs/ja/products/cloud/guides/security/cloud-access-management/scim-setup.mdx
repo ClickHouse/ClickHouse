@@ -1,0 +1,338 @@
+---
+sidebarTitle: 'Okta での SCIM プロビジョニング'
+slug: /cloud/security/scim-setup
+title: 'Okta での SCIM プロビジョニング'
+description: 'Okta と ClickHouse Cloud 間で SCIM プロビジョニングを設定する方法'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SCIM', 'プロビジョニング', 'Okta', 'SSO', 'SAML', 'アイデンティティプロバイダー', 'IdP', 'ユーザー管理']
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+<Note>
+  SCIMプロビジョニングはプライベートプレビューです。
+</Note>
+
+<EnterprisePlanFeatureBadge feature="SCIM" />
+
+ClickHouse Cloud は、ユーザーとグループのライフサイクルを自動管理するための SCIM 2.0 (System for Cross-domain Identity Management) をサポートしています。IDプロバイダーに接続すると、ClickHouse Cloud アプリケーションに割り当てたすべてのユーザーが、適切なロールで組織内に自動的に作成されます。プロファイルの更新も自動的に反映され、IdP からユーザーを削除すると、そのユーザーのアクセス権も削除されます。手動で招待したり、不要なアカウントが残ったりすることはありません。
+
+このガイドでは、**Okta** を使用して SCIMプロビジョニングをエンドツーエンドで設定する手順を説明します。ClickHouse Cloud の SCIM エンドポイントは SCIM 2.0 (RFC 7644) に準拠していますが、認証方式としてサポートされているのは Basic Auth のみで、検証済みの IDプロバイダーも Okta のみです。他の SCIM 2.0 IdP でも、Basic Auth で認証できれば動作する可能性はありますが、現時点では正式にはサポートされていません。
+
+<div id="before-you-begin">
+  ## 始める前に
+</div>
+
+必要なもの:
+
+* ClickHouse Cloud の組織で **Admin** ロールを持っていること。
+* IdP と ClickHouse Cloud の間で [SAML SSO](/ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup) がすでに設定済みであること。SCIM でユーザーアカウントは作成されますが、それらのアカウントは SAML 経由でサインインするため、まず SSO が正常に動作している必要があります。
+* Okta テナントに対するスーパー管理者権限があり、アプリケーションのインストールと Provisioning の設定を行えること。
+* SCIM 経由で割り当てるロールの一覧 (例: Admins、Developers、Read-only) 。これは事前に決めておいてください。Okta で対応するグループを作成します。
+
+<div id="how-scim-works">
+  ## SCIM と ClickHouse Cloud の連携の仕組み
+</div>
+
+1. Okta の管理者が、ユーザーを直接またはグループ経由で ClickHouse Cloud アプリケーションに割り当てます。
+2. Okta は、生成したトークンを使って認証し、HTTPS 経由で ClickHouse Cloud の SCIM エンドポイントを呼び出します。
+3. ClickHouse Cloud は、組織内にユーザーを作成し、Okta のグループ所属に基づいてロールを割り当てます。
+4. ユーザーは、既存の SAML SSO フローを使用して ClickHouse Cloud にサインインします。
+5. プロファイルやグループの変更、Okta での無効化は、自動的に ClickHouse Cloud に反映されます。
+
+<div id="configure-clickhouse-cloud">
+  ## ClickHouse Cloud の組織で SCIM を設定する
+</div>
+
+<Steps>
+  <Step>
+    ### SCIM を有効にする
+
+    組織管理者として **ClickHouse Cloud Console** にサインインし、**組織設定 → SAML and SCIM settings → SCIM Configuration** を開きます。
+
+    ![組織設定で SCIM 設定タブに移動する](/images/cloud/security/scim-okta/scim-okta-01.webp)
+
+    `Enable SCIM` をクリックします。SCIM は SAML SSO の接続後に有効になります。オプションがグレーアウトしている場合は、先に SAML の設定を完了してください。
+
+    ![Enable SCIM を切り替える](/images/cloud/security/scim-okta/scim-okta-02.webp)
+
+    次の形式の **SCIM エンドポイント URL** が生成されます。
+
+    ```plaintext
+    https://api.clickhouse.cloud/v1/organizations/<your-org-id>/scim
+    ```
+
+    これをコピーしてください。後で Okta に貼り付けます。
+  </Step>
+
+  <Step>
+    ### SCIM アクセストークンを生成する
+
+    `Create an API key` セクションで有効期限を選択します。
+
+    <Tip>
+      **ローテーションを見越して計画してください**
+
+      有効期限は 12 か月に設定し、カレンダーにリマインダーを追加することをおすすめします。ClickHouse Cloud では同時に最大 2 つの SCIM トークンを有効にできるため、ダウンタイムなしでローテーションできます。新しいトークンを生成し、Okta 側を切り替え、プロビジョニングが引き続き機能することを確認してから、古いトークンを取り消してください。
+    </Tip>
+
+    `Generate key` をクリックします。トークンは **一度だけ**、キー (`scim_` プレフィックス付き) とシークレットとして表示されます。両方をすぐにコピーし、安全なシークレットマネージャーに保存してください。後から再取得することはできません。紛失した場合は、そのトークンを取り消して新しいものを生成してください。
+
+    ![新しい SCIM API key を生成する](/images/cloud/security/scim-okta/scim-okta-07.webp)
+  </Step>
+
+  <Step>
+    ### ロールマッピングを定義する
+
+    SCIM Configuration パネルで **Map roles in &quot;Users and roles&quot;** をクリックします (または **Users and roles → Roles** から直接移動します)。
+
+    SCIM グループは名前に基づいて ClickHouse Cloud のロールに紐付けられます。あわせて次のルールに注意してください。
+
+    * **SCIM グループを定義済みのシステムロールにマップすることはできません。** SCIM マッピングが適用されるのはカスタムロールのみです。SCIM 経由でシステムレベルの権限を公開する必要がある場合は、必要な権限をまとめたカスタムロールを作成してください。
+    * **名前が一致すると自動的にリンクされます。** カスタムロールが受信した SCIM グループと同じ名前であれば、ClickHouse Cloud が自動的に紐付けます。手動マッピングは不要です。
+    * **グループ名とは異なるロール名を使うには**、まず使用したいロール名でカスタムロールを作成し、その後、そのロールが紐付けられる SCIM グループ名を **SCIM group** フィールドに設定してください。
+    * **未マップのグループは新しいロールを作成します。** Okta が、既存のロール名と一致せず、どのロールの `SCIM group` フィールドからも参照されていないグループをプッシュすると、ClickHouse Cloud はそのグループ名で新しいカスタムロールを作成します。その後、そのロールに必要な権限を付与できます。
+  </Step>
+</Steps>
+
+<div id="configure-okta">
+  ## Okta で ClickHouse Cloud アプリケーションを設定する
+</div>
+
+<Steps>
+  <Step>
+    ### Okta で ClickHouse Cloud アプリケーションを開く
+
+    **Okta Admin Console** で **Applications → Applications** に移動し、ClickHouse Cloud の SAML SSO 設定時に作成したアプリケーションを検索して開きます。
+
+    まだ SAML アプリケーションを作成していない場合は、先に [SAML SSO setup guide](/ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup) に従ってください。SCIM プロビジョニングは同じアプリケーションで設定します。
+
+    **General** タブで **App Settings** セクションを見つけて `Edit` をクリックします。**Provisioning** で `SCIM` を選択し、`Save` をクリックします。
+
+    ![Okta アプリケーション設定でプロビジョニングモードを SCIM に設定する](/images/cloud/security/scim-okta/scim-okta-03.webp)
+
+    これで、アプリケーションに **Provisioning** タブが表示されます。
+
+    ![アプリケーションに Provisioning タブが表示された状態](/images/cloud/security/scim-okta/scim-okta-05.webp)
+  </Step>
+
+  <Step>
+    ### Okta を SCIM エンドポイントに接続する
+
+    アプリケーションの **Provisioning** タブを開き、`Edit` をクリックします。フォームに必要事項を入力します。
+
+    * **SCIM connector base URL** — 先ほどの SCIM エンドポイント URL。
+    * **Unique identifier field for users** — `userName`。
+    * **Supported provisioning actions** — 次の項目をすべて選択します。
+      * Import New Users and Profile Updates
+      * Push New Users
+      * Push Profile Updates
+      * Push Groups
+      * Import Groups
+    * **Authentication Mode** — `Basic Auth`。
+      * **Username** — SCIM トークンのキー (`scim_` で始まります) 。
+      * **Password** — SCIM トークンのシークレット。
+
+    ![SCIM コネクタ URL を入力し、一意識別子を userName に設定する](/images/cloud/security/scim-okta/scim-okta-06.webp)
+
+    ![SCIM 認証用の API 認証情報を入力する](/images/cloud/security/scim-okta/scim-okta-08.webp)
+
+    `Test Connector Configuration` をクリックします。緑色の確認メッセージが表示されるはずです。失敗した場合は、[Troubleshooting](#troubleshooting) に進んでください。
+
+    ![SCIM 接続をテストする](/images/cloud/security/scim-okta/scim-okta-09.webp)
+
+    `Save` をクリックします。
+  </Step>
+
+  <Step>
+    ### Provisioning の動作を設定する
+
+    引き続き **Provisioning** タブで、左側のサイドバーにある `To App` をクリックします。`Edit` をクリックし、以下を有効にします。
+
+    | 設定                     | 操作  | 内容                                                   |
+    | ---------------------- | --- | ---------------------------------------------------- |
+    | Create Users           | 有効化 | Okta で割り当てられると、ClickHouse Cloud に新しいユーザーを作成します       |
+    | Update User Attributes | 有効化 | プロファイルの変更 (名前、メールアドレスなど) を自動的に同期します                  |
+    | Deactivate Users       | 有効化 | Okta で割り当て解除または無効化されると、ClickHouse Cloud からユーザーを削除します |
+    | Sync Password          | 無効化 | 使用しません — サインインはパスワードではなく SAML 経由で行われます               |
+
+    ![ユーザー向けの SCIM Provisioning アクションを有効にする](/images/cloud/security/scim-okta/scim-okta-10.webp)
+
+    `Save` をクリックし、アプリケーションの **Sign On** / **Provisioning** タブに戻って、設定が反映されていることを確認します。
+
+    ![Provisioning の設定を保存して Sign On タブに戻る](/images/cloud/security/scim-okta/scim-okta-10b.webp)
+  </Step>
+
+  <Step>
+    ### ユーザー属性をマッピングする
+
+    Okta と ClickHouse Cloud で、どのユーザーフィールドを対応付けるか一致している必要があります。**Provisioning** タブで `To App` をクリックし、アプリケーションの **Attribute Mappings** を確認してください。通常は Okta SAML アプリケーションのデフォルト設定で問題ありませんが、以下の表を確認してください。
+
+    | Okta 属性           | ClickHouse Cloud (SCIM) 属性 | 必須                                  |
+    | ----------------- | -------------------------- | ----------------------------------- |
+    | `userName`        | `userName`                 | **はい** — 一意の識別子およびプライマリメールとして使用されます |
+    | `email` (primary) | `emails[primary].value`    | **はい** — `userName` と一致している必要があります  |
+    | `firstName`       | `name.givenName`           | 推奨                                  |
+    | `lastName`        | `name.familyName`          | 推奨                                  |
+    | `displayName`     | `displayName`              | 推奨 — ClickHouse Cloud UI に表示されます    |
+    | `externalId`      | `externalId`               | 推奨 — 照合時の精度向上に役立ちます                 |
+
+    department、manager、location などの任意の属性を追加できます。ClickHouse Cloud はこれらをユーザープロファイルに保存しますが、現時点では権限には使用しません。SCIM 標準セットに含まれない属性は、ClickHouse Cloud 側で無視されます。
+
+    <Warning>
+      **メールアドレスの大文字・小文字は重要です**
+
+      Okta の `userName` と `email` で大文字・小文字が一致していることを確認してください。ClickHouse Cloud はメールアドレスを小文字に正規化するため、2 つのフィールドに不一致があるとテストに失敗することがあります。
+    </Warning>
+  </Step>
+
+  <Step>
+    ### グループをプッシュしてユーザーを割り当てる
+
+    ここでロールが自動的に適用されます。
+
+    **Okta でグループを作成します。** 先ほど設定した各ロールマッピングに対して、**表示名が完全に一致する** Okta グループを作成するか、既存のグループを特定します。たとえば、マッピングが `ClickHouse-Admins → Admin` であれば、Okta で `ClickHouse-Admins` という名前のグループを作成します。
+
+    ![Okta で新しいグループを作成する](/images/cloud/security/scim-okta/scim-okta-13.webp)
+
+    作成したグループを開き、`Assign people` をクリックしてメンバーを追加します。
+
+    ![グループの Assign people をクリックする](/images/cloud/security/scim-okta/scim-okta-14.webp)
+
+    ![ユーザーをグループに割り当てる](/images/cloud/security/scim-okta/scim-okta-15.webp)
+
+    次に、ロールのメンバーシップとアプリへのアクセスを同期した状態に保つため、同じグループに SCIM アプリケーションも割り当てます。
+
+    ![アプリケーションをグループに割り当てる](/images/cloud/security/scim-okta/scim-okta-16.webp)
+
+    **グループをプッシュします。** アプリケーションの **Provisioning** タブで `Push Groups → Find groups by name` をクリックし、グループを検索して `Save` をクリックします。これを各ロールグループに対して繰り返します。プロビジョニングが完了すると、それぞれの **Push Status** は **Active (Pushed)** と表示されるはずです。
+
+    ![アプリケーションの Push Groups タブで名前による Group Push を設定する](/images/cloud/security/scim-okta/scim-okta-17.webp)
+
+    **ユーザーを割り当てます。** 方法は 2 つあります。
+
+    * **グループ経由 (推奨) 。** 先ほどプッシュした Okta グループにユーザーを追加します。ユーザーは ClickHouse Cloud にプロビジョニングされ、対応するロールが自動的に割り当てられます。
+    * **直接。** アプリケーションの **Assignments** タブで、`Assign → Assign to People` をクリックし、個別のユーザーを選択します。プッシュ済みのグループにも所属していない場合、ユーザーは **Default role** でプロビジョニングされます。
+
+    継続的な管理では、グループベースの割り当てのほうが簡潔です。誰かのロールが変わっても、更新するのはグループのメンバーシップだけで済みます。
+  </Step>
+</Steps>
+
+<div id="test-the-integration">
+  ## インテグレーションをテストする
+</div>
+
+Provisioning の設定が完了したら、ClickHouse Cloud Console の **Settings → Users and roles** に戻り、同期されたユーザーが想定どおりのロールで表示されていることを確認します。
+
+![Users and roles でユーザー同期を確認](/images/cloud/security/scim-okta/scim-okta-18.webp)
+
+チーム全体を割り当てる**前に**、1～2 人のテストユーザーでこの簡単なテスト計画を実施してください。各手順は数秒以内に成功するはずです。成功しない場合は、Okta の Tasks キューと [Troubleshooting](#troubleshooting) セクションを確認してください。
+
+| # | Okta での操作                                                 | ClickHouse Cloud での期待される結果                         |
+| - | --------------------------------------------------------- | -------------------------------------------------- |
+| 1 | テストユーザーを `ClickHouse-Admins` Okta グループに追加する               | ユーザーが **Settings → Members** にロール **Admin** で表示される |
+| 2 | テストユーザーが SSO 経由で ClickHouse Cloud にサインインする                | 管理者権限を持った状態でダッシュボードが表示される                          |
+| 3 | Okta でユーザーの名を更新する                                         | 更新後の名前が数秒以内に **Members** に表示される                    |
+| 4 | ユーザーを `ClickHouse-Admins` から `ClickHouse-Read-only` に移動する | ユーザーのロールが **Read-only** に変わる                       |
+| 5 | アプリケーションからユーザーの割り当てを解除する (または Okta で無効化する)                | ユーザーが組織から削除され、その後のサインインは失敗する                       |
+
+いずれかの手順が失敗した場合は、先に進む前に根本原因を解消してください。問題はそのままにすると、症状が連鎖的に悪化することがよくあります。
+
+<Tip>
+  **Okta で SCIM エラーを確認する場所**
+
+  SCIM エラーは、対象アプリケーションで絞り込んだ **Reports → System Log** と、アプリケーションの **Provisioning → View Logs** 画面に表示されます。ClickHouse Cloud から返されたエラーメッセージはそのまま表示されるため、まずはそこを確認してください。
+</Tip>
+
+<div id="best-practices">
+  ## 本番環境向けのベストプラクティス
+</div>
+
+**トークンは定期的にローテーションしてください。** SCIMトークンのローテーションを忘れないよう、カレンダーにリマインダーを設定してください。推奨頻度は12か月ごと、またはそのトークンを把握していた管理者が退職した場合は直ちに実施することです。ClickHouse Cloud では、プロビジョニングを止めずにローテーションできるよう、組織ごとに2つのアクティブなトークンを利用できます。
+
+**直接割り当てではなく、グループを使ってください。** アプリケーションにユーザーを直接割り当てることもできますが、すぐに監査しづらくなります。Okta のグループ経由で割り当てれば、アクセスレビューやロール変更を1か所で管理できます。
+
+**監査ログを確認してください。** ユーザーの作成、無効化、プロファイル更新など、あらゆる SCIM アクションは ClickHouse Cloud の監査ログに記録されます。[Audit logging](/ja/products/cloud/reference/security/audit-logging)を参照してください。ログは定期的に確認し、特に大量のプロビジョニングが発生した後は注意して確認してください。
+
+**適切なデフォルトロールを設定してください。** Okta ユーザーがアプリケーションに割り当てられていても、どのプッシュ済みグループにも含まれていない場合は、**Default role** で作成されます。設定ミスがあっても安全に失敗するよう、ユーザーが*最低限の操作は*行える範囲で、最も制限の厳しいロールを選んでください。
+
+**SCIM と手動招待を同時に使わないでください。** SCIM を有効にしたら、メンバーシップは Okta 経由で管理し、同じユーザーに手動招待を送らないでください。両方を混在させると、どちらを正とすべきかが不明確になり、重複が発生することがあります。
+
+**失敗したプロビジョニングタスクを監視してください。** Okta は失敗したプロビジョニング呼び出しを再試行しますが、最終的には **Tasks** キューに保留します。このキューを IT チームが普段監視しているダッシュボードに追加するか、Okta の webhook やメールアラートを使って、継続的な失敗を検知してください。
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="test-credentials-fails">
+  ### Okta で &quot;Test connector configuration&quot; が失敗する
+</div>
+
+* ClickHouse Cloud Console で SCIM が **有効** になっていることを確認してください。
+* Okta の **base URL** が、Cloud Console に表示されている SCIM のエンドポイント URL と完全に一致していることを確認してください。組織 ID が正しい必要があります。
+* **トークンのキーとシークレット** を、先頭や末尾に空白を含めずに貼り付けていることを確認してください。
+* トークンをローテーションした場合は、以前の組ではなく、**新しい** キーとシークレットを使用していることを確認してください。
+
+<div id="users-no-permissions">
+  ### ユーザーは作成されるが、権限が付与されない
+</div>
+
+* 想定しているロールについて、**Map roles in &quot;Users and roles&quot;** に行が追加されていることを確認してください。
+* Okta のグループ名が、マッピング内の SCIM グループ名と**完全に**一致していること (大文字・小文字やハイフンを含む) を確認してください。
+* 設計上、意図的に一部のユーザーをグループなしでプロビジョニングしている場合は、**Default role** が設定されていることを確認してください。
+
+<div id="duplicate-user">
+  ### メンバーリスト内の重複ユーザー
+</div>
+
+通常は、Okta と過去の手動招待でメールアドレスの大文字・小文字の不一致があることが原因です。Members リストから重複した項目を削除し、その後 Okta でそのユーザーの割り当てを解除してから再度割り当て、あらためてプロビジョニングしてください。
+
+<div id="group-display-name">
+  ### グループのプッシュが &quot;displayName not recognised&quot; で失敗する
+</div>
+
+Okta のグループ名が、ClickHouse Cloud で設定されているマッピングと一致していません。Okta のグループ名を変更するか、SCIM Configuration パネルの **Map roles in &quot;Users and roles&quot;** でマッピングを追加してください (または **Users and roles → Roles** から追加します) 。
+
+<div id="deactivated-users-remaining">
+  ### 無効化したユーザーが引き続きメンバーとして表示される
+</div>
+
+Okta で無効化が反映されるまで、最大 1 分かかることがあります。数分経ってもそのユーザーがまだメンバーのままである場合は、Okta の **Provisioning → View Logs** で、無効化タスクに関するエラーがないか確認してください。
+
+<div id="token-rotation-issue">
+  ### SCIMトークンをローテーションした後、Okta でエラーが発生するようになりました
+</div>
+
+Okta の**同じ SCIM アプリケーション**で認証情報を更新したことを確認してください。更新後、`Test Connector Configuration` をクリックして確認します。Provisioning が再び緑色になったら、ClickHouse Cloud Console で古いトークンを取り消してください。
+
+<div id="lost-token">
+  ### SCIM トークンを紛失した場合
+</div>
+
+トークンは再取得できません。ClickHouse Cloud Console の **組織設定 → SAML and SCIM settings → SCIM Configuration** で、紛失したトークンを取り消して新しいトークンを生成し、Okta の認証情報を更新してください。
+
+<div id="faq">
+  ## よくある質問
+</div>
+
+**SCIM を使う前に SAML SSO は必要ですか？**
+はい。SCIM はユーザーアカウントを作成しますが、その認証は ClickHouse Cloud が SAML 経由で行います。先に [SAML SSO](/ja/products/cloud/guides/security/cloud-access-management/saml-sso-setup) を設定してください。
+
+**SCIM は Microsoft Entra ID、OneLogin、またはその他の SCIM 2.0 IdP で動作しますか？**
+公式には、いいえ — 現時点でテスト済みかつサポート対象なのは Okta のみです。エンドポイントは SCIM 2.0 (RFC 7644) に準拠していますが、認証は Basic Auth のみに制限されているため、Basic Auth で認証できない IdP では動作しません。その他の Basic Auth 対応 SCIM 2.0 IdP も実際には動作する可能性がありますが、保証はありません。
+
+**Okta での変更はどれくらいで ClickHouse Cloud に反映されますか？**
+ほとんどの操作は数秒以内に反映されます。大量の変更 (大規模なグループのプッシュ) は、規模によってはさらに時間がかかることがありますが、一時的なエラーに対しては Okta が自動的に再試行します。
+
+**1 つの Okta テナントから複数の ClickHouse Cloud 組織をプロビジョニングできますか？**
+はい — 組織ごとに、それぞれ専用の SCIM エンドポイント URL とトークンを使ってアプリケーションを 1 つずつインストールしてください。必要に応じて、同じ Okta グループを各アプリケーションに push できます。
+
+**行き詰まった場合は、どこでサポートを受けられますか？**
+ClickHouse Cloud Console の **Help → Contact support** からサポートチケットを作成し、次の情報を含めてください。
+
+* 組織 ID
+* Okta アプリケーション ID
+* Okta のログにある、失敗したタスクまたはテストのスクリーンショット

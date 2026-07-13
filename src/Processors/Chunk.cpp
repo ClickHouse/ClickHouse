@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
@@ -217,6 +218,14 @@ void materializeChunk(Chunk & chunk)
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+    chunk.setColumns(std::move(columns), num_rows);
+}
+
+void compactReplicatedColumns(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    compactReplicatedColumns(columns);
     chunk.setColumns(std::move(columns), num_rows);
 }
 

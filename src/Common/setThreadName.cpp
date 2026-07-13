@@ -211,9 +211,11 @@ bool isThreadStackVMANamingUnsupported() noexcept
 #if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD)
     return g_stack_vma_naming_unsupported.load(std::memory_order_relaxed);
 #else
-    /// On non-Linux the `MemoryThreadStacks*` metric does not exist at all
-    /// (smaps is Linux-only), so there is nothing to warn about. Return
-    /// `false` so any future caller without an OS_LINUX guard doesn't
+    /// This warning is specific to the Linux `PR_SET_VMA_ANON_NAME` path.
+    /// On Darwin the `MemoryThreadStacks*` metrics are derived from the Mach
+    /// VM map and have no kernel-version dependency; on other platforms the
+    /// metrics do not exist. Either way there is nothing to warn about, so
+    /// return `false` and a future caller without an OS_LINUX guard does not
     /// publish a spurious warning here.
     return false;
 #endif

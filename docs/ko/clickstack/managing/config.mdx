@@ -1,0 +1,480 @@
+---
+slug: /use-cases/observability/clickstack/config
+title: '구성 옵션'
+description: 'ClickStack - ClickHouse Observability Stack의 구성 옵션'
+keywords: ['ClickStack 구성', '관측성 구성', 'HyperDX 설정', 'collector 구성', '환경 변수']
+doc_type: '참고'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickStack의 각 구성 요소에 대해 다음 구성 옵션을 사용할 수 있습니다:
+
+<div id="modifying-settings">
+  ## 오픈 소스 배포판 설정
+</div>
+
+<div id="docker">
+  ### Docker
+</div>
+
+[All in One](/ko/clickstack/deployment/all-in-one), [HyperDX Only](/ko/clickstack/deployment/hyperdx-only) 또는 [Local Mode](/ko/clickstack/deployment/local-mode-only)를 사용하는 경우에는 예를 들어 환경 변수를 통해 원하는 설정을 전달하십시오.
+
+```shell
+docker run  -e HYPERDX_LOG_LEVEL='debug' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+```
+
+<div id="docker-compose">
+  ### Docker Compose
+</div>
+
+[Docker Compose](/ko/clickstack/deployment/docker-compose) 배포 가이드를 사용하는 경우 [`.env`](https://github.com/hyperdxio/hyperdx/blob/main/.env) 파일로 설정을 변경할 수 있습니다.
+
+또는 [`docker-compose.yaml`](https://github.com/hyperdxio/hyperdx/blob/main/docker-compose.yml) 파일에서 설정을 직접 덮어쓸 수 있습니다. 예를 들면 다음과 같습니다.
+
+예시:
+
+```yaml
+services:
+  app:
+    environment:
+      HYPERDX_API_KEY: ${HYPERDX_API_KEY}
+      HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+      # ... 기타 설정
+```
+
+<div id="helm">
+  ### Helm
+</div>
+
+<div id="customizing-values">
+  #### values 맞춤 설정(선택 사항)
+</div>
+
+예를 들어 `--set` 플래그를 사용해 설정을 맞춤 설정할 수 있습니다.
+
+```shell
+helm install my-hyperdx hyperdx/hdx-oss-v2 \
+  --set replicaCount=2 \
+  --set resources.limits.cpu=500m \
+  --set resources.limits.memory=512Mi \
+  --set resources.requests.cpu=250m \
+  --set resources.requests.memory=256Mi \
+  --set ingress.enabled=true \
+  --set ingress.annotations."kubernetes\.io/ingress\.class"=nginx \
+  --set ingress.hosts[0].host=hyperdx.example.com \
+  --set ingress.hosts[0].paths[0].path=/ \
+  --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific \
+  --set env[0].name=CLICKHOUSE_USER \
+  --set env[0].value=abc
+```
+
+또는 `values.yaml`을 수정하세요. 기본값을 확인하려면 다음을 실행하십시오:
+
+```shell
+helm show values hyperdx/hdx-oss-v2 > values.yaml
+```
+
+구성 예시:
+
+```yaml
+replicaCount: 2
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  hosts:
+    - host: hyperdx.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  env:
+    - name: CLICKHOUSE_USER
+      value: abc
+```
+
+<div id="hyperdx">
+  ## ClickStack UI (HyperDX) 애플리케이션
+</div>
+
+<div id="datasource-settings">
+  ### 데이터 소스 설정
+</div>
+
+ClickStack UI에서는 각 관측성 데이터 타입/축에 대해 사용자가 소스를 정의해야 합니다:
+
+* `Logs`
+* `Traces`
+* `Metrics`
+* `Sessions`
+
+이 구성은 애플리케이션의 `Team Settings -> Sources`에서 수행할 수 있으며, 아래는 로그에 대한 예시입니다:
+
+<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="HyperDX 소스 구성" size="md" />
+
+각 소스를 생성할 때는 최소 1개의 테이블을 지정해야 하며, HyperDX가 데이터를 쿼리할 수 있도록 컬럼 집합도 함께 지정해야 합니다.
+
+ClickStack과 함께 제공되는 [기본 OpenTelemetry (OTel) 스키마](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry#out-of-the-box-schema)를 사용하는 경우, 이러한 컬럼은 각 소스별로 자동 추론할 수 있습니다. [스키마를 수정](#clickhouse)하거나 사용자 지정 스키마를 사용하는 경우에는 이러한 매핑을 직접 지정하고 업데이트해야 합니다.
+
+<Note>
+  ClickStack과 함께 제공되는 ClickHouse의 기본 스키마는 [OTel collector용 ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)가 생성하는 스키마입니다. 이러한 컬럼 이름은 [여기](https://opentelemetry.io/docs/specs/otel/logs/data-model/)에 문서화된 OTel 공식 사양과 연관됩니다.
+</Note>
+
+각 소스에 대해 다음 설정을 사용할 수 있습니다:
+
+<div id="logs">
+  #### 로그
+</div>
+
+| 설정                               | 설명                                                                                               | 필수  | 기본 스키마에서 추론 | 추론 값                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------ | --- | ----------- | -------------------------------------------------- |
+| `Name`                           | 소스 이름입니다.                                                                                        | 예   | 아니요         | –                                                  |
+| `Section`                        | 소스 셀렉터에서 소스를 그룹화하기 위한 선택적 레이블입니다. 같은 섹션을 사용하는 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 항목으로 처리됩니다. | 아니요 | 아니요         | –                                                  |
+| `Server Connection`              | 서버 연결 이름입니다.                                                                                     | 예   | 아니요         | `Default`                                          |
+| `Database`                       | ClickHouse 데이터베이스 이름입니다.                                                                         | 예   | 예           | `default`                                          |
+| `Table`                          | 대상 테이블 이름입니다. 기본 스키마를 사용하는 경우 `otel_logs`로 설정합니다.                                                | 예   | 아니요         |                                                    |
+| `Timestamp Column`               | 프라이머리 키의 일부인 날짜/시간 컬럼 또는 표현식입니다.                                                                 | 예   | 예           | `TimestampTime`                                    |
+| `Default Select`                 | 기본 검색 결과에 표시할 컬럼입니다.                                                                             | 예   | 예           | `Timestamp`, `ServiceName`, `SeverityText`, `Body` |
+| `Service Name Expression`        | 서비스 이름에 사용할 표현식 또는 컬럼입니다.                                                                        | 예   | 예           | `ServiceName`                                      |
+| `Log Level Expression`           | 로그 레벨에 사용할 표현식 또는 컬럼입니다.                                                                         | 예   | 예           | `SeverityText`                                     |
+| `Body Expression`                | 로그 메시지에 사용할 표현식 또는 컬럼입니다.                                                                        | 예   | 예           | `Body`                                             |
+| `Log Attributes Expression`      | 사용자 지정 로그 속성에 사용할 표현식 또는 컬럼입니다.                                                                  | 예   | 예           | `LogAttributes`                                    |
+| `리소스 속성 표현식` | 리소스 수준 속성에 사용할 표현식 또는 컬럼입니다.                                                                     | 예   | 예           | `ResourceAttributes`                               |
+| `Displayed Timestamp Column`     | UI에 표시할 때 사용하는 타임스탬프 컬럼입니다.                                                                      | 예   | 예           | `ResourceAttributes`                               |
+| `Correlated Metric Source`       | 연결된 상관관계 메트릭 소스입니다(예: HyperDX metrics).                                                          | 아니요 | 아니요         | –                                                  |
+| `Correlated Trace Source`        | 연결된 상관관계 트레이스 소스입니다(예: HyperDX traces).                                                          | 아니요 | 아니요         | –                                                  |
+| `Trace Id Expression`            | 트레이스 ID를 추출하는 데 사용할 표현식 또는 컬럼입니다.                                                                | 예   | 예           | `TraceId`                                          |
+| `Span Id Expression`             | 스팬 ID를 추출하는 데 사용할 표현식 또는 컬럼입니다.                                                                  | 예   | 예           | `SpanId`                                           |
+| `Implicit Column Expression`     | 필드가 지정되지 않았을 때 전문 검색에 사용할 컬럼입니다(Lucene 스타일). 일반적으로 로그 본문입니다.                                     | 예   | 예           | `Body`                                             |
+| `Highlighted Attributes`         | 로그 세부 정보를 열 때 표시되는 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                       | 아니요 | 아니요         | –                                                  |
+| `Highlighted Trace Attributes`   | 트레이스의 각 로그에서 추출되어 트레이스 워터폴 상단에 표시되는 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                      | 아니요 | 아니요         | –                                                  |
+
+<div id="traces">
+  #### 트레이스
+</div>
+
+| 설정                               | 설명                                                                                                      | 필수 여부 | 기본 스키마에서 추론 | 추론값                                                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------- | ----- | ----------- | ----------------------------------------------------------------------------------------------------- |
+| `Name`                           | 소스 이름입니다.                                                                                               | Yes   | No          | –                                                                                                     |
+| `Section`                        | 선택 사항입니다. 소스 셀렉터에서 소스를 그룹화하기 위한 레이블입니다. 동일한 섹션을 공유하는 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 대상으로 포함됩니다. | No    | No          | –                                                                                                     |
+| `Server Connection`              | 서버 연결 이름입니다.                                                                                            | Yes   | No          | `Default`                                                                                             |
+| `Database`                       | ClickHouse 데이터베이스 이름입니다.                                                                                | Yes   | Yes         | `default`                                                                                             |
+| `Table`                          | 대상 테이블 이름입니다. 기본 스키마를 사용하는 경우 `otel_traces`로 설정합니다.                                                     | Yes   | Yes         | -                                                                                                     |
+| `Timestamp Column`               | 프라이머리 키에 포함되는 날짜/시간 컬럼 또는 표현식입니다.                                                                       | Yes   | Yes         | `Timestamp`                                                                                           |
+| `Timestamp`                      | `Timestamp Column`의 별칭입니다.                                                                              | Yes   | Yes         | `Timestamp`                                                                                           |
+| `Default Select`                 | 기본 검색 결과에 표시할 컬럼입니다.                                                                                    | Yes   | Yes         | `Timestamp, ServiceName as service, StatusCode as level, round(Duration / 1e6) as duration, SpanName` |
+| `Duration Expression`            | 스팬 지속 시간을 계산하는 표현식입니다.                                                                                  | Yes   | Yes         | `Duration`                                                                                            |
+| `Duration Precision`             | 지속 시간 표현식의 정밀도입니다(예: 나노초, 마이크로초).                                                                       | Yes   | Yes         | ns                                                                                                    |
+| `Trace Id Expression`            | 트레이스 ID에 사용할 표현식 또는 컬럼입니다.                                                                              | Yes   | Yes         | `TraceId`                                                                                             |
+| `Span Id Expression`             | 스팬 ID에 사용할 표현식 또는 컬럼입니다.                                                                                | Yes   | Yes         | `SpanId`                                                                                              |
+| `Parent Span Id Expression`      | 부모 스팬 ID에 사용할 표현식 또는 컬럼입니다.                                                                             | Yes   | Yes         | `ParentSpanId`                                                                                        |
+| `Span Name Expression`           | 스팬 이름에 사용할 표현식 또는 컬럼입니다.                                                                                | Yes   | Yes         | `SpanName`                                                                                            |
+| `Span Kind Expression`           | 스팬 종류(예: client, server)에 사용할 표현식 또는 컬럼입니다.                                                             | Yes   | Yes         | `SpanKind`                                                                                            |
+| `Correlated Log Source`          | 선택 사항입니다. 연결된 상관관계 로그 소스입니다(예: HyperDX logs).                                                           | No    | No          | –                                                                                                     |
+| `Correlated Session Source`      | 선택 사항입니다. 연결된 상관관계 세션 소스입니다.                                                                            | No    | No          | –                                                                                                     |
+| `Correlated Metric Source`       | 선택 사항입니다. 연결된 상관관계 메트릭 소스입니다(예: HyperDX metrics).                                                       | No    | No          | –                                                                                                     |
+| `Status Code Expression`         | 스팬 상태 코드에 대한 표현식입니다.                                                                                    | Yes   | Yes         | `StatusCode`                                                                                          |
+| `Status Message Expression`      | 스팬 상태 메시지에 대한 표현식입니다.                                                                                   | Yes   | Yes         | `StatusMessage`                                                                                       |
+| `Service Name Expression`        | 서비스 이름에 사용할 표현식 또는 컬럼입니다.                                                                               | Yes   | Yes         | `ServiceName`                                                                                         |
+| `리소스 속성 표현식` | 리소스 수준 속성에 사용할 표현식 또는 컬럼입니다.                                                                            | Yes   | Yes         | `ResourceAttributes`                                                                                  |
+| `Event Attributes Expression`    | 이벤트 속성에 사용할 표현식 또는 컬럼입니다.                                                                               | Yes   | Yes         | `SpanAttributes`                                                                                      |
+| `Span Events Expression`         | 스팬 이벤트를 추출하는 표현식입니다. 일반적으로 `Nested` 유형의 컬럼입니다. 이를 통해 지원되는 language SDKs에서 예외 스택 트레이스를 렌더링할 수 있습니다.      | Yes   | Yes         | `Events`                                                                                              |
+| `Implicit Column Expression`     | 필드가 지정되지 않은 경우 전문 검색에 사용할 컬럼입니다(Lucene 스타일). 일반적으로 로그 본문입니다.                                            | Yes   | Yes         | `SpanName`                                                                                            |
+| `Highlighted Attributes`         | 스팬 세부 정보를 열 때 표시되는 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                                              | No    | No          | –                                                                                                     |
+| `Highlighted Trace Attributes`   | 트레이스의 각 스팬에서 추출되어 트레이스 워터폴 위에 표시되는 표현식 또는 컬럼입니다. URL을 반환하는 표현식은 링크로 표시됩니다.                              | No    | No          | –                                                                                                     |
+
+<div id="metrics">
+  #### 메트릭
+</div>
+
+| 설정                      | 설명                                                                                               | 필수 여부 | 기본 스키마에서 추론됨 | 추론된 값                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------ | ----- | ------------ | ------------------------ |
+| `Name`                  | 소스 이름입니다.                                                                                        | 예     | 아니요          | –                        |
+| `Section`               | 소스 셀렉터에서 소스를 그룹화하기 위한 선택적 레이블입니다. 같은 섹션을 공유하는 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 항목으로 처리됩니다. | 아니요   | 아니요          | –                        |
+| `Server Connection`     | 서버 연결 이름입니다.                                                                                     | 예     | 아니요          | `Default`                |
+| `Database`              | ClickHouse 데이터베이스 이름입니다.                                                                         | 예     | 예            | `default`                |
+| `Gauge Table`           | Gauge 유형의 메트릭을 저장하는 테이블입니다.                                                                      | 예     | 아니요          | `otel_metrics_gauge`     |
+| `Histogram Table`       | 히스토그램 유형의 메트릭을 저장하는 테이블입니다.                                                                      | 예     | 아니요          | `otel_metrics_histogram` |
+| `Sum Table`             | 합계 유형(Counter)의 메트릭을 저장하는 테이블입니다.                                                                | 예     | 아니요          | `otel_metrics_sum`       |
+| `Correlated Log Source` | 선택 사항입니다. 상관관계 로그 소스(예: HyperDX 로그)입니다.                                                          | 아니요   | 아니요          | –                        |
+
+<div id="settings">
+  #### 세션
+</div>
+
+| 설정                               | 설명                                                                                                     | 필수  | 기본 스키마에서 추론됨 | 추론된 값                |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------ | --- | ------------ | -------------------- |
+| `Name`                           | 소스 이름입니다.                                                                                              | 예   | 아니요          | –                    |
+| `Section`                        | 선택 사항입니다. 소스 셀렉터에서 소스를 그룹화하기 위한 레이블입니다. 같은 섹션을 공유하는 소스는 함께 표시되며, 검색 시 소스 이름뿐 아니라 섹션 이름도 일치 대상으로 사용됩니다. | 아니요 | 아니요          | –                    |
+| `Server Connection`              | 서버 연결 이름입니다.                                                                                           | 예   | 아니요          | `Default`            |
+| `Database`                       | ClickHouse 데이터베이스 이름입니다.                                                                               | 예   | 예            | `default`            |
+| `Table`                          | 세션 데이터의 대상 테이블(target table)입니다. 대상 테이블 이름입니다. 기본 스키마를 사용하는 경우 `hyperdx_sessions`로 설정합니다.              | 예   | 예            | -                    |
+| `Timestamp Column`               | 프라이머리 키(primary key)의 일부인 Datetime 컬럼 또는 표현식입니다.                                                       | 예   | 예            | `TimestampTime`      |
+| `Log Attributes Expression`      | 세션 데이터에서 로그 수준 속성을 추출하는 표현식입니다.                                                                        | 예   | 예            | `LogAttributes`      |
+| `LogAttributes`                  | 로그 속성을 저장하는 데 사용하는 별칭 또는 필드 참조입니다.                                                                     | 예   | 예            | `LogAttributes`      |
+| `리소스 속성 표현식` | 리소스 수준 메타데이터를 추출하는 표현식입니다.                                                                             | 예   | 예            | `ResourceAttributes` |
+| `Correlated Trace Source`        | 선택 사항입니다. 세션 상관관계를 위한 연결된 trace source입니다.                                                             | 아니요 | 아니요          | –                    |
+| `Implicit Column Expression`     | 필드가 지정되지 않았을 때 전문 검색에 사용하는 컬럼입니다(예: Lucene 스타일 쿼리 파싱).                                                 | 예   | 예            | `Body`               |
+
+<div id="highlighted-attributes">
+  #### 강조 속성
+</div>
+
+강조 속성과 강조 트레이스 속성은 Log 및 Trace 데이터 소스에서 구성할 수 있습니다.
+
+* 강조 속성은 로그 또는 스팬 세부 정보를 볼 때 각 로그 또는 스팬에 표시되는 컬럼 또는 표현식입니다.
+* 강조 트레이스 속성은 트레이스 내 각 로그 또는 스팬에서 조회되어 트레이스 워터폴 위에 표시되는 컬럼 또는 표현식입니다.
+
+이러한 속성은 source 구성에서 정의되며, 임의의 SQL 표현식으로 지정할 수 있습니다. SQL 표현식이 URL 포맷의 값을 반환하면 해당 속성은 링크로 표시됩니다. 빈 값은 표시되지 않습니다.
+
+예를 들어, 이 trace source는 강조 속성과 강조 트레이스 속성으로 구성되어 있습니다.
+
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="강조 속성 구성" size="md" />
+
+이러한 속성은 로그 또는 스팬을 클릭한 뒤 사이드 패널에 표시됩니다.
+
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="강조 속성" size="md" />
+
+속성을 클릭하면 해당 속성을 검색 값으로 사용하는 옵션이 표시됩니다. 속성 구성에 선택적 Lucene 표현식이 제공된 경우, 검색에는 SQL 표현식 대신 Lucene 표현식이 사용됩니다.
+
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="강조 속성 검색" size="md" />
+
+<div id="correlated-sources">
+  ### 상관관계 소스
+</div>
+
+ClickStack에서 소스 간 전체 상호 연관을 사용하려면 로그, 트레이스, 메트릭, 세션에 대한 상관관계 소스를 구성해야 합니다. 그러면 HyperDX가 관련 데이터를 서로 연관시키고 이벤트를 렌더링할 때 더 풍부한 맥락을 제공할 수 있습니다.
+
+* `Logs`: 트레이스 및 메트릭과 연관시킬 수 있습니다.
+* `Traces`: 로그, 세션 및 메트릭과 연관시킬 수 있습니다.
+* `Metrics`: 로그와 연관시킬 수 있습니다.
+* `Sessions`: 트레이스와 연관시킬 수 있습니다.
+
+이러한 연관 관계를 설정하면 여러 기능을 활용할 수 있습니다. 예를 들어 HyperDX는 트레이스와 함께 관련 로그를 렌더링하거나 세션과 연결된 메트릭 이상 징후를 표시할 수 있습니다.
+
+예를 들어, 아래는 상관관계 소스로 구성된 로그 소스입니다:
+
+<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="상관관계 소스가 구성된 HyperDX 소스" size="md" />
+
+<div id="application-configuration-settings">
+  ### 애플리케이션 구성 설정
+</div>
+
+<Info>
+  **ClickHouse Cloud의 HyperDX**
+
+  HyperDX가 ClickHouse Cloud에서 관리되는 경우 이러한 설정은 수정할 수 없습니다.
+</Info>
+
+* `HYPERDX_API_KEY`
+  * **기본값:** None (필수)
+  * **설명:** HyperDX API의 인증 키입니다.
+  * **지침:**
+  * telemetry 및 로깅에 필요합니다
+  * 로컬 개발 환경에서는 비어 있지 않은 값이라면 아무 값이나 사용할 수 있습니다
+  * 운영 환경에서는 안전하고 고유한 키를 사용하십시오
+  * 계정 생성 후 Team Settings 페이지에서 확인할 수 있습니다
+
+* `HYPERDX_LOG_LEVEL`
+  * **기본값:** `info`
+  * **설명:** 로깅 상세도 수준을 설정합니다.
+  * **옵션:** `debug`, `info`, `warn`, `error`
+  * **권장 사항:**
+  * 상세한 문제 진단에는 `debug`를 사용하세요
+  * 일반적인 운영에는 `info`를 사용하세요
+  * 로그 양을 줄이려면 프로덕션 환경에서는 `warn` 또는 `error`를 사용하세요
+
+* `HYPERDX_API_PORT`
+  * **기본값:** `8000`
+  * **설명:** HyperDX API 서버에 사용되는 포트입니다.
+  * **지침:**
+  * 이 포트를 호스트에서 사용할 수 있는지 확인하세요
+  * 포트 충돌이 있으면 변경하세요
+  * API 클라이언트 구성의 포트와 일치해야 합니다
+
+* `HYPERDX_APP_PORT`
+  * **기본값:** `8000`
+  * **설명:** HyperDX 프런트엔드 앱의 포트입니다.
+  * **지침:**
+  * 이 포트가 호스트에서 사용 가능한지 확인하세요
+  * 포트 충돌이 있으면 변경하세요
+  * 브라우저에서 이 포트에 접속할 수 있어야 합니다
+
+* `HYPERDX_APP_URL`
+  * **기본값:** `http://localhost`
+  * **설명:** 프런트엔드 앱의 기준 URL입니다.
+  * **지침:**
+  * 운영 환경에서는 도메인으로 설정하세요
+  * 프로토콜(http/https)을 포함하세요
+  * 끝의 슬래시는 포함하지 마세요
+
+* `MONGO_URI`
+  * **기본값:** `mongodb://db:27017/hyperdx`
+  * **설명:** MongoDB 연결 문자열입니다.
+  * **지침:**
+  * Docker를 사용하는 로컬 개발 환경에서는 기본값을 사용하세요
+  * 운영 환경에서는 보안이 적용된 연결 문자열을 사용하세요
+  * 필요한 경우 인증 정보를 포함하세요
+  * 예시: `mongodb://user:pass@host:port/db`
+
+* `MINER_API_URL`
+  * **기본값:** `http://miner:5123`
+  * **설명:** 로그 패턴 마이닝 서비스의 URL입니다.
+  * **지침:**
+  * Docker를 사용하는 로컬 개발 환경에서는 기본값을 사용합니다.
+  * 운영 환경에서는 miner 서비스 URL로 설정합니다.
+  * API 서비스에서 접근할 수 있어야 합니다.
+
+* `FRONTEND_URL`
+  * **기본값:** `http://localhost:3000`
+  * **설명:** 프런트엔드 앱의 URL입니다.
+  * **지침:**
+  * 로컬 개발 환경에서는 기본값을 사용하세요
+  * 운영 환경에서는 자체 도메인으로 설정하세요
+  * API 서비스에서 접근할 수 있어야 합니다
+
+* `OTEL_SERVICE_NAME`
+  * **기본값:** `hdx-oss-api`
+  * **설명:** OpenTelemetry 계측용 서비스 이름입니다.
+  * **지침:**
+  * HyperDX 서비스에 대해 의미를 잘 드러내는 이름을 사용하십시오. HyperDX가 자체 계측을 수행하는 경우에 적용됩니다.
+  * 텔레메트리 데이터에서 HyperDX 서비스를 식별하는 데 도움이 됩니다
+
+* `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT`
+  * **기본값:** `http://localhost:4318`
+  * **설명:** OpenTelemetry collector 엔드포인트입니다.
+  * **지침:**
+  * HyperDX 자체 계측에 해당합니다.
+  * 로컬 개발 환경에서는 기본값을 사용하세요
+  * 프로덕션 환경에서는 collector URL로 설정하세요
+  * HyperDX 서비스에서 접근할 수 있어야 합니다.
+
+* `USAGE_STATS_ENABLED`
+  * **기본값:** `true`
+  * **설명:** 사용 통계 수집 여부를 설정합니다.
+  * **지침:**
+  * 사용량 추적을 비활성화하려면 `false`로 설정하세요
+  * 개인정보 보호가 중요한 배포 환경에 유용합니다
+  * 제품 개선을 위해 기본값은 `true`입니다
+
+* `IS_OSS`
+  * **기본값:** `true`
+  * **설명:** OSS 모드로 실행되는지 여부를 나타냅니다.
+  * **지침:**
+  * 오픈소스 배포에서는 `true`로 유지합니다
+  * 엔터프라이즈 배포에서는 `false`로 설정합니다
+  * 사용 가능한 기능에 영향을 줍니다
+
+* `IS_LOCAL_MODE`
+  * **기본값:** `false`
+  * **설명:** 로컬 모드로 실행할지 여부를 나타냅니다.
+  * **지침:**
+  * 로컬 개발 환경에서는 `true`로 설정하세요
+  * 일부 운영 기능을 비활성화합니다
+  * 테스트 및 개발에 유용합니다
+
+* `EXPRESS_SESSION_SECRET`
+  * **기본값:** `hyperdx is cool 👋`
+  * **설명:** Express session 관리를 위한 시크릿입니다.
+  * **지침:**
+  * 프로덕션 환경에서는 변경하세요
+  * 충분히 강력한 무작위 문자열을 사용하세요
+  * 외부에 노출되지 않도록 안전하게 관리하세요
+
+* `ENABLE_SWAGGER`
+  * **기본값:** `false`
+  * **설명:** Swagger API 문서의 활성화 여부를 전환합니다.
+  * **지침:**
+  * API 문서를 활성화하려면 `true`로 설정하세요
+  * 개발 및 테스트에 유용합니다
+  * production 환경에서는 비활성화하십시오
+
+* `BETA_CH_OTEL_JSON_SCHEMA_ENABLED`
+  * **기본값:** `false`
+  * **설명:** HyperDX에서 JSON 타입에 대한 베타 지원을 활성화합니다. OTel collector에서 JSON 지원을 활성화하려면 [`OTEL_AGENT_FEATURE_GATE_ARG`](#otel-collector)도 참조하십시오.
+  * **지침:**
+    * **베타 기능**을 활성화합니다. JSON 타입 스키마는 일반적인 관측성 워크로드에는 **권장되지 않습니다**. 두 방식의 비교와 각각이 적합한 사용 사례는 [Map vs JSON type](/ko/clickstack/ingesting-data/schema/map-vs-json)를 참조하십시오.
+    * ClickStack UI에서 JSON 지원을 활성화하려면 `true`로 설정하십시오.
+
+<div id="otel-collector">
+  ## OpenTelemetry collector
+</div>
+
+자세한 내용은 [&quot;ClickStack OpenTelemetry Collector&quot;](/ko/clickstack/ingesting-data/collector)를 참조하십시오.
+
+* `CLICKHOUSE_ENDPOINT`
+  * **Default:** 독립 실행형 이미지인 경우 *None (필수)*입니다. All-in-one 또는 Docker Compose 배포판에서는 통합된 ClickHouse 인스턴스로 설정됩니다.
+  * **Description:** 텔레메트리 데이터를 내보낼 대상 ClickHouse 인스턴스의 HTTPS URL입니다.
+  * **Guidance:**
+    * 포트를 포함한 전체 HTTPS 엔드포인트여야 합니다(예: `https://clickhouse.example.com:8443`)
+    * collector가 데이터를 ClickHouse로 전송하려면 필수입니다
+
+* `CLICKHOUSE_USER`
+  * **Default:** `default`
+  * **Description:** ClickHouse 인스턴스에 인증할 때 사용하는 사용자 이름입니다.
+  * **Guidance:**
+    * 해당 사용자에게 `INSERT` 및 `CREATE TABLE` 권한이 있는지 확인하십시오
+    * 수집 전용 사용자를 별도로 생성하는 것이 좋습니다
+
+* `CLICKHOUSE_PASSWORD`
+  * **Default:** *None (인증이 활성화된 경우 필수)*
+  * **Description:** 지정된 ClickHouse 사용자의 비밀번호입니다.
+  * **Guidance:**
+    * 사용자 계정에 비밀번호가 설정되어 있으면 필수입니다
+    * 운영 배포에서는 시크릿을 사용해 안전하게 저장하십시오
+
+* `HYPERDX_LOG_LEVEL`
+  * **Default:** `info`
+  * **Description:** collector의 로그 상세도 수준입니다.
+  * **Guidance:**
+    * `debug`, `info`, `warn`, `error` 등의 값을 사용할 수 있습니다
+    * 문제 해결 중에는 `debug`를 사용하십시오
+
+* `OPAMP_SERVER_URL`
+  * **Default:** 독립 실행형 이미지인 경우 *None (필수)*입니다. All-in-one 또는 Docker Compose 배포판에서는 배포된 HyperDX 인스턴스를 가리킵니다.
+  * **Description:** collector를 관리하는 데 사용하는 OpAMP 서버의 URL입니다(예: HyperDX 인스턴스). 기본 포트는 `4320`입니다.
+  * **Guidance:**
+    * HyperDX 인스턴스를 가리켜야 합니다
+    * 동적 구성과 안전한 수집을 활성화합니다
+    * 생략하면 `OTLP_AUTH_TOKEN` 값이 지정된 경우를 제외하고 안전한 수집이 비활성화됩니다.
+
+* `OTLP_AUTH_TOKEN`
+  * **Default:** *None*. 독립 실행형 이미지에서만 사용됩니다.
+  * **Description:** OTLP 인증 토큰을 지정할 수 있습니다. 설정하면 모든 통신에 이 Bearer token이 필요합니다.
+  * **Guidance:**
+    * 운영 환경에서 독립 실행형 collector 이미지를 사용하는 경우 권장됩니다.
+
+* `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`
+  * **Default:** `default`
+  * **Description:** collector가 텔레메트리 데이터를 기록하는 ClickHouse 데이터베이스입니다.
+  * **Guidance:**
+    * 사용자 지정 데이터베이스 이름을 사용하는 경우 설정하십시오
+    * 지정된 사용자가 이 데이터베이스에 접근할 수 있는지 확인하십시오
+
+* `OTEL_AGENT_FEATURE_GATE_ARG`
+  * **Default:** `<empty string>`
+  * **Description:** collector에서 기능 플래그를 활성화합니다. `--feature-gates=clickhouse.json`으로 설정하면 collector에서 JSON 타입에 대한 베타 지원이 활성화되어 스키마가 해당 타입으로 생성됩니다. HyperDX에서 JSON 지원을 활성화하려면 [`BETA_CH_OTEL_JSON_SCHEMA_ENABLED`](#hyperdx)도 참조하십시오.
+  * **Guidance:**
+    * **베타 기능**을 활성화합니다. JSON 타입 스키마는 일반적인 관측성 워크로드에는 **권장되지 않습니다**. 비교와 각 방식이 적합한 경우는 [Map vs JSON type](/ko/clickstack/ingesting-data/schema/map-vs-json)을 참조하십시오.
+    * 새 테이블을 JSON 타입으로 생성하려면 `--feature-gates=clickhouse.json`으로 설정하십시오.
+
+<div id="clickhouse">
+  ## ClickHouse
+</div>
+
+ClickStack Open Source에는 멀티 테라바이트 규모에 맞게 설계된 기본 ClickHouse 구성이 포함되어 있지만, 워크로드에 맞게 자유롭게 수정하고 최적화할 수 있습니다.
+
+ClickHouse를 효과적으로 튜닝하려면 [파트](/ko/concepts/core-concepts/parts), [파티션](/ko/concepts/core-concepts/partitions), [세그먼트 및 레플리카](/ko/guides/oss/deployment-and-scaling/shards)와 같은 핵심 스토리지 개념과 [머지](/ko/concepts/core-concepts/merges)가 삽입 시점에 어떻게 발생하는지 이해해야 합니다. 또한 [프라이머리 인덱스](/ko/concepts/core-concepts/primary-indexes), [희소 세컨더리 인덱스](/ko/concepts/features/performance/skip-indexes/skipping-indexes), 데이터 스키핑 인덱스의 기초와 TTL 수명 주기 사용과 같은 [데이터 수명 주기 관리](/ko/guides/use-cases/observability/build-your-own/managing-data) 기법도 함께 검토할 것을 권장합니다.
+
+ClickStack은 [스키마 사용자 지정](/ko/guides/use-cases/observability/build-your-own/schema-design)을 지원합니다. 컬럼 타입을 수정하고, 새 필드(예: 로그에서)를 추출하고, 코덱과 딕셔너리를 적용하고, 프로젝션을 사용해 쿼리를 가속할 수 있습니다.
+
+또한 materialized view는 데이터가 view의 원본 테이블에 기록되고 애플리케이션이 대상 테이블에서 읽는 경우 [수집 중 데이터를 변환하거나 필터링하는 데](/ko/guides/use-cases/observability/build-your-own/schema-design#materialized-columns) 사용할 수 있습니다. materialized view는 ClickStack에서 [쿼리를 네이티브 방식으로 가속하는 데](/ko/clickstack/managing/materialized-views)도 사용할 수 있습니다.
+
+자세한 내용은 스키마 설계, 인덱싱 전략, 데이터 관리 모범 사례에 관한 ClickHouse 문서를 참조하십시오. 이들 대부분은 ClickStack 배포에 직접 적용됩니다.
