@@ -1,0 +1,31 @@
+---
+title: Alter Delete
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
+```
+
+Supprime les données correspondant à l’expression de filtrage spécifiée. Implémenté sous forme de [mutation](/fr/reference/statements/alter/index#mutations).
+
+<Note>
+  Le préfixe `ALTER TABLE` rend cette syntaxe différente de celle de la plupart des autres systèmes prenant en charge SQL. Il vise à indiquer que, contrairement à des requêtes similaires dans les bases de données OLTP, il s’agit d’une opération lourde qui n’est pas conçue pour une utilisation fréquente. `ALTER TABLE` est considéré comme une opération lourde qui nécessite que les données sous-jacentes soient fusionnées avant d’être supprimées. Pour les tables MergeTree, envisagez d’utiliser la [requête `DELETE FROM`](/fr/reference/statements/delete), qui effectue une suppression légère et peut être nettement plus rapide.
+</Note>
+
+Le `filter_expr` doit être de type `UInt8`. La requête supprime les lignes de la table pour lesquelles cette expression prend une valeur non nulle.
+
+Une requête peut contenir plusieurs commandes séparées par des virgules.
+
+Le caractère synchrone du traitement de la requête est défini par le paramètre [mutations&#95;sync](/fr/reference/settings/session-settings#mutations_sync). Par défaut, il est asynchrone.
+
+**Voir aussi**
+
+* [Mutations](/fr/reference/statements/alter/index#mutations)
+* [Caractère synchrone des requêtes ALTER](/fr/reference/statements/alter/index#synchronicity-of-alter-queries)
+* Paramètre [mutations&#95;sync](/fr/reference/settings/session-settings#mutations_sync)
+
+<div id="related-content">
+  ## Contenu connexe
+</div>
+
+* Blog : [Gérer les mises à jour et les suppressions dans ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

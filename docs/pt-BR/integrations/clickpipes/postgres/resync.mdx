@@ -1,0 +1,58 @@
+---
+title: 'Ressincronizando um ClickPipe de banco de dados'
+description: 'Documento para ressincronizar um ClickPipe de banco de dados'
+slug: /integrations/clickpipes/postgres/resync
+sidebarTitle: 'Ressincronizar ClickPipe'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="what-postgres-resync-do">
+  ### O que a ressincronização faz?
+</div>
+
+A ressincronização envolve as seguintes operações, nesta ordem:
+
+1. O ClickPipe existente é excluído, e um novo ClickPipe de &quot;ressincronização&quot; é iniciado. Assim, alterações nas estruturas das tabelas de origem serão detectadas quando você fizer a ressincronização.
+2. O ClickPipe de ressincronização cria (ou substitui) um novo conjunto de tabelas de destino com os mesmos nomes das tabelas originais, mas com o sufixo `_resync`.
+3. A carga inicial é realizada nas tabelas `_resync`.
+4. As tabelas `_resync` são então trocadas com as tabelas originais. Linhas marcadas com exclusão suave são transferidas das tabelas originais para as tabelas `_resync` antes da troca.
+
+Todas as configurações do ClickPipe original são mantidas no ClickPipe de ressincronização. As estatísticas do ClickPipe original são apagadas na UI.
+
+<div id="use-cases-postgres-resync">
+  ### Casos de uso para ressincronizar um ClickPipe
+</div>
+
+Aqui estão alguns cenários:
+
+1. Pode ser necessário fazer alterações significativas no schema das tabelas de origem, o que quebraria o ClickPipe existente e exigiria reiniciá-lo. Nesse caso, basta clicar em Ressincronizar após fazer as alterações.
+2. Especificamente no ClickHouse, talvez tenha sido necessário alterar as chaves do ORDER BY nas tabelas de destino. Você pode usar Ressincronizar para preencher novamente os dados na nova tabela com a chave de ordenação correta.
+3. O slot de replicação do ClickPipe foi invalidado: a ressincronização cria um novo ClickPipe e um novo slot no banco de dados de origem.
+
+<Note>
+  Você pode ressincronizar várias vezes; no entanto, leve em conta a carga no banco de dados de origem ao fazer isso,
+  já que uma carga inicial de dados com threads paralelas é executada todas as vezes.
+</Note>
+
+<div id="guide-postgres-resync">
+  ### Guia de ressincronização do ClickPipe
+</div>
+
+1. Na aba Data Sources, clique no ClickPipe do Postgres que você deseja ressincronizar.
+2. Acesse a aba **Configurações**.
+3. Clique no botão **Ressincronizar**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+
+4. Uma caixa de diálogo de confirmação será exibida. Clique em **Ressincronizar** novamente.
+5. Acesse a aba **Métricas**.
+6. Em cerca de 5 segundos (e também ao recarregar a página), o status do pipe deve ser **Setup** ou **Snapshot**.
+7. A carga inicial da ressincronização pode ser acompanhada na aba **Tabelas** - na seção **Estatísticas da carga inicial**.
+8. Quando a carga inicial for concluída, o pipe trocará atomicamente as tabelas `_resync` pelas tabelas originais. Durante essa troca, o status será **Ressincronizar**.
+9. Quando a troca for concluída, o pipe entrará no estado **Running** e executará CDC, se estiver habilitado.

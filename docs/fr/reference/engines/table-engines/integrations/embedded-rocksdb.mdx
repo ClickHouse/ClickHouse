@@ -1,0 +1,259 @@
+---
+description: "Ce moteur permet d'intégrer ClickHouse à RocksDB"
+sidebarTitle: 'EmbeddedRocksDB'
+slug: /engines/table-engines/integrations/embedded-rocksdb
+title: 'Moteur de table EmbeddedRocksDB'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Ce moteur permet d’intégrer ClickHouse à [RocksDB](http://rocksdb.org/).
+
+<div id="creating-a-table">
+  ## Créer une table
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(primary_key_name)
+[ SETTINGS name=value, ... ]
+```
+
+Paramètres du moteur :
+
+* `ttl` - durée de vie des valeurs. Le TTL est exprimé en secondes. Si le TTL vaut 0, une instance RocksDB standard est utilisée (sans TTL).
+* `rocksdb_dir` - chemin vers le répertoire d&#39;une instance RocksDB existante ou chemin de destination de l&#39;instance RocksDB créée. Ouvre la table avec le `rocksdb_dir` spécifié.
+* `read_only` - lorsque `read_only` est défini sur true, le mode lecture seule est utilisé. Pour un stockage avec TTL, la compaction ne sera pas déclenchée (ni manuellement ni automatiquement), donc aucune entrée expirée ne sera supprimée.
+* `primary_key_name` – n&#39;importe quel nom de colonne dans la liste des colonnes.
+* `primary key` doit être spécifiée ; elle ne prend en charge qu&#39;une seule colonne. La clé primaire sera sérialisée au format binaire comme `rocksdb key`.
+* les colonnes autres que la clé primaire seront sérialisées au format binaire comme valeur `rocksdb`, dans l&#39;ordre correspondant.
+* les requêtes avec filtrage sur la clé via `equals` ou `in` seront optimisées en recherche de plusieurs clés dans `rocksdb`.
+
+Réglages du moteur :
+
+* `optimize_for_bulk_insert` – la table est optimisée pour les insertions en masse (le pipeline d&#39;insertion créera des fichiers SST et les importera dans la base de données rocksdb au lieu d&#39;écrire dans les memtables) ; valeur par défaut : `1`.
+* `bulk_insert_block_size` - taille minimale des fichiers SST (en nombre de lignes) créés par insertion en masse ; valeur par défaut : `1048449`.
+
+Exemple :
+
+```sql
+CREATE TABLE test
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = EmbeddedRocksDB
+PRIMARY KEY key
+```
+
+<div id="metrics">
+  ## Métriques
+</div>
+
+Il existe également la table `system.rocksdb`, qui fournit des statistiques sur rocksdb :
+
+```sql
+SELECT
+    name,
+    value
+FROM system.rocksdb
+
+┌─name──────────────────────┬─value─┐
+│ no.file.opens             │     1 │
+│ number.block.decompressed │     1 │
+└───────────────────────────┴───────┘
+```
+
+<div id="configuration">
+  ## Configuration
+</div>
+
+Vous pouvez également modifier n’importe quelle [option de RocksDB](https://github.com/facebook/rocksdb/wiki/Option-String-and-Option-Map) via la config :
+
+```xml
+<rocksdb>
+    <options>
+        <max_background_jobs>8</max_background_jobs>
+    </options>
+    <column_family_options>
+        <num_levels>2</num_levels>
+    </column_family_options>
+    <tables>
+        <table>
+            <name>TABLE</name>
+            <options>
+                <max_background_jobs>8</max_background_jobs>
+            </options>
+            <column_family_options>
+                <num_levels>2</num_levels>
+            </column_family_options>
+        </table>
+    </tables>
+</rocksdb>
+```
+
+Par défaut, l’optimisation de comptage approximatif trivial est désactivée, ce qui peut affecter les performances des requêtes `count()`. Pour activer cette
+optimisation, définissez `optimize_trivial_approximate_count_query = 1`. Ce paramètre affecte également `system.tables` pour le moteur EmbeddedRocksDB ;
+activez-le pour voir des valeurs approximatives de `total_rows` et `total_bytes`.
+
+<div id="supported-operations">
+  ## Opérations prises en charge
+</div>
+
+<div id="inserts">
+  ### Insertions
+</div>
+
+Lorsque de nouvelles lignes sont insérées dans `EmbeddedRocksDB`, si la clé existe déjà, la valeur est mise à jour ; sinon, une nouvelle clé est créée.
+
+Exemple :
+
+```sql
+INSERT INTO test VALUES ('some key', 1, 'value', 3.2);
+```
+
+<div id="deletes">
+  ### Suppressions
+</div>
+
+Les lignes peuvent être supprimées à l’aide d’une requête `DELETE` ou de `TRUNCATE`.
+
+```sql
+DELETE FROM test WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+ALTER TABLE test DELETE WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+TRUNCATE TABLE test;
+```
+
+<div id="updates">
+  ### Mises à jour
+</div>
+
+Les valeurs peuvent être mises à jour à l’aide de la requête `ALTER TABLE`. La clé primaire ne peut pas être modifiée.
+
+```sql
+ALTER TABLE test UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
+```
+
+<div id="joins">
+  ### Jointures
+</div>
+
+Une jointure `direct` spéciale avec des tables EmbeddedRocksDB est prise en charge.
+Cette jointure directe évite de construire une table de hachage en mémoire et accède
+directement aux données dans EmbeddedRocksDB.
+
+Avec de grosses jointures, l&#39;utilisation de la mémoire peut être nettement plus faible avec les jointures directes,
+car la table de hachage n&#39;est pas créée.
+
+Pour activer les jointures directes :
+
+```sql
+SET join_algorithm = 'direct, hash'
+```
+
+<Tip>
+  Lorsque `join_algorithm` est défini sur `direct, hash`, les jointures directes seront utilisées
+  lorsque c&#39;est possible, et `hash` sinon.
+</Tip>
+
+<div id="example">
+  #### Exemple
+</div>
+
+<div id="create-and-populate-an-embeddedrocksdb-table">
+  ##### Créer et peupler une table EmbeddedRocksDB
+</div>
+
+```sql
+CREATE TABLE rdb
+(
+    `key` UInt32,
+    `value` Array(UInt32),
+    `value2` String
+)
+ENGINE = EmbeddedRocksDB
+PRIMARY KEY key
+```
+
+```sql
+INSERT INTO rdb
+    SELECT
+        toUInt32(sipHash64(number) % 10) AS key,
+        [key, key+1] AS value,
+        ('val2' || toString(key)) AS value2
+    FROM numbers_mt(10);
+```
+
+<div id="create-and-populate-a-table-to-join-with-table-rdb">
+  ##### Créer et peupler une table pour effectuer une jointure avec la table `rdb`
+</div>
+
+```sql
+CREATE TABLE t2
+(
+    `k` UInt16
+)
+ENGINE = TinyLog
+```
+
+```sql
+INSERT INTO t2 SELECT number AS k
+FROM numbers_mt(10)
+```
+
+<div id="set-the-join-algorithm-to-direct">
+  ##### Définissez l’algorithme de jointure à `direct`
+</div>
+
+```sql
+SET join_algorithm = 'direct'
+```
+
+<div id="an-inner-join">
+  ##### Un INNER JOIN
+</div>
+
+```sql
+SELECT *
+FROM
+(
+    SELECT k AS key
+    FROM t2
+) AS t2
+INNER JOIN rdb ON rdb.key = t2.key
+ORDER BY key ASC
+```
+
+```response
+┌─key─┬─rdb.key─┬─value──┬─value2─┐
+│   0 │       0 │ [0,1]  │ val20  │
+│   2 │       2 │ [2,3]  │ val22  │
+│   3 │       3 │ [3,4]  │ val23  │
+│   6 │       6 │ [6,7]  │ val26  │
+│   7 │       7 │ [7,8]  │ val27  │
+│   8 │       8 │ [8,9]  │ val28  │
+│   9 │       9 │ [9,10] │ val29  │
+└─────┴─────────┴────────┴────────┘
+```
+
+<div id="more-information-on-joins">
+  ### Informations complémentaires sur les jointures
+</div>
+
+* [paramètre `join_algorithm`](/fr/reference/settings/session-settings#join_algorithm)
+* [clause JOIN](/fr/reference/statements/select/join)

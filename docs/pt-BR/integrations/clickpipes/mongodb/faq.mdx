@@ -1,0 +1,111 @@
+---
+sidebarTitle: 'FAQ'
+description: 'Perguntas frequentes sobre o ClickPipes para MongoDB.'
+slug: /integrations/clickpipes/mongodb/faq
+title: 'FAQ do ClickPipes para MongoDB'
+doc_type: 'reference'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="can-i-query-for-individual-fields-in-the-json-datatype">
+  ### Posso consultar campos individuais no tipo de dados JSON?
+</div>
+
+Para acessar campos diretamente, como em `{"user_id": 123}`, você pode usar **notação de ponto**:
+
+```sql
+SELECT doc.user_id as user_id FROM your_table;
+```
+
+Para acessar diretamente os campos de um objeto aninhado, como `{"address": { "city": "San Francisco", "state": "CA" }}`, use o operador `^`:
+
+```sql
+SELECT doc.^address.city AS city FROM your_table;
+```
+
+Nas agregações, converta o campo para o tipo apropriado com a função `CAST` ou a sintaxe `::`:
+
+```sql
+SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
+```
+
+Para saber mais sobre como trabalhar com JSON, consulte nosso [guia Working with JSON](/pt-BR/integrations/clickpipes/mongodb/quickstart).
+
+<div id="how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse">
+  ### Como desaninhar os documentos aninhados do MongoDB no ClickHouse?
+</div>
+
+Os documentos do MongoDB são replicados como tipo JSON no ClickHouse por padrão, preservando a estrutura aninhada. Você tem várias opções para desaninhar esses dados. Se quiser desaninhar os dados em colunas, pode usar views normais, visões materializadas ou acesso em tempo de consulta.
+
+1. **Views normais**: Use views normais para encapsular a lógica de desaninhamento.
+2. **Visões materializadas**: Para conjuntos de dados menores, você pode usar visões materializadas atualizáveis com o [modificador `FINAL`](/pt-BR/reference/statements/select/from#final-modifier) para desaninhar e deduplicar os dados periodicamente. Para conjuntos de dados maiores, recomendamos usar views materializadas incrementais sem `FINAL` para desaninhar os dados em tempo real e, em seguida, deduplicá-los em tempo de consulta.
+3. **Acesso em tempo de consulta**: Em vez de desaninhar, use a notação de ponto para acessar campos aninhados diretamente nas consultas.
+
+Para ver exemplos detalhados, consulte nosso [guia Working with JSON](/pt-BR/integrations/clickpipes/mongodb/quickstart).
+
+<div id="can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
+  ### Posso me conectar a bancos de dados MongoDB que não têm IP público ou estão em redes privadas?
+</div>
+
+Oferecemos suporte ao AWS PrivateLink para conectar bancos de dados MongoDB que não têm IP público ou estão em redes privadas. No momento, Azure Private Link e GCP Private Service Connect não são compatíveis.
+
+<div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
+  ### O que acontece se eu excluir um banco de dados/uma tabela do meu banco de dados MongoDB?
+</div>
+
+Quando você exclui um banco de dados/uma tabela do MongoDB, o ClickPipes continua em execução, mas o banco de dados/a tabela removido(a) deixa de replicar alterações. As tabelas correspondentes no ClickHouse são preservadas.
+
+<div id="how-does-mongodb-cdc-connector-handle-transactions">
+  ### Como o MongoDB CDC Connector lida com transações?
+</div>
+
+Cada alteração de documento dentro de uma transação é processada individualmente no ClickHouse. As alterações são aplicadas na ordem em que aparecem no oplog, e apenas as alterações confirmadas são replicadas para o ClickHouse. Se uma transação do MongoDB for desfeita, essas alterações não aparecerão no change stream.
+
+Para mais exemplos, consulte nosso [guia Working with JSON](/pt-BR/integrations/clickpipes/mongodb/quickstart).
+
+<div id="resume-point-may-no-longer-be-in-the-oplog-error">
+  ### Como lidar com o erro `resume of change stream was not possible, as the resume point may no longer be in the oplog.`?
+</div>
+
+Esse erro normalmente ocorre quando o oplog é truncado e o ClickPipe não consegue retomar o change stream no ponto esperado. Para resolver esse problema, [ressincronize o ClickPipe](/pt-BR/integrations/clickpipes/mongodb/resync). Para evitar que isso volte a acontecer, recomendamos aumentar o período de retenção do oplog. Consulte as instruções para [MongoDB Atlas](/pt-BR/integrations/clickpipes/mongodb/source/atlas#enable-oplog-retention), [MongoDB autogerenciado](/pt-BR/integrations/clickpipes/mongodb/source/generic#enable-oplog-retention) ou [Amazon DocumentDB](/pt-BR/integrations/clickpipes/mongodb/source/documentdb#configure-change-stream-log-retention).
+
+<div id="how-is-replication-managed">
+  ### Como a replicação é gerenciada?
+</div>
+
+Usamos a API nativa de Change Streams do MongoDB para rastrear alterações no banco de dados. A API de Change Streams fornece um fluxo de alterações no banco de dados que pode ser retomado, aproveitando o oplog (log de operações) do MongoDB. O ClickPipe usa os tokens de retomada do MongoDB para rastrear a posição no oplog e garantir que cada alteração seja replicada para o ClickHouse.
+
+<div id="which-read-preference-should-i-use">
+  ### Qual preferência de leitura devo usar?
+</div>
+
+A preferência de leitura ideal depende do seu caso de uso. Se você quiser minimizar a carga no nó primário, recomendamos usar a preferência de leitura `secondaryPreferred`. Se quiser otimizar a latência de ingestão, recomendamos usar a preferência de leitura `primaryPreferred`. Para mais detalhes, consulte a [documentação do MongoDB](https://www.mongodb.com/docs/manual/core/read-preference/#read-preference-modes-1).
+
+<div id="does-the-mongodb-clickpipe-support-sharded-cluster">
+  ### O ClickPipe do MongoDB oferece suporte a cluster fragmentado?
+</div>
+
+Sim, o ClickPipe do MongoDB oferece suporte tanto a conjunto de réplicas quanto a cluster fragmentado.
+
+<div id="documentdb-support">
+  ### O ClickPipe do MongoDB suporta o Amazon DocumentDB?
+</div>
+
+Sim, o ClickPipe do MongoDB suporta o Amazon DocumentDB 5.0. Consulte o [guia de configuração da origem do Amazon DocumentDB](/pt-BR/integrations/clickpipes/mongodb/source/documentdb) para mais detalhes.
+
+<div id="privatelink-support">
+  ### O ClickPipe do MongoDB oferece suporte a PrivateLink?
+</div>
+
+Oferecemos suporte a PrivateLink para clusters do MongoDB (e do DocumentDB) apenas na AWS.
+
+Observe que, diferentemente de um banco de dados relacional de nó único, o cliente MongoDB exige que a descoberta do conjunto de réplicas seja bem-sucedida para respeitar a `ReadPreference` configurada. Isso exige configurar o PrivateLink com todos os nós do cluster para que o cliente MongoDB consiga estabelecer com sucesso uma conexão com o conjunto de réplicas, além de redirecionar para outro nó quando o nó conectado ficar indisponível.
+
+Se você preferir se conectar a um único nó do cluster, poderá ignorar a descoberta do conjunto de réplicas especificando `/?directConnection=true` na string de conexão durante a configuração do ClickPipes. Nesse caso, a configuração do PrivateLink será semelhante à de um banco de dados relacional de nó único e é a opção mais simples para ter suporte a PrivateLink.
+
+Para conexão com conjunto de réplicas, você pode configurar o PrivateLink para MongoDB com VPC Resource ou VPC Endpoint Service. Se optar por VPC Resource, será necessário criar uma configuração de recurso `GROUP`, além de uma configuração de recurso `CHILD` para cada nó do cluster. Se optar por VPC Endpoint Service, será necessário criar um Endpoint Service separado (e um NLB separado) para cada nó do cluster.
+
+Consulte a documentação de [AWS PrivateLink para ClickPipes](/pt-BR/integrations/clickpipes/aws-privatelink) para mais detalhes. Entre em contato com o suporte do ClickHouse para obter ajuda.

@@ -45,6 +45,8 @@ Contains information about all filesystem cache settings
 - `split_cache_ratio` ([Float64](/sql-reference/data-types/float)) — Ratio of system segment to total size of cache for split_cache.
 - `overcommit_eviction_evict_step` ([UInt64](/sql-reference/data-types/int-uint)) — Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings
 - `check_cache_probability` ([Float64](/sql-reference/data-types/float)) — Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element
+- `expose_prometheus_eviction_metrics` ([UInt8](/sql-reference/data-types/int-uint)) — Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.
+- `expose_prometheus_eviction_metrics_per_user` ([UInt8](/sql-reference/data-types/int-uint)) — Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.
 - `is_initialized` ([UInt8](/sql-reference/data-types/int-uint)) — Indicates whether cache was successfully initialized
 - `current_size` ([UInt64](/sql-reference/data-types/int-uint)) — Current cache size
 - `current_elements_num` ([UInt64](/sql-reference/data-types/int-uint)) — Current cache elements (file segments) number

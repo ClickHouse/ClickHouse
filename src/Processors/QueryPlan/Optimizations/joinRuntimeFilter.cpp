@@ -12,6 +12,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
@@ -234,6 +235,29 @@ static UInt64 calculateJoinFingerprint(
     return fingerprint_hash.get64();
 }
 
+/// Use the cached hash table size in hash-table-statistics as a hint for sizing the runtime filter.
+static std::optional<UInt64> getBuildSideDistinctKeys(const JoinStepLogical & join_step, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.join_runtime_filter_size_from_hash_table_stats
+        || !optimization_settings.collect_hash_table_stats_during_joins)
+        return std::nullopt;
+
+    const UInt64 cache_key = join_step.getRightHashTableCacheKey();
+    if (!cache_key)
+        return std::nullopt;
+
+    const StatsCollectingParams params{
+        cache_key,
+        /*enable_=*/true,
+        optimization_settings.max_entries_for_hash_table_stats,
+        optimization_settings.max_size_to_preallocate_for_joins};
+
+    auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
+    if (!hint || hint->ht_size == 0)
+        return std::nullopt;
+    return hint->ht_size;
+}
+
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a join step?
@@ -393,6 +417,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
+    const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
+
     /// For LEFT ANTI JOIN with multiple keys, per-column NOT IN filters combined with AND are incorrect:
     /// NOT_IN(a, set_a) AND NOT_IN(b, set_b) would incorrectly drop rows where one key is in its per-column set
     /// but the full tuple has no match in the right table.
@@ -438,7 +464,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
                 optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                 optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-                /*allow_to_use_not_exact_filter_=*/false);
+                /*allow_to_use_not_exact_filter_=*/false,
+                distinct_keys_hint);
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
             new_build_filter_node->children = {build_filter_node};
             build_filter_node = new_build_filter_node;
@@ -491,6 +518,40 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             all_filter_conditions.push_back(check_left_does_not_contain
                 ? addNullBypassForAntiJoin(filter_dag, &filter_condition, {join_key_probe_side})
                 : &filter_condition);
+
+            /// Add building filter to the build subtree of join
+            {
+                QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
+                new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
+                    build_filter_node->step->getOutputHeader(),
+                    join_key_build_side.name,
+                    common_type,
+                    id.name,
+                    id.key,
+                    optimization_settings.join_runtime_filter_exact_values_limit,
+                    optimization_settings.join_runtime_bloom_filter_bytes,
+                    optimization_settings.join_runtime_bloom_filter_hash_functions,
+                    optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
+                    optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
+                    optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
+                    distinct_keys_hint);
+                new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
+                new_build_filter_node->children = {build_filter_node};
+
+                build_filter_node = new_build_filter_node;
+            }
+
+            /// Record a descriptor so HashJoin can replace the Set/BloomFilter above with a
+            /// SharedFixedHashTableRuntimeFilter when its build side ends up as a FixedHashMap;
+            /// otherwise the Set/BloomFilter stays as fallback. Carry the rendezvous key (`id.key`),
+            /// NOT the stable display name: the filter is registered in the lookup under that key, so
+            /// `HashJoin::publishSharedRuntimeFilters` must find/replace it under the same key.
+            if (join_step->getJoinSettings().join_runtime_filter_from_fixed_hash_table
+                && !check_left_does_not_contain)
+            {
+                join_step->getJoinOperator().shared_runtime_filter_descriptors.emplace_back(id.key, join_key_build_side.name);
+            }
         }
 
         if (all_filter_conditions.size() == 1)

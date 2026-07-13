@@ -121,7 +121,6 @@ private:
         RestoreSettings restore_settings,
         std::shared_ptr<IRestoreCoordination> restore_coordination,
         ContextMutablePtr context,
-        const ContextPtr & query_context,
         bool on_cluster,
         const ClusterPtr & cluster);
 

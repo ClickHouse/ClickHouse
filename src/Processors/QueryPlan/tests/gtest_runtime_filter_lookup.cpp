@@ -103,7 +103,8 @@ TEST(RuntimeFilterLookup, ApproximateRuntimeFilterQueriesBloomFilter)
             /*bytes_limit_=*/1_MiB,
             /*exact_values_limit_=*/1,
             /*bloom_filter_hash_functions_=*/3,
-            /*max_ratio_of_set_bits_in_bloom_filter_=*/1.0));
+            /*max_ratio_of_set_bits_in_bloom_filter_=*/1.0,
+            /*distinct_keys_hint=*/std::nullopt));
 
     filter.insert(makeUInt64Column({1, 3}));
     filter.insert(makeUInt64Column({5}));

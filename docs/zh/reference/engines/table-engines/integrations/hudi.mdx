@@ -1,0 +1,58 @@
+---
+description: '该引擎提供对亚马逊 S3 中现有 Apache Hudi 表的只读集成。'
+sidebarTitle: 'Hudi'
+slug: /engines/table-engines/integrations/hudi
+title: 'Hudi 表引擎'
+doc_type: 'reference'
+---
+
+该引擎提供对亚马逊 S3 中现有 Apache [Hudi](https://hudi.apache.org/) 表的只读集成。
+
+<div id="create-table">
+  ## 创建表
+</div>
+
+请注意，S3 中必须已存在 Hudi 表；此命令不接受用于创建新表的 DDL 参数。
+
+```sql
+CREATE TABLE hudi_table
+    ENGINE = Hudi(url, [aws_access_key_id, aws_secret_access_key,] [extra_credentials])
+```
+
+**引擎参数**
+
+* `url` — bucket URL，包含指向现有 Hudi 表的路径。
+* `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) 账户用户的长期凭证。您可以使用这些凭证对请求进行身份验证。该参数为可选项。如果未指定凭证，则使用配置文件中的凭证。
+* `extra_credentials` - 可选。用于在 ClickHouse Cloud 中传递用于基于角色的访问的 `role_arn`。有关配置步骤，请参见 [安全访问 S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
+
+引擎参数也可以通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)指定。
+
+**示例**
+
+```sql
+CREATE TABLE hudi_table ENGINE=Hudi('http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/test_table/', 'ABC123', 'Abc+123')
+```
+
+使用命名集合：
+
+```xml
+<clickhouse>
+    <named_collections>
+        <hudi_conf>
+            <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
+            <access_key_id>ABC123</access_key_id>
+            <secret_access_key>Abc+123</secret_access_key>
+        </hudi_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
+```
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [Hudi 表函数](/zh/reference/functions/table-functions/hudi)

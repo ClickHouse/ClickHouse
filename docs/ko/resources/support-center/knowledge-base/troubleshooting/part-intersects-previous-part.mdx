@@ -1,0 +1,76 @@
+---
+title: "DB::Exception: 파트 XXXXX가 이전 파트 YYYYY와 겹칩니다. 이는 버그이거나 ZooKeeper 데이터에 수동으로 개입한 결과일 수 있습니다."
+date: 2023-05-02
+description: "이 문서에서는 ClickHouse에서 파트가 서로 겹치는 문제와 관련된 DB::Exception 오류를 해결하는 방법을 설명합니다. 이 오류는 대개 경쟁 상태(race condition) 또는 ZooKeeper 데이터에 대한 수동 개입으로 인해 발생합니다."
+tags: ['오류 및 예외', '시스템 테이블']
+keywords: ['파트 겹침', 'system.replicas']
+---
+
+<div id="why-it-occurs">
+  ## 발생 원인
+</div>
+
+이 오류가 발생하면 테이블이 읽기 전용으로 표시되며, 오류 메시지에 파트가 서로 겹친다고 표시됩니다.
+
+로그에서 오류를 확인하거나 다음 방법으로 확인할 수 있습니다.
+
+```sql
+SELECT *
+FROM system.replicas
+WHERE is_readonly = 1
+```
+
+오류 메시지는 다음과 같습니다:
+
+```
+Code: 49. DB::Exception: Part XXXXX intersects previous part YYYYY. It is a bug or a result of manual intervention in the ZooKeeper data. (LOGICAL_ERROR) (version 21.12.4.1 (official build))
+```
+
+<div id="cause-of-the-error">
+  ## 오류의 원인
+</div>
+
+이 오류는 `mergeSelectingTask`와 큐를 다시 초기화하는 과정 사이에서 발생하는 경쟁 상태로 인해 발생할 수 있습니다.
+
+<div id="solution">
+  ## 해결책
+</div>
+
+모든 레플리카에서 다음 쿼리를 실행하세요:
+
+```sql
+DETACH TABLE table_name;  -- DROP REPLICA 실행 전 필요
+
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/table_path_in_zk/'; -- /table_path_in_zk의 모든 내용을 제거합니다
+
+ATTACH TABLE table_name;  -- ZK에 메타데이터가 없으므로 테이블이 읽기 전용 모드로 전환됩니다
+```
+
+그런 다음 모든 레플리카에서 다음 명령을 실행하십시오:
+
+```sql
+SYSTEM RESTORE REPLICA table_name;  -- 모든 파티션을 분리하고, ZK에서 메타데이터를 재생성한 후(새로운 빈 테이블처럼), 모든 파티션을 다시 연결합니다
+
+SYSTEM SYNC REPLICA table_name; -- 레플리카가 파트를 동기화할 때까지 기다립니다. 복원 완료 후 모든 레플리카에서 `system.detached_parts`를 확인하는 것을 권장합니다.
+```
+
+<Tip>
+  ClickHouse를 최신 버전으로 업그레이드하는 것이 좋습니다.
+</Tip>
+
+<div id="additional-resources">
+  ## 추가 자료
+</div>
+
+관련 PR 및 GitHub 이슈:
+
+* [ClickHouse/ClickHouse#34096](https://github.com/ClickHouse/ClickHouse/pull/34096)
+* [ClickHouse/ClickHouse#30651](https://github.com/ClickHouse/ClickHouse/pull/30651)
+* [ClickHouse/ClickHouse#31060](https://github.com/ClickHouse/ClickHouse/pull/31060)
+* [ClickHouse/ClickHouse#35863](https://github.com/ClickHouse/ClickHouse/issues/35863)
+
+<div id="versions-affected">
+  ## 영향을 받는 버전:
+</div>
+
+ClickHouse v 22.12 이하

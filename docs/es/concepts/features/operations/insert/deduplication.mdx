@@ -1,0 +1,353 @@
+---
+slug: /guides/developer/deduplication
+sidebarTitle: 'Estrategias de deduplicación'
+description: 'Utilice la deduplicación cuando necesite realizar upserts, actualizaciones y eliminaciones frecuentes.'
+title: 'Estrategias de deduplicación'
+keywords: ['estrategias de deduplicación', 'deduplicación de datos', 'upserts', 'actualizaciones y eliminaciones', 'guía para desarrolladores']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+**La deduplicación** se refiere al proceso de ***eliminar filas duplicadas de un conjunto de datos***. En una base de datos OLTP, esto se hace fácilmente porque cada fila tiene una clave primaria única, pero a costa de inserciones más lentas. Primero hay que buscar cada fila insertada y, si se encuentra, reemplazarla.
+
+ClickHouse está diseñado para ser rápido a la hora de insertar datos. Los archivos de almacenamiento son inmutables y ClickHouse no comprueba si ya existe una clave primaria antes de insertar una fila, por lo que la deduplicación requiere algo más de esfuerzo. Esto también significa que la deduplicación no es inmediata: se produce **con el tiempo**, lo que tiene algunos efectos secundarios:
+
+* En cualquier momento, tu tabla puede seguir teniendo duplicados (filas con la misma clave de ordenación)
+* La eliminación real de las filas duplicadas se produce durante la fusión de partes
+* Tus consultas deben contemplar la posibilidad de que existan duplicados
+
+<div class="transparent-table">
+  |                                                                                                       |                                                                                                                                                                                                                                                                          |
+  | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | <Image img="/images/guides/developer/de_duplication.webp" alt="Logotipo de deduplicación" size="sm" /> | ClickHouse ofrece formación gratuita sobre deduplicación y muchos otros temas. El [módulo de formación Deleting and Updating Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) es un buen punto de partida. |
+</div>
+
+<div id="options-for-deduplication">
+  ## Opciones de deduplicación
+</div>
+
+La deduplicación se implementa en ClickHouse mediante los siguientes motores de tabla:
+
+1. Motor de tabla `ReplacingMergeTree`: con este motor de tabla, las filas duplicadas con la misma clave de ordenación se eliminan durante las fusiones. `ReplacingMergeTree` es una buena opción para emular el comportamiento de upsert (cuando quieres que las consultas devuelvan la última fila insertada).
+
+2. Colapso de filas: los motores de tabla `CollapsingMergeTree` y `VersionedCollapsingMergeTree` usan una lógica en la que una fila existente se &quot;cancela&quot; y se inserta una fila nueva. Son más complejos de implementar que `ReplacingMergeTree`, pero las consultas y agregaciones pueden ser más sencillas de escribir, sin tener que preocuparte de si los datos ya se han fusionado o no. Estos dos motores de tabla son útiles cuando necesitas actualizar datos con frecuencia.
+
+A continuación, explicamos ambas técnicas. Para obtener más información, consulta nuestro [módulo de formación Deleting and Updating Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs), gratuito y disponible a demanda.
+
+<div id="using-replacingmergetree-for-upserts">
+  ## Uso de ReplacingMergeTree para upserts
+</div>
+
+Veamos un ejemplo sencillo en el que una tabla contiene comentarios de Hacker News con una columna `views` que representa el número de veces que se ha visto un comentario. Supongamos que insertamos una nueva fila cuando se publica un artículo y que hacemos un upsert de una nueva fila una vez al día con el número total de visualizaciones si el valor aumenta:
+
+```sql
+CREATE TABLE hackernews_rmt (
+    id UInt32,
+    author String,
+    comment String,
+    views UInt64
+)
+ENGINE = ReplacingMergeTree
+PRIMARY KEY (author, id)
+```
+
+Vamos a insertar dos filas:
+
+```sql
+INSERT INTO hackernews_rmt VALUES
+   (1, 'ricardo', 'This is post #1', 0),
+   (2, 'ch_fan', 'This is post #2', 0)
+```
+
+Para actualizar la columna `views`, inserta una nueva fila con la misma clave primaria (observa los nuevos valores de la columna `views`):
+
+```sql
+INSERT INTO hackernews_rmt VALUES
+   (1, 'ricardo', 'This is post #1', 100),
+   (2, 'ch_fan', 'This is post #2', 200)
+```
+
+La tabla ahora tiene 4 filas:
+
+```sql
+SELECT *
+FROM hackernews_rmt
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │     0 │
+│  1 │ ricardo │ This is post #1 │     0 │
+└────┴─────────┴─────────────────┴───────┘
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   200 │
+│  1 │ ricardo │ This is post #1 │   100 │
+└────┴─────────┴─────────────────┴───────┘
+```
+
+Los cuadros separados de arriba en la salida muestran las dos partes internas: estos datos aún no se han fusionado, por lo que las filas duplicadas todavía no se han eliminado. Usemos la palabra clave `FINAL` en la consulta `SELECT`, lo que da lugar a una fusión lógica del resultado de la consulta:
+
+```sql
+SELECT *
+FROM hackernews_rmt
+FINAL
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   200 │
+│  1 │ ricardo │ This is post #1 │   100 │
+└────┴─────────┴─────────────────┴───────┘
+```
+
+El resultado solo tiene 2 filas, y la última fila insertada es la que se devuelve.
+
+<Note>
+  Usar `FINAL` funciona bien si tienes pocos datos. Si estás trabajando con una gran cantidad de datos,
+  probablemente `FINAL` no sea la mejor opción. Veamos una alternativa mejor para
+  encontrar el valor más reciente de una columna.
+</Note>
+
+<div id="avoiding-final">
+  ### Evitar FINAL
+</div>
+
+Volvamos a actualizar la columna `views` para ambas filas únicas:
+
+```sql
+INSERT INTO hackernews_rmt VALUES
+   (1, 'ricardo', 'This is post #1', 150),
+   (2, 'ch_fan', 'This is post #2', 250)
+```
+
+La tabla ahora tiene 6 filas, porque todavía no se ha producido una fusión real (solo la fusión en tiempo de consulta cuando usamos `FINAL`).
+
+```sql
+SELECT *
+FROM hackernews_rmt
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   200 │
+│  1 │ ricardo │ This is post #1 │   100 │
+└────┴─────────┴─────────────────┴───────┘
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │     0 │
+│  1 │ ricardo │ This is post #1 │     0 │
+└────┴─────────┴─────────────────┴───────┘
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   250 │
+│  1 │ ricardo │ This is post #1 │   150 │
+└────┴─────────┴─────────────────┴───────┘
+```
+
+En lugar de usar `FINAL`, apliquemos cierta lógica de negocio: sabemos que la columna `views` siempre va en aumento, así que podemos seleccionar la fila con el valor máximo usando la función `max` después de agrupar por las columnas deseadas:
+
+```sql
+SELECT
+    id,
+    author,
+    comment,
+    max(views)
+FROM hackernews_rmt
+GROUP BY (id, author, comment)
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─max(views)─┐
+│  2 │ ch_fan  │ This is post #2 │        250 │
+│  1 │ ricardo │ This is post #1 │        150 │
+└────┴─────────┴─────────────────┴────────────┘
+```
+
+La agrupación, como se muestra en la consulta anterior, puede ser incluso más eficiente (en términos de rendimiento de la consulta) que usar la palabra clave `FINAL`.
+
+Nuestro [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) amplía este ejemplo, incluido el uso de una columna `version` con `ReplacingMergeTree`.
+
+<div id="using-collapsingmergetree-for-updating-columns-frequently">
+  ## Uso de CollapsingMergeTree para actualizar columnas con frecuencia
+</div>
+
+Actualizar una columna implica eliminar una fila existente y sustituirla por valores nuevos. Como ya has visto, este tipo de mutación en ClickHouse ocurre *con el tiempo*, durante las fusiones. Si tienes muchas filas que actualizar, de hecho puede ser más eficiente evitar `ALTER TABLE..UPDATE` y, en su lugar, simplemente insertar los datos nuevos junto con los datos existentes. Podríamos añadir una columna que indique si los datos están obsoletos o son nuevos... y, de hecho, ya existe un motor de tabla que implementa este comportamiento de forma muy elegante, sobre todo porque elimina automáticamente los datos obsoletos. Veamos cómo funciona.
+
+Supongamos que hacemos un seguimiento del número de visualizaciones de un comentario de Hacker News mediante un sistema externo y que, cada pocas horas, enviamos los datos a ClickHouse. Queremos que se eliminen las filas antiguas y que las filas nuevas representen el nuevo estado de cada comentario de Hacker News. Podemos usar un `CollapsingMergeTree` para implementar este comportamiento.
+
+Definamos una tabla para almacenar el número de visualizaciones:
+
+```sql
+CREATE TABLE hackernews_views (
+    id UInt32,
+    author String,
+    views UInt64,
+    sign Int8
+)
+ENGINE = CollapsingMergeTree(sign)
+PRIMARY KEY (id, author)
+```
+
+Observe que la tabla `hackernews_views` tiene una columna `Int8` llamada sign, a la que se denomina columna **de signo**. El nombre de la columna de signo es arbitrario, pero el tipo de dato `Int8` es obligatorio, y observe que el nombre de la columna se pasó al constructor de la tabla `CollapsingMergeTree`.
+
+¿Qué es la columna de signo de una tabla `CollapsingMergeTree`? Representa el *estado* de la fila, y la columna de signo solo puede ser 1 o -1. Así funciona:
+
+* Si dos filas tienen la misma clave primaria (o el criterio de ordenación, si es distinto de la clave primaria), pero distintos valores en la columna de signo, la última fila insertada con un +1 se convierte en la fila de estado y las demás filas se anulan entre sí
+* Las filas que se anulan entre sí se eliminan durante las merges
+* Las filas que no tienen un par correspondiente se conservan
+
+Añadamos una fila a la tabla `hackernews_views`. Como es la única fila para esta clave primaria, establecemos su estado en 1:
+
+```sql
+INSERT INTO hackernews_views VALUES
+   (123, 'ricardo', 0, 1)
+```
+
+Ahora supongamos que queremos cambiar la columna views. Se insertan dos filas: una que cancela la fila existente y otra que contiene el nuevo estado de la fila:
+
+```sql
+INSERT INTO hackernews_views VALUES
+   (123, 'ricardo', 0, -1),
+   (123, 'ricardo', 150, 1)
+```
+
+La tabla ahora tiene 3 filas con la clave primaria `(123, 'ricardo')`:
+
+```sql
+SELECT *
+FROM hackernews_views
+```
+
+```response
+┌──id─┬─author──┬─views─┬─sign─┐
+│ 123 │ ricardo │     0 │   -1 │
+│ 123 │ ricardo │   150 │    1 │
+└─────┴─────────┴───────┴──────┘
+┌──id─┬─author──┬─views─┬─sign─┐
+│ 123 │ ricardo │     0 │    1 │
+└─────┴─────────┴───────┴──────┘
+```
+
+Tenga en cuenta que, al añadir `FINAL`, se devuelve la fila correspondiente al estado actual:
+
+```sql
+SELECT *
+FROM hackernews_views
+FINAL
+```
+
+```response
+┌──id─┬─author──┬─views─┬─sign─┐
+│ 123 │ ricardo │   150 │    1 │
+└─────┴─────────┴───────┴──────┘
+```
+
+Pero, por supuesto, no se recomienda usar `FINAL` en tablas grandes.
+
+<Note>
+  El valor que se pasa a la columna `views` en nuestro ejemplo no es realmente necesario, ni tampoco tiene que coincidir con el valor actual de `views` de la fila anterior. De hecho, se puede cancelar una fila solo con la clave primaria y un -1:
+
+  ```sql
+  INSERT INTO hackernews_views(id, author, sign) VALUES
+     (123, 'ricardo', -1)
+  ```
+</Note>
+
+<div id="real-time-updates-from-multiple-threads">
+  ## Actualizaciones en tiempo real desde varios hilos
+</div>
+
+Con una tabla `CollapsingMergeTree`, las filas se cancelan entre sí mediante una columna de signo, y el estado de una fila lo determina la última fila insertada. Pero esto puede ser problemático si insertas filas desde distintos hilos, ya que pueden insertarse fuera de orden. Usar la “última” fila no funciona en esta situación.
+
+Aquí es donde `VersionedCollapsingMergeTree` resulta útil: colapsa filas igual que `CollapsingMergeTree`, pero en lugar de conservar la última fila insertada, conserva la fila con el valor más alto en una columna de versión que especifiques.
+
+Veamos un ejemplo. Supongamos que queremos hacer un seguimiento del número de visualizaciones de nuestros comentarios de Hacker News y que los datos se actualizan con frecuencia. Queremos que los informes usen los valores más recientes sin forzar ni esperar fusiones. Empezamos con una tabla similar a `CollapsedMergeTree`, salvo que añadimos una columna para almacenar la versión del estado de la fila:
+
+```sql
+CREATE TABLE hackernews_views_vcmt (
+    id UInt32,
+    author String,
+    views UInt64,
+    sign Int8,
+    version UInt32
+)
+ENGINE = VersionedCollapsingMergeTree(sign, version)
+PRIMARY KEY (id, author)
+```
+
+Observe que la tabla usa `VersionsedCollapsingMergeTree` como motor y especifica una **columna de signo** y una **columna de versión**. Así funciona la tabla:
+
+* Elimina cada par de filas que tienen la misma clave primaria y la misma versión, pero distinto signo
+* El orden en que se insertaron las filas no importa
+* Tenga en cuenta que, si la columna de versión no forma parte de la clave primaria, ClickHouse la añade implícitamente a la clave primaria como el último campo
+
+Use el mismo tipo de lógica al escribir consultas: agrupe por la clave primaria y use una lógica adecuada para evitar las filas que se han cancelado pero aún no se han eliminado. Agreguemos algunas filas a la tabla `hackernews_views_vcmt`:
+
+```sql
+INSERT INTO hackernews_views_vcmt VALUES
+   (1, 'ricardo', 0, 1, 1),
+   (2, 'ch_fan', 0, 1, 1),
+   (3, 'kenny', 0, 1, 1)
+```
+
+Ahora actualizamos dos de las filas y eliminamos una de ellas. Para anular una fila, asegúrate de incluir el número de versión anterior (ya que forma parte de la clave primaria):
+
+```sql
+INSERT INTO hackernews_views_vcmt VALUES
+   (1, 'ricardo', 0, -1, 1),
+   (1, 'ricardo', 50, 1, 2),
+   (2, 'ch_fan', 0, -1, 1),
+   (3, 'kenny', 0, -1, 1),
+   (3, 'kenny', 1000, 1, 2)
+```
+
+Ejecutaremos la misma consulta que antes, que suma y resta valores de forma inteligente según la columna de signo:
+
+```sql
+SELECT
+    id,
+    author,
+    sum(views * sign)
+FROM hackernews_views_vcmt
+GROUP BY (id, author)
+HAVING sum(sign) > 0
+ORDER BY id ASC
+```
+
+El resultado es dos filas:
+
+```response
+┌─id─┬─author──┬─sum(multiply(views, sign))─┐
+│  1 │ ricardo │                         50 │
+│  3 │ kenny   │                       1000 │
+└────┴─────────┴────────────────────────────┘
+```
+
+Forcemos la fusión de la tabla:
+
+```sql
+OPTIMIZE TABLE hackernews_views_vcmt
+```
+
+Solo debería haber dos filas en el resultado:
+
+```sql
+SELECT *
+FROM hackernews_views_vcmt
+```
+
+```response
+┌─id─┬─author──┬─views─┬─sign─┬─version─┐
+│  1 │ ricardo │    50 │    1 │       2 │
+│  3 │ kenny   │  1000 │    1 │       2 │
+└────┴─────────┴───────┴──────┴─────────┘
+```
+
+Una tabla `VersionedCollapsingMergeTree` resulta muy útil cuando se quiere implementar la deduplicación al insertar filas desde varios clientes y/o hilos.
+
+<div id="why-arent-my-rows-being-deduplicated">
+  ## ¿Por qué mis filas no se deduplican?
+</div>
+
+Una de las razones por las que las filas insertadas pueden no deduplicarse es que estés usando una función o expresión no idempotente en tu sentencia `INSERT`. Por ejemplo, si estás insertando filas con la columna `createdAt DateTime64(3) DEFAULT now()`, se garantiza que tus filas serán únicas porque cada fila tendrá un valor por defecto único para la columna `createdAt`. El motor de tabla MergeTree / ReplicatedMergeTree no sabrá que debe deduplicar las filas, ya que cada fila insertada generará un checksum único.
+
+En este caso, puedes especificar tu propio `insert_deduplication_token` para cada lote de filas a fin de garantizar que varias inserciones del mismo lote no den lugar a que se vuelvan a insertar las mismas filas. Consulta la [documentación sobre `insert_deduplication_token`](/es/reference/settings/session-settings#insert_deduplication_token) para obtener más información sobre cómo usar esta configuración.
