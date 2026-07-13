@@ -27,12 +27,15 @@ namespace DB
 ///     (common prefixes), which are walked concurrently; subtrees that cannot contain a matching key
 ///     are pruned via `should_descend`.
 ///
-///  2. Big flat directories: a prefix that is truncated but has no '/' sub-directories is split by
-///     keyspace. Its remaining range is tiled into contiguous `(start_after, end)` sub-ranges whose
-///     boundaries are derived from the byte alphabet observed in the listed page, and each sub-range
+///  2. Big flat directories: a prefix that is truncated but has no '/' sub-directories on its first page
+///     is split by keyspace. Its remaining range is tiled into contiguous `(start_after, end)` sub-ranges
+///     whose boundaries are derived from the byte alphabet observed in the listed page, and each sub-range
 ///     is listed concurrently. Because the sub-ranges are *contiguous* they tile the interval with no
 ///     gaps — a key whose byte is not in the sampled alphabet still falls into the range that brackets
-///     it — so the split is complete regardless of the key distribution or character set.
+///     it — so the split is complete regardless of the key distribution or character set. Each sub-range
+///     is still listed *with* the '/' delimiter, so a sub-directory that only a later page would have
+///     revealed (a mixed prefix that merely looked flat on its first page) still surfaces as a common
+///     prefix and is pruned via `should_descend`, rather than being scanned recursively.
 ///
 /// The order in which keys are produced is unspecified (it depends on thread scheduling).
 ///
@@ -59,9 +62,9 @@ public:
     /// of interest. It may be called concurrently. Returning `true` when unsure is safe.
     /// `max_buffered_keys` softly bounds how many keys may be buffered ahead of the consumer.
     /// `allow_keyspace_split` enables splitting a big flat directory by keyspace (issuing `start_after`
-    /// requests with an empty delimiter). Set it to false for storages that do not support `StartAfter`
-    /// or a non-'/' delimiter (e.g. S3 Express / directory buckets); such flat ranges are then paginated
-    /// serially, while the hierarchical delimiter walk stays parallel.
+    /// requests, still with the '/' delimiter). Set it to false for storages that do not support
+    /// `StartAfter` (e.g. S3 Express / directory buckets); such flat ranges are then paginated serially,
+    /// while the hierarchical delimiter walk stays parallel.
     /// `check_cancellation`, if set, must throw when the query owning this listing was cancelled; it is
     /// polled while the consumer waits for a batch (a `KILL`/timeout does not notify our condition
     /// variables), so the listing fails fast instead of hanging. Empty in non-query contexts (tests).
@@ -94,7 +97,9 @@ private:
         std::string end;           /// Inclusive upper bound key; empty = unbounded.
         size_t split_pos = 0;      /// Byte position to split at if this range needs a flat (keyspace) split.
         size_t split_budget = 0;   /// How many more times this branch may flat-split (0 = paginate serially).
-        bool use_delimiter = true; /// List with the '/' delimiter (discover sub-dirs) vs. raw keyspace range.
+        bool use_delimiter = true; /// List with the '/' delimiter to discover (and prune) sub-directories.
+                                   /// Kept true even for keyspace-split slices, so a mixed prefix that
+                                   /// only looked flat on its first page is never scanned recursively.
     };
 
     void worker();

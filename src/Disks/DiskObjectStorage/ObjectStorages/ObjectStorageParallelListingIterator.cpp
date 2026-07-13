@@ -67,8 +67,8 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     ListRange root;
     root.prefix = std::move(root_prefix_);
     root.split_pos = root.prefix.size();
-    /// A zero budget disables flat keyspace splitting (and the `StartAfter`/empty-delimiter requests it
-    /// issues), so a flat directory is paginated serially; the hierarchical delimiter walk is unaffected.
+    /// A zero budget disables flat keyspace splitting (and the `StartAfter` requests it issues), so a flat
+    /// directory is paginated serially; the hierarchical delimiter walk is unaffected.
     root.split_budget = allow_keyspace_split_ ? FLAT_SPLIT_BUDGET : 0;
     root.use_delimiter = true;
     ranges_to_list.push_back(std::move(root));
@@ -205,15 +205,24 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
 
     /// Tile (last_key, range.end] into contiguous half-open-then-closed sub-ranges. `end` is inclusive,
     /// `start_after` is exclusive, so a key equal to a boundary lands in exactly one sub-range.
+    ///
+    /// The sub-ranges keep the '/' delimiter (`use_delimiter = true`): the keyspace split only decides
+    /// *where* to fan the listing out, not *how* to list each slice. Listing each slice with the delimiter
+    /// means a sub-directory that the first (flat-looking) page did not reveal — a mixed prefix whose
+    /// truncated first page held only files — still surfaces as a common prefix inside its slice and is
+    /// pruned by `should_descend`, instead of being scanned recursively as it would be with a raw
+    /// (delimiter-free) keyspace range. This keeps `s3_list_object_parallelism` a pure speedup rather than
+    /// a potential much-larger scan of unrelated subtrees, at no cost for a genuinely flat directory (whose
+    /// keys contain no '/', so the delimiter produces no common prefixes anyway).
     std::string prev = last_key;
     result.reserve(boundaries.size() + 1);
     for (auto & boundary : boundaries)
     {
-        ListRange sub{range.prefix, prev, boundary, pos + 1, range.split_budget - 1, /* use_delimiter */ false};
+        ListRange sub{range.prefix, prev, boundary, pos + 1, range.split_budget - 1, /* use_delimiter */ true};
         result.push_back(std::move(sub));
         prev = std::move(boundary);
     }
-    result.push_back(ListRange{range.prefix, prev, range.end, pos + 1, range.split_budget - 1, /* use_delimiter */ false});
+    result.push_back(ListRange{range.prefix, prev, range.end, pos + 1, range.split_budget - 1, /* use_delimiter */ true});
     return result;
 }
 
@@ -266,11 +275,18 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range)
             auto result = list_level(range.prefix, delimiter, first ? range.start_after : std::string{}, continuation_token);
             first = false;
 
+            /// Common prefixes and objects are each returned in ascending order, so once one is past
+            /// `range.end` every following key is too: stop this range (a bounded keyspace-split slice
+            /// that runs into a sibling sub-directory of the next slice must not keep paginating it).
+            bool reached_end = false;
             std::vector<ListRange> new_ranges;
             for (auto & common_prefix : result.common_prefixes)
             {
                 if (!range.end.empty() && common_prefix > range.end)
-                    continue;
+                {
+                    reached_end = true;
+                    break;
+                }
                 if (should_descend(common_prefix))
                 {
                     ListRange child;
@@ -283,7 +299,6 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range)
             }
 
             RelativePathsWithMetadata batch;
-            bool reached_end = false;
             for (auto & object : result.objects)
             {
                 if (!range.end.empty() && object->getPath() > range.end)

@@ -31,8 +31,10 @@ struct FakeS3
     std::vector<std::string> keys; /// sorted, unique
     size_t page_size = 1000;
     mutable std::atomic<size_t> requests{0};
-    /// Requests that used a non-empty `StartAfter` and requests that used an empty `Delimiter` — both are
-    /// unsupported by S3 Express / directory buckets, so the gated (no-keyspace-split) path must avoid them.
+    /// Requests that used a non-empty `StartAfter`: the keyspace split issues these to tile the keyspace,
+    /// and `StartAfter` is unsupported by S3 Express / directory buckets, so the gated (no-keyspace-split)
+    /// path must avoid it. `requests_with_empty_delimiter` tracks requests that dropped the '/' delimiter:
+    /// the split stays '/'-delimited (so sub-directories are discovered and pruned), so this must stay zero.
     mutable std::atomic<size_t> requests_with_start_after{0};
     mutable std::atomic<size_t> requests_with_empty_delimiter{0};
 
@@ -210,10 +212,11 @@ TEST(ObjectStorageParallelListing, FlatBigDirectoryUUIDs)
 
 TEST(ObjectStorageParallelListing, KeyspaceSplitCanBeDisabledForDirectoryBuckets)
 {
-    /// S3 Express / directory buckets reject `StartAfter` and only allow the '/' delimiter, so for them
-    /// keyspace splitting is disabled. The same big flat directory must still be listed completely, but
-    /// only via serial pagination — never issuing a `StartAfter` request or an empty delimiter — while the
-    /// hierarchical delimiter walk (used here only at the root) stays available.
+    /// S3 Express / directory buckets reject `StartAfter`, so for them keyspace splitting is disabled. The
+    /// same big flat directory must still be listed completely, but only via serial pagination — never
+    /// issuing a `StartAfter` request — while the hierarchical delimiter walk (used here only at the root)
+    /// stays available. (The split itself always keeps the '/' delimiter, so no request ever drops it,
+    /// whether the split is enabled or not.)
     auto fill = [](FakeS3 & s3)
     {
         for (size_t i = 0; i < 6000; ++i)
@@ -229,7 +232,7 @@ TEST(ObjectStorageParallelListing, KeyspaceSplitCanBeDisabledForDirectoryBuckets
     }
 
     /// Sanity check the gate is meaningful: with splitting enabled, this uniform directory IS split, so
-    /// `StartAfter` and empty-delimiter requests are indeed issued.
+    /// `StartAfter` requests are indeed issued (while the '/' delimiter is always kept).
     {
         FakeS3 s3;
         s3.page_size = 50;
@@ -241,7 +244,7 @@ TEST(ObjectStorageParallelListing, KeyspaceSplitCanBeDisabledForDirectoryBuckets
         std::sort(got.begin(), got.end());
         EXPECT_EQ(got, expected);
         EXPECT_GT(s3.requests_with_start_after.load(), 0u);
-        EXPECT_GT(s3.requests_with_empty_delimiter.load(), 0u);
+        EXPECT_EQ(s3.requests_with_empty_delimiter.load(), 0u);
     }
 
     /// With splitting disabled, the listing is still complete, but no `StartAfter` and no empty delimiter
@@ -405,6 +408,53 @@ TEST(ObjectStorageParallelListing, Pruning)
     auto got = drain(iterator);
     std::sort(got.begin(), got.end());
     EXPECT_EQ(got, expectedUnder(s3, "root/keep/"));
+}
+
+TEST(ObjectStorageParallelListing, MixedPrefixLooksFlatThenExposesSubdirectory)
+{
+    /// Regression test for a performance-contract violation of the flat keyspace split: a mixed prefix
+    /// whose *first* truncated page contains only flat files (so it looks flat) but which exposes a
+    /// sub-directory on a *later* page must not be keyspace-split in a way that scans that sub-tree
+    /// recursively — the split must stay '/'-delimited so the sub-directory surfaces as a common prefix
+    /// and `should_descend` prunes it, exactly as the plain hierarchical walk would.
+    ///
+    /// Here `root/` holds many `NNNNNNN.csv` files (first byte a digit, so they sort before `z`) plus a
+    /// `root/zsub/` directory with its own large sub-tree. The small page size makes the first page all
+    /// digit-named files (no common prefix) and truncated, so the flat split is attempted; a `should_descend`
+    /// that prunes `zsub` (as the glob `root/*.csv` would) must keep the whole `zsub` sub-tree unlisted.
+    FakeS3 s3;
+    s3.page_size = 50;
+    for (int i = 0; i < 3000; ++i)
+        s3.add(fmt::format("root/{:07}.csv", i));
+    for (int i = 0; i < 3000; ++i)
+        s3.add(fmt::format("root/zsub/{:07}.bin", i));
+    s3.finalize();
+
+    auto should_descend = [](const std::string & prefix) { return prefix.find("zsub") == std::string::npos; };
+
+    std::vector<std::string> expected_csvs;
+    for (const auto & key : s3.keys)
+        if (key.find("zsub") == std::string::npos)
+            expected_csvs.push_back(key);
+    std::sort(expected_csvs.begin(), expected_csvs.end());
+
+    for (size_t threads : {1, 2, 4, 16})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "root/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), should_descend,
+            /* allow_keyspace_split */ true);
+        auto listed = drain(iterator);
+
+        /// The pruned `zsub` sub-tree must never be scanned (that is the "much larger scan" the split
+        /// would otherwise turn an opt-in speedup into).
+        for (const auto & key : listed)
+            EXPECT_EQ(key.find("zsub"), std::string::npos) << "scanned pruned sub-tree: " << key << " threads=" << threads;
+
+        /// The flat files must still all be produced exactly once.
+        std::vector<std::string> csvs = listed;
+        std::sort(csvs.begin(), csvs.end());
+        EXPECT_EQ(csvs, expected_csvs) << "threads=" << threads;
+    }
 }
 
 TEST(ObjectStorageParallelListing, DirectoryMarkerMatchesTrailingSlashGlob)
