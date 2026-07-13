@@ -26,7 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -152,12 +151,6 @@ DataTypePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::getReturnT
         {"tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
     };
 
-    /// The 'icu' tokenizer takes its (mandatory) locale as a separate 4th argument, e.g.
-    /// hasAnyTokens(col, needle, 'icu', 'ja'), avoiding the nested quoting of `icu('ja')`.
-    if (arguments.size() >= 4 && arguments[arg_tokenizer].column
-        && String(arguments[arg_tokenizer].column->getDataAt(0)) == IcuTokenizer::getExternalName())
-        optional_args.emplace_back("locale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
-
     validateFunctionArguments(name, arguments, mandatory_args, optional_args);
 
     DataTypePtr return_type = std::make_shared<DataTypeNumber<UInt8>>();
@@ -176,24 +169,7 @@ FunctionBasePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::buildI
         ? SplitByNonAlphaTokenizer::getExternalName()
         : arguments[arg_tokenizer].column->getDataAt(0);
 
-    std::unique_ptr<ITokenizer> tokenizer;
-    if (arguments.size() > arg_tokenizer + 1)
-    {
-        /// Arguments after the tokenizer name are its parameters, e.g. the icu locale in
-        /// hasAnyTokens(col, needle, 'icu', 'ja').
-        FieldVector params;
-        for (size_t i = arg_tokenizer + 1; i < arguments.size(); ++i)
-        {
-            if (!arguments[i].column)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #{} of function {} must be constant", i + 1, getName());
-            params.push_back(String(arguments[i].column->getDataAt(0)));
-        }
-        tokenizer = TokenizerFactory::instance().get(tokenizer_name, params);
-    }
-    else
-    {
-        tokenizer = TokenizerFactory::instance().get(tokenizer_name);
-    }
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
     auto search_tokens = initializeSearchTokens(arguments, *tokenizer, getName());
     DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
     return std::make_shared<FunctionBaseHasAnyAllTokens<HasTokensTraits>>(std::move(tokenizer), std::move(search_tokens), std::move(argument_types), return_type);
@@ -493,8 +469,7 @@ hasAnyTokens(input, needles)
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
-        {"locale", "The locale for the `icu` tokenizer (mandatory when the tokenizer is `icu`), passed as a separate argument, e.g. `hasAnyTokens(col, needle, 'icu', 'ja')`. The embedded form `icu('ja')` in the tokenizer argument is also accepted.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAnyTokens = {
@@ -702,8 +677,7 @@ hasAllTokens(input, needles)
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
         {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
-        {"locale", "The locale for the `icu` tokenizer (mandatory when the tokenizer is `icu`), passed as a separate argument, e.g. `hasAnyTokens(col, needle, 'icu', 'ja')`. The embedded form `icu('ja')` in the tokenizer argument is also accepted.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAllTokens = {
