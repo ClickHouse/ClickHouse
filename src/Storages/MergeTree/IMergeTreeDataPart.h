@@ -850,6 +850,12 @@ private:
     /// If no such column exists (every column has an explicit CODEC), returns `fallback_codec`.
     CompressionCodecPtr detectDefaultCompressionCodec(const CompressionCodecPtr & fallback_codec) const;
 
+    /// Recover the default codec of a part that has no `default_compression_codec.txt` file and no
+    /// column proving the codec, by reading the codec of `checksums.txt` (its modern format is
+    /// compressed with the default codec effective when the part was written). Returns `LZ4` for a
+    /// genuinely legacy part whose `checksums.txt` predates that compressed format (or is absent).
+    CompressionCodecPtr detectDefaultCompressionCodecForMissingCodecFile() const;
+
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;
 

@@ -1632,16 +1632,49 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     }
     else
     {
-        /// A part without a `default_compression_codec.txt` file predates that file (it was
-        /// introduced long ago), so it was produced by a version whose built-in default codec was
-        /// `LZ4` (it stayed `LZ4` until the default was changed to `ZSTD(3)`). Its default-coded
-        /// auxiliary streams (for example `checksums.txt`, written by `MergeTreeDataPartChecksums::write`)
-        /// are therefore `LZ4`. When no column proves the codec, infer `LZ4` rather than the current
-        /// global default, so `system.parts.default_compression_codec` stays accurate for such
-        /// upgraded legacy parts (and the projection codec inheritance in `MergeTask` / `MutateTask`
-        /// does not propagate a wrong `ZSTD(3)` to re-merges of a part that was actually `LZ4`).
-        default_codec = detectDefaultCompressionCodec(CompressionCodecFactory::instance().get("LZ4", {}));
+        /// The `default_compression_codec.txt` file is missing. When no column proves the codec
+        /// (every column has an explicit `CODEC`), recover the codec the part was actually written
+        /// with from `checksums.txt` instead of using the current global default. Assuming the
+        /// current default would silently downgrade a legacy `LZ4` part to `ZSTD(3)`, or - after this
+        /// default flip - a modern part that merely lost its codec file (for example during
+        /// detach/copy/restore) from its real `ZSTD(3)` to `LZ4`. Either way the value would be wrong
+        /// in `system.parts.default_compression_codec` and the projection codec inheritance in
+        /// `MergeTask` / `MutateTask` would then propagate the wrong codec to projection re-merges.
+        default_codec = detectDefaultCompressionCodec(detectDefaultCompressionCodecForMissingCodecFile());
     }
+}
+
+CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodecForMissingCodecFile() const
+{
+    /// `checksums.txt` is written by `MergeTreeDataPartChecksums::write`. Its modern format
+    /// (version >= 4) compresses the body with the global default codec effective when the part was
+    /// written, so the codec of that compressed frame is exactly the default codec of the part. A
+    /// genuinely legacy part predating that compressed format has an uncompressed `checksums.txt`
+    /// (version < 4, written when the built-in default was `LZ4`, which it stayed until the flip to
+    /// `ZSTD(3)`), so for it - and for a part with no `checksums.txt` at all - infer `LZ4`.
+    auto lz4 = CompressionCodecFactory::instance().get("LZ4", {});
+
+    auto buf = readFileIfExists("checksums.txt");
+    if (!buf)
+        return lz4;
+
+    if (!checkString("checksums format version: ", *buf))
+        return lz4;
+
+    size_t format_version = 0;
+    readText(format_version, *buf);
+    assertChar('\n', *buf);
+
+    /// Only the compressed format carries a codec frame to read; earlier versions are plain text.
+    if (format_version < 4)
+        return lz4;
+
+    /// `getCompressionCodecForFile` reads the codec from the compressed frame the buffer now points
+    /// at. Like the column-based detection above, it recovers the codec family but not its level
+    /// (the level is not stored in the frame), e.g. `ZSTD(3)` is recovered as `ZSTD(1)`.
+    UInt32 size_compressed = 0;
+    UInt32 size_decompressed = 0;
+    return getCompressionCodecForFile(*buf, size_compressed, size_decompressed, /* skip_to_next_block */ false);
 }
 
 void IMergeTreeDataPart::loadSourcePartsSet()

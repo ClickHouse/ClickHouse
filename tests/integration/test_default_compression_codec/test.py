@@ -444,17 +444,24 @@ def test_default_codec_for_compact_parts(start_cluster):
     node4.query("DROP TABLE compact_parts_table SYNC")
 
 
-def test_default_codec_for_legacy_part_without_codec_file(start_cluster):
-    # A part written by an old version has no `default_compression_codec.txt` file (that file was
-    # introduced long ago). If every column has an explicit CODEC, no column proves the default
+def test_default_codec_recovered_from_checksums_when_codec_file_missing(start_cluster):
+    # A part can be missing `default_compression_codec.txt` because it is genuinely legacy (that file
+    # was introduced long ago) or because a modern part lost it, for example during
+    # detach/copy/restore. When every column has an explicit CODEC, no column proves the default
     # codec, so `IMergeTreeDataPart::detectDefaultCompressionCodec` cannot read it from a column
-    # `.bin` and must fall back. Such a legacy part was produced when the built-in default codec was
-    # `LZ4` (it stayed `LZ4` until the default was changed to `ZSTD(3)`), so its inferred default
-    # must stay `LZ4` rather than silently becoming the new global default `ZSTD(3)`. We simulate a
-    # legacy part by removing the codec file from a freshly written part.
+    # `.bin` and must recover it. It recovers the codec from `checksums.txt`, whose modern format is
+    # compressed with the default codec effective when the part was written, so a legacy `LZ4` part
+    # is not upgraded to the new `ZSTD(3)` default and, just as importantly, a modern part that only
+    # lost its codec file is not silently downgraded to `LZ4` (which would also propagate through the
+    # projection codec inheritance in `MergeTask` / `MutateTask`).
+    #
+    # Here the part is written and then merged under the new `ZSTD(3)` default, so its `checksums.txt`
+    # is a ZSTD frame; after we drop the codec file from the merged part the recovered default must
+    # stay a ZSTD codec (the frame does not store the level, so it comes back as `ZSTD(1)`) rather
+    # than falling back to `LZ4`.
     node4.query(
         """
-    CREATE TABLE legacy_no_codec_file (
+    CREATE TABLE no_codec_file (
         key UInt64 CODEC(ZSTD(1)),
         data String CODEC(ZSTD(1))
     )
@@ -462,32 +469,39 @@ def test_default_codec_for_legacy_part_without_codec_file(start_cluster):
     """
     )
 
-    node4.query("INSERT INTO legacy_no_codec_file VALUES (1, 'Hello world')")
+    # Two inserts and a merge, so the part whose codec file we drop is a merged part.
+    node4.query("INSERT INTO no_codec_file VALUES (1, 'Hello world')")
+    node4.query("INSERT INTO no_codec_file VALUES (2, 'Goodbye world')")
+    node4.query("OPTIMIZE TABLE no_codec_file FINAL")
 
-    node4.query("ALTER TABLE legacy_no_codec_file DETACH PART 'all_1_1_0'")
+    part_name = node4.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='no_codec_file' AND active"
+    ).strip()
+
+    node4.query(f"ALTER TABLE no_codec_file DETACH PART '{part_name}'")
 
     data_path = node4.query(
-        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='legacy_no_codec_file'"
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='no_codec_file'"
     ).strip()
     node4.exec_in_container(
         [
             "bash",
             "-c",
-            f"rm {data_path}detached/all_1_1_0/default_compression_codec.txt",
+            f"rm {data_path}detached/{part_name}/default_compression_codec.txt",
         ]
     )
 
-    node4.query("ALTER TABLE legacy_no_codec_file ATTACH PART 'all_1_1_0'")
+    node4.query(f"ALTER TABLE no_codec_file ATTACH PART '{part_name}'")
 
-    assert node4.query("SELECT COUNT() FROM legacy_no_codec_file") == "1\n"
+    assert node4.query("SELECT COUNT() FROM no_codec_file") == "2\n"
 
-    # Without the fix this reports `ZSTD(3)` (the new global default); with the fix it stays `LZ4`.
+    # Recovered from the ZSTD-compressed `checksums.txt`; must not be silently downgraded to `LZ4`.
     assert (
         node4.query(
             "SELECT default_compression_codec FROM system.parts "
-            "WHERE database='default' AND table='legacy_no_codec_file' AND active AND name='all_1_1_0'"
+            "WHERE database='default' AND table='no_codec_file' AND active"
         ).strip()
-        == "LZ4"
+        == "ZSTD(1)"
     )
 
-    node4.query("DROP TABLE legacy_no_codec_file SYNC")
+    node4.query("DROP TABLE no_codec_file SYNC")
