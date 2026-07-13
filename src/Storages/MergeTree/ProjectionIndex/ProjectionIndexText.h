@@ -53,6 +53,9 @@ private:
     SortDescription sort_description;
     IndexDescription index_description;
     std::shared_ptr<const MergeTreeProjectionIndexText> index;
+    /// Effective projection MergeTree settings captured in fillProjectionDescription;
+    /// used by getIndex to re-create the inner text index with identical parameters.
+    std::shared_ptr<const MergeTreeSettings> effective_settings;
 };
 
 }

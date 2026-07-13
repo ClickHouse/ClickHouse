@@ -598,6 +598,8 @@ MergeTreeIndexConditionPtr MergeTreeProjectionIndexText::createIndexCondition(co
         index.sample_block,
         text_index->tokenizer.get(),
         text_index->preprocessor,
+        text_index->postprocessor,
+        text_index->params.positions,
         text_index->params.enable_phrase_query_support);
 }
 

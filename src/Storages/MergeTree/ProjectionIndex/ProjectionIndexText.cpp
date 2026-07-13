@@ -40,8 +40,8 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
 }
 
-MergeTreeIndexPtr textIndexCreator(const IndexDescription & index);
-void textIndexValidator(const IndexDescription & index, bool /*attach*/);
+MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void textIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & settings);
 
 ProjectionIndexPtr ProjectionIndexText::create(const ASTProjectionDeclaration & proj)
 {
@@ -73,7 +73,7 @@ void ProjectionIndexText::fillProjectionDescription(
     static_cast<ProjectionIndexText &>(*result.index).index_description = IndexDescription::getIndexFromAST(
         index_ast, columns, /* is_implicitly_created */ true, /* escape_filenames */ true, query_context);
     /// TODO(amos): this also should be moved out to check whether `attach` or not
-    textIndexValidator(index_description, true /* attach */);
+    textIndexValidator(index_description, true /* attach */, projection_settings);
 
     /// Projection-specific shape validation: reject `Nullable(LowCardinality(...))` because the
     /// projection's tokenize fast path (see calculate()) requires either a per-row null map OR a
@@ -95,8 +95,15 @@ void ProjectionIndexText::fillProjectionDescription(
         }
     }
 
+    /// The inner text index references `index_description`, which is owned by this
+    /// `ProjectionIndexText` (not by a storage metadata snapshot), so no snapshot is passed.
     static_cast<ProjectionIndexText &>(*result.index).index = std::make_shared<MergeTreeProjectionIndexText>(
-        result, std::static_pointer_cast<const MergeTreeIndexText>(textIndexCreator(index_description)));
+        result, std::static_pointer_cast<const MergeTreeIndexText>(textIndexCreator(nullptr, index_description, projection_settings)));
+
+    /// Remember the effective projection settings: `getIndex` must resolve the same
+    /// `text_index_*` defaults as the index created above, otherwise the fresh per-query
+    /// index could disagree with the on-disk layout produced at write time.
+    static_cast<ProjectionIndexText &>(*result.index).effective_settings = std::make_shared<const MergeTreeSettings>(projection_settings);
 
     result.required_columns = index_description.expression->getRequiredColumns();
     result.with_parent_part_offset = true;
@@ -193,7 +200,9 @@ MergeTreeIndexPtr ProjectionIndexText::getIndex() const
     /// indexes are obtained in `ReadFromMergeTree::buildIndexes` via
     /// `MergeTreeIndexFactory::instance().get(index)` — a fresh
     /// `MergeTreeIndexText` per call.
-    auto fresh_text_index = std::static_pointer_cast<const MergeTreeIndexText>(textIndexCreator(index_description));
+    if (!effective_settings)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection text index is not initialized: fillProjectionDescription was not called");
+    auto fresh_text_index = std::static_pointer_cast<const MergeTreeIndexText>(textIndexCreator(nullptr, index_description, *effective_settings));
     return std::make_shared<MergeTreeProjectionIndexText>(index_description, std::move(fresh_text_index));
 }
 
