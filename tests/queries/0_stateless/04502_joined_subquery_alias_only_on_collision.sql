@@ -9,10 +9,13 @@ SET enable_analyzer = 1;
 DROP TABLE IF EXISTS item;
 DROP TABLE IF EXISTS sales;
 DROP TABLE IF EXISTS with_number;
+DROP TABLE IF EXISTS mt;
 
 CREATE TABLE item (item_id Int32, brand Int32) ENGINE = Memory;
 CREATE TABLE sales (s_item Int32, s_brand Int32) ENGINE = Memory;
 CREATE TABLE with_number (number Int32) ENGINE = Memory;
+CREATE TABLE mt (id UInt8) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mt VALUES (1), (2);
 INSERT INTO item VALUES (1, 100), (2, 200);
 INSERT INTO sales VALUES (10, 100), (20, 999);
 
@@ -40,6 +43,20 @@ SELECT count() FROM with_number, numbers(3); -- { serverError ALIAS_REQUIRED }
 -- The restriction can still be disabled entirely, even in the presence of a collision.
 SELECT item_id FROM item, (SELECT s_brand AS brand FROM sales) ORDER BY item_id SETTINGS joined_subquery_requires_alias = 0;
 
+-- Virtual columns are bindable identifiers too: a subquery output colliding with a sibling's virtual
+-- column `_part` is just as ambiguous as one colliding with an ordinary column, so an alias is required.
+SELECT id FROM mt, (SELECT '' AS _part); -- { serverError ALIAS_REQUIRED }
+
+-- The same query is accepted once the subquery is aliased (the ambiguity can then be qualified away).
+SELECT id FROM mt, (SELECT '' AS _part) AS sub ORDER BY id;
+
+-- ... or when the restriction is disabled.
+SELECT id FROM mt, (SELECT '' AS _part) ORDER BY id SETTINGS joined_subquery_requires_alias = 0;
+
+-- No collision with a non-virtual, non-ordinary name: still allowed without an alias.
+SELECT id FROM mt, (SELECT 1 AS not_a_column) ORDER BY id;
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;
+DROP TABLE mt;

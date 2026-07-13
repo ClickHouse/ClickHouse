@@ -896,7 +896,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
     }
 }
 
-static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns);
+static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns, bool include_virtuals = false);
 
 void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
@@ -926,6 +926,14 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
       * name also occurs in another table expression of the same join: only then is an unqualified reference
       * ambiguous with no way to qualify it. When there is no such collision every column can be referenced
       * unambiguously by its name, so the missing alias is harmless and we allow it.
+      *
+      * The comparison is asymmetric on purpose. For the unaliased expression we take only the columns it
+      * actually exposes as output (its projection / physical columns). For the *siblings* we also include
+      * virtual columns (e.g. `_part`), because a bare identifier can bind to a sibling's virtual column too,
+      * so `SELECT _part FROM mt, (SELECT '' AS _part)` is genuinely ambiguous and must force the alias.
+      * Including virtual columns of the unaliased expression itself would instead create spurious collisions
+      * on the ubiquitous `_table` / `_database` virtuals present on every table expression. The reverse
+      * orientation is still covered because this validation runs for every unaliased sibling in turn.
       */
     NameSet table_expression_columns;
     NameSet sibling_columns;
@@ -947,7 +955,7 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     {
         if (sibling.get() == table_expression_node.get())
             continue;
-        columns_are_known &= getColumnsFromTableExpression(sibling, sibling_columns);
+        columns_are_known &= getColumnsFromTableExpression(sibling, sibling_columns, /*include_virtuals=*/ true);
     }
 
     /// If the columns of any table expression cannot be determined, keep the strict behavior and require an alias.
@@ -5149,7 +5157,7 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
         validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope);
 }
 
-static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns)
+static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns, bool include_virtuals)
 {
     std::stack<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push(root_table_expression.get());
@@ -5167,6 +5175,8 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
                 chassert(table_node);
 
                 auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+                if (include_virtuals)
+                    get_column_options = get_column_options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
                 for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
                     existing_columns.insert(column.name);
 
@@ -5178,6 +5188,8 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
                 chassert(table_function_node);
 
                 auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                if (include_virtuals)
+                    get_column_options = get_column_options.withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
                 for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
                     existing_columns.insert(column.name);
 
