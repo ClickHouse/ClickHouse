@@ -99,6 +99,7 @@ static struct InitFiu
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_mutate_only_second_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
+    REGULAR(merge_memory_reservation_gate_closed) \
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
     REGULAR(file_cache_background_eviction_push_fail) \

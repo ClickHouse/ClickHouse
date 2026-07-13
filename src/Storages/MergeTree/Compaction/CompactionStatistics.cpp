@@ -13,6 +13,8 @@
 
 #include <base/interpolate.h>
 
+#include <unordered_set>
+
 namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
@@ -41,7 +43,11 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsUInt64 s3_max_single_part_upload_size;
+    extern const SettingsUInt64 s3_max_upload_part_size;
+    extern const SettingsUInt64 s3_max_inflight_parts_for_one_file;
     extern const SettingsUInt64 azure_max_single_part_upload_size;
+    extern const SettingsUInt64 azure_max_upload_part_size;
+    extern const SettingsUInt64 azure_max_inflight_parts_for_one_file;
 }
 
 /// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
@@ -114,6 +120,40 @@ size_t countPartStreams(const IMergeTreeDataPart & part)
     return countColumnStreams(part.getColumns());
 }
 
+/// Number of on-disk column streams the merged wide part will write. Its substream set is the union of
+/// the source parts' substreams: for JSON / Dynamic columns the merged dynamic structure is chosen from
+/// all source columns (ColumnObject::chooseDynamicStructureForMerge / ColumnDynamic::chooseDynamicStructureForMerge),
+/// so paths or variants that appear in only some of the source parts all end up in the result part. A plain
+/// max over the source parts would undercount exactly that case (part A has only path 'a', part B only 'b',
+/// yet the merged part writes both). Count the union of substream names per column from each source part's
+/// columns_substreams.txt (the reliable source of truth for dynamic substreams), falling back to the default
+/// serialization for columns whose substreams are not recorded (parts written before that file existed, or a
+/// column absent from every source part). The union is an upper bound on the real count - the merge may
+/// collapse some dynamic substreams via max_dynamic_paths / max_dynamic_types - which is the safe direction
+/// for a reservation. For simple column types the union equals the default serialization count, so this only
+/// ever raises the estimate for semi-structured columns.
+size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeTreeDataPartsVector & source_parts)
+{
+    size_t streams = 0;
+    for (const auto & column : output_columns)
+    {
+        std::unordered_set<std::string_view> union_substreams;
+        bool recorded = false;
+        for (const auto & part : source_parts)
+        {
+            if (const auto * substreams = part->getColumnsSubstreams().tryGetColumnSubstreams(column.name))
+            {
+                recorded = true;
+                for (const auto & substream : *substreams)
+                    union_substreams.insert(substream);
+            }
+        }
+
+        streams += recorded ? union_substreams.size() : countColumnStreams({column});
+    }
+    return streams;
+}
+
 }
 
 UInt64 estimateNeededMemoryForMerge(
@@ -137,18 +177,30 @@ UInt64 estimateNeededMemoryForMerge(
         max_compress_block_size = DBMS_DEFAULT_BUFFER_SIZE;
     const UInt64 local_write_buffer_size = 2 * max_compress_block_size;
 
-    /// Per-stream write buffer size on object storage (S3 / Azure): upload parts are buffered whole in
-    /// memory and there can be more than one part buffered per stream at a time due to background (double)
-    /// buffering. The single-part upload size is configurable, so honor the effective settings and never
-    /// let this worst-case ceiling drop below the configured value (otherwise a deployment that raises
-    /// s3_max_single_part_upload_size / azure_max_single_part_upload_size above the default could allocate
-    /// far more than is reserved here, defeating the admission control).
+    /// Per-stream write buffer size on object storage (S3 / Azure). A stream's upload buffers follow the
+    /// multipart buffer allocation policy (see BufferAllocationPolicy / WriteBufferFromS3 /
+    /// WriteBufferFromAzureBlobStorage): the first buffer is *_max_single_part_upload_size, later buffers
+    /// grow up to *_max_upload_part_size, and up to *_max_inflight_parts_for_one_file of them can be held in
+    /// memory at once while their uploads are in flight. Take that worst-case per-stream ceiling from the
+    /// effective settings over both back ends (a given disk is only one of them, so the max is a safe upper
+    /// bound), so a deployment that raises the multipart sizes cannot allocate more per stream than is
+    /// reserved here - pinning this to *_max_single_part_upload_size alone would underestimate it. This is
+    /// only a ceiling: the output side is separately capped by the merge's data volume below, because an
+    /// upload buffer never holds more than the data written into it.
     const auto & query_settings = context->getSettingsRef();
-    const UInt64 single_part_upload_size = std::max<UInt64>({
-        S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
-        query_settings[Setting::s3_max_single_part_upload_size],
-        query_settings[Setting::azure_max_single_part_upload_size]});
-    const UInt64 remote_write_buffer_size = 2 * single_part_upload_size;
+    auto remote_stream_ceiling = [](UInt64 max_single, UInt64 max_upload, UInt64 max_inflight) -> UInt64
+    {
+        return max_single + max_inflight * max_upload;
+    };
+    const UInt64 remote_write_buffer_size = std::max(
+        remote_stream_ceiling(
+            std::max<UInt64>(S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, query_settings[Setting::s3_max_single_part_upload_size]),
+            query_settings[Setting::s3_max_upload_part_size],
+            query_settings[Setting::s3_max_inflight_parts_for_one_file]),
+        remote_stream_ceiling(
+            std::max<UInt64>(S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, query_settings[Setting::azure_max_single_part_upload_size]),
+            query_settings[Setting::azure_max_upload_part_size],
+            query_settings[Setting::azure_max_inflight_parts_for_one_file]));
 
     /// Input side: one reader stream per column substream of every source part. The reader buffers hold
     /// a window of the compressed file plus the decompressed block, so they can never hold more than the
@@ -156,14 +208,12 @@ UInt64 estimateNeededMemoryForMerge(
     UInt64 input_memory = 0;
     UInt64 sum_input_bytes_compressed = 0;
     UInt64 sum_input_bytes_uncompressed = 0;
-    size_t max_source_streams = 0;
     for (const auto & part : future_part.parts)
     {
         /// Compact and in-memory parts read all columns through a single shared stream.
         const size_t streams = part->getType() == MergeTreeDataPartType::Wide
             ? countPartStreams(*part)
             : 1;
-        max_source_streams = std::max(max_source_streams, streams);
         const UInt64 read_buffer_size = part->isStoredOnRemoteDisk() ? remote_read_buffer_size : local_read_buffer_size;
         const UInt64 part_bytes = part->getBytesOnDisk() + part->getBytesUncompressedOnDisk();
         input_memory += std::min<UInt64>(streams * read_buffer_size, part_bytes);
@@ -172,13 +222,14 @@ UInt64 estimateNeededMemoryForMerge(
     }
 
     /// Output side: one writer stream per column substream of the result part. The result part is not
-    /// written yet, so its dynamic substreams (JSON, Dynamic) are not known up front - the default
-    /// serialization count would collapse such columns to a single stream. The merged part holds at least
-    /// as many substreams as the largest source part (its dynamic structure is the union of the sources),
-    /// so use that as a floor.
+    /// written yet, so its dynamic substreams (JSON, Dynamic) are not known up front and the default
+    /// serialization count would collapse such columns to a single stream. Estimate the result substreams
+    /// as the union of the source parts' substreams (see countOutputStreams) - this both counts the actual
+    /// dynamic substreams and covers the case where different source parts contribute disjoint dynamic
+    /// paths that all appear in the merged part.
     const auto output_columns = metadata_snapshot->getColumns().getAllPhysical();
     const size_t output_streams = future_part.part_format.part_type == MergeTreeDataPartType::Wide
-        ? std::max(countColumnStreams(output_columns), max_source_streams)
+        ? countOutputStreams(output_columns, future_part.parts)
         : 1;
 
     /// Worst case: every stream allocates all of its buffers in full.

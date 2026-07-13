@@ -89,6 +89,7 @@ namespace FailPoints
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char merge_memory_reservation_gate_closed[];
 }
 
 namespace Setting
@@ -1536,6 +1537,14 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto is_background_memory_usage_ok = []() -> std::expected<void, PreformattedMessage>
     {
+        /// Simulate a background admission gate saturated by reservations of running merges, so that a test
+        /// can deterministically verify that a user-initiated OPTIMIZE still bypasses it.
+        fiu_do_on(FailPoints::merge_memory_reservation_gate_closed,
+        {
+            ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
+            return std::unexpected(PreformattedMessage::create("Background tasks memory gate is closed (failpoint)"));
+        });
+
         if (canEnqueueBackgroundTask())
             return {};
 
@@ -1574,11 +1583,18 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     const auto select_without_hint = [&]() -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
-        if (auto check_memory_result = is_background_memory_usage_ok(); !check_memory_result.has_value())
-            return std::unexpected(SelectMergeFailure{
-                .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                .explanation = std::move(check_memory_result.error()),
-            });
+        /// A user-initiated merge (OPTIMIZE) must never be silently skipped by the background admission
+        /// gate: it reserves memory unconditionally in construct_merge_select_entry. Only background merge
+        /// selection is throttled here, so that reservations of running merges cannot block an explicit
+        /// OPTIMIZE once they have saturated merges_mutations_memory_usage_soft_limit.
+        if (!user_initiated)
+        {
+            if (auto check_memory_result = is_background_memory_usage_ok(); !check_memory_result.has_value())
+                return std::unexpected(SelectMergeFailure{
+                    .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                    .explanation = std::move(check_memory_result.error()),
+                });
+        }
 
         UInt64 max_source_parts_bytes_for_merge = CompactionStatistics::getMaxSourcePartsBytesForMerge(*this);
         UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
@@ -1616,25 +1632,31 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             auto timeout_ms = (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations].totalMilliseconds();
             auto timeout = std::chrono::milliseconds(timeout_ms);
 
-            if (auto memory_check = is_background_memory_usage_ok(); !memory_check.has_value())
+            /// A user-initiated merge (OPTIMIZE) reserves memory unconditionally below, so it must not be
+            /// gated (or made to wait) on the background admission check here - otherwise reservations of
+            /// running merges that have saturated the soft limit would silently turn OPTIMIZE into a no-op.
+            if (!user_initiated)
             {
-                constexpr auto poll_interval = std::chrono::seconds(1);
-                Int64 attempts = timeout / poll_interval;
-                bool ok = false;
-                for (Int64 i = 0; i < attempts; ++i)
+                if (auto memory_check = is_background_memory_usage_ok(); !memory_check.has_value())
                 {
-                    std::this_thread::sleep_for(poll_interval);
-                    if (memory_check = is_background_memory_usage_ok(); memory_check.has_value())
+                    constexpr auto poll_interval = std::chrono::seconds(1);
+                    Int64 attempts = timeout / poll_interval;
+                    bool ok = false;
+                    for (Int64 i = 0; i < attempts; ++i)
                     {
-                        ok = true;
-                        break;
+                        std::this_thread::sleep_for(poll_interval);
+                        if (memory_check = is_background_memory_usage_ok(); memory_check.has_value())
+                        {
+                            ok = true;
+                            break;
+                        }
                     }
+                    if (!ok)
+                        return std::unexpected(SelectMergeFailure{
+                            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                            .explanation = std::move(memory_check.error()),
+                        });
                 }
-                if (!ok)
-                    return std::unexpected(SelectMergeFailure{
-                        .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                        .explanation = std::move(memory_check.error()),
-                    });
             }
 
             auto select_result = merger_mutator.selectAllPartsToMergeWithinPartition(
