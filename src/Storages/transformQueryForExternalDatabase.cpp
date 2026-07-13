@@ -1,3 +1,4 @@
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
@@ -148,6 +149,8 @@ void dropAliases(ASTPtr & node)
 /// must not be pushed down; it is evaluated by ClickHouse instead.
 bool fieldHasStringWithNulByte(const Field & field)
 {
+    checkStackSize();
+
     switch (field.getType())
     {
         case Field::Types::String:
