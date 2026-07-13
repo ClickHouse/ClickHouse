@@ -116,15 +116,24 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
     if (metadata_snapshot->hasPrimaryKey())
     {
         String index_name = "primary" + getIndexExtension(compress_primary_key);
-        /// The index compressor below takes the zero-copy NONE path, which writes a whole
-        /// compression block straight into this file buffer. `HashingWriteBuffer` reuses the
+
+        CompressionCodecPtr primary_key_compression_codec;
+        if (compress_primary_key)
+            primary_key_compression_codec = CompressionCodecFactory::instance().get(settings.primary_key_compression_codec);
+
+        /// Only the NONE codec takes the zero-copy path in `CompressedWriteBuffer`, which writes a
+        /// whole compression block straight into this file buffer. `HashingWriteBuffer` reuses the
         /// nested buffer as its own, so the block is effectively clamped to this size. Size the
         /// buffer so it can hold a full `primary_key_compress_block_size` block; otherwise a
         /// NONE-coded index would be re-chunked into smaller frames, ignoring the setting (the
         /// same pitfall that keeps the marks writers off this path). Keep a `DBMS_DEFAULT_BUFFER_SIZE`
         /// floor so small block sizes don't shrink the write buffer and multiply syscalls. This
         /// mirrors how the data stream sizes its file buffer from `max_compress_block_size`.
-        const size_t index_file_buffer_size = compress_primary_key
+        /// Other codecs keep `DBMS_DEFAULT_BUFFER_SIZE`: `CompressedWriteBuffer` compresses into its
+        /// own working buffer for them, so enlarging this buffer too would just double the memory
+        /// (both sized to `primary_key_compress_block_size`) for no benefit.
+        const bool index_uses_none_zero_copy = primary_key_compression_codec && primary_key_compression_codec->isNone();
+        const size_t index_file_buffer_size = index_uses_none_zero_copy
             ? std::max<size_t>(DBMS_DEFAULT_BUFFER_SIZE, settings.primary_key_compress_block_size)
             : DBMS_DEFAULT_BUFFER_SIZE;
         index_file_stream = getDataPartStorage().writeFile(index_name, index_file_buffer_size, settings.query_write_settings);
@@ -132,10 +141,9 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 
         if (compress_primary_key)
         {
-            CompressionCodecPtr primary_key_compression_codec = CompressionCodecFactory::instance().get(settings.primary_key_compression_codec);
             /// The index compressor is the sole writer of index_file_hashing_stream, so it may write
-            /// NONE-coded data directly into the output buffer without copying. The output buffer is
-            /// sized above to fit a full block so the NONE path honors primary_key_compress_block_size.
+            /// NONE-coded data directly into the output buffer without copying. For the NONE codec the
+            /// output buffer is sized above to fit a full block so the path honors primary_key_compress_block_size.
             index_compressor_stream = std::make_unique<CompressedWriteBuffer>(
                 *index_file_hashing_stream, primary_key_compression_codec, settings.primary_key_compress_block_size,
                 /*use_adaptive_buffer_size_=*/ false, DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE, /*out_buffer_is_exclusive=*/ true);
