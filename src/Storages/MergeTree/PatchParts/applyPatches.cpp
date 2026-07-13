@@ -456,7 +456,6 @@ void processEqualRun(
             UInt128 identity = makeBlockIdentity((*cursor.block_number)[i], (*cursor.block_offset)[i]);
             auto [it, inserted] = run_map.try_emplace(identity, static_cast<UInt32>(run_entries.size()));
 
-            /// PODArray::resize does not initialize new elements, fill them with empty entries.
             if (inserted)
                 run_entries.resize_fill(run_entries.size() + num_groups, RunEntry{});
 
@@ -491,6 +490,192 @@ void processEqualRun(
             patch.patch_block_indices.push_back(entry.block_idx);
             patch.patch_row_indices.push_back(entry.row_idx);
         }
+    }
+}
+
+/// Drives the merge with a linear scan for the cursor with the minimal key. With few cursors
+/// it needs no more key comparisons than heap maintenance and the code is branch-predictable;
+/// with one cursor it degenerates into a plain two-pointer merge.
+void applyCursorsLinear(
+    BlockCursor & result_cursor,
+    std::vector<BlockCursor> & cursors,
+    PatchIndicesGroup & groups,
+    const std::vector<bool> & reverse_flags)
+{
+    EqualRunScratch run_scratch;
+    std::vector<size_t> equal_cursors;
+
+    /// Indices of cursors with unprocessed rows.
+    std::vector<size_t> live_cursors;
+    live_cursors.reserve(cursors.size());
+
+    for (size_t i = 0; i < cursors.size(); ++i)
+    {
+        if (!cursors[i].isFinished())
+            live_cursors.push_back(i);
+    }
+
+    while (result_cursor.row < result_cursor.num_rows && !live_cursors.empty())
+    {
+        /// Find the cursor with the minimal current key.
+        size_t min_pos = 0;
+
+        for (size_t i = 1; i < live_cursors.size(); ++i)
+        {
+            const auto & cursor = cursors[live_cursors[i]];
+            const auto & min_cursor = cursors[live_cursors[min_pos]];
+
+            if (cursor.compare(min_cursor, reverse_flags) < 0)
+                min_pos = i;
+        }
+
+        auto & top_cursor = cursors[live_cursors[min_pos]];
+        result_cursor.advanceRowToCursor(top_cursor, reverse_flags);
+
+        if (result_cursor.row == result_cursor.num_rows)
+            break;
+
+        /// main[row] > patch[row]: the current patch key has no match in main.
+        /// Advance the cursor to the first key that is not less than the main key.
+        if (result_cursor.compare(top_cursor, reverse_flags) > 0)
+        {
+            top_cursor.advanceRowToCursor(result_cursor, reverse_flags);
+
+            if (top_cursor.row == top_cursor.num_rows)
+            {
+                live_cursors[min_pos] = live_cursors.back();
+                live_cursors.pop_back();
+            }
+
+            continue;
+        }
+
+        /// cmp == 0: equal-sort-key run on both sides. Find the run extents.
+        result_cursor.advanceRunEndGalloping(top_cursor, reverse_flags);
+        equal_cursors.clear();
+        size_t num_patch_rows_in_run = 0;
+
+        for (size_t i = 0; i < live_cursors.size(); ++i)
+        {
+            auto & cursor = cursors[live_cursors[i]];
+            if (i != min_pos && cursor.compare(result_cursor, reverse_flags) != 0)
+                continue;
+
+            /// Scan the patch side linearly because patch runs are usually small.
+            cursor.advanceRunEndLinear(result_cursor, reverse_flags);
+            num_patch_rows_in_run += cursor.runLength();
+            equal_cursors.push_back(live_cursors[i]);
+        }
+
+        processEqualRun(result_cursor, num_patch_rows_in_run, equal_cursors, cursors, groups, run_scratch);
+
+        for (size_t cursor_idx : equal_cursors)
+        {
+            cursors[cursor_idx].row = cursors[cursor_idx].run_end;
+        }
+
+        for (size_t i = 0; i < live_cursors.size();)
+        {
+            if (cursors[live_cursors[i]].isFinished())
+            {
+                live_cursors[i] = live_cursors.back();
+                live_cursors.pop_back();
+            }
+            else
+            {
+                ++i;
+            }
+        }
+
+        result_cursor.row = result_cursor.run_end;
+    }
+}
+
+/// Drives the merge with a heap of cursors ordered by the sort key of the current row.
+void applyCursorsHeap(
+    BlockCursor & result_cursor,
+    std::vector<BlockCursor> & cursors,
+    PatchIndicesGroup & groups,
+    const std::vector<bool> & reverse_flags)
+{
+    EqualRunScratch run_scratch;
+    std::vector<size_t> equal_cursors;
+
+    /// Heap of cursors ordered by the sort key of the current row, the smallest key at the top.
+    std::vector<size_t> heap;
+    heap.reserve(cursors.size());
+
+    for (size_t i = 0; i < cursors.size(); ++i)
+    {
+        if (!cursors[i].isFinished())
+            heap.push_back(i);
+    }
+
+    auto greater = [&](size_t lhs, size_t rhs)
+    {
+        return cursors[lhs].compare(cursors[rhs], reverse_flags) > 0;
+    };
+
+    std::make_heap(heap.begin(), heap.end(), greater);
+
+    while (result_cursor.row < result_cursor.num_rows && !heap.empty())
+    {
+        auto & top_cursor = cursors[heap.front()];
+        result_cursor.advanceRowToCursor(top_cursor, reverse_flags);
+
+        if (result_cursor.row == result_cursor.num_rows)
+            break;
+
+        /// main[row] > patch[row]: the current patch key has no match in main.
+        /// Advance the cursor to the first key that is not less than the main key.
+        if (result_cursor.compare(top_cursor, reverse_flags) > 0)
+        {
+            std::pop_heap(heap.begin(), heap.end(), greater);
+            top_cursor.advanceRowToCursor(result_cursor, reverse_flags);
+
+            if (top_cursor.row == top_cursor.num_rows)
+                heap.pop_back();
+            else
+                std::push_heap(heap.begin(), heap.end(), greater);
+
+            continue;
+        }
+
+        /// cmp == 0: equal-sort-key run on both sides. Find the run extents. Gallop on the main side.
+        result_cursor.advanceRunEndGalloping(top_cursor, reverse_flags);
+        equal_cursors.clear();
+        size_t num_patch_rows_in_run = 0;
+
+        while (!heap.empty())
+        {
+            auto & cursor = cursors[heap.front()];
+            if (cursor.compare(result_cursor, reverse_flags) != 0)
+                break;
+
+            /// Scan the patch side linearly because patch runs are usually small.
+            cursor.advanceRunEndLinear(result_cursor, reverse_flags);
+            num_patch_rows_in_run += cursor.runLength();
+            equal_cursors.push_back(heap.front());
+
+            std::pop_heap(heap.begin(), heap.end(), greater);
+            heap.pop_back();
+        }
+
+        processEqualRun(result_cursor, num_patch_rows_in_run, equal_cursors, cursors, groups, run_scratch);
+
+        for (size_t cursor_idx : equal_cursors)
+        {
+            auto & cursor = cursors[cursor_idx];
+            cursor.row = cursor.run_end;
+
+            if (!cursor.isFinished())
+            {
+                heap.push_back(cursor_idx);
+                std::push_heap(heap.begin(), heap.end(), greater);
+            }
+        }
+
+        result_cursor.row = result_cursor.run_end;
     }
 }
 
@@ -550,8 +735,6 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
         if (group_inserted)
             groups.push_back(std::make_shared<PatchIndices>());
 
-        auto & columns_group = groups[group_it->second];
-
         /// Keep only the updated columns and the data version column in the emitted block.
         Block emitted_block;
         emitted_block.insert(patch_block.getByName(PartDataVersionColumn::name));
@@ -559,6 +742,7 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
         for (const auto & name : block_updated_columns)
             emitted_block.insert(patch_block.getByName(name));
 
+        auto & columns_group = groups[group_it->second];
         auto & cursor = cursors.emplace_back(patch_block, sorting_key);
         cursor.group_idx = group_it->second;
         cursor.block_idx_in_group = static_cast<UInt32>(columns_group->patch_blocks.size());
@@ -568,180 +752,16 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
         patch_blocks.push_back(std::move(patch_block));
     }
 
-    EqualRunScratch run_scratch;
-    std::vector<size_t> equal_cursors;
-
     /// Patch blocks are typically much smaller than the main stream, so we drive the merge
     /// from the patch side using galloping search into main. This skips over long runs of main
     /// rows below the current patch key in `O(log gap)` comparisons per patch row.
+    /// With few cursors the minimal key is found by a linear scan, a heap pays off only with many cursors.
     static constexpr size_t max_cursors_for_linear_scan = 8;
 
     if (cursors.size() <= max_cursors_for_linear_scan)
-    {
-        /// Indices of cursors with unprocessed rows.
-        std::vector<size_t> live_cursors;
-        live_cursors.reserve(cursors.size());
-
-        for (size_t i = 0; i < cursors.size(); ++i)
-        {
-            if (!cursors[i].isFinished())
-                live_cursors.push_back(i);
-        }
-
-        while (result_cursor.row < result_cursor.num_rows && !live_cursors.empty())
-        {
-            /// Find the cursor with the minimal current key.
-            size_t min_pos = 0;
-
-            for (size_t i = 1; i < live_cursors.size(); ++i)
-            {
-                const auto & cursor = cursors[live_cursors[i]];
-                const auto & min_cursor = cursors[live_cursors[min_pos]];
-
-                if (cursor.compare(min_cursor, reverse_flags) < 0)
-                    min_pos = i;
-            }
-
-            auto & top_cursor = cursors[live_cursors[min_pos]];
-            result_cursor.advanceRowToCursor(top_cursor, reverse_flags);
-
-            if (result_cursor.row == result_cursor.num_rows)
-                break;
-
-            /// main[row] > patch[row]: the current patch key has no match in main.
-            /// Advance the cursor to the first key that is not less than the main key.
-            if (result_cursor.compare(top_cursor, reverse_flags) > 0)
-            {
-                top_cursor.advanceRowToCursor(result_cursor, reverse_flags);
-
-                if (top_cursor.row == top_cursor.num_rows)
-                {
-                    live_cursors[min_pos] = live_cursors.back();
-                    live_cursors.pop_back();
-                }
-
-                continue;
-            }
-
-            /// cmp == 0: equal-sort-key run on both sides. Find the run extents.
-            result_cursor.advanceRunEndGalloping(top_cursor, reverse_flags);
-            equal_cursors.clear();
-            size_t num_patch_rows_in_run = 0;
-
-            for (size_t i = 0; i < live_cursors.size(); ++i)
-            {
-                auto & cursor = cursors[live_cursors[i]];
-                if (i != min_pos && cursor.compare(result_cursor, reverse_flags) != 0)
-                    continue;
-
-                /// Scan the patch side linearly because patch runs are usually small.
-                cursor.advanceRunEndLinear(result_cursor, reverse_flags);
-                num_patch_rows_in_run += cursor.runLength();
-                equal_cursors.push_back(live_cursors[i]);
-            }
-
-            processEqualRun(result_cursor, num_patch_rows_in_run, equal_cursors, cursors, groups, run_scratch);
-
-            for (size_t cursor_idx : equal_cursors)
-            {
-                cursors[cursor_idx].row = cursors[cursor_idx].run_end;
-            }
-
-            for (size_t i = 0; i < live_cursors.size();)
-            {
-                if (cursors[live_cursors[i]].isFinished())
-                {
-                    live_cursors[i] = live_cursors.back();
-                    live_cursors.pop_back();
-                }
-                else
-                {
-                    ++i;
-                }
-            }
-
-            result_cursor.row = result_cursor.run_end;
-        }
-    }
+        applyCursorsLinear(result_cursor, cursors, groups, reverse_flags);
     else
-    {
-        /// Heap of cursors ordered by the sort key of the current row, the smallest key at the top.
-        std::vector<size_t> heap;
-        heap.reserve(cursors.size());
-
-        for (size_t i = 0; i < cursors.size(); ++i)
-        {
-            if (!cursors[i].isFinished())
-                heap.push_back(i);
-        }
-
-        auto greater = [&](size_t lhs, size_t rhs)
-        {
-            return cursors[lhs].compare(cursors[rhs], reverse_flags) > 0;
-        };
-
-        std::make_heap(heap.begin(), heap.end(), greater);
-
-        while (result_cursor.row < result_cursor.num_rows && !heap.empty())
-        {
-            auto & top_cursor = cursors[heap.front()];
-            result_cursor.advanceRowToCursor(top_cursor, reverse_flags);
-
-            if (result_cursor.row == result_cursor.num_rows)
-                break;
-
-            /// main[row] > patch[row]: the current patch key has no match in main.
-            /// Advance the cursor to the first key that is not less than the main key.
-            if (result_cursor.compare(top_cursor, reverse_flags) > 0)
-            {
-                std::pop_heap(heap.begin(), heap.end(), greater);
-                top_cursor.advanceRowToCursor(result_cursor, reverse_flags);
-
-                if (top_cursor.row == top_cursor.num_rows)
-                    heap.pop_back();
-                else
-                    std::push_heap(heap.begin(), heap.end(), greater);
-
-                continue;
-            }
-
-            /// cmp == 0: equal-sort-key run on both sides. Find the run extents. Gallop on the main side.
-            result_cursor.advanceRunEndGalloping(top_cursor, reverse_flags);
-            equal_cursors.clear();
-            size_t num_patch_rows_in_run = 0;
-
-            while (!heap.empty())
-            {
-                auto & cursor = cursors[heap.front()];
-                if (cursor.compare(result_cursor, reverse_flags) != 0)
-                    break;
-
-                /// Scan the patch side linearly because patch runs are usually small.
-                cursor.advanceRunEndLinear(result_cursor, reverse_flags);
-                num_patch_rows_in_run += cursor.runLength();
-                equal_cursors.push_back(heap.front());
-
-                std::pop_heap(heap.begin(), heap.end(), greater);
-                heap.pop_back();
-            }
-
-            processEqualRun(result_cursor, num_patch_rows_in_run, equal_cursors, cursors, groups, run_scratch);
-
-            for (size_t cursor_idx : equal_cursors)
-            {
-                auto & cursor = cursors[cursor_idx];
-                cursor.row = cursor.run_end;
-
-                if (!cursor.isFinished())
-                {
-                    heap.push_back(cursor_idx);
-                    std::push_heap(heap.begin(), heap.end(), greater);
-                }
-            }
-
-            result_cursor.row = result_cursor.run_end;
-        }
-    }
+        applyCursorsHeap(result_cursor, cursors, groups, reverse_flags);
 
     std::vector<PatchIndicesPtr> result;
     result.reserve(groups.size());

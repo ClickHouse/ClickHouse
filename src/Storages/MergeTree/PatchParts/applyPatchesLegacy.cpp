@@ -367,8 +367,8 @@ PatchIndicesPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
 
-    auto block_number_column = result_block.getByName(BlockNumberColumn::name).column->convertToFullIfNeeded();
-    auto block_offset_column = result_block.getByName(BlockOffsetColumn::name).column->convertToFullIfNeeded();
+    auto block_number_column = result_block.getByName(BlockNumberColumn::name).column->convertToFullIfWrapped();
+    auto block_offset_column = result_block.getByName(BlockOffsetColumn::name).column->convertToFullIfWrapped();
 
     const auto & result_block_number = assert_cast<const ColumnUInt64 &>(*block_number_column).getData();
     const auto & result_block_offset = assert_cast<const ColumnUInt64 &>(*block_offset_column).getData();
