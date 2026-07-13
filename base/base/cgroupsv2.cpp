@@ -36,16 +36,24 @@ fs::path cgroupV2PathOfProcess()
     std::ifstream cgroup_name_file("/proc/self/cgroup");
     if (!cgroup_name_file.is_open())
         return {};
-    /// With cgroups v2, there will be a *single* line with prefix "0::/"
-    /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
-    std::string cgroup;
-    std::getline(cgroup_name_file, cgroup);
+    /// https://docs.kernel.org/admin-guide/cgroup-v2.html says:
+    ///   /proc/$PID/cgroup” lists a process’s cgroup membership. If legacy cgroup is in use in the
+    ///   system, this file may contain multiple lines, one for each hierarchy. The entry for cgroup
+    ///   v2 is always in the format “0::$PATH”.
+    ///
+    /// So we're basically looking for a (v2) line with prefix "0::/", possibly among lines with
+    /// other prefixes belonging v1. Note: It is valid to have an empty name as 'root' cgroup v2.
     static const std::string v2_prefix = "0::/";
-    if (!cgroup.starts_with(v2_prefix))
-        return {};
-    cgroup = cgroup.substr(v2_prefix.length());
-    /// Note: The 'root' cgroup can have an empty cgroup name, this is valid
-    return default_cgroups_mount / cgroup;
+    std::string cgroup;
+    while (std::getline(cgroup_name_file, cgroup))
+    {
+        if (cgroup.starts_with(v2_prefix))
+        {
+            cgroup = cgroup.substr(v2_prefix.length());
+            return default_cgroups_mount / cgroup;
+        }
+    }
+    return {};
 #else
     return {};
 #endif

@@ -1,9 +1,4 @@
 if (GLIBC_COMPATIBILITY)
-    add_subdirectory(memcpy)
-    if(TARGET memcpy)
-        set(MEMCPY_LIBRARY memcpy)
-    endif()
-
     enable_language(ASM)
 
     add_headers_and_sources(glibc_compatibility .)
@@ -11,6 +6,9 @@ if (GLIBC_COMPATIBILITY)
     if (ARCH_AARCH64)
         list (APPEND glibc_compatibility_sources musl/aarch64/syscall.s musl/aarch64/longjmp.s)
         set (musl_arch_include_dir musl/aarch64)
+        # Disable getauxval in aarch64. ARM glibc minimum requirement for the project is 2.18 and getauxval is present
+        # in 2.16. Having a custom one introduces issues with sanitizers
+        list (REMOVE_ITEM glibc_compatibility_sources musl/getauxval.c)
     elseif (ARCH_AMD64)
         list (APPEND glibc_compatibility_sources musl/x86_64/syscall.s musl/x86_64/longjmp.s)
         set (musl_arch_include_dir musl/x86_64)
@@ -18,7 +16,7 @@ if (GLIBC_COMPATIBILITY)
         message (FATAL_ERROR "glibc_compatibility can only be used on x86_64 or aarch64.")
     endif ()
 
-    if (SANITIZE STREQUAL thread)
+    if (SANITIZE STREQUAL thread AND ARCH_AMD64)
         # Disable TSAN instrumentation that conflicts with re-exec due to high ASLR entropy using getauxval
         # See longer comment in __auxv_init_procfs
         # In the case of tsan we need to make sure getauxval is not instrumented as that would introduce tsan
@@ -43,7 +41,7 @@ if (GLIBC_COMPATIBILITY)
         target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 
-    target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
+    target_link_libraries(global-libs INTERFACE glibc-compatibility)
 
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
 

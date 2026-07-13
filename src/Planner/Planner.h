@@ -1,15 +1,18 @@
 #pragma once
 
+#include <Common/Logger.h>
+
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
-#include <Analyzer/QueryTreePassManager.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
+
+class ActionsDAG;
+class QueryNode;
 
 class GlobalPlannerContext;
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
@@ -22,7 +25,8 @@ class Planner
 public:
     /// Initialize planner with query tree after analysis phase
     Planner(const QueryTreeNodePtr & query_tree_,
-        SelectQueryOptions & select_query_options_);
+        SelectQueryOptions & select_query_options_,
+        const ActionsDAG * post_filter_ = nullptr);
 
     /// Initialize planner with query tree after query analysis phase and global planner context
     Planner(const QueryTreeNodePtr & query_tree_,
@@ -56,8 +60,6 @@ public:
         return std::move(query_plan);
     }
 
-    SelectQueryInfo buildSelectQueryInfo() const;
-
     void addStorageLimits(const StorageLimitsList & limits);
 
     PlannerContextPtr getPlannerContext() const
@@ -71,10 +73,13 @@ public:
     const QueryNodeToPlanStepMapping & getQueryNodeToPlanStepMapping() const { return query_node_to_plan_step_mapping; }
 
 private:
+    SelectQueryInfo buildSelectQueryInfo() const;
+
     void buildPlanForUnionNode();
 
     void buildPlanForQueryNode();
 
+    LoggerPtr log = getLogger("Planner");
     QueryTreeNodePtr query_tree;
     SelectQueryOptions & select_query_options;
     PlannerContextPtr planner_context;

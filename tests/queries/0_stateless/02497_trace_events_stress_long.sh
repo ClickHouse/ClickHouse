@@ -28,7 +28,7 @@ function thread2()
 {
     local TIMELIMIT=$((SECONDS+$1))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+        $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS trace_log"
     done
 }
 

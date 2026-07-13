@@ -1,7 +1,8 @@
+import logging
 import os.path
 
 import pytest
-import logging
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 

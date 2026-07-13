@@ -6,12 +6,12 @@
 namespace DB
 {
 
-void ASTPublicSSHKey::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTPublicSSHKey::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << "KEY ";
-    settings.ostr << backQuoteIfNeed(key_base64) << ' ';
-    settings.ostr << "TYPE ";
-    settings.ostr << backQuoteIfNeed(type);
+    ostr << "KEY ";
+    ostr << backQuoteIfNeed(key_base64) << ' ';
+    ostr << "TYPE ";
+    ostr << backQuoteIfNeed(type);
 }
 
 }

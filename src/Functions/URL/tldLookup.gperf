@@ -9,6 +9,7 @@
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
 #pragma GCC diagnostic ignored "-Wunused-macros"
+// NOLINTBEGIN(modernize-macro-to-enum)
 %}
 # List generated using https://publicsuffix.org/list/public_suffix_list.dat
 %%
@@ -5058,3 +5059,4 @@ basicserver.io
 virtualserver.io
 enterprisecloud.nu
 %%
+// NOLINTEND(modernize-macro-to-enum)

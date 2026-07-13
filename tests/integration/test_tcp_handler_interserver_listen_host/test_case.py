@@ -1,11 +1,11 @@
 """Test Interserver responses on configured IP."""
 
-from pathlib import Path
-import pytest
-from helpers.cluster import ClickHouseCluster
-import requests
-import socket
 import time
+
+import pytest
+import requests
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -48,7 +48,7 @@ def requests_get(url, attempts=10, sleep=0.5):
         attempt += 1
         try:
             return requests.get(url)
-        except requests.exceptions.ConnectionError as e:
+        except requests.exceptions.ConnectionError:
             if attempt >= attempts:
                 raise
         time.sleep(sleep)

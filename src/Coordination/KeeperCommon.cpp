@@ -2,44 +2,44 @@
 
 #include <string>
 #include <filesystem>
+#include <thread>
 
 #include <Common/logger_useful.h>
+#include <Disks/DiskLocal.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/CoordinationSettings.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <base/find_symbols.h>
 
 namespace DB
 {
 
-static size_t findLastSlash(StringRef path)
+namespace CoordinationSetting
 {
-    if (path.size == 0)
-        return std::string::npos;
-
-    for (size_t i = path.size - 1; i > 0; --i)
-    {
-        if (path.data[i] == '/')
-            return i;
-    }
-
-    if (path.data[0] == '/')
-        return 0;
-
-    return std::string::npos;
+    extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
+    extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
 }
 
-StringRef parentNodePath(StringRef path)
+bool isLocalDisk(const IDisk & disk)
 {
-    auto rslash_pos = findLastSlash(path);
-    if (rslash_pos > 0)
-        return StringRef{path.data, rslash_pos};
-    return "/";
+    return dynamic_cast<const DiskLocal *>(&disk) != nullptr;
 }
 
-StringRef getBaseNodeName(StringRef path)
+uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path)
 {
-    size_t basename_start = findLastSlash(path);
-    return StringRef{path.data + basename_start + 1, path.size - basename_start - 1};
+    std::filesystem::path path(snapshot_path);
+    std::string filename = path.stem();
+    std::vector<std::string_view> name_parts;
+    splitInto<'_', '.'>(name_parts, filename);
+    return parse<uint64_t>(name_parts[1]);
+}
+
+std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path)
+{
+    const uint64_t up_to_log_idx = getLogIdxFromSnapshotPath(snapshot_path);
+    return fmt::format("snapshot_{}.bin{}", up_to_log_idx, snapshot_path.ends_with(".zstd") ? ".zstd" : "");
 }
 
 void moveFileBetweenDisks(
@@ -47,7 +47,7 @@ void moveFileBetweenDisks(
     const std::string & path_from,
     DiskPtr disk_to,
     const std::string & path_to,
-    std::function<void()> before_file_remove_op,
+    std::function<bool()> before_file_remove_op,
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context)
 {
@@ -59,9 +59,9 @@ void moveFileBetweenDisks(
     auto from_path = fs::path(path_from);
     auto tmp_file_name = from_path.parent_path() / (std::string{tmp_keeper_file_prefix} + from_path.filename().string());
 
-    const auto & coordination_settings = keeper_context->getCoordinationSettings();
-    auto max_retries_on_init = coordination_settings->disk_move_retries_during_init.value;
-    auto retries_sleep = std::chrono::milliseconds(coordination_settings->disk_move_retries_wait_ms);
+    const auto & coordination_settings = keeper_context->getFixedCoordinationSettings();
+    auto max_retries_on_init = coordination_settings[CoordinationSetting::disk_move_retries_during_init].value;
+    auto retries_sleep = std::chrono::milliseconds(coordination_settings[CoordinationSetting::disk_move_retries_wait_ms]);
     auto run_with_retries = [&](const auto & op, std::string_view operation_description)
     {
         size_t retry_num = 0;
@@ -113,8 +113,11 @@ void moveFileBetweenDisks(
     if (!run_with_retries([&] { disk_to->removeFileIfExists(tmp_file_name); }, "removing temporary file"))
         return;
 
-    if (before_file_remove_op)
-        before_file_remove_op();
+    if (before_file_remove_op && !before_file_remove_op())
+    {
+        LOG_DEBUG(logger, "Move of {} to disk {} was rejected by the caller, keeping the source file", path_from, disk_to->getName());
+        return;
+    }
 
     if (!run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk"))
         return;

@@ -4,7 +4,7 @@
 
 #if USE_SQLITE
 #include <Core/Types.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <sqlite3.h>
 
 

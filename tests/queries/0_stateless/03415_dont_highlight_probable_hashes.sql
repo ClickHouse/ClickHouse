@@ -1,0 +1,2 @@
+SELECT cityHash64('') FORMAT Pretty;
+SELECT 123456789 FORMAT Pretty;

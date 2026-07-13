@@ -1,0 +1,155 @@
+---
+title: 'AWS IAMユーザーとS3バケットの作成方法'
+description: 'AWS IAMユーザーとS3バケットの作成方法。'
+keywords: ['AWS', 'IAM', 'S3 bucket']
+slug: /integrations/s3/creating-iam-user-and-s3-bucket
+sidebarTitle: 'AWS IAMユーザーとS3バケットの作成方法'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+> このガイドでは、AWS で IAM ユーザーと S3 バケットを設定する方法を説明します。
+> これは、S3 へのバックアップの取得や、ClickHouse が
+> データを S3 に保存するように設定するための前提手順です
+
+<div id="create-an-aws-iam-user">
+  ## AWS IAM ユーザーを作成する
+</div>
+
+この手順では、ログインユーザーではなく、サービスアカウント用のユーザーを作成します。
+
+1. AWS IAM Management Console にログインします。
+
+2. `Users` タブで、`Create user` を選択します
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-1.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+3. ユーザー名を入力します
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-2.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+4. `Next` を選択します
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-3.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+5. `Next` を選択します
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-4.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+6. `Create user` を選択します
+
+ユーザーが作成されたら、
+新しく作成したユーザーをクリックします
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-5.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+7. `Create access key` を選択します
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-6.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+8. `Application running outside AWS` を選択します
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-7.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+9. `Create access key` を選択します
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-8.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+10. 後で使用できるよう、アクセスキーとシークレットアクセスキーを .csv としてダウンロードします
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-9.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+<div id="create-an-s3-bucket">
+  ## S3 バケットを作成する
+</div>
+
+1. S3 バケットのセクションで、**Create bucket** を選択します
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-10.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+2. バケット名を入力し、その他のオプションはデフォルトのままにします
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-11.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+<Note>
+  バケット名は組織内だけでなく AWS 全体で一意である必要があります。そうでない場合はエラーが発生します。
+</Note>
+
+3. `Block all Public Access` は有効のままにします。パブリックアクセスは不要です。
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-12.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+4. ページ下部の **Create Bucket** を選択します
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-13.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+5. リンクを選択して ARN をコピーし、バケットのアクセスポリシーを構成する際に使用できるよう保存します
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-14.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+6. バケットを作成したら、S3 バケット一覧で新しい S3 バケットを見つけてバケット名を選択します。すると、以下のページが表示されます。
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-15.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+7. `Create folder` を選択します
+
+8. ClickHouse の S3 ディスクまたは Backup の保存先となるフォルダー名を入力し、ページ下部の `Create folder` を選択します
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-16.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+9. フォルダーがバケット一覧に表示されます
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-17.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+10. 新しいフォルダーのチェックボックスを選択し、`Copy URL` をクリックします。次のセクションで ClickHouse のストレージ構成に使用するため、この URL を保存します。
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-18.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+11. **Permissions** タブを選択し、**Bucket Policy** セクションの **Edit** ボタンをクリックします
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-19.webp" alt="AWS IAM Management Console - 新しいユーザーの追加" />
+
+12. バケットポリシーを追加します。以下は例です
+
+```json
+{
+    "Version": "2012-10-17",
+    "Id": "Policy123456",
+    "Statement": [
+        {
+            "Sid": "abc123",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::782985192762:user/docs-s3-user"
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::ch-docs-s3-bucket",
+                "arn:aws:s3:::ch-docs-s3-bucket/*"
+            ]
+        }
+    ]
+}
+```
+
+<Note>
+  上記のポリシーを使用すると、バケットに対するすべての操作を実行できます
+</Note>
+
+| パラメーター    | 説明                            | 値の例                                                                                      |
+| --------- | ----------------------------- | ---------------------------------------------------------------------------------------- |
+| Version   | ポリシーインタープリタのバージョン。このままにしておきます | 2012-10-17                                                                               |
+| Sid       | ユーザー定義のポリシー ID                | abc123                                                                                   |
+| Effect    | ユーザーからのリクエストを許可するか拒否するか       | Allow                                                                                    |
+| Principal | 許可するアカウントまたはユーザー              | arn:aws:iam::782985192762:user/docs-s3-user                                              |
+| Action    | バケットに対して許可する操作                | s3:*                                                                                     |
+| Resource  | バケット内のどのリソースに対して操作を許可するか      | &quot;arn:aws:s3:::ch-docs-s3-bucket&quot;, &quot;arn:aws:s3:::ch-docs-s3-bucket/*&quot; |
+
+<Note>
+  使用する権限については、セキュリティチームと連携して決定してください。ここでは出発点となる例を示しています。
+  ポリシーと設定の詳細については、AWS のドキュメントを参照してください。
+  https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
+</Note>
+
+13. ポリシー設定を保存します

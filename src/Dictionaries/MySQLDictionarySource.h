@@ -7,9 +7,10 @@
 #if USE_MYSQL
 #    include <Common/LocalDateTime.h>
 #    include <mysqlxx/PoolWithFailover.h>
-#    include "DictionaryStructure.h"
-#    include "ExternalQueryBuilder.h"
-#    include "IDictionarySource.h"
+#    include <Dictionaries/DictionaryStructure.h>
+#    include <Dictionaries/ExternalQueryBuilder.h>
+#    include <Dictionaries/IDictionarySource.h>
+#    include <Dictionaries/InvalidateQueryResponse.h>
 #    include <Processors/Sources/MySQLSource.h>
 
 namespace Poco
@@ -38,7 +39,7 @@ public:
         const std::string invalidate_query;
         const std::string update_field;
         const UInt64 update_lag;
-        const bool dont_check_update_time;
+        const bool bg_reconnect;
     };
 
     MySQLDictionarySource(
@@ -52,13 +53,13 @@ public:
     MySQLDictionarySource(const MySQLDictionarySource & other);
     MySQLDictionarySource & operator=(const MySQLDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override;
+    BlockIO loadUpdatedAll() override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -77,8 +78,6 @@ private:
 
     static std::string quoteForLike(const std::string & value);
 
-    LocalDateTime getLastModification(mysqlxx::Pool::Entry & connection, bool allow_connection_closure) const;
-
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
 
@@ -91,8 +90,7 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
-    LocalDateTime last_modification;
-    mutable std::string invalidate_query_response;
+    mutable InvalidateQueryResponse invalidate_query_response;
     const StreamSettings settings;
 };
 

@@ -1,0 +1,7 @@
+<clickhouse>
+    <distributed_ddl>
+        <path replace="1">/clickhouse/test_ddl_worker_stale_task_name/ddl</path>
+        <replicas_path replace="1">/clickhouse/test_ddl_worker_stale_task_name/replicas</replicas_path>
+        <pool_size replace="1">2</pool_size>
+    </distributed_ddl>
+</clickhouse>

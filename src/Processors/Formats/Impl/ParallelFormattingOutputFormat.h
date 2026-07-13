@@ -3,12 +3,11 @@
 #include <Processors/Formats/IOutputFormat.h>
 
 #include <Common/ThreadPool.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <IO/WriteBufferFromString.h>
-#include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
@@ -16,6 +15,7 @@
 
 #include <deque>
 #include <atomic>
+
 
 namespace CurrentMetrics
 {
@@ -26,6 +26,9 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 namespace ErrorCodes
 {
@@ -61,7 +64,7 @@ namespace ErrorCodes
  * To stop the execution, a fake Chunk is added (ProcessingUnitType = FINALIZE) and finalize()
  * function is blocked until the Collector thread is done.
 */
-class ParallelFormattingOutputFormat : public IOutputFormat
+class ParallelFormattingOutputFormat final : public IOutputFormat
 {
 public:
     /// Used to recreate formatter on every new data piece.
@@ -71,7 +74,7 @@ public:
     struct Params
     {
         WriteBuffer & out;
-        const Block & header;
+        SharedHeader header;
         InternalFormatterCreator internal_formatter_creator;
         const size_t max_threads_for_parallel_formatting;
     };
@@ -87,7 +90,9 @@ public:
         LOG_TEST(getLogger("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
         NullWriteBuffer buf;
-        save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
+        auto internal_formatter = internal_formatter_creator(buf);
+        save_totals_and_extremes_in_statistics = internal_formatter->areTotalsAndExtremesUsedInFinalize();
+        supports_non_default_serialization_kinds = internal_formatter->supportsSpecialSerializationKinds();
         buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
@@ -98,7 +103,7 @@ public:
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
         /// Also some race condition is possible, because collector_thread runs in parallel with
         /// the destruction of the objects already created in this scope.
-        collector_thread = ThreadFromGlobalPool([thread_group = CurrentThread::getGroup(), this]
+        collector_thread = ThreadFromGlobalPool([thread_group = getCurrentThreadGroup(), this]
         {
             collectorThreadFunction(thread_group);
         });
@@ -111,9 +116,10 @@ public:
 
     String getName() const override { return "ParallelFormattingOutputFormat"; }
 
-    void flush() override
+    void flushImpl() override
     {
-        need_flush = true;
+        if (!auto_flush)
+            need_flush = true;
     }
 
     void writePrefix() override
@@ -127,31 +133,21 @@ public:
         finishAndWait();
     }
 
-    void onProgress(const Progress & value) override
-    {
-        std::lock_guard lock(statistics_mutex);
-        statistics.progress.incrementPiecewiseAtomically(value);
-    }
-
     void writeSuffix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::PLAIN_FINISH, /*can_throw_exception*/ true);
         started_suffix = true;
     }
 
-    String getContentType() const override
-    {
-        WriteBufferFromOwnString buffer;
-        return internal_formatter_creator(buffer)->getContentType();
-    }
-
     bool supportsWritingException() const override
     {
-        WriteBufferFromOwnString buffer;
+        NullWriteBuffer buffer;
         return internal_formatter_creator(buffer)->supportsWritingException();
     }
 
     void setException(const String & exception_message_) override { exception_message = exception_message_; }
+
+    bool supportsSpecialSerializationKinds() const override { return supports_non_default_serialization_kinds; }
 
 private:
     void consume(Chunk chunk) final
@@ -225,7 +221,7 @@ private:
         Memory<> segment;
         size_t actual_memory_size{0};
         Statistics statistics;
-        size_t rows_num;
+        size_t rows_num{};
     };
 
     Poco::Event collector_finished{};
@@ -259,6 +255,7 @@ private:
     /// We change statistics in onProgress() which can be called from different threads.
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;
+    bool supports_non_default_serialization_kinds;
 
     String exception_message;
     bool exception_is_rethrown = false;
@@ -295,7 +292,7 @@ private:
 
     void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number, size_t first_row_num)
     {
-        pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), ticket_number, first_row_num]
+        pool.scheduleOrThrowOnError([this, thread_group = getCurrentThreadGroup(), ticket_number, first_row_num]
         {
             formatterThreadFunction(ticket_number, first_row_num, thread_group);
         });

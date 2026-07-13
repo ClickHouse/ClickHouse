@@ -1,4 +1,10 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -35,13 +41,13 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
  */
 static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 {
-    const Databases databases = DatabaseCatalog::instance().getDatabases();
+    const Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     StorageSystemGraphite::Configs graphite_configs;
 
     for (const auto & db : databases)
     {
         /// Check if database can contain MergeTree tables
-        if (!db.second->canContainMergeTreeTables())
+        if (db.second->isExternal())
             continue;
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -146,3 +152,6 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr co
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemGraphite) }

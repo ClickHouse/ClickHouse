@@ -1,13 +1,16 @@
 #pragma once
 
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
-#include <Storages/StorageInMemoryMetadata.h>
+#include <Core/SettingsEnums.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <base/types.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
 
+struct ObjectStorageQueueSettings;
 class WriteBuffer;
 class ReadBuffer;
 
@@ -16,29 +19,108 @@ class ReadBuffer;
  */
 struct ObjectStorageQueueTableMetadata
 {
-    String format_name;
-    String columns;
-    String after_processing;
-    String mode;
-    UInt64 tracked_files_limit = 0;
-    UInt64 tracked_file_ttl_sec = 0;
-    UInt64 buckets = 0;
-    UInt64 processing_threads_num = 1;
-    String last_processed_path;
+    /// Non-changeable settings.
+    const String format_name;
+    const String columns;
+    const String mode;
+    const String last_processed_path;
+    const String bucketing_mode;
+    const String partitioning_mode;
+    const String partition_regex;
+    const String partition_component;
+    /// Changeable settings.
+    std::atomic<ObjectStorageQueueAction> after_processing;
+    std::atomic<UInt64> loading_retries;
+    std::atomic<UInt64> processing_threads_num;
+    std::atomic<bool> parallel_inserts;
+    std::atomic<UInt64> tracked_files_limit;
+    std::atomic<UInt64> tracked_files_ttl_sec;
+    std::atomic<UInt64> buckets;
 
-    ObjectStorageQueueTableMetadata() = default;
+    bool processing_threads_num_changed = false;
+
     ObjectStorageQueueTableMetadata(
-        const StorageObjectStorage::Configuration & configuration,
         const ObjectStorageQueueSettings & engine_settings,
-        const StorageInMemoryMetadata & storage_metadata);
+        const ColumnsDescription & columns_,
+        const std::string & format_);
 
-    void read(const String & metadata_str);
+    ObjectStorageQueueTableMetadata(const ObjectStorageQueueTableMetadata & other)
+        : format_name(other.format_name)
+        , columns(other.columns)
+        , mode(other.mode)
+        , last_processed_path(other.last_processed_path)
+        , bucketing_mode(other.bucketing_mode)
+        , partitioning_mode(other.partitioning_mode)
+        , partition_regex(other.partition_regex)
+        , partition_component(other.partition_component)
+        , after_processing(other.after_processing.load())
+        , loading_retries(other.loading_retries.load())
+        , processing_threads_num(other.processing_threads_num.load())
+        , parallel_inserts(other.parallel_inserts.load())
+        , tracked_files_limit(other.tracked_files_limit.load())
+        , tracked_files_ttl_sec(other.tracked_files_ttl_sec.load())
+        , buckets(other.buckets.load())
+    {
+    }
+
+    void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other)
+    {
+        after_processing = other.after_processing.load();
+        loading_retries = other.loading_retries.load();
+        processing_threads_num = other.processing_threads_num.load();
+        tracked_files_limit = other.tracked_files_limit.load();
+        tracked_files_ttl_sec = other.tracked_files_ttl_sec.load();
+    }
+
+    explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);
+
     static ObjectStorageQueueTableMetadata parse(const String & metadata_str);
+
+    static ObjectStorageQueueAction actionFromString(const std::string & action);
+    static std::string actionToString(ObjectStorageQueueAction action);
 
     String toString() const;
 
+    ObjectStorageQueueMode getMode() const;
+    ObjectStorageQueueBucketingMode getBucketingMode() const;
+    ObjectStorageQueuePartitioningMode getPartitioningMode() const;
+
+    void adjustFromKeeper(const ObjectStorageQueueTableMetadata & from_zk);
+
     void checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
-    static void checkEquals(const ObjectStorageQueueSettings & current, const ObjectStorageQueueSettings & expected);
+
+    static bool isStoredInKeeper(const std::string & name)
+    {
+        static const std::unordered_set<std::string_view> settings_names
+        {
+            "format_name",
+            "columns",
+            "mode",
+            "buckets",
+            "last_processed_path",
+            "bucketing_mode",
+            "partitioning_mode",
+            "partition_regex",
+            "partition_component",
+            "after_processing",
+            "loading_retries",
+            "processing_threads_num",
+            "parallel_inserts",
+            "tracked_files_limit",
+            "tracked_file_ttl_sec",
+            "tracked_files_ttl_sec",
+        };
+        return settings_names.contains(name);
+    }
+
+    size_t getBucketsNum() const
+    {
+        if (buckets)
+            return buckets;
+        return processing_threads_num;
+    }
+
+    bool hasTrackedFilesLimit() const { return tracked_files_limit || tracked_files_ttl_sec; }
 
 private:
     void checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const;

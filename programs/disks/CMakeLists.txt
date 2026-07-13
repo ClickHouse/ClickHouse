@@ -10,12 +10,18 @@ set (CLICKHOUSE_DISKS_SOURCES
     CommandMkDir.cpp
     CommandMove.cpp
     CommandRead.cpp
+    CommandReadBitmap.cpp
+    CommandReadChecksums.cpp
     CommandRemove.cpp
     CommandSwitchDisk.cpp
     CommandWrite.cpp
+    CommandSed.cpp
     CommandHelp.cpp
     CommandTouch.cpp
-    CommandGetCurrentDiskAndPath.cpp)
+    CommandGetCurrentDiskAndPath.cpp
+    CommandDiskUsage.cpp
+    CommandWordCount.cpp
+    Utils.cpp)
 
 if (CLICKHOUSE_CLOUD)
   set (CLICKHOUSE_DISKS_SOURCES ${CLICKHOUSE_DISKS_SOURCES} CommandPackedIO.cpp)

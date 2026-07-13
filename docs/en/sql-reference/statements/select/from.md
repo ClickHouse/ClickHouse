@@ -1,36 +1,52 @@
 ---
-slug: /en/sql-reference/statements/select/from
-sidebar_label: FROM
+description: 'Documentation for FROM Clause'
+sidebar_label: 'FROM'
+slug: /sql-reference/statements/select/from
+title: 'FROM Clause'
+doc_type: 'reference'
 ---
-
-# FROM Clause
 
 The `FROM` clause specifies the source to read data from:
 
 - [Table](../../../engines/table-engines/index.md)
 - [Subquery](../../../sql-reference/statements/select/index.md) 
-- [Table function](../../../sql-reference/table-functions/index.md#table-functions)
+- [Table function](/sql-reference/table-functions)
 
 [JOIN](../../../sql-reference/statements/select/join.md) and [ARRAY JOIN](../../../sql-reference/statements/select/array-join.md) clauses may also be used to extend the functionality of the `FROM` clause.
 
 Subquery is another `SELECT` query that may be specified in parenthesis inside `FROM` clause.
 
-`FROM` clause can contain multiple data sources, separated by commas, which is equivalent of performing [CROSS JOIN](../../../sql-reference/statements/select/join.md) on them.
+A SQL standard `VALUES` clause can also be used as a table expression:
 
-## FINAL Modifier
+```sql
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+See [Values table function](/sql-reference/table-functions/values#sql-standard-values-clause) for more details.
+
+The `FROM` can contain multiple data sources, separated by commas, which is equivalent of performing [CROSS JOIN](../../../sql-reference/statements/select/join.md) on them.
+
+`FROM` can optionally appear before a `SELECT` clause. This is a ClickHouse-specific extension of standard SQL which makes `SELECT` statements easier to read. Example:
+
+```sql
+FROM table
+SELECT *
+```
+
+## FINAL Modifier {#final-modifier}
 
 When `FINAL` is specified, ClickHouse fully merges the data before returning the result. This also performs all data transformations that happen during merges for the given table engine.
 
-It is applicable when selecting data from from tables using the following table engines:
+It is applicable when selecting data from tables using the following table engines:
 - `ReplacingMergeTree`
 - `SummingMergeTree`
 - `AggregatingMergeTree`
 - `CollapsingMergeTree`
 - `VersionedCollapsingMergeTree`
 
-`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
+`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](/operations/settings/settings#max_final_threads) setting limits the number of threads used.
 
-### Drawbacks
+### Drawbacks {#drawbacks}
 
 Queries that use `FINAL` execute slightly slower than similar queries that do not use `FINAL` because:
 
@@ -43,28 +59,40 @@ As an alternative to using `FINAL`, it is sometimes possible to use different qu
 
 `FINAL` can be applied automatically using [FINAL](../../../operations/settings/settings.md#final) setting to all tables in a query using a session or a user profile.
 
-### Example Usage
+### Example Usage {#example-usage}
 
-**Using the `FINAL` keyword**
+Using the `FINAL` keyword
 
 ```sql
 SELECT x, y FROM mytable FINAL WHERE x > 1;
 ```
 
-**Using `FINAL` as a query-level setting**
+Using `FINAL` as a query-level setting
 
 ```sql
 SELECT x, y FROM mytable WHERE x > 1 SETTINGS final = 1;
 ```
 
-**Using `FINAL` as a session-level setting**
+Using `FINAL` as a session-level setting
 
 ```sql
 SET final = 1;
 SELECT x, y FROM mytable WHERE x > 1;
 ```
 
-## Implementation Details
+### Aliases and FINAL {#aliases-and-final}
+
+When a table has an alias, `FINAL` comes after the alias. This is most visible in [`JOIN`](/sql-reference/statements/select/join) queries, where tables are usually aliased:
+
+```sql
+SELECT t1.id, t2.name
+FROM table1 AS t1 FINAL
+INNER JOIN table2 AS t2 FINAL ON t1.id = t2.id;
+```
+
+`FINAL` is a modifier on the table reference, so it must follow the full `table [AS alias]` expression. Placing it before the alias (`FROM table1 FINAL AS t1`) is a syntax error.
+
+## Implementation Details {#implementation-details}
 
 If the `FROM` clause is omitted, data will be read from the `system.one` table.
 The `system.one` table contains exactly one row (this table fulfills the same purpose as the DUAL table found in other DBMSs).

@@ -1,5 +1,7 @@
 #include <Processors/Transforms/DistinctSortedTransform.h>
 
+#include <Core/SortCursor.h>
+
 namespace DB
 {
 
@@ -80,7 +82,7 @@ bool DistinctSortedTransform::isApplicable(const Block & header, const SortDescr
 }
 
 DistinctSortedTransform::DistinctSortedTransform(
-    const Block & header,
+    SharedHeader header,
     const SortDescription & sort_description,
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
@@ -94,13 +96,13 @@ DistinctSortedTransform::DistinctSortedTransform(
 
     /// pre-calculate column positions to use during chunk transformation
     ColumnNumbers const_column_positions;
-    calcColumnPositionsInHeader(header, column_names, column_positions, const_column_positions);
+    calcColumnPositionsInHeader(*header, column_names, column_positions, const_column_positions);
     if (column_positions.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "DistinctSortedTransform: all columns can't be const. DistinctTransform should be used instead");
 
     /// pre-calculate DISTINCT column positions which form sort prefix of sort description
-    calcSortPrefixPositionsInHeader(header, sort_description, column_positions, const_column_positions, sort_prefix_positions);
+    calcSortPrefixPositionsInHeader(*header, sort_description, column_positions, const_column_positions, sort_prefix_positions);
     if (sort_prefix_positions.empty())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "DistinctSortedTransform: columns have to form a sort prefix for provided sort description");
@@ -136,7 +138,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
     const size_t rows = chunk.getNumRows();
     IColumn::Filter filter(rows);
 
-    bool has_new_data = false;
+    size_t new_output_rows = 0;
     switch (data.type)
     {
         case ClearableSetVariants::Type::EMPTY:
@@ -144,7 +146,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
             // clang-format off
 #define M(NAME) \
         case ClearableSetVariants::Type::NAME: \
-            has_new_data = buildFilter(*data.NAME, column_ptrs, sort_prefix_columns, filter, rows, data); \
+            new_output_rows = buildFilter(*data.NAME, column_ptrs, sort_prefix_columns, filter, rows, data); \
             break;
 
         APPLY_FOR_SET_VARIANTS(M)
@@ -153,22 +155,23 @@ void DistinctSortedTransform::transform(Chunk & chunk)
     }
 
     /// Just go to the next block if there isn't any new record in the current one.
-    if (!has_new_data)
+    if (!new_output_rows)
     {
         chunk.clear();
         return;
     }
 
-    size_t data_total_row_count = data.getTotalRowCount();
-    if (!set_size_limits.check(data_total_row_count, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
-    {
+    total_output_rows += new_output_rows;
+
+    /// In case of overflow_mode = 'break' `check` returns false instead of throwing.
+    /// Stop reading, but still emit the new rows from the current chunk (their keys are
+    /// already in the set): 'break' means return a partial result as if the source data
+    /// ran out, not discard it.
+    if (!set_size_limits.check(total_output_rows, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         stopReading();
-        chunk.clear();
-        return;
-    }
 
     /// Stop reading if we already reached the limit.
-    if (limit_hint && data_total_row_count >= limit_hint)
+    if (limit_hint && total_output_rows >= limit_hint)
         stopReading();
 
     prev_chunk.chunk = std::move(chunk);
@@ -183,7 +186,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
 }
 
 template <typename Method>
-bool DistinctSortedTransform::buildFilter(
+size_t DistinctSortedTransform::buildFilter(
     Method & method,
     const ColumnRawPtrs & columns,
     const ColumnRawPtrs & clearing_hint_columns,
@@ -201,29 +204,31 @@ bool DistinctSortedTransform::buildFilter(
             method.data.clear();
     }
 
-    bool has_new_data = false;
-    { /// handle 0-indexed row to avoid index check in loop below
-        const auto emplace_result = state.emplaceKey(method.data, 0, variants.string_pool);
-        if (emplace_result.isInserted())
-            has_new_data = true;
-        filter[0] = emplace_result.isInserted();
-    }
-    for (size_t i = 1; i < rows; ++i)
+    size_t new_rows = 0;
+
+    for (size_t run_begin = 0; run_begin < rows;)
     {
-        /// Compare i-th row and i-1-th row,
-        /// If rows are not equal, we can clear HashSet
-        if (!rowsEqual(clearing_hint_columns, i, clearing_hint_columns, i - 1))
+        /// A new run means the clearing key changed from the previous run, so the set can be cleared.
+        /// The first run (run_begin == 0) may continue the previous chunk, whose boundary is handled above.
+        if (run_begin != 0)
             method.data.clear();
 
-        const auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-        if (emplace_result.isInserted())
-            has_new_data = true;
+        const size_t run_end = getEqualRangeEndAssumeSorted(clearing_hint_columns, run_begin, rows, -1);
 
-        /// Emit the record if there is no such key in the current set yet.
-        /// Skip it otherwise.
-        filter[i] = emplace_result.isInserted();
+        for (size_t i = run_begin; i < run_end; ++i)
+        {
+            const auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+            if (emplace_result.isInserted())
+                ++new_rows;
+
+            /// Emit the record if there is no such key in the current set yet.
+            /// Skip it otherwise.
+            filter[i] = emplace_result.isInserted();
+        }
+
+        run_begin = run_end;
     }
-    return has_new_data;
+    return new_rows;
 }
 
 bool DistinctSortedTransform::rowsEqual(const ColumnRawPtrs & lhs, size_t n, const ColumnRawPtrs & rhs, size_t m)

@@ -52,10 +52,11 @@ Connection::Connection(
     unsigned timeout,
     unsigned rw_timeout,
     bool enable_local_infile,
-    bool opt_reconnect)
+    bool opt_reconnect,
+    bool enable_compression)
     : Connection()
 {
-    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile, opt_reconnect);
+    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile, opt_reconnect, enable_compression);
 }
 
 Connection::Connection(const std::string & config_name)
@@ -82,7 +83,8 @@ void Connection::connect(const char* db,
     unsigned timeout,
     unsigned rw_timeout,
     bool enable_local_infile,
-    bool opt_reconnect)
+    bool opt_reconnect,
+    bool enable_compression)
 {
     if (is_connected)
         disconnect();
@@ -110,6 +112,10 @@ void Connection::connect(const char* db,
     if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&opt_reconnect)))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
+    /// Enable classic MySQL protocol compression if requested.
+    if (enable_compression && mysql_options(driver.get(), MYSQL_OPT_COMPRESS, nullptr))
+        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+
     /// Specifies particular ssl key and certificate if it needs
     if (mysql_ssl_set(driver.get(), ifNotEmpty(ssl_key), ifNotEmpty(ssl_cert), ifNotEmpty(ssl_ca), nullptr, nullptr))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
@@ -135,7 +141,7 @@ void Connection::disconnect()
         return;
 
     // If driver->free_me, then mysql_close will deallocate memory by calling 'free' function.
-    assert(driver && !driver->free_me);
+    chassert(driver && !driver->free_me);
     mysql_close(driver.get());
     memset(driver.get(), 0, sizeof(*driver));
 
@@ -158,5 +164,9 @@ MYSQL * Connection::getDriver()
     return driver.get();
 }
 
+uint64_t Connection::getDriverThreadID()
+{
+    return mysql_thread_id(driver.get());
 }
 
+}

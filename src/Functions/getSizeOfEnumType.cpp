@@ -16,7 +16,7 @@ namespace
 {
 
 /// Returns number of fields in Enum data type of passed value.
-class FunctionGetSizeOfEnumType : public IFunction
+class FunctionGetSizeOfEnumType final : public IFunction
 {
 public:
     static constexpr auto name = "getSizeOfEnumType";
@@ -45,7 +45,7 @@ public:
 
         if (which.isEnum8())
             return std::make_shared<DataTypeUInt8>();
-        else if (which.isEnum16())
+        if (which.isEnum16())
             return std::make_shared<DataTypeUInt16>();
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Enum", getName());
@@ -67,10 +67,9 @@ private:
     {
         if (const auto * type8 = checkAndGetDataType<DataTypeEnum8>(data_type.get()))
             return DataTypeUInt8().createColumnConst(input_rows_count, type8->getValues().size());
-        else if (const auto * type16 = checkAndGetDataType<DataTypeEnum16>(data_type.get()))
+        if (const auto * type16 = checkAndGetDataType<DataTypeEnum16>(data_type.get()))
             return DataTypeUInt16().createColumnConst(input_rows_count, type16->getValues().size());
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Enum", getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Enum", getName());
     }
 };
 
@@ -78,7 +77,32 @@ private:
 
 REGISTER_FUNCTION(GetSizeOfEnumType)
 {
-    factory.registerFunction<FunctionGetSizeOfEnumType>();
+    FunctionDocumentation::Description description = R"(
+Returns the number of fields in the given [`Enum`](../../sql-reference/data-types/enum.md).
+)";
+    FunctionDocumentation::Syntax syntax = "getSizeOfEnumType(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Value of type `Enum`.", {"Enum"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of fields with `Enum` input values.", {"UInt8/16"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT getSizeOfEnumType(CAST('a' AS Enum8('a' = 1, 'b' = 2))) AS x;
+        )",
+        R"(
+┌─x─┐
+│ 2 │
+└───┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGetSizeOfEnumType>(documentation);
 }
 
 }

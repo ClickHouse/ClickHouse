@@ -5,8 +5,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Core/DecimalFunctions.h>
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <base/arithmeticOverflow.h>
 
@@ -23,7 +24,7 @@ namespace ErrorCodes
 }
 
 /// Cast DateTime64 to Int64 representation narrowed down (or scaled up) to any scale value defined in Impl.
-class FunctionToUnixTimestamp64 : public IFunction
+class FunctionToUnixTimestamp64 final : public IFunction
 {
 private:
     const size_t target_scale;
@@ -49,6 +50,11 @@ public:
         };
         validateFunctionArguments(*this, arguments, args);
 
+        return std::make_shared<DataTypeInt64>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeInt64>();
     }
 
@@ -99,7 +105,7 @@ public:
 };
 
 
-class FunctionFromUnixTimestamp64 : public IFunction
+class FunctionFromUnixTimestamp64 final : public IFunction
 {
 private:
     const size_t target_scale;

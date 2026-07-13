@@ -20,7 +20,7 @@ ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 --query="OPTIMIZE TABLE test_opt
 ${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 --query="OPTIMIZE TABLE test_optimize_exception_replicated PARTITION 201709 FINAL"
 
 echo "$(${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 --server_logs_file=/dev/null --query="OPTIMIZE TABLE test_optimize_exception PARTITION 201710" 2>&1)" \
-  | grep -c 'Code: 388. DB::Exception: .* DB::Exception: .* Cannot select parts for optimization'
+  | grep -c 'Code: 388. DB::Exception: .* DB::Exception: .* There are no parts inside partition'
 echo "$(${CLICKHOUSE_CLIENT} --optimize_throw_if_noop 1 --server_logs_file=/dev/null --query="OPTIMIZE TABLE test_optimize_exception_replicated PARTITION 201710" 2>&1)" \
   | grep -c 'Code: 388. DB::Exception: .* DB::Exception:.* Cannot select parts for optimization'
 

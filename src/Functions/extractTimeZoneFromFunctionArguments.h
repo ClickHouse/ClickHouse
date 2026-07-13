@@ -1,11 +1,10 @@
 #pragma once
 
-#include <string>
-#include <Core/ColumnNumbers.h>
+#include <Common/DateLUT.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
+#include <string>
 
-class DateLUTImpl;
 
 namespace DB
 {

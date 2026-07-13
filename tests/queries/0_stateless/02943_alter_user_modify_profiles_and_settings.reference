@@ -1,0 +1,39 @@
+CREATE USER test_user IDENTIFIED WITH no_password
+CREATE USER test_user IDENTIFIED WITH no_password SETTINGS PROFILE `profile_a`, PROFILE `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE USER test_user IDENTIFIED WITH no_password
+CREATE USER test_user IDENTIFIED WITH no_password SETTINGS PROFILE `profile_a`, PROFILE `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE USER test_user IDENTIFIED WITH no_password
+CREATE USER test_user IDENTIFIED WITH no_password SETTINGS PROFILE `profile_a`, PROFILE `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE USER test_user IDENTIFIED WITH no_password
+CREATE USER test_user IDENTIFIED WITH no_password SETTINGS PROFILE `profile_a`, PROFILE `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE USER test_user IDENTIFIED WITH no_password
+CREATE USER test_user IDENTIFIED WITH no_password SETTINGS custom_x = 123, custom_t = 7, custom_s = \'str\'
+CREATE USER test_user IDENTIFIED WITH no_password SETTINGS PROFILE `profile_a`, custom_x = 123, custom_t = 7, custom_s = \'str\'
+CREATE USER test_user IDENTIFIED WITH no_password SETTINGS PROFILE `profile_b`, PROFILE `profile_a`, custom_x = 321, custom_s = \'str\' CONST
+CREATE USER test_user IDENTIFIED WITH no_password
+CREATE ROLE test_role
+CREATE ROLE test_role SETTINGS PROFILE `profile_a`, PROFILE `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE ROLE test_role
+CREATE ROLE test_role SETTINGS PROFILE `profile_a`, PROFILE `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE ROLE test_role
+CREATE ROLE test_role SETTINGS PROFILE `profile_a`, PROFILE `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE ROLE test_role
+CREATE ROLE test_role SETTINGS PROFILE `profile_a`, PROFILE `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE ROLE test_role
+CREATE ROLE test_role SETTINGS custom_x = 123, custom_t = 7, custom_s = \'str\'
+CREATE ROLE test_role SETTINGS PROFILE `profile_a`, custom_x = 123, custom_t = 7, custom_s = \'str\'
+CREATE ROLE test_role SETTINGS PROFILE `profile_b`, PROFILE `profile_a`, custom_x = 321, custom_s = \'str\' CONST
+CREATE ROLE test_role
+CREATE SETTINGS PROFILE `test_profile`
+CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_a`, INHERIT `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE SETTINGS PROFILE `test_profile`
+CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_a`, INHERIT `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE SETTINGS PROFILE `test_profile`
+CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_a`, INHERIT `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE SETTINGS PROFILE `test_profile`
+CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_a`, INHERIT `profile_b`, custom_x = 123, custom_y = 56.5, custom_w = \'www\'
+CREATE SETTINGS PROFILE `test_profile`
+CREATE SETTINGS PROFILE `test_profile` SETTINGS custom_x = 123, custom_t = 7, custom_s = \'str\'
+CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_a`, custom_x = 123, custom_t = 7, custom_s = \'str\'
+CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_b`, INHERIT `profile_a`, custom_x = 321, custom_s = \'str\' CONST
+CREATE SETTINGS PROFILE `test_profile`

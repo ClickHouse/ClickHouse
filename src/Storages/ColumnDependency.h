@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/SipHash.h>
 #include <base/types.h>
 #include <unordered_set>
 
@@ -38,7 +37,7 @@ struct ColumnDependency
 
     bool isReadOnly() const
     {
-        return kind == SKIP_INDEX || kind == PROJECTION || kind == TTL_EXPRESSION;
+        return kind == SKIP_INDEX || kind == PROJECTION || kind == TTL_EXPRESSION || kind == STATISTICS;
     }
 
     bool operator==(const ColumnDependency & other) const
@@ -48,13 +47,7 @@ struct ColumnDependency
 
     struct Hash
     {
-        UInt64 operator()(const ColumnDependency & dependency) const
-        {
-            SipHash hash;
-            hash.update(dependency.column_name);
-            hash.update(dependency.kind);
-            return hash.get64();
-        }
+        UInt64 operator()(const ColumnDependency & dependency) const;
     };
 };
 

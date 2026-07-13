@@ -1,9 +1,18 @@
 #pragma once
-#include <Common/ProfileEvents.h>
-#include <Common/ThreadStatus.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <Columns/IColumn.h>
 
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/ProfileEvents.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <Columns/IColumn_fwd.h>
+#include <Core/Block.h>
+
+namespace DB
+{
+
+using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
+using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
+
+}
 
 namespace ProfileEvents
 {
@@ -13,11 +22,12 @@ constexpr size_t VALUE_COLUMN_INDEX = 5;
 
 struct ProfileEventsSnapshot
 {
-    UInt64 thread_id;
+    UInt64 thread_id{};
     CountersIncrement counters;
-    Int64 memory_usage;
-    Int64 peak_memory_usage;
-    time_t current_time;
+    Int64 memory_usage{};
+    Int64 peak_memory_usage{};
+    Int64 temp_data_on_disk_usage{};
+    time_t current_time{};
 };
 
 using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, Counters::Snapshot>;
@@ -25,10 +35,11 @@ using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, Counters::Snapshot
 /// Dumps profile events to columns Map(String, UInt64)
 void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only = true);
 
-void getProfileEvents(
+DB::Block getSampleBlock();
+
+DB::Block getProfileEvents(
     const String & host_name,
     DB::InternalProfileEventsQueuePtr profile_queue,
-    DB::Block & block,
     ThreadIdToCountersSnapshot & last_sent_snapshots);
 
 /// This is for ProfileEvents packets.

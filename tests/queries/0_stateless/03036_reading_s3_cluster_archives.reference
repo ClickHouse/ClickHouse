@@ -1,0 +1,28 @@
+s3, single archive
+3	Str3	25	example2.csv	test/03036_archive2.zip::example2.csv
+4	Str4	25	example2.csv	test/03036_archive2.zip::example2.csv
+5	Str5	25	example3.csv	test/03036_archive2.zip::example3.csv
+6	Str6	25	example3.csv	test/03036_archive2.zip::example3.csv
+s3Cluster: single archive
+3	Str3	25	example2.csv	test/03036_archive2.zip::example2.csv
+4	Str4	25	example2.csv	test/03036_archive2.zip::example2.csv
+5	Str5	25	example3.csv	test/03036_archive2.zip::example3.csv
+6	Str6	25	example3.csv	test/03036_archive2.zip::example3.csv
+s3: many archives
+1	Str1	25	example1.csv	test/03036_archive1.zip::example1.csv
+2	Str2	25	example1.csv	test/03036_archive1.zip::example1.csv
+3	Str3	25	example2.csv	test/03036_archive1.zip::example2.csv
+3	Str3	25	example2.csv	test/03036_archive2.zip::example2.csv
+4	Str4	25	example2.csv	test/03036_archive1.zip::example2.csv
+4	Str4	25	example2.csv	test/03036_archive2.zip::example2.csv
+5	Str5	25	example3.csv	test/03036_archive2.zip::example3.csv
+6	Str6	25	example3.csv	test/03036_archive2.zip::example3.csv
+s3Cluster: many archives
+1	Str1	25	example1.csv	test/03036_archive1.zip::example1.csv
+2	Str2	25	example1.csv	test/03036_archive1.zip::example1.csv
+3	Str3	25	example2.csv	test/03036_archive1.zip::example2.csv
+3	Str3	25	example2.csv	test/03036_archive2.zip::example2.csv
+4	Str4	25	example2.csv	test/03036_archive1.zip::example2.csv
+4	Str4	25	example2.csv	test/03036_archive2.zip::example2.csv
+5	Str5	25	example3.csv	test/03036_archive2.zip::example3.csv
+6	Str6	25	example3.csv	test/03036_archive2.zip::example3.csv

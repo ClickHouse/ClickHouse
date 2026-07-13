@@ -3,6 +3,7 @@
 #include <chrono>
 #include <functional>
 #include <exception>
+#include <optional>
 #include <unordered_map>
 #include <base/types.h>
 #include <Interpreters/IExternalLoadable.h>
@@ -74,7 +75,8 @@ public:
         LoadablePtr object;
         TimePoint loading_start_time;
         TimePoint last_successful_update_time;
-        Duration loading_duration;
+        size_t error_count{};
+        Duration loading_duration{};
         std::exception_ptr exception;
         std::shared_ptr<const ObjectConfig> config;
     };
@@ -103,6 +105,8 @@ public:
 
     /// Sets settings for periodic updates.
     void enablePeriodicUpdates(bool enable);
+
+    void joinLoadingThreads();
 
     /// Returns the status of the object.
     /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.
@@ -154,11 +158,11 @@ public:
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
     ReturnType tryLoad(const FilterByNameFunction & filter, Duration timeout = WAIT) const;
 
-    /// Loads all objects.
+    /// Loads all objects except lazy-loadable ones.
     /// The function does nothing for already loaded objects, it just returns them.
     /// The function doesn't throw an exception if it's failed to load something.
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>> // NOLINT
-    ReturnType tryLoadAll(Duration timeout = WAIT) const { return tryLoad<ReturnType>(FilterByNameFunction{}, timeout); }
+    ReturnType tryLoadAllExceptLazy(Duration timeout = WAIT) const;
 
     /// Loads a specified object.
     /// The function does nothing if it's already loaded.
@@ -213,7 +217,12 @@ public:
     void reloadConfig(const String & repository_name, const String & path) const;
 
 protected:
-    virtual LoadableMutablePtr createObject(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
+    virtual LoadableMutablePtr createObject(
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & key_in_config,
+        const String & repository_name,
+        const String & config_file_path) const = 0;
 
     /// Returns whether the object must be reloaded after a specified change in its configuration.
     virtual bool doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & /* old_config */, const String & /* old_key_in_config */,
@@ -223,11 +232,15 @@ protected:
     virtual void updateObjectFromConfigWithoutReloading(
         IExternalLoadable & /* object */, const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const {}
 
+    /// Returns whether the object's configuration overrides lazy loading, or no value to follow the loader-wide setting.
+    virtual std::optional<bool> isObjectLazy(
+        const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const { return {}; }
+
+    Strings getAllTriedToLoadNames() const;
+
 private:
     void checkLoaded(const LoadResult & result, bool check_no_errors) const;
     void checkLoaded(const LoadResults & results, bool check_no_errors) const;
-
-    Strings getAllTriedToLoadNames() const;
 
     LoadableMutablePtr createOrCloneObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const;
 

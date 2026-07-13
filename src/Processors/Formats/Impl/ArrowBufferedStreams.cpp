@@ -1,10 +1,9 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
-#include "ArrowBufferedStreams.h"
-
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #if USE_ARROW || USE_ORC || USE_PARQUET
-#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -13,9 +12,8 @@
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
 #include <arrow/memory_pool_internal.h>
+#include <Common/Allocator.h>
 #include <Core/Settings.h>
-
-#include <sys/stat.h>
 
 
 namespace DB
@@ -24,6 +22,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+}
+
+/// Wraps the in-flight exception into a status, so that `throwFromArrowStatus`
+/// can recover its original error code.
+static arrow::Status statusFromCurrentException(arrow::StatusCode code, std::string message)
+{
+    return arrow::Status(code, std::move(message), std::make_shared<ExceptionStatusDetail>(std::current_exception()));
 }
 
 ArrowBufferedOutputStream::ArrowBufferedOutputStream(WriteBuffer & out_) : out{out_}, is_open{true}
@@ -53,7 +58,7 @@ arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length
     {
         auto message = getCurrentExceptionMessage(false);
         LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while writing to arrow stream: {}", message);
-        return arrow::Status::IOError(message);
+        return statusFromCurrentException(arrow::StatusCode::IOError, message);
     }
 }
 
@@ -95,7 +100,7 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbyt
     {
         auto message = getCurrentExceptionMessage(false);
         LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
-        return arrow::Status::IOError(message);
+        return statusFromCurrentException(arrow::StatusCode::IOError, message);
     }
 }
 
@@ -133,7 +138,7 @@ arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)
     {
         auto message = getCurrentExceptionMessage(false);
         LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while seeking arrow file: {}", message);
-        return arrow::Status::IOError(message);
+        return statusFromCurrentException(arrow::StatusCode::IOError, message);
     }
 }
 
@@ -152,7 +157,7 @@ arrow::Result<int64_t> ArrowInputStreamFromReadBuffer::Read(int64_t nbytes, void
     {
         auto message = getCurrentExceptionMessage(false);
         LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
-        return arrow::Status::IOError(message);
+        return statusFromCurrentException(arrow::StatusCode::IOError, message);
     }
 }
 
@@ -183,7 +188,11 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
     return arrow::Status();
 }
 
-RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_) : in(in_), file_size(file_size_) {}
+RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_, std::shared_ptr<ThreadPool> io_pool_) : in(in_), file_size(file_size_), io_pool(std::move(io_pool_))
+{
+    if (io_pool)
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(*io_pool, ThreadName::ARROW_FILE);
+}
 
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::GetSize()
 {
@@ -201,7 +210,7 @@ arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::ReadAt(int64_
     {
         auto message = getCurrentExceptionMessage(false);
         LOG_ERROR(getLogger("ArrowBufferedOutputStream"), "Error while reading from arrow stream: {}", message);
-        return arrow::Status::IOError(message);
+        return statusFromCurrentException(arrow::StatusCode::IOError, message);
     }
 }
 
@@ -218,7 +227,14 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessRe
 
 arrow::Future<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::ReadAsync(const arrow::io::IOContext&, int64_t position, int64_t nbytes)
 {
-    return arrow::Future<std::shared_ptr<arrow::Buffer>>::MakeFinished(ReadAt(position, nbytes));
+    auto future = arrow::Future<std::shared_ptr<arrow::Buffer>>::Make();
+    if (io_pool)
+    {
+        async_runner([this, future, position, nbytes]() mutable { asyncThreadFunction(future, position, nbytes); }, {});
+        return future.Then([=]() { return future.result(); });
+    }
+    asyncThreadFunction(future, position, nbytes);
+    return future;
 }
 
 arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Close()
@@ -228,10 +244,49 @@ arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Close()
     return arrow::Status::OK();
 }
 
+void RandomAccessFileFromRandomAccessReadBuffer::asyncThreadFunction(
+    arrow::Future<std::shared_ptr<arrow::Buffer>> future, int64_t position, int64_t nbytes)
+{
+    auto buffer = ReadAt(position, nbytes);
+    future.MarkFinished(buffer);
+}
+
 arrow::Status RandomAccessFileFromRandomAccessReadBuffer::Seek(int64_t) { return arrow::Status::NotImplemented(""); }
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::Tell() const { return arrow::Status::NotImplemented(""); }
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::Read(int64_t, void*) { return arrow::Status::NotImplemented(""); }
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromRandomAccessReadBuffer::Read(int64_t) { return arrow::Status::NotImplemented(""); }
+
+std::string ExceptionStatusDetail::ToString() const
+{
+    return getExceptionMessage(exception, /*with_stacktrace=*/ false);
+}
+
+void throwFromArrowStatus(const arrow::Status & status, int error_code, PreformattedMessage context)
+{
+    chassert(!status.ok());
+
+    if (auto detail = std::dynamic_pointer_cast<ExceptionStatusDetail>(status.detail()))
+    {
+        try
+        {
+            std::rethrow_exception(detail->exception);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(context.text);
+            throw;
+        }
+        catch (...) /// NOLINT(bugprone-empty-catch): not a DB::Exception, report the status text below - Ok
+        {
+        }
+    }
+
+    /// The status text goes only into the message, not into the format string
+    /// (it is unbounded runtime data).
+    context.text += ": ";
+    context.text += status.ToString();
+    throw Exception(std::move(context), error_code);
+}
 
 ArrowMemoryPool * ArrowMemoryPool::instance()
 {
@@ -247,16 +302,19 @@ arrow::Status ArrowMemoryPool::Allocate(int64_t size, int64_t alignment, uint8_t
         return arrow::Status::OK();
     }
 
-    try // is arrow exception-safe? idk, let's avoid throwing, just in case
+    try
     {
         void * p = Allocator<false>().alloc(size_t(size), size_t(alignment));
-        *out = reinterpret_cast<uint8_t*>(p);
+        *out = reinterpret_cast<uint8_t *>(p);
     }
     catch (...)
     {
-        return arrow::Status::OutOfMemory("allocation of size ", size, " failed");
+        return statusFromCurrentException(
+            arrow::StatusCode::OutOfMemory,
+            fmt::format("allocation of size {} failed: {}", size, getCurrentExceptionMessage(false)));
     }
 
+    stats.DidAllocateBytes(size);
     return arrow::Status::OK();
 }
 
@@ -277,17 +335,20 @@ arrow::Status ArrowMemoryPool::Reallocate(int64_t old_size, int64_t new_size, in
     try
     {
         void * p = Allocator<false>().realloc(*ptr, size_t(old_size), size_t(new_size), size_t(alignment));
-        *ptr = reinterpret_cast<uint8_t*>(p);
+        *ptr = reinterpret_cast<uint8_t *>(p);
     }
     catch (...)
     {
-        return arrow::Status::OutOfMemory("reallocation of size ", new_size, " failed");
+        return statusFromCurrentException(
+            arrow::StatusCode::OutOfMemory,
+            fmt::format("reallocation of size {} failed: {}", new_size, getCurrentExceptionMessage(false)));
     }
 
+    stats.DidReallocateBytes(old_size, new_size);
     return arrow::Status::OK();
 }
 
-void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t /*alignment*/)
+void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t alignment)
 {
     if (size == 0)
     {
@@ -295,7 +356,8 @@ void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t /*alignment*/
         return;
     }
 
-    Allocator<false>().free(buffer, size_t(size));
+    Allocator<false>().free(buffer, size_t(size), alignment);
+    stats.DidFreeBytes(size);
 }
 
 
@@ -305,21 +367,48 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     std::atomic<int> & is_cancelled,
     const std::string & format_name,
     const std::string & magic_bytes,
-    bool avoid_buffering)
+    bool avoid_buffering,
+    std::shared_ptr<ThreadPool> io_pool)
 {
     bool has_file_size = isBufferWithFileSize(in);
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
 
+    // When the source is not seekable (or seekable_read is off), we cannot use
+    // RandomAccessFileFromSeekableReadBuffer / RandomAccessFileFromRandomAccessReadBuffer.
+    // We then load the entire file into memory and optionally log a warning for schema inference.
+    std::string fallback_reason;
+
     if (has_file_size && seekable_in && settings.seekable_read)
     {
         if (avoid_buffering && seekable_in->supportsReadAt())
-            return std::make_shared<RandomAccessFileFromRandomAccessReadBuffer>(*seekable_in, getFileSizeFromReadBuffer(in));
+            return std::make_shared<RandomAccessFileFromRandomAccessReadBuffer>(*seekable_in, getFileSizeFromReadBuffer(in), io_pool);
 
         if (seekable_in->checkIfActuallySeekable())
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*seekable_in, std::nullopt, avoid_buffering);
+
+        fallback_reason = "checkIfActuallySeekable() returned false";
+    }
+    else if (!settings.seekable_read)
+    {
+        fallback_reason = "seekable_read disabled in format settings";
+    }
+    else if (!has_file_size)
+    {
+        fallback_reason = "file size unavailable";
+    }
+    else
+    {
+        fallback_reason = "stream is not seekable";
     }
 
-    // fallback to loading the entire file in memory
+    if (settings.log_full_buffer_fallback_during_schema_inference)
+    {
+        LOG_WARNING(
+            getLogger("ArrowBufferedInputStream"),
+            "Cannot read {} as seekable stream ({}), falling back to loading the entire file into memory",
+            format_name,
+            fallback_reason);
+    }
     return asArrowFileLoadIntoMemory(in, is_cancelled, format_name, magic_bytes);
 }
 
@@ -336,9 +425,10 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFileLoadIntoMemory(
     if (bytes_read < magic_bytes.size() || file_data != magic_bytes)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not a {} file", format_name);
 
-    WriteBufferFromString file_buffer(file_data, AppendModeTag{});
-    copyData(in, file_buffer, is_cancelled);
-    file_buffer.finalize();
+    {
+        WriteBufferFromString file_buffer(file_data, AppendModeTag{});
+        copyData(in, file_buffer, is_cancelled);
+    }
 
     return std::make_shared<arrow::io::BufferReader>(arrow::Buffer::FromString(std::move(file_data)));
 }

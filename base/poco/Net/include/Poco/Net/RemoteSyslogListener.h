@@ -101,7 +101,6 @@ namespace Net
 
         static const std::string LOG_PROP_APP;
         static const std::string LOG_PROP_HOST;
-        static const std::string LOG_PROP_STRUCTURED_DATA;
 
     protected:
         ~RemoteSyslogListener();

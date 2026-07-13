@@ -32,8 +32,8 @@ expect -nocase -re "mysql.*> "
 send -- "DROP TABLE IF EXISTS tab;\r"
 expect "Query OK, 0 rows affected"
 
-send -- "SET allow_suspicious_low_cardinality_types=1;\r"
-send -- "SET allow_experimental_json_type=1;\r"
+send -- "SET allow_suspicious_low_cardinality_types = 1;\r"
+send -- "SET enable_json_type = 1;\r"
 
 send -- "
 CREATE TABLE tab

@@ -7,7 +7,7 @@ CREATE TABLE test_table
     value String,
     value_array Array(UInt64),
     value_array_array Array(Array(UInt64))
-) ENGINE=TinyLog;
+) ENGINE=MergeTree ORDER BY tuple();
 
 INSERT INTO test_table VALUES (0, 'Value', [1, 2, 3], [[1, 2, 3]]), (0, 'Value', [4, 5, 6], [[1, 2, 3], [4, 5, 6]]);
 

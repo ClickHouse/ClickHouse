@@ -4,9 +4,11 @@
 
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <algorithm>
 #include <filesystem>
+
 
 namespace DB
 {
@@ -45,16 +47,14 @@ ReadBufferPtr FileLogConsumer::consume()
         LOG_TRACE(log, "No new records to read");
         return nullptr;
     }
-    else
-    {
-        records = std::move(new_records);
-        current = records.begin();
 
-        LOG_TRACE(log, "Polled batch of {} records. ", records.size());
+    records = std::move(new_records);
+    current = records.begin();
 
-        buffer_status = BufferStatus::POLLED_OK;
-        return getNextRecord();
-    }
+    LOG_TRACE(log, "Polled batch of {} records. ", records.size());
+
+    buffer_status = BufferStatus::POLLED_OK;
+    return getNextRecord();
 }
 
 FileLogConsumer::Records FileLogConsumer::pollBatch(size_t batch_size_)

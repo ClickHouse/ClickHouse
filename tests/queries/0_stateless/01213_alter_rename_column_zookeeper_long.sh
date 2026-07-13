@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS table_for_rename_replicated"
 
-$CLICKHOUSE_CLIENT -n --query "
+$CLICKHOUSE_CLIENT --query "
 CREATE TABLE table_for_rename_replicated
 (
   date Date,

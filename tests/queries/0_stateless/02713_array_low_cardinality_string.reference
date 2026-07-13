@@ -10,3 +10,4 @@ Expression
         Description: bloom_filter GRANULARITY 1
         Parts: 1/1
         Granules: 1/1
+      Ranges: 1

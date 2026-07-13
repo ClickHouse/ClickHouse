@@ -1,13 +1,13 @@
 #pragma once
 
-#include <string>
-#include <Core/Block.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
 
+#include <string>
 
 namespace DB
 {
+class Block;
 class WriteBuffer;
 
 
@@ -20,14 +20,9 @@ class WriteBuffer;
 class ODBCDriver2BlockOutputFormat final : public IOutputFormat
 {
 public:
-    ODBCDriver2BlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    ODBCDriver2BlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
 
-    String getName() const override { return "ODBCDriver2BlockOutputFormat"; }
-
-    std::string getContentType() const override
-    {
-        return "application/octet-stream";
-    }
+    String getName() const override { return "ODBCDriver2"; }
 
 private:
     void consume(Chunk) override;

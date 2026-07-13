@@ -8,14 +8,14 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    void formatNames(const Strings & names, WriteBuffer & ostr)
     {
         bool need_comma = false;
         for (const auto & name : names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ',';
-            settings.ostr << ' ' << backQuoteIfNeed(name);
+                ostr << ',';
+            ostr << ' ' << backQuoteIfNeed(name);
         }
     }
 }
@@ -27,33 +27,33 @@ String ASTMoveAccessEntityQuery::getID(char) const
 
 ASTPtr ASTMoveAccessEntityQuery::clone() const
 {
-    auto res = std::make_shared<ASTMoveAccessEntityQuery>(*this);
+    auto res = make_intrusive<ASTMoveAccessEntityQuery>(*this);
 
     if (row_policy_names)
-        res->row_policy_names = std::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
+        res->row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(row_policy_names->clone());
 
     return res;
 }
 
-void ASTMoveAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTMoveAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
+    ostr
                   << "MOVE " << AccessEntityTypeInfo::get(type).name
-                  << (settings.hilite ? hilite_none : "");
+                 ;
 
     if (type == AccessEntityType::ROW_POLICY)
     {
-        settings.ostr << " ";
-        row_policy_names->format(settings);
+        ostr << " ";
+        row_policy_names->format(ostr, settings);
     }
     else
-        formatNames(names, settings);
+        formatNames(names, ostr);
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << " TO " << (settings.hilite ? hilite_none : "")
+    ostr
+                  << " TO "
                   << backQuoteIfNeed(storage_name);
 
-    formatOnCluster(settings);
+    formatOnCluster(ostr, settings);
 }
 
 void ASTMoveAccessEntityQuery::replaceEmptyDatabase(const String & current_database) const

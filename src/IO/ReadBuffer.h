@@ -1,24 +1,15 @@
 #pragma once
 
-#include <cassert>
 #include <cstring>
-#include <algorithm>
 #include <memory>
 
-#include <Common/Exception.h>
 #include <Common/Priority.h>
 #include <IO/BufferBase.h>
-#include <IO/AsynchronousReader.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CANNOT_READ_ALL_DATA;
-}
 
 static constexpr auto DEFAULT_PREFETCH_PRIORITY = Priority{0};
 
@@ -54,6 +45,13 @@ public:
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
+    /// Whether this buffer's nextImpl honors the external-buffer pointer set via set() -- i.e.,
+    /// reads into the caller-provided memory. Defaults to false: a buffer is external-capable
+    /// only if it explicitly opts in by overriding this, so a buffer whose nextImpl ignores
+    /// set() is never read zero-copy. Callers that want zero-copy via set()+next() must check
+    /// this first.
+    virtual bool supportsExternalBufferMode() const { return false; }
+
     /** read next data and fill a buffer with it; set position to the beginning of the new data
       * (but not necessarily to the beginning of working_buffer!);
       * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong;
@@ -61,29 +59,14 @@ public:
       * if an exception was thrown, is the ReadBuffer left in a usable state? this varies across implementations;
       * can the caller retry next() after an exception, or call other methods? not recommended
       */
-    bool next()
+    bool next();
+
+    void cancel();
+
+    bool isCanceled() const
     {
-        chassert(!hasPendingData());
-        chassert(position() <= working_buffer.end());
-
-        bytes += offset();
-        bool res = nextImpl();
-        if (!res)
-        {
-            working_buffer = Buffer(pos, pos);
-        }
-        else
-        {
-            pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
-            chassert(position() < working_buffer.end());
-        }
-        nextimpl_working_buffer_offset = 0;
-
-        chassert(position() <= working_buffer.end());
-
-        return res;
+        return canceled;
     }
-
 
     void nextIfAtEnd()
     {
@@ -93,6 +76,9 @@ public:
 
     virtual ~ReadBuffer() = default;
 
+    /// True if the whole input is already in the working buffer and will never be refilled
+    /// (e.g. ReadBufferFromMemory). Lets hot parsers take the no-copy path without an RTTI check.
+    virtual bool isMemoryBuffer() const { return false; }
 
     /** Unlike std::istream, it returns true if all data was read
       *  (and not in case there was an attempt to read after the end).
@@ -142,9 +128,9 @@ public:
         return bytes_ignored;
     }
 
-    void ignoreAll()
+    size_t ignoreAll()
     {
-        tryIgnore(std::numeric_limits<size_t>::max());
+        return tryIgnore(std::numeric_limits<size_t>::max());
     }
 
     /// Peeks a single byte.
@@ -191,14 +177,8 @@ public:
         return bytes_copied;
     }
 
-    /** Reads n bytes, if there are less - throws an exception. */
-    void readStrict(char * to, size_t n)
-    {
-        auto read_bytes = read(to, n);
-        if (n != read_bytes)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                            "Cannot read all data. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
-    }
+    /** Reads n bytes with read, if there are less - throws an exception. */
+    void readStrict(char * to, size_t n);
 
     /** A method that can be more efficiently implemented in derived classes, in the case of reading large enough blocks.
       * The implementation can read data directly into `to`, without superfluous copying, if in `to` there is enough space for work.
@@ -208,12 +188,19 @@ public:
       */
     [[nodiscard]] virtual size_t readBig(char * to, size_t n) { return read(to, n); }
 
+    /** Reads n bytes with readBig, if there are less - throws an exception. */
+    void readBigStrict(char * to, size_t n);
+
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.
       * `priority` is the `ThreadPool` priority, with which the prefetch task will be scheduled.
       * Lower value means higher priority.
       */
     virtual void prefetch(Priority) {}
+
+    /// Wait until reading more data from this buffer is expected to complete without blocking.
+    /// The default implementation keeps the previous behavior for buffers that cannot expose readiness.
+    virtual bool poll(size_t /* timeout_microseconds */) { return true; }
 
     /**
      * Set upper bound for read range [..., position).
@@ -255,27 +242,26 @@ protected:
     size_t nextimpl_working_buffer_offset = 0;
 
 private:
-    /** Read the next data and fill a buffer with it.
+    /** Read the next data and fill a buffer with it. It should also account for `nextimpl_working_buffer_offset` out parameter if set
+      * so that after this value is applied to `pos` (see next() method) buffer still contains available data.
       * Return `false` in case of the end, `true` otherwise.
       * Throw an exception if something is wrong.
       */
     virtual bool nextImpl() { return false; }
 
-    [[noreturn]] static void throwReadAfterEOF()
-    {
-        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof");
-    }
+    [[noreturn]] static void throwReadAfterEOF();
 };
 
 
 using ReadBufferPtr = std::shared_ptr<ReadBuffer>;
+using ReadBufferUniquePtr = std::unique_ptr<ReadBuffer>;
 
 /// Due to inconsistencies in ReadBuffer-family interfaces:
 ///  - some require to fully wrap underlying buffer and own it,
 ///  - some just wrap the reference without ownership,
 /// we need to be able to wrap reference-only buffers with movable transparent proxy-buffer.
 /// The uniqueness of such wraps is responsibility of the code author.
-std::unique_ptr<ReadBuffer> wrapReadBufferReference(ReadBuffer & ref);
-std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr);
+ReadBufferUniquePtr wrapReadBufferReference(ReadBuffer & ref);
+ReadBufferUniquePtr wrapReadBufferPointer(ReadBufferPtr ptr);
 
 }

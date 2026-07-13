@@ -22,7 +22,8 @@ SETTINGS
     index_granularity = 3,
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 6,
-    ratio_of_defaults_for_sparse_serialization = 0.9;
+    ratio_of_defaults_for_sparse_serialization = 0.9,
+    compact_parts_max_granules_to_buffer = 1;
 
 INSERT INTO t_merge_tree_index (a) VALUES (1);
 

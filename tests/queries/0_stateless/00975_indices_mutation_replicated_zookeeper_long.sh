@@ -11,7 +11,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS indices_mutaions1;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS indices_mutaions2;"
 
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 CREATE TABLE indices_mutaions1
 (
     u64 UInt64,

@@ -24,7 +24,7 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='error';
 SYSTEM RELOAD CONFIG" 2>&1 | grep -c 'volume_priority values must be unique across the policy'
 
@@ -40,7 +40,7 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -nm --query "
+$CLICKHOUSE_CLIENT -m --query "
 set send_logs_level='error';
 SYSTEM RELOAD CONFIG" 2>&1 | grep -c 'volume_priority values must cover the range from 1 to N (lowest priority specified) without gaps'
 

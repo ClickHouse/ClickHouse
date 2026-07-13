@@ -83,15 +83,13 @@ ASTs OptimizeIfChainsVisitor::ifChain(const ASTPtr & child)
         cur.push_back(function_node->arguments->children[0]);
         return cur;
     }
-    else
-    {
-        ASTs end;
-        end.reserve(3);
-        end.push_back(function_node->arguments->children[2]);
-        end.push_back(function_node->arguments->children[1]);
-        end.push_back(function_node->arguments->children[0]);
-        return end;
-    }
+
+    ASTs end;
+    end.reserve(3);
+    end.push_back(function_node->arguments->children[2]);
+    end.push_back(function_node->arguments->children[1]);
+    end.push_back(function_node->arguments->children[0]);
+    return end;
 }
 
 }

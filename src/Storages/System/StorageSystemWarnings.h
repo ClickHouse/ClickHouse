@@ -18,6 +18,8 @@ public:
 
     static ColumnsDescription getColumnsDescription();
 
+    void truncate(const ASTPtr & query_ast, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, TableExclusiveLockHolder & lock_holder) override;
+
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 

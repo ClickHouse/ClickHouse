@@ -18,4 +18,7 @@ namespace DB
   */
 QueryTreeNodePtr buildQueryTree(ASTPtr query, ContextPtr context);
 
+/// For table function only
+class TableFunctionNode;
+std::shared_ptr<TableFunctionNode> buildTableFunctionQueryTree(ASTPtr query, ContextPtr context);
 }

@@ -19,12 +19,12 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return String("QueryParameter") + delim + name + ':' + type; }
 
-    ASTPtr clone() const override { return std::make_shared<ASTQueryParameter>(*this); }
+    ASTPtr clone() const override;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 };
 

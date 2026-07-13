@@ -4,7 +4,7 @@
 drop table if exists test_table_url_syntax
 ;
 create table test_table_url_syntax (id UInt32) ENGINE = URL('')
-; -- { serverError UNSUPPORTED_URI_SCHEME }
+; -- { serverError BAD_ARGUMENTS }
 create table test_table_url_syntax (id UInt32) ENGINE = URL('','','','')
 ; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 drop table if exists test_table_url_syntax

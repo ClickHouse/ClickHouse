@@ -1,0 +1,51 @@
+---
+title: 'GCP のカスタム設定'
+slug: /cloud/reference/byoc/onboarding/customization-gcp
+sidebarTitle: 'GCP のカスタム設定'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'オンボーディング', 'GCP', 'VPC']
+description: '既存の GCP VPC に ClickHouse BYOC をデプロイします'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="customer-managed-vpc-gcp">
+  ## GCP 向けカスタマー管理 VPC (BYO-VPC)
+</div>
+
+ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わりに、既存の VPC を使用して ClickHouse BYOC をデプロイする場合は、以下の手順に従ってください。この方法では、ネットワーク構成をより細かく制御できるほか、ClickHouse BYOC を既存のネットワークインフラストラクチャに統合できます。
+
+<Steps>
+  <Step>
+    ### 既存の VPC を設定する
+
+    1. ClickHouse Kubernetes (GKE) クラスター用に、[ClickHouse BYOC がサポートするリージョン](/ja/products/cloud/reference/supported-regions)内にプライベートサブネットを少なくとも 1 つ割り当てます。GKE クラスターのノードに十分な IP アドレスを確保するため、サブネットの CIDR 範囲は最低でも `/24` (例: 10.0.0.0/24) であることを確認してください。
+    2. そのプライベートサブネット内で、GKE クラスターのポッドに使用するセカンダリ IPv4 範囲を少なくとも 1 つ割り当てます。GKE クラスターのポッドに十分な IP アドレスを確保するため、セカンダリ範囲は少なくとも `/23` にしてください。
+    3. サブネットで **Private Google Access** を有効にします。これにより、GKE ノードは外部 IP アドレスなしで Google API や各種サービスにアクセスできます。
+
+    <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Private Google Access が有効で、プライマリおよびセカンダリ IPv4 範囲が表示された BYOC GCP サブネットの詳細" />
+  </Step>
+
+  <Step>
+    ### ネットワーク接続を確保する
+
+    **Cloud NAT ゲートウェイ**
+    VPC に対して [Cloud NAT ゲートウェイ](https://cloud.google.com/nat/docs/overview)がデプロイされていることを確認してください。ClickHouse BYOC の各コンポーネントが Tailscale コントロールプレーンと通信するには、アウトバウンドのインターネットアクセスが必要です。Tailscale は、プライベートな管理操作のための安全なゼロトラストネットワークを提供するために使用されます。Cloud NAT ゲートウェイは、外部 IP アドレスを持たないインスタンスにこのアウトバウンド接続を提供します。
+
+    **DNS 名前解決**
+    VPC で DNS 名前解決が正しく機能しており、標準的な DNS 名をブロックしたり、妨害したり、上書きしたりしていないことを確認してください。ClickHouse BYOC は、Tailscale のコントロールサーバーおよび ClickHouse サービスのエンドポイントを解決するために DNS に依存しています。DNS が利用できない、または設定に不備がある場合、BYOC サービスが接続できなかったり、正常に動作しなかったりする可能性があります。
+  </Step>
+
+  <Step>
+    ### BYOC インフラストラクチャを設定する
+
+    ClickHouse Cloud コンソールで、新しいインフラストラクチャを設定する際に以下を構成します。
+
+    1. **VPC configuration** で、**Use existing VPC** を選択します。
+    2. **VPC network name** を入力します。
+    3. ClickHouse 用に割り当てた **Subnet name** を入力します。
+    4. **Set up Infrastructure** をクリックして、プロビジョニングを開始します。
+
+    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="GCP 用に Use existing VPC が選択された ClickHouse Cloud BYOC セットアップ UI" />
+  </Step>
+</Steps>

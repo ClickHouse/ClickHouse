@@ -204,7 +204,7 @@ CREATE TABLE store
     `s_zip` Nullable(String),
     `s_country` Nullable(String),
     `s_gmt_offset` Nullable(Float32),
-    `s_tax_precentage` Nullable(Float32)
+    `s_tax_percentage` Nullable(Float32)
 )
 ENGINE = MergeTree ORDER BY s_store_sk;
 
@@ -332,6 +332,11 @@ CREATE TABLE item
 )
 ENGINE = MergeTree ORDER BY i_item_sk;
 
+set ignore_format_null_for_explain = 0;
+
+-- `parallel_hash` uses two-level hash tables (that have 256 tables internally).
+-- it preallocates too much data as the result and memory exception occurs.
+SET join_algorithm = 'hash';
 EXPLAIN SYNTAX
 WITH
     cs_ui AS

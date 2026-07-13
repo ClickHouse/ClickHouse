@@ -1,8 +1,11 @@
-#include "StorageSystemContributors.h"
+#include <Storages/System/StorageSystemContributors.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+
+#include <Columns/IColumn.h>
+#include <Common/thread_local_rng.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <algorithm>
-#include <DataTypes/DataTypeString.h>
-#include <Common/thread_local_rng.h>
 
 
 extern const char * auto_contributors[];
@@ -29,3 +32,6 @@ void StorageSystemContributors::fillData(MutableColumns & res_columns, ContextPt
         res_columns[0]->insert(String(it));
 }
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemContributors) }

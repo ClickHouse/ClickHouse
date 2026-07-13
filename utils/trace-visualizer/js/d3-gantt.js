@@ -6,6 +6,26 @@
     function gantt(input_data) {
         data = input_data;
 
+        // compute aggregates
+        total_count = data.length;
+        total_runtime = data.reduce((a, d)  => a + d.t2 - d.t1, 0);
+        filtered_count = total_count;
+        filtered_runtime = total_runtime;
+
+        // Compute left margin based on widest band name, capped at 1/4 page width
+        var measureSvg = d3.select("body").append("svg").attr("class", "chart").style("position", "absolute").style("visibility", "hidden");
+        var maxTextWidth = 0;
+        data.bands.forEach(function(name) {
+            var textEl = measureSvg.append("text").attr("class", "axis y").text(name);
+            var w = textEl.node().getBBox().width;
+            if (w > maxTextWidth) maxTextWidth = w;
+            textEl.remove();
+        });
+        measureSvg.remove();
+        var maxMarginLeft = Math.floor(document.body.clientWidth / 4);
+        margin.left = Math.min(maxMarginLeft, Math.max(30, Math.ceil(maxTextWidth + 15)));
+        width = document.body.clientWidth - margin.right - margin.left - 5;
+
         initAxis();
 
         // create svg element
@@ -38,6 +58,13 @@
                 if (tipShown != null) {
                     tip.hide(tipShown);
                     tipShown = null;
+                    tipPinned = false;
+                    if (tipPinnedRect) {
+                        tipPinnedRect.removeAttribute("data-pinned");
+                        tipPinnedRect = null;
+                    }
+                    var cls = tip.attr("class") || "";
+                    tip.attr("class", cls.replace(/\s*pinned/g, ""));
                 }
                 var tr = d3.event.transform;
                 xZoomed = tr.rescaleX(x);
@@ -76,8 +103,8 @@
             .attr("class", "zoom-panel")
             .attr("width", width)
             .attr("height", height)
-            .call(zoom)
         ;
+        svgChart.call(zoom);
 
         zoomContainer2 = svgChart.append("g");
         bandsSvg = zoomContainer2.append("g");
@@ -85,6 +112,24 @@
         // tooltips for bands
         var maxTipHeight = 130;
         const tipDirection = d => y(d.band) - maxTipHeight < documentBodyScrollTop()? 's': 'n';
+        function tipText(d) {
+            const runtime = d.t2 - d.t1;
+            const attributeRows = d.attributes
+                ? Object.entries(d.attributes)
+                    .map(([key, value]) => `<tr><td><span class="attribute">${key}</span></td><td>${value}</td></tr>`)
+                    .join('')
+                : '';
+            return `
+                <table>
+                    <tr><td colspan="2">${d.text}</td></tr>
+                    ${attributeRows}
+                    <tr><td><strong>begin</strong></td><td>${d.t1.toFixed(3)}</td></tr>
+                    <tr><td><strong>end</strong></td><td>${d.t2.toFixed(3)}</td></tr>
+                    <tr><td><strong>runtime</strong></td><td>${runtime.toFixed(3)}</td></tr>
+                    <tr><td><strong>share</strong></td><td>${(runtime * 100 / filtered_runtime).toFixed(3)}%</td></tr>
+                </table>
+            `;
+        }
         tip = d3.tip()
             .attr("class", "d3-tip")
             .offset(function(d) {
@@ -95,12 +140,12 @@
                 return [dir === 'n'? -10 : 10, xZoomed(t1) - xZoomed(t0)];
             })
             .direction(tipDirection)
-            .html(d => "<pre>" + d.text + "</pre>")
+            .html(d => tipText(d))
         ;
 
         bandsSvg.call(tip);
 
-        render();
+        createRects();
 
         // container for non-zoomable elements
         fixedContainer = svg.append("g")
@@ -149,8 +194,8 @@
                     // rearange y scale and axis
                     svg.select("g.y.axis").transition().call(yAxis);
 
-                    // rearange other stuff
-                    render(-1, true);
+                    // rearrange other stuff
+                    repositionBands(true);
                 }
             })
             .on("start", function(d) {
@@ -246,6 +291,9 @@
         svg.select("g.x.axis").call(xAxis);
         svg.select("g.y.axis").call(yAxis);
 
+        // Add native tooltip to y-axis labels for full text on hover
+        svg.selectAll("g.y.axis .tick").append("title").text(function(d) { return d; });
+
         // update to initiale state
         window.onscroll(0);
 
@@ -254,53 +302,148 @@
 
 // private:
 
-    var keyFunction = function(d) {
-        return d.t1.toString() + d.t2.toString() + d.band.toString();
+    var SVG_NS = "http://www.w3.org/2000/svg";
+
+    // Array of rect DOM elements, parallel to data[]
+    var rects = null;
+
+    // Whether tooltip is pinned (click to keep visible)
+    var tipPinned = false;
+    var tipPinnedRect = null;
+    var docClickHandler = null;
+
+    var filterMatch = function(d) {
+        return filter == '' || d.text.toLowerCase().includes(filter);
     }
 
-    var bandTransform = function(d) {
-        return "translate(" + x(d.t1) + "," + y(d.band) + ")";
-    }
+    var createRects = function() {
+        var container = bandsSvg.node();
+        // Clear previous content
+        while (container.firstChild) container.removeChild(container.firstChild);
 
-    var render = function(t0, smooth) {
-        // Save/restore last t0 value
-        if (!arguments.length || t0 == -1) {
-            t0 = render.t0;
+        if (data.length == 0) {
+            var text = document.createElementNS(SVG_NS, "text");
+            text.textContent = "no data to show";
+            container.appendChild(text);
+            rects = [];
+            return;
         }
-        render.t0 = t0;
-        smooth = smooth || false;
 
-        // Create rectangles for bands
-        bands = bandsSvg.selectAll("rect.bar")
-          .data(data, keyFunction);
-        bands.exit().remove();
-        bands.enter().append("rect")
-            .attr("class", "bar")
-            .attr("vector-effect", "non-scaling-stroke")
-            .style("fill", d => d.color)
-            .on('mouseover', function(d) {
-                if (tipShown != d) {
-                    tipShown = d;
-                    tip.show(d);
-                } else {
-                    tipShown = null;
-                    tip.hide(d);
+        var bw = y.bandwidth();
+        var frag = document.createDocumentFragment();
+        rects = new Array(data.length);
+        for (var i = 0; i < data.length; i++) {
+            var d = data[i];
+            var r = document.createElementNS(SVG_NS, "rect");
+            r.setAttribute("class", "bar bar-f");
+            r.setAttribute("vector-effect", "non-scaling-stroke");
+            r.setAttribute("fill", d.color);
+            r.setAttribute("y", 0);
+            r.setAttribute("transform", "translate(" + x(d.t1) + "," + y(d.band) + ")");
+            r.setAttribute("width", x(d.t2) - x(d.t1));
+            r.setAttribute("height", bw);
+            r.__data__ = d;
+            rects[i] = r;
+            frag.appendChild(r);
+        }
+        container.appendChild(frag);
+
+        // Delegated mouse handlers for tooltips
+        tipPinned = false;
+        tipPinnedRect = null;
+        var setTipPinned = function(pinned, rectEl) {
+            tipPinned = pinned;
+            // Remove highlight from previous pinned rect
+            if (tipPinnedRect) {
+                tipPinnedRect.removeAttribute("data-pinned");
+                tipPinnedRect = null;
+            }
+            // Toggle 'pinned' class on tooltip node for pointer-events control
+            var cls = tip.attr("class") || "";
+            if (pinned) {
+                if (cls.indexOf("pinned") === -1)
+                    tip.attr("class", cls + " pinned");
+                if (rectEl) {
+                    rectEl.setAttribute("data-pinned", "true");
+                    tipPinnedRect = rectEl;
                 }
-            })
-          .merge(bands)
-          .transition().duration(smooth? 250: 0)
-            .attr("y", 0)
-            .attr("transform", bandTransform)
-            .attr("height", y.bandwidth())
-            .attr("width", d => x(d.t2) - x(d.t1))
-        ;
+            } else {
+                tip.attr("class", cls.replace(/\s*pinned/g, ""));
+            }
+        };
+        container.addEventListener("mouseover", function(evt) {
+            var target = evt.target;
+            if (target.tagName === "rect" && target.__data__ && !tipPinned) {
+                var d = target.__data__;
+                tipShown = d;
+                tip.show(d, target);
+            }
+        });
+        container.addEventListener("mouseout", function(evt) {
+            var target = evt.target;
+            if (target.tagName === "rect" && tipShown != null && !tipPinned) {
+                tip.hide(tipShown);
+                tipShown = null;
+            }
+        });
+        container.addEventListener("click", function(evt) {
+            evt.stopPropagation(); // prevent document click handler from immediately dismissing
+            var target = evt.target;
+            if (target.tagName === "rect" && target.__data__) {
+                if (tipPinned && tipShown === target.__data__) {
+                    // Unpin on click of same rect
+                    setTipPinned(false, null);
+                    tip.hide(tipShown);
+                    tipShown = null;
+                } else {
+                    // Pin tooltip
+                    tipShown = target.__data__;
+                    tip.show(target.__data__, target);
+                    setTipPinned(true, target);
+                }
+            }
+        });
+        // Click anywhere outside a rect or tooltip dismisses pinned tooltip
+        docClickHandler = function(evt) {
+            if (tipPinned) {
+                // Don't dismiss if click is inside the tooltip
+                var tipNode = document.querySelector(".d3-tip");
+                if (tipNode && tipNode.contains(evt.target)) return;
+                setTipPinned(false, null);
+                if (tipShown != null) {
+                    tip.hide(tipShown);
+                    tipShown = null;
+                }
+            }
+        };
+        document.addEventListener("click", docClickHandler);
+    }
 
-        var emptyMarker = bandsSvg.selectAll("text")
-          .data(data.length == 0? ["no data to show"]: []);
-        emptyMarker.exit().remove();
-        emptyMarker.enter().append("text")
-            .text(d => d)
-        ;
+    var updateFilter = function() {
+        if (!rects) return;
+        for (var i = 0; i < rects.length; i++) {
+            var cls = filterMatch(rects[i].__data__) ? "bar bar-f" : "bar bar-u";
+            if (rects[i].getAttribute("class") !== cls)
+                rects[i].setAttribute("class", cls);
+        }
+    }
+
+    var repositionBands = function(smooth) {
+        if (!rects) return;
+        var bw = y.bandwidth();
+        if (smooth) {
+            // Use D3 transition for smooth band reordering
+            bandsSvg.selectAll("rect.bar")
+              .transition().duration(250)
+                .attr("transform", function() { var d = this.__data__; return "translate(" + x(d.t1) + "," + y(d.band) + ")"; })
+                .attr("height", bw);
+        } else {
+            for (var i = 0; i < rects.length; i++) {
+                var d = rects[i].__data__;
+                rects[i].setAttribute("transform", "translate(" + x(d.t1) + "," + y(d.band) + ")");
+                rects[i].setAttribute("height", bw);
+            }
+        }
     }
 
     function initAxis() {
@@ -400,8 +543,6 @@
             .attr("width", textWidth + (xpadding*2))
             .attr("height", positionRuler.bbox.height + (ypadding*2))
         ;
-
-        render(tpos);
     }
 
 // public:
@@ -442,11 +583,49 @@
         return gantt;
     }
 
+    gantt.filter = function(pattern) {
+        if (!arguments.length)
+            return filter;
+        filter = pattern.toLowerCase();
+
+        filtered_count = 0;
+        filtered_runtime = 0;
+        for (const d of data) {
+            if (filterMatch(d)) {
+                filtered_count++;
+                filtered_runtime += d.t2 - d.t1;
+            }
+        }
+
+        updateFilter();
+        return gantt;
+    }
+
+    gantt.filteredCount = function() {
+        return filtered_count;
+    }
+
+    gantt.filteredRuntime = function() {
+        return filtered_runtime;
+    }
+
+    gantt.totalCount = function() {
+        return total_count;
+    }
+
+    gantt.totalRuntime = function() {
+        return total_runtime;
+    }
+
     gantt.data = function() {
         return data;
     }
 
     gantt.destroy = function() {
+        if (docClickHandler) {
+            document.removeEventListener("click", docClickHandler);
+            docClickHandler = null;
+        }
         tip.destroy();
         d3.select(selector).selectAll("svg").remove();
     }
@@ -461,7 +640,11 @@
         selector = 'body',
         timeDomainStart = 0,
         timeDomainEnd = 1000,
-        scales = {};
+        filter = '',
+        filtered_count = 0,
+        filtered_runtime = 0,
+        total_count = 0,
+        total_runtime = 0
     ;
 
     // View
@@ -480,7 +663,6 @@
         fixedContainer = null,
         zoom = null,
         bandsSvg = null,
-        bands = null,
         tip = null,
         tipShown = null,
         ruler = null

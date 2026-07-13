@@ -24,7 +24,7 @@ exec bash -c "echo select 1 > $history_file.txt"
 exec bash -c "echo select 1 >> $history_file.txt"
 exec bash -c "echo select 1 >> $history_file.txt"
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --history_file=$history_file.txt"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file.txt"
 expect "The history file ($history_file.txt) is in old format. 3 lines, 1 unique lines."
 expect ":) "
 send -- "\4"

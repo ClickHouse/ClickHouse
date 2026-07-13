@@ -19,7 +19,7 @@ function perform()
 }
 
 perform "DROP TABLE IF EXISTS alter_00427"
-perform "CREATE TABLE alter_00427 (d Date, a Enum8('foo'=1), b DateTime, c DateTime) ENGINE=MergeTree(d, (a, b, toTime(c)), 8192)"
+perform "CREATE TABLE alter_00427 (d Date, a Enum8('foo'=1), b DateTime, c DateTime) ENGINE=MergeTree(d, (a, b, toTimeWithFixedDate(c)), 8192)"
 
 perform "INSERT INTO alter_00427 VALUES ('2017-02-09', 'foo', '2017-02-09 00:00:00', '2017-02-09 00:00:00')"
 

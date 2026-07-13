@@ -1,4 +1,5 @@
--- Tags: no-object-storage
+-- Tags: no-object-storage, no-fasttest
+-- no-fasttest: It can be slow
 
 drop table if exists data_01643;
 

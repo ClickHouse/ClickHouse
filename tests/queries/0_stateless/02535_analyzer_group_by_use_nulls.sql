@@ -82,7 +82,7 @@ GROUP BY
         (number % 2)
     )
 ORDER BY 1, tuple(val)
-SETTINGS group_by_use_nulls = 1, max_bytes_before_external_sort=10;
+SETTINGS group_by_use_nulls = 1, max_bytes_before_external_sort=10, max_bytes_ratio_before_external_sort=0;
 
 CREATE TABLE test
 ENGINE = ReplacingMergeTree
@@ -98,7 +98,7 @@ HAVING id IN (
     FROM test
 )
 FORMAT `NUll`
-SETTINGS allow_experimental_analyzer = 1, group_by_use_nulls = true;
+SETTINGS enable_analyzer = 1, group_by_use_nulls = true;
 
 SELECT id
 FROM test
@@ -111,7 +111,7 @@ HAVING id IN (
     FINAL
 )
 FORMAT `NUll`
-SETTINGS allow_experimental_analyzer = 1, group_by_use_nulls = true;
+SETTINGS enable_analyzer = 1, group_by_use_nulls = true;
 
 SELECT id
 FROM test
@@ -127,4 +127,4 @@ ORDER BY
     ) ASC
 LIMIT 256 BY id
 FORMAT `NUll`
-SETTINGS allow_experimental_analyzer = 1, group_by_use_nulls=true;
+SETTINGS enable_analyzer = 1, group_by_use_nulls=true;

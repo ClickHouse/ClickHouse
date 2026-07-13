@@ -1,9 +1,9 @@
--- Tags: long
+-- Tags: long, no-asan, no-msan, no-tsan
 
 DROP TABLE IF EXISTS tvs;
 
 -- to use different algorithms for in subquery
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 CREATE TABLE tvs(k UInt32, t UInt32, tv UInt64) ENGINE = Memory;
 INSERT INTO tvs(k,t,tv) SELECT k, t, t

@@ -1,4 +1,5 @@
 set input_format_json_try_infer_numbers_from_strings=1;
+set input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
 
 select JSONExtract(materialize('{"d" : true}'), 'd', 'Dynamic') as d, dynamicType(d);
 select JSONExtract(materialize('{"d" : 42}'), 'd', 'Dynamic') as d, dynamicType(d);

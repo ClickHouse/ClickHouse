@@ -6,6 +6,7 @@
 #include <pcg_random.hpp>
 #include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 #include <base/defines.h>
 
@@ -13,7 +14,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -25,7 +25,7 @@ namespace
  * ATTENTION: Method generate only assignable code points (excluded 4-13 planes).
  * See https://en.wikipedia.org/wiki/Plane_(Unicode) */
 
-class FunctionRandomStringUTF8 : public IFunction
+class FunctionRandomStringUTF8 final : public IFunction
 {
 public:
     static constexpr auto name = "randomStringUTF8";
@@ -38,11 +38,18 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isNumber(*arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"length", &isNumber, nullptr, "(U)Int*"}
+        };
 
+        validateFunctionArguments(*this, arguments, mandatory_args);
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -63,18 +70,20 @@ public:
 
         const IColumn & col_length = *arguments[0].column;
         size_t total_codepoints = 0;
+        const size_t max_total_codepoints = 1ULL << 29;
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t codepoints = col_length.getUInt(row_num);
+
+            if (codepoints > max_total_codepoints - total_codepoints)
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
+
             total_codepoints += codepoints;
         }
 
         /* As we generate only assigned planes, the mathematical expectation of the number of bytes
          * per generated code point ~= 3.85. So, reserving for coefficient 4 will not be an overhead
          */
-
-        if (total_codepoints > (1 << 29))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
         size_t max_byte_size = total_codepoints * 4 + input_rows_count;
         data_to.resize(max_byte_size);
@@ -112,27 +121,24 @@ public:
             size_t codepoints = col_length.getUInt(row_num);
             auto * pos = data_to.data() + offset;
 
-            for (size_t i = 0; i < codepoints; i +=2)
+            for (size_t i = 0; i < codepoints; i += 2)
             {
                 UInt64 rand = rng(); /// that's the bottleneck
 
                 UInt32 code_point1 = generate_code_point(static_cast<UInt32>(rand));
 
-                size_t bytes1 = UTF8::convertCodePointToUTF8(code_point1, pos, 4);
+                size_t bytes1 = UTF8::convertCodePointToUTF8(code_point1, reinterpret_cast<char *>(pos), 4);
                 chassert(bytes1 <= 4);
                 pos += bytes1;
 
                 if (i + 1 != codepoints)
                 {
                     UInt32 code_point2 = generate_code_point(static_cast<UInt32>(rand >> 32u));
-                    size_t bytes2 = UTF8::convertCodePointToUTF8(code_point2, pos, 4);
+                    size_t bytes2 = UTF8::convertCodePointToUTF8(code_point2, reinterpret_cast<char *>(pos), 4);
                     chassert(bytes2 <= 4);
                     pos += bytes2;
                 }
             }
-
-            *pos = 0;
-            ++pos;
 
             offset = pos - data_to.data();
             offsets_to[row_num] = offset;
@@ -148,6 +154,27 @@ public:
 
 REGISTER_FUNCTION(RandomStringUTF8)
 {
-    factory.registerFunction<FunctionRandomStringUTF8>();
+    FunctionDocumentation::Description description = R"(
+Generates a random [UTF-8](https://en.wikipedia.org/wiki/UTF-8) string with the specified number of codepoints.
+No codepoints from unassigned [planes](https://en.wikipedia.org/wiki/Plane_(Unicode)) (planes 4 to 13) are returned.
+It is still possible that the client interacting with ClickHouse server is not able to display the produced UTF-8 string correctly.
+    )";
+    FunctionDocumentation::Syntax syntax = "randomStringUTF8(length)";
+    FunctionDocumentation::Arguments arguments = {
+        {"length", "Length of the string in code points.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random UTF-8 codepoints.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT randomStringUTF8(13)", R"(
+┌─randomStringUTF8(13)─┐
+│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛       │
+└──────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRandomStringUTF8>(documentation);
 }
 }

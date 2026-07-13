@@ -1,14 +1,17 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
-#include <list>
 #include <optional>
+#include <vector>
 
 namespace DB
 {
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /*
  * Validate (API level validation, no business logic validation) and extracts input arguments from
@@ -18,8 +21,8 @@ class ArgumentExtractor
 {
 public:
     using CharArgument = std::optional<char>;
-    using VectorArgument = std::vector<char>;
-    using ColumnsWithTypeAndNameList = std::list<ColumnWithTypeAndName>;
+    using VectorArgument = VectorWithMemoryTracking<char>;
+    using ColumnsWithTypeAndNameList = ListWithMemoryTracking<ColumnWithTypeAndName>;
 
     struct ParsedArguments
     {
@@ -28,6 +31,7 @@ public:
         CharArgument key_value_delimiter = {};
         VectorArgument pair_delimiters = {};
         CharArgument quoting_character = {};
+        ColumnPtr unexpected_quoting_character_strategy = nullptr;
     };
 
 

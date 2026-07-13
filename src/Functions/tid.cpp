@@ -9,7 +9,7 @@ namespace DB
 {
 namespace
 {
-    class FunctionTid : public IFunction
+    class FunctionTid final : public IFunction
     {
     public:
         static constexpr auto name = "tid";
@@ -20,6 +20,11 @@ namespace
         size_t getNumberOfArguments() const override { return 0; }
 
         DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt64>(); }
+
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
+            return std::make_shared<DataTypeUInt64>();
+        }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -34,7 +39,30 @@ namespace
 
 REGISTER_FUNCTION(Tid)
 {
-    factory.registerFunction<FunctionTid>();
+    FunctionDocumentation::Description description = R"(
+Returns id of the thread, in which the current [Block](/development/architecture/#block) is processed.
+    )";
+    FunctionDocumentation::Syntax syntax = "tid()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current thread id.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT tid();
+        )",
+        R"(
+┌─tid()─┐
+│  3878 │
+└───────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionTid>(documentation);
 }
 
 }

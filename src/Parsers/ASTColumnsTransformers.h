@@ -18,13 +18,13 @@ public:
     String getID(char) const override { return "ColumnsTransformerList"; }
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTColumnsTransformerList>(*this);
+        auto clone = make_intrusive<ASTColumnsTransformerList>(*this);
         clone->cloneChildren();
         return clone;
     }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 class IASTColumnsTransformer : public IAST
@@ -40,7 +40,7 @@ public:
     String getID(char) const override { return "ColumnsApplyTransformer"; }
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTColumnsApplyTransformer>(*this);
+        auto res = make_intrusive<ASTColumnsApplyTransformer>(*this);
         if (parameters)
             res->parameters = parameters->clone();
         if (lambda)
@@ -62,7 +62,7 @@ public:
     String column_name_prefix;
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 class ASTColumnsExceptTransformer : public IASTColumnsTransformer
@@ -72,7 +72,7 @@ public:
     String getID(char) const override { return "ColumnsExceptTransformer"; }
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTColumnsExceptTransformer>(*this);
+        auto clone = make_intrusive<ASTColumnsExceptTransformer>(*this);
         clone->cloneChildren();
         return clone;
     }
@@ -83,7 +83,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     std::optional<String> pattern;
 };
 
@@ -96,7 +96,7 @@ public:
         String getID(char) const override { return "ColumnsReplaceTransformer::Replacement"; }
         ASTPtr clone() const override
         {
-            auto replacement = std::make_shared<Replacement>(*this);
+            auto replacement = make_intrusive<Replacement>(*this);
             replacement->cloneChildren();
             return replacement;
         }
@@ -107,14 +107,14 @@ public:
         String name;
 
     protected:
-        void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+        void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     };
 
     bool is_strict = false;
     String getID(char) const override { return "ColumnsReplaceTransformer"; }
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTColumnsReplaceTransformer>(*this);
+        auto clone = make_intrusive<ASTColumnsReplaceTransformer>(*this);
         clone->cloneChildren();
         return clone;
     }
@@ -123,7 +123,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
 private:
     static void replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name);

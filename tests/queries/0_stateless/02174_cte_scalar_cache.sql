@@ -30,7 +30,7 @@ SELECT '02177_CTE_NEW_ANALYZER', a1, a2, a3, a4, a5 FROM system.numbers LIMIT 10
         FORMAT Null
 SETTINGS enable_analyzer = 1;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
        '02177_CTE_GLOBAL_ON',
        ProfileEvents['SleepFunctionCalls'] as sleep_calls,

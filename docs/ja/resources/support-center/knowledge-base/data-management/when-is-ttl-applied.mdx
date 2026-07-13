@@ -1,0 +1,88 @@
+---
+date: 2023-05-02
+title: 有効期限 (TTL) ルールはいつ適用され、どこまで制御できますか？
+description: ClickHouse の有効期限 (TTL) ルールはいずれ適用されます。`merge_with_ttl_timeout` 設定を使うことで、その実行タイミングを制御できます。TTL の適用を強制する方法と、TTL 実行用のバックグラウンドスレッドを管理する方法を学びましょう。
+tags: ['データの基本概念']
+keywords: ['有効期限 (TTL)']
+---
+
+<div id="ttl-rules-and-control">
+  ## 有効期限 (TTL) ルールと制御
+</div>
+
+有効期限 (TTL) &#x306F;***最終的には***&#x9069;用されます。これはどういう意味でしょうか。`MergeTree` テーブル設定の [`merge_with_ttl_timeout`](/ja/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout) は、delete 有効期限 (TTL) を伴うマージを再実行するまでの最短待機時間を秒単位で設定します。デフォルト値は 14400 秒 (4 時間) です。ただし、これはあくまで最短の待機時間であり、delete 有効期限 (TTL) のマージがトリガーされるまでには、さらに時間がかかることがあります。
+
+次のクエリを使うと、現在の 有効期限 (TTL) 設定 (`merge_with_ttl_timeout` など) をすべて確認できます。
+
+```sql
+SELECT *
+FROM system.merge_tree_settings
+WHERE name like '%ttl%'
+```
+
+応答は次のようになります。
+
+```response
+┌─name───────────────────────────────────────────────────────────┬─value───┬─changed─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┬─type───┐
+│ max_replicated_merges_with_ttl_in_queue                        │ 1       │       0 │ How many tasks of merging parts with TTL are allowed simultaneously in ReplicatedMergeTree queue.                                                                                          │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ max_number_of_merges_with_ttl_in_pool                          │ 2       │       0 │ When there is more than specified number of merges with TTL entries in pool, do not assign new merge with TTL. This is to leave free threads for regular merges and avoid "Too many parts" │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds │ 2592000 │       1 │ Remove old broken detached parts in the background if they remained intouched for a specified by this setting period of time.                                                              │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_with_ttl_timeout                                         │ 14400   │       0 │ Minimal time in seconds, when merge with delete TTL can be repeated.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ merge_with_recompression_ttl_timeout                           │ 14400   │       0 │ Minimal time in seconds, when merge with recompression TTL can be repeated.                                                                                                                │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ ttl_only_drop_parts                                            │ 0       │       0 │ Only drop altogether the expired parts and not partially prune them.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+│ materialize_ttl_recalculate_only                               │ 0       │       0 │ Only recalculate ttl info when MATERIALIZE TTL                                                                                                                                             │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+└────────────────────────────────────────────────────────────────┴─────────┴─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┴────────┘
+```
+
+`SHOW CREATE TABLE` を使うと、テーブルに有効期限 (TTL) ルールが含まれているかどうかや、テーブルの `SETTINGS` によって上記の設定値が変更されているかどうかを確認できます。
+
+```sql
+SHOW CREATE TABLE <TableName>
+```
+
+<div id="force-a-ttl-rule-to-be-applied">
+  ## 有効期限 (TTL)ルールを強制的に適用する
+</div>
+
+これはあまりスマートな方法ではありませんが、`MATERIALIZE TTL` を明示的に実行することで、テーブルのすべての有効期限 (TTL)ルールを強制的にマテリアライズできます。
+
+```sql
+ALTER TABLE my_table
+    MATERIALIZE TTL
+```
+
+<div id="background-threads-affecting-ttl">
+  ## 有効期限 (TTL) に影響するバックグラウンドスレッド
+</div>
+
+バックグラウンドプールの稼働スレッド数が不足しているために、有効期限 (TTL) のルールが適用されていない可能性があります。たとえば、データを高頻度で insert している場合、バックグラウンドプール全体が通常のマージ処理で使われてしまうことがあります。ただし、バックグラウンドプールのサイズは増やせます。
+
+現在のバックグラウンドプールのサイズは、次のクエリで確認できます。
+
+```sql
+SELECT *
+FROM system.settings
+WHERE name = 'background_pool_size';
+```
+
+応答は次のようになります:
+
+```response
+┌─name─────────────────┬─value─┬─changed─┬─description─────────────────────┬─min──┬─max──┬─readonly─┬─type───┬─default─┬─alias_for─┐
+│ background_pool_size │ 16    │       0 │ 廃止された設定。何も行いません。 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
+└──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
+```
+
+以下のように設定されている[`background_pool_size` 設定](/ja/reference/settings/server-settings/settings#background_pool_size)の変更方法については、ドキュメントを参照してください:
+
+```xml
+<background_pool_size>16</background_pool_size>
+```
+
+次のクエリで、現在のバックグラウンドプールのアクティビティを確認できます。
+
+```sql
+SELECT *
+FROM system.metrics
+WHERE metric like 'Background%'
+```

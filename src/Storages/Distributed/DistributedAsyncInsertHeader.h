@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Core/Settings.h>
 #include <Core/Block.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <base/types.h>
 #include <string>
 
@@ -10,6 +10,7 @@ namespace DB
 {
 
 class ReadBufferFromFile;
+struct Settings;
 
 namespace OpenTelemetry
 {
@@ -20,8 +21,10 @@ using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 /// Header for the binary files that are stored on disk for async INSERT into Distributed.
 struct DistributedAsyncInsertHeader
 {
+    DistributedAsyncInsertHeader();
+
     UInt64 revision = 0;
-    Settings insert_settings;
+    std::unique_ptr<Settings> insert_settings;
     std::string insert_query;
     ClientInfo client_info;
 

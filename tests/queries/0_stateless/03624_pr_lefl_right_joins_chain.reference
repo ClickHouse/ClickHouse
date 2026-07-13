@@ -1,0 +1,10 @@
+-- no parallel replicas --
+\N	\N	\N		0		3	B
+1	1	1	a	1	A	1	A
+2	2	2	b	2	B	2	B
+-- parallel replicas --
+\N	\N	\N		0		3	B
+1	1	1	a	1	A	1	A
+2	2	2	b	2	B	2	B
+-- explain: check parallel replicas is disabled, looking at ReadFromRemoteParallelReplicas steps count --
+0

@@ -1,0 +1,186 @@
+-- { echoOn }
+
+SELECT 'First JOIN FULL second JOIN INNER';
+First JOIN FULL second JOIN INNER
+SELECT count()
+FROM
+(
+    SELECT *
+    FROM viewExplain('EXPLAIN PIPELINE', '', (
+        SELECT
+            t1.id,
+            t1.value,
+            t2.id,
+            t2.value,
+            t3.id,
+            t3.value
+        FROM test_table_join_1 AS t1
+        FULL OUTER JOIN test_table_join_2 AS t2 USING(id)
+        INNER JOIN test_table_join_3 AS t3 USING(id)
+        ORDER BY ALL ASC
+	SETTINGS parallel_replicas_local_plan=0, max_threads=1
+    ))
+)
+WHERE explain ILIKE '%ReadPoolParallelReplicas%';
+0
+SELECT 'First JOIN FULL second JOIN LEFT';
+First JOIN FULL second JOIN LEFT
+SELECT count()
+FROM
+(
+    SELECT *
+    FROM viewExplain('EXPLAIN PIPELINE', '', (
+        SELECT
+            t1.id,
+            t1.value,
+            t2.id,
+            t2.value,
+            t3.id,
+            t3.value
+        FROM test_table_join_1 AS t1
+        FULL OUTER JOIN test_table_join_2 AS t2 USING(id)
+        INNER JOIN test_table_join_3 AS t3 USING(id)
+        ORDER BY ALL ASC
+	SETTINGS parallel_replicas_local_plan=0, max_threads=1
+    ))
+)
+WHERE explain ILIKE '%ReadPoolParallelReplicas%';
+0
+SELECT 'First JOIN FULL second JOIN RIGHT';
+First JOIN FULL second JOIN RIGHT
+SELECT count()
+FROM
+(
+    SELECT *
+    FROM viewExplain('EXPLAIN PIPELINE', '', (
+        SELECT
+            t1.id,
+            t1.value,
+            t2.id,
+            t2.value,
+            t3.id,
+            t3.value
+        FROM test_table_join_1 AS t1
+        FULL OUTER JOIN test_table_join_2 AS t2 USING(id)
+        INNER JOIN test_table_join_3 AS t3 USING(id)
+        ORDER BY ALL ASC
+	SETTINGS parallel_replicas_local_plan=0, max_threads=1
+    ))
+)
+WHERE explain ILIKE '%ReadPoolParallelReplicas%';
+0
+SELECT 'First JOIN FULL second JOIN FULL';
+First JOIN FULL second JOIN FULL
+SELECT count()
+FROM
+(
+    SELECT *
+    FROM viewExplain('EXPLAIN PIPELINE', '', (
+        SELECT
+            t1.id,
+            t1.value,
+            t2.id,
+            t2.value,
+            t3.id,
+            t3.value
+        FROM test_table_join_1 AS t1
+        FULL OUTER JOIN test_table_join_2 AS t2 USING(id)
+        INNER JOIN test_table_join_3 AS t3 USING(id)
+        ORDER BY ALL ASC
+	SETTINGS parallel_replicas_local_plan=0, max_threads=1
+    ))
+)
+WHERE explain ILIKE '%ReadPoolParallelReplicas%';
+0
+SELECT 'First JOIN FULL second JOIN INNER';
+First JOIN FULL second JOIN INNER
+SELECT count()
+FROM
+(
+    SELECT *
+    FROM viewExplain('EXPLAIN PIPELINE', '', (
+        SELECT
+            t1.id,
+            t1.value,
+            t2.id,
+            t2.value,
+            t3.id,
+            t3.value
+        FROM test_table_join_1 AS t1
+        FULL OUTER JOIN test_table_join_2 AS t2 USING(id)
+        INNER JOIN test_table_join_3 AS t3 USING(id)
+        ORDER BY ALL ASC
+	SETTINGS parallel_replicas_local_plan=1, max_threads=1
+    ))
+)
+WHERE explain ILIKE '%ReadPoolParallelReplicas%';
+0
+SELECT 'First JOIN FULL second JOIN LEFT';
+First JOIN FULL second JOIN LEFT
+SELECT count()
+FROM
+(
+    SELECT *
+    FROM viewExplain('EXPLAIN PIPELINE', '', (
+        SELECT
+            t1.id,
+            t1.value,
+            t2.id,
+            t2.value,
+            t3.id,
+            t3.value
+        FROM test_table_join_1 AS t1
+        FULL OUTER JOIN test_table_join_2 AS t2 USING(id)
+        INNER JOIN test_table_join_3 AS t3 USING(id)
+        ORDER BY ALL ASC
+	SETTINGS parallel_replicas_local_plan=1, max_threads=1
+    ))
+)
+WHERE explain ILIKE '%ReadPoolParallelReplicas%';
+0
+SELECT 'First JOIN FULL second JOIN RIGHT';
+First JOIN FULL second JOIN RIGHT
+SELECT count()
+FROM
+(
+    SELECT *
+    FROM viewExplain('EXPLAIN PIPELINE', '', (
+        SELECT
+            t1.id,
+            t1.value,
+            t2.id,
+            t2.value,
+            t3.id,
+            t3.value
+        FROM test_table_join_1 AS t1
+        FULL OUTER JOIN test_table_join_2 AS t2 USING(id)
+        INNER JOIN test_table_join_3 AS t3 USING(id)
+        ORDER BY ALL ASC
+	SETTINGS parallel_replicas_local_plan=1, max_threads=1
+    ))
+)
+WHERE explain ILIKE '%ReadPoolParallelReplicas%';
+0
+SELECT 'First JOIN FULL second JOIN FULL';
+First JOIN FULL second JOIN FULL
+SELECT count()
+FROM
+(
+    SELECT *
+    FROM viewExplain('EXPLAIN PIPELINE', '', (
+        SELECT
+            t1.id,
+            t1.value,
+            t2.id,
+            t2.value,
+            t3.id,
+            t3.value
+        FROM test_table_join_1 AS t1
+        FULL OUTER JOIN test_table_join_2 AS t2 USING(id)
+        INNER JOIN test_table_join_3 AS t3 USING(id)
+        ORDER BY ALL ASC
+	SETTINGS parallel_replicas_local_plan=1, max_threads=1
+    ))
+)
+WHERE explain ILIKE '%ReadPoolParallelReplicas%';
+0

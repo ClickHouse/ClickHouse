@@ -1,5 +1,5 @@
-#include "DisksApp.h"
-#include "ICommand.h"
+#include <DisksApp.h>
+#include <ICommand.h>
 
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
@@ -10,7 +10,7 @@ namespace DB
 class CommandHelp final : public ICommand
 {
 public:
-    explicit CommandHelp(const DisksApp & disks_app_) : disks_app(disks_app_)
+    explicit CommandHelp(const DisksApp & disks_app_) : ICommand("CommandHelp"), disks_app(disks_app_)
     {
         command_name = "help";
         description = "Print help message about available commands";

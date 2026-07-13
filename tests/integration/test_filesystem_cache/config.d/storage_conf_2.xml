@@ -3,21 +3,27 @@
         <disks>
             <hdd_blob>
                 <type>local_blob_storage</type>
-                <path>/</path>
+                <path>/var/lib/clickhouse/local_disk_2/</path>
             </hdd_blob>
             <cache1>
                 <type>cache</type>
                 <disk>hdd_blob</disk>
-                <path>/cache1/</path>
+                <path>/var/lib/clickhouse/tmp_dsk/cache1/</path>
                 <max_size>1Mi</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
+                <!-- These caches are tiny (1Mi). Disable reserve-ahead so the default
+                     reserve_granularity does not try to reserve a whole granule (4Mi),
+                     which exceeds max_size and would fail every reservation, leaving the
+                     cache empty. -->
+                <reserve_granularity>0</reserve_granularity>
             </cache1>
             <cache2>
                 <type>cache</type>
                 <disk>hdd_blob</disk>
-                <path>/cache1/</path>
+                <path>/var/lib/clickhouse/tmp_dsk/cache1/</path>
                 <max_size>1Mi</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
+                <reserve_granularity>0</reserve_granularity>
             </cache2>
         </disks>
     </storage_configuration>

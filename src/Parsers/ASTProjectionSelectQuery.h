@@ -15,6 +15,7 @@ public:
     {
         WITH,
         SELECT,
+        WHERE,
         GROUP_BY,
         ORDER_BY,
     };
@@ -28,6 +29,7 @@ public:
 
     ASTPtr with() const { return getExpression(Expression::WITH); }
     ASTPtr select() const { return getExpression(Expression::SELECT); }
+    ASTPtr where() const { return getExpression(Expression::WHERE); }
     ASTPtr groupBy() const { return getExpression(Expression::GROUP_BY); }
     ASTPtr orderBy() const { return getExpression(Expression::ORDER_BY); }
 
@@ -45,7 +47,7 @@ public:
     ASTPtr cloneToASTSelect() const;
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
 private:
     std::unordered_map<Expression, size_t> positions;

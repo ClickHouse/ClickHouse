@@ -20,7 +20,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL  --disable_suggestion"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL  --disable_suggestion --enable-progress-table-toggle=0"
 expect ":) "
 
 send -- "drop table if exists t\r"

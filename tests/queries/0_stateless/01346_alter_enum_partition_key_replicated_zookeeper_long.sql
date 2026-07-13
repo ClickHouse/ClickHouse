@@ -19,6 +19,8 @@ SELECT min_block_number, max_block_number, partition, partition_id FROM system.p
 ALTER TABLE test MODIFY COLUMN x Enum('hello' = 1, 'world' = 2, 'goodbye' = 3);
 INSERT INTO test VALUES ('goodbye', 'test');
 OPTIMIZE TABLE test FINAL;
+SYSTEM SYNC REPLICA test2;
+
 SELECT * FROM test ORDER BY x;
 SYSTEM SYNC REPLICA test2;
 SELECT * FROM test2 ORDER BY x;
@@ -33,6 +35,8 @@ ALTER TABLE test MODIFY COLUMN x Enum('hello' = 1, 'world' = 2, 'goodbye' = 4); 
 ALTER TABLE test MODIFY COLUMN x Int8;
 INSERT INTO test VALUES (111, 'abc');
 OPTIMIZE TABLE test FINAL;
+SYSTEM SYNC REPLICA test2;
+
 SELECT * FROM test ORDER BY x;
 SYSTEM SYNC REPLICA test2;
 SELECT * FROM test2 ORDER BY x;

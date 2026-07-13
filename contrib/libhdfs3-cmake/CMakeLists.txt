@@ -1,4 +1,4 @@
-if(NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_PPC64LE)
+if(NOT OS_FREEBSD AND NOT ARCH_PPC64LE)
     option(ENABLE_HDFS "Enable HDFS" ${ENABLE_LIBRARIES})
 elseif(ENABLE_HDFS)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use HDFS3 with current configuration")
@@ -10,7 +10,6 @@ if(NOT ENABLE_HDFS)
 endif()
 
 if (TARGET ch_contrib::krb5)
-    message(STATUS "Enable kerberos for HDFS")
     SET(WITH_KERBEROS 1)
 else()
     SET(WITH_KERBEROS 0)
@@ -27,7 +26,7 @@ ADD_DEFINITIONS(-D_GNU_SOURCE)
 ADD_DEFINITIONS(-D_GLIBCXX_USE_NANOSLEEP)
 ADD_DEFINITIONS(-DHAVE_NANOSLEEP)
 
-if (USE_MUSL)
+if (USE_MUSL OR APPLE)
     ADD_DEFINITIONS(-DSTRERROR_R_RETURN_INT)
 endif ()
 
@@ -99,6 +98,7 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/client/RawErasureDecoder.cpp"
     "${HDFS3_SOURCE_DIR}/client/RawErasureEncoder.cpp"
     "${HDFS3_SOURCE_DIR}/client/StatefulStripeReader.cpp"
+    "${HDFS3_SOURCE_DIR}/client/PositionStripeReader.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripeReader.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedBlockUtil.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedInputStreamImpl.cpp"
@@ -139,7 +139,7 @@ set(SRCS
     ${PROTO_SOURCES}
 )
 
-if (ARCH_AMD64)
+if (ARCH_AMD64 AND NOT APPLE)
     find_program(YASM_PATH NAMES yasm)
     if (NOT YASM_PATH)
         message(FATAL_ERROR "Please install the Yasm assembler to build ClickHouse with Hadoop Distributed File System (HDFS) support")
@@ -158,6 +158,9 @@ set_source_files_properties("${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp" PROPERTIES C
 add_library(_hdfs3 ${SRCS})
 
 add_dependencies(_hdfs3 protoc)
+target_compile_options(_hdfs3 PRIVATE
+    -include "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/google/protobuf/stubs/port.h"
+)
 
 if (ENABLE_CLICKHOUSE_BENCHMARK)
     message(STATUS "enable perf checksum")

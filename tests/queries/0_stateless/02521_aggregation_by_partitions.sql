@@ -1,10 +1,17 @@
--- Tags: long, no-object-storage
+-- Tags: long, no-object-storage, no-msan
+SET explain_query_plan_default = 'legacy';
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
 set max_threads = 16;
 set allow_aggregate_partitions_independently = 1;
 set force_aggregate_partitions_independently = 1;
+-- Aggregating each partition independently skips the merge phase where the global
+-- `max_rows_to_group_by` limit is enforced, so the optimization falls back to normal aggregation
+-- whenever that limit is set. The stateless test profile (tests/config/users.d/limits.yaml) sets a
+-- high `max_rows_to_group_by` as a safety net, which would disable the optimization and break this
+-- test. Clear it so the test keeps exercising the partition-independent pipeline it verifies.
+set max_rows_to_group_by = 0;
 set optimize_use_projections = 0;
 set optimize_trivial_insert_select = 1;
 
@@ -57,7 +64,7 @@ select count() from (select throwIf(count() != 2) from t3 group by a);
 select throwIf(count() != 4) from remote('127.0.0.{1,2}', currentDatabase(), t3) group by a format Null;
 
 -- if we happened to switch to external aggregation at some point, merging will happen as usual
-select count() from (select throwIf(count() != 2) from t3 group by a) settings max_bytes_before_external_group_by = '1Ki';
+select count() from (select throwIf(count() != 2) from t3 group by a) settings max_bytes_before_external_group_by = '1Ki', max_bytes_ratio_before_external_group_by = 0;
 
 drop table t3;
 

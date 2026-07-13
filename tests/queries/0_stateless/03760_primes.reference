@@ -1,0 +1,519 @@
+-- { echoOn }
+
+SET max_block_size = 16;
+SELECT database, name
+FROM system.tables
+WHERE database = 'system' AND name = 'primes';
+system	primes
+SELECT prime FROM system.primes LIMIT 10;
+2
+3
+5
+7
+11
+13
+17
+19
+23
+29
+SELECT prime FROM system.primes LIMIT 20;
+2
+3
+5
+7
+11
+13
+17
+19
+23
+29
+31
+37
+41
+43
+47
+53
+59
+61
+67
+71
+SELECT count(), min(prime), max(prime)
+FROM system.primes
+WHERE prime < 20;
+8	2	19
+SELECT prime
+FROM system.primes
+WHERE prime < 20;
+2
+3
+5
+7
+11
+13
+17
+19
+SELECT prime
+FROM system.primes
+WHERE prime < 20
+LIMIT 3;
+2
+3
+5
+SELECT prime
+FROM system.primes
+WHERE prime < 20
+LIMIT -3;
+13
+17
+19
+SELECT count()
+FROM system.primes
+WHERE prime < 2;
+0
+SELECT count()
+FROM system.primes
+WHERE prime = 1;
+0
+SELECT prime
+FROM system.primes
+WHERE prime <= 2;
+2
+SELECT prime
+FROM system.primes
+WHERE prime = 17;
+17
+SELECT count(), min(prime), max(prime)
+FROM system.primes
+WHERE prime BETWEEN 100 AND 200;
+21	101	199
+SELECT prime
+FROM system.primes
+WHERE prime BETWEEN 100 AND 110;
+101
+103
+107
+109
+SELECT prime
+FROM system.primes
+WHERE (prime > 50) AND (prime < 30);
+SELECT prime
+FROM system.primes
+WHERE (prime BETWEEN 200 AND 220)
+   OR (prime BETWEEN 100 AND 120)
+   OR (prime BETWEEN 110 AND 130)
+   OR (prime IN (97, 101, 109));
+97
+101
+103
+107
+109
+113
+127
+211
+SELECT prime
+FROM system.primes
+WHERE (prime > 10 AND prime < 20)
+   OR (prime >= 17 AND prime <= 23)
+   OR (prime IN (19, 23, 29))
+   OR (prime BETWEEN 30 AND 40);
+11
+13
+17
+19
+23
+29
+31
+37
+SELECT prime
+FROM system.primes
+WHERE prime IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+2
+3
+5
+7
+SELECT prime
+FROM system.primes
+WHERE prime IN (17, 19, 21);
+17
+19
+SELECT prime
+FROM system.primes
+WHERE (prime < 10) OR (prime BETWEEN 100 AND 110);
+2
+3
+5
+7
+101
+103
+107
+109
+SELECT prime
+FROM system.primes
+LIMIT 10 OFFSET 5;
+13
+17
+19
+23
+29
+31
+37
+41
+43
+47
+SELECT prime
+FROM system.primes
+LIMIT 100;
+2
+3
+5
+7
+11
+13
+17
+19
+23
+29
+31
+37
+41
+43
+47
+53
+59
+61
+67
+71
+73
+79
+83
+89
+97
+101
+103
+107
+109
+113
+127
+131
+137
+139
+149
+151
+157
+163
+167
+173
+179
+181
+191
+193
+197
+199
+211
+223
+227
+229
+233
+239
+241
+251
+257
+263
+269
+271
+277
+281
+283
+293
+307
+311
+313
+317
+331
+337
+347
+349
+353
+359
+367
+373
+379
+383
+389
+397
+401
+409
+419
+421
+431
+433
+439
+443
+449
+457
+461
+463
+467
+479
+487
+491
+499
+503
+509
+521
+523
+541
+SELECT prime
+FROM system.primes
+WHERE prime > 1000
+LIMIT 10;
+1009
+1013
+1019
+1021
+1031
+1033
+1039
+1049
+1051
+1061
+SELECT count()
+FROM system.primes
+WHERE prime BETWEEN 14 AND 16;
+0
+SELECT prime
+FROM system.primes
+WHERE prime < 20
+ORDER BY prime DESC
+LIMIT 3;
+19
+17
+13
+SELECT prime FROM primes() LIMIT 10;
+2
+3
+5
+7
+11
+13
+17
+19
+23
+29
+SELECT count() FROM primes(0);
+0
+SELECT prime FROM primes(10);
+2
+3
+5
+7
+11
+13
+17
+19
+23
+29
+SELECT prime FROM primes(0, 5);
+2
+3
+5
+7
+11
+SELECT prime FROM primes(3, 5);
+7
+11
+13
+17
+19
+SELECT prime FROM primes(3, 5, 2);
+7
+13
+19
+29
+37
+SELECT prime FROM primes(3, 5, 3);
+7
+17
+29
+41
+53
+SELECT prime FROM primes(1, 1);
+3
+SELECT prime FROM primes(2, 2);
+5
+7
+SELECT prime FROM primes(1, 10, 2);
+3
+7
+13
+19
+29
+37
+43
+53
+61
+71
+SELECT prime FROM primes(1, 100) WHERE prime >= 50 and prime <= 70;
+53
+59
+61
+67
+SELECT prime FROM primes(1, 100, 2) WHERE prime >= 50 and prime <= 70;
+53
+61
+SELECT prime FROM primes(1, 100, 2) WHERE prime >= 50 and prime <= 90 LIMIT 2;
+53
+61
+SELECT prime FROM primes(1, 100, 2) WHERE prime >= 50 and prime <= 90 LIMIT -2;
+79
+89
+SELECT prime
+FROM system.primes
+WHERE prime > 100000 AND prime < 100100;
+100003
+100019
+100043
+100049
+100057
+100069
+SELECT prime
+FROM system.primes
+WHERE prime = 3000017;
+3000017
+SELECT prime
+FROM system.primes
+WHERE prime BETWEEN 3000000 AND 3000100;
+3000017
+3000029
+3000047
+3000061
+3000073
+3000077
+3000089
+SELECT prime
+FROM system.primes
+LIMIT 10 OFFSET 100000;
+1299721
+1299743
+1299763
+1299791
+1299811
+1299817
+1299821
+1299827
+1299833
+1299841
+SELECT * FROM primes(0, 0);
+SELECT * FROM primes(1, 2, 3, 4); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT * FROM primes(0, 10, 0); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM primes('10'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT * FROM primes(NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT * FROM primes(*, 10); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM primes(-1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT * FROM primes(18446744073709551616); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT * FROM primes(rand()); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM primes(10, -5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT *
+FROM system.primes
+WHERE ((prime + 10) % 5) = 1
+LIMIT 10;
+11
+31
+41
+61
+71
+101
+131
+151
+181
+191
+SELECT prime
+FROM system.primes
+WHERE prime BETWEEN toUInt64(1e14) AND toUInt64(1e14) + 100;
+100000000000031
+100000000000067
+100000000000097
+100000000000099
+SELECT prime FROM system.primes
+WHERE prime > toUInt64(1e15) LIMIT 1;
+1000000000000037
+SELECT prime FROM system.primes
+   WHERE (prime BETWEEN toUInt64(1e5) AND toUInt64(1e5) + 100)
+   OR (prime BETWEEN toUInt64(1e6) AND toUInt64(1e6) + 100)
+   OR (prime BETWEEN toUInt64(1e7) AND toUInt64(1e7) + 100)
+   OR (prime BETWEEN toUInt64(1e8) AND toUInt64(1e8) + 100)
+   OR (prime BETWEEN toUInt64(1e9) AND toUInt64(1e9) + 100)
+   OR (prime BETWEEN toUInt64(1e11) AND toUInt64(1e11) + 100)
+   OR (prime BETWEEN toUInt64(1e12) AND toUInt64(1e12) + 100)
+   OR (prime BETWEEN toUInt64(1e13) AND toUInt64(1e13) + 100)
+   OR (prime BETWEEN toUInt64(1e14) AND toUInt64(1e14) + 100)
+   OR (prime BETWEEN toUInt64(1e14) + 1000 AND toUInt64(1e14) + 1100)
+   OR (prime BETWEEN toUInt64(1e14) + 100000 AND toUInt64(1e14) + 100100)
+   OR (prime BETWEEN toUInt64(1e14) + 100000000 AND toUInt64(1e14) + 100000100)
+   OR (prime BETWEEN toUInt64(1e14) + 10000000000 AND toUInt64(1e14) + 10000000100)
+   OR (prime BETWEEN toUInt64(1e14) + 1000000000000 AND toUInt64(1e14) + 1000000000100)
+   OR (prime BETWEEN toUInt64(1e14) + 100000000000000 AND toUInt64(1e14) + 100000000000100)
+   OR (prime IN [2])
+   OR prime == 3;
+2
+3
+100003
+100019
+100043
+100049
+100057
+100069
+1000003
+1000033
+1000037
+1000039
+1000081
+1000099
+10000019
+10000079
+100000007
+100000037
+100000039
+100000049
+100000073
+100000081
+1000000007
+1000000009
+1000000021
+1000000033
+1000000087
+1000000093
+1000000097
+100000000003
+100000000019
+100000000057
+100000000063
+100000000069
+100000000073
+100000000091
+1000000000039
+1000000000061
+1000000000063
+1000000000091
+10000000000037
+10000000000051
+10000000000099
+100000000000031
+100000000000067
+100000000000097
+100000000000099
+100000000001087
+100000000001089
+100000000100023
+100000000100087
+100000000100089
+100000100000041
+100000100000089
+100010000000077
+200000000000027
+200000000000029
+200000000000041
+SELECT prime
+FROM system.primes
+WHERE prime = 65537;
+65537

@@ -12,6 +12,7 @@ ORDER BY key
 SETTINGS index_granularity=8192, min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
 
 SYSTEM STOP MERGES data;
+SET optimize_on_insert = 0;
 
 -- generate 50% of marks that cannot be skipped with v1_index
 -- this will create a gap in marks

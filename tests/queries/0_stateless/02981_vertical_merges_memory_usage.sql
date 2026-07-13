@@ -20,7 +20,7 @@ INSERT INTO t_vertical_merge_memory SELECT number, arrayMap(x -> repeat('a', 50)
 
 OPTIMIZE TABLE t_vertical_merge_memory FINAL;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT
     merge_algorithm,
@@ -28,7 +28,7 @@ SELECT
         ? 'OK'
         : format('FAIL: memory usage: {}', formatReadableSize(peak_memory_usage))
 FROM system.part_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     database = currentDatabase()
     AND table = 't_vertical_merge_memory'
     AND event_type = 'MergeParts'

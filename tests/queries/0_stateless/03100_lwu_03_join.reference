@@ -1,0 +1,20 @@
+all_0_0_0	2
+patch-3e1a7650697c132eb044cc6f1d82bc92-all_0_0_0_1	1
+1	100
+3	4
+all_0_0_0	2
+all_2_2_0	1
+patch-3e1a7650697c132eb044cc6f1d82bc92-all_0_0_0_1	1
+patch-3e1a7650697c132eb044cc6f1d82bc92-all_2_2_0_3	1
+1	100
+3	4
+5	200
+all_0_2_1	3
+patch-3e1a7650697c132eb044cc6f1d82bc92-all_0_0_0_1	1
+patch-3e1a7650697c132eb044cc6f1d82bc92-all_2_2_0_3	1
+1	100
+3	4
+5	200
+{'PatchesAppliedInAllReadTasks':1,'PatchesMergeAppliedInAllReadTasks':1,'ReadTasksWithAppliedPatches':1}
+{'PatchesAppliedInAllReadTasks':2,'PatchesMergeAppliedInAllReadTasks':2,'ReadTasksWithAppliedPatches':2}
+{'PatchesAppliedInAllReadTasks':2,'PatchesJoinAppliedInAllReadTasks':2,'ReadTasksWithAppliedPatches':1}

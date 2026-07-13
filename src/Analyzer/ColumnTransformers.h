@@ -1,9 +1,8 @@
 #pragma once
 
-#include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
-
+#include <Core/Names.h>
 
 namespace re2
 {

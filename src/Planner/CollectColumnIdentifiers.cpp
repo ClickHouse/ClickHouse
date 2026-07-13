@@ -1,9 +1,14 @@
 #include <Planner/CollectColumnIdentifiers.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Planner/PlannerContext.h>
+
 
 namespace DB
 {
@@ -28,11 +33,36 @@ public:
             && child_node_type != QueryTreeNodeType::QUERY
             && child_node_type != QueryTreeNodeType::UNION
             && child_node_type != QueryTreeNodeType::JOIN
+            && child_node_type != QueryTreeNodeType::CROSS_JOIN
             && child_node_type != QueryTreeNodeType::ARRAY_JOIN;
     }
 
     void visitImpl(const QueryTreeNodePtr & node)
     {
+        if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
+        {
+            auto * function_node = node->as<FunctionNode>();
+            for (const auto & argument : function_node->getArguments().getNodes())
+            {
+                if (!isCorrelatedQueryOrUnionNode(argument))
+                    continue;
+
+                auto * query_node = argument->as<QueryNode>();
+                auto * union_node = argument->as<UnionNode>();
+
+                const auto & correlated_columns = query_node != nullptr ? query_node->getCorrelatedColumns() : union_node->getCorrelatedColumns();
+                for (const auto & column : correlated_columns)
+                {
+                    const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(column);
+                    if (!column_identifier)
+                        return;
+
+                    used_identifiers.insert(*column_identifier);
+                }
+            }
+            return;
+        }
+
         if (node->getNodeType() != QueryTreeNodeType::COLUMN)
             return;
 
@@ -63,4 +93,3 @@ ColumnIdentifierSet collectTopLevelColumnIdentifiers(const QueryTreeNodePtr & no
 }
 
 }
-

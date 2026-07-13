@@ -1,4 +1,6 @@
 #include <memory>
+#include <base/defines.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IParserBase.h>
@@ -6,15 +8,12 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/ParserSampleRatio.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTInterpolateElement.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Poco/String.h>
+#include <Parsers/ASTWithElement.h>
 
 
 namespace DB
@@ -34,7 +33,7 @@ namespace ErrorCodes
 
 bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto select_query = std::make_shared<ASTSelectQuery>();
+    auto select_query = make_intrusive<ASTSelectQuery>();
     node = select_query;
 
     ParserKeyword s_select(Keyword::SELECT);
@@ -72,6 +71,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(/*allow_alias_without_as_keyword*/ true, /*allow_trailing_commas*/ true);
+    ParserAliasesExpressionList exp_list_for_aliases;
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserOrderByExpressionList order_list;
     ParserGroupingSetsExpressionList grouping_sets_list;
@@ -83,6 +83,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr with_expression_list;
     ASTPtr select_expression_list;
     ASTPtr tables;
+    ASTPtr expression_list_for_aliases;
+    ASTPtr expression_list_for_cte_aliases;
     ASTPtr prewhere_expression;
     ASTPtr where_expression;
     ASTPtr group_expression_list;
@@ -106,11 +108,18 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             select_query->recursive_with = s_recursive.ignore(pos, expected);
 
-            if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma))
+            if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma), true, ',', true)
                      .parse(pos, with_expression_list, expected))
                 return false;
             if (with_expression_list->children.empty())
                 return false;
+
+            for (const auto & child : with_expression_list->children) /// For cases: WITH _ (a, b) AS ...      <- (a, b) are aliases
+            {
+                if (auto * with_element = child->as<ASTWithElement>())
+                    if (with_element->aliases)
+                        expression_list_for_cte_aliases = with_element->aliases;
+            }
         }
     }
 
@@ -125,7 +134,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         bool has_all = false;
         if (!s_select.ignore(pos, expected))
-            return false;
+        {
+            /// This allows queries without SELECT, like `1 + 2`.
+            if (!implicit_select || with_expression_list || tables)
+                return false;
+        }
 
         if (s_all.ignore(pos, expected))
             has_all = true;
@@ -185,6 +198,15 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    if (tables && open_bracket.ignore(pos, expected))
+    {
+        if (!exp_list_for_aliases.parse(pos, expression_list_for_aliases, expected))
+            return false;
+
+        if (!close_bracket.ignore(pos, expected))
+            return false;
+    }
+
     /// PREWHERE expr
     if (s_prewhere.ignore(pos, expected))
     {
@@ -232,26 +254,29 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// WITH ROLLUP, CUBE, GROUPING SETS or TOTALS
-    if (s_with.ignore(pos, expected))
+    /// WITH ROLLUP, CUBE, or TOTALS (multiple modifiers allowed, e.g. WITH ROLLUP WITH CUBE WITH TOTALS)
+    while (s_with.ignore(pos, expected))
     {
         if (s_rollup.ignore(pos, expected))
+        {
+            if (select_query->group_by_with_rollup)
+                return false;
             select_query->group_by_with_rollup = true;
+        }
         else if (s_cube.ignore(pos, expected))
+        {
+            if (select_query->group_by_with_cube)
+                return false;
             select_query->group_by_with_cube = true;
+        }
         else if (s_totals.ignore(pos, expected))
+        {
+            if (select_query->group_by_with_totals)
+                return false;
             select_query->group_by_with_totals = true;
+        }
         else
             return false;
-    }
-
-    /// WITH TOTALS
-    if (s_with.ignore(pos, expected))
-    {
-        if (select_query->group_by_with_totals || !s_totals.ignore(pos, expected))
-            return false;
-
-        select_query->group_by_with_totals = true;
     }
 
     /// HAVING expr
@@ -281,36 +306,102 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
     if (s_order_by.ignore(pos, expected))
     {
-        if (!order_list.parse(pos, order_expression_list, expected))
-            return false;
+        /// ParserKeyword only matches BareWord tokens, so quoted identifiers like `all` won't match.
+        /// This allows ORDER BY `all` to refer to a column named "all" rather than ORDER BY ALL.
+        ///
+        /// After matching the ALL keyword with optional ASC/DESC/NULLS modifiers,
+        /// we check if a comma follows. If so, this is a multi-column ORDER BY (e.g. ORDER BY all, a)
+        /// and `all` should be treated as a regular column reference, not the ALL keyword.
+        auto saved_pos = pos;
+        bool is_order_by_all = false;
 
-        /// if any WITH FILL parse possible INTERPOLATE list
-        if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
-                [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
+        if (s_all.ignore(pos, expected))
         {
-            if (s_interpolate.ignore(pos, expected))
+            is_order_by_all = true;
+
+            /// Parse the optional ASC/DESC and NULLS direction after ORDER BY ALL.
+            ParserKeyword s_desc(Keyword::DESC);
+            ParserKeyword s_descending(Keyword::DESCENDING);
+            ParserKeyword s_asc(Keyword::ASC);
+            ParserKeyword s_ascending(Keyword::ASCENDING);
+            ParserKeyword s_nulls(Keyword::NULLS);
+            ParserKeyword s_last(Keyword::LAST);
+
+            int direction = 1;
+            int nulls_direction = 1;
+            bool nulls_direction_was_explicitly_specified = false;
+
+            if (s_desc.ignore(pos, expected) || s_descending.ignore(pos, expected))
             {
-                if (open_bracket.ignore(pos, expected))
-                {
-                    if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
-                        return false;
-                    if (!close_bracket.ignore(pos, expected))
-                        return false;
-                } else
-                    interpolate_expression_list = std::make_shared<ASTExpressionList>();
+                direction = -1;
+                nulls_direction = -1;
+            }
+            else
+            {
+                s_asc.ignore(pos, expected) || s_ascending.ignore(pos, expected);
+            }
+
+            if (s_nulls.ignore(pos, expected))
+            {
+                nulls_direction_was_explicitly_specified = true;
+                if (s_first.ignore(pos, expected))
+                    nulls_direction = -direction;
+                else if (s_last.ignore(pos, expected))
+                    ;
+                else
+                    return false;
+            }
+
+            /// If a comma follows, this is a multi-column ORDER BY (e.g., ORDER BY all, a).
+            /// In this case, `all` should be treated as a regular column, not the ALL keyword.
+            if (pos->type == TokenType::Comma)
+            {
+                /// Backtrack to before we consumed `ALL`.
+                pos = saved_pos;
+                is_order_by_all = false;
+            }
+            else
+            {
+                select_query->order_by_all = true;
+
+                auto elem = make_intrusive<ASTOrderByElement>();
+                elem->direction = direction;
+                elem->nulls_direction = nulls_direction;
+                elem->nulls_direction_was_explicitly_specified = nulls_direction_was_explicitly_specified;
+                elem->children.push_back(make_intrusive<ASTIdentifier>("all"));
+
+                order_expression_list = make_intrusive<ASTExpressionList>();
+                order_expression_list->children.push_back(std::move(elem));
             }
         }
-        else if (order_expression_list->children.size() == 1)
+
+        if (!is_order_by_all)
         {
-            /// ORDER BY ALL
-            auto * identifier = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTIdentifier>();
-            if (identifier != nullptr && Poco::toUpper(identifier->name()) == "ALL")
-                select_query->order_by_all = true;
+            if (!order_list.parse(pos, order_expression_list, expected))
+                return false;
+
+            /// if any WITH FILL parse possible INTERPOLATE list
+            if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
+                    [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
+            {
+                if (s_interpolate.ignore(pos, expected))
+                {
+                    if (open_bracket.ignore(pos, expected))
+                    {
+                        if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
+                            return false;
+                        if (!close_bracket.ignore(pos, expected))
+                            return false;
+                    }
+                    else
+                        interpolate_expression_list = make_intrusive<ASTExpressionList>();
+                }
+            }
         }
     }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.
-    bool limit_with_ties_occured = false;
+    bool limit_with_ties_occurred = false;
 
     bool has_offset_clause = false;
     bool offset_clause_has_sql_standard_row_or_rows = false; /// OFFSET offset_row_count {ROW | ROWS}
@@ -331,7 +422,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (s_with_ties.ignore(pos, expected))
             {
-                limit_with_ties_occured = true;
+                limit_with_ties_occurred = true;
                 select_query->limit_with_ties = true;
             }
         }
@@ -341,14 +432,20 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
 
             has_offset_clause = true;
+
+            if (s_with_ties.ignore(pos, expected))
+            {
+                limit_with_ties_occurred = true;
+                select_query->limit_with_ties = true;
+            }
         }
         else if (s_with_ties.ignore(pos, expected))
         {
-            limit_with_ties_occured = true;
+            limit_with_ties_occurred = true;
             select_query->limit_with_ties = true;
         }
 
-        if (limit_with_ties_occured && distinct_on_expression_list)
+        if (limit_with_ties_occurred && distinct_on_expression_list)
             throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
 
         if (s_by.ignore(pos, expected))
@@ -356,7 +453,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             /// WITH TIES was used alongside LIMIT BY
             /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
             /// So we have to ignore WITH TIES exactly in LIMIT BY state.
-            if (limit_with_ties_occured)
+            if (limit_with_ties_occurred)
                 throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
 
             if (distinct_on_expression_list)
@@ -367,8 +464,16 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             limit_length = nullptr;
             limit_offset = nullptr;
 
-            if (!exp_list.parse(pos, limit_by_expression_list, expected))
-                return false;
+            if (s_all.ignore(pos, expected))
+            {
+                select_query->limit_by_all = true;
+                limit_by_expression_list = make_intrusive<ASTExpressionList>();
+            }
+            else
+            {
+                if (!exp_list.parse(pos, limit_by_expression_list, expected))
+                    return false;
+            }
         }
 
         if (top_length && limit_length)
@@ -441,11 +546,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (distinct_on_expression_list)
     {
         /// DISTINCT ON and LIMIT BY are mutually exclusive, checked before
-        assert (limit_by_expression_list == nullptr);
+        chassert(limit_by_expression_list == nullptr);
 
         /// Transform `DISTINCT ON expr` to `LIMIT 1 BY expr`
         limit_by_expression_list = distinct_on_expression_list;
-        limit_by_length = std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        limit_by_length = make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)});
         distinct_on_expression_list = nullptr;
     }
 
@@ -496,6 +601,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+    select_query->setExpression(ASTSelectQuery::Expression::ALIASES, std::move(expression_list_for_aliases));
+    select_query->setExpression(ASTSelectQuery::Expression::CTE_ALIASES, std::move(expression_list_for_cte_aliases));
     select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_expression));
     select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));

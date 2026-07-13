@@ -1,10 +1,12 @@
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
+#include <Common/ErrnoException.h>
 
 namespace DB
 {
@@ -61,11 +63,20 @@ UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
         out.finalize();
         return new_uuid;
     }
+    catch (ErrnoException &)
+    {
+        throw;
+    }
     catch (...)
     {
         throw Exception(ErrorCodes::CANNOT_CREATE_FILE, "Caught Exception {} while writing the Server UUID file {}",
                         getCurrentExceptionMessage(false), server_uuid_file.string());
     }
+}
+
+void ServerUUID::set(UUID & uuid)
+{
+    server_uuid = uuid;
 }
 
 void ServerUUID::setRandomForUnitTests()

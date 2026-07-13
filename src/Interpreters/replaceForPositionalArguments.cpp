@@ -31,7 +31,7 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
     if (which != Field::Types::UInt64 && which != Field::Types::Int64)
         return false;
 
-    UInt64 pos;
+    UInt64 pos = 0;
 
     if (which == Field::Types::UInt64)
     {
@@ -79,13 +79,11 @@ bool replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * sel
                                     "Illegal value (aggregate function) for positional argument in {}",
                                     ASTSelectQuery::expressionToString(expression));
                 }
-                else
+
+                if (function->arguments)
                 {
-                    if (function->arguments)
-                    {
-                        for (const auto & arg : function->arguments->children)
-                            throw_if_aggregate_function(arg);
-                    }
+                    for (const auto & arg : function->arguments->children)
+                        throw_if_aggregate_function(arg);
                 }
             }
         };

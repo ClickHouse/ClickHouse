@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 DICTIONARY_FILES = ["configs/dictionaries/cache.xml"]
@@ -14,7 +15,8 @@ def started_cluster():
 
         instance.query(
             """
-            CREATE DATABASE IF NOT EXISTS test;
+            DROP DATABASE IF EXISTS test;
+            CREATE DATABASE test;
             DROP TABLE IF EXISTS test.source;
             CREATE TABLE test.source (id UInt64, key0 UInt8, key0_str String, key1 UInt8,
                     StartDate Date, EndDate Date,

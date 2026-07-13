@@ -2,6 +2,7 @@
 
 #include <Core/Field.h>
 
+#include <vector>
 
 namespace DB
 {
@@ -35,6 +36,8 @@ public:
     void setSetting(std::string_view name, const Field & value);
     /// If element exists - removes it and returns true, otherwise returns false
     bool removeSetting(std::string_view name);
+
+    String namesToString() const;
 };
 
 }

@@ -15,7 +15,7 @@ template <typename Base>
 class OutputFormatWithUTF8ValidationAdaptorBase : public Base
 {
 public:
-    OutputFormatWithUTF8ValidationAdaptorBase(const Block & header, WriteBuffer & out_, bool validate_utf8)
+    OutputFormatWithUTF8ValidationAdaptorBase(SharedHeader header, WriteBuffer & out_, bool validate_utf8)
         : Base(header, out_)
     {
         bool values_can_contain_invalid_utf8 = false;
@@ -29,11 +29,11 @@ public:
             validating_ostr = std::make_unique<WriteBufferValidUTF8>(*Base::getWriteBufferPtr());
     }
 
-    void flush() override
+    void flushImpl() override
     {
         if (validating_ostr)
             validating_ostr->next();
-        Base::flush();
+        Base::flushImpl();
     }
 
     void finalizeBuffers() override
@@ -68,4 +68,3 @@ using OutputFormatWithUTF8ValidationAdaptor = OutputFormatWithUTF8ValidationAdap
 using RowOutputFormatWithUTF8ValidationAdaptor = OutputFormatWithUTF8ValidationAdaptorBase<IRowOutputFormat>;
 
 }
-

@@ -1,3 +1,5 @@
+-- Tags: no-shared-merge-tree
+-- Stop replication queues
 DROP TABLE IF EXISTS wrong_metadata;
 
 CREATE TABLE wrong_metadata(

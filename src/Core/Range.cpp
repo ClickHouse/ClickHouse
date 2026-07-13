@@ -1,11 +1,19 @@
+#include <Columns/IColumn.h>
 #include <Core/Range.h>
-#include <Common/FieldVisitorToString.h>
-#include <IO/WriteBufferFromString.h>
+#include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldAccurateComparison.h>
 
 
 namespace DB
 {
+
+FieldRef::FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
+    : Field((*(*columns_)[column_idx_].column)[row_idx_]), columns(columns_), row_idx(row_idx_), column_idx(column_idx_)
+{
+}
 
 Range::Range(const FieldRef & point) /// NOLINT
     : left(point), right(point), left_included(true), right_included(true) {}
@@ -30,9 +38,19 @@ Range Range::createWholeUniverseWithoutNull()
     return Range(NEGATIVE_INFINITY, false, POSITIVE_INFINITY, false);
 }
 
+Range Range::createWholeUniverseTypeAware(const DataTypePtr & type)
+{
+    return isNullableOrLowCardinalityNullable(type) ? createWholeUniverse() : createWholeUniverseWithoutNull();
+}
+
 Range Range::createRightBounded(const FieldRef & right_point, bool right_included, bool with_null)
 {
-    Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
+    return createRightBounded(right_point, right_included, with_null ? createWholeUniverse() : createWholeUniverseWithoutNull());
+}
+
+Range Range::createRightBounded(const FieldRef & right_point, bool right_included, const Range & universe)
+{
+    Range r = universe;
     r.right = right_point;
     r.right_included = right_included;
     r.shrinkToIncludedIfPossible();
@@ -44,7 +62,12 @@ Range Range::createRightBounded(const FieldRef & right_point, bool right_include
 
 Range Range::createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null)
 {
-    Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
+    return createLeftBounded(left_point, left_included, with_null ? createWholeUniverse() : createWholeUniverseWithoutNull());
+}
+
+Range Range::createLeftBounded(const FieldRef & left_point, bool left_included, const Range & universe)
+{
+    Range r = universe;
     r.left = left_point;
     r.left_included = left_included;
     r.shrinkToIncludedIfPossible();
@@ -64,12 +87,12 @@ void Range::shrinkToIncludedIfPossible()
     {
         if (left.getType() == Field::Types::UInt64 && left.safeGet<UInt64>() != std::numeric_limits<UInt64>::max())
         {
-            ++left.safeGet<UInt64 &>();
+            ++left.safeGet<UInt64>();
             left_included = true;
         }
         if (left.getType() == Field::Types::Int64 && left.safeGet<Int64>() != std::numeric_limits<Int64>::max())
         {
-            ++left.safeGet<Int64 &>();
+            ++left.safeGet<Int64>();
             left_included = true;
         }
     }
@@ -77,12 +100,12 @@ void Range::shrinkToIncludedIfPossible()
     {
         if (right.getType() == Field::Types::UInt64 && right.safeGet<UInt64>() != std::numeric_limits<UInt64>::min())
         {
-            --right.safeGet<UInt64 &>();
+            --right.safeGet<UInt64>();
             right_included = true;
         }
         if (right.getType() == Field::Types::Int64 && right.safeGet<Int64>() != std::numeric_limits<Int64>::min())
         {
-            --right.safeGet<Int64 &>();
+            --right.safeGet<Int64>();
             right_included = true;
         }
     }
@@ -90,12 +113,12 @@ void Range::shrinkToIncludedIfPossible()
 
 bool Range::equals(const Field & lhs, const Field & rhs)
 {
-    return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
+    return accurateEquals(lhs, rhs);
 }
 
 bool Range::less(const Field & lhs, const Field & rhs)
 {
-    return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
+    return accurateLess(lhs, rhs);
 }
 
 bool Range::empty() const

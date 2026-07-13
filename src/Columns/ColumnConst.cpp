@@ -2,8 +2,8 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/WeakHash.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 
@@ -19,8 +19,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
+extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
@@ -38,18 +39,20 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
 #if defined(MEMORY_SANITIZER)
     if (data->isFixedAndContiguous())
     {
-        StringRef value = data->getDataAt(0);
-        __msan_check_mem_is_initialized(value.data, value.size);
+        auto value = data->getDataAt(0);
+        __msan_check_mem_is_initialized(value.data(), value.size());
     }
 #endif
 }
 
 ColumnPtr ColumnConst::convertToFullColumn() const
 {
+    if (s == 1)
+        return data;
     return data->replicate(Offsets(1, s));
 }
 
-ColumnPtr ColumnConst::removeLowCardinality() const
+ColumnPtr ColumnConst::convertToFullColumnIfLowCardinality() const
 {
     return ColumnConst::create(data->convertToFullColumnIfLowCardinality(), s);
 }
@@ -64,6 +67,15 @@ ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/)
     return ColumnConst::create(data, new_size);
 }
 
+void ColumnConst::filter(const Filter & filt)
+{
+    if (s != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
+            filt.size(), toString(s));
+
+    s = countBytesInFilter(filt);
+}
+
 void ColumnConst::expand(const Filter & mask, bool inverted)
 {
     if (mask.size() < s)
@@ -75,7 +87,7 @@ void ColumnConst::expand(const Filter & mask, bool inverted)
 
     if (bytes_count < s)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
-    else if (bytes_count > s)
+    if (bytes_count > s)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
     s = mask.size();
@@ -110,19 +122,32 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
-MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnConst::scatter(size_t num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
             selector.size(), toString(s));
 
-    std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
+    VectorWithMemoryTracking<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
 
-    MutableColumns res(num_columns);
+    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
         res[i] = cloneResized(counts[i]);
 
     return res;
+}
+
+void ColumnConst::popBack(size_t n)
+{
+    if (n > s)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
+    s -= n;
+}
+
+void ColumnConst::gather(ColumnGathererStream &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot gather into constant column {}", getName());
 }
 
 void ColumnConst::getPermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
@@ -137,17 +162,23 @@ void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, Perm
 {
 }
 
-WeakHash32 ColumnConst::getWeakHash32() const
+void ColumnConst::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    WeakHash32 element_hash = data->getWeakHash32();
-    return WeakHash32(s, element_hash.getData()[0]);
+    UInt32 value = 0;
+    data->computeHashInto(0, 1, &value, true);
+
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? value : combineWeakHash32(value, out);
+    }
 }
 
 void ColumnConst::compareColumn(
     const IColumn & rhs, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> & compare_results, int, int nan_direction_hint)
     const
 {
-    Int8 res = compareAt(1, 1, rhs, nan_direction_hint);
+    Int8 res = static_cast<Int8>(compareAt(1, 1, rhs, nan_direction_hint));
     std::fill(compare_results.begin(), compare_results.end(), res);
 }
 
@@ -172,5 +203,14 @@ ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr & column)
     return ColumnConst::create(std::move(data), 1);
 }
 
+void intrusive_ptr_add_ref(const ColumnConst * c)
+{
+    intrusive_ptr_add_ref(static_cast<const IColumn *>(c));
+}
+
+void intrusive_ptr_release(const ColumnConst * c)
+{
+    intrusive_ptr_release(static_cast<const IColumn *>(c));
+}
 
 }

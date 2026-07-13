@@ -2,6 +2,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Common/IntervalKind.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -24,11 +25,11 @@ template <LeastSupertypeOnError on_error = LeastSupertypeOnError::Throw>
 DataTypePtr getLeastSupertype(const DataTypes & types);
 
 /// Same as above but return String type instead of throwing exception.
-/// All types can be casted to String, because they can be serialized to String.
+/// All types can be cast to String, because they can be serialized to String.
 DataTypePtr getLeastSupertypeOrString(const DataTypes & types);
 
 /// Same as getLeastSupertype but in case when there is no supertype for provided types
-/// it uses Variant of these types as a supertype. Any type can be casted to a Variant
+/// it uses Variant of these types as a supertype. Any type can be cast to a Variant
 /// that contains this type.
 /// As nested Variants are not allowed, if one of the types is Variant, it's variants
 /// are used in the resulting Variant.
@@ -41,7 +42,7 @@ DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types);
 /// Same as above but return nullptr instead of throwing exception.
 DataTypePtr tryGetLeastSupertype(const DataTypes & types);
 
-using TypeIndexSet = std::unordered_set<TypeIndex>;
+using TypeIndexSet = UnorderedSetWithMemoryTracking<TypeIndex>;
 
 template <LeastSupertypeOnError on_error = LeastSupertypeOnError::Throw>
 DataTypePtr getLeastSupertype(const TypeIndexSet & types);

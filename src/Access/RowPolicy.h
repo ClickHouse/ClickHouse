@@ -4,6 +4,7 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <Core/Types.h>
+#include <Parsers/IAST_fwd.h>
 #include <array>
 
 
@@ -50,7 +51,12 @@ struct RowPolicy : public IAccessEntity
     AccessEntityType getType() const override { return TYPE; }
 
     std::vector<UUID> findDependencies() const override;
+    bool hasDependencies(const std::unordered_set<UUID> & ids) const override;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
+    void copyDependenciesFrom(const IAccessEntity & src, const std::unordered_set<UUID> & ids) override;
+    void removeDependencies(const std::unordered_set<UUID> & ids) override;
+    void clearAllExceptDependencies() override;
+
     bool isBackupAllowed() const override { return true; }
 
     /// Which roles or users should use this row policy.
@@ -64,5 +70,9 @@ private:
 };
 
 using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
+
+/// A row policy filter is applied as a per-row predicate at the storage read stage, so a
+/// row-count-changing function like `arrayJoin` breaks the reader's invariants. Reject it.
+void checkRowPolicyFilterExpression(const ASTPtr & expression);
 
 }

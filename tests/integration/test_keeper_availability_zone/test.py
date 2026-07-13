@@ -1,7 +1,7 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.keeper_utils import KeeperClient
-
 
 cluster = ClickHouseCluster(__file__)
 

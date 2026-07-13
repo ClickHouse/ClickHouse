@@ -1,3 +1,4 @@
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 DROP TABLE IF EXISTS kv;
 
 CREATE TABLE kv (k UInt32, v UInt32) ENGINE Join(Any, Left, k);
@@ -14,6 +15,7 @@ CREATE TABLE t2 (k UInt32, v UInt32) ENGINE = Memory;
 INSERT INTO t2 VALUES (1, 2), (1, 3);
 
 SET enable_analyzer = 1;
+SET join_algorithm = 'hash';
 
 SELECT v FROM (SELECT 1 as k) t1 ANY INNER JOIN t2 USING (k) SETTINGS join_any_take_last_row = 0;
 SELECT v FROM (SELECT 1 as k) t1 ANY INNER JOIN t2 USING (k) SETTINGS join_any_take_last_row = 1;

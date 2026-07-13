@@ -8,14 +8,14 @@
 namespace DB
 {
 
-/// Table functions timeSeriesData('mydb', 'my_ts_table'), timeSeriesTags('mydb', 'my_ts_table'), timeSeriesMetrics('mydb', 'my_ts_table')
-/// return the data table, the tags table, and the metrics table respectively associated with any TimeSeries table mydb.my_ts_table
+/// Table functions timeSeriesSamples('mydb', 'my_ts_table'), timeSeriesTags('mydb', 'my_ts_table'), timeSeriesMetrics('mydb', 'my_ts_table')
+/// return the "samples" table, the "tags" table, and the "metrics" table respectively associated with any TimeSeries table mydb.my_ts_table
 template <ViewTarget::Kind target_kind>
 class TableFunctionTimeSeriesTarget : public ITableFunction
 {
 public:
-    static constexpr auto name = (target_kind == ViewTarget::Data)
-        ? "timeSeriesData"
+    static constexpr auto name = (target_kind == ViewTarget::Samples)
+        ? "timeSeriesSamples"
         : ((target_kind == ViewTarget::Tags) ? "timeSeriesTags" : "timeSeriesMetrics");
 
     String getName() const override { return name; }
@@ -31,7 +31,7 @@ private:
         bool is_insert_query) const override;
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-    const char * getStorageTypeName() const override;
+    const char * getStorageEngineName() const override;
 
     StoragePtr getTargetTable(const ContextPtr & context) const;
 

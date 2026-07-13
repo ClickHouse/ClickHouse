@@ -1,15 +1,16 @@
 #pragma once
 
-#include <string>
 #include <optional>
-#include <vector>
-#include <boost/noncopyable.hpp>
-#include <unordered_map>
+#include <string>
 
+#include <boost/noncopyable.hpp>
+
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 struct UCollator;
 
-/// Class represents available locales for collations.
+/// Represents available locales for collations.
 class AvailableCollationLocales : private boost::noncopyable
 {
 public:
@@ -20,8 +21,8 @@ public:
         std::optional<std::string> language; /// full language name in English
     };
 
-    using AvailableLocalesMap = std::unordered_map<std::string, LocaleAndLanguage>;
-    using LocalesVector = std::vector<LocaleAndLanguage>;
+    using AvailableLocalesMap = DB::UnorderedMapWithMemoryTracking<std::string, LocaleAndLanguage>;
+    using LocalesVector = DB::VectorWithMemoryTracking<LocaleAndLanguage>;
 
     static const AvailableCollationLocales & instance();
 

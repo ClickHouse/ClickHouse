@@ -1,8 +1,14 @@
 ---
-slug: /en/operations/external-authenticators/kerberos
+description: 'Existing and properly configured ClickHouse users can be authenticated
+  via Kerberos authentication protocol.'
+slug: /operations/external-authenticators/kerberos
+title: 'Kerberos'
+doc_type: 'reference'
 ---
+
+import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
+
 # Kerberos
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
 
 <SelfManaged />
 
@@ -12,21 +18,20 @@ Currently, Kerberos can only be used as an external authenticator for existing u
 
 For this approach, Kerberos must be configured in the system and must be enabled in ClickHouse config.
 
-
 ## Enabling Kerberos in ClickHouse {#enabling-kerberos-in-clickhouse}
 
 To enable Kerberos, one should include `kerberos` section in `config.xml`. This section may contain additional parameters.
 
-#### Parameters:
+#### Parameters {#parameters}
 
 - `principal` - canonical service principal name that will be acquired and used when accepting security contexts.
-    - This parameter is optional, if omitted, the default principal will be used.
+  - This parameter is optional, if omitted, the default principal will be used.
 
 - `realm` - a realm, that will be used to restrict authentication to only those requests whose initiator's realm matches it.
-    - This parameter is optional, if omitted, no additional filtering by realm will be applied.
+  - This parameter is optional, if omitted, no additional filtering by realm will be applied.
 
 - `keytab` - path to service keytab file.
-    - This parameter is optional, if omitted, path to service keytab file must be set in `KRB5_KTNAME` environment variable.
+  - This parameter is optional, if omitted, path to service keytab file must be set in `KRB5_KTNAME` environment variable.
 
 Example (goes into `config.xml`):
 
@@ -84,7 +89,7 @@ In order to enable Kerberos authentication for the user, specify `kerberos` sect
 Parameters:
 
 - `realm` - a realm that will be used to restrict authentication to only those requests whose initiator's realm matches it.
-    - This parameter is optional, if omitted, no additional filtering by realm will be applied.
+  - This parameter is optional, if omitted, no additional filtering by realm will be applied.
 
 Example (goes into `users.xml`):
 
@@ -113,7 +118,7 @@ Note, that now, once user `my_user` uses `kerberos`, Kerberos must be enabled in
 
 ### Enabling Kerberos using SQL {#enabling-kerberos-using-sql}
 
-When [SQL-driven Access Control and Account Management](/docs/en/guides/sre/user-management/index.md#access-control) is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
+When [SQL-driven Access Control and Account Management](/operations/access-rights#access-control-usage) is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'

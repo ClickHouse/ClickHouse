@@ -3,7 +3,7 @@
 namespace DB
 {
 
-SourceFromChunks::SourceFromChunks(Block header, Chunks chunks_)
+SourceFromChunks::SourceFromChunks(SharedHeader header, Chunks chunks_)
     : ISource(std::move(header))
     , chunks(std::move(chunks_))
     , it(chunks.begin())
@@ -19,11 +19,10 @@ Chunk SourceFromChunks::generate()
     if (it != chunks.end())
     {
         Chunk && chunk = std::move(*it);
-        it++;
+        ++it;
         return chunk;
     }
-    else
-        return {};
+    return {};
 }
 
 }

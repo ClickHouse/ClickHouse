@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 -- Looks like you cannot use the query parameter as a column name.
 -- https://github.com/ClickHouse/ClickHouse/issues/23194
 SET enable_analyzer = 1;
@@ -39,7 +39,7 @@ SELECT * GROUP BY *;
 -- not ok as every component of ORDER BY may contain ASC/DESC and COLLATE; though can be supported in some sense
 -- but it works
 SELECT * ORDER BY *;
-SELECT * WHERE *; -- { serverError BAD_ARGUMENTS }
+SELECT * WHERE *; -- { serverError UNEXPECTED_EXPRESSION }
 
 SELECT '---';
 

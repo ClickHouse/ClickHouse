@@ -1,25 +1,23 @@
 #pragma once
-#include <Interpreters/Context_fwd.h>
-#include <Formats/ReadSchemaUtils.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
+#include <Interpreters/Context_fwd.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Formats/ReadSchemaUtils.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 
 namespace DB
 {
 
+class StorageObjectStorageConfiguration;
+using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
+
 class ReadBufferIterator : public IReadBufferIterator, WithContext
 {
 public:
-    using FileIterator = std::shared_ptr<StorageObjectStorageSource::IIterator>;
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-    using ObjectInfoPtr = StorageObjectStorage::ObjectInfoPtr;
-    using ObjectInfo = StorageObjectStorage::ObjectInfo;
-    using ObjectInfos = StorageObjectStorage::ObjectInfos;
-
     ReadBufferIterator(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
-        const FileIterator & file_iterator_,
+        StorageObjectStorageConfigurationPtr configuration_,
+        const ObjectIterator & file_iterator_,
         const std::optional<FormatSettings> & format_settings_,
         SchemaCache & schema_cache_,
         ObjectInfos & read_keys_,
@@ -30,8 +28,6 @@ public:
     void setNumRowsToLastFile(size_t num_rows) override;
 
     void setSchemaToLastFile(const ColumnsDescription & columns) override;
-
-    void setResultingSchema(const ColumnsDescription & columns) override;
 
     String getLastFilePath() const override;
 
@@ -48,10 +44,10 @@ private:
         const ObjectInfos::iterator & begin, const ObjectInfos::iterator & end);
 
     ObjectStoragePtr object_storage;
-    const ConfigurationPtr configuration;
-    const FileIterator file_iterator;
+    const StorageObjectStorageConfigurationPtr configuration;
+    const ObjectIterator file_iterator;
     const std::optional<FormatSettings> & format_settings;
-    const StorageObjectStorage::QuerySettings query_settings;
+    const StorageObjectStorageQuerySettings query_settings;
     SchemaCache & schema_cache;
     ObjectInfos & read_keys;
     std::optional<String> format;

@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-openssl-fips
 
+SET output_format_pretty_single_large_number_tip_threshold = 0;
 SET enable_analyzer = 1;
 
 SELECT

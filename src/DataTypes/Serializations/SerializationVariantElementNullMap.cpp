@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -27,7 +28,34 @@ struct DeserializeBinaryBulkStateVariantElementNullMap : public ISerialization::
     /// substream cache correctly.
     ColumnPtr discriminators;
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateVariantElementNullMap>();
+        new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;
+        return new_state;
+    }
 };
+
+
+UInt128 SerializationVariantElementNullMap::getHash(const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_)
+{
+    SipHash hash;
+    hash.update("VariantElementNullMap");
+    hash.update(variant_element_name_.size());
+    hash.update(variant_element_name_);
+    hash.update(variant_discriminator_);
+    hash.update(num_variants_);
+    return hash.get128();
+}
+
+SerializationPtr SerializationVariantElementNullMap::create(
+    const String & variant_element_name_,
+    ColumnVariant::Discriminator variant_discriminator_,
+    size_t num_variants_)
+{
+    return ISerialization::pooled(getHash(variant_element_name_, variant_discriminator_, num_variants_), [&] { return new SerializationVariantElementNullMap(variant_element_name_, variant_discriminator_, num_variants_); });
+}
 
 void SerializationVariantElementNullMap::enumerateStreams(
     DB::ISerialization::EnumerateStreamsSettings & settings,
@@ -35,6 +63,13 @@ void SerializationVariantElementNullMap::enumerateStreams(
     const DB::ISerialization::SubstreamData &) const
 {
     /// We will need stream for discriminators during deserialization.
+    if (settings.use_specialized_prefixes_and_suffixes_substreams)
+    {
+        settings.path.push_back(Substream::VariantDiscriminatorsPrefix);
+        callback(settings.path);
+        settings.path.pop_back();
+    }
+
     settings.path.push_back(Substream::VariantDiscriminators);
     callback(settings.path);
     settings.path.pop_back();
@@ -75,6 +110,7 @@ void SerializationVariantElementNullMap::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & result_column,
+    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -85,10 +121,11 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
 
     DeserializeBinaryBulkStateVariantElementNullMap * variant_element_null_map_state = nullptr;
     std::optional<size_t> variant_limit;
-    if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
+    size_t num_read_discriminators = 0;
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
     {
         variant_element_null_map_state = checkAndGetState<DeserializeBinaryBulkStateVariantElementNullMap>(state);
-        variant_element_null_map_state->discriminators = cached_discriminators;
+        std::tie(variant_element_null_map_state->discriminators, num_read_discriminators) = *cached_column_with_num_read_rows;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
@@ -100,21 +137,35 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
         if (!variant_element_null_map_state->discriminators || result_column->empty())
             variant_element_null_map_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
 
+        size_t prev_size = variant_element_null_map_state->discriminators->size();
+
         /// Deserialize discriminators according to serialization mode.
+        /// Don't skip rows_offset rows now, because we want to store discriminators without applied rows_offset in cache.
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
-            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(
-                *variant_element_null_map_state->discriminators->assumeMutable(), *discriminators_stream, limit, 0);
+        {
+            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(
+                *variant_element_null_map_state->discriminators->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
+        }
         else
-            variant_limit = SerializationVariantElement::deserializeCompactDiscriminators(
+        {
+            auto variant_pair = SerializationVariantElement::deserializeCompactDiscriminators(
                 variant_element_null_map_state->discriminators,
                 variant_discriminator,
+                rows_offset,
                 limit,
                 discriminators_stream,
                 settings.continuous_reading,
                 variant_element_null_map_state->discriminators_state,
+                settings,
+                num_variants,
                 this);
 
-        addToSubstreamsCache(cache, settings.path, variant_element_null_map_state->discriminators);
+            variant_limit = variant_pair.second;
+        }
+
+        num_read_discriminators = variant_element_null_map_state->discriminators->size() - prev_size;
+        /// We are not going to apply rows_offsets to discriminators column here, so we can put it as is in the cache.
+        addColumnWithNumReadRowsToSubstreamsCache(cache,settings.path, variant_element_null_map_state->discriminators, num_read_discriminators);
     }
     else
     {
@@ -128,24 +179,25 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
     }
     settings.path.pop_back();
 
+    size_t discriminators_offset = variant_element_null_map_state->discriminators->size() - num_read_discriminators + rows_offset;
+
     MutableColumnPtr mutable_column = result_column->assumeMutable();
     auto & data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
     /// Check if there are no such variant in read range.
     if (variant_limit && *variant_limit == 0)
     {
-        data.resize_fill(data.size() + limit, 1);
+        data.resize_fill(data.size() + num_read_discriminators, 1);
     }
     /// Check if there is only our variant in read range.
-    else if (variant_limit && *variant_limit == limit)
+    else if (variant_limit && *variant_limit == num_read_discriminators)
     {
-        data.resize_fill(data.size() + limit, 0);
+        data.resize_fill(data.size() + num_read_discriminators, 0);
     }
     /// Iterate through new discriminators to calculate the null map of our variant.
     else
     {
         const auto & discriminators_data
             = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*variant_element_null_map_state->discriminators).getData();
-        size_t discriminators_offset = variant_element_null_map_state->discriminators->size() - limit;
         for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
             data.push_back(discriminators_data[i] != variant_discriminator);
     }
@@ -155,11 +207,13 @@ SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::VariantNullM
     const ColumnPtr & local_discriminators_,
     const String & variant_element_name_,
     ColumnVariant::Discriminator global_variant_discriminator_,
-    ColumnVariant::Discriminator local_variant_discriminator_)
+    ColumnVariant::Discriminator local_variant_discriminator_,
+    size_t num_variants_)
     : local_discriminators(local_discriminators_)
     , variant_element_name(variant_element_name_)
     , global_variant_discriminator(global_variant_discriminator_)
     , local_variant_discriminator(local_variant_discriminator_)
+    , num_variants(num_variants_)
 {
 }
 
@@ -168,9 +222,9 @@ DataTypePtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::
     return std::make_shared<DataTypeUInt8>();
 }
 
-SerializationPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::SerializationPtr &) const
+SerializationPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::SerializationPtr &, const DataTypePtr &) const
 {
-    return std::make_shared<SerializationVariantElementNullMap>(variant_element_name, global_variant_discriminator);
+    return SerializationVariantElementNullMap::create(variant_element_name, global_variant_discriminator, num_variants);
 }
 
 ColumnPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::create(const DB::ColumnPtr &) const
@@ -186,5 +240,9 @@ ColumnPtr SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::cr
     return null_map_col;
 }
 
+size_t SerializationVariantElementNullMap::allocatedBytes() const
+{
+    return sizeof(*this) + variant_element_name.capacity();
+}
 
 }

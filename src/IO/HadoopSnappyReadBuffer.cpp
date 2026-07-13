@@ -9,7 +9,7 @@
 
 #include <snappy-c.h>
 
-#include "HadoopSnappyReadBuffer.h"
+#include <IO/HadoopSnappyReadBuffer.h>
 
 #include <IO/WithFileName.h>
 
@@ -33,7 +33,7 @@ inline bool HadoopSnappyDecoder::checkAvailIn(size_t avail_in, int min)
 
 inline void HadoopSnappyDecoder::copyToBuffer(size_t * avail_in, const char ** next_in)
 {
-    assert(*avail_in + buffer_length <= sizeof(buffer));
+    chassert(*avail_in + buffer_length <= sizeof(buffer));
 
     memcpy(buffer + buffer_length, *next_in, *avail_in);
 
@@ -216,7 +216,7 @@ bool HadoopSnappyReadBuffer::nextImpl()
 
     if (decoder->result == Status::OK)
     {
-        decoder->reset();
+        (*decoder).reset();
         if (in->eof())
         {
             eof = true;
@@ -224,7 +224,7 @@ bool HadoopSnappyReadBuffer::nextImpl()
         }
         return true;
     }
-    else if (decoder->result != Status::NEEDS_MORE_INPUT)
+    if (decoder->result != Status::NEEDS_MORE_INPUT)
     {
         throw Exception(
             ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,

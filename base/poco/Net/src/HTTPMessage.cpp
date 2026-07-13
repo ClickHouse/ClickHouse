@@ -186,7 +186,7 @@ void HTTPMessage::setKeepAliveTimeout(int timeout, int max_requests)
 }
 
 
-int parseFromHeaderValues(const std::string_view header_value, const std::string_view param_name)
+static int parseFromHeaderValues(const std::string_view header_value, const std::string_view param_name)
 {
     auto param_value_pos = header_value.find(param_name);
     if (param_value_pos == std::string::npos)
@@ -203,7 +203,7 @@ int parseFromHeaderValues(const std::string_view header_value, const std::string
         return -1;
 
     int value = 0;
-    auto [ptr, ec] = std::from_chars(timeout_value_substr.begin(), timeout_value_substr.end(), value);
+    auto [ptr, ec] = std::from_chars(timeout_value_substr.data(), timeout_value_substr.data() + timeout_value_substr.size(), value);
 
     if (ec == std::errc())
         return value;

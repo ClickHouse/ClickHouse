@@ -1,0 +1,12 @@
+syntax = "proto3";
+message Empty {}
+message InnerRecord {
+  oneof type {
+    Empty nothing = 1;
+    Empty nothing2 = 2;
+  }
+}
+message Record {
+    int32 id = 1;
+		InnerRecord inner = 2;
+}

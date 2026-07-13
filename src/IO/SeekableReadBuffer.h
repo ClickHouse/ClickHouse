@@ -2,16 +2,15 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileSize.h>
+
+#include <Common/VectorWithMemoryTracking.h>
+
+#include <functional>
+#include <memory>
 #include <optional>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 
 class SeekableReadBuffer : public ReadBuffer
 {
@@ -42,13 +41,19 @@ public:
      */
     virtual off_t getPosition() = 0;
 
+    /// Returns the current position in the file corresponding to the buffer.
+    /// This function is like getPosition(), but it returns std::nullopt instead of throwing exception.
+    std::optional<off_t> tryGetPosition();
+
+    /// Shouldn't be called frequently, may be expensive.
+    /// (In particular, in AsynchronousBoundedReadBuffer it waits for prefetch, to avoid race condition.)
     virtual String getInfoForLog() { return ""; }
 
     /// NOTE: This method should be thread-safe against seek(), since it can be
     /// used in CachedOnDiskReadBufferFromFile from multiple threads (because
     /// it first releases the buffer, and then do logging, and so other thread
     /// can already call seek() which will lead to data-race).
-    virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented"); }
+    virtual size_t getFileOffsetOfBufferEnd() const;
 
     /// If true, setReadUntilPosition() guarantees that eof will be reported at the given position.
     virtual bool supportsRightBoundedReads() const { return false; }
@@ -82,11 +87,31 @@ public:
     ///    (e.g. next() or supportsReadAt()).
     ///  * Performance: there's no buffering. Each readBigAt() call typically translates into actual
     ///    IO operation (e.g. HTTP request). Don't use it for small adjacent reads.
-    virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/) const
-        { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() not implemented"); }
+    virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/) const;
 
     /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
     virtual bool supportsReadAt() { return false; }
+
+    /// A contiguous region of cached data that the caller can reference directly (zero-copy).
+    /// The `handle` keeps the underlying cache cell alive; the data is valid as long as the handle
+    /// exists. Regions are returned in file order and cover the requested range contiguously.
+    struct CachedRegion
+    {
+        std::shared_ptr<void> handle;
+        const char * data;
+        size_t size;
+        size_t file_offset;
+    };
+
+    /// Like readBigAt, but instead of copying data into a caller-provided buffer, returns
+    /// references to cached data. The caller can read directly from the returned regions without
+    /// any memory copy.
+    ///
+    /// Thread safety: same rules as readBigAt — multiple concurrent calls are allowed.
+    virtual VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const;
+
+    /// Whether readBigAtRetainCells is available. Only true when an in-memory page cache is in use.
+    virtual bool supportsReadAtRetainCells() const { return false; }
 
     /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
     /// Sometimes however seek is basically free because underlying read buffer wasn't yet initialised (or re-initialised after reset).
@@ -94,6 +119,7 @@ public:
 
     /// For tables that have an external storage (like S3) as their main storage we'd like to distinguish whether we're reading from this storage or from a local cache.
     /// It allows to reuse all the optimisations done for reading from local tables when reading from cache.
+    /// Usually `offset` is equal to getPosition().
     virtual bool isContentCached([[maybe_unused]] size_t offset, [[maybe_unused]] size_t size) { return false; }
 };
 

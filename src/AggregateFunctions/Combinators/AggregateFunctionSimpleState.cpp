@@ -1,5 +1,5 @@
-#include "AggregateFunctionCombinatorFactory.h"
-#include "AggregateFunctionSimpleState.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionSimpleState.h>
 
 namespace DB
 {
@@ -25,9 +25,13 @@ namespace
 
 }
 
+void registerAggregateFunctionCombinatorSimpleState(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorSimpleState(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorSimpleState>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorSimpleState>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumSimpleState`), it returns the final aggregation result value, but typed as `SimpleAggregateFunction` instead of the plain result type, for storage in engines such as `AggregatingMergeTree`. Unlike the `State` combinator, it does not return a serialized intermediate state; it is only supported for functions whose partial results can be merged by reapplying the function itself.",
+        .syntax = "<aggregate_function>SimpleState",
+        .related = {"State"}});
 }
 
 }

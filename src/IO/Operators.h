@@ -5,9 +5,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <functional>
-
-
 namespace DB
 {
 
@@ -44,7 +41,6 @@ struct DoubleQuoteManipReadBuffer    : std::reference_wrapper<ReadBuffer> { usin
 struct BinaryManipReadBuffer         : std::reference_wrapper<ReadBuffer> { using std::reference_wrapper<ReadBuffer>::reference_wrapper; };
 
 inline WriteBuffer & operator<<(WriteBuffer & buf, const auto & x) { writeText(x, buf); return buf; }
-inline WriteBuffer & operator<<(WriteBuffer & buf, const pcg32_fast & x) { PcgSerializer::serializePcg32(x, buf); return buf; }
 
 inline EscapeManipWriteBuffer      operator<< (WriteBuffer & buf, EscapeManip)      { return buf; }
 inline QuoteManipWriteBuffer       operator<< (WriteBuffer & buf, QuoteManip)       { return buf; }
@@ -60,7 +56,6 @@ template <typename T> WriteBuffer & operator<< (XMLManipWriteBuffer buf,        
 
 inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const String & x)   { writeEscapedString(x, buf); return buf; }
 inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, std::string_view x) { writeEscapedString(x, buf); return buf; }
-inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, StringRef x)        { writeEscapedString(x.toView(), buf); return buf; }
 inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const char * x)     { writeEscapedString(x, strlen(x), buf); return buf; }
 
 inline WriteBuffer & operator<< (QuoteManipWriteBuffer buf,       const char * x) { writeAnyQuotedString<'\''>(x, x + strlen(x), buf.get()); return buf; }
@@ -68,7 +63,6 @@ inline WriteBuffer & operator<< (DoubleQuoteManipWriteBuffer buf, const char * x
 inline WriteBuffer & operator<< (BinaryManipWriteBuffer buf,      const char * x) { writeStringBinary(x, buf.get()); return buf; }
 
 inline  WriteBuffer & operator<< (XMLManipWriteBuffer buf, std::string_view x) { writeXMLStringForTextElementOrAttributeValue(x, buf); return buf; }
-inline  WriteBuffer & operator<< (XMLManipWriteBuffer buf, StringRef x)        { writeXMLStringForTextElementOrAttributeValue(x.toView(), buf); return buf; }
 inline  WriteBuffer & operator<< (XMLManipWriteBuffer buf, const char * x)     { writeXMLStringForTextElementOrAttributeValue(std::string_view(x), buf); return buf; }
 
 /// The manipulator calls the WriteBuffer method `next` - this makes the buffer reset. For nested buffers, the reset is not recursive.
@@ -80,7 +74,6 @@ inline WriteBuffer & operator<< (WriteBuffer & buf, FlushManip) { buf.next(); re
 template <typename T> ReadBuffer & operator>> (ReadBuffer & buf, T & x)              { readText(x, buf);     return buf; }
 template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, String & x)         { readString(x, buf);   return buf; }
 template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, char & x)           { readChar(x, buf);     return buf; }
-template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, pcg32_fast & x)     { PcgDeserializer::deserializePcg32(x, buf); return buf; }
 
 /// If you specify a string literal for reading, this will mean - make sure there is a sequence of bytes and skip it.
 inline ReadBuffer & operator>> (ReadBuffer & buf, const char * x)     { assertString(x, buf); return buf; }

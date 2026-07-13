@@ -25,6 +25,7 @@ INSERT INTO t_missed_subcolumns VALUES (4, [NULL, 'bbb'], ['ddd', NULL]), (5, [N
 SELECT id, n.a, n.b FROM t_missed_subcolumns ORDER BY id;
 SELECT id, n.a.size0, n.b.size0 FROM t_missed_subcolumns ORDER BY id;
 SELECT id, n.a.null, n.b.null FROM t_missed_subcolumns ORDER BY id;
+SELECT n.b.size0 FROM t_missed_subcolumns ORDER BY id;
 
 DROP TABLE IF EXISTS t_missed_subcolumns;
 

@@ -1,13 +1,13 @@
+import importlib
 import logging
 import os
 import time
-import importlib
 
 
 # Starts simple HTTP servers written in Python.
 # Parameters:
 # `script_dir` contains a path to the directory containing server scripts.
-# `mocks` is a list of tuples (server_script, container_name, port), where
+# `mocks` is a list of tuples (server_script, container_name, port[, args]), where
 #     `server_script` is a name of a python file inside `script_dir`,
 #     `container_name` is usually "resolver" (see docker/test/integration/resolver)
 def start_mock_servers(cluster, script_dir, mocks, timeout=100):
@@ -20,7 +20,14 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
     start_time = time.time()
     mocks_to_check = {}
 
-    for server_name, container, port in mocks:
+    for mock_spec in mocks:
+        assert len(mock_spec) in {3, 4}
+        if len(mock_spec)== 3:
+            server_name, container, port = mock_spec
+            args = []
+        else:
+            server_name, container, port, args = mock_spec
+
         filepath = os.path.join(script_dir, server_name)
         container_id = cluster.get_container_id(container)
         mocks_to_check[server_name] = (container_id, port)
@@ -31,9 +38,23 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
             server_name,
         )
 
+        logs_dir = (
+            "/var/log/resolver"
+            if container == "resolver"
+            else "/var/log/clickhouse-server"
+        )
+        log_file = os.path.join(logs_dir, os.path.splitext(server_name)[0] + ".log")
+        err_log_file = os.path.join(
+            logs_dir, os.path.splitext(server_name)[0] + ".err.log"
+        )
+
         cluster.exec_in_container(
             container_id,
-            ["python3", server_name, str(port)],
+            [
+                "bash",
+                "-c",
+                f"python3 {server_name} {port} {' '.join(args)} >{log_file} 2>{err_log_file}",
+            ],
             detach=True,
         )
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-FILENAME="${USER_FILES_PATH}/corrupted_file.tsv.xx"
+FILENAME="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"_corrupted_file.tsv.xx
 
 echo 'corrupted file' > $FILENAME;
 

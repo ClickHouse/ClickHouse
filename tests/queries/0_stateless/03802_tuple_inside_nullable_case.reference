@@ -1,0 +1,17 @@
+-- { echo }
+
+SELECT CASE WHEN number = 0 THEN (SELECT 0) WHEN number = 1 THEN (SELECT 1) END as col, toTypeName(col) FROM numbers(2);
+0	Nullable(UInt8)
+1	Nullable(UInt8)
+SELECT CASE WHEN number = 0 THEN (SELECT 1, 2) WHEN number = 1 THEN (SELECT 3, 4) END as col, toTypeName(col) FROM numbers(2);
+(1,2)	Nullable(Tuple(UInt8, UInt8))
+(3,4)	Nullable(Tuple(UInt8, UInt8))
+SELECT CASE WHEN number = 0 THEN (SELECT 1, 2) WHEN number = 1 THEN (SELECT NULL) END as col, toTypeName(col) FROM numbers(2);
+(1,2)	Nullable(Tuple(`1` UInt8, `2` UInt8))
+\N	Nullable(Tuple(`1` UInt8, `2` UInt8))
+SELECT CASE WHEN number = 0 THEN (SELECT NULL) WHEN number = 1 THEN (SELECT 1, 2) END as col, toTypeName(col) FROM numbers(2);
+\N	Nullable(Tuple(`1` UInt8, `2` UInt8))
+(1,2)	Nullable(Tuple(`1` UInt8, `2` UInt8))
+SELECT CASE WHEN number = 0 THEN (SELECT NULL) WHEN number = 1 THEN (SELECT NULL) END as col, toTypeName(col) FROM numbers(2);
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)

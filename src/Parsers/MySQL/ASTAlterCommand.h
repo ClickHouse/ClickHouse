@@ -76,18 +76,18 @@ public:
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 
 protected:
-    void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
+    void formatImpl(WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTAlterCommand.");
     }
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&index_decl));
-        f(reinterpret_cast<void **>(&default_expression));
-        f(reinterpret_cast<void **>(&additional_columns));
-        f(reinterpret_cast<void **>(&order_by_columns));
-        f(reinterpret_cast<void **>(&properties));
+        f(reinterpret_cast<IAST **>(&index_decl), nullptr);
+        f(&default_expression, nullptr);
+        f(reinterpret_cast<IAST **>(&additional_columns), nullptr);
+        f(reinterpret_cast<IAST **>(&order_by_columns), nullptr);
+        f(&properties, nullptr);
     }
 };
 

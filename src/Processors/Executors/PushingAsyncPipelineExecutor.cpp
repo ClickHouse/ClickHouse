@@ -7,6 +7,7 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Poco/Event.h>
 
 namespace DB
@@ -21,7 +22,7 @@ namespace ErrorCodes
 class PushingAsyncSource : public ISource
 {
 public:
-    explicit PushingAsyncSource(const Block & header)
+    explicit PushingAsyncSource(SharedHeader header)
         : ISource(header)
     {}
 
@@ -99,16 +100,9 @@ struct PushingAsyncPipelineExecutor::Data
 static void threadFunction(
     PushingAsyncPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
-    setThreadName("QueryPushPipeEx");
-
     try
     {
-        if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PUSHING_ASYNC_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
     }
@@ -116,11 +110,10 @@ static void threadFunction(
     {
         data.exception = std::current_exception();
         data.has_exception = true;
-
-        /// Finish source in case of exception. Otherwise thread.join() may hung.
-        if (data.source)
-            data.source->finish();
     }
+
+    if (data.source)
+        data.source->finish();
 
     data.is_finished = true;
     data.finish_event.set();
@@ -132,7 +125,7 @@ PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipel
     if (!pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PushingPipelineExecutor must be pushing");
 
-    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getHeader());
+    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getSharedHeader());
     connect(pushing_source->getPort(), *pipeline.input);
     pipeline.processors->emplace_back(pushing_source);
 }

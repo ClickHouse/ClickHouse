@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
-#include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -26,14 +25,19 @@ public:
 
     MergeTreeReadPool(
         RangesInDataParts && parts_,
+        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
+        const IndexReadTasks & index_read_tasks_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
-        const ContextPtr & context_);
+        const MergeTreeReadTask::BlockSizeParams & params_,
+        const ContextPtr & context_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     ~MergeTreeReadPool() override = default;
 
@@ -84,14 +88,16 @@ private:
         explicit BackoffState(size_t threads) : current_threads(threads) {}
     };
 
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
     const BackoffSettings backoff_settings;
-    BackoffState backoff_state;
+    BackoffState backoff_state TSA_GUARDED_BY(mutex);
 
     struct ThreadTask
     {
         struct PartIndexAndRange
         {
-            size_t part_idx;
+            size_t part_idx{};
             MarkRanges ranges;
         };
 
@@ -99,8 +105,8 @@ private:
         std::vector<size_t> sum_marks_in_parts;
     };
 
-    std::vector<ThreadTask> threads_tasks;
-    std::set<size_t> remaining_thread_tasks;
+    std::vector<ThreadTask> threads_tasks TSA_GUARDED_BY(mutex);
+    std::set<size_t> remaining_thread_tasks TSA_GUARDED_BY(mutex);
 
     LoggerPtr log = getLogger("MergeTreeReadPool");
 };

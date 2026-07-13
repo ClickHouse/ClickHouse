@@ -101,11 +101,19 @@ forcestop()
 
 service_or_func()
 {
-    if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
-        systemctl $1 $PROGRAM
-    else
+    if [ -n "${SYSTEMCTL_SKIP_REDIRECT+x}" ]; then
         $1
+        return
     fi
+
+    if [ -x "/bin/systemctl" ] && [ -d /run/systemd/system ]; then
+        if [ -f /etc/systemd/system/clickhouse-server.service ] || [ -f /lib/systemd/system/clickhouse-server.service ]; then
+            systemctl $1 $PROGRAM
+            return
+        fi
+    fi
+
+    $1
 }
 
 forcerestart()

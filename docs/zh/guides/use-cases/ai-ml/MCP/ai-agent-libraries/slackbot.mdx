@@ -1,0 +1,116 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/slackbot
+sidebarTitle: '集成 SlackBot'
+title: '如何使用 ClickHouse MCP 服务器构建 SlackBot 智能体'
+description: '了解如何构建可与 ClickHouse MCP 服务器交互的 SlackBot 智能体。'
+keywords: ['ClickHouse', 'MCP', 'Slack', 'SlackBot', 'PydanticAI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+在本指南中，你将学习如何构建一个 [SlackBot](https://slack.com/intl/en-gb/help/articles/202026038-An-introduction-to-Slackbot) 智能体。
+这个机器人让你能够直接在 Slack 中使用自然语言查询 ClickHouse 数据。它使用
+[ClickHouse MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse) 和 [PydanticAI](https://ai.pydantic.dev/mcp/client/#__tabbed_1_1)。
+
+<Info>
+  **示例项目**
+
+  此示例的代码可在 [examples 仓库](https://github.com/ClickHouse/examples/blob/main/ai/mcp/slackbot/README.md) 中找到。
+</Info>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 你需要先安装好 [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+* 你需要有权访问一个 Slack 工作区
+* 你需要一个 Anthropic API key，或其他 LLM 提供商的 API key
+
+<Steps>
+  <Step>
+    ## 创建 Slack App
+
+    1. 前往 [slack.com/apps](https://slack.com/apps)，然后点击 `Create New App`。
+    2. 选择 `From scratch`，并为应用命名。
+    3. 选择你的 Slack 工作区。
+  </Step>
+
+  <Step>
+    ## 将应用安装到工作区
+
+    接下来，你需要将上一步创建的应用添加到工作区中。
+    你可以按照 Slack 文档 [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
+    中的说明进行操作。
+  </Step>
+
+  <Step>
+    ## 配置 Slack 应用设置
+
+    * 前往 `App Home`
+      * 在 `Show Tabs` → `Messages Tab` 下：启用 `Allow users to send Slash commands and messages from the messages tab`
+      * 前往 `Socket Mode`
+        * 启用 `Socket Mode`
+        * 记下 `Socket Mode Handler`，用于环境变量 `SLACK_APP_TOKEN`
+      * 前往 `OAuth & Permissions`
+        * 添加以下 `Bot Token Scopes`：
+          * `app_mentions:read`
+          * `assistant:write`
+          * `chat:write`
+          * `im:history`
+          * `im:read`
+          * `im:write`
+          * `channels:history`
+        * 将应用安装到你的工作区，并记下 `Bot User OAuth Token`，用于环境变量 `SLACK_BOT_TOKEN`。
+      * 前往 `Event Subscriptions`
+        * 启用 `Events`
+        * 在 `Subscribe to bot events` 下添加：
+          * `app_mention`
+          * `assistant_thread_started`
+          * `message:im`
+        * `Save Changes`
+  </Step>
+
+  <Step>
+    ## 添加环境变量 (`.env`) 
+
+    在项目根目录创建一个 `.env` 文件，并添加以下环境变量，
+    这样你的应用就能连接到 [ClickHouse 的 SQL playground](https://sql.clickhouse.com/)。
+
+    ```env
+    SLACK_BOT_TOKEN=your-slack-bot-token
+    SLACK_APP_TOKEN=your-slack-app-level-token
+    ANTHROPIC_API_KEY=your-anthropic-api-key
+    CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com
+    CLICKHOUSE_PORT=8443
+    CLICKHOUSE_USER=demo
+    CLICKHOUSE_PASSWORD=
+    CLICKHOUSE_SECURE=true
+    ```
+
+    如果你愿意，也可以调整 ClickHouse 相关变量，改为使用你自己的 ClickHouse server
+    或 Cloud 实例。
+  </Step>
+
+  <Step>
+    ## 使用机器人
+
+    1. **启动机器人：**
+
+       ```sh
+       uv run main.py
+       ```
+    2. **在 Slack 中：**
+       * 在频道中提及机器人：`@yourbot Who are the top contributors to the ClickHouse git repo?`
+       * 在线程中回复并提及机器人：`@yourbot how many contributions did these users make last week?`
+       * 给机器人发送私信：`Show me all tables in the demo database.`
+
+    机器人会在线程中回复，
+    并在适用时使用该线程中之前的所有消息作为上下文。
+
+    **线程上下文：**
+    在线程中回复时，机器人会加载之前的所有消息 (当前消息除外) ，并将其作为 AI 的上下文。
+
+    **工具使用：**
+    机器人只会使用通过 MCP 提供的工具 (例如 schema 发现、SQL 执行) ，并始终展示所使用的 SQL 以及答案生成方式的摘要。
+  </Step>
+</Steps>

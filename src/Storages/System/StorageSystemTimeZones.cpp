@@ -1,7 +1,7 @@
-#include "StorageSystemTimeZones.h"
-
-#include <algorithm>
+#include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
+#include <Storages/System/StorageSystemTimeZones.h>
 
 
 extern const char * auto_time_zones[];
@@ -22,3 +22,6 @@ void StorageSystemTimeZones::fillData(MutableColumns & res_columns, ContextPtr, 
         res_columns[0]->insert(String(*it));
 }
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTimeZones) }

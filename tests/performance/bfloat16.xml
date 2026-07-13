@@ -1,0 +1,17 @@
+<test>
+    <substitutions>
+        <substitution>
+           <name>op</name>
+           <values>
+               <value>=</value>
+               <value>!=</value>
+               <value>+</value>
+               <value>-</value>
+               <value>*</value>
+               <value>/</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT toBFloat16(number) {op} toBFloat16(42.0) FROM numbers(1000000000) FORMAT Null</query>
+</test>

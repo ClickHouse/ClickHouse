@@ -47,6 +47,4 @@ TEST(EventNotifier, SimpleTest)
     handler13.reset();
     EventNotifier::instance().notify(Coordination::Error::ZSESSIONEXPIRED);
     ASSERT_EQ(result, 1);
-
-    EventNotifier::shutdown();
 }

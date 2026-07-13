@@ -8,7 +8,7 @@ CREATE TABLE source
 
 ) ENGINE = MergeTree ORDER BY ();
 
-INSERT INTO source SELECT ['fail', 'success'][number % 2] as Name, number AS Value FROM numbers(1000);
+INSERT INTO source SELECT ['fail', 'success'][((number + 1) % 2) + 1] as Name, number AS Value FROM numbers(1000);
 
 DROP TABLE IF EXISTS test_agg_variant;
 CREATE TABLE test_agg_variant
@@ -39,20 +39,23 @@ SELECT
     Name,
     uniqExactMerge(Value.`AggregateFunction(uniqExact, Int64)`) AS Value
 FROM test_agg_variant
-GROUP BY Name;
+GROUP BY Name
+ORDER BY Name;
 
 SELECT
     Name,
     avgMerge(Value.`AggregateFunction(avg, Int64)`) AS Value
 FROM test_agg_variant
-GROUP BY Name;
+GROUP BY Name
+ORDER BY Name;
 
 SELECT
     Name,
     uniqExactMerge(Value.`AggregateFunction(uniqExact, Int64)`) AS ValueUniq,
     avgMerge(Value.`AggregateFunction(avg, Int64)`) AS ValueAvg
 FROM test_agg_variant
-GROUP BY Name;
+GROUP BY Name
+ORDER BY Name;
 
 
 DROP TABLE test_agg_variant;

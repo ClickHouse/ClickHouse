@@ -1,0 +1,72 @@
+---
+description: 'Installer ClickHouse'
+keywords: ['ClickHouse', 'installation', 'prise en main', 'démarrage rapide']
+sidebarTitle: 'Installer'
+slug: /install
+title: 'Instructions d’installation'
+doc_type: 'guide'
+---
+
+import {galaxyOnClick} from "/snippets/fr/lib/galaxy.jsx";
+
+<Card title="ClickHouse Cloud" icon="cloud" href="https://console.clickhouse.cloud/signUp?loc=docs-install-page-banner" cta="Commencer gratuitement">
+  Créez immédiatement sans avoir à dimensionner ni à faire évoluer votre cluster. ClickHouse Cloud s&#39;occupe du dimensionnement, de la mise à l&#39;échelle
+  , de la sécurité, de la fiabilité et des mises à niveau.
+</Card>
+
+<br />
+
+Si vous préférez l&#39;autogérer, sélectionnez l&#39;une des options open source de ClickHouse ci-dessous.
+Utilisez le script d&#39;installation rapide ou la CLI `clickhousectl` pour une installation locale, ou installez
+ClickHouse Server à partir de paquets ou de binaires pour un déploiement en production.
+
+<h3 className="install-group-heading">Développement local</h3>
+
+<p className="install-group-description">
+  Exécutez ClickHouse sur votre propre machine pour développer, tester et expérimenter.
+  L&#39;installation rapide vous fournit rapidement un binaire unique, ou utilisez clickhousectl
+  pour installer et gérer des versions locales et des serveurs.
+</p>
+
+<div className="installContainer">
+  <a href="/install/quick-install" style={{textDecoration: 'none'}}>
+    <Card title="Installation rapide" />
+  </a>
+
+  <a href="/install/clickhousectl" style={{textDecoration: 'none'}}>
+    <Card title="clickhousectl (CLI)" icon="console" />
+  </a>
+
+  <a href="/install/docker" style={{textDecoration: 'none'}}>
+    <Card title="Docker" />
+  </a>
+
+  <a href="/install/advanced" style={{textDecoration: 'none'}}>
+    <Card title="Compilation depuis les sources" icon="code" />
+  </a>
+</div>
+
+<h3 className="install-group-heading">Serveur de production</h3>
+
+<p className="install-group-description">
+  Installez ClickHouse Server à partir de paquets ou de binaires pour un
+  déploiement durable sur votre propre infrastructure.
+</p>
+
+<div className="installContainer">
+  <a href="/install/debian_ubuntu" style={{textDecoration: 'none'}}>
+    <Card title="Debian/Ubuntu" />
+  </a>
+
+  <a href="/install/redhat" style={{textDecoration: 'none'}}>
+    <Card title="Redhat" />
+  </a>
+
+  <a href="/install/nixos" style={{textDecoration: 'none'}}>
+    <Card title="NixOS" />
+  </a>
+
+  <a href="/install/linux_other" style={{textDecoration: 'none'}}>
+    <Card title="Autres distributions Linux" />
+  </a>
+</div>

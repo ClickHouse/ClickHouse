@@ -13,7 +13,7 @@ do
     it=$((it+1))
     $CLICKHOUSE_CLIENT --query "
         DROP TABLE IF EXISTS mt;
-        CREATE TABLE mt (x UInt8, k UInt8 DEFAULT 0) ENGINE = SummingMergeTree ORDER BY k;
+        CREATE TABLE mt (x UInt8, k UInt8 DEFAULT 0) ENGINE = SummingMergeTree ORDER BY k SETTINGS concurrent_part_removal_threshold=1;
 
         INSERT INTO mt (x) VALUES (1);
         INSERT INTO mt (x) VALUES (2);

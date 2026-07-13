@@ -13,7 +13,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO ws FORMAT RowBinary
 ; ";
 echo -n ";" | $CLICKHOUSE_CLIENT -q "INSERT INTO ws FORMAT RowBinary";
 
-$CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT * FROM ws";
+$CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT * FROM ws ORDER BY ALL";
 $CLICKHOUSE_CLIENT -q "DROP TABLE ws";
 
 
@@ -27,6 +27,6 @@ echo ";" | $CLICKHOUSE_CLIENT -q "INSERT INTO ws FORMAT TSV"
 if $CLICKHOUSE_CLIENT -q "INSERT INTO ws FORMAT TSV;" 1>/dev/null 2>/dev/null; then
     echo ERROR;
 fi
-$CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT * FROM ws";
+$CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT * FROM ws ORDER BY ALL";
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ws";

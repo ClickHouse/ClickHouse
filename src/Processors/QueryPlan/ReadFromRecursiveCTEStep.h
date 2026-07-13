@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Processors/QueryPlan/ISourceStep.h>
-
 #include <Analyzer/IQueryTreeNode.h>
+#include <Core/Block_fwd.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 
 namespace DB
 {
@@ -10,7 +10,7 @@ namespace DB
 class ReadFromRecursiveCTEStep : public ISourceStep
 {
 public:
-    explicit ReadFromRecursiveCTEStep(Block output_header, QueryTreeNodePtr recursive_cte_union_node_);
+    explicit ReadFromRecursiveCTEStep(SharedHeader output_header, QueryTreeNodePtr recursive_cte_union_node_);
 
     String getName() const override { return "ReadFromRecursiveCTEStep"; }
 

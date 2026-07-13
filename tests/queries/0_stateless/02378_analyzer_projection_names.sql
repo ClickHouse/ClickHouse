@@ -191,6 +191,10 @@ DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value, [1,2,3]) FROM test_tab
 
 SELECT '--';
 
+DESCRIBE (SELECT arrayMap(x -> tt.* EXCEPT value, [1,2,3]) FROM test_table as tt);
+
+SELECT '--';
+
 DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value APPLY x -> x, [1,2,3]) FROM test_table);
 
 SELECT '--';

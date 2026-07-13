@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper
+# Tags: zookeeper, no-shared-merge-tree, long
+# no-shared-merge-tree: depend on local fs
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -42,6 +43,9 @@ $CLICKHOUSE_CLIENT -q "system sync replica rmt1;"
 $CLICKHOUSE_CLIENT -q "system sync replica rmt2;"
 $CLICKHOUSE_CLIENT -q "select 3, *, _part from rmt1 order by n;"
 $CLICKHOUSE_CLIENT -q "select 4, *, _part from rmt2 order by n;"
+
+$CLICKHOUSE_CLIENT -q "detach table rmt1;"
+$CLICKHOUSE_CLIENT -q "attach table rmt1;"
 
 $CLICKHOUSE_CLIENT -q "drop table rmt1 sync;"
 $CLICKHOUSE_CLIENT -q "drop table rmt2 sync;"

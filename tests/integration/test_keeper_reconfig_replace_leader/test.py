@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
-import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from os.path import join, dirname, realpath
 import time
-import helpers.keeper_utils as ku
 import typing as tp
+from os.path import dirname, join, realpath
+
+import pytest
+
+import helpers.keeper_utils as ku
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = join(dirname(realpath(__file__)), "configs")
@@ -90,7 +92,12 @@ def test_reconfig_replace_leader(started_cluster):
     ):
         time.sleep(1)
 
-    # additional 20s wait before removing leader
+    # additional 20s wait before removing leader;
+    # create new client because leader migration may spuriously close client sessions
+    # (see comment next to dropInFlightRequests call in KeeperRequestDispatcher,
+    #  if it's still there)
+    zk2.stop()
+    zk2 = create_client(node2)
     ku.wait_configs_equal(config, zk2, timeout=50)
 
     node4.start_clickhouse()

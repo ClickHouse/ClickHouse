@@ -10,11 +10,11 @@ namespace DB
 class IInputFormat;
 
 /// Adds defaults to columns using BlockDelayedDefaults bitmask attached to Block by child InputStream.
-class AddingDefaultsTransform : public ISimpleTransform
+class AddingDefaultsTransform final : public ISimpleTransform
 {
 public:
     AddingDefaultsTransform(
-        const Block & header,
+        SharedHeader header,
         const ColumnsDescription & columns_,
         IInputFormat & input_format_,
         ContextPtr context_);

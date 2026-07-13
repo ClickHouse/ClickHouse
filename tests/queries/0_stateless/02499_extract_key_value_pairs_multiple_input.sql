@@ -404,7 +404,7 @@ SELECT
 
 -- should fail because one extra argument / non existent has been provided
 WITH
-    extractKeyValuePairs('a', ':', ',', '"', '') AS s_map,
+    extractKeyValuePairs('a', ':', ',', '"', 'accept', '') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -483,7 +483,7 @@ SELECT
 
 -- https://github.com/ClickHouse/ClickHouse/issues/56357
 WITH
-    extractKeyValuePairs('{"a":"1", "b":"2"}') as s_map,
+    extractKeyValuePairs('{"a":"1", "b":"2"}', ':', '{, }') as s_map,
     CAST(
         arrayMap(
             (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -514,5 +514,177 @@ WITH
                 ),
             'Map(String,String)'
         ) AS x
+SELECT
+    x;
+
+-- Quoting character must be escaped, otherwise key will be discarded. Consider using `unexpected_quoting_character_strategy`
+WITH
+    extractKeyValuePairs('key:"#123"junk", second_key:0') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- test unexpected_quoting_character_strategy
+-- unexpected_quoting_character_strategy=accept, the quoting characters shall become part of the key
+WITH
+    extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'accept') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- unexpected_quoting_character_strategy=invalid, empty return
+WITH
+    extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'invalid') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- unexpected_quoting_character_strategy=promote, abc=5
+WITH
+    extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'promote') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- test unexpected_quoting_character_strategy
+-- unexpected_quoting_character_strategy=accept, the quoting character shall become part of the key
+WITH
+    extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'accept') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- unexpected_quoting_character_strategy=invalid, start reading key from abc
+WITH
+    extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'invalid') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- unexpected_quoting_character_strategy=promote, start reading abc as quoted key but fails to find closing quoting character
+WITH
+    extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'promote') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- test unexpected_quoting_character_strategy
+-- unexpected_quoting_character_strategy=accept, the quoting characters shall become part of the value
+WITH
+    extractKeyValuePairs('key:val"abc', ':', ' ,;', '\"', 'accept') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- unexpected_quoting_character_strategy=invalid, empty return
+WITH
+    extractKeyValuePairs('key:val"abc', ':', ' ,;', '\"', 'invalid') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- unexpected_quoting_character_strategy=promote, empty
+WITH
+    extractKeyValuePairs('key:val"abc', ':', ' ,;', '\"', 'promote') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- test unexpected_quoting_character_strategy
+-- unexpected_quoting_character_strategy=accept, the quoting characters shall become part of the value
+WITH
+    extractKeyValuePairs('key:val"abc"', ':', ' ,;', '\"', 'accept') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- unexpected_quoting_character_strategy=invalid, empty
+WITH
+    extractKeyValuePairs('key:val"abc"', ':', ' ,;', '\"', 'invalid') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- unexpected_quoting_character_strategy=promote, start reading abc as quoted key but fails to find closing quoting character
+WITH
+    extractKeyValuePairs('key:val"abc"', ':', ' ,;', '\"', 'promote') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- after parsing a quoted value, the next key should only start after a pair delimiter
+WITH
+    extractKeyValuePairs('key:"quoted_value"junk,second_key:0') as s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
 SELECT
     x;

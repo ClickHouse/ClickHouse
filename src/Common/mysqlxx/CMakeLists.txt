@@ -20,7 +20,3 @@ target_link_libraries (mysqlxx
 )
 
 add_library(ch::mysqlxx ALIAS mysqlxx)
-
-if (ENABLE_TESTS)
-    add_subdirectory (tests)
-endif ()

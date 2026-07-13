@@ -1,7 +1,11 @@
 #pragma once
 
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <Core/Types.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#include <IO/DistributedCacheSettings.h>
+#endif
 
 namespace DB
 {
@@ -24,7 +28,23 @@ struct WriteSettings
     bool s3_allow_parallel_part_upload = true;
     bool azure_allow_parallel_part_upload = true;
 
+    bool use_adaptive_write_buffer = false;
+    size_t adaptive_write_buffer_initial_size = 16 * 1024;
+
+    bool write_through_distributed_cache = false;
+#if ENABLE_DISTRIBUTED_CACHE
+    DistributedCacheSettings distributed_cache_settings;
+#endif
+
+    bool is_initial_access_check = false;
+
+    std::string object_storage_write_if_none_match; /// Supported only for S3-like object storages.
+    std::string object_storage_write_if_match;     /// Supported only for S3-like object storages.
+
     bool operator==(const WriteSettings & other) const = default;
 };
 
+WriteSettings getWriteSettings();
+
+WriteSettings getWriteSettingsForMetadata();
 }

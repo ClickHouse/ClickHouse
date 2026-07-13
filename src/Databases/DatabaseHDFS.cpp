@@ -14,7 +14,10 @@
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/Logger.h>
+#include <Common/quoteString.h>
 #include <Common/re2.h>
+#include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
 
 #include <Poco/URI.h>
@@ -25,6 +28,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -101,7 +109,7 @@ bool DatabaseHDFS::checkUrl(const std::string & url, ContextPtr context_, bool t
 bool DatabaseHDFS::isTableExist(const String & name, ContextPtr context_) const
 {
     std::lock_guard lock(mutex);
-    if (loaded_tables.find(name) != loaded_tables.end())
+    if (loaded_tables.contains(name))
         return true;
 
     return checkUrl(name, context_, false);
@@ -121,7 +129,7 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
 
     checkUrl(url, context_, true);
 
-    auto args = makeASTFunction("hdfs", std::make_shared<ASTLiteral>(url));
+    auto args = makeASTFunction("hdfs", make_intrusive<ASTLiteral>(url));
 
     auto table_function = TableFunctionFactory::instance().get(args, context_);
     if (!table_function)
@@ -178,18 +186,19 @@ bool DatabaseHDFS::empty() const
     return loaded_tables.empty();
 }
 
-ASTPtr DatabaseHDFS::getCreateDatabaseQuery() const
+ASTPtr DatabaseHDFS::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(getDatabaseName()), source);
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(database_name), source);
+    ASTPtr ast
+        = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
     }
 
     return ast;
@@ -231,6 +240,7 @@ DatabaseTablesIteratorPtr DatabaseHDFS::getTablesIterator(ContextPtr, const Filt
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
+void registerDatabaseHDFS(DatabaseFactory & factory);
 void registerDatabaseHDFS(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -253,7 +263,14 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
-    factory.registerDatabase("HDFS", create_fn);
+    factory.registerDatabase("HDFS", create_fn, {
+        .supports_arguments = true,
+        .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::HDFS,
+    }, Documentation{
+        .description = "A read-only database that exposes files in HDFS as tables.",
+        .syntax = "ENGINE = HDFS([hdfs_host_and_root_path])",
+        .related = {"S3", "Filesystem"}});
 }
 } // DB
 

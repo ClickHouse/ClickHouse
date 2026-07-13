@@ -1,5 +1,6 @@
--- Tags: long, no-tsan, no-msan, no-distributed-cache
--- Too long for TSan and MSan
+-- Tags: long, no-tsan, no-msan, no-asan, no-distributed-cache
+-- Too long for TSan, MSan and ASan: inserts ~25M rows of long strings leaving the server
+-- RSS elevated (ASan keeps freed pages), which causes cascading OOM in parallel test runs.
 
 set enable_filesystem_cache=0;
 set enable_filesystem_cache_on_write_operations=0;
@@ -11,7 +12,7 @@ create table t (x UInt64, s String) engine = MergeTree order by x SETTINGS index
 INSERT INTO t SELECT
     number,
     if(number < (8129 * 1024), arrayStringConcat(arrayMap(x -> toString(x), range(number % 128)), ' '), '')
-FROM numbers_mt((8129 * 1024) * 3) settings max_insert_threads=8, max_rows_to_read=0;
+FROM numbers_mt((8129 * 1024) * 3) settings max_insert_threads=8, max_rows_to_read=0, max_memory_usage='10Gi';
 
 -- optimize table t final;
 

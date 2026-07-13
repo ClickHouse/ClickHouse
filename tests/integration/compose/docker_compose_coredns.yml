@@ -1,5 +1,3 @@
-version: "2.3"
-
 services:
   coredns:
     image: coredns/coredns:1.9.3 # :latest broke this test
@@ -7,3 +5,5 @@ services:
     volumes:
       - ${COREDNS_CONFIG_DIR}/example.com:/example.com
       - ${COREDNS_CONFIG_DIR}/Corefile:/Corefile
+    stop_grace_period: 5s
+    cpus: 3

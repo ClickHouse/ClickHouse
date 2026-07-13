@@ -1,0 +1,52 @@
+#!/usr/bin/expect -f
+# test for issue: https://github.com/ClickHouse/ClickHouse/issues/83987
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/--highlight 1} --history_file=$history_file"
+expect "\n:) "
+
+# Validate that hex character sequence doesn't cause the client to crash.
+# Also validate that highlighting works correctly.
+send  "SELECT x'A0';\r"
+
+expect -- "\033\\\[0;22;32mx'A0'\033\\\[0m"
+
+# expect at least one byte and a newline to pass
+expect -re {.+\r\n};
+
+expect ":) "
+
+# test for one more edge case that causes the client to crash
+send  "CREATE TABLE t0 (c0 Enum(x'e282' = 1)) ENGINE = MergeTree() ORDER BY tuple();\r"
+
+expect -- "\033\\\[0;22;32mx'e282'\033\\\[0m"
+
+expect ":) "
+
+# drop and clean up table
+send  "DROP TABLE t0;\r"
+expect ":) "
+
+# Ctrl+D
+send -- "\4"
+expect eof

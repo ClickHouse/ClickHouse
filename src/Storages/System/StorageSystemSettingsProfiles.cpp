@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemSettingsProfiles.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/SettingsProfile.h>
@@ -101,10 +102,13 @@ void StorageSystemSettingsProfiles::backupData(
 }
 
 void StorageSystemSettingsProfiles::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer);
+    access_control.restoreFromBackup(restorer, data_path_in_backup);
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSettingsProfiles) }

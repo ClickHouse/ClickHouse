@@ -21,13 +21,16 @@ public:
     };
     Kind kind = Kind::SET_ROLE;
 
-    std::shared_ptr<ASTRolesOrUsersSet> roles;
-    std::shared_ptr<ASTRolesOrUsersSet> to_users;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> to_users;
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Set; }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
+
 }

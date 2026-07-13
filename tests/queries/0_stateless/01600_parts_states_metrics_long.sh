@@ -27,7 +27,7 @@ verify()
             (SELECT sum(active), sum(NOT active) FROM (
                 SELECT active FROM system.parts
                 UNION ALL SELECT active FROM system.projection_parts
-                UNION ALL SELECT 1 FROM system.dropped_tables_parts
+                UNION ALL SELECT active FROM system.dropped_tables_parts
             ))"
         )
 
@@ -43,7 +43,7 @@ verify()
         SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics;
         SELECT sum(active), sum(NOT active) FROM system.parts;
         SELECT sum(active), sum(NOT active) FROM system.projection_parts;
-        SELECT count() FROM system.dropped_tables_parts;
+        SELECT sum(active), sum(NOT active) FROM system.dropped_tables_parts;
     "
 }
 

@@ -3,8 +3,8 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", stay_alive=True)
-node2 = cluster.add_instance("node2", stay_alive=True)
+node1 = cluster.add_instance("node1", stay_alive=True, main_configs=["configs/config.xml"])
+node2 = cluster.add_instance("node2", stay_alive=True, main_configs=["configs/config.xml"], cpu_limit=6)
 
 
 @pytest.fixture(scope="module")
@@ -30,7 +30,7 @@ def get_async_metric(node, metric):
         SELECT max(value)
             FROM (
             SELECT toStartOfInterval(event_time, toIntervalSecond(1)) AS t, avg(value) AS value
-                FROM system.asynchronous_metric_log
+            FROM system.asynchronous_metric_log
             WHERE event_time >= now() - 60 AND metric = '{metric}'
             GROUP BY t
             )
@@ -46,13 +46,12 @@ def test_user_cpu_accounting(start_cluster):
     # run query on the other node, its usage shouldn't be accounted by node1
     run_cpu_intensive_task(node2)
 
-    node1_cpu_time = get_async_metric(node1, "OSUserTime")
-    assert float(node1_cpu_time) < 2
+    node1_cgroup_cpu_time = get_async_metric(node1, "CGroupUserTime")
+    assert float(node1_cgroup_cpu_time) < 2
 
-    # then let's test that we will account cpu time spent by the server itself
-    node2_cpu_time = get_async_metric(node2, "OSUserTime")
+    node1_os_cpu_time = get_async_metric(node1, "OSUserTime")
     # this check is really weak, but CI is tough place and we cannot guarantee that test process will get many cpu time
-    assert float(node2_cpu_time) > 2
+    assert float(node1_os_cpu_time) > 2
 
 
 def test_normalized_user_cpu(start_cluster):
@@ -62,8 +61,31 @@ def test_normalized_user_cpu(start_cluster):
     # run query on the other node, its usage shouldn't be accounted by node1
     run_cpu_intensive_task(node2)
 
-    node1_cpu_time = get_async_metric(node1, "OSUserTimeNormalized")
-    assert float(node1_cpu_time) < 1.01
+    node1_cpu_time = get_async_metric(node1, "CGroupUserTimeNormalized")
+    assert float(node1_cpu_time) < 1.1
 
-    node2_cpu_time = get_async_metric(node2, "OSUserTimeNormalized")
-    assert float(node2_cpu_time) < 1.01
+    node2_cpu_time = get_async_metric(node2, "CGroupUserTimeNormalized")
+    assert float(node2_cpu_time) < 1.1
+
+
+def test_system_wide_metrics(start_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
+    run_cpu_intensive_task(node2)
+
+    # /proc/loadavg - LoadAverage1
+    # /proc/uptime - OSUptime
+    # /proc/stat - OSProcessesRunning, OSInterrupts
+    # /proc/meminfo - OSMemoryTotal
+    for metric in [
+        "LoadAverage1",
+        "OSUptime",
+        "OSProcessesRunning",
+        "OSInterrupts",
+        "OSMemoryTotal",
+        "OSUserTimeNormalized",
+        "OSSystemTimeNormalized",
+    ]:
+        node2_value = get_async_metric(node2, metric)
+        assert float(node2_value) > 0
