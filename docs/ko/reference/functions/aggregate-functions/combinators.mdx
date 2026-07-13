@@ -1,0 +1,343 @@
+---
+description: '집계 함수 조합자에 대한 문서'
+sidebarTitle: '조합자'
+slug: /sql-reference/aggregate-functions/combinators
+title: '집계 함수 조합자'
+doc_type: 'reference'
+---
+
+집계 함수 이름 뒤에 접미사를 붙일 수 있습니다. 이렇게 하면 집계 함수의 동작 방식이 바뀝니다.
+
+<div id="-if">
+  ## -If
+</div>
+
+접미사 -If는 모든 집계 함수 이름에 붙일 수 있습니다. 이 경우 집계 함수는 추가 인수로 조건(Uint8 유형)을 받습니다. 집계 함수는 해당 조건을 만족하는 행만 처리합니다. 조건이 한 번도 만족되지 않으면 기본값(보통 0 또는 빈 문자열)을 반환합니다.
+
+예시: `sumIf(column, cond)`, `countIf(cond)`, `avgIf(x, cond)`, `quantilesTimingIf(level1, level2)(x, cond)`, `argMinIf(arg, val, cond)` 등입니다.
+
+조건부 집계 함수를 사용하면 서브쿼리와 `JOIN`을 사용하지 않고도 여러 조건에 대한 집계를 한 번에 계산할 수 있습니다. 예를 들어, 조건부 집계 함수는 세그먼트 비교 기능을 구현하는 데 사용할 수 있습니다.
+
+<div id="-array">
+  ## -Array
+</div>
+
+`-Array` 접미사는 모든 집계 함수에 붙일 수 있습니다. 이 경우 집계 함수는 `T` 유형 인수 대신 `Array(T)` 유형(배열)의 인수를 받습니다. 집계 함수가 여러 인수를 받는 경우, 해당 인수는 길이가 같은 배열이어야 합니다. 배열을 처리할 때 집계 함수는 모든 배열 요소에 대해 원래 집계 함수와 동일한 방식으로 동작합니다.
+
+예시 1: `sumArray(arr)` - 모든 `arr` 배열의 모든 요소를 합산합니다. 이 예시에서는 더 간단하게 `sum(arraySum(arr))`로 작성할 수도 있습니다.
+
+예시 2: `uniqArray(arr)` – 모든 `arr` 배열에서 고유한 요소 수를 계산합니다. 이는 `uniq(arrayJoin(arr))`로 더 쉽게 처리할 수 있지만, 쿼리에 `arrayJoin`을 추가할 수 없는 경우도 있습니다.
+
+`-If`와 `-Array`는 함께 사용할 수 있습니다. 단, `Array`가 먼저 오고 그다음에 `If`가 와야 합니다. 예시: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. 이 순서 때문에 `cond` 인수는 배열이 아닙니다.
+
+<div id="-map">
+  ## -Map
+</div>
+
+-Map 접미사는 모든 집계 함수에 붙일 수 있습니다. 이렇게 하면 맵(Map) 타입을 인수로 받고, 지정된 집계 함수를 사용해 맵의 각 키에 대한 값을 개별적으로 집계하는 집계 함수가 생성됩니다. 결과 역시 맵(Map) 타입입니다.
+
+**예시**
+
+```sql
+CREATE TABLE map_map(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO map_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [10, 10, 10]));
+
+SELECT
+    timeslot,
+    sumMap(status),
+    avgMap(status),
+    minMap(status)
+FROM map_map
+GROUP BY timeslot;
+
+┌────────────timeslot─┬─sumMap(status)───────────────────────┬─avgMap(status)───────────────────────┬─minMap(status)───────────────────────┐
+│ 2000-01-01 00:00:00 │ {'a':10,'b':10,'c':20,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │
+│ 2000-01-01 00:01:00 │ {'d':10,'e':10,'f':20,'g':20}        │ {'d':10,'e':10,'f':10,'g':10}        │ {'d':10,'e':10,'f':10,'g':10}        │
+└─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="-simplestate">
+  ## -SimpleState
+</div>
+
+이 조합자를 적용하면 집계 함수는 동일한 값을 반환하지만 타입은 달라집니다. 반환되는 타입은 [SimpleAggregateFunction(...)](/ko/reference/data-types/simpleaggregatefunction)이며, [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 테이블과 함께 사용할 수 있도록 테이블에 저장할 수 있습니다.
+
+**구문**
+
+```sql
+<aggFunction>SimpleState(x)
+```
+
+**인수**
+
+* `x` — 집계 함수의 매개변수입니다.
+
+**반환 값**
+
+`SimpleAggregateFunction(...)` 유형을 갖는 집계 함수의 값입니다.
+
+**예시**
+
+```sql title="Query"
+WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
+```
+
+```text title="Response"
+┌─toTypeName(c)────────────────────────┬─c─┐
+│ SimpleAggregateFunction(any, UInt64) │ 0 │
+└──────────────────────────────────────┴───┘
+```
+
+<div id="-state">
+  ## -State
+</div>
+
+이 조합자를 적용하면 집계 함수는 결과 값(예: [uniq](/ko/reference/functions/aggregate-functions/uniq) 함수의 고유값 개수)을 반환하지 않고 집계의 중간 상태를 반환합니다(`uniq`의 경우 고유값 개수를 계산하기 위한 해시 테이블). 이는 이후 추가 처리에 사용하거나 나중에 집계를 완료할 수 있도록 테이블에 저장할 수 있는 `AggregateFunction(...)`입니다.
+
+<Note>
+  유의하십시오. -MapState는 중간 상태의 데이터 순서가 바뀔 수 있으므로 동일한 데이터에 대해서도 불변하지 않습니다. 하지만 이는 이 데이터의 수집에는 영향을 주지 않습니다.
+</Note>
+
+이러한 상태를 다루려면 다음을 사용하십시오.
+
+* [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 테이블 엔진.
+* [finalizeAggregation](/ko/reference/functions/regular-functions/other-functions#finalizeAggregation) 함수.
+* [runningAccumulate](/ko/reference/functions/regular-functions/other-functions#runningAccumulate) 함수.
+* [-Merge](#-merge) 조합자.
+* [-MergeState](#-mergestate) 조합자.
+
+<div id="-merge">
+  ## -Merge
+</div>
+
+이 조합자를 적용하면 집계 함수는 중간 집계 상태를 인수로 받아, 해당 상태들을 결합해 집계를 완료한 뒤 결과 값을 반환합니다.
+
+<div id="-mergestate">
+  ## -MergeState
+</div>
+
+-Merge 조합자(combinator)와 같은 방식으로 중간 집계 상태를 머지합니다. 다만 결과값을 반환하는 대신, -State 조합자와 마찬가지로 중간 집계 상태를 반환합니다.
+
+<div id="-foreach">
+  ## -ForEach
+</div>
+
+테이블용 집계 함수를 배열용 집계 함수로 변환합니다. 이 함수는 각 배열의 같은 위치에 있는 항목들을 집계해 결과 배열을 반환합니다. 예를 들어, 배열 `[1, 2]`, `[3, 4, 5]`and`[6, 7]`에 대해 `sumForEach`를 사용하면 같은 위치의 배열 항목들을 더한 결과인 `[10, 13, 5]`를 반환합니다.
+
+<div id="-distinct">
+  ## -Distinct
+</div>
+
+각 고유한 인수 조합은 한 번만 집계됩니다. 중복되는 값은 무시됩니다.
+예시: `sum(DISTINCT x)` (또는 `sumDistinct(x)`), `groupArray(DISTINCT x)` (또는 `groupArrayDistinct(x)`), `corrStable(DISTINCT x, y)` (또는 `corrStableDistinct(x, y)`) 등이 있습니다.
+
+<div id="-ordefault">
+  ## -OrDefault
+</div>
+
+집계 함수의 동작을 변경합니다.
+
+집계 함수에 입력 값이 없을 경우, 이 조합자를 사용하면 반환 데이터 타입의 기본값을 반환합니다. 빈 입력 데이터를 받을 수 있는 집계 함수에 적용됩니다.
+
+`-OrDefault`는 다른 조합자와 함께 사용할 수 있습니다.
+
+**구문**
+
+```sql
+<aggFunction>OrDefault(x)
+```
+
+**인수**
+
+* `x` — 집계 함수의 매개변수입니다.
+
+**반환 값**
+
+집계할 값이 없으면 집계 함수 반환 유형의 기본값을 반환합니다.
+
+유형은 사용하는 집계 함수에 따라 달라집니다.
+
+**예시**
+
+```sql title="Query"
+SELECT avg(number), avgOrDefault(number) FROM numbers(0)
+```
+
+```text title="Response"
+┌─avg(number)─┬─avgOrDefault(number)─┐
+│         nan │                    0 │
+└─────────────┴──────────────────────┘
+```
+
+또한 `-OrDefault`는 다른 조합자와도 함께 사용할 수 있습니다. 집계 함수가 빈 입력을 허용하지 않는 경우에 유용합니다.
+
+```sql title="Query"
+SELECT avgOrDefaultIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+```text title="Response"
+┌─avgOrDefaultIf(x, greater(x, 10))─┐
+│                              0.00 │
+└───────────────────────────────────┘
+```
+
+<div id="-ornull">
+  ## -OrNull
+</div>
+
+집계 함수의 동작을 변경합니다.
+
+이 조합자는 집계 함수의 결과를 [널 허용(Nullable)](/ko/reference/data-types/nullable) 데이터 타입으로 변환합니다. 집계 함수가 계산할 값이 없으면 [NULL](/ko/reference/settings/formats#input_format_null_as_default)을 반환합니다.
+
+`-OrNull`은 다른 조합자와 함께 사용할 수 있습니다.
+
+**구문**
+
+```sql
+<aggFunction>OrNull(x)
+```
+
+**인수**
+
+* `x` — 집계 함수의 매개변수입니다.
+
+**반환 값**
+
+* 집계 함수의 결과를 `Nullable` 데이터 타입으로 변환한 값입니다.
+* 집계할 값이 없으면 `NULL`입니다.
+
+유형: `Nullable(aggregate function return type)`.
+
+**예시**
+
+집계 함수 끝에 `-orNull`을 추가합니다.
+
+```sql title="Query"
+SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
+```
+
+```text title="Response"
+┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
+│              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
+└───────────────────┴───────────────────────────────┘
+```
+
+또한 `-OrNull`은 다른 combinator와 함께 사용할 수도 있습니다. 집계 함수가 빈 입력을 받지 못할 때 유용합니다.
+
+```sql title="Query"
+SELECT avgOrNullIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+```text title="Response"
+┌─avgOrNullIf(x, greater(x, 10))─┐
+│                           ᴺᵁᴸᴸ │
+└────────────────────────────────┘
+```
+
+<div id="-resample">
+  ## -Resample
+</div>
+
+데이터를 그룹으로 나눈 뒤, 각 그룹의 데이터를 별도로 집계할 수 있습니다. 그룹은 하나의 컬럼 값을 인터벌 단위로 나누어 생성됩니다.
+
+```sql
+<aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
+```
+
+**인수**
+
+* `start` — `resampling_key` 값에 대해 필요한 전체 인터벌의 시작 값입니다.
+* `stop` — `resampling_key` 값에 대해 필요한 전체 인터벌의 끝 값입니다. 전체 인터벌에는 `stop` 값이 포함되지 않습니다(`[start, stop)`).
+* `step` — 전체 인터벌을 하위 인터벌로 나누는 간격입니다. `aggFunction`은 각 하위 인터벌에서 독립적으로 실행됩니다.
+* `resampling_key` — 값에 따라 데이터를 인터벌로 나누는 데 사용하는 컬럼입니다.
+* `aggFunction_params` — `aggFunction`의 매개변수입니다.
+
+**반환 값**
+
+* 각 하위 인터벌에 대한 `aggFunction` 결과의 배열입니다.
+
+**예시**
+
+다음 데이터가 있는 `people` 테이블을 예로 들어 보겠습니다:
+
+```text
+┌─name───┬─age─┬─wage─┐
+│ John   │  16 │   10 │
+│ Alice  │  30 │   15 │
+│ Mary   │  35 │    8 │
+│ Evelyn │  48 │ 11.5 │
+│ David  │  62 │  9.9 │
+│ Brian  │  60 │   16 │
+└────────┴─────┴──────┘
+```
+
+나이가 `[30,60)` 및 `[60,75)` 인터벌에 속하는 사람들의 이름을 구해 보겠습니다. 나이는 정수로 표현하므로 실제로는 `[30, 59]` 및 `[60,74]` 인터벌에 해당하는 나이를 얻게 됩니다.
+
+이름을 배열로 집계하려면 [groupArray](/ko/reference/functions/aggregate-functions/groupArray) 집계 함수를 사용합니다. 이 함수는 하나의 인수를 받습니다. 여기서는 `name` 컬럼입니다. `groupArrayResample` 함수는 `age` 컬럼을 사용해 나이별로 이름을 집계합니다. 필요한 인터벌을 정의하려면 `30, 75, 30` 인수를 `groupArrayResample` 함수에 전달합니다.
+
+```sql
+SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
+```
+
+```text
+┌─groupArrayResample(30, 75, 30)(name, age)─────┐
+│ [['Alice','Mary','Evelyn'],['David','Brian']] │
+└───────────────────────────────────────────────┘
+```
+
+결과를 살펴보겠습니다.
+
+`John`은 너무 어려서 표본에서 제외됩니다. 다른 사람들은 지정된 연령 구간에 따라 분류됩니다.
+
+이제 지정된 연령 구간별 전체 인원 수와 평균 임금을 계산해 보겠습니다.
+
+```sql
+SELECT
+    countResample(30, 75, 30)(name, age) AS amount,
+    avgResample(30, 75, 30)(wage, age) AS avg_wage
+FROM people
+```
+
+```text
+┌─amount─┬─avg_wage──────────────────┐
+│ [3,2]  │ [11.5,12.949999809265137] │
+└────────┴───────────────────────────┘
+```
+
+<div id="-argmin">
+  ## -ArgMin
+</div>
+
+접미사 -ArgMin은 모든 집계 함수 이름에 붙일 수 있습니다. 이 경우 집계 함수는 추가 인수를 받으며, 이 인수에는 비교 가능한 표현식이라면 어떤 것이든 사용할 수 있습니다. 집계 함수는 지정된 추가 표현식의 값이 최솟값인 행만 처리합니다.
+
+예시: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` 등입니다.
+
+<div id="-argmax">
+  ## -ArgMax
+</div>
+
+접미사 -ArgMin과 유사하지만, 지정된 추가 표현식의 값이 최대인 행만 처리합니다.
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* 블로그: [ClickHouse에서 배열, 맵, 상태에 집계 조합자 사용하기](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

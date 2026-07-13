@@ -1,0 +1,34 @@
+---
+title: '特定のテーブルの再同期'
+description: 'MySQL ClickPipe の特定のテーブルを再同期する'
+slug: /integrations/clickpipes/mysql/table_resync
+sidebarTitle: 'テーブルを再同期'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'CDC', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+パイプ内の特定のテーブルを再同期したい場面はあります。たとえば、MySQL 側で大きなスキーマ変更があった場合や、ClickHouse 側でデータの再モデリングを行った場合などです。
+
+個別のテーブルをボタン操作で再同期する機能は現在開発中ですが、このガイドでは、現時点で MySQL ClickPipe でこれを実現する手順を紹介します。
+
+<div id="removing-table">
+  ### 1. パイプからテーブルを削除する
+</div>
+
+これを行うには、[テーブル削除ガイド](/ja/integrations/clickpipes/mysql/remove-table)に従ってください。
+
+<div id="truncate-drop-table">
+  ### 2. ClickHouse 上のテーブルを TRUNCATE または DROP する
+</div>
+
+この手順は、次のステップでこのテーブルを再度追加する際のデータ重複を防ぐためのものです。これを行うには、ClickHouse Cloud の **SQL Console** タブに移動し、クエリを実行します。
+なお、テーブルが ClickHouse にすでに存在し、空でない場合は、そのテーブルを追加できないように検証が行われます。
+
+<div id="add-table-again">
+  ### 3. テーブルを ClickPipe に再度追加する
+</div>
+
+続けて、[テーブル追加ガイド](/ja/integrations/clickpipes/mysql/add-table) に従ってください。

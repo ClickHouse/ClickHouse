@@ -1,0 +1,103 @@
+---
+title: 向 Cloud 上传文件
+slug: /cloud/migrate/upload-a-csv-file
+description: '了解如何向 Cloud 上传文件'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse Cloud 提供了便捷的文件导入方式，并支持以下格式：
+
+| 格式                              |
+| ------------------------------- |
+| `CSV`                           |
+| `CSVWithNamesAndTypes`          |
+| `CSVWithNames`                  |
+| `JSONEachRow`                   |
+| `TabSeparated`                  |
+| `TabSeparatedWithNames`         |
+| `TabSeparatedWithNamesAndTypes` |
+
+<Steps>
+  <Step>
+    ## 上传文件
+
+    在 Cloud 首页中，选择你的服务，如下所示：
+
+    <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
+
+    如果你的服务处于空闲状态，则需要先将其唤醒。
+
+    按照下图所示，在左侧标签中选择 `Data sources`：
+
+    <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
+
+    接下来，在数据源页面右侧选择 `Upload a file`：
+
+    <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
+
+    随后会弹出文件选择对话框，让你选择要用于向 Cloud 服务中的某个表插入数据的文件。
+
+    <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
+  </Step>
+
+  <Step>
+    ## 配置表
+
+    文件上传完成后，你就可以配置要将数据插入到哪个表中。界面会显示该表前 3 行的预览。
+
+    <Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
+
+    现在你可以选择目标表。可选项包括：
+
+    * 新表
+    * 现有表
+
+    <br />
+
+    你可以指定要将数据上传到哪个数据库；如果是新表，还可以指定要创建的表名。你还可以选择排序键：
+
+    <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
+
+    从文件中读取的列会显示为 `Source field`，对于每个字段，你都可以更改：
+
+    * 推断出的类型
+    * 默认值
+    * 是否将该列设为 [Nullable](/zh/reference/data-types/nullable)
+
+    <Image img="/images/cloud/migrate/csv_06.webp" alt="upload_file_06" />
+
+    <Info>
+      **排除字段**
+
+      如果你不想在导入中包含某个字段，也可以将其移除。
+    </Info>
+
+    你可以指定要使用的表引擎类型：
+
+    * `MergeTree`
+    * `ReplacingMergeTree`
+    * `SummingMergeTree`
+    * `Null`
+
+    <br />
+
+    你可以指定分区键表达式和主键表达式。
+
+    <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
+
+    点击 `Import to ClickHouse` (如上图所示) 即可导入数据。数据导入会进入队列，
+    如下图所示，`Status` 列中会显示 `queued` 状态标记。你也可以点击
+    `Open as query` (如上图所示) ，在 SQL 控制台中打开该插入查询。该查询会使用 `URL` 表函数，
+    将已上传到 S3 bucket 的文件插入到 ClickHouse 中。
+
+    <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
+
+    如果任务失败，你会在 `Data upload history` 标签页的 `Status` 列中看到
+    `failed` 状态标记。你可以点击 `View Details` 查看上传失败的更多信息。
+    根据失败插入返回的错误消息，你可能需要修改表配置或清理数据。
+
+    <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
+  </Step>
+</Steps>

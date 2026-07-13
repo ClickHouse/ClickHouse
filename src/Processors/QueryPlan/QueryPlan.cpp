@@ -473,7 +473,7 @@ static void collectIndexesFromPlan(const QueryPlan & plan, std::vector<IndexesDe
 {
     struct Frame
     {
-        QueryPlan::Node * node;
+        QueryPlan::Node * node = {};
         size_t next_child = 0;
     };
 
@@ -654,8 +654,18 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 
         if (!descriptions.empty())
         {
-            auto aggregated = aggregateIndexes(descriptions, descriptions.size());
-            formatIndexes(aggregated, *node_map, options.compact);
+            /// With a single reading step there is no cross-table ambiguity,
+            /// so keep the original per-index metadata (name, condition, keys,
+            /// search algorithm) instead of aggregating and dropping it.
+            if (descriptions.size() == 1)
+            {
+                formatIndexes(descriptions.front(), *node_map, options.compact);
+            }
+            else
+            {
+                auto aggregated = aggregateIndexes(descriptions, descriptions.size());
+                formatIndexes(aggregated, *node_map, options.compact);
+            }
         }
 
         return node_map;
@@ -972,13 +982,23 @@ void QueryPlan::explainPlan(
 
         if (!descriptions.empty())
         {
-            auto aggregated = aggregateIndexes(descriptions, descriptions.size());
-            formatIndexes(aggregated, settings);
+            /// With a single reading step there is no cross-table ambiguity,
+            /// so keep the original per-index metadata (name, condition, keys,
+            /// search algorithm) instead of aggregating and dropping it.
+            if (descriptions.size() == 1)
+            {
+                formatIndexes(descriptions.front(), settings);
+            }
+            else
+            {
+                auto aggregated = aggregateIndexes(descriptions, descriptions.size());
+                formatIndexes(aggregated, settings);
+            }
         }
         return;
     }
 
-    auto * first_node = options.compact ? skipExpressions(root) : root;
+    auto * first_node = (options.compact && options.actions) ? skipExpressions(root) : root;
     stack.push_back(ExplainPlan::Frame{
         .node = first_node,
     });
@@ -1004,7 +1024,7 @@ void QueryPlan::explainPlan(
 
             bool has_child_plans_below = !frame.node->step->getChildPlans().empty();
             bool is_last = (frame.next_child + 1) == (frame.node->children.size()) && !has_child_plans_below;
-            auto * next_node = options.compact ? skipExpressions(frame.node->children[child_idx]) : frame.node->children[child_idx];
+            auto * next_node = (options.compact && options.actions) ? skipExpressions(frame.node->children[child_idx]) : frame.node->children[child_idx];
 
             stack.push_back(ExplainPlan::Frame{
                 .node = next_node,

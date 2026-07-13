@@ -1,0 +1,110 @@
+---
+title: 'Cloud にファイルをアップロードする'
+slug: /cloud/migrate/upload-a-csv-file
+description: 'Cloud にファイルをアップロードする方法'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse Cloud では、ファイルを簡単にインポートでき、以下の
+フォーマットをサポートしています。
+
+| Format                          |
+| ------------------------------- |
+| `CSV`                           |
+| `CSVWithNamesAndTypes`          |
+| `CSVWithNames`                  |
+| `JSONEachRow`                   |
+| `TabSeparated`                  |
+| `TabSeparatedWithNames`         |
+| `TabSeparatedWithNamesAndTypes` |
+
+<Steps>
+  <Step>
+    ## ファイルをアップロードする
+
+    Cloud のホーム画面で、以下のようにサービスを選択します。
+
+    <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
+
+    サービスがアイドル状態の場合は、起動する必要があります。
+
+    以下のように、左側のタブで `Data sources` を選択します。
+
+    <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
+
+    次に、data sources ページの右側で `Upload a file` を選択します。
+
+    <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
+
+    ファイル選択ダイアログが表示され、Cloud サービス上のテーブルにデータを
+    挿入するためのファイルを選択できます。
+
+    <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
+  </Step>
+
+  <Step>
+    ## テーブルを設定する
+
+    ファイルのアップロードが完了すると、データの挿入先となるテーブルを
+    設定できます。先頭 3 行を含むテーブルのプレビューも表示されます。
+
+    <Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
+
+    次に、宛先テーブルを選択できます。選択肢は次のとおりです。
+
+    * 新しいテーブル
+    * 既存のテーブル
+
+    <br />
+
+    データのアップロード先データベースを指定でき、新しいテーブルの場合は、
+    作成するテーブル名も指定できます。また、ソートキーも選択できます。
+
+    <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
+
+    ファイルから読み取られたカラムは `Source field` として表示され、各フィールドについて
+    次の項目を変更できます。
+
+    * 推定された型
+    * デフォルト値
+    * カラムを [Nullable](/ja/reference/data-types/nullable) にするかどうか
+
+    <Image img="/images/cloud/migrate/csv_06.webp" alt="upload_file_06" />
+
+    <Info>
+      **フィールドの除外**
+
+      インポートに含めたくない場合は、フィールドを削除することもできます。
+    </Info>
+
+    使用するテーブルエンジンの種類を指定できます。
+
+    * `MergeTree`
+    * `ReplacingMergeTree`
+    * `SummingMergeTree`
+    * `Null`
+
+    <br />
+
+    パーティションキー式とプライマリ
+    キー式を指定できます。
+
+    <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
+
+    データをインポートするには、`Import to ClickHouse` (上図参照) をクリックします。データのインポートはキューに追加され、
+    以下に示すように `Status` カラムの `queued` ステータスバッジで確認できます。また、
+    `Open as query` (上図参照) をクリックすると、SQL コンソールで INSERT クエリを開くこともできます。このクエリは、
+    `URL` table function を使用して S3 バケットにアップロードされたファイルを挿入します。
+
+    <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
+
+    ジョブが失敗すると、`Data upload history` タブの `Status` カラムに
+    `failed` ステータスバッジが表示されます。`View Details` をクリックすると、
+    アップロードが失敗した理由の詳細を確認できます。失敗した INSERT のエラーメッセージに基づいて、
+    テーブル設定を修正したり、データをクリーンアップしたりする必要がある場合があります。
+
+    <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
+  </Step>
+</Steps>

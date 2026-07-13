@@ -2,7 +2,6 @@
 
 import json
 import logging
-import time
 
 from confluent_kafka.avro.cached_schema_registry_client import (
     CachedSchemaRegistryClient,
@@ -47,29 +46,7 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = k.get_admin_client(cluster)
-
-    def get_topics_to_delete():
-        return [t for t in admin_client.list_topics() if not t.startswith("_")]
-
-    topics = get_topics_to_delete()
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
-    retries = 0
-    topics = get_topics_to_delete()
-    while len(topics) != 0:
-        logging.info(f"Existing topics: {topics}")
-        if retries >= 5:
-            raise Exception(f"Failed to delete topics {topics}")
-        retries += 1
-        time.sleep(0.5)
+    k.clean_test_database_and_topics(instance, cluster)
     yield  # run test
 
 
@@ -398,9 +375,17 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
         )
         errors_text = instance.query_with_retry(
             errors_query,
-            retry_count=30,
+            retry_count=60,
             sleep_time=1,
             check_callback=lambda res: len(res) > 0,
+        )
+        # query_with_retry returns the last result even if check_callback never
+        # passed, so guard against an empty error MV before json.loads (which
+        # would otherwise raise an opaque "Expecting value" JSONDecodeError).
+        assert (
+            len(errors_text) > 0
+        ), "Error row for format {} did not appear in kafka_errors_{}_mv".format(
+            format_name, format_name
         )
         errors_result = json.loads(errors_text)
         # print(errors_result.strip())

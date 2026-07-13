@@ -1,14 +1,18 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Common/Documentation.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Parsers/IAST_fwd.h>
 #include <Columns/IColumn_fwd.h>
 
 #include <functional>
 #include <memory>
 #include <optional>
+#include <source_location>
+#include <utility>
 
 #include <boost/noncopyable.hpp>
 
@@ -77,13 +81,19 @@ public:
     /// Insert codec information into MutableColumns to show in the system table
     void fillCodecDescriptions(MutableColumns & res_columns) const;
 
-    /// Register codec with parameters and column type
-    void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);
+    /// The embedded documentation of every registered codec, as a (family name, documentation) pair. The
+    /// description is the codec's `getDescription` and the `source` is the file where the codec was registered.
+    /// Used by `system.documentation`.
+    VectorWithMemoryTracking<std::pair<String, Documentation>> getCodecDocumentations() const;
+
+    /// Register codec with parameters and column type. The `source` is captured automatically at the call site
+    /// (the codec's registration), so it points to the source file that defines the codec; do not pass it explicitly.
+    void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator, std::source_location source = std::source_location::current());
     /// Register codec with parameters
-    void registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator);
+    void registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator, std::source_location source = std::source_location::current());
 
     /// Register codec without parameters
-    void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator);
+    void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator, std::source_location source = std::source_location::current());
 
     Strings getAllRegisteredNames() const;
 
@@ -93,6 +103,8 @@ protected:
 private:
     CompressionCodecsDictionary family_name_with_codec;
     CompressionCodecsCodeDictionary family_code_with_codec;
+    /// The source file where each codec family was registered, keyed by family name. See `getCodecDocumentations`.
+    UnorderedMapWithMemoryTracking<String, const char *> family_name_with_source;
     CompressionCodecPtr default_codec;
 
     CompressionCodecFactory();

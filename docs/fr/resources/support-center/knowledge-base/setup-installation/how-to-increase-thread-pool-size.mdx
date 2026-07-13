@@ -1,0 +1,37 @@
+---
+title: Comment augmenter le nombre de threads dans ClickHouse
+description: Découvrez comment configurer le Global Thread pool de ClickHouse en ajustant des paramètres tels que `max_thread_pool_size`, `thread_pool_queue_size` et `max_thread_pool_free_size`.
+date: 2023-03-01
+tags: ['Performances et optimisations']
+keywords: ['Threads disponibles']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="increasing-the-number-of-threads-in-clickhouse">
+  ## Augmentation du nombre de threads dans ClickHouse
+</div>
+
+ClickHouse utilise des threads du **Global Thread pool** pour traiter les requêtes et exécuter également des opérations en arrière-plan comme les fusions et les mutations. S&#39;il n&#39;y a aucun thread inactif pour traiter une requête, un nouveau thread est créé dans le pool.
+
+La taille maximale du pool global de threads est déterminée par le paramètre `max_thread_pool_size`, dont la valeur par défaut est de 10 000. Vous pouvez modifier cette valeur dans votre configuration ; ici, nous la définissons sur 20 000 :
+
+```xml
+<max_thread_pool_size>20000</max_thread_pool_size>
+```
+
+Si vous modifiez `max_thread_pool_size`, nous vous recommandons de définir `thread_pool_queue_size` sur la même valeur. Le paramètre `thread_pool_queue_size` correspond au nombre maximal de tâches pouvant être planifiées sur le Global Thread pool :
+
+```xml
+<thread_pool_queue_size>20000</thread_pool_queue_size>
+```
+
+Vous pouvez également libérer des ressources si votre serveur comporte beaucoup de threads inactifs, à l’aide du paramètre `max_thread_pool_free_size`. La valeur par défaut est de 1 000, ce qui signifie que votre Global Thread pool ne comportera jamais plus de 1 000 threads inactifs. L’exemple suivant porte cette valeur à 2 000 :
+
+```xml
+<max_thread_pool_free_size>2000</max_thread_pool_free_size>
+```
+
+Consultez la [documentation](/fr/reference/settings/server-settings/settings#max_thread_pool_size) pour plus de détails sur les paramètres ci-dessus et d&#39;autres paramètres qui influent sur le Global Thread pool.
