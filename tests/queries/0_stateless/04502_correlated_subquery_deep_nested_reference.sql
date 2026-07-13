@@ -18,7 +18,7 @@ CREATE TABLE t04502_5 (vkey UInt32) ENGINE = Memory;
 INSERT INTO t04502_2 VALUES (1), (2), (3);
 INSERT INTO t04502_4 VALUES (2), (3), (4);
 INSERT INTO t04502_3 VALUES (1), (2);
-INSERT INTO t04502_5 VALUES (5);
+INSERT INTO t04502_5 VALUES (2);
 
 -- Deep correlated reference: inner EXISTS references ref_1 from the top scope, skipping the t04502_3 scope.
 SELECT ref_1.vkey
@@ -40,13 +40,17 @@ WHERE exists (SELECT 1 FROM t04502_3 AS ref_2 WHERE ref_2.vkey = ref_1.vkey)
 ORDER BY ref_1.vkey;
 
 -- Nested EXISTS where the inner subquery correlates only on its immediate parent scope.
+-- The inner EXISTS matches ref_3.vkey against ref_2.vkey, so it is true only for ref_2 = 2
+-- (the sole common value of t04502_3 and t04502_5). The outer EXISTS is therefore non-empty
+-- only because the inner subquery genuinely correlates on ref_2: if the correlation degenerated
+-- into a constant-false branch the whole result would be empty instead of {2, 3}.
 SELECT ref_1.vkey
 FROM t04502_2 AS ref_0
 GLOBAL INNER JOIN t04502_4 AS ref_1 ON ref_0.vkey = ref_1.vkey
 WHERE exists (
     SELECT ref_2.vkey
     FROM t04502_3 AS ref_2
-    WHERE exists (SELECT 1 FROM t04502_5 AS ref_3 WHERE ref_2.vkey = 0)
+    WHERE exists (SELECT 1 FROM t04502_5 AS ref_3 WHERE ref_3.vkey = ref_2.vkey)
 )
 ORDER BY ref_1.vkey;
 
