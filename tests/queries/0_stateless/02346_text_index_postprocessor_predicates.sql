@@ -4,7 +4,7 @@
 
 DROP TABLE IF EXISTS tab;
 
-SELECT '1. Array tokenizer + postprocessor: has() / hasAll() / hasAny() use postprocessor via hint mode.';
+SELECT 'Array tokenizer + postprocessor: has() / hasAll() / hasAny() use postprocessor via hint mode.';
 -- The index stores postprocessed (lower-cased) elements.
 -- has/hasAll/hasAny apply the postprocessor to the needle for the index lookup (hint mode),
 -- then re-evaluate the original predicate at row level.
@@ -26,7 +26,7 @@ SELECT count() FROM tab WHERE has(val, 'xyz');   -- 0
 
 DROP TABLE tab;
 
-SELECT '2. hasAll / hasAny with non-array tokenizer + postprocessor: needle elements go through postprocessor.';
+SELECT 'hasAll / hasAny with non-array tokenizer + postprocessor: needle elements go through postprocessor.';
 -- The index stores postprocessed (lower-cased) tokens. Before the fix, hasAll / hasAny built
 -- lookup tokens without the postprocessor, so 'FOO' was looked up instead of 'foo', the granule
 -- was falsely pruned, and matching rows were dropped.
@@ -53,7 +53,7 @@ SELECT count() FROM tab WHERE hasAny(val, ['xyz']);          -- 0
 
 DROP TABLE tab;
 
-SELECT '3. Predicates hasPhrase / startsWith / endsWith work correctly with a postprocessor.';
+SELECT 'Predicates hasPhrase / startsWith / endsWith work correctly with a postprocessor.';
 
 CREATE TABLE tab
 (
@@ -72,7 +72,7 @@ SELECT count() FROM tab WHERE endsWith(val, 'walking');           -- 1
 
 DROP TABLE tab;
 
-SELECT '4. startsWith / endsWith use hint with postprocessor when normalized tokens survive.';
+SELECT 'startsWith / endsWith use hint with postprocessor when normalized tokens survive.';
 
 CREATE TABLE tab
 (
@@ -90,7 +90,7 @@ SELECT count() FROM tab WHERE endsWith(val, 'cat dog');            -- 1
 
 DROP TABLE tab;
 
-SELECT '5. startsWith stays correct when the postprocessor maps all hint tokens to empty.';
+SELECT 'startsWith stays correct when the postprocessor maps all hint tokens to empty.';
 
 CREATE TABLE tab
 (
@@ -108,7 +108,7 @@ SELECT count() FROM tab WHERE startsWith(val, 'the quick');  -- 1
 
 DROP TABLE tab;
 
-SELECT '6. val IN (...) routes set elements through the postprocessor.';
+SELECT 'val IN (...) routes set elements through the postprocessor.';
 -- The bug: tryPrepareSetForTextSearch built set tokens with preprocessor + tokenizer
 -- only, ignoring the postprocessor. Index stored 'foo' (postprocessed); a query
 -- val IN ('FOO') would search for token 'FOO', miss, prune the granule, and drop
@@ -164,7 +164,7 @@ SELECT count() FROM tab WHERE val IN ('the', 'cat');    -- 2
 
 DROP TABLE tab;
 
-SELECT '7. String column + array tokenizer + postprocessor: equals / hasAllTokens use postprocessor via hint mode.';
+SELECT 'String column + array tokenizer + postprocessor: equals / hasAllTokens use postprocessor via hint mode.';
 -- Index stores postprocessed (lower-cased) values. Lookup applies postprocessor to the needle
 -- (hint mode) and re-evaluates the original predicate at row level.
 
@@ -191,7 +191,7 @@ SELECT count() FROM tab WHERE val IN ('foo', 'bar');              -- 0
 
 DROP TABLE tab;
 
-SELECT '8. Map column + postprocessor: mapContainsKey / mapContainsKeyLike normalize the needle.';
+SELECT 'Map column + postprocessor: mapContainsKey / mapContainsKeyLike normalize the needle.';
 
 CREATE TABLE tab
 (
@@ -210,7 +210,7 @@ SELECT count() FROM tab WHERE mapContainsKeyLike(val, '%FOO%');   -- 1
 
 DROP TABLE tab;
 
-SELECT '9. Map column + postprocessor: mapContainsValue / mapContainsValueLike normalize the needle.';
+SELECT 'Map column + postprocessor: mapContainsValue / mapContainsValueLike normalize the needle.';
 
 CREATE TABLE tab
 (
@@ -227,7 +227,7 @@ SELECT count() FROM tab WHERE mapContainsValueLike(val, '%FOO%');   -- 1
 
 DROP TABLE tab;
 
-SELECT '10. Map column + array tokenizer + postprocessor: mapContains* use postprocessor via hint mode.';
+SELECT 'Map column + array tokenizer + postprocessor: mapContains* use postprocessor via hint mode.';
 -- Index stores postprocessed (lower-cased) keys/values. Lookup applies postprocessor to the needle
 -- (hint mode) and re-evaluates the original predicate at row level.
 
@@ -263,7 +263,7 @@ SELECT count() FROM tab WHERE mapContainsValue(val, 'foo');   -- 0
 
 DROP TABLE tab;
 
-SELECT '11. sparseGrams + postprocessor: needle compaction stays sound (no false positives in Exact direct read).';
+SELECT 'sparseGrams + postprocessor: needle compaction stays sound (no false positives in Exact direct read).';
 -- sparseGrams compaction drops a shorter gram covered by a longer one, relying on the index guaranteeing
 -- that a document with the longer gram also has the shorter one. A length-changing postprocessor (here:
 -- vowel removal) breaks that invariant, so the hasAllTokens lookup must require every postprocessed needle
@@ -287,32 +287,31 @@ SELECT count() FROM tab WHERE hasAllTokens(val, 'etf');     -- 2
 
 DROP TABLE IF EXISTS tab;
 
-SELECT '12. ALIAS column + postprocessor: needle and stored tokens are postprocessed.';
+SELECT 'ALIAS column + postprocessor: needle and stored tokens are postprocessed.';
 -- The index is on an ALIAS column and the postprocessor references the ALIAS by name.
 -- https://github.com/ClickHouse/ClickHouse/issues/95944
 
 CREATE TABLE tab
 (
-    provider Nullable(String),
-    name String ALIAS ifNull(provider, 'default_name'),
-    INDEX name_text_idx(name) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(name))
+    str Nullable(String),
+    alias String ALIAS ifNull(str, 'default'),
+    INDEX alias_text_idx(alias) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(alias))
 )
 ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO tab(provider) VALUES ('Hello World'), ('FOO bar'), (NULL);
+INSERT INTO tab(str) VALUES ('Hello World'), ('FOO bar'), (NULL);
 
-SELECT count() FROM tab WHERE hasToken(name, 'hello');
-SELECT count() FROM tab WHERE hasToken(name, 'HELLO'); -- search term is postprocessed too
-SELECT count() FROM tab WHERE hasToken(name, 'world');
-SELECT count() FROM tab WHERE hasToken(name, 'foo');
-SELECT count() FROM tab WHERE hasToken(name, 'bar');
-SELECT count() FROM tab WHERE hasToken(name, 'default'); -- from the ifNull default of the NULL row
-SELECT count() FROM tab WHERE hasToken(name, 'name');
-SELECT count() FROM tab WHERE hasToken(name, 'missing');
+SELECT count() FROM tab WHERE hasToken(alias, 'hello');
+SELECT count() FROM tab WHERE hasToken(alias, 'HELLO'); -- search term is postprocessed too
+SELECT count() FROM tab WHERE hasToken(alias, 'world');
+SELECT count() FROM tab WHERE hasToken(alias, 'foo');
+SELECT count() FROM tab WHERE hasToken(alias, 'bar');
+SELECT count() FROM tab WHERE hasToken(alias, 'default'); -- from the ifNull default of the NULL row
+SELECT count() FROM tab WHERE hasToken(alias, 'missing');
 
 DROP TABLE IF EXISTS tab;
 
-SELECT '13. Postprocessor with a lambda parameter shadowing an ALIAS column.';
+SELECT 'Postprocessor with a lambda parameter shadowing an ALIAS column.';
 -- The postprocessor references the physical column `val` as the token; its lambda parameter `x` collides
 -- with an ALIAS column named `x`. The lambda parameter must win and must not be expanded to the ALIAS.
 
