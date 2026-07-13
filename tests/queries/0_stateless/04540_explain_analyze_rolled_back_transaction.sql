@@ -18,7 +18,10 @@ SELECT n FROM t_04540; -- { serverError INVALID_TRANSACTION }
 EXPLAIN ANALYZE SELECT n FROM t_04540; -- { serverError INVALID_TRANSACTION }
 
 -- Non-executing EXPLAIN forms only inspect the query and stay allowed.
-EXPLAIN SYNTAX SELECT 1;
+-- Use EXPLAIN AST: it dumps the parsed AST before analysis, so its output is
+-- identical under both analyzers (unlike EXPLAIN SYNTAX, whose normalized query
+-- differs, e.g. the implicit `FROM system.one` is only added by the new analyzer).
+EXPLAIN AST SELECT 1;
 
 ROLLBACK;
 
