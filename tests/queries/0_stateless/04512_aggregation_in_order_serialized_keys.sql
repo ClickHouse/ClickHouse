@@ -1,22 +1,25 @@
 -- Regression test for a quadratic slowdown (effectively a hang) in aggregation-in-order.
 --
--- With optimize_aggregation_in_order = 1 and a multi-key GROUP BY that uses the serialized
--- aggregation method (here: a UInt64 key plus a String key), the "prealloc serialized" method
+-- With `optimize_aggregation_in_order = 1` and a multi-key `GROUP BY` that uses the serialized
+-- aggregation method (here: a `UInt64` key plus a `String` key), the "prealloc serialized" method
 -- re-serialized the keys of the whole block on every sorting-key-prefix sub-range processed by
--- Aggregator::executeOnBlockSmall. A block with many distinct sorting-key prefixes therefore
--- cost O(distinct_prefixes * block_rows), which made this query run for minutes and trip the
--- stress-test hung-check. The in-order path must stay linear, so this must finish quickly.
+-- `Aggregator::executeOnBlockSmall`. A block with many distinct sorting-key prefixes therefore cost
+-- `O(distinct_prefixes * block_rows)`, which made this query run for minutes and trip the
+-- stress-test hung-check. The in-order path must stay linear.
 --
--- The in-order aggregation is pinned to a fixed, small configuration (max_threads = 1,
--- max_block_size = 16384, optimize_read_in_order = 1) so the flaky check cannot randomize it into
--- an expensive read. The max_execution_time limit is a guard against the quadratic blowup, not a
--- tight assertion on the linear runtime, and the two runtimes are orders of magnitude apart: on a
--- release build the linear path takes a fraction of a second while the quadratic one takes tens of
--- seconds; on a debug or sanitizer build the linear path can still take tens of seconds under the
--- parallel load of the flaky check (a 20-second limit flaked here for exactly that reason) while the
--- quadratic one runs for many minutes. A 120-second limit clears the linear path with a wide margin
--- on every build and is still far below the quadratic runtime on the instrumented builds that run
--- this suite, so it catches a regression without any risk of a false timeout on the fixed code.
+-- This regression is a CPU-time blowup with no other observable footprint (the results are
+-- identical and the memory/allocation profile is the same), so the guard must be a time limit. A
+-- wall-clock limit (`max_execution_time`) is not usable here: earlier revisions of this test flaked
+-- repeatedly on the debug flaky check because the query's wall-clock is dominated by how loaded the
+-- CI runner is (a linear query on a heavily oversubscribed box can take longer than a quadratic one
+-- on an idle box), not by whether the code is linear. Instead we assert on the query's CPU time
+-- (`ProfileEvents['OSCPUVirtualTimeMicroseconds']`), read back from `system.query_log`: CPU time
+-- measures the cycles the query actually consumed and is unaffected by box contention, so it
+-- separates the linear code (a fraction of a CPU-second) from the quadratic code (tens of
+-- CPU-seconds on release, well over a minute on the instrumented debug/sanitizer builds that run
+-- this suite) by more than an order of magnitude regardless of runner load. The 3-second threshold
+-- clears the linear path with a wide margin on every build and is far below the quadratic runtime,
+-- so it catches a regression without any risk of a false failure on the fixed code.
 
 DROP TABLE IF EXISTS t_agg_in_order_serialized;
 
@@ -27,7 +30,7 @@ ENGINE = MergeTree ORDER BY k1;
 -- sub-ranges as there are rows - this is what triggered the quadratic behaviour.
 INSERT INTO t_agg_in_order_serialized
 SELECT number, toString(number % 8), number
-FROM numbers(200000);
+FROM numbers(500000);
 
 -- The in-order aggregation must produce the same result as regular hash aggregation.
 SELECT
@@ -35,7 +38,7 @@ SELECT
     SELECT groupBitXor(cityHash64(k1, k2, s))
     FROM (SELECT k1, k2, sum(v) AS s FROM t_agg_in_order_serialized GROUP BY k1, k2)
     SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1,
-             max_threads = 1, max_block_size = 16384, max_execution_time = 120
+             max_threads = 1, max_block_size = 16384
 )
 =
 (
@@ -43,6 +46,26 @@ SELECT
     FROM (SELECT k1, k2, sum(v) AS s FROM t_agg_in_order_serialized GROUP BY k1, k2)
     SETTINGS optimize_aggregation_in_order = 0
 );
+
+-- Run the in-order aggregation once on its own (the `CPUGUARD` marker lets us find it in the log)
+-- so its CPU time can be asserted on in isolation.
+SELECT k1, k2, sum(v) FROM t_agg_in_order_serialized GROUP BY k1, k2 -- CPUGUARD
+SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1,
+         max_threads = 1, max_block_size = 16384, log_queries = 1
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The in-order path must stay linear: its CPU time is a fraction of a second, far below the
+-- 3-second guard, while the quadratic regression burns tens of CPU-seconds (much more on debug).
+SELECT ProfileEvents['OSCPUVirtualTimeMicroseconds'] < 3000000
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND current_database = currentDatabase()
+  AND query LIKE '%CPUGUARD%' AND query NOT LIKE '%query_log%'
+  AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
 
 DROP TABLE t_agg_in_order_serialized;
 
@@ -81,7 +104,7 @@ SELECT
     SELECT groupBitXor(cityHash64(k1, k2, s))
     FROM (SELECT k1, k2, sum(v) AS s FROM t_agg_in_order_serialized_multi GROUP BY k1, k2)
     SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1,
-             max_threads = 4, max_block_size = 16384, max_execution_time = 120
+             max_threads = 4, max_block_size = 16384
 )
 =
 (
