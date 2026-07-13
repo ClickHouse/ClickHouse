@@ -1,0 +1,12 @@
+-- Reader has SELECT on the view but not on the base table: EXPLAIN matches SELECT and is allowed
+SELECT via DEFINER view: OK
+SELECT via DEFINER view (inline): OK
+EXPLAIN QUERY TREE DEFINER view: OK
+EXPLAIN QUERY TREE DEFINER view (inline): OK
+EXPLAIN SYNTAX DEFINER view (inline): OK
+EXPLAIN QUERY TREE DEFINER view count (inline): OK
+EXPLAIN QUERY TREE NONE view (inline): OK
+-- Outsider has no access: EXPLAIN is denied exactly as a plain SELECT would be
+EXPLAIN QUERY TREE DEFINER view: ACCESS_DENIED
+EXPLAIN SYNTAX DEFINER view: ACCESS_DENIED
+EXPLAIN QUERY TREE base table (inline): ACCESS_DENIED
