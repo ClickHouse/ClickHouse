@@ -6,6 +6,7 @@
 -- With optimize_empty_string_comparisons=1 (default), `s = ''` is rewritten
 -- to `empty(s)`. This test verifies that empty() and notEmpty() report
 -- monotonicity for String arguments so granules can be skipped.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_empty_pk;
 

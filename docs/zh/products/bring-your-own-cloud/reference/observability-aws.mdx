@@ -1,0 +1,229 @@
+---
+title: 'BYOC 可观测性'
+slug: /cloud/reference/byoc/observability
+sidebarTitle: '可观测性'
+keywords: ['BYOC', '云', '自备 Cloud', '可观测性', '监控', 'Prometheus', 'Grafana']
+description: '使用内置仪表盘和 Prometheus 指标监控和观测 BYOC ClickHouse 部署'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+BYOC 部署提供全面的可观测性功能，使您能够通过专用的 Prometheus 监控栈以及 ClickHouse 服务器直接暴露的指标端点来监控您的 ClickHouse 服务。所有可观测性数据都会保留在您的云账户中，让您能够完全掌控自己的监控基础设施。
+
+<div id="prometheus-monitoring">
+  ## Prometheus 监控方法
+</div>
+
+BYOC 提供了两种使用 Prometheus 收集和可视化指标的主要方法：
+
+1. **连接到内置的 Prometheus 栈**：访问运行在 BYOC Kubernetes 集群内预先安装的集中式 Prometheus 实例。
+2. **直接抓取 ClickHouse 指标**：将你自己的 Prometheus 部署指向各个 ClickHouse 服务暴露的 `/metrics_all` 端点。
+
+<div id="monitoring-approaches-comparison">
+  ### 监控方式对比
+</div>
+
+| 能力         | 内置 Prometheus 栈                                  | 直接从 ClickHouse 服务抓取                      |
+| ---------- | ------------------------------------------------ | ---------------------------------------- |
+| **指标范围**   | 汇总来自 ClickHouse、Kubernetes 和配套服务的指标 (具备完整集群可见性)  | 仅包含各个 ClickHouse 服务器的指标                  |
+| **设置流程**   | 需要配置私有网络访问 (例如通过私有负载均衡器)                         | 只需将 Prometheus 配置为抓取公开或私有的 ClickHouse 端点 |
+| **连接方式**   | 通过 VPC/网络内的私有负载均衡器连接                             | 使用与数据库访问相同的端点                            |
+| **身份验证**   | 无需身份验证 (仅限私有网络访问)                                | 使用 ClickHouse 服务凭据                       |
+| **网络前置条件** | 私有负载均衡器以及适当的网络连通性                                | 任何可访问你的 ClickHouse 端点的网络均可使用             |
+| **最适合的场景** | 全面的基础设施和服务监控                                     | 面向特定服务的监控和集成                             |
+| **集成方式**   | 在外部 Prometheus 中配置 federation 以摄取集群指标            | 将 ClickHouse 指标端点直接添加到 Prometheus 配置中    |
+
+**建议**：对于大多数使用场景，我们建议集成内置 Prometheus 栈，因为它能够提供 BYOC 部署中所有组件 (ClickHouse 服务、Kubernetes 集群和配套服务) 的全面指标，而不仅仅是 ClickHouse 服务器指标。 
+
+<div id="builtin-prometheus-stack">
+  ## 内置 BYOC Prometheus 栈
+</div>
+
+ClickHouse BYOC 会在 Kubernetes 集群内部署一套完整的 Prometheus 监控栈，其中包括 Prometheus、Grafana、AlertManager，以及可选的 Thanos (用于长期存储指标) 。该栈会从以下来源采集指标：
+
+* ClickHouse 服务器和 ClickHouse Keeper
+* Kubernetes 集群和系统组件
+* 底层基础设施节点
+
+<div id="accessing-prometheus-stack">
+  ### 访问 Prometheus 栈
+</div>
+
+要连接到内置的 Prometheus 栈，请执行以下操作：
+
+1. **联系 ClickHouse 支持团队**，为您的 BYOC 环境启用私有负载均衡器。
+2. **向 ClickHouse 支持团队索取 Prometheus 端点 URL**。
+3. **确认与 Prometheus 端点之间的私有网络连通性**——通常通过 VPC 对等连接或其他私有网络配置实现。
+
+端点格式因连接类型而异：
+
+| 连接方式              | 端点格式                                                                           |
+| ----------------- | ------------------------------------------------------------------------------ |
+| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| PrivateLink       | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`     |
+
+<Note>
+  Prometheus 栈 URL 只能通过私有网络连接访问，且不需要身份验证。只有能够通过 VPC 对等连接或其他私有连接方式访问您的 BYOC VPC 的网络才能访问。
+</Note>
+
+<div id="prometheus-stack-integration">
+  ### 与您的监控工具集成
+</div>
+
+您可以通过多种方式将 BYOC Prometheus 栈接入您的监控体系：
+
+**选项 1：查询 Prometheus API**
+
+* 直接从您常用的监控平台或自定义仪表盘访问 Prometheus API 端点。
+* 使用 PromQL 查询提取、聚合并可视化所需指标。
+* 适合构建定制化仪表盘或告警管道。
+
+Prometheus 查询端点 `/query`：
+
+```text
+https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com/query
+```
+
+**选项 2：将指标联邦到您自己的 Prometheus**
+
+* 将外部 Prometheus 实例配置为从 ClickHouse BYOC Prometheus 栈联邦抓取指标。
+* 这样可以将来自多个环境或集群的指标采集统一并集中起来。
+* Prometheus 联邦配置示例：
+
+```yaml
+scrape_configs:
+  - job_name: 'federate-clickhouse-byoc'
+    scrape_interval: 15s
+    honor_labels: true
+    metrics_path: '/federate'
+    params:
+      'match[]':
+        - '{job="clickhouse"}'
+        - '{job="kubernetes"}'
+    static_configs:
+      - targets:
+        - 'prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com'
+```
+
+<div id="direct-prometheus-integration">
+  ## ClickHouse 服务 Prometheus 集成
+</div>
+
+ClickHouse 服务会暴露一个与 Prometheus 兼容的指标端点，你可以直接使用自己的 Prometheus 实例进行抓取。这种方式可提供 ClickHouse 特有的指标，但不包含 Kubernetes 或相关支持服务的指标。
+
+<div id="metrics-endpoint">
+  ### 访问指标端点
+</div>
+
+指标端点位于您的 ClickHouse 服务端点上的 `/metrics_all`：
+
+```bash
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+```
+
+**示例响应：**
+
+```bash
+# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes 存储在系统数据库 `s3disk` 磁盘上的字节数
+# TYPE ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes gauge
+ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes{hostname="c-jet-ax-16-server-43d5baj-0"} 62660929
+# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts 损坏的 detached parts 数量
+# TYPE ClickHouse_CustomMetric_NumberOfBrokenDetachedParts gauge
+ClickHouse_CustomMetric_NumberOfBrokenDetachedParts{hostname="c-jet-ax-16-server-43d5baj-0"} 0
+# HELP ClickHouse_CustomMetric_TotalNumberOfErrors 自上次重启以来服务器上的错误总数
+# TYPE ClickHouse_CustomMetric_TotalNumberOfErrors gauge
+ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj-0"} 9
+```
+
+<div id="authentication">
+  ### 身份验证
+</div>
+
+指标端点需要使用 ClickHouse 凭据进行身份验证。我们建议使用 `default` 用户，或专门创建一个仅具备最小权限、用于抓取指标的用户。
+
+**所需权限：**
+
+* 连接到服务所需的 `REMOTE` 权限
+* 对相关系统表的 `SELECT` 权限
+
+**示例用户设置：**
+
+```sql
+CREATE USER scrapping_user IDENTIFIED BY 'secure_password';
+GRANT REMOTE ON *.* TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_custom_metrics_tables TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_database_replicated_recovery_time TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_failed_mutations TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_group TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_shared_catalog_recovery_time TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_table_read_only_duration_seconds TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_view_error_metrics TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_view_histograms TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_view_metrics_and_events TO scrapping_user;
+GRANT SELECT(description, metric, value) ON system.asynchronous_metrics TO scrapping_user;
+GRANT SELECT ON system.custom_metrics TO scrapping_user;
+GRANT SELECT(name, value) ON system.errors TO scrapping_user;
+GRANT SELECT(description, event, value) ON system.events TO scrapping_user;
+GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO scrapping_user;
+GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
+```
+
+<div id="configuring-prometheus">
+  ### 配置 Prometheus
+</div>
+
+将你的 Prometheus 实例配置为抓取 ClickHouse 的指标端点：
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+    scheme: https
+    metrics_path: "/metrics_all"
+    basic_auth:
+      username: <username>
+      password: <password>
+    honor_labels: true
+```
+
+替换：
+
+* 将 `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` 替换为你的实际服务端点
+* 将 `<username>` 和 `<password>` 替换为用于抓取的用户凭据
+
+<div id="clickhouse-mixin">
+  ## ClickHouse Mixin
+</div>
+
+对于希望直接使用现成仪表盘的团队，ClickHouse 提供了一个 Prometheus **ClickHouse Mixin**。这是一个预先构建好的 Grafana 仪表盘，专门用于监控 ClickHouse 集群。
+
+<div id="setup-grafana-mixin">
+  ### 设置 Grafana 并导入 ClickHouse Mix-in
+</div>
+
+当你的 Prometheus 实例已集成到 ClickHouse 监控栈中后，即可按以下步骤在 Grafana 中将指标可视化：
+
+1. **在 Grafana 中将 Prometheus 添加为数据源**
+   前往 Grafana 侧边栏中的“Data sources”，点击“Add data source”，然后选择“Prometheus”。输入你的 Prometheus 实例 URL 以及连接所需的凭据。
+
+<Image img="/images/cloud/reference/byoc-mixin-1.webp" size="lg" alt="BYOC Mixin 1" background="black" />
+
+<Image img="/images/cloud/reference/byoc-mixin-2.webp" size="lg" alt="BYOC Mixin 2" background="black" />
+
+<Image img="/images/cloud/reference/byoc-mixin-3.webp" size="lg" alt="BYOC Mixin 3" background="black" />
+
+2. **导入 ClickHouse 仪表板**
+   在 Grafana 中，进入仪表板区域并选择“Import”。你既可以上传仪表板 JSON 文件，也可以直接粘贴其内容。从 ClickHouse mixin 仓库获取该 JSON 文件：
+   [ClickHouse Mix-in Dashboard JSON](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
+
+<Image img="/images/cloud/reference/byoc-mixin-4.webp" size="lg" alt="BYOC Mixin 4" background="black" />
+
+3. **查看你的指标**
+   导入仪表板并将其配置为使用你的 Prometheus 数据源后，你应该能看到来自 ClickHouse Cloud 服务的实时指标。
+
+<Image img="/images/cloud/reference/byoc-mixin-5.webp" size="lg" alt="BYOC Mixin 5" background="black" />

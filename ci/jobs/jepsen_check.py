@@ -47,11 +47,11 @@ def _parse_jepsen_output(path: Path):
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             if SUCCESSFUL_TESTS_ANCHOR in line:
-                current_type = Result.StatusExtended.OK
+                current_type = Result.Status.OK
             elif INTERMINATE_TESTS_ANCHOR in line or CRASHED_TESTS_ANCHOR in line:
-                current_type = Result.StatusExtended.ERROR
+                current_type = Result.Status.ERROR
             elif FAILED_TESTS_ANCHOR in line:
-                current_type = Result.StatusExtended.FAIL
+                current_type = Result.Status.FAIL
 
             if (
                 line.startswith("store/clickhouse") or line.startswith("clickhouse")
@@ -178,78 +178,101 @@ def main():
         logging.info("Not jepsen test label in labels list, skipping")
         sys.exit(0)
 
+    image_name = KEEPER_IMAGE_NAME if args.program == "keeper" else SERVER_IMAGE_NAME
+    # Pull by the immutable praktika digest tag instead of mutable ":latest".
+    # Jepsen runs docker directly, so use the architecture-specific tag built by praktika.
+    docker_tag = info.docker_tag(image_name)
+    if docker_tag:
+        if Utils.is_arm():
+            docker_tag += "_arm"
+        elif Utils.is_amd():
+            docker_tag += "_amd"
+        else:
+            raise RuntimeError("Unsupported CPU architecture")
+        docker_image = f"{image_name}:{docker_tag}"
+    else:
+        if not info.is_local_run:
+            raise RuntimeError(
+                f"No praktika digest tag for image [{image_name}] "
+                f"in workflow [{info.workflow_name}]"
+            )
+        logging.warning(
+            "No praktika digest tag for %s in local run; falling back to mutable ':latest' "
+            "(may be served stale through the pull-through cache)",
+            image_name,
+        )
+        docker_image = image_name
+
     temp_path.mkdir(parents=True, exist_ok=True)
 
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
 
-    instances = prepare_autoscaling_group_and_get_hostnames(
-        KEEPER_DESIRED_INSTANCE_COUNT
-        if args.program == "keeper"
-        else SERVER_DESIRED_INSTANCE_COUNT
-    )
-    nodes_path = save_nodes_to_file(
-        instances[:KEEPER_DESIRED_INSTANCE_COUNT], temp_path
-    )
-
-    # always use latest
-    docker_image = KEEPER_IMAGE_NAME if args.program == "keeper" else SERVER_IMAGE_NAME
-
-    # build amd_binary assumed to be always ready on the master as it's part of the merge queue workflow
-    urls = read_build_urls(temp_path, "amd_binary")
-    build_url = None
-    for url in urls:
-        if url.endswith("clickhouse"):
-            build_url = url
-    assert build_url, "No build url found in the report"
-
-    extra_args = ""
-    if args.program == "server":
-        extra_args = f"-e KEEPER_NODE={instances[-1]}"
-
-    ssh_key_secret = Secret.Config(
-        name="jepsen_ssh_key", type=Secret.Type.AWS_SSM_PARAMETER
-    )
-    with SSHKey(key_value=ssh_key_secret.get_value() + "\n"):
-        ssh_auth_sock = os.environ["SSH_AUTH_SOCK"]
-        auth_sock_dir = os.path.dirname(ssh_auth_sock)
-        cmd = get_run_command(
-            ssh_auth_sock,
-            auth_sock_dir,
-            info,
-            nodes_path,
-            Utils.cwd(),
-            build_url,
-            result_path,
-            extra_args,
-            docker_image,
+    try:
+        instances = prepare_autoscaling_group_and_get_hostnames(
+            KEEPER_DESIRED_INSTANCE_COUNT
+            if args.program == "keeper"
+            else SERVER_DESIRED_INSTANCE_COUNT
         )
-        logging.info("Going to run jepsen: %s", cmd)
+        nodes_path = save_nodes_to_file(
+            instances[:KEEPER_DESIRED_INSTANCE_COUNT], temp_path
+        )
 
-        if Shell.run(cmd) != 0:
-            logging.error("Jepsen run command failed")
+        # build amd_binary assumed to be always ready on the master as it's part of the merge queue workflow
+        urls = read_build_urls(temp_path, "amd_binary")
+        build_url = None
+        for url in urls:
+            if url.endswith("clickhouse"):
+                build_url = url
+        assert build_url, "No build url found in the report"
 
-    clear_autoscaling_group()
+        extra_args = ""
+        if args.program == "server":
+            extra_args = f"-e KEEPER_NODE={instances[-1]}"
 
-    status = Result.Status.SUCCESS
+        ssh_key_secret = Secret.Config(
+            name="jepsen_ssh_key", type=Secret.Type.AWS_SSM_PARAMETER
+        )
+        with SSHKey(key_value=ssh_key_secret.get_value() + "\n"):
+            ssh_auth_sock = os.environ["SSH_AUTH_SOCK"]
+            auth_sock_dir = os.path.dirname(ssh_auth_sock)
+            cmd = get_run_command(
+                ssh_auth_sock,
+                auth_sock_dir,
+                info,
+                nodes_path,
+                Utils.cwd(),
+                build_url,
+                result_path,
+                extra_args,
+                docker_image,
+            )
+            logging.info("Going to run jepsen: %s", cmd)
+
+            if Shell.run(cmd) != 0:
+                logging.error("Jepsen run command failed")
+    finally:
+        clear_autoscaling_group()
+
+    status = Result.Status.OK
     description = "No invalid analysis found ヽ(‘ー`)ノ"
     jepsen_log_path = result_path / "jepsen_run_all_tests.log"
     additional_data = []
     try:
         test_result = _parse_jepsen_output(jepsen_log_path)
         if len(test_result) == 0:
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
             description = "No test results found"
         elif any(r.status == "FAIL" for r in test_result):
-            status = Result.Status.FAILED
+            status = Result.Status.FAIL
             description = "Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻"
 
         additional_data.append(Utils.compress_zst(result_path / "store"))
     except Exception as ex:
         print("Exception", ex)
-        status = Result.Status.FAILED
+        status = Result.Status.FAIL
         description = "No Jepsen output log"
-        test_result = [Result("No Jepsen output log", "FAIL")]
+        test_result = [Result("No Jepsen output log", Result.Status.FAIL)]
 
     Result.create_from(
         results=test_result,

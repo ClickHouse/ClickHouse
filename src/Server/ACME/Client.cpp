@@ -220,7 +220,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
 
             LOG_TRACE(log, "Certificate for domain {} expires on {}", domain, x509_certificate.expiresOn());
 
-            int tzd;
+            int tzd = 0;
             auto expiration_date = Poco::DateTimeParser::parse("%y%m%d%H%M%S", x509_certificate.expiresOn(), tzd);
             auto best_before = Poco::Timestamp() + Poco::Timespan(refresh_certificates_before_seconds * Poco::Timespan::SECONDS);
 

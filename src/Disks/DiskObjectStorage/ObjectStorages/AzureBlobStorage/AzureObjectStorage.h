@@ -8,6 +8,7 @@
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>
+#include <azure/storage/files/datalake/datalake_file_client.hpp>
 #include <azure/core/http/curl_transport.hpp>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 
@@ -64,7 +65,9 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const override;
 
     SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
         const StoredObject & object,
@@ -115,6 +118,7 @@ public:
 
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
+    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override { return connection_params; }
 
     bool isReadOnly() const override { return settings.get()->read_only; }
 
@@ -136,6 +140,8 @@ private:
         const StoredObjects & objects,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
         BlobStorageLogWriterPtr blob_storage_log);
+
+    std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient> buildDataLakeFileClient(const String & blob_path) const;
 
     const String name;
     AzureBlobStorage::AuthMethod auth_method;

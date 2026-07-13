@@ -1,0 +1,16 @@
+syntax = "proto3";
+message Empty {}
+message Clear {}
+message Info {
+  string name = 1;
+  int32 age = 2;
+}
+message Record {
+  string id = 1;
+  oneof type {
+    Info details = 3;
+    Empty nothing = 4;
+    Empty nothing2 = 5;
+    Clear nothing3 = 6;
+  }
+}

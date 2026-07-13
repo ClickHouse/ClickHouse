@@ -16,7 +16,7 @@ namespace
 {
 
 /// Returns number of fields in Enum data type of passed value.
-class FunctionGetSizeOfEnumType : public IFunction
+class FunctionGetSizeOfEnumType final : public IFunction
 {
 public:
     static constexpr auto name = "getSizeOfEnumType";

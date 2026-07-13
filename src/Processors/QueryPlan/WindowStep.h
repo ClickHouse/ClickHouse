@@ -18,12 +18,25 @@ public:
 
     String getName() const override { return "Window"; }
 
+    bool hasCorrelatedExpressions() const override
+    {
+        for (const auto & actions : window_description.partition_by_actions)
+            if (actions && actions->hasCorrelatedColumns())
+                return true;
+        for (const auto & actions : window_description.order_by_actions)
+            if (actions && actions->hasCorrelatedColumns())
+                return true;
+        return false;
+    }
+
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
     const WindowDescription & getWindowDescription() const;
+
+    QueryPlanStepPtr clone() const override;
 
 private:
     void updateOutputHeader() override;

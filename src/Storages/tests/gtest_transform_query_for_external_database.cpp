@@ -420,6 +420,7 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
 
     check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo"},
         "SELECT * EXCEPT (is_value) FROM table WHERE (column) IN (1)",
+        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE ("column") IN (1))",
         R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" IN (1))");
 
     check(state, 1, {"is_value"},

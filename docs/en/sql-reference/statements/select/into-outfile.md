@@ -6,8 +6,6 @@ title: 'INTO OUTFILE Clause'
 doc_type: 'reference'
 ---
 
-# INTO OUTFILE Clause
-
 `INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
 
 Compressed files are supported. Compression type is detected by the extension of the file name (mode `'auto'` is used by default). Or it can be explicitly specified in a `COMPRESSION` clause. The compression level for a certain compression type can be specified in a `LEVEL` clause.
@@ -35,13 +33,11 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 Execute the following query using [command-line client](../../../interfaces/client.md):
 
-```bash
+```bash title="Query"
 clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
 zcat select.gz 
 ```
 
-Result:
-
-```text
+```text title="Response"
 1,"ABC"
 ```

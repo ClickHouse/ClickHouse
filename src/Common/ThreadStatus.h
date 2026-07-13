@@ -6,6 +6,7 @@
 #include <Common/IThrottler.h>
 #include <Common/Logger_fwd.h>
 #include <Common/MemoryTracker.h>
+#include <Common/PerCPUMemoryThreadState.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
@@ -17,6 +18,7 @@
 #include <functional>
 #include <mutex>
 #include <unordered_set>
+#include <vector>
 
 
 template <class T>
@@ -36,7 +38,14 @@ struct PerfEventsCounters;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
+struct Settings;
 enum class ThreadName : uint8_t;
+
+/// Apply memory-profiler / fault-injection / soft-limit related query settings to a `MemoryTracker`.
+/// Query-level sample settings (`memory_profiler_*`) are pushed only when they were actually changed
+/// from their default — otherwise the tracker is left at `sample_probability == -1` so that
+/// `getResolvedSampleConfig` transparently falls through to `total_memory_tracker_sample_probability`.
+void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker & memory_tracker, const Settings & settings);
 
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
@@ -46,6 +55,8 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
 
 using QueryIsCanceledPredicate = std::function<bool()>;
+/// Throws the real cancellation cause if the query has been cancelled and its process-list element is available.
+using ThrowIfQueryCanceledPredicate = std::function<void()>;
 
 /** Thread group is a collection of threads dedicated to single task
   * (query or other process like background merge).
@@ -97,6 +108,7 @@ public:
         std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
+        ThrowIfQueryCanceledPredicate throw_if_query_canceled_predicate = {};
     };
 
     SharedData getSharedData()
@@ -149,46 +161,6 @@ private:
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 };
 
-/**
- * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
- *
- * Typically used for inheriting thread group when scheduling tasks on a thread pool:
- *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
- *       {
- *           ThreadGroupSwitcher switcher(thread_group, "MyThread");
- *           ...
- *       });
- */
-class ThreadGroupSwitcher : private boost::noncopyable
-{
-public:
-    /// If thread_group_ is nullptr or equal to current thread group, does nothing.
-    /// allow_existing_group:
-    ///  * If false, asserts that the thread is not already attached to a different group.
-    ///    Use this when running a task in a thread pool.
-    ///  * If true, remembers the current group and restores it in destructor.
-    /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
-    ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
-    ~ThreadGroupSwitcher();
-
-private:
-    ThreadStatus * prev_thread = nullptr;
-    ThreadGroupPtr prev_thread_group;
-    ThreadGroupPtr thread_group;
-};
-
-
-/**
- * We use **constinit** here to tell the compiler the current_thread variable is initialized.
- * If we didn't help the compiler, then it would most likely add a check before every use of the variable to initialize it if needed.
- * Instead it will trust that we are doing the right thing (and we do initialize it to nullptr) and emit more optimal code.
- * This is noticeable in functions like CurrentMemoryTracker::free and CurrentMemoryTracker::allocImpl
- * See also:
- * - https://en.cppreference.com/w/cpp/language/constinit
- * - https://github.com/ClickHouse/ClickHouse/pull/40078
- */
-extern thread_local constinit ThreadStatus * current_thread;
-
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
   * The object must be created in thread function and destroyed in the same thread before the exit.
   * It is accessed through thread-local pointer.
@@ -214,6 +186,8 @@ public:
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// Per-CPU untracked memory
+    PerCPUMemoryThreadState per_cpu_untracked_memory;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -243,6 +217,10 @@ protected:
     bool performance_counters_finalized = false;
 
     String query_id;
+    /// The query_id can be read by signal handlers. If the signal interrupts the thread while it is updating the query_id, it can lead to a race.
+    std::atomic<bool> is_query_id_usable{true};
+    /// is_query_id_usable is used in signal handlers, so ensure it is lock-free to avoid undefined behavior in signal handlers.
+    static_assert(std::atomic<bool>::is_always_lock_free);
 
     [[maybe_unused]] bool jemalloc_profiler_enabled = false;
 
@@ -285,7 +263,7 @@ public:
 
     void setQueryId(std::string && new_query_id) noexcept;
     void clearQueryId() noexcept;
-    const String & getQueryId() const;
+    std::string_view getQueryId() const;
 
     ContextPtr tryGetQueryContext() const;
     ContextPtr getGlobalContext() const;
@@ -313,6 +291,9 @@ public:
 
     bool isQueryCanceled() const;
 
+    /// Throws the real cancellation cause if the query has been cancelled. No-op if not attached to a query.
+    void throwIfQueryCanceled() const;
+
     /// Proper cal for fatal_error_callback
     void onFatalError();
 
@@ -335,6 +316,29 @@ public:
     size_t getNextPlanStepIndex() const;
     size_t getNextPipelineProcessorIndex() const;
 
+    double getEffectiveSampleProbability(UInt64 size) const
+    {
+        if (sample_probability <= 0)
+            return 0;
+        if (sample_min_allocation_size && size < sample_min_allocation_size)
+            return 0;
+        if (sample_max_allocation_size && size > sample_max_allocation_size)
+            return 0;
+        return sample_probability;
+    }
+
+    /// getEffectiveSampleProbability reads only this cache on the per-allocation path, so it must be
+    /// re-resolved from the tracker chain whenever the effective parent changes (attach, switcher),
+    /// otherwise threads parented to total_memory_tracker miss total_memory_tracker_sample_probability.
+    MemoryTracker::SampleConfig getMemorySampleConfig() const { return {sample_probability, sample_min_allocation_size, sample_max_allocation_size}; }
+    void setMemorySampleConfig(const MemoryTracker::SampleConfig & c)
+    {
+        sample_probability = c.probability;
+        sample_min_allocation_size = c.min_allocation_size;
+        sample_max_allocation_size = c.max_allocation_size;
+    }
+    void resolveMemorySampleConfig() { setMemorySampleConfig(memory_tracker.getResolvedSampleConfig()); }
+
 private:
     void applyGlobalSettings();
     void applyQuerySettings();
@@ -348,6 +352,11 @@ private:
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database);
 
     void attachToGroupImpl(const ThreadGroupPtr & thread_group_);
+
+    /// Cached sample probability resolved from MemoryTracker hierarchy to avoid parent traversal on every allocation
+    double sample_probability = 0;
+    UInt64 sample_min_allocation_size = 0;
+    UInt64 sample_max_allocation_size = 0;
 };
 
 /**
@@ -359,7 +368,6 @@ public:
     static MainThreadStatus & getInstance();
     static ThreadStatus * get() { return main_thread; }
     static bool initialized() { return is_initialized.test(std::memory_order_relaxed); }
-    static bool isMainThread() { return main_thread == current_thread; }
 
     static void reset() { is_initialized.clear(std::memory_order_relaxed); }
 

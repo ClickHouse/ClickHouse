@@ -1,0 +1,108 @@
+---
+slug: /community-wisdom/cost-optimization
+sidebarTitle: '成本优化'
+doc_type: 'guide'
+keywords: [
+  '成本优化',
+  '存储成本', 
+  '分区管理',
+  '数据保留',
+  '存储分析',
+  '数据库优化',
+  'ClickHouse 成本降低',
+  '存储热点',
+  'TTL 性能',
+  '磁盘使用',
+  '压缩策略',
+  '保留分析'
+]
+title: '经验总结 - 成本优化'
+description: '来自 ClickHouse 社区 meetup 的成本优化策略，包含真实生产示例和经过验证的技术。'
+---
+
+*本指南是社区 meetup 经验总结系列的一部分。本页汇总了社区在使用 ClickHouse 过程中与成本优化相关的实践经验，这些做法已在各自特定的环境和配置中取得了良好效果。若要了解更多真实场景下的解决方案和洞见，你可以[按具体问题浏览](/zh/resources/support-center/tips-and-tricks/community-wisdom)。*
+
+*了解 [ClickHouse Cloud 如何帮助管理运营成本](/zh/products/cloud/getting-started/intro)。*
+
+<div id="compression-strategy">
+  ## 压缩策略：生产环境中的 LZ4 与 ZSTD
+</div>
+
+当 Microsoft Clarity 需要处理数百 TB 的数据时，他们发现压缩方案的选择会对成本产生巨大影响。在这样的规模下，哪怕只节省一点存储空间都很重要，因此他们面临着一个经典取舍：性能还是存储成本。Microsoft Clarity 处理着海量数据——所有账户每月总计 2 PB 的未压缩数据，在 8 个节点上每小时处理约 60,000 次查询，并为数百万个网站提供数十亿次页面浏览。在这种规模下，压缩策略就成了关键的成本因素。
+
+他们最初使用的是 ClickHouse 默认的 [LZ4](/zh/reference/statements/create/table#lz4) 压缩，但随后发现，改用 [ZSTD](/zh/reference/statements/create/table#zstd) 可以显著节省成本。虽然 LZ4 速度更快，但 ZSTD 能提供更高的压缩率，代价是性能略有下降。经过对两种方案的测试后，他们作出了战略性决定：优先考虑存储节省。结果非常显著：大型表的存储占用减少了 50%，同时对摄取和查询的性能影响仍在可控范围内。
+
+**关键结果：**
+
+* 通过 ZSTD 压缩，大型表的存储空间节省了 50%
+* 每月可处理 2 PB 数据
+* 对摄取和查询的性能影响可控
+* 在数百 TB 规模下显著降低了成本
+
+<div id="column-retention">
+  ## 基于列的保留策略
+</div>
+
+最有效的成本优化方法之一，就是分析哪些列实际上被使用了。Microsoft Clarity 利用 ClickHouse 内置的遥测能力，实施了精细的基于列的保留策略。ClickHouse 可按列提供详细的存储使用指标，以及全面的查询模式信息：哪些列被访问、访问频率、查询耗时以及整体使用统计。
+
+这种以数据为驱动的方法，使团队能够就保留策略和列生命周期管理做出更有针对性的决策。通过分析这些遥测数据，Microsoft 可以识别出存储热点——即占用大量空间但很少被查询的列。对于这些低使用率的列，他们可以实施更激进的保留策略，将存储时间从 30 个月缩短到仅 1 个月；如果这些列完全没有被查询，还可以直接删除。这样的选择性保留策略能够在不影响用户体验的情况下降低存储成本。
+
+**该策略：**
+
+* 使用 ClickHouse 遥测分析列使用模式
+* 识别高存储、低查询的列
+* 实施选择性保留策略
+* 监控查询模式，以支持数据驱动的决策
+
+**相关文档**
+
+* [管理数据 - 列级生存时间 (TTL)](/zh/guides/use-cases/observability/build-your-own/managing-data)
+
+<div id="partition-management">
+  ## 基于分区的数据管理
+</div>
+
+Microsoft Clarity 发现，分区策略同时会影响性能和运维简便性。他们采用的方法是：按日期分区，按小时排序。除了提升清理效率之外，这一策略还带来了多方面的收益——它使数据清理变得极为简单，简化了其面向客户服务的计费计算，并支持 GDPR 对按行删除的合规要求。
+
+**主要优势：**
+
+* 数据清理极其简单 (删除分区，而不是逐行删除)
+* 简化计费计算
+* 通过分区裁剪提升查询性能
+* 更便于运维管理
+
+**相关文档**
+
+* [数据管理 - 分区](/zh/guides/use-cases/observability/build-your-own/managing-data#partitions)
+
+<div id="string-integer-conversion">
+  ## 字符串到整数的转换策略
+</div>
+
+分析平台在处理跨数百万行反复出现的分类数据时，往往会面临存储挑战。Microsoft 的工程团队在其搜索分析数据中遇到了这个问题，并开发出一种有效的解决方案，使受影响数据集的存储占用减少了 60%。
+
+在 Microsoft 的网站分析系统中，搜索结果会触发不同类型的答案——天气卡片、体育信息、新闻文章以及事实性回答。每个查询结果都会带有描述性字符串标签，例如 &quot;weather&#95;answer&quot;、&quot;sports&#95;answer&quot; 或 &quot;factual&#95;answer&quot;。由于系统需要处理数十亿次搜索查询，这些字符串值在 ClickHouse 中被反复存储，占用了大量存储空间，同时在查询时还需要进行开销高昂的字符串比较。
+
+Microsoft 使用单独的 MySQL 数据库实现了一套字符串到整数的映射系统。他们不在 ClickHouse 中存储实际字符串，而是只存储整数 ID。当你通过 UI 运行查询并请求 `weather_answer` 的数据时，查询优化器会先查阅 MySQL 映射表以获取对应的整数 ID，然后在将查询发送到 ClickHouse 之前，把查询改写为使用该整数值。
+
+这种架构保留了用户体验——用户在仪表盘中仍然能看到像 `weather_answer` 这样有明确含义的标签——同时，后端存储和查询则基于效率高得多的整数运行。该映射系统会以透明方式完成所有转换，无需更改用户界面或用户工作流。
+
+**主要优势：**
+
+* 受影响数据集的存储占用减少 60%
+* 基于整数比较的查询性能更高
+* 降低连接和聚合的内存使用量
+* 降低大型结果集的网络传输成本
+
+<Note>
+  这是一个专门针对 Microsoft Clarity 数据场景的示例。如果你的所有数据都在 ClickHouse 中，或者没有将数据迁移到 ClickHouse 的限制，建议改用 [字典](/zh/concepts/features/dictionaries/index)。
+</Note>
+
+<div id="video-sources">
+  ## 相关视频
+</div>
+
+* **[Microsoft Clarity 与 ClickHouse](https://www.youtube.com/watch?v=rUVZlquVGw0)** - Microsoft Clarity Team
+* **[Contentsquare 中的 ClickHouse 之旅](https://www.youtube.com/watch?v=zvuCBAl2T0Q)** - Doron Hoffman &amp; Guram Sigua (ContentSquare)
+
+*这些来自社区的成本优化经验，展示了处理数百 TB 到 PB 数据的公司所采用的策略，以及在实际场景中降低 ClickHouse 运营成本的方法。*

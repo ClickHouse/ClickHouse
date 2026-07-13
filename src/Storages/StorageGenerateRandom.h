@@ -1,7 +1,7 @@
 #pragma once
 
 #include <optional>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <pcg_random.hpp>
 
 
@@ -15,7 +15,7 @@ ColumnPtr fillColumnWithRandomData(
 
 /* Generates random data for given schema.
  */
-class StorageGenerateRandom final : public IStorage
+class StorageGenerateRandom final : public StorageWithCommonVirtualColumns
 {
 public:
     StorageGenerateRandom(
@@ -27,6 +27,10 @@ public:
         const std::optional<UInt64> & random_seed);
 
     std::string getName() const override { return "GenerateRandom"; }
+
+    static VirtualColumnsDescription createVirtuals();
+
+    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

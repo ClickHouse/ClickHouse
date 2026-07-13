@@ -4,18 +4,10 @@
 
 #if USE_AWS_S3
 
-namespace ErrorCodes
-{
-    extern const int S3_ERROR;
-}
-
-
 namespace ProfileEvents
 {
-    extern const Event S3GetObject;
     extern const Event S3GetObjectTagging;
     extern const Event S3HeadObject;
-    extern const Event DiskS3GetObject;
     extern const Event DiskS3GetObjectTagging;
     extern const Event DiskS3HeadObject;
 }
@@ -108,7 +100,7 @@ bool isAuthenticationError(Aws::S3::S3Errors error)
         || error == Aws::S3::S3Errors::INVALID_SIGNATURE;
 }
 
-String getAuthenticationErrorHint(Aws::S3::S3Errors error)
+static String getAuthenticationErrorHint(Aws::S3::S3Errors error)
 {
     if (isAuthenticationError(error))
         return " Please check your AWS credentials and permissions.";

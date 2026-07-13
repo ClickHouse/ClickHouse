@@ -1,0 +1,201 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/langchain
+sidebarTitle: 'Интеграция с LangChain'
+title: 'Как создать ИИ-агента на LangChain/LangGraph с помощью MCP-сервера ClickHouse.'
+description: 'Узнайте, как создать ИИ-агента на LangChain/LangGraph, который может взаимодействовать с SQL-песочницей ClickHouse через MCP-сервер ClickHouse.'
+keywords: ['ClickHouse', 'MCP', 'LangChain', 'LangGraph']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+В этом руководстве вы узнаете, как создать ИИ-агента на [LangChain/LangGraph](https://github.com/langchain-ai/langgraph), который
+может взаимодействовать с [SQL-песочницей ClickHouse](https://sql.clickhouse.com/) через [MCP-сервер ClickHouse](https://github.com/ClickHouse/mcp-clickhouse).
+
+<Info>
+  **Блокнот с примером**
+
+  Этот пример доступен в виде блокнота в [репозитории с примерами](https://github.com/ClickHouse/examples/blob/main/ai/mcp/langchain/langchain.ipynb).
+</Info>
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* В системе должен быть установлен Python.
+* В системе должен быть установлен `pip`.
+* Вам понадобится API key Anthropic или API key другого провайдера LLM
+
+Вы можете выполнить следующие шаги либо в Python REPL, либо с помощью скрипта.
+
+<Steps>
+  <Step>
+    ## Установка библиотек
+
+    Установите необходимые библиотеки, выполнив следующие команды:
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q langchain-mcp-adapters langgraph "langchain[anthropic]"
+    ```
+  </Step>
+
+  <Step>
+    ## Настройка учетных данных
+
+    Далее вам нужно указать API-ключ Anthropic:
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="Response"
+    Enter Anthropic API Key: ········
+    ```
+
+    <Info>
+      **Использование другого провайдера LLM**
+
+      Если у вас нет API key Anthropic и вы хотите использовать другого провайдера LLM,
+      инструкции по настройке учетных данных можно найти в [документации LangChain Providers](https://python.langchain.com/docs/integrations/providers/)
+    </Info>
+  </Step>
+
+  <Step>
+    ## Инициализируйте MCP-сервер
+
+    Теперь настройте MCP-сервер ClickHouse для работы с песочницей ClickHouse SQL:
+
+    ```python
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    server_params = StdioServerParameters(
+        command="uv",
+        args=[
+            "run",
+            "--with", "mcp-clickhouse",
+            "--python", "3.13",
+            "mcp-clickhouse"
+        ],
+        env={
+            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+            "CLICKHOUSE_PORT": "8443",
+            "CLICKHOUSE_USER": "demo",
+            "CLICKHOUSE_PASSWORD": "",
+            "CLICKHOUSE_SECURE": "true"
+        }
+    )
+    ```
+  </Step>
+
+  <Step>
+    ## Настройте обработчик потока
+
+    При работе с Langchain и MCP-сервером ClickHouse результаты запроса часто
+    возвращаются в виде потока данных, а не одним ответом. Для больших наборов данных или
+    сложных аналитических запросов, обработка которых может занять некоторое время, важно настроить
+    обработчик потока. Без надлежащей обработки с этим потоковым выводом может быть сложно
+    работать в приложении.
+
+    Настройте обработчик для потокового вывода, чтобы его было проще использовать:
+
+    ```python
+    class UltraCleanStreamHandler:
+        def __init__(self):
+            self.buffer = ""
+            self.in_text_generation = False
+            self.last_was_tool = False
+            
+        def handle_chunk(self, chunk):
+            event = chunk.get("event", "")
+            
+            if event == "on_chat_model_stream":
+                data = chunk.get("data", {})
+                chunk_data = data.get("chunk", {})
+                
+                # Обрабатывать только текстовое содержимое, пропускать потоки вызова инструментов
+                if hasattr(chunk_data, 'content'):
+                    content = chunk_data.content
+                    if isinstance(content, str) and not content.startswith('{"'):
+                        # Добавить пробел после завершения инструмента, если необходимо
+                        if self.last_was_tool:
+                            print(" ", end="", flush=True)
+                            self.last_was_tool = False
+                        print(content, end="", flush=True)
+                        self.in_text_generation = True
+                    elif isinstance(content, list):
+                        for item in content:
+                            if (isinstance(item, dict) and 
+                                item.get('type') == 'text' and 
+                                'partial_json' not in str(item)):
+                                text = item.get('text', '')
+                                if text and not text.startswith('{"'):
+                                    # Добавить пробел после завершения инструмента, если необходимо
+                                    if self.last_was_tool:
+                                        print(" ", end="", flush=True)
+                                        self.last_was_tool = False
+                                    print(text, end="", flush=True)
+                                    self.in_text_generation = True
+                                    
+            elif event == "on_tool_start":
+                if self.in_text_generation:
+                    print(f"\n🔧 {chunk.get('name', 'tool')}", end="", flush=True)
+                    self.in_text_generation = False
+                    
+            elif event == "on_tool_end":
+                print(" ✅", end="", flush=True)
+                self.last_was_tool = True
+    ```
+  </Step>
+
+  <Step>
+    ## Обратитесь к агенту
+
+    Наконец, обратитесь к своему агенту и спросите, кто внёс больше всего кода в ClickHouse:
+
+    ```python
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await load_mcp_tools(session)
+            agent = create_react_agent("anthropic:claude-sonnet-4-0", tools)
+            
+            handler = UltraCleanStreamHandler()        
+            async for chunk in agent.astream_events(
+                {"messages": [{"role": "user", "content": "Who's committed the most code to ClickHouse?"}]}, 
+                version="v1"
+            ):
+                handler.handle_chunk(chunk)
+                
+            print("\n")
+    ```
+
+    Вы должны увидеть ответ, похожий на приведённый ниже:
+
+    ```response title="Response"
+    Я помогу вам найти того, кто внёс наибольший вклад в кодовую базу ClickHouse, изучив доступные базы данных и таблицы с данными о git-коммитах.
+    🔧 list_databases ✅ Я вижу базу данных `git`, которая, вероятно, содержит информацию о git-коммитах. Давайте изучим таблицы в этой базе данных:
+    🔧 list_tables ✅ Отлично! Таблица `clickhouse_commits` в базе данных git содержит данные о коммитах ClickHouse — всего 80 644 коммита. В таблице хранится информация о каждом коммите: автор, добавленные/удалённые строки, изменённые файлы и т. д. Выполним запрос к этой таблице, чтобы определить, кто внёс наибольший вклад по различным метрикам.
+    🔧 run_select_query ✅ Давайте также посмотрим только на добавленные строки, чтобы выяснить, кто написал больше всего нового кода:
+    🔧 run_select_query ✅ По данным git-коммитов ClickHouse, **Алексей Миловидов** внёс наибольший вклад в кодовую базу ClickHouse сразу по нескольким показателям:
+
+    ## Ключевая статистика:
+
+    1. **Наибольшее общее количество изменённых строк**: Алексей Миловидов — **1 696 929 строк** (853 049 добавлено + 843 880 удалено)
+    2. **Наибольшее количество добавленных строк**: Алексей Миловидов — **853 049 строк**
+    3. **Наибольшее количество коммитов**: Алексей Миловидов — **15 375 коммитов**
+    4. **Наибольшее количество изменённых файлов**: Алексей Миловидов — **73 529 файлов**
+
+    ## Топ участников по количеству добавленных строк:
+
+    1. **Alexey Milovidov**: 853 049 строк (15 375 коммитов)
+    2. **s-kat**: 541 609 строк (50 коммитов)
+    3. **Nikolai Kochetov**: 219 020 строк (4 218 коммитов)
+    4. **alesapin**: 193 566 строк (4 783 коммита)
+    5. **Vitaly Baranov**: 168 807 строк (1 152 коммита)
+
+    Алексей Миловидов — безусловно, самый активный участник разработки ClickHouse, что неудивительно: он является одним из создателей проекта и его ведущим разработчиком. Его вклад значительно превосходит вклад остальных как по объёму кода, так и по количеству коммитов — почти 16 000 коммитов и более 850 000 добавленных строк кода.
+    ```
+  </Step>
+</Steps>

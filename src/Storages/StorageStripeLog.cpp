@@ -48,9 +48,6 @@
 
 #include <base/insertAtEnd.h>
 
-#include <cassert>
-
-
 namespace DB
 {
 namespace Setting
@@ -187,15 +184,10 @@ private:
             result_columns.emplace_back(res.getByName(col.name).column);
     }
 
-    void fillVirtualColumns(Columns & result_columns, UInt64 num_rows) const
+    void fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
     {
-        for (const auto & col : virtual_columns)
-        {
-            if (col.name == "_table")
-                result_columns.emplace_back(col.type->createColumnConst(num_rows, storage->getStorageID().getTableName())->convertToFullColumnIfConst());
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual column: '{}'", col.name);
-        }
+        if (!virtual_columns.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
     }
 };
 
@@ -314,7 +306,7 @@ StorageStripeLog::StorageStripeLog(
     const String & comment,
     LoadingStrictnessLevel mode,
     ContextMutablePtr context_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithMutableContext(context_)
     , disk(std::move(disk_))
     , table_path(relative_path_)
@@ -328,8 +320,8 @@ StorageStripeLog::StorageStripeLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Storage {} requires data path", getName());
@@ -367,7 +359,7 @@ StorageStripeLog::~StorageStripeLog() = default;
 
 void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    assert(table_path != new_path_to_table_data);
+    chassert(table_path != new_path_to_table_data);
     {
         disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(table_path, new_path_to_table_data);
@@ -393,7 +385,8 @@ static std::chrono::seconds getLockTimeout(ContextPtr local_context)
 VirtualColumnsDescription StorageStripeLog::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
     return desc;
 }
 
@@ -423,7 +416,7 @@ Pipe StorageStripeLog::read(
     auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
     auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{physical_column_names.begin(), physical_column_names.end()}));
     auto physical_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names);
-    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(), virtual_column_names);
+    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
     size_t size = indices_for_selected_columns->blocks.size();
     num_streams = std::min(num_streams, size);
@@ -654,9 +647,10 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
 
     /// columns.txt
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / "columns.txt",
-        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
+        std::make_unique<BackupEntryFromMemory>(metadata_snapshot->getColumns().getAllPhysical().toString()));
 
     /// count.txt
     size_t num_rows = 0;
@@ -743,6 +737,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 }
 
 
+void registerStorageStripeLog(StorageFactory & factory);
 void registerStorageStripeLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
@@ -768,7 +763,101 @@ void registerStorageStripeLog(StorageFactory & factory)
             args.comment,
             args.mode,
             args.getContext());
-    }, features);
+    }, features, Documentation{
+        .description = R"DOCS_MD(
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# StripeLog table engine
+
+<CloudNotSupportedBadge/>
+
+This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
+
+Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows). For example, this table can be used to store incoming data batches for transformation where atomic processing of them is required. 100k instances of this table type are viable for a ClickHouse server. This table engine should be preferred over [Log](./log.md) when a high number of tables are required. This is at the expense of read efficiency.
+
+## Creating a table {#table_engines-stripelog-creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = StripeLog
+```
+
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+
+## Writing the data {#table_engines-stripelog-writing-the-data}
+
+The `StripeLog` engine stores all the columns in one file. For each `INSERT` query, ClickHouse appends the data block to the end of a table file, writing columns one by one.
+
+For each table ClickHouse writes the files:
+
+- `data.bin` — Data file.
+- `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
+
+The `StripeLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
+
+## Reading the data {#table_engines-stripelog-reading-the-data}
+
+The file with marks allows ClickHouse to parallelize the reading of data. This means that a `SELECT` query returns rows in an unpredictable order. Use the `ORDER BY` clause to sort rows.
+
+## Example of use {#table_engines-stripelog-example-of-use}
+
+Creating a table:
+
+```sql
+CREATE TABLE stripe_log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = StripeLog
+```
+
+Inserting data:
+
+```sql
+INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+We used two `INSERT` queries to create two data blocks inside the `data.bin` file.
+
+ClickHouse uses multiple threads when selecting data. Each thread reads a separate data block and returns resulting rows independently as it finishes. As a result, the order of blocks of rows in the output does not match the order of the same blocks in the input in most cases. For example:
+
+```sql
+SELECT * FROM stripe_log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+┌───────────timestamp─┬─message_type─┬─message───────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message │
+└─────────────────────┴──────────────┴───────────────────────────┘
+```
+
+Sorting the results (ascending order by default):
+
+```sql
+SELECT * FROM stripe_log_table ORDER BY timestamp
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```
+)DOCS_MD",
+        .syntax = "ENGINE = StripeLog",
+        .related = {"Log", "TinyLog"}});
 }
 
 }
