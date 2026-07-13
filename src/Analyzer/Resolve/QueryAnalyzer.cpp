@@ -4492,6 +4492,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     const auto & table_function_name = table_function_node_typed.getTableFunctionName();
 
+    /// The `eval` table function executes its argument at analysis time and generates a new query.
+    /// Inside arguments of other table functions (e.g. `remote('host', eval(...))`) the argument
+    /// would have to be resolved on the initiator while the wrapper is resolved on the remote
+    /// server, which requires special handling, so it is disallowed for simplicity.
+    if (nested_table_function && table_function_name == "eval")
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Table function `eval` cannot be used as an argument of another table function");
+
     auto & scope_context = scope.context;
 
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
@@ -6373,6 +6381,19 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         else
             resolveUnion(non_recursive_query, non_recursive_subquery_scope);
 
+        /// The seed (non-recursive) term of a recursive CTE cannot be correlated to an outer
+        /// scope either: the whole union is lowered to ReadFromRecursiveCTEStep and re-run with
+        /// only the temporary CTE table injected, so there is no mechanism to supply an outer-scope
+        /// binding to the seed. Reject it here for the same reason as a correlated recursive member.
+        bool non_recursive_query_is_correlated = non_recursive_query_is_query_node
+            ? non_recursive_query->as<QueryNode &>().isCorrelated()
+            : non_recursive_query->as<UnionNode &>().isCorrelated();
+        if (non_recursive_query_is_correlated)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Recursive CTE '{}' cannot be correlated. In scope {}",
+                union_node_typed.getCTEName(),
+                scope.scope_node->formatASTForErrorMessage());
+
         auto temporary_table_columns = non_recursive_query_is_query_node
             ? non_recursive_query->as<QueryNode &>().getProjectionColumns()
             : non_recursive_query->as<UnionNode &>().computeProjectionColumns();
@@ -6420,6 +6441,20 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                         "UNION unsupported node {}. In scope {}",
                         query_node->formatASTForErrorMessage(),
+                        scope.scope_node->formatASTForErrorMessage());
+
+                /// A recursive CTE is planned as a fixed-point over a temporary table, so it has no
+                /// per-call-site substitution mechanism and cannot be correlated to an outer scope.
+                /// If resolution bound an identifier to an outer table expression, the resulting
+                /// ColumnNode's source is not part of this subquery and produces a dangling source
+                /// node later during planning (LOGICAL_ERROR in ColumnNode::getColumnSource).
+                bool is_correlated = query_node->as<QueryNode>()
+                    ? query_node->as<QueryNode>()->isCorrelated()
+                    : query_node->as<UnionNode>()->isCorrelated();
+                if (is_correlated)
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Recursive CTE '{}' cannot be correlated. In scope {}",
+                        union_node_typed.getCTEName(),
                         scope.scope_node->formatASTForErrorMessage());
             }
 
