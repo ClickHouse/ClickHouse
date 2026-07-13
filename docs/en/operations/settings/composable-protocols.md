@@ -255,7 +255,10 @@ modules, and the value closest to the endpoint wins. It applies to the `tcp`, `h
 `mysql` and `postgres` protocol handlers, and to the `prometheus` handlers that
 authenticate requests (`remote_write`, `remote_read`, `query` and `api_v1`); the
 metrics exposition endpoints (including Keeper metrics-only endpoints) are served
-without authentication and ignore the setting. It cannot be used with the
+without authentication and ignore the setting. Handlers with a fixed user (the `user`
+key inside `handler` of an `http_handlers` rule, or the `user` key of a `prometheus`
+protocol) authenticate as their configured user and also ignore the setting - in
+particular, an empty `default_session_user` does not reject them. It cannot be used with the
 `interserver` protocol: interserver connections are authenticated by the cluster
 secret and the initial user and never use the default session user.
 

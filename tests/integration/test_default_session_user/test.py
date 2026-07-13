@@ -154,6 +154,23 @@ def test_http_per_protocol_default_session_user():
     )
 
 
+def test_fixed_user_handler_with_anonymous_logins_disabled():
+    # A handler with a fixed user (`handler.user` of an `http_handlers` rule)
+    # authenticates as the configured user regardless of the request, so a request
+    # without a user name is not resolved through the default session user: an empty
+    # `default_session_user`, which prohibits anonymous logins, must not reject
+    # fixed-user handlers.
+    url = f"http://{node1.ip_address}:8129/fixed"
+    response = urllib.request.urlopen(url, timeout=10).read()
+    assert response == b"fixed_handler_user\n"
+    assert_login_success("fixed_handler_user", "HTTP")
+
+    # The prohibition still applies to the default handlers on the same endpoint.
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        execute_query_http(8129, "SELECT currentUser()")
+    assert exc_info.value.code == 403
+
+
 def test_native_default_session_user():
     hello = 0
     exception = 2

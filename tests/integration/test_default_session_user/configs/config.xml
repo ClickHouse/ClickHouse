@@ -19,6 +19,23 @@
         </rule>
     </http_handlers_custom_webterminal>
 
+    <!-- A rule with a fixed user (`handler.user`): the handler authenticates as that
+         user regardless of the request, so it must keep working on an endpoint that
+         prohibits anonymous logins with an empty `default_session_user`. The default
+         handlers are also included to check that the prohibition still applies to them. -->
+    <http_handlers_fixed_user>
+        <rule>
+            <url>/fixed</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT currentUser()</query>
+                <user>fixed_handler_user</user>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers_fixed_user>
+
     <session_log>
         <database>system</database>
         <table>session_log</table>
@@ -116,6 +133,14 @@
             <default_session_user>proto_prometheus_user</default_session_user>
             <description>keeper-metrics-only prometheus protocol with its own default session user</description>
         </prometheus_defuser>
+        <http_fixed_no_anonymous>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8129</port>
+            <default_session_user></default_session_user>
+            <handlers>http_handlers_fixed_user</handlers>
+            <description>http protocol with a fixed-user handler and anonymous logins prohibited</description>
+        </http_fixed_no_anonymous>
         <prometheus_no_anonymous>
             <type>prometheus</type>
             <host>0.0.0.0</host>

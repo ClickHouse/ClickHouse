@@ -230,7 +230,7 @@ A value of `0` (default) means unlimited.
     DECLARE(String, default_session_user, "default", R"(
 The user name that is used for authentication when a client connects without specifying a user name: an HTTP request without the `user` parameter and `X-ClickHouse-User` header, a native protocol `Hello` packet with an empty user name, a MySQL or PostgreSQL handshake with an empty user name, or a gRPC query without `user_name`.
 
-If set to an empty string, connections without a user name are rejected.
+If set to an empty string, connections without a user name are rejected. HTTP handlers with a fixed user (the `user` key inside `handler` of an `http_handlers` rule, or the `user` key of a `prometheus` protocol) authenticate as their configured user and are not affected.
 
 The default session user is never applied to interserver connections: they identify themselves with a special marker instead of a user name and are authenticated by the cluster secret and the initial user.
 

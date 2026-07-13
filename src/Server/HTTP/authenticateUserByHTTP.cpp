@@ -246,12 +246,22 @@ bool authenticateUserByHTTP(
         if (has_config_credentials && has_authorization_header)
             throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication set in config");
 
-        /// If the user name is not set (or set to an empty string), the default session user is assumed.
         user = params.get("user", "");
-        if (user.empty())
-            user = default_session_user;
         password = params.get("password", "");
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context);
+
+        /// When the handler has credentials configured (`handler.user` of an `http_handlers`
+        /// rule or `user` of a `prometheus` protocol), they are applied below regardless of
+        /// the request, so an absent user name is not resolved through the default session
+        /// user: an empty `default_session_user` (which prohibits requests without a user
+        /// name) must not reject handlers with a fixed user. The configured user name has
+        /// already been checked above.
+        if (!has_config_credentials)
+        {
+            /// If the user name is not set (or set to an empty string), the default session user is assumed.
+            if (user.empty())
+                user = default_session_user;
+            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context);
+        }
     }
 
     if (has_config_credentials)
