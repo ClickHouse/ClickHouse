@@ -516,6 +516,17 @@ static bool joinKeyTypeBreaksHashSharding(const IDataType & type)
 /// the boundary of a whole input stream for a single downstream merge; once the stream is scattered by the
 /// hash of the join keys, each virtual row is routed to one shard and, having lost its `MergeTreeReadInfo`
 /// through the scatter, would surface as a spurious result row. The in-order read itself is preserved.
+///
+/// The walk stops at any nested `SortingStep` below the one being scattered (`node` itself): that inner
+/// sort's `MergingSortedTransform` is where the virtual rows of the reads beneath it are consumed, so those
+/// rows never reach the outer scatter and must be left in place. Clearing them would be worse than useless:
+/// `optimizeReadInOrder` may have admitted such an inner read-in-order plan only because
+/// `setVirtualRowConversions` succeeded (for a non-`LEFT ANY/ALL` inner join it otherwise bails out of the
+/// in-order read to avoid reading excessive data), so resetting the conversions after that decision would
+/// leave the inner plan in a shape the inner optimizer would never have produced. A nested `JoinStep` is
+/// not a boundary: `JoiningTransform` forwards virtual rows unchanged, so without an intervening sort they
+/// can still reach the outer scatter through a join - the walk therefore recurses through joins, filters and
+/// unions and only stops at inner sorts.
 static void disableVirtualRowInSubtree(QueryPlan::Node & node)
 {
     std::stack<QueryPlan::Node *> stack;
@@ -529,7 +540,13 @@ static void disableVirtualRowInSubtree(QueryPlan::Node & node)
             reading->resetVirtualRowConversions();
 
         for (auto * child : current->children)
+        {
+            /// A nested `SortingStep` consumes (in its `MergingSortedTransform`) the virtual rows of the
+            /// reads below it, so those reads cannot reach the outer scatter - do not descend past it.
+            if (typeid_cast<SortingStep *>(child->step.get()))
+                continue;
             stack.push(child);
+        }
     }
 }
 
