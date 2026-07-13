@@ -90,8 +90,12 @@ BlockPtr SortedFile::getBlockCoveringPath(NodePath path, BlockCache * block_cach
 }
 
 void SortedFile::listChildrenNames(
-    NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena_, BlockCache * block_cache) const
+    NodePath range_start, NodePath range_end, UInt128 parent_path_hash, ChildrenSet2 & out, DB::Arena & arena_, BlockCache * block_cache) const
 {
+    if (parent_paths_filter && !parent_paths_filter->findHashPair(
+            DB::BloomFilterHashPair {parent_path_hash.items[0], parent_path_hash.items[1]}))
+        return;
+
     auto block_it = std::ranges::partition_point(
         blocks,
         [&](const BlockInfo & block) { return block.max_path.compare(range_start) <= 0; });

@@ -315,7 +315,7 @@ void StorageState::listCommittedChildrenNames(
         const NodePath range_end(range_end_str, path.path.depth + 1);
 
         for (auto it = sorted_runs.rbegin(); it != sorted_runs.rend(); ++it)
-            (*it)->listChildrenNames(range_start, range_end, out, arena, block_cache.get());
+            (*it)->listChildrenNames(range_start, range_end, path.hash, out, arena, block_cache.get());
     }
 }
 
