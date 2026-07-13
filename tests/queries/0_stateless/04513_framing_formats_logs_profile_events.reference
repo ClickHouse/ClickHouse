@@ -7,3 +7,8 @@ log packets: OK
 "packet":"log","log":{"event_time":
 --- log packets in EventStream
 log events: OK
+--- profile events in EventStream are a single JSON array
+profile_events single JSON array: OK
+--- planning-phase logs are framed when the query fails before producing output
+planning-phase log packets: OK
+exception packet: OK

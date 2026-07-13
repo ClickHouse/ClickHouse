@@ -2456,9 +2456,14 @@ namespace
 /// The content type alone is not sufficient: raw passthrough formats (`RawBLOB`, `TSVRaw`, `LineAsString`)
 /// advertise a textual content type but write the column bytes verbatim, which are not guaranteed to be
 /// valid UTF-8. They are marked with `markOutputFormatMayProduceRawBytes` and rejected explicitly.
-bool outputFormatProducesText(const String & format_name, const std::optional<FormatSettings> & output_format_settings)
+/// Some formats produce raw bytes only under certain settings (for example `CustomSeparated` with a
+/// `Raw` escaping rule), which is detected with the settings-aware `checkIfOutputFormatMayProduceRawBytes`.
+bool outputFormatProducesText(
+    const String & format_name,
+    const std::optional<FormatSettings> & output_format_settings,
+    const FormatSettings & format_settings)
 {
-    if (FormatFactory::instance().checkIfOutputFormatMayProduceRawBytes(format_name))
+    if (FormatFactory::instance().checkIfOutputFormatMayProduceRawBytes(format_name, format_settings))
         return false;
     const String content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
     return content_type.starts_with("text/") || content_type.find("charset=") != String::npos;
@@ -2468,7 +2473,8 @@ FramingFormatPtr createFramingFormatIfApplicable(
     const ContextMutablePtr & context,
     WriteBuffer & ostr,
     const String & format_name,
-    const std::optional<FormatSettings> & output_format_settings)
+    const std::optional<FormatSettings> & output_format_settings,
+    bool for_exception = false)
 {
     if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
         return nullptr;
@@ -2482,7 +2488,7 @@ FramingFormatPtr createFramingFormatIfApplicable(
     /// Whether the output format may produce bytes that are not valid UTF-8 text: binary formats
     /// (such as `Native` or `RowBinary`) and raw passthrough formats (`RawBLOB`, `TSVRaw`,
     /// `LineAsString`) that write the column bytes verbatim.
-    const bool binary_payload = !outputFormatProducesText(format_name, output_format_settings);
+    const bool binary_payload = !outputFormatProducesText(format_name, output_format_settings, format_settings);
 
     auto framing = createFramingFormat(framing_name, ostr, format_settings, {.is_http = true, .binary_payload = binary_payload});
 
@@ -2490,7 +2496,11 @@ FramingFormatPtr createFramingFormatIfApplicable(
     /// non-textual output would corrupt the stream. `EventStream` handles this by base64-encoding
     /// the payloads (see `binary_payload`), but `JSONEachPacketString` puts the bytes into a JSON
     /// string and cannot; it is rejected here, pointing to `JSONEachPacketBase64` instead.
-    if (framing->requiresTextPayload() && binary_payload)
+    ///
+    /// When framing only an exception (`for_exception`), the stream carries a single `exception`
+    /// packet, which is always JSON regardless of the output format, so this compatibility check is
+    /// skipped: the exception is framed even for output formats that cannot be embedded as text.
+    if (!for_exception && framing->requiresTextPayload() && binary_payload)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The framing format {} embeds the output as text and is not compatible with the output format {}, "
@@ -2665,6 +2675,11 @@ void executeQuery(
     String format_name;
     OutputFormatPtr output_format;
 
+    /// If a framing format is requested, attach its logs and profile-events queues to the current
+    /// thread before the query is interpreted, so the logs emitted during parsing, planning and
+    /// analysis are captured too (they are wired into the framing format once it is created below).
+    const FramingQueues framing_queues = attachQueuesForFramingIfApplicable(context);
+
     auto update_format_on_exception_if_needed = [&]()
     {
         if (!output_format)
@@ -2676,11 +2691,17 @@ void executeQuery(
                     ? getIdentifierName(ast_query_with_output->format_ast)
                     : context->getDefaultFormat();
 
-                auto framing = createFramingFormatIfApplicable(context, ostr, format_name, output_format_settings);
+                /// The exception stream carries only the `exception` packet (always JSON), so the framing
+                /// is created for the exception even when the output format cannot be embedded as text or
+                /// defers totals/extremes (`for_exception`), which the normal data path rejects. The queues
+                /// attached before the query are wired in as well, so any `log` / `profile_events` packets
+                /// accumulated during parsing and planning are still drained on `finalize`.
+                auto framing = createFramingFormatIfApplicable(context, ostr, format_name, output_format_settings, /*for_exception=*/ true);
                 if (framing)
                 {
                     output_format = FormatFactory::instance().getOutputFormat(format_name, framing->getPayloadBuffer(), {}, context, output_format_settings);
-                    output_format->setFraming(framing);
+                    output_format->setFraming(framing, /*for_exception=*/ true);
+                    setFramingQueues(*framing, context, framing_queues);
                 }
                 else
                 {
@@ -2720,11 +2741,6 @@ void executeQuery(
         }
     };
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
-
-    /// If a framing format is requested, attach its logs and profile-events queues to the current
-    /// thread before the query is interpreted, so the logs emitted during parsing, planning and
-    /// analysis are captured too (they are wired into the framing format once it is created below).
-    const FramingQueues framing_queues = attachQueuesForFramingIfApplicable(context);
 
     try
     {

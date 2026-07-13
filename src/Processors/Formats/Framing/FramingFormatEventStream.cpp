@@ -77,15 +77,20 @@ void FramingFormatEventStream::writeLogsPacket(const Block & block)
 
 void FramingFormatEventStream::writeProfileEventsPacket(const Block & block)
 {
-    writeCString("event: profile_events\n", out);
+    /// Serialize the whole block as a single JSON array in one `data:` field. An SSE client
+    /// reconstructs `event.data` by joining consecutive `data:` fields with '\n', so emitting one
+    /// `data:` field per row would produce `{...}\n{...}`, which is not valid JSON and does not match
+    /// the documented `profile_events` contract (an array of profile events as JSON). This mirrors the
+    /// `profile_events` array of the `JSONEachPacket` framings.
+    writeCString("event: profile_events\ndata: [", out);
     size_t rows = block.rows();
     for (size_t i = 0; i < rows; ++i)
     {
-        writeCString("data: ", out);
+        if (i != 0)
+            writeChar(',', out);
         writeProfileEventRowJSON(block, i, out);
-        writeChar('\n', out);
     }
-    writeChar('\n', out);
+    writeCString("]\n\n", out);
 }
 
 void FramingFormatEventStream::writeExceptionPacket(const String & message)

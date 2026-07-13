@@ -69,3 +69,13 @@ is not compatible with the output format TSVRaw
 1
 --- JSONEachPacketBase64 carries raw output formats (RawBLOB)
 1
+--- JSONEachPacketString is rejected for CustomSeparated with the Raw escaping rule
+is not compatible with the output format CustomSeparated
+--- EventStream base64-encodes CustomSeparated with the Raw escaping rule
+text/event-stream; charset=UTF-8; payload=base64
+--- JSONEachPacketString accepts CustomSeparated with an escaping rule that escapes (Escaped)
+CustomSeparated (Escaped) accepted: OK
+--- a compatibility error is delivered as a framed exception packet (streaming)
+1
+--- a compatibility error is delivered as a framed exception packet (wait_end_of_query)
+1
