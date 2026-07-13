@@ -90,7 +90,12 @@ public:
     /// When `now` is provided, it is used as the reference time for a per-authentication
     /// `VALID FOR <interval>` clause, so that all `VALID FOR` clauses of one statement share one `now`.
     static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now = std::nullopt);
-    boost::intrusive_ptr<ASTAuthenticationData> toAST() const;
+
+    /// In attach mode the result is meant to be parsed back by a server (replicated or disk access
+    /// storage), possibly with a different default time zone, so `valid_until` is serialized with an
+    /// explicit `UTC` suffix to denote the same instant everywhere. Otherwise (`SHOW CREATE USER`)
+    /// `valid_until` is formatted in the server time zone for display.
+    boost::intrusive_ptr<ASTAuthenticationData> toAST(bool attach_mode) const;
 
     struct Util
     {

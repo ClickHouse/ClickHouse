@@ -3,11 +3,14 @@
 #include <IO/parseDateTimeBestEffort.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/DateLUT.h>
 #include <Common/ErrnoException.h>
 #include <Common/assert_cast.h>
 
@@ -22,7 +25,7 @@ namespace DB
         extern const int CANNOT_CLOCK_GETTIME;
     }
 
-    time_t sampleValidForBaseTime()
+    time_t getCurrentTime()
     {
         timespec spec{};
         if (clock_gettime(CLOCK_REALTIME, &spec))
@@ -30,8 +33,20 @@ namespace DB
         return spec.tv_sec;
     }
 
-    time_t getValidUntilFromAST(ASTPtr valid_until, ContextPtr context, bool is_interval, std::optional<time_t> now)
+    String formatValidUntilInUTC(time_t valid_until)
     {
+        WriteBufferFromOwnString out;
+        writeDateTimeText(valid_until, out, DateLUT::instance("UTC"));
+        writeCString(" UTC", out);
+        return out.str();
+    }
+
+    time_t getValidUntilFromAST(const ASTPtr & valid_until, ContextPtr context, bool is_interval, std::optional<time_t> now)
+    {
+        /// The input AST is never modified: `evaluateConstantExpression*` folds a clone, and the
+        /// rewrites below only build new nodes around this local copy of the pointer.
+        ASTPtr ast = valid_until;
+
         if (is_interval)
         {
             /// `VALID FOR <interval>` is a shortcut for `VALID UNTIL now + <interval>`. We compute the
@@ -49,8 +64,11 @@ namespace DB
             /// The parser accepts an arbitrary expression, so a bare number such as `VALID FOR 365` would
             /// otherwise be resolved by `plus(DateTime64, Number)` as `addSeconds`, silently setting a
             /// 365-second lifetime instead of failing. Reject anything whose folded type is neither
-            /// an `Interval` nor a tuple of `Interval`s (the latter is produced by summing intervals).
-            const auto interval_type = evaluateConstantExpression(valid_until, context).second;
+            /// an `Interval` nor a tuple of `Interval`s. The tuple form appears because the type system
+            /// has no single type for a sum of intervals of different kinds, so `FunctionBinaryArithmetic`
+            /// folds e.g. `INTERVAL 1 DAY + INTERVAL 2 HOUR` into `Tuple(IntervalDay, IntervalHour)`
+            /// (a sum of intervals of the same kind stays a plain `Interval`).
+            const auto interval_type = evaluateConstantExpression(ast, context).second;
             bool is_interval_type = WhichDataType(*interval_type).isInterval();
             if (!is_interval_type && WhichDataType(*interval_type).isTuple())
             {
@@ -67,18 +85,18 @@ namespace DB
 
             /// Use the reference time supplied by the caller when available, so that all `VALID FOR`
             /// clauses of one statement resolve against a single `now`; otherwise sample it here.
-            const time_t now_seconds = now.has_value() ? *now : sampleValidForBaseTime();
+            const time_t now_seconds = now.has_value() ? *now : getCurrentTime();
 
             auto now_literal = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(now_seconds)));
             auto scale_literal = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0)));
-            valid_until = makeASTFunction("toString",
-                makeASTFunction("plus", makeASTFunction("toDateTime64", now_literal, scale_literal), valid_until));
+            ast = makeASTFunction("toString",
+                makeASTFunction("plus", makeASTFunction("toDateTime64", now_literal, scale_literal), ast));
         }
 
         if (context)
-            valid_until = evaluateConstantExpressionAsLiteral(valid_until, context);
+            ast = evaluateConstantExpressionAsLiteral(ast, context);
 
-        const String valid_until_str = checkAndGetLiteralArgument<String>(valid_until, "valid_until");
+        const String valid_until_str = checkAndGetLiteralArgument<String>(ast, "valid_until");
 
         if (valid_until_str == "infinity")
             return 0;
@@ -86,17 +104,16 @@ namespace DB
         time_t time = 0;
         ReadBufferFromString in(valid_until_str);
 
-        if (context)
-        {
-            const auto & time_zone = DateLUT::instance("");
-            const auto & utc_time_zone = DateLUT::instance("UTC");
+        /// Best-effort parsing honours an explicit time zone in the string. That matters in particular
+        /// when there is no query context, i.e. when deserializing stored access entities (`ATTACH USER`
+        /// coming from replicated or disk access storage): deadlines are serialized with an explicit
+        /// `UTC` suffix (see `formatValidUntilInUTC`), so every server maps them to the same instant.
+        /// Entities written by older versions store a bare local-time string, which is resolved in the
+        /// server time zone, as before.
+        const auto & time_zone = DateLUT::instance("");
+        const auto & utc_time_zone = DateLUT::instance("UTC");
 
-            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
-        }
-        else
-        {
-            readDateTimeText(time, in);
-        }
+        parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
 
         return time;
     }

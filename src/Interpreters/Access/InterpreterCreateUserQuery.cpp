@@ -19,12 +19,6 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <boost/range/algorithm/copy.hpp>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <IO/parseDateTimeBestEffort.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -227,7 +221,7 @@ BlockIO InterpreterCreateUserQuery::execute()
     /// clause would take its own `CLOCK_REALTIME` sample while methods are built one by one (interleaved
     /// with e.g. bcrypt hashing), and two identical `VALID FOR INTERVAL 1 DAY` clauses could end up with
     /// slightly different deadlines.
-    const time_t valid_for_base_time = sampleValidForBaseTime();
+    const time_t valid_for_base_time = getCurrentTime();
 
     std::vector<AuthenticationData> authentication_methods;
     if (!query.authentication_methods.empty())
@@ -284,14 +278,11 @@ BlockIO InterpreterCreateUserQuery::execute()
 
         auto make_absolute_valid_until = [](time_t deadline) -> ASTPtr
         {
-            /// Serialize the deadline in `UTC` and keep the `UTC` suffix in the literal. Every replica
-            /// parses the resulting `VALID UNTIL` string with `parseDateTimeBestEffort`, which honours the
-            /// explicit time zone, so the deadline maps to the same instant everywhere. Without the zone,
-            /// a bare `'2026-07-14 12:00:00'` would be interpreted in each replica's own default time zone
-            /// and the stored `valid_until` would diverge on mixed-time-zone clusters.
-            WriteBufferFromOwnString out;
-            writeDateTimeText(deadline, out, DateLUT::instance("UTC"));
-            return make_intrusive<ASTLiteral>(out.str() + " UTC");
+            /// The explicit `UTC` suffix in the literal makes every replica parse the resulting
+            /// `VALID UNTIL` string to the same instant. Without the zone, a bare `'2026-07-14 12:00:00'`
+            /// would be interpreted in each replica's own default time zone and the stored `valid_until`
+            /// would diverge on mixed-time-zone clusters.
+            return make_intrusive<ASTLiteral>(formatValidUntilInUTC(deadline));
         };
 
         if (cluster_query.global_valid_until_is_interval)

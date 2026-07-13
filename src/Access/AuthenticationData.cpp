@@ -360,7 +360,7 @@ void AuthenticationData::addSSLCertificateSubject(X509Certificate::Subjects::Typ
 }
 #endif
 
-boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
+boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attach_mode) const
 {
     auto node = make_intrusive<ASTAuthenticationData>();
     auto auth_type = getType();
@@ -469,10 +469,22 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 
     if (valid_until)
     {
-        WriteBufferFromOwnString out;
-        writeDateTimeText(valid_until, out);
+        if (attach_mode)
+        {
+            /// The serialized entity is parsed back by another server (replicated access storage) or
+            /// after a restart (disk access storage), possibly under a different default time zone.
+            /// The explicit `UTC` suffix makes the deadline denote the same instant everywhere, whereas
+            /// a bare local-time string would be reinterpreted in each server's own time zone.
+            node->valid_until = make_intrusive<ASTLiteral>(formatValidUntilInUTC(valid_until));
+        }
+        else
+        {
+            /// For display (`SHOW CREATE USER`), format the deadline in the server time zone.
+            WriteBufferFromOwnString out;
+            writeDateTimeText(valid_until, out);
 
-        node->valid_until = make_intrusive<ASTLiteral>(out.str());
+            node->valid_until = make_intrusive<ASTLiteral>(out.str());
+        }
     }
 
     return node;
