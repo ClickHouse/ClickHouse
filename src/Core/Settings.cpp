@@ -8434,6 +8434,9 @@ Serialize the distributed query plan for execution at replicas.
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_elasticsearch_queue, false, R"(
+Experimental queue table engine for ingesting data from Elasticsearch.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_function, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \

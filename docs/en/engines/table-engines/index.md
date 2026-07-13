@@ -60,6 +60,7 @@ Engines in the family:
 | [JDBC](../../engines/table-engines/integrations/jdbc.md)                        |
 | [MySQL](../../engines/table-engines/integrations/mysql.md)                      |
 | [MongoDB](../../engines/table-engines/integrations/mongodb.md)                  |
+| [ElasticsearchQueue](../../engines/table-engines/integrations/elasticsearch-queue.md) |
 | [Redis](../../engines/table-engines/integrations/redis.md)                      |
 | [HDFS](../../engines/table-engines/integrations/hdfs.md)                        |
 | [S3](../../engines/table-engines/integrations/s3.md)                            |
