@@ -1,6 +1,8 @@
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
 
+#include <numbers>
+
 namespace DB
 {
 namespace
@@ -14,8 +16,7 @@ struct Log10Fast
     static constexpr auto name = Log10Name::name;
     static void fast(const double * src, size_t size, double * dst)
     {
-        static constexpr double inv_ln10 = 0.43429448190325182765112891891660508;
-        fastNaturalLogScaled(src, size, dst, inv_ln10);
+        fastNaturalLogScaled(src, size, dst, std::numbers::log10e);
     }
 };
 struct FunctionLog10
