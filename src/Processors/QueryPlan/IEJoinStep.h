@@ -21,6 +21,7 @@ public:
         JoinKind kind_,
         JoinStrictness strictness_,
         bool inputs_sorted_by_first_key_,
+        const SizeLimits & size_limits_,
         size_t max_block_size_);
 
     /// Whether the step can execute this join type.
@@ -51,6 +52,8 @@ private:
     /// The planner pre-sorted each input by its first-condition key with a `SortingStep`
     /// (always ascending, NULLS LAST); selects the merge-based L1 build in the operator.
     bool inputs_sorted_by_first_key;
+    /// Limits on the materialized input, from `max_rows_in_join` / `max_bytes_in_join`.
+    SizeLimits size_limits;
     size_t max_block_size;
 };
 

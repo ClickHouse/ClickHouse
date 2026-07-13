@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
 static bool isInequalityOperator(JoinConditionOperator op)
@@ -48,7 +49,8 @@ UInt64 encodeSignedKey(Int64 value)
 /// `compareAt` with nan_direction_hint = 1 treats every NaN, of either sign, as equal to other
 /// NaNs and greater than all numbers, and -0.0 as equal to +0.0. The plain total-order bit trick
 /// preserves neither (a negative NaN would sort below -inf), so every NaN maps to the greatest
-/// encoding and -0.0 is canonicalized to +0.0 before the trick.
+/// encoding and -0.0 is canonicalized to +0.0 before the trick. (NaN-keyed rows never enter the
+/// union - the validity mask in `buildJoinState` excludes them - so the NaN mapping is defensive.)
 UInt64 encodeFloatKey(Float64 value)
 {
     if (isNaN(value))
@@ -140,12 +142,14 @@ IEJoinAlgorithm::IEJoinAlgorithm(
     const IEJoinConditions & conditions_,
     bool inputs_sorted_by_first_key_,
     const SharedHeaders & input_headers_,
+    const SizeLimits & size_limits_,
     size_t max_block_size_)
     : input_headers(input_headers_)
     , max_block_size(std::max<size_t>(1, max_block_size_))
     , kind(kind_)
     , conditions(conditions_)
     , inputs_sorted_by_first_key(inputs_sorted_by_first_key_)
+    , size_limits(size_limits_)
 {
     if (input_headers.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoinAlgorithm requires exactly two inputs");
@@ -192,6 +196,15 @@ void IEJoinAlgorithm::consume(Input & input, size_t source_num)
     }
 
     removeConstAndSparse(input);
+
+    /// Both inputs are materialized entirely, so the join size limits apply to their total.
+    /// With `join_overflow_mode = 'break'` keep what is already accumulated and drop the rest.
+    if (!size_limits.check(
+            stat.num_rows[0] + stat.num_rows[1] + input.chunk.getNumRows(),
+            stat.num_bytes[0] + stat.num_bytes[1] + input.chunk.allocatedBytes(),
+            "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+        return;
+
     stat.num_blocks[source_num] += 1;
     stat.num_rows[source_num] += input.chunk.getNumRows();
     stat.num_bytes[source_num] += input.chunk.allocatedBytes();
@@ -248,7 +261,7 @@ bool IEJoinAlgorithm::frontierAdvances(size_t l2_from, size_t l2_current) const
     /// The value of `l2_from` satisfies the second condition with respect to the value of `l2_current`
     /// exactly when it sorts strictly earlier in the L2 order (or non-strictly for a loose condition):
     /// L2 is ordered so that earlier entries satisfy the condition against all later ones.
-    int cmp = compareKeysAt(1, l2_union[l2_from], l2_union[l2_current]);
+    int cmp = compareKeysAt(1, l1_union[permutation[l2_from]], l1_union[permutation[l2_current]]);
     int oriented = descending ? cmp : -cmp;
     return strict ? oriented > 0 : oriented >= 0;
 }
@@ -324,21 +337,38 @@ void IEJoinAlgorithm::buildJoinState()
         }
 
         /// Rows with NULL in any key never enter the union: a NULL fails every inequality, so
-        /// they cannot produce matches. The rows stay in `side_columns`, their matched bits are
-        /// never set, and the post-phases emit them as unmatched naturally.
+        /// they cannot produce matches. Rows with a NaN key are excluded for the same reason:
+        /// the operator matches by the `compareAt` total order, where NaN is an ordinary greatest
+        /// value, but the predicates the join implements follow IEEE semantics, under which every
+        /// comparison involving NaN is false. The rows stay in `side_columns`, their matched bits
+        /// are never set, and the post-phases emit them as unmatched naturally.
         auto & valid = valid_mask[side];
-        for (size_t key_index = 0; key_index < (side_key_shared ? 1u : 2u); ++key_index)
+        auto exclude_rows = [&](auto && is_excluded)
         {
-            const auto & key = comparison_keys[key_index];
-            const auto * nullable = checkAndGetColumn<ColumnNullable>(key.get());
-            if (!nullable)
-                continue;
-
-            const auto & null_map = nullable->getNullMapData();
             if (valid.empty())
                 valid.resize_fill(rows, 1);
             for (size_t row = 0; row < rows; ++row)
-                valid[row] &= !null_map[row];
+                valid[row] &= !is_excluded(row);
+        };
+        for (size_t key_index = 0; key_index < (side_key_shared ? 1u : 2u); ++key_index)
+        {
+            const IColumn * key = comparison_keys[key_index].get();
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(key))
+            {
+                const auto & null_map = nullable->getNullMapData();
+                exclude_rows([&](size_t row) { return null_map[row] != 0; });
+                key = &nullable->getNestedColumn();
+            }
+            if (const auto * float64_key = checkAndGetColumn<ColumnFloat64>(key))
+            {
+                const auto & data = float64_key->getData();
+                exclude_rows([&](size_t row) { return isNaN(data[row]); });
+            }
+            else if (const auto * float32_key = checkAndGetColumn<ColumnFloat32>(key))
+            {
+                const auto & data = float32_key->getData();
+                exclude_rows([&](size_t row) { return isNaN(data[row]); });
+            }
         }
 
         num_valid_rows[side] = rows;
@@ -617,10 +647,6 @@ void IEJoinAlgorithm::buildJoinState()
         chassert(!l2_order_less(permutation[i], permutation[i - 1]));
 #endif
 
-    l2_union.resize(n_union);
-    for (size_t i = 0; i < n_union; ++i)
-        l2_union[i] = l1_union[permutation[i]];
-
     bit_array.resize_fill((n_union + 63) / 64);
 }
 
@@ -635,7 +661,7 @@ bool IEJoinAlgorithm::testBit(size_t pos) const
     return (bit_array[pos / 64] >> (pos % 64)) & 1;
 }
 
-size_t IEJoinAlgorithm::findNextSetBit(size_t from) const
+size_t IEJoinAlgorithm::findNextSetBit(size_t from)
 {
     /// No bit at or past bit_array_end is set, so the scan can stop there. This bounds the
     /// common case where all matches of the current entry sit right after its own position
@@ -648,6 +674,7 @@ size_t IEJoinAlgorithm::findNextSetBit(size_t from) const
     UInt64 word = bit_array[word_index] & (~UInt64(0) << (from % 64));
     while (true)
     {
+        ++produce_work;
         if (word)
             return word_index * 64 + std::countr_zero(word);
         ++word_index;
@@ -673,6 +700,10 @@ bool IEJoinAlgorithm::nextLeftRow()
 {
     while (l2_cursor < n_union)
     {
+        if (produce_work >= produce_work_budget)
+            return false;
+        ++produce_work;
+
         UInt64 pos = permutation[l2_cursor];
         Int64 rid = li[pos];
         if (rid < 0)
@@ -684,8 +715,9 @@ bool IEJoinAlgorithm::nextLeftRow()
 
         auto advance_frontier_while = [&](auto && qualifies)
         {
-            while (frontier < n_union && qualifies(frontier))
+            while (frontier < n_union && produce_work < produce_work_budget && qualifies(frontier))
             {
+                ++produce_work;
                 UInt64 frontier_pos = permutation[frontier];
                 /// Mark right-side entries only, so that a row can never match same-side rows.
                 if (li[frontier_pos] < 0)
@@ -711,6 +743,12 @@ bool IEJoinAlgorithm::nextLeftRow()
         }
         /// The frontier is monotone and never exceeds the union size.
         chassert(frontier <= n_union);
+
+        /// The frontier advance may have stopped on the work budget instead of on the first
+        /// non-qualifying entry: yield and re-enter at the same L2 position, the frontier
+        /// continues from where it stopped.
+        if (frontier < n_union && produce_work >= produce_work_budget)
+            return false;
 
         current_left_rid = rid;
         /// The tie-break in the L1 order guarantees that the entry's own position is the exact scan
@@ -758,14 +796,20 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
     auto & left_data = left_indexes->getData();
     auto & right_data = right_indexes->getData();
 
+    /// The work budget bounds the cursor advances and bit-array words inspected by one call,
+    /// so control returns to the executor (which observes cancellation) even when a long
+    /// stretch of the scan emits nothing, e.g. an ANTI join. All loop state is resumable:
+    /// an exhausted budget just yields an incomplete (possibly empty) non-final chunk.
+    produce_work = 0;
+
     bool done = false;
-    while (left_data.size() < max_block_size)
+    while (left_data.size() < max_block_size && produce_work < produce_work_budget)
     {
         if (!has_current_left)
         {
             if (!nextLeftRow())
             {
-                done = true;
+                done = l2_cursor >= n_union;
                 break;
             }
             has_current_left = true;
@@ -939,19 +983,20 @@ IEJoinTransform::IEJoinTransform(
     bool inputs_sorted_by_first_key,
     SharedHeaders & input_headers,
     SharedHeader output_header,
-    size_t max_block_size,
-    UInt64 limit_hint_)
+    const SizeLimits & size_limits,
+    size_t max_block_size)
     : IMergingTransform<IEJoinAlgorithm>(
         input_headers,
         output_header,
         /* have_all_inputs_= */ true,
-        limit_hint_,
+        /* limit_hint_= */ 0,
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
         kind,
         conditions,
         inputs_sorted_by_first_key,
         input_headers,
+        size_limits,
         max_block_size)
 {
 }

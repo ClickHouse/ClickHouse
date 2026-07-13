@@ -2,6 +2,11 @@ plan encoded	1
 plan nullable	1
 plan mixed	1
 plan generic	1
+plan decimal	1
+plan datetime64	1
+plan enum	1
+plan bool	1
+plan date32	1
 UInt8	1	36697
 UInt16	1	40135
 UInt32	1	36227

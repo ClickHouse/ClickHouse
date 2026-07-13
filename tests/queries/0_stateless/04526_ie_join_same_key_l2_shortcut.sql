@@ -20,6 +20,9 @@ CREATE TABLE bands (id Int64, lo Int64, hi Int64) ENGINE = MergeTree ORDER BY id
 INSERT INTO pts SELECT number, intDiv(number, 40) FROM numbers(1000);
 INSERT INTO bands SELECT number, number % 20, number % 20 + intDiv(number, 100) FROM numbers(800);
 
+-- The comparisons below are vacuous if the JOIN side is not routed through IEJoin: pin the plan.
+SELECT 'plan', count() > 0 FROM (EXPLAIN SELECT count() FROM pts p JOIN bands b ON p.x BETWEEN b.lo AND b.hi) WHERE explain LIKE '%IEJoin%';
+
 -- BETWEEN desugars to `>=` + `<=`: opposite families, merge shortcut.
 SELECT 'between', (SELECT (count(), sum(cityHash64(p.id, b.id))) FROM pts p JOIN bands b ON p.x BETWEEN b.lo AND b.hi) = (SELECT (count(), sum(cityHash64(p.id, b.id))) FROM pts p, bands b WHERE p.x BETWEEN b.lo AND b.hi) AS ok, (SELECT count() FROM pts p JOIN bands b ON p.x BETWEEN b.lo AND b.hi) AS cnt;
 
@@ -40,6 +43,7 @@ CREATE TABLE bands_mixed (id Int64, lo Int32, hi Int64) ENGINE = MergeTree ORDER
 INSERT INTO pts32 SELECT number, toInt32(intDiv(number, 40)) FROM numbers(1000);
 INSERT INTO bands_mixed SELECT number, toInt32(number % 20), toInt64(number % 20 + intDiv(number, 100)) FROM numbers(800);
 
+SELECT 'plan mixed', count() > 0 FROM (EXPLAIN SELECT count() FROM pts32 p JOIN bands_mixed b ON p.x BETWEEN b.lo AND b.hi) WHERE explain LIKE '%IEJoin%';
 SELECT 'mixed', (SELECT (count(), sum(cityHash64(p.id, b.id))) FROM pts32 p JOIN bands_mixed b ON p.x BETWEEN b.lo AND b.hi) = (SELECT (count(), sum(cityHash64(p.id, b.id))) FROM pts32 p, bands_mixed b WHERE p.x BETWEEN b.lo AND b.hi) AS ok, (SELECT count() FROM pts32 p JOIN bands_mixed b ON p.x BETWEEN b.lo AND b.hi) AS cnt;
 
 DROP TABLE pts;

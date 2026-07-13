@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/ComparisonNames.h>
@@ -866,6 +867,17 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
         else if (!lhs.fromLeft() || !rhs.fromRight())
             return {};
 
+        /// The commit below casts both sides of the condition to a common type; probe that
+        /// here, so that a combination `predicateOperandsToCommonType` cannot handle makes the
+        /// caller fall back to the generic handling (which compares such operands in a filter)
+        /// instead of throwing.
+        const auto & lhs_type = lhs.getType();
+        const auto & rhs_type = rhs.getType();
+        if (!join_settings.allow_dynamic_type_in_join_keys && (hasDynamicType(lhs_type) || hasDynamicType(rhs_type)))
+            return {};
+        if (!lhs_type->equals(*rhs_type) && !tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}))
+            return {};
+
         description.operators[i] = predicate_op;
         keys.emplace_back(std::move(lhs), std::move(rhs));
     }
@@ -1213,9 +1225,10 @@ static void constructIEJoinStep(
         conditions[i].right_key_position = right_header->getPositionByName(description.key_names_right[i]);
     }
 
+    SizeLimits size_limits(join_settings.max_rows_in_join, join_settings.max_bytes_in_join, join_settings.join_overflow_mode);
     node.step = std::make_unique<IEJoinStep>(
         left_header, right_header, conditions, kind, strictness,
-        /*inputs_sorted_by_first_key=*/ true, join_settings.max_block_size);
+        /*inputs_sorted_by_first_key=*/ true, size_limits, join_settings.max_block_size);
 
     node.children = {join_left_node, join_right_node};
 

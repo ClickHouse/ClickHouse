@@ -392,10 +392,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesPaired(
     if (left->hasTotals() || right->hasTotals())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
 
-    if (left->getNumStreams() != 1)
-        left->resize(1);
-    if (right->getNumStreams() != 1)
-        right->resize(1);
+    /// The joining transform may rely on the order of each input stream (e.g. IEJoin expects
+    /// pre-sorted inputs), so a multi-stream input cannot be silently squashed here.
+    if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Join is supported only for pipelines with one output port, got {} and {}", left->getNumStreams(), right->getNumStreams());
 
     return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
 }

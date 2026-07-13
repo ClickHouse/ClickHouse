@@ -19,6 +19,10 @@ CREATE TABLE ties_r (id Int64, x Int64, y Int64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO ties_l SELECT number, intDiv(number, 400), number % 7 FROM numbers(1200);
 INSERT INTO ties_r SELECT number, intDiv(number, 400), number % 5 FROM numbers(1200);
 
+-- The comparisons below are vacuous if the JOIN side is not routed through IEJoin: pin the plan.
+SELECT 'plan', count() > 0 FROM (EXPLAIN SELECT count() FROM ties_l l JOIN ties_r r ON l.x < r.x AND l.y >= r.y) WHERE explain LIKE '%IEJoin%';
+SELECT 'plan self', count() > 0 FROM (EXPLAIN SELECT count() FROM ties_l s1 JOIN ties_l s2 ON s1.x < s2.x AND s1.y > s2.y) WHERE explain LIKE '%IEJoin%';
+
 -- Strict and loose variants of the first condition, in both directions.
 SELECT '<  >=', (SELECT (count(), sum(cityHash64(l.id, r.id))) FROM ties_l l JOIN ties_r r ON l.x < r.x AND l.y >= r.y) = (SELECT (count(), sum(cityHash64(l.id, r.id))) FROM ties_l l, ties_r r WHERE l.x < r.x AND l.y >= r.y) AS ok, (SELECT count() FROM ties_l l JOIN ties_r r ON l.x < r.x AND l.y >= r.y) AS cnt;
 SELECT '<= >', (SELECT (count(), sum(cityHash64(l.id, r.id))) FROM ties_l l JOIN ties_r r ON l.x <= r.x AND l.y > r.y) = (SELECT (count(), sum(cityHash64(l.id, r.id))) FROM ties_l l, ties_r r WHERE l.x <= r.x AND l.y > r.y) AS ok, (SELECT count() FROM ties_l l JOIN ties_r r ON l.x <= r.x AND l.y > r.y) AS cnt;
@@ -35,6 +39,8 @@ CREATE TABLE ties_const_l (id Int64, x Int64, y Int64) ENGINE = MergeTree ORDER 
 CREATE TABLE ties_const_r (id Int64, x Int64, y Int64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO ties_const_l SELECT number, 42, number % 11 FROM numbers(700);
 INSERT INTO ties_const_r SELECT number, 42, number % 13 FROM numbers(700);
+
+SELECT 'plan const', count() > 0 FROM (EXPLAIN SELECT count() FROM ties_const_l l JOIN ties_const_r r ON l.x <= r.x AND l.y < r.y) WHERE explain LIKE '%IEJoin%';
 
 SELECT 'const <=', (SELECT (count(), sum(cityHash64(l.id, r.id))) FROM ties_const_l l JOIN ties_const_r r ON l.x <= r.x AND l.y < r.y) = (SELECT (count(), sum(cityHash64(l.id, r.id))) FROM ties_const_l l, ties_const_r r WHERE l.x <= r.x AND l.y < r.y) AS ok, (SELECT count() FROM ties_const_l l JOIN ties_const_r r ON l.x <= r.x AND l.y < r.y) AS cnt;
 SELECT 'const <', (SELECT count() FROM ties_const_l l JOIN ties_const_r r ON l.x < r.x AND l.y < r.y) AS cnt;

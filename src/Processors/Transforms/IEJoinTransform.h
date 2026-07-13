@@ -9,6 +9,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Common/PODArray.h>
 
 namespace DB
@@ -64,6 +65,7 @@ public:
         const IEJoinConditions & conditions_,
         bool inputs_sorted_by_first_key_,
         const SharedHeaders & input_headers_,
+        const SizeLimits & size_limits_,
         size_t max_block_size_);
 
     const char * getName() const override { return "IEJoinAlgorithm"; }
@@ -99,8 +101,9 @@ private:
     /// Emit up to max_block_size rows: the pair scan first, then the unmatched rows of the
     /// sides that need them; sets produce_done when everything is emitted.
     Chunk produceBatch();
-    /// Run the pair scan and fill up to max_block_size rows per the join kind. Returns true
-    /// when the scan is exhausted; an empty chunk alone is not a completion signal.
+    /// Run the pair scan and fill up to max_block_size rows per the join kind, bounded also
+    /// by the per-call work budget (see `produce_work_budget`). Returns true when the scan is
+    /// exhausted; an empty chunk alone is not a completion signal.
     bool producePairsBatch(Chunk & chunk);
     /// Fill up to max_block_size rows of the side without a set bit in the matched bitmap,
     /// padding the other side. Returns true when all rows of the side were examined.
@@ -114,7 +117,7 @@ private:
     void setBit(size_t pos);
     bool testBit(size_t pos) const;
     /// Position of the first set bit >= from, or n_union if there is none.
-    size_t findNextSetBit(size_t from) const;
+    size_t findNextSetBit(size_t from);
 
     /// Re-verify an emitted pair against both conditions by direct evaluation (debug builds).
     bool checkEmittedPair(size_t key_index, size_t left_row, size_t right_row) const;
@@ -140,6 +143,9 @@ private:
     /// selects the merge-based L1 build; with the flag off the operator orders the union
     /// itself with an index sort.
     bool inputs_sorted_by_first_key;
+
+    /// Limits on the accumulated input (both sides), from `max_rows_in_join` / `max_bytes_in_join`.
+    SizeLimits size_limits;
 
     std::array<Chunks, 2> accumulated_chunks;
     std::array<bool, 2> source_finished = {false, false};
@@ -180,8 +186,6 @@ private:
     PaddedPODArray<Int64> li;
     /// L1 position of each L2 entry (the permutation array P).
     PaddedPODArray<UInt64> permutation;
-    /// Union entry of each L2 entry (== l1_union[permutation[i]], denormalized for key comparisons).
-    PaddedPODArray<UInt64> l2_union;
     /// Second-condition keys encoded into fixed-width values whose unsigned order is the L2 order,
     /// indexed by L1 position (the frontier reaches them through the `permutation` entry it
     /// loads for bit-marking anyway); empty when the condition's type has no encoding
@@ -200,6 +204,12 @@ private:
     size_t scan_pos = 0;
     Int64 current_left_rid = 0;
     bool has_current_left = false;
+
+    /// Bound on the cursor advances plus bit-array words inspected by one producePairsBatch
+    /// call, so that control regularly returns to the executor, which observes cancellation.
+    static constexpr size_t produce_work_budget = 1 << 20;
+    /// Work spent by the current producePairsBatch call.
+    size_t produce_work = 0;
 
     /// Post-phase state, per side: the row cursor and the number of unmatched rows emitted
     /// (for the final invariant check).
@@ -226,8 +236,8 @@ public:
         bool inputs_sorted_by_first_key,
         SharedHeaders & input_headers,
         SharedHeader output_header,
-        size_t max_block_size,
-        UInt64 limit_hint_ = 0);
+        const SizeLimits & size_limits,
+        size_t max_block_size);
 
     String getName() const override { return "IEJoinTransform"; }
 };

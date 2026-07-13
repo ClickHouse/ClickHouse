@@ -101,6 +101,11 @@ SELECT 'plan encoded', count() > 0 FROM (EXPLAIN SELECT count() FROM enc_l l JOI
 SELECT 'plan nullable', count() > 0 FROM (EXPLAIN SELECT count() FROM enc_l l JOIN enc_r r ON l.ni32a <= r.ni32a AND l.ni32b > r.ni32b) WHERE explain LIKE '%IEJoin%';
 SELECT 'plan mixed', count() > 0 FROM (EXPLAIN SELECT count() FROM enc_l l JOIN enc_r r ON l.sa < r.sa AND l.i64b > r.i64b) WHERE explain LIKE '%IEJoin%';
 SELECT 'plan generic', count() > 0 FROM (EXPLAIN SELECT count() FROM enc_l l JOIN enc_r r ON l.sa < r.sa AND l.sb > r.sb) WHERE explain LIKE '%IEJoin%';
+SELECT 'plan decimal', count() > 0 FROM (EXPLAIN SELECT count() FROM enc_l l JOIN enc_r r ON l.dec32a < r.dec32a AND l.dec32b <= r.dec32b) WHERE explain LIKE '%IEJoin%';
+SELECT 'plan datetime64', count() > 0 FROM (EXPLAIN SELECT count() FROM enc_l l JOIN enc_r r ON l.dt64a >= r.dt64a AND l.dt64b > r.dt64b) WHERE explain LIKE '%IEJoin%';
+SELECT 'plan enum', count() > 0 FROM (EXPLAIN SELECT count() FROM enc_l l JOIN enc_r r ON l.e8a <= r.e8a AND l.e8b > r.e8b) WHERE explain LIKE '%IEJoin%';
+SELECT 'plan bool', count() > 0 FROM (EXPLAIN SELECT count() FROM enc_l l JOIN enc_r r ON l.ba <= r.ba AND l.bb >= r.bb) WHERE explain LIKE '%IEJoin%';
+SELECT 'plan date32', count() > 0 FROM (EXPLAIN SELECT count() FROM enc_l l JOIN enc_r r ON l.d32a > r.d32a AND l.d32b <= r.d32b) WHERE explain LIKE '%IEJoin%';
 
 SELECT 'UInt8', (SELECT (count(), sum(cityHash64(l.id, r.id))) FROM enc_l l JOIN enc_r r ON l.u8a <= r.u8a AND l.u8b > r.u8b) = (SELECT (count(), sum(cityHash64(l.id, r.id))) FROM enc_l l, enc_r r WHERE l.u8a <= r.u8a AND l.u8b > r.u8b) AS ok, (SELECT count() FROM enc_l l JOIN enc_r r ON l.u8a <= r.u8a AND l.u8b > r.u8b) AS cnt;
 SELECT 'UInt16', (SELECT (count(), sum(cityHash64(l.id, r.id))) FROM enc_l l JOIN enc_r r ON l.u16a < r.u16a AND l.u16b >= r.u16b) = (SELECT (count(), sum(cityHash64(l.id, r.id))) FROM enc_l l, enc_r r WHERE l.u16a < r.u16a AND l.u16b >= r.u16b) AS ok, (SELECT count() FROM enc_l l JOIN enc_r r ON l.u16a < r.u16a AND l.u16b >= r.u16b) AS cnt;

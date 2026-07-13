@@ -1,5 +1,5 @@
 -- Bucketing a year of daily epochs into 40 ranges with a LEFT range join and counting rows
--- per bucket: the verbatim LEFT form of the aggregation whose INNER adaptation is in 04511.
+-- per bucket: the verbatim LEFT form of the aggregation whose INNER adaptation is in 04539.
 -- `join_use_nulls = 1` so `count(ts)` counts only matched rows in would-be-empty buckets
 -- (all buckets are non-empty here, so the result equals the INNER one).
 

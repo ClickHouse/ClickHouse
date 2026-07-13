@@ -1,3 +1,5 @@
+#include <optional>
+
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
@@ -18,38 +20,37 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static std::pair<IEJoinKind, bool> toIEJoinKind(JoinKind kind, JoinStrictness strictness)
+/// The executed kind and whether the inputs must be swapped for it, or std::nullopt for
+/// a combination IEJoin does not execute. The single source of truth for the supported
+/// join type matrix.
+static std::optional<std::pair<IEJoinKind, bool>> toIEJoinKind(JoinKind kind, JoinStrictness strictness)
 {
     if (strictness == JoinStrictness::All)
     {
         switch (kind)
         {
-            case JoinKind::Inner: return {IEJoinKind::Inner, false};
-            case JoinKind::Left: return {IEJoinKind::Left, false};
-            case JoinKind::Right: return {IEJoinKind::Right, false};
-            case JoinKind::Full: return {IEJoinKind::Full, false};
-            default: throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin does not support {} {} JOIN", toString(strictness), toString(kind));
+            case JoinKind::Inner: return {{IEJoinKind::Inner, false}};
+            case JoinKind::Left: return {{IEJoinKind::Left, false}};
+            case JoinKind::Right: return {{IEJoinKind::Right, false}};
+            case JoinKind::Full: return {{IEJoinKind::Full, false}};
+            default: return {};
         }
     }
 
     if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
     {
         if (kind != JoinKind::Left && kind != JoinKind::Right)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin does not support {} {} JOIN", toString(strictness), toString(kind));
+            return {};
         IEJoinKind ie_kind = strictness == JoinStrictness::Semi ? IEJoinKind::LeftSemi : IEJoinKind::LeftAnti;
-        return {ie_kind, kind == JoinKind::Right};
+        return {{ie_kind, kind == JoinKind::Right}};
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin does not support {} {} JOIN", toString(strictness), toString(kind));
+    return {};
 }
 
 bool IEJoinStep::isSupportedJoinType(JoinKind kind, JoinStrictness strictness)
 {
-    if (strictness == JoinStrictness::All)
-        return kind == JoinKind::Inner || kind == JoinKind::Left || kind == JoinKind::Right || kind == JoinKind::Full;
-    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
-        return kind == JoinKind::Left || kind == JoinKind::Right;
-    return false;
+    return toIEJoinKind(kind, strictness).has_value();
 }
 
 IEJoinStep::IEJoinStep(
@@ -59,14 +60,18 @@ IEJoinStep::IEJoinStep(
     JoinKind kind_,
     JoinStrictness strictness_,
     bool inputs_sorted_by_first_key_,
+    const SizeLimits & size_limits_,
     size_t max_block_size_)
     : conditions(conditions_)
     , inputs_sorted_by_first_key(inputs_sorted_by_first_key_)
+    , size_limits(size_limits_)
     , max_block_size(max_block_size_)
 {
     auto ie_kind = toIEJoinKind(kind_, strictness_);
-    kind = ie_kind.first;
-    swap_inputs = ie_kind.second;
+    if (!ie_kind)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin does not support {} {} JOIN", toString(strictness_), toString(kind_));
+    kind = ie_kind->first;
+    swap_inputs = ie_kind->second;
 
     updateInputHeaders({left_header_, right_header_});
 }
@@ -103,7 +108,7 @@ QueryPipelineBuilderPtr IEJoinStep::updatePipeline(QueryPipelineBuilders pipelin
     SharedHeaders inputs = {pipelines[0]->getSharedHeader(), pipelines[1]->getSharedHeader()};
     auto executed_conditions = swap_inputs ? reverseIEJoinConditions(conditions) : conditions;
     auto joining = std::make_shared<IEJoinTransform>(
-        kind, executed_conditions, inputs_sorted_by_first_key, inputs, concatHeaders(inputs), max_block_size);
+        kind, executed_conditions, inputs_sorted_by_first_key, inputs, concatHeaders(inputs), size_limits, max_block_size);
     auto pipeline = QueryPipelineBuilder::joinPipelinesPaired(std::move(pipelines[0]), std::move(pipelines[1]), std::move(joining), &processors);
 
     if (swap_inputs)

@@ -159,7 +159,7 @@ public:
         Processors * collected_processors = nullptr);
 
     /// Join two independent pipelines with a two-input joining transform created by the caller.
-    /// Both pipelines are squashed to a single stream.
+    /// Each pipeline must have a single output stream (the transform may rely on its order).
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesPaired(
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,

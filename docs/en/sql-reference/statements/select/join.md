@@ -222,6 +222,17 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
+## JOIN with only inequality conditions {#join-with-only-inequality-conditions}
+
+A `JOIN` whose `ON` section consists of exactly two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables, with no equality condition, can be executed with the sort-based IEJoin algorithm when the experimental setting [`allow_experimental_ie_join`](/operations/settings/settings#allow_experimental_ie_join) is enabled. Supported kinds are `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`; the join appears as an `IEJoin` step in `EXPLAIN`. Without the setting, an `INNER JOIN` of this shape is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
+
+**Example**
+
+```sql
+SET allow_experimental_ie_join = 1;
+SELECT t1.*, t2.* FROM t1 JOIN t2 ON t1.a < t2.a AND t1.b > t2.b;
+```
+
 ## NULL values in JOIN keys {#null-values-in-join-keys}
 
 `NULL` is not equal to any value, including itself. This means that if a `JOIN` key has a `NULL` value in one table, it won't match a `NULL` value in the other table.

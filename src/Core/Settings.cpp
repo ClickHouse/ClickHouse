@@ -8251,7 +8251,7 @@ The maximum number of rows in the right table to determine whether to rerange th
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_ie_join, false, R"(
-Allow the experimental IEJoin algorithm: an INNER JOIN whose `ON` section consists of exactly two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables is executed with a sort-based algorithm instead of a CROSS JOIN with a filter.
+Allow the experimental IEJoin algorithm: a JOIN whose `ON` section consists of exactly two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables is executed with a sort-based algorithm. Supports `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`. Without the setting an `INNER JOIN` of this shape is executed as a CROSS JOIN with a filter, and the other kinds are not supported.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_json_lazy_type_hints, false, R"(
 Enable experimental lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
