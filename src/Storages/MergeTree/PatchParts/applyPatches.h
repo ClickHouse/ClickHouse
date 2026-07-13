@@ -10,7 +10,7 @@ namespace DB
 struct KeyDescription;
 
 /// Represents a patch that can be applied to the result block to update the data.
-struct PatchToApply
+struct PatchIndices
 {
     /// Blocks with data from patch parts.
     Blocks patch_blocks;
@@ -31,8 +31,8 @@ struct PatchToApply
     }
 };
 
-using PatchToApplyPtr = std::shared_ptr<const PatchToApply>;
-using PatchesToApply = std::vector<PatchToApplyPtr>;
+using PatchIndicesPtr = std::shared_ptr<const PatchIndices>;
+using PatchesIndices = std::vector<PatchIndicesPtr>;
 
 struct PatchReadResult
 {
@@ -67,35 +67,31 @@ struct PatchMergeOnKeyReadResult : public PatchReadResult
     bool empty() const override { return block.rows() == 0; }
 };
 
-/// Applies patch. Returns indices in result and patch blocks for rows that should be updated.
-PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch);
-PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & join_entry);
-
-/// A block of a v2 (MergeOnKey) patch with the set of columns updated from it.
-struct PatchBlockForMergeOnKey
-{
-    const Block * block;
-    const Names * updated_columns;
-};
-
-/// Applies all v2 (MergeOnKey) patch blocks in one merge pass over the main table's sort-key
-/// columns, keeping a heap of patch-block cursors. Within each equal-sort-key run, uses
-/// `(_block_number, _block_offset)` to identify which main-side row matches which patch-side row
-/// and keeps the highest data version per row. Memory bounded by the largest equal-sort-key run.
-/// Returns one combined patch per distinct set of updated columns (paired with that set),
-/// because sets of columns must be applied to the result block independently.
-std::vector<std::pair<Names, PatchToApplyPtr>> applyPatchesMergeOnKey(
-    const Block & result_block,
-    const std::vector<PatchBlockForMergeOnKey> & patch_blocks,
-    const KeyDescription & sorting_key);
-
 /// Updates rows in result_block from patch_block at specified indices.
+/// The set of updated columns is derived from the patch blocks (all non-system columns).
 /// versions_block is a shared block with current versions of rows for each updated column.
 void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
-    const PatchesToApply & patches,
-    const Names & updated_columns,
+    const PatchesIndices & patches,
+    UInt64 source_data_version);
+
+/// A read result of a patch part with the set of result-block columns updated from it.
+struct PatchReadResultToApply
+{
+    PatchPartInfoForReader patch;
+    PatchReadResultPtr read_result;
+    Names updated_columns;
+};
+
+/// Builds patches of all modes from patch read results and applies them to result_block.
+/// Patches updating the same set of columns are combined and applied together.
+/// If min_version is set, updated rows get a data version of at least min_version.
+void applyPatchReadResults(
+    Block & result_block,
+    Block & versions_block,
+    const std::vector<PatchReadResultToApply> & patch_read_results,
+    std::optional<UInt64> min_version,
     UInt64 source_data_version);
 
 }
