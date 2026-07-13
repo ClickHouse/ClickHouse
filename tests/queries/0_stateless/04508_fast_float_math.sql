@@ -35,9 +35,9 @@ SELECT sum(pow(number, 0) = 1) = count() FROM numbers(1000);
 -- non-constant column (materialize), which routes pow through the std::pow fallback even here.
 SELECT max(abs(pow(b, 17) - pow(b, materialize(17))) / abs(pow(b, materialize(17)))) < 1e-13
 FROM (SELECT number / 991.0 - 0.5 AS b FROM numbers(1000)) WHERE b != 0;
--- The specific finite integer-exponent case reported in review is close to, but not equal to, precise pow.
-SELECT pow(-0.8157093076673938, 17) != pow(-0.8157093076673938, materialize(17))
-   AND abs(pow(-0.8157093076673938, 17) - pow(-0.8157093076673938, materialize(17)))
+-- The specific finite integer-exponent case reported in review stays within ~1e-13 relative of precise
+-- pow. Whether the two are bit-identical depends on the platform's libm, so we only pin the closeness.
+SELECT abs(pow(-0.8157093076673938, 17) - pow(-0.8157093076673938, materialize(17)))
        / abs(pow(-0.8157093076673938, materialize(17))) < 1e-13;
 -- pow special values with integer exponent.
 SELECT pow(inf, 2) = inf AND isNaN(pow(nan, 3)) AND pow(0, 3) = 0 AND pow(0, -1) = inf;
