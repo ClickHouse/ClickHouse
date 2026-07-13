@@ -25,10 +25,20 @@ SELECT exp10(-inf) = 0 AND exp10(inf) = inf AND isNaN(exp10(nan));
 SELECT log10(1) = 0 AND abs(log10(100) - 2) / 2 < 1e-9 AND abs(log10(1000) - 3) / 3 < 1e-9;
 SELECT log10(0) = -inf AND isNaN(log10(-5)) AND log10(inf) = inf;
 
--- pow, constant integer exponent (including 0, negatives): exact via multiplication.
+-- pow, constant integer exponent (including 0, negatives): computed by repeated multiplication.
 SELECT pow(2, 3) = 8 AND pow(2, 10) = 1024 AND pow(5, 2) = 25 AND pow(-2, 3) = -8 AND pow(2, -1) = 0.5;
 SELECT sum(pow(number, 2) = number * number) = count() FROM numbers(1000);
 SELECT sum(pow(number, 0) = 1) = count() FROM numbers(1000);
+-- Repeated multiplication is accurate but NOT bit-identical to precise pow for nontrivial floating
+-- bases: enabling fast_float_math perturbs the last mantissa bits. Pin the real contract - agreement
+-- with precise pow to ~1e-13 relative. The precise reference comes from making the exponent a
+-- non-constant column (materialize), which routes pow through the std::pow fallback even here.
+SELECT max(abs(pow(b, 17) - pow(b, materialize(17))) / abs(pow(b, materialize(17)))) < 1e-13
+FROM (SELECT number / 991.0 - 0.5 AS b FROM numbers(1000)) WHERE b != 0;
+-- The specific finite integer-exponent case reported in review is close to, but not equal to, precise pow.
+SELECT pow(-0.8157093076673938, 17) != pow(-0.8157093076673938, materialize(17))
+   AND abs(pow(-0.8157093076673938, 17) - pow(-0.8157093076673938, materialize(17)))
+       / abs(pow(-0.8157093076673938, materialize(17))) < 1e-13;
 -- pow special values with integer exponent.
 SELECT pow(inf, 2) = inf AND isNaN(pow(nan, 3)) AND pow(0, 3) = 0 AND pow(0, -1) = inf;
 -- Negative integer exponent near the underflow boundary: computing x^|n| then inverting would let
