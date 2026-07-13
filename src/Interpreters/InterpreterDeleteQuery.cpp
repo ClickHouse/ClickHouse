@@ -65,7 +65,7 @@ BlockIO InterpreterDeleteQuery::execute()
 {
     FunctionNameNormalizer::visit(query_ptr.get());
     const ASTDeleteQuery & delete_query = query_ptr->as<ASTDeleteQuery &>();
-    auto table_id = getContext()->resolveStorageID(delete_query, Context::ResolveOrdinary);
+    auto table_id = getContext()->resolveStorageIDFromQuery(delete_query, Context::ResolveOrdinary);
 
     getContext()->checkAccess(AccessType::ALTER_DELETE, table_id);
     const auto & settings = getContext()->getSettingsRef();

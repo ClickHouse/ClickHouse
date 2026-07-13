@@ -173,7 +173,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         query.setDatabase(table_id.database_name);
         query.setTable(table_id.table_name);
     }
-    else if (auto resolved = context_->tryResolveStorageID(table_id, Context::ResolveGlobal))
+    else if (auto resolved = context_->tryResolveStorageIDFromQuery(table_id, Context::ResolveGlobal))
     {
         /// `USE catalog; DROP TABLE namespace.table` — resolve namespace qualifiers too.
         table_id = resolved;

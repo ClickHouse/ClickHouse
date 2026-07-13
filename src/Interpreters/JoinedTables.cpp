@@ -237,7 +237,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
     StorageID table_id = StorageID::createEmpty();
     if (left_db_and_table)
     {
-        table_id = context->resolveStorageID(StorageID(left_db_and_table->database, left_db_and_table->table, left_db_and_table->uuid));
+        table_id = context->resolveStorageIDFromQuery(StorageID(left_db_and_table->database, left_db_and_table->table, left_db_and_table->uuid));
     }
     else /// If the table is not specified - use the table `system.one`.
     {
@@ -342,7 +342,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
     {
-        auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
+        auto joined_table_id = context->resolveStorageIDFromQuery(table_to_join.database_and_table_name);
         StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
         if (storage)
         {

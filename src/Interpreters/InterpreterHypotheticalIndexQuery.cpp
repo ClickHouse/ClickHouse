@@ -43,7 +43,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
         return {};
     }
 
-    auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
+    auto table_id = context->resolveStorageIDFromQuery(StorageID(query.getDatabase(), query.getTable()));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
 
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());

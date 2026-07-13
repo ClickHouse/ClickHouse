@@ -928,10 +928,26 @@ std::pair<String, String> DatabaseCatalog::splitTablePrefixFromDatabaseName(cons
         return {name, ""};
 
     String database_name = name.substr(0, dot_pos);
-    if (!isDatalakeCatalog(database_name))
+    auto database = tryGetDatabase(database_name);
+    if (!database || database->getTableNamespaceSupport() == TableNamespaceSupport::None)
         return {name, ""};
 
     return {database_name, name.substr(dot_pos + 1)};
+}
+
+StorageID DatabaseCatalog::applyNamespaceQualifier(StorageID storage_id, const String & current_database) const
+{
+    if (storage_id.hasUUID() || storage_id.database_name.empty() || current_database.empty()
+        || storage_id.database_name == current_database || isDatabaseExist(storage_id.database_name))
+        return storage_id;
+
+    auto current = tryGetDatabase(current_database);
+    if (!current || current->getTableNamespaceSupport() == TableNamespaceSupport::None)
+        return storage_id;
+
+    storage_id.table_name = storage_id.database_name + "." + storage_id.table_name;
+    storage_id.database_name = current_database;
+    return storage_id;
 }
 
 Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const

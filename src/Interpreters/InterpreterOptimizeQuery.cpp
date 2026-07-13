@@ -32,7 +32,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     /// Resolve before authorization and ON CLUSTER serialization: the resolver may
     /// namespace-qualify the table (DataLakeCatalog), and access checks must target
     /// the executed table. The try-variant keeps authorization ahead of existence errors.
-    auto table_id = getContext()->tryResolveStorageID(ast);
+    auto table_id = getContext()->tryResolveStorageIDFromQuery(ast);
     if (table_id)
     {
         ast.setDatabase(table_id.database_name);
@@ -51,7 +51,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     getContext()->checkAccess(getRequiredAccess());
     /// Report a resolution error (e.g. unknown database) only after authorization.
     if (!table_id)
-        table_id = getContext()->resolveStorageID(ast);
+        table_id = getContext()->resolveStorageIDFromQuery(ast);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);

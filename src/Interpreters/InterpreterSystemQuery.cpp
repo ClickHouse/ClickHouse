@@ -380,9 +380,9 @@ BlockIO InterpreterSystemQuery::execute()
         /// reached, so use `tryResolveStorageID` here when `if_exists` is set.
         /// The handler still validates table existence via the catalog.
         if (query.if_exists)
-            table_id = getContext()->tryResolveStorageID(id_in_query, Context::ResolveOrdinary);
+            table_id = getContext()->tryResolveStorageIDFromQuery(id_in_query, Context::ResolveOrdinary);
         else
-            table_id = getContext()->resolveStorageID(id_in_query, Context::ResolveOrdinary);
+            table_id = getContext()->resolveStorageIDFromQuery(id_in_query, Context::ResolveOrdinary);
     }
 
 
@@ -1049,7 +1049,7 @@ BlockIO InterpreterSystemQuery::execute()
             std::vector<StorageID> tables;
             for (const auto & [database, table]: query.tables)
             {
-                tables.push_back(getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
+                tables.push_back(getContext()->resolveStorageIDFromQuery({database, table}, Context::ResolveOrdinary));
                 getContext()->getQueryContext()->addQueryAccessInfo(tables.back(), {});
             }
 

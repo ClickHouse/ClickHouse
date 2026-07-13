@@ -1001,6 +1001,11 @@ public:
     String resolveDatabase(const String & database_name) const;
     StorageID resolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID tryResolveStorageID(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
+
+    /// Same, for table names written in a query: the qualifier may be a namespace of the
+    /// current database (see DatabaseCatalog::applyNamespaceQualifier).
+    StorageID resolveStorageIDFromQuery(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
+    StorageID tryResolveStorageIDFromQuery(StorageID storage_id, StorageNamespace where = StorageNamespace::ResolveAll) const;
     StorageID resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const;
 
     Tables getExternalTables() const;

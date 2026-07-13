@@ -7724,6 +7724,16 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     return resolved;
 }
 
+StorageID Context::resolveStorageIDFromQuery(StorageID storage_id, StorageNamespace where) const
+{
+    return resolveStorageID(DatabaseCatalog::instance().applyNamespaceQualifier(std::move(storage_id), getCurrentDatabase()), where);
+}
+
+StorageID Context::tryResolveStorageIDFromQuery(StorageID storage_id, StorageNamespace where) const
+{
+    return tryResolveStorageID(DatabaseCatalog::instance().applyNamespaceQualifier(std::move(storage_id), getCurrentDatabase()), where);
+}
+
 StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
     if (storage_id.uuid != UUIDHelpers::Nil)
@@ -7766,19 +7776,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (!storage_id.database_name.empty())
     {
         if (in_specified_database)
-        {
-            /// `USE catalog; ... namespace.table` (DataLakeCatalog databases): a qualifier that is
-            /// not an existing database is a namespace inside the current catalog, whose tables
-            /// are named `namespace.table`. Existing databases take priority over namespaces.
-            if (!current_database.empty()
-                && DatabaseCatalog::instance().isDatalakeCatalog(current_database)
-                && !DatabaseCatalog::instance().isDatabaseExist(storage_id.database_name))
-            {
-                storage_id.table_name = storage_id.database_name + "." + storage_id.table_name;
-                storage_id.database_name = current_database;
-            }
             return storage_id;     /// NOTE There is no guarantees that table actually exists in database.
-        }
         if (exception)
             exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "External and temporary tables have no database, but {} is specified",
                                storage_id.database_name));

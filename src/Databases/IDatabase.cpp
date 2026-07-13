@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TABLE;
+    extern const int BAD_ARGUMENTS;
 
 }
 
@@ -222,4 +223,38 @@ DiskPtr IDatabase::getDisk() const
 {
     return Context::getGlobalContextInstance()->getDatabaseDisk();
 }
+
+String IDatabase::resolveTableNamePath(const Names & path_parts) const
+{
+    chassert(!path_parts.empty());
+    String result;
+    for (const auto & part : path_parts)
+    {
+        /// a dot inside a component would be indistinguishable from a path boundary
+        if (part.find('.') != String::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table path component {} contains a dot, which database {} cannot represent unambiguously",
+                backQuoteIfNeed(part), backQuoteIfNeed(getDatabaseName()));
+        if (!result.empty())
+            result += '.';
+        result += part;
+    }
+    return result;
+}
+
+void IDatabase::validateTableNamespace(const Names & namespace_parts, ContextPtr context) const
+{
+    if (getTableNamespaceSupport() != TableNamespaceSupport::Lexical)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Database {} does not support table namespaces", backQuoteIfNeed(getDatabaseName()));
+
+    const String prefix = resolveTableNamePath(namespace_parts) + ".";
+    for (const auto & details : getLightweightTablesIterator(context, {}, /*skip_not_loaded*/ true))
+        if (details.name.starts_with(prefix))
+            return;
+
+    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Database {} has no tables under namespace {}",
+        backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(prefix.substr(0, prefix.size() - 1)));
+}
+
 }

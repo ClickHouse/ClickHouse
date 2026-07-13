@@ -33,6 +33,9 @@ public:
     bool shouldBeEmptyOnDetach() const override { return false; }
     bool isDatalakeCatalog() const override { return true; }
 
+    TableNamespaceSupport getTableNamespaceSupport() const override { return TableNamespaceSupport::Native; }
+    void validateTableNamespace(const Names & namespace_parts, ContextPtr context) const override;
+
     bool empty() const override;
 
     bool isTableExist(const String & name, ContextPtr context) const override;

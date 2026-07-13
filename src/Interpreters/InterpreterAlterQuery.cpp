@@ -409,7 +409,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
 
-    auto table_id = getContext()->tryResolveStorageID(alter);
+    auto table_id = getContext()->tryResolveStorageIDFromQuery(alter);
     StoragePtr table;
 
     if (table_id)
@@ -437,7 +437,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 && !getContext()->tryResolveStorageID(
                     {command_ast->from_database, command_ast->from_table}, Context::ResolveExternal))
             {
-                if (auto from_id = getContext()->tryResolveStorageID(
+                if (auto from_id = getContext()->tryResolveStorageIDFromQuery(
                         {command_ast->from_database, command_ast->from_table}, Context::ResolveOrdinary))
                 {
                     command_ast->from_database = from_id.database_name;
@@ -448,7 +448,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 && !getContext()->tryResolveStorageID(
                     {command_ast->to_database, command_ast->to_table}, Context::ResolveExternal))
             {
-                if (auto to_id = getContext()->tryResolveStorageID(
+                if (auto to_id = getContext()->tryResolveStorageIDFromQuery(
                         {command_ast->to_database, command_ast->to_table}, Context::ResolveOrdinary))
                 {
                     command_ast->to_database = to_id.database_name;

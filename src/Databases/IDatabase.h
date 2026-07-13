@@ -47,6 +47,14 @@ struct LightWeightTableDetails
     String name;
 };
 
+/// How a database exposes hierarchical table paths (`namespace.table`).
+enum class TableNamespaceSupport
+{
+    None,     /// flat table names only
+    Lexical,  /// a namespace exists when some table name starts with it plus a dot
+    Native,   /// the engine has real namespace metadata (e.g. a data lake catalog)
+};
+
 /// Advisory hint passed to getTablesIterator: lets DataLake catalogs restrict
 /// which namespaces are listed instead of enumerating the whole catalog.
 struct TablesFilter
@@ -209,6 +217,15 @@ public:
     virtual bool isExternal() const { return true; }
 
     virtual bool isDatalakeCatalog() const { return false; }
+
+    virtual TableNamespaceSupport getTableNamespaceSupport() const { return TableNamespaceSupport::None; }
+
+    /// Throws if the namespace does not exist. `namespace_parts` are separate path
+    /// components; ["a.b"] and ["a", "b"] are different namespaces.
+    virtual void validateTableNamespace(const Names & namespace_parts, ContextPtr context) const;
+
+    /// Canonical stored table name for a namespace-qualified path.
+    virtual String resolveTableNamePath(const Names & path_parts) const;
 
     /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.
     /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.

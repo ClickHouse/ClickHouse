@@ -68,7 +68,7 @@ BlockIO InterpreterWatchQuery::execute()
 QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
 {
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);
-    auto table_id = getContext()->resolveStorageID(query, Context::ResolveOrdinary);
+    auto table_id = getContext()->resolveStorageIDFromQuery(query, Context::ResolveOrdinary);
 
     /// Get storage
     storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());

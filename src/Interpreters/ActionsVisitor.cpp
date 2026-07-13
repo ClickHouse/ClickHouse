@@ -1048,7 +1048,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             else if (identifier && (functionIsJoinGet(node.name) || functionIsDictGet(node.name)) && arg == 0)
             {
                 auto table_id = identifier->getTableId();
-                table_id = data.getContext()->resolveStorageID(table_id, Context::ResolveOrdinary);
+                table_id = data.getContext()->resolveStorageIDFromQuery(table_id, Context::ResolveOrdinary);
                 auto column_string = ColumnString::create();
                 column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
                 ColumnConstPtr column = ColumnConst::create(std::move(column_string), 1);
@@ -1270,7 +1270,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
         {
-            auto table_id = data.getContext()->resolveStorageID(right_in_operand);
+            auto table_id = data.getContext()->resolveStorageIDFromQuery(right_in_operand);
             StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, data.getContext());
 
             if (table)

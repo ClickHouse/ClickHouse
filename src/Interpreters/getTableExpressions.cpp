@@ -115,7 +115,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
     }
     else if (table_expression.database_and_table_name)
     {
-        auto table_id = context->resolveStorageID(table_expression.database_and_table_name);
+        auto table_id = context->resolveStorageIDFromQuery(table_expression.database_and_table_name);
         const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
         auto table_metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
         const auto & columns = table_metadata_snapshot->getColumns();

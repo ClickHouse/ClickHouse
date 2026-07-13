@@ -51,6 +51,7 @@
 #include <Parsers/ASTDataType.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -601,6 +602,16 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
 bool DatabaseDataLake::empty() const
 {
     return getCatalog()->empty();
+}
+
+void DatabaseDataLake::validateTableNamespace(const Names & namespace_parts, ContextPtr /*context*/) const
+{
+    /// one authoritative catalog call; also recognizes empty namespaces
+    const String requested = resolveTableNamePath(namespace_parts);
+    const auto namespaces = getCatalog()->getNamespaces();
+    if (std::find(namespaces.begin(), namespaces.end(), requested) == namespaces.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Catalog {} has no namespace {}",
+            backQuote(getDatabaseName()), backQuote(requested));
 }
 
 bool DatabaseDataLake::isTableExist(const String & name, ContextPtr /* context_ */) const

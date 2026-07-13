@@ -48,7 +48,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     /// throw) and keeps the access check ahead of any existence disclosure.
     auto resolve_table = [&](const ASTQueryWithTableAndOutput & q)
     {
-        if (auto resolved = getContext()->tryResolveStorageID({q.getDatabase(), q.getTable()}, Context::ResolveOrdinary))
+        if (auto resolved = getContext()->tryResolveStorageIDFromQuery({q.getDatabase(), q.getTable()}, Context::ResolveOrdinary))
             return resolved;
         return StorageID{getContext()->resolveDatabase(q.getDatabase()), q.getTable()};
     };

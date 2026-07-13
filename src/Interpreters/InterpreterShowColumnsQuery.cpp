@@ -43,7 +43,7 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     WriteBufferFromOwnString buf_database;
     /// Resolve through the central storage resolver so DataLakeCatalog namespaces are honored
     /// (`USE db.namespace` prefixes and `namespace.table` qualifiers under `USE catalog`).
-    auto storage_id = getContext()->tryResolveStorageID({query.database, query.table}, Context::ResolveOrdinary);
+    auto storage_id = getContext()->tryResolveStorageIDFromQuery({query.database, query.table}, Context::ResolveOrdinary);
     if (!storage_id)
         storage_id = StorageID{getContext()->resolveDatabase(query.database), query.table};
     String resolved_database = storage_id.database_name;
@@ -178,7 +178,7 @@ WHERE
 BlockIO InterpreterShowColumnsQuery::execute()
 {
     const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
-    String database = getContext()->tryResolveStorageID({query.database, query.table}, Context::ResolveOrdinary).database_name;
+    String database = getContext()->tryResolveStorageIDFromQuery({query.database, query.table}, Context::ResolveOrdinary).database_name;
     if (database.empty())
         database = getContext()->resolveDatabase(query.database);
     auto query_context = Context::createCopy(getContext());

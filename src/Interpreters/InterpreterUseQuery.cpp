@@ -1,10 +1,12 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/typeid_cast.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -13,9 +15,17 @@ namespace DB
 BlockIO InterpreterUseQuery::execute()
 {
     const String & new_database = query_ptr->as<ASTUseQuery &>().getDatabase();
-    /// `USE db.namespace` selects a namespace inside a DataLakeCatalog database.
     const auto [database_name, table_prefix] = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(new_database);
     getContext()->checkAccess(AccessType::SHOW_DATABASES, database_name);
+
+    if (!table_prefix.empty())
+    {
+        /// authorize above first; then one authoritative existence check for the namespace
+        Names parts;
+        splitInto<'.'>(parts, table_prefix);
+        DatabaseCatalog::instance().getDatabase(database_name)->validateTableNamespace(parts, getContext());
+    }
+
     getContext()->getSessionContext()->setCurrentDatabase(database_name, table_prefix);
     return {};
 }

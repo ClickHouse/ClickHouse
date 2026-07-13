@@ -302,7 +302,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     }
 
     StorageID storage_id(database_name, table_name);
-    storage_id = context->resolveStorageID(storage_id);
+    storage_id = context->resolveStorageIDFromQuery(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
     StoragePtr storage;

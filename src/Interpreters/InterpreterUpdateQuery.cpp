@@ -90,7 +90,7 @@ BlockIO InterpreterUpdateQuery::execute()
     /// is the hidden virtual marker; on an engine where it is an ordinary physical column it is a normal
     /// update. Resolve the table best-effort (null for a non-local ON CLUSTER target) and fail closed.
     StoragePtr table_for_access;
-    if (auto table_id_for_access = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary))
+    if (auto table_id_for_access = getContext()->tryResolveStorageIDFromQuery(update_query, Context::ResolveOrdinary))
         table_for_access = DatabaseCatalog::instance().tryGetTable(table_id_for_access, getContext());
     const bool row_exists_is_marker = InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(table_for_access, getContext());
 
@@ -122,7 +122,7 @@ BlockIO InterpreterUpdateQuery::execute()
 
     /// Authorize the resolved table: the resolver may namespace-qualify it (DataLakeCatalog).
     /// The try-variant keeps authorization ahead of resolution errors (unknown database).
-    auto table_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
+    auto table_id = getContext()->tryResolveStorageIDFromQuery(update_query, Context::ResolveOrdinary);
     if (table_id)
     {
         update_query.setDatabase(table_id.database_name);
@@ -137,7 +137,7 @@ BlockIO InterpreterUpdateQuery::execute()
     }
     getContext()->checkAccess(required_access);
     if (!table_id)
-        table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
+        table_id = getContext()->resolveStorageIDFromQuery(update_query, Context::ResolveOrdinary);
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());

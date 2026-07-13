@@ -2727,7 +2727,7 @@ BlockIO InterpreterCreateQuery::execute()
     /// failure the names are kept and downstream code reports the error after authorization.
     if (!create.as_table.empty())
     {
-        if (auto as_table_id = getContext()->tryResolveStorageID({create.as_database, create.as_table}, Context::ResolveOrdinary);
+        if (auto as_table_id = getContext()->tryResolveStorageIDFromQuery({create.as_database, create.as_table}, Context::ResolveOrdinary);
             as_table_id && as_table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
         {
             create.as_database = as_table_id.database_name;

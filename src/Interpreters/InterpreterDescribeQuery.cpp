@@ -178,7 +178,7 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
 {
     auto query_context = getContext();
     auto resolve_type = temporary ? Context::ResolveExternal : Context::ResolveAll;
-    auto table_id = query_context->resolveStorageID(table_expression.database_and_table_name, resolve_type);
+    auto table_id = query_context->resolveStorageIDFromQuery(table_expression.database_and_table_name, resolve_type);
     query_context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
