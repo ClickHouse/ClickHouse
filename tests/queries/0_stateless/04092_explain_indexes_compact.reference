@@ -1,28 +1,41 @@
 100	200
 -- { echo }
 explain indexes=1 select * from test_1m where value > 800_000*100;
-Expression ((Project names + Projection))
-  Expression ((WHERE + Change column names to column identifiers))
-    ReadFromMergeTree (default.test_1m)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 100/100
-        Granules: 100/100
-      Skip
-        Name: value_idx
-        Description: minmax GRANULARITY 1
-        Condition: (value in [80000001, +Inf))
-        Parts: 20/100
-        Granules: 20/100
-      Ranges: 20
+Output: key, value
+
+ReadFromMergeTree (default.test_1m)
+Read type: Default
+Parts: 20 | Granules: 20
+Output: value, key
+Prewhere filter
+Prewhere filter column:  value > 80000000
+Indexes:
+  PrimaryKey
+    Condition: true
+    Parts: 100/100
+    Granules: 100/100
+  Skip
+    Name: value_idx
+    Description: minmax GRANULARITY 1
+    Condition: (value in [80000001, +Inf))
+    Parts: 20/100
+    Granules: 20/100
+  Ranges: 20
 -- { echoOff }
 
 -- { echo }
 explain indexes=1, compact=1 select * from test_1m where value > 800_000*100 settings distributed_index_analysis=1;
+Output: key, value
+
 ReadFromMergeTree (default.test_1m)
+Read type: Default
+Parts: 20 | Granules: 20
+Output: value, key
+Prewhere filter
+Prewhere filter column:  value > 80000000
 Indexes:
   PrimaryKey
+    Condition: true
     Parts: 20/100
     Granules: 20/100
     Distributed:
@@ -35,7 +48,10 @@ Indexes:
 100	200
 -- { echo }
 explain indexes=1, compact=1 select * from test_merge where key > 800_000 settings distributed_index_analysis=1;
+Output: key, value
+
 ReadFromMerge
+Output: key, value
 Indexes:
   PrimaryKey
     Parts: 40/200
@@ -80,7 +96,10 @@ explain indexes=1, compact=1, json=1 select * from test_merge where key > 800_00
 -- (without distributed_index_analysis so local path produces both PK and Skip stats).
 -- { echo }
 explain indexes=1, compact=1 select * from test_merge where value > 800_000*100;
+Output: key, value
+
 ReadFromMerge
+Output: key, value
 Indexes:
   PrimaryKey
     Parts: 200/200
@@ -92,6 +111,8 @@ Indexes:
   Ranges: 40
 -- { echo }
 explain indexes=1, compact=1 select * from test_1m where key > 800_000 union all select * from test_1m_copy where key > 900_000;
+Output: key, value
+
 Union
 Indexes:
   PrimaryKey
@@ -99,3 +120,34 @@ Indexes:
     Granules: 30/200
   Tables: 2
   Ranges: 30
+-- { echo }
+explain indexes=1, compact=1 select number from numbers(10) where number > 3;
+Output: number
+
+Filter ((WHERE + Change column names to column identifiers))
+│  Filter column: number > 3
+└──ReadFromSystemNumbers
+      Output: number
+explain indexes=1, compact=1, json=1 select number from numbers(10) where number > 3 format TSVRaw;
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Node Id": "Expression_6",
+      "Description": "(Project names + Projection)",
+      "Plans": [
+        {
+          "Node Type": "Filter",
+          "Node Id": "Filter_5",
+          "Description": "(WHERE + Change column names to column identifiers)",
+          "Plans": [
+            {
+              "Node Type": "ReadFromSystemNumbers",
+              "Node Id": "ReadFromSystemNumbers_0"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

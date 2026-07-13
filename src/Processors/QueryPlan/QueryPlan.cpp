@@ -506,6 +506,18 @@ static void collectIndexesFromPlan(const QueryPlan & plan, std::vector<IndexesDe
     }
 }
 
+/// Whether the collected descriptions contain any index that `formatIndexes`
+/// would actually print (i.e. a stat with a type other than `None`). This
+/// mirrors the early-out conditions in `formatIndexes`.
+static bool hasIndexOutput(const std::vector<IndexesDescription> & descriptions)
+{
+    for (const auto & desc : descriptions)
+        for (const auto & stat : desc.index_stats)
+            if (stat.type != IndexType::None)
+                return true;
+    return false;
+}
+
 static IndexesDescription aggregateIndexes(const std::vector<IndexesDescription> & descriptions, size_t table_count)
 {
     IndexesDescription aggregated;
@@ -643,17 +655,20 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 
     if (options.compact && options.indexes)
     {
-        auto * node = skipExpressions(root);
-        auto node_map = std::make_unique<JSONBuilder::JSONMap>();
-        auto header_options = options;
-        header_options.indexes = false;
-        explainStep(*node->step, *node_map, header_options);
-
         std::vector<IndexesDescription> descriptions;
         collectIndexesFromPlan(*this, descriptions);
 
-        if (!descriptions.empty())
+        /// Only take the aggregated fast path when there is actual index
+        /// output to show; otherwise fall back to the regular compact
+        /// traversal so the plan shape is preserved.
+        if (hasIndexOutput(descriptions))
         {
+            auto * node = skipExpressions(root);
+            auto node_map = std::make_unique<JSONBuilder::JSONMap>();
+            auto header_options = options;
+            header_options.indexes = false;
+            explainStep(*node->step, *node_map, header_options);
+
             /// With a single reading step there is no cross-table ambiguity,
             /// so keep the original per-index metadata (name, condition, keys,
             /// search algorithm) instead of aggregating and dropping it.
@@ -666,9 +681,9 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
                 auto aggregated = aggregateIndexes(descriptions, descriptions.size());
                 formatIndexes(aggregated, *node_map, options.compact);
             }
-        }
 
-        return node_map;
+            return node_map;
+        }
     }
 
     struct Frame
@@ -972,16 +987,19 @@ void QueryPlan::explainPlan(
     /// and print a flat summary after the reading step header.
     if (options.compact && options.indexes)
     {
-        auto * reading_node = skipExpressions(root);
-        auto header_options = options;
-        header_options.indexes = false;
-        explainStep(*reading_node->step, settings, header_options, max_description_length);
-
         std::vector<IndexesDescription> descriptions;
         collectIndexesFromPlan(*this, descriptions);
 
-        if (!descriptions.empty())
+        /// Only take the aggregated fast path when there is actual index
+        /// output to show; otherwise fall back to the regular compact
+        /// traversal so the plan shape is preserved.
+        if (hasIndexOutput(descriptions))
         {
+            auto * reading_node = skipExpressions(root);
+            auto header_options = options;
+            header_options.indexes = false;
+            explainStep(*reading_node->step, settings, header_options, max_description_length);
+
             /// With a single reading step there is no cross-table ambiguity,
             /// so keep the original per-index metadata (name, condition, keys,
             /// search algorithm) instead of aggregating and dropping it.
@@ -994,8 +1012,8 @@ void QueryPlan::explainPlan(
                 auto aggregated = aggregateIndexes(descriptions, descriptions.size());
                 formatIndexes(aggregated, settings);
             }
+            return;
         }
-        return;
     }
 
     auto * first_node = (options.compact && options.actions) ? skipExpressions(root) : root;

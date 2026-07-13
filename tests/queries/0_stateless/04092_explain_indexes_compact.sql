@@ -49,3 +49,12 @@ explain indexes=1, compact=1 select * from test_1m where key > 800_000 union all
 -- { echoOff }
 
 drop table test_1m_copy;
+
+-- When there is no index summary to print (e.g. a plan with no MergeTree
+-- reading step), compact mode must not truncate the plan down to a single
+-- header node: it should fall back to the regular compact plan traversal.
+set max_parallel_replicas=1;
+-- { echo }
+explain indexes=1, compact=1 select number from numbers(10) where number > 3;
+explain indexes=1, compact=1, json=1 select number from numbers(10) where number > 3 format TSVRaw;
+-- { echoOff }
