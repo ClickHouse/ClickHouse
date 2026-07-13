@@ -416,7 +416,8 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             }
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
-            LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
+            /// Log the request-local range_begin, not the shared sequential `offset` (mutated by nextImpl()/seek()).
+            LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, range_begin, i + 1, max_single_download_retries, e.Message);
 
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))
                 throw;

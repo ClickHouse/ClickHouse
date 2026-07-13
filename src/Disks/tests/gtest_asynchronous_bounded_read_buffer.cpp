@@ -274,6 +274,64 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentReadBigAtNoPrefetchInFlight)
     }
 }
 
+/// Regression for the second half of issue #109678: an overlapping-range readBigAt() drains the shared
+/// prefetch_future, while a concurrent sequential next() also consumes it. Before the fix, next() consumed
+/// prefetch_future without prefetch_mutex, so it could race the readBigAt() drain and both get() the same
+/// (moved-from) future -> null shared state -> SIGSEGV. Every prefetch-consumption path now takes
+/// prefetch_mutex, so the two serialize; the sequential reader must still observe the file from the start.
+TEST_F(AsynchronousBoundedReadBufferTest, overlappingReadBigAtRacesSequentialNext)
+{
+    const String contents = getAlphabetWithDigits(); /// 36 bytes: a..z0..9
+    String file_path = makeTempFile(contents);
+    ThreadPoolRemoteFSReader remote_fs_reader(8, 0);
+
+    for (int iteration = 0; iteration < 200; ++iteration)
+    {
+        AsynchronousBoundedReadBuffer read_buffer(
+            createReadBufferFromFileBase(file_path, ReadSettings{}), remote_fs_reader,
+            DBMS_DEFAULT_BUFFER_SIZE, /* min_bytes_for_seek */ 0,
+            Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
+
+        ASSERT_TRUE(read_buffer.supportsReadAt());
+
+        /// Prefetch covers the whole small file, so the readBigAt() below overlaps it and drains it.
+        read_buffer.prefetch(Priority{0});
+
+        std::atomic<bool> go{false};
+        std::atomic<bool> all_ok{true};
+
+        /// Positional reader: overlapping range -> takes prefetch_mutex and drains prefetch_future.
+        std::thread positional([&]
+        {
+            String out;
+            out.resize(contents.size());
+            while (!go.load())
+                ;
+            size_t read = read_buffer.readBigAt(out.data(), out.size(), 0, nullptr);
+            if (read != contents.size() || out != contents)
+                all_ok.store(false);
+        });
+
+        /// Sequential reader: read() -> nextImpl() also consumes prefetch_future (now under the same mutex).
+        std::thread sequential([&]
+        {
+            String out;
+            out.resize(contents.size());
+            while (!go.load())
+                ;
+            out.resize(read_buffer.read(out.data(), out.size()));
+            if (out != contents.substr(0, out.size()))
+                all_ok.store(false);
+        });
+
+        go.store(true);
+        positional.join();
+        sequential.join();
+
+        EXPECT_TRUE(all_ok.load()) << "overlapping readBigAt vs sequential next returned wrong data at iteration " << iteration;
+    }
+}
+
 /// Models a lazily initialized remote reader (like ReadBufferFromAzureBlobStorage, whose backend client
 /// is created inside initialize() from nextImpl()). Its nextImpl() parks on a latch so a prefetch can be
 /// held in flight while a racing out-of-prefetch readBigAt() runs. readBigAt() is self-contained (uses

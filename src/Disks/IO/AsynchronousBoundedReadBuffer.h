@@ -95,13 +95,16 @@ private:
     Memory<> prefetch_buffer;
     /// mutable: a pending prefetch may be consumed from the const readBigAt().
     mutable std::future<IAsynchronousReader::Result> prefetch_future;
-    /// Serializes consuming `prefetch_future` from readBigAt() (called concurrently on the Parquet
-    /// RandomRead path); without it racing threads deref a moved-from future's null shared state (SIGSEGV).
+    /// Guards every access to the prefetch state (prefetch_future, prefetch_estimated_end,
+    /// prefetch_buffer, last_prefetch_info). readBigAt() runs in parallel with a sequential next()/seek()
+    /// (SeekableReadBuffer contract) and both may consume prefetch_future; a racing get() on a moved-from
+    /// future null-derefs its shared state (SIGSEGV, issue #109678). Held by every sequential entry point
+    /// (nextImpl, seek, prefetch, setReadUntilPosition, finalize, getInfoForLog) and by readBigAt()'s drain.
+    /// The *Locked private helpers assume it is already held.
     mutable std::mutex prefetch_mutex;
-    /// 0 when no prefetch is in flight, else an upper bound on the prefetch's end offset. Stored (release)
-    /// at prefetch(), reset to 0 (release) after the future is consumed (background next() done); readBigAt()
-    /// loads it (acquire) and only takes prefetch_mutex when the range overlaps [.., prefetch_estimated_end).
-    /// mutable: reset from the const readBigAt() when it consumes the prefetch.
+    /// 0 when no prefetch is in flight, else an upper bound on the prefetch's end offset. Lets readBigAt()
+    /// cheaply skip the mutex for a range that does not overlap the prefetch. Written under prefetch_mutex
+    /// (release), loaded lock-free (acquire) by readBigAt() before deciding whether to take the mutex.
     mutable std::atomic<size_t> prefetch_estimated_end{0};
 
     /// When using userspace page cache, we directly use memory owned by the cache instead of
@@ -128,7 +131,10 @@ private:
 
     void finalize();
 
-    bool hasPendingDataToRead();
+    /// The *Locked helpers assume prefetch_mutex is already held (see the mutex comment above).
+    bool nextImplLocked();
+
+    bool hasPendingDataToReadLocked();
 
     void appendToPrefetchLog(
         FilesystemPrefetchState state,
@@ -139,7 +145,7 @@ private:
 
     IAsynchronousReader::Result readSync(char * data, size_t size);
 
-    void resetPrefetch(FilesystemPrefetchState state);
+    void resetPrefetchLocked(FilesystemPrefetchState state);
 };
 
 }

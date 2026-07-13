@@ -95,12 +95,13 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
 
 String AsynchronousBoundedReadBuffer::getInfoForLog()
 {
+    std::lock_guard lock(prefetch_mutex);
     if (prefetch_future.valid())
         prefetch_future.wait();
     return impl->getInfoForLog();
 }
 
-bool AsynchronousBoundedReadBuffer::hasPendingDataToRead()
+bool AsynchronousBoundedReadBuffer::hasPendingDataToReadLocked()
 {
     if (read_until_position)
     {
@@ -155,10 +156,12 @@ IAsynchronousReader::Result AsynchronousBoundedReadBuffer::readSync(char * data,
 
 void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
 {
+    std::lock_guard lock(prefetch_mutex);
+
     if (prefetch_future.valid())
         return;
 
-    if (!hasPendingDataToRead())
+    if (!hasPendingDataToReadLocked())
         return;
 
     last_prefetch_info.submit_time = std::chrono::system_clock::now();
@@ -177,6 +180,8 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
 
 void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
 {
+    std::lock_guard lock(prefetch_mutex);
+
     if (!read_until_position || position != *read_until_position)
     {
         if (position < file_offset_of_buffer_end)
@@ -210,7 +215,7 @@ void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
         /// which reinitializes internal remote read buffer (because if we have a new read range
         /// then we need a new range request) and in case of reading from cache we need to request
         /// and hold more file segment ranges from cache.
-        resetPrefetch(FilesystemPrefetchState::CANCELLED_WITH_RANGE_CHANGE);
+        resetPrefetchLocked(FilesystemPrefetchState::CANCELLED_WITH_RANGE_CHANGE);
         impl->setReadUntilPosition(*read_until_position);
     }
 }
@@ -242,7 +247,13 @@ void AsynchronousBoundedReadBuffer::appendToPrefetchLog(
 
 bool AsynchronousBoundedReadBuffer::nextImpl()
 {
-    if (!hasPendingDataToRead())
+    std::lock_guard lock(prefetch_mutex);
+    return nextImplLocked();
+}
+
+bool AsynchronousBoundedReadBuffer::nextImplLocked()
+{
+    if (!hasPendingDataToReadLocked())
         return false;
 
     chassert(file_offset_of_buffer_end <= getFileSize());
@@ -335,6 +346,8 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
 
 off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
 {
+    std::lock_guard lock(prefetch_mutex);
+
     ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
 
     size_t new_pos = 0;
@@ -376,7 +389,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
             read_from_prefetch = true;
 
             /// Read from prefetch buffer and recheck if the new position is valid inside.
-            if (nextImpl())
+            if (nextImplLocked())
                 continue;
         }
 
@@ -431,7 +444,8 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
 
 void AsynchronousBoundedReadBuffer::finalize()
 {
-    resetPrefetch(FilesystemPrefetchState::UNNEEDED);
+    std::lock_guard lock(prefetch_mutex);
+    resetPrefetchLocked(FilesystemPrefetchState::UNNEEDED);
 }
 
 AsynchronousBoundedReadBuffer::~AsynchronousBoundedReadBuffer()
@@ -446,7 +460,7 @@ AsynchronousBoundedReadBuffer::~AsynchronousBoundedReadBuffer()
     }
 }
 
-void AsynchronousBoundedReadBuffer::resetPrefetch(FilesystemPrefetchState state)
+void AsynchronousBoundedReadBuffer::resetPrefetchLocked(FilesystemPrefetchState state)
 {
     if (!prefetch_future.valid())
         return;
