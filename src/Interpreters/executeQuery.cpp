@@ -2720,7 +2720,18 @@ void executeQuery(
 
     auto update_format_on_exception_if_needed = [&]()
     {
-        if (!output_format)
+        /// The data path may have thrown from `setFraming` after the output format was already
+        /// created: a format that defers totals and extremes to finalization (`Template`) or writes
+        /// progress in-band (`JSONEachRowWithProgress`) is rejected there. Such a leftover format is
+        /// not framed, and it writes to the payload buffer of a framing format that was destroyed
+        /// during stack unwinding, so it must not carry the exception. Recreate the format in that
+        /// case too, so the error is delivered as a framed `exception` packet rather than falling
+        /// back to a plain HTTP error body.
+        const bool unusable_for_framed_exception = output_format && !output_format->getFraming()
+            && context->getClientInfo().interface == ClientInfo::Interface::HTTP
+            && !boost::iequals(context->getSettingsRef()[Setting::framing_output_format].value, "None");
+
+        if (!output_format || unusable_for_framed_exception)
         {
             /// `executeQueryImpl` may have applied the query's `SETTINGS` clause before throwing, so
             /// reconcile the queues with the effective settings before framing the exception, so the
@@ -2742,7 +2753,14 @@ void executeQuery(
                 auto framing = createFramingFormatIfApplicable(context, ostr, format_name, output_format_settings, /*for_exception=*/ true);
                 if (framing)
                 {
-                    output_format = FormatFactory::instance().getOutputFormat(format_name, framing->getPayloadBuffer(), {}, context, output_format_settings);
+                    /// With a framing format, the exception packet is written by the framing itself and
+                    /// the output format writes nothing in exception-only mode (see
+                    /// `framing_exception_only`), so the format here is only a carrier for the framing.
+                    /// It is created as `Null` rather than as the query's own format, because the real
+                    /// format may not even be constructible on the exception path - for example
+                    /// `Template` with a row template referencing columns of the header, which is empty
+                    /// here.
+                    output_format = FormatFactory::instance().getOutputFormat("Null", framing->getPayloadBuffer(), {}, context, output_format_settings);
                     output_format->setFraming(framing, /*for_exception=*/ true);
                     setFramingQueues(*framing, context, framing_queues);
                 }
