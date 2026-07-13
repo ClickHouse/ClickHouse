@@ -287,10 +287,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     const bool can_use_runtime_filter =
         (
             (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
-           || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
-           || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Anti)
-           || (join_operator.kind == JoinKind::Right && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
-        ) && 
+            || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
+            || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Anti)
+            || (join_operator.kind == JoinKind::Right && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
+        ) &&
         (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
         std::find_if(join_algorithms.begin(), join_algorithms.end(), supportsRuntimeFilter) != join_algorithms.end();
 
@@ -369,15 +369,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     /// When negation will be use for the set of rows in filter, double check that all original predicates were transformed into equality predicates
     /// between left and right side
-    if (check_left_does_not_contain
-        && (join_keys_build_side.size() != total_join_on_predicates_count || join_keys_probe_side.size() != total_join_on_predicates_count))
+    if (check_left_does_not_contain &&
+        (join_keys_build_side.size() != total_join_on_predicates_count ||
+        join_keys_probe_side.size() != total_join_on_predicates_count))
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Original predicate count {} does not match the number of JOIN ON keys, left: {}, right: {}",
-            total_join_on_predicates_count,
-            join_keys_probe_side.size(),
-            join_keys_build_side.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Original predicate count {} does not match the number of JOIN ON keys, left: {}, right: {}",
+            total_join_on_predicates_count, join_keys_probe_side.size(), join_keys_build_side.size());
     }
 
     const UInt64 base_fingerprint = calculateJoinFingerprint(
@@ -409,12 +406,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             }
             catch (Exception & ex)
             {
-                ex.addMessage(
-                    "JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
-                    join_key_probe_side.name,
-                    join_key_probe_side.type->getName(),
-                    join_key_build_side.name,
-                    join_key_build_side.type->getName());
+                ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
+                    join_key_probe_side.name, join_key_probe_side.type->getName(),
+                    join_key_build_side.name, join_key_build_side.type->getName());
                 throw;
             }
         }
@@ -577,7 +571,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     }
 
     QueryPlan::Node * new_apply_filter_node = &nodes.emplace_back();
-    new_apply_filter_node->step = std::make_unique<FilterStep>(apply_filter_node->step->getOutputHeader(), std::move(filter_dag), filter_column_name, true);
+    new_apply_filter_node->step = std::make_unique<FilterStep>(
+        apply_filter_node->step->getOutputHeader(), std::move(filter_dag), filter_column_name, true);
     new_apply_filter_node->step->setStepDescription("Apply runtime join filter");
     new_apply_filter_node->children = {apply_filter_node};
     apply_filter_node = new_apply_filter_node;
