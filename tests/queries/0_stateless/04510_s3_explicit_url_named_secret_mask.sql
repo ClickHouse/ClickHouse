@@ -69,6 +69,10 @@ BACKUP TABLE nonexistent_04510 TO S3('url_backup_pos', 'ak', 'SEKRIT_SAK',
 CREATE DATABASE db_04510_ec ENGINE = Backup('', S3('url_dbec', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'))); -- { serverError BAD_ARGUMENTS }
 
+-- The reconstructor must fail closed on an invalid extra positional argument (a session token).
+CREATE DATABASE db_04510_postok ENGINE = Backup('', S3('url_dbpostok', 'ak', 'SEKRIT_SAK',
+                 'SEKRIT_DBTOK')); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
 -- The reconstructor must fail closed on an unsupported tail (headers), not emit it verbatim.
 CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_SAK',
                  headers('X-Auth' = 'SEKRIT_HDR'))); -- { serverError BAD_ARGUMENTS }
@@ -87,6 +91,7 @@ SELECT
     countIf(query LIKE '%url_backup''%'     AND query LIKE '%[HIDDEN]%') > 0 AS backup_masked,
     countIf(query LIKE '%url_backup_pos%'   AND query LIKE '%[HIDDEN]%') > 0 AS backup_positional_masked,
     countIf(query LIKE '%db_04510_ec%'      AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_masked,
+    countIf(query LIKE '%db_04510_postok%'  AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_positional_masked,
     countIf(query LIKE '%db_04510_hdr%'     AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_headers_masked,
     countIf(query LIKE '%db_04510_expr%'    AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_expr_key_masked,
     countIf(query LIKE '%SEKRIT%') AS leaked

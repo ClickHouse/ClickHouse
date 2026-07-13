@@ -996,8 +996,10 @@ protected:
                 continue;
             }
 
-            /// Positional argument. In the explicit-key form the secret is at position 2.
-            if (!is_named_collection && i == 2)
+            /// Positional argument. In the explicit-key form the secret is at position 2, and the locator
+            /// accepts no further positional argument, so hide everything from position 2 on: fail closed
+            /// on an invalid extra positional (e.g. a session token) rather than emit it verbatim.
+            if (!is_named_collection && i >= 2)
             {
                 replacement += "'[HIDDEN]'";
                 has_secret = true;
