@@ -56,5 +56,37 @@
             <profile>default</profile>
             <quota>default</quota>
         </explicit_user>
+        <proto_webterminal_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </proto_webterminal_user>
+        <reload_effective_before>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </reload_effective_before>
+        <reload_effective_after>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </reload_effective_after>
+        <reload_shadow_endpoint_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </reload_shadow_endpoint_user>
     </users>
 </clickhouse>

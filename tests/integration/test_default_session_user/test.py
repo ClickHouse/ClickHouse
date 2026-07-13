@@ -1,5 +1,9 @@
+import base64
+import json
+import secrets
 import socket
 import struct
+import time
 import urllib.parse
 import urllib.request
 
@@ -218,4 +222,164 @@ def test_interserver_connections_do_not_use_default_session_user():
             "SELECT hostName(), currentUser() FROM clusterAllReplicas('secret_cluster', system.one) ORDER BY hostName()"
         )
         == "node1\tdefault\nnode2\tdefault\n"
+    )
+
+
+def ws_handshake(sock, host, origin):
+    key = base64.b64encode(secrets.token_bytes(16)).decode()
+    headers = [
+        "GET /webterminal HTTP/1.1",
+        f"Host: {host}",
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        f"Sec-WebSocket-Key: {key}",
+        "Sec-WebSocket-Version: 13",
+        f"Origin: {origin}",
+    ]
+    sock.sendall(("\r\n".join(headers) + "\r\n\r\n").encode())
+    response = b""
+    while b"\r\n\r\n" not in response:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        response += chunk
+    return response
+
+
+def ws_send_text(sock, payload):
+    data = payload.encode("utf-8")
+    mask = secrets.token_bytes(4)
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+    header = bytearray([0x81])  # FIN | text opcode
+    length = len(data)
+    if length < 126:
+        header.append(0x80 | length)
+    else:
+        header.append(0x80 | 126)
+        header += struct.pack(">H", length)
+    header += mask
+    sock.sendall(bytes(header) + masked)
+
+
+def ws_read_opcode(sock, timeout=15.0):
+    """Read one WebSocket frame and return its opcode (0x02 = binary PTY data on
+    a successful session, 0x08 = close on failure), or None on EOF."""
+    sock.settimeout(timeout)
+
+    def recv_exact(n):
+        buf = b""
+        while len(buf) < n:
+            chunk = sock.recv(n - len(buf))
+            if not chunk:
+                return None
+            buf += chunk
+        return buf
+
+    header = recv_exact(2)
+    if header is None:
+        return None
+    opcode = header[0] & 0x0F
+    length = header[1] & 0x7F
+    if length == 126:
+        extra = recv_exact(2)
+        length = struct.unpack(">H", extra)[0] if extra else 0
+    elif length == 127:
+        extra = recv_exact(8)
+        length = struct.unpack(">Q", extra)[0] if extra else 0
+    if length > 0:
+        recv_exact(length)
+    return opcode
+
+
+def webterminal_auth_opcode(port, auth_message):
+    host = f"{node1.ip_address}:{port}"
+    sock = socket.create_connection((node1.ip_address, port), timeout=10)
+    try:
+        response = ws_handshake(sock, host, origin=f"http://{host}")
+        assert response.startswith(b"HTTP/1.1 101"), response
+        ws_send_text(sock, auth_message)
+        return ws_read_opcode(sock)
+    finally:
+        sock.close()
+
+
+def test_webterminal_default_session_user():
+    # A web terminal auth message without a "user" field falls back to the
+    # endpoint's default session user (here a per-endpoint override), proving the
+    # override reaches `WebTerminalRequestHandler` and is not the global default.
+    # A successful session forwards PTY data as a binary frame (0x02); a failure
+    # would send a close frame (0x08).
+    opcode = webterminal_auth_opcode(
+        8125, json.dumps({"type": "auth", "password": ""})
+    )
+    assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
+    assert_login_success("proto_webterminal_user", "HTTP")
+
+    # An explicitly specified user is not affected by the default session user.
+    opcode = webterminal_auth_opcode(
+        8125, json.dumps({"type": "auth", "user": "explicit_user", "password": ""})
+    )
+    assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
+    assert_login_success("explicit_user", "HTTP")
+
+
+def test_config_reload_default_session_user():
+    config_path = "/etc/clickhouse-server/config.d/config.xml"
+
+    # The effective default session user comes from the endpoint itself ...
+    assert execute_query_http(8126, "SELECT currentUser()") == "reload_effective_before\n"
+    # ... and, for an endpoint that references a base via `impl`, the value closest
+    # to the endpoint wins (the base's value is shadowed).
+    assert (
+        execute_query_http(8127, "SELECT currentUser()")
+        == "reload_shadow_endpoint_user\n"
+    )
+
+    # In a single reload, change one endpoint's own (effective) value and a base
+    # value that a closer module shadows (so the shadow endpoint's effective value
+    # does not change).
+    node1.replace_in_config(
+        config_path, "reload_effective_before", "reload_effective_after"
+    )
+    node1.replace_in_config(
+        config_path, "reload_shadow_base_before", "reload_shadow_base_after"
+    )
+    node1.query("SYSTEM RELOAD CONFIG")
+
+    # The endpoint whose effective value changed is restarted and now serves the
+    # new user (the value is baked into the handler factory, so a restart is
+    # required for it to take effect).
+    for _ in range(30):
+        try:
+            if (
+                execute_query_http(8126, "SELECT currentUser()")
+                == "reload_effective_after\n"
+            ):
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+    assert execute_query_http(8126, "SELECT currentUser()") == "reload_effective_after\n"
+
+    # The shadow endpoint's effective value is unchanged, so it keeps serving the
+    # same user.
+    assert (
+        execute_query_http(8127, "SELECT currentUser()")
+        == "reload_shadow_endpoint_user\n"
+    )
+
+    # The endpoint with a changed effective value was reloaded ...
+    for _ in range(30):
+        if node1.contains_in_log(
+            "<default_session_user> had been changed, will reload http-reload-effective"
+        ):
+            break
+        time.sleep(1)
+    assert node1.contains_in_log(
+        "<default_session_user> had been changed, will reload http-reload-effective"
+    )
+    # ... but the shadow endpoint was not reloaded for `default_session_user`,
+    # because only a shadowed base changed and its effective value is the same.
+    assert not node1.contains_in_log(
+        "<default_session_user> had been changed, will reload http-reload-shadow-endpoint"
     )

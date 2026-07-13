@@ -42,6 +42,33 @@
             <default_session_user>proto_http_user</default_session_user>
             <description>http protocol with its own default session user</description>
         </http_defuser>
+        <http_webterminal>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8125</port>
+            <default_session_user>proto_webterminal_user</default_session_user>
+            <description>http protocol whose web terminal uses its own default session user</description>
+        </http_webterminal>
+        <http_reload_effective>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8126</port>
+            <default_session_user>reload_effective_before</default_session_user>
+            <description>http-reload-effective</description>
+        </http_reload_effective>
+        <http_reload_shadow_base>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <default_session_user>reload_shadow_base_before</default_session_user>
+            <description>http-reload-shadow-base</description>
+        </http_reload_shadow_base>
+        <http_reload_shadow_endpoint>
+            <impl>http_reload_shadow_base</impl>
+            <host>0.0.0.0</host>
+            <port>8127</port>
+            <default_session_user>reload_shadow_endpoint_user</default_session_user>
+            <description>http-reload-shadow-endpoint</description>
+        </http_reload_shadow_endpoint>
         <mysql_defuser>
             <type>mysql</type>
             <host>0.0.0.0</host>
