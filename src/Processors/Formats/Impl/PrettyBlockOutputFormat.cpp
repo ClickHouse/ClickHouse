@@ -15,7 +15,7 @@
 #include <Common/setThreadName.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -195,7 +195,7 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
             {
                 thread.emplace([this, thread_group = CurrentThread::getGroup()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::PRETTY_WRITER);
+                    ScopedThreadAttributes scoped_attributes(thread_group, ThreadName::PRETTY_WRITER);
 
                     writingThread();
                 });

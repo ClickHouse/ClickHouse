@@ -18,7 +18,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 
@@ -151,7 +151,7 @@ public:
             {
                 /// Attach to current query thread group, to be able to
                 /// have query id in logs and metrics from scanDataFunc.
-                DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
+                DB::ScopedThreadAttributes scoped_attributes(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
                 scanDataFunc();
             });
     }

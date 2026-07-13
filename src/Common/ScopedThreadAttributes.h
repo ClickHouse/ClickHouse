@@ -1,6 +1,6 @@
 #pragma once
 
-/// Convenience header that provides ThreadGroupSwitcher and getCurrentThreadGroup
+/// Convenience header that provides ScopedThreadAttributes and getCurrentThreadGroup
 /// without pulling in the full CurrentThread.h (which includes ThreadStatus.h).
 
 #include <memory>
@@ -28,11 +28,11 @@ ThreadGroupPtr getCurrentThreadGroup();
  * Typically used for inheriting thread group when scheduling tasks on a thread pool:
  *   pool->scheduleOrThrow([thread_group = getCurrentThreadGroup()]()
  *       {
- *           ThreadGroupSwitcher switcher(thread_group, ThreadName::MY_THREAD);
+ *           ScopedThreadAttributes scoped_attributes(thread_group, ThreadName::MY_THREAD);
  *           ...
  *       });
  */
-class ThreadGroupSwitcher : private boost::noncopyable
+class ScopedThreadAttributes : private boost::noncopyable
 {
 public:
     /// Name: if thread_name is not UNKNOWN, calls setThreadName and restores the previous name
@@ -42,8 +42,8 @@ public:
     ///  * If false, asserts that the thread is not already attached to a different group.
     ///    Use this when running a task in a thread pool.
     ///  * If true, remembers the current group and restores it in the destructor.
-    ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
-    ~ThreadGroupSwitcher();
+    ScopedThreadAttributes(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
+    ~ScopedThreadAttributes();
 
 private:
     ThreadStatus * prev_thread = nullptr;

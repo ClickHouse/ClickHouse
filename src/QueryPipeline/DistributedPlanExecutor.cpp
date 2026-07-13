@@ -26,7 +26,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Common/ThreadStatus.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/QueryScope.h>
 #include <Processors/Sources/NativeCompressedSource.h>
 #include <Planner/Utils.h>

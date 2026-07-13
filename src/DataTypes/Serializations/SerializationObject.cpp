@@ -16,7 +16,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 
 namespace DB
 {
@@ -617,7 +617,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             auto task = std::make_shared<DeserializationTask>(std::move(deserialize));
             static_cast<void>(settings.prefixes_deserialization_thread_pool->trySchedule([task_ptr = task, thread_group = CurrentThread::getGroup()]()
             {
-                ThreadGroupSwitcher switcher(thread_group, ThreadName::PREFIX_READER);
+                ScopedThreadAttributes scoped_attributes(thread_group, ThreadName::PREFIX_READER);
 
                 task_ptr->tryExecute();
             }));

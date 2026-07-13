@@ -3,7 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <exception>
 #include <future>
 
@@ -59,20 +59,20 @@ struct CallbackRunnerTask
             if constexpr (std::is_void_v<Result>)
             {
                 {
-                    ThreadGroupSwitcher switcher(thread_group, thread_name);
+                    ScopedThreadAttributes scoped_attributes(thread_group, thread_name);
                     SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
                     callback();
                 }
-                /// The ThreadGroupSwitcher is destroyed (thread group detached) and the callback is
+                /// The ScopedThreadAttributes is destroyed (thread group detached) and the callback is
                 /// released before satisfying the promise, otherwise the waiter could race with the
-                /// detaching thread (see "Destroy ThreadGroupSwitcher before set value in std::future").
+                /// detaching thread (see "Destroy ScopedThreadAttributes before set value in std::future").
                 promise.set_value();
             }
             else
             {
                 std::optional<Result> res;
                 {
-                    ThreadGroupSwitcher switcher(thread_group, thread_name);
+                    ScopedThreadAttributes scoped_attributes(thread_group, thread_name);
                     SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
                     res.emplace(callback());
                 }
@@ -94,11 +94,11 @@ struct CallbackRunnerTask
         /// woken waiter cannot tear down state the captures reference (same ordering as run()).
         /// When scheduleOrThrowOnError() throws synchronously, this destructor runs during stack
         /// unwinding on the SCHEDULING thread, which is usually a query thread already attached to its
-        /// own group; only then allow borrowing it (the switcher saves and restores that group, instead
+        /// own group; only then allow borrowing it (ScopedThreadAttributes saves and restores that group, instead
         /// of the LOGICAL_ERROR that would abort debug/sanitizer builds). A drop that is not an unwind
         /// (e.g. shutdown drain) runs on a group-less pool worker and must keep asserting.
         {
-            ThreadGroupSwitcher switcher(thread_group, thread_name, /*allow_existing_group=*/ std::uncaught_exceptions() > 0);
+            ScopedThreadAttributes scoped_attributes(thread_group, thread_name, /*allow_existing_group=*/ std::uncaught_exceptions() > 0);
             SCOPE_EXIT_SAFE({ [[maybe_unused]] auto released = std::move(callback); });
         }
 
@@ -224,7 +224,7 @@ private:
         {
             FunctionResult res;
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
+                ScopedThreadAttributes scoped_attributes(thread_group, thread_name);
                 res = callback();
                 callback = {};
             }
@@ -246,7 +246,7 @@ private:
         try
         {
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
+                ScopedThreadAttributes scoped_attributes(thread_group, thread_name);
                 callback();
                 callback = {};
             }

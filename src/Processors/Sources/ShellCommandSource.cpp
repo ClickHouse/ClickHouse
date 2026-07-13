@@ -9,7 +9,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/ErrnoException.h>
 
 #include <IO/WriteHelpers.h>
@@ -515,7 +515,7 @@ namespace
                 {
                     send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
                     {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::SEND_TO_SHELL_CMD);
+                        ScopedThreadAttributes scoped_attributes(thread_group, ThreadName::SEND_TO_SHELL_CMD);
 
                         try
                         {

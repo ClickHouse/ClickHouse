@@ -1,5 +1,5 @@
 #include <Coordination/KeeperReadThreadPool.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -62,7 +62,7 @@ void KeeperReadThreadPool::execute(size_t count, const CoordinationSettings & co
         {
             pool->scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::KEEPER_READ);
+                    ScopedThreadAttributes scoped_attributes(thread_group, ThreadName::KEEPER_READ);
                     threadFunction();
                 });
         }

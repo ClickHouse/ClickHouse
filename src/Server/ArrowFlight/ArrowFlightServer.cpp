@@ -12,7 +12,7 @@
 #include <Common/setThreadName.h>
 #include <Common/quoteString.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SettingSource.h>
 #include <Common/ThreadStatus.h>
@@ -994,7 +994,7 @@ arrow::Status ArrowFlightServer::evaluatePollDescriptor(const String & poll_desc
         return *info->status;
     }
 
-    ThreadGroupSwitcher thread_group_switcher{poll_session->getThreadGroup(), ThreadName::ARROW_FLIGHT};
+    ScopedThreadAttributes scoped_thread_attributes{poll_session->getThreadGroup(), ThreadName::ARROW_FLIGHT};
 
     std::optional<String> ticket;
     try

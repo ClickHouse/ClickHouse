@@ -2,7 +2,7 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryHelpers.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/iota.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -68,7 +68,7 @@ public:
             {
                 pool.scheduleOrThrowOnError([this, shard, thread_group = getCurrentThreadGroup()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_LOAD);
+                    ScopedThreadAttributes scoped_attributes(thread_group, ThreadName::HASHED_DICT_LOAD);
 
                     WorkerStatistic statistic;
                     SCOPE_EXIT_SAFE(

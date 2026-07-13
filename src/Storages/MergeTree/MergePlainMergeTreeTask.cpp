@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
@@ -43,10 +43,10 @@ bool MergePlainMergeTreeTask::executeStep()
     ProfileEventsScope profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
-    std::optional<ThreadGroupSwitcher> switcher;
+    std::optional<ScopedThreadAttributes> scoped_attributes;
     if (merge_list_entry)
     {
-        switcher.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+        scoped_attributes.emplace((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
     }
 
     switch (state)

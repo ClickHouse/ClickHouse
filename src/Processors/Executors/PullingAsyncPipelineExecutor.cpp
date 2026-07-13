@@ -7,7 +7,7 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/ThreadPool.h>
 
 namespace DB
@@ -74,7 +74,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PULLING_ASYNC_EXECUTOR);
+        ScopedThreadAttributes scoped_attributes(thread_group, ThreadName::PULLING_ASYNC_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
     }

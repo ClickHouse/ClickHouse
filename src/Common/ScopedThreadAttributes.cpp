@@ -1,7 +1,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 
@@ -10,7 +10,7 @@ namespace DB
 
 namespace FailPoints
 {
-    extern const char thread_group_switcher_post_attach_failure[];
+    extern const char scoped_thread_attributes_post_attach_failure[];
 }
 
 namespace ErrorCodes
@@ -26,7 +26,7 @@ ThreadGroupPtr getCurrentThreadGroup()
     return current_thread->getThreadGroup();
 }
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
+ScopedThreadAttributes::ScopedThreadAttributes(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
     : thread_group(std::move(thread_group_))
 {
     /// The name is switched independently of the group: it must be set even when there is
@@ -76,7 +76,7 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
         /// Simulate a failure after the attach succeeded, to verify the catch block
         /// detaches from the target group and restores the previous one instead of
         /// leaving the thread attached to the failed target.
-        fiu_do_on(FailPoints::thread_group_switcher_post_attach_failure,
+        fiu_do_on(FailPoints::scoped_thread_attributes_post_attach_failure,
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after attachToGroup");
         });
@@ -106,7 +106,7 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
     }
 }
 
-ThreadGroupSwitcher::~ThreadGroupSwitcher()
+ScopedThreadAttributes::~ScopedThreadAttributes()
 {
     if (thread_group)
     {
@@ -115,9 +115,9 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
             ThreadStatus * cur_thread = current_thread;
             ThreadGroupPtr cur_thread_group = CurrentThread::getGroup();
             if (cur_thread != prev_thread)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested: current thread changed between scope start ({}) and end ({})", prev_thread ? std::to_string(prev_thread->thread_id) : "nullptr", cur_thread ? std::to_string(cur_thread->thread_id) : "nullptr");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ScopedThreadAttributes are not properly nested: current thread changed between scope start ({}) and end ({})", prev_thread ? std::to_string(prev_thread->thread_id) : "nullptr", cur_thread ? std::to_string(cur_thread->thread_id) : "nullptr");
             if (cur_thread_group != thread_group)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested: current thread group changed between scope start (master_thread_id {}) and end ({})", thread_group->master_thread_id, cur_thread_group ? "master_thread_id " + std::to_string(cur_thread_group->master_thread_id) : "nullptr");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ScopedThreadAttributes are not properly nested: current thread group changed between scope start (master_thread_id {}) and end ({})", thread_group->master_thread_id, cur_thread_group ? "master_thread_id " + std::to_string(cur_thread_group->master_thread_id) : "nullptr");
             thread_group.reset();
 
             CurrentThread::detachFromGroupIfNotDetached();

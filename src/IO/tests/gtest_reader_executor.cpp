@@ -10,7 +10,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/tests/gtest_global_context.h>
@@ -67,7 +67,7 @@ struct TestThreadGroup
     std::optional<DB::ThreadStatus> thread_status_holder{
         current_thread ? std::nullopt : std::optional<DB::ThreadStatus>(std::in_place)};
     DB::ThreadGroupPtr thread_group = DB::ThreadGroup::createForQuery(getContext().context);
-    DB::ThreadGroupSwitcher switcher{thread_group, ThreadName::UNKNOWN};
+    DB::ScopedThreadAttributes scoped_attributes{thread_group, ThreadName::UNKNOWN};
 
     ProfileEvents::Count get(ProfileEvents::Event event) const
     {

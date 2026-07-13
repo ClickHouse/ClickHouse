@@ -1,7 +1,7 @@
 #pragma once
 
 #include <concepts>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <deque>
 #include <future>
 #include <memory>
@@ -190,7 +190,7 @@ public:
 
             auto get_status_task = [this, req, thread_group = getCurrentThreadGroup()]() mutable
             {
-                ThreadGroupSwitcher switcher(thread_group, get_thread_name());
+                ScopedThreadAttributes scoped_attributes(thread_group, get_thread_name());
 
                 try
                 {
