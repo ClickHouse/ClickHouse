@@ -36,7 +36,7 @@ def parse_args():
     )
     parser.add_argument(
         "--options",
-        help="Comma-separated options. Examples: parallel|sequential|BATCH_NUM/BATCH_TOT|s3 storage|DatabaseReplicated|azure|AsyncInsert|BugfixValidation|coverage",
+        help="Comma-separated options. Examples: parallel|sequential|BATCH_NUM/BATCH_TOT|s3 storage|DBReplicated|azure|AsyncInsert|BugfixValidation|coverage",
         default="",
     )
     parser.add_argument(
@@ -139,7 +139,7 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
     "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
-    "DatabaseReplicated": "--db-replicated",
+    "DBReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
     "ParallelReplicas": "--parallel-rep",
@@ -154,7 +154,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
-    "DatabaseReplicated": " --no-stateful --replicated-database",
+    "DBReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
@@ -312,7 +312,7 @@ def main():
             is_s3_storage = True
         if "azure" in to:
             is_azure_storage = True
-        if "DatabaseReplicated" in to:
+        if "DBReplicated" in to:
             is_database_replicated = True
         if "SharedCatalog" in to:
             is_shared_catalog = True
@@ -770,6 +770,7 @@ def main():
                 if not CH.prepare_stateful_data(
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
+                    build_type=build_types[0] if is_bugfix_validation else None,
                 ):
                     print(
                         "SETUP FAILURE: "
@@ -973,6 +974,7 @@ def main():
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
+                            build_type=bugfix_bt,
                         ):
                             # Prefer the concrete sub-command + ClickHouse error
                             # captured by prepare_stateful_data() over the generic
@@ -1217,7 +1219,7 @@ def main():
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False
-    if "parallel" in test_options and test_result:
+    if test_result:
         failures_cnt = len([r for r in test_result.results if not r.is_ok()])
         if failures_cnt > 0 and failures_cnt < 4:
             print(
