@@ -3356,7 +3356,7 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
             if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty())
             {
                 /// Move alias to the end of the identifier (most of the time) or somewhere else
-                Strings clone_parts = id->name_parts;
+                Strings clone_parts = id->name_parts.spellings();
                 int name_parts_size = static_cast<int>(id->name_parts.size());
                 const int index = (fuzz_rand() % 2) == 0 ? (name_parts_size - 1) : (fuzz_rand() % name_parts_size);
 

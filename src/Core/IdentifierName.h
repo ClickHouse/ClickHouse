@@ -60,6 +60,23 @@ struct IdentifierName
     bool empty() const { return parts.empty(); }
     size_t size() const { return parts.size(); }
 
+    IdentifierPart & operator[](size_t i) { return parts[i]; }
+    const IdentifierPart & operator[](size_t i) const { return parts[i]; }
+    IdentifierPart & front() { return parts.front(); }
+    const IdentifierPart & front() const { return parts.front(); }
+    IdentifierPart & back() { return parts.back(); }
+    const IdentifierPart & back() const { return parts.back(); }
+    auto begin() const { return parts.begin(); }
+    auto end() const { return parts.end(); }
+    void push_back(IdentifierPart part) { parts.push_back(std::move(part)); }
+    void pop_back() { parts.pop_back(); }
+    void clear() { parts.clear(); }
+
+    /// Copies of the spellings, for interfaces that take plain strings.
+    std::vector<String> spellings() const;
+
+    bool anyPartDoubleQuoted() const;
+
     /// Flattened form for display and error messages only. Never re-split it.
     String toString() const;
 

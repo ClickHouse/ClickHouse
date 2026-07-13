@@ -43,7 +43,7 @@ bool ParserShowIndexesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
     query->table = table_id->shortName();
     if (table_id->compound())
-        query->database = table_id->name_parts[0];
+        query->database = table_id->name_parts[0].spelling;
     else
     {
         if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))

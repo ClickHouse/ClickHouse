@@ -1575,7 +1575,12 @@ static BlockIO executeQueryImpl(
             if (insert_query->table_id)
                 insert_query->table_id = context->resolveStorageID(insert_query->table_id);
             else if (auto table = insert_query->getTable(); !table.empty())
-                insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
+            {
+                StorageID insert_table_id{insert_query->getDatabase(), table};
+                insert_table_id.database_name_quote = identifierPartQuoteFromAST(insert_query->database);
+                insert_table_id.table_name_quote = identifierPartQuoteFromAST(insert_query->table);
+                insert_query->table_id = context->resolveStorageID(insert_table_id);
+            }
 
             if (insert_query->table_id)
             {

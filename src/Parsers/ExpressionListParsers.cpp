@@ -3627,7 +3627,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                             /// just with the whole `_a.x`.
                             used_identifiers.insert(ident->name());
                             for (const auto & part : ident->name_parts)
-                                used_identifiers.insert(part);
+                                used_identifiers.insert(part.spelling);
                         }
                         for (const auto & child : node->children)
                             collect_identifiers(child.get());

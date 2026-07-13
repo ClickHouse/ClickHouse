@@ -17,6 +17,8 @@
 #include <Interpreters/TableNameHints.h>
 
 #include <Analyzer/Utils.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -280,7 +282,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context, const ASTPtr & original_ast)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -302,6 +304,37 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     }
 
     StorageID storage_id(database_name, table_name);
+
+    /// The query tree keeps only spellings; recover per-part quoting from the original AST
+    /// so double-quoted parts stay exact under `standard` name matching.
+    if (original_ast)
+    {
+        const ASTTableIdentifier * table_identifier_ast = nullptr;
+        if (const auto * table_expression_ast = original_ast->as<ASTTableExpression>())
+        {
+            if (table_expression_ast->database_and_table_name)
+                table_identifier_ast = table_expression_ast->database_and_table_name->as<ASTTableIdentifier>();
+        }
+        else
+        {
+            table_identifier_ast = original_ast->as<ASTTableIdentifier>();
+        }
+
+        if (table_identifier_ast && table_identifier_ast->name_parts.spellings() == table_identifier.getParts())
+        {
+            const auto & parts = table_identifier_ast->name_parts;
+            if (parts.size() == 2)
+            {
+                storage_id.database_name_quote = parts[0].quote;
+                storage_id.table_name_quote = parts[1].quote;
+            }
+            else
+            {
+                storage_id.table_name_quote = parts[0].quote;
+            }
+        }
+    }
+
     storage_id = context->resolveStorageID(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
@@ -373,9 +406,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     return result;
 }
 
-IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
+IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context, const ASTPtr & original_ast)
 {
-    if (auto result = tryResolveTableIdentifier(table_identifier, context))
+    if (auto result = tryResolveTableIdentifier(table_identifier, context, original_ast))
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
 
     return {};

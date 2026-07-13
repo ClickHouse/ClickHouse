@@ -69,7 +69,7 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
     if (!parser.parse(pos, res, expected))
         throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse itable identifier ({})", str);
 
-    return Identifier(std::move(res->as<ASTIdentifier>()->name_parts));
+    return Identifier(res->as<ASTIdentifier>()->name_parts.spellings());
 }
 
 std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context);

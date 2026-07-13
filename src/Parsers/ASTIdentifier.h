@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/IdentifierName.h>
 #include <Core/UUID.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTQueryParameter.h>
@@ -16,6 +17,9 @@ struct StorageID;
 
 class ASTTableIdentifier;
 
+/// Quote style of a single-part identifier AST; Unquoted when the node is absent or not an identifier.
+IdentifierPartQuote identifierPartQuoteFromAST(const ASTPtr & node);
+
 /// FIXME: rewrite code about params - they should be substituted at the parsing stage,
 ///        or parsed as a separate AST entity.
 
@@ -25,6 +29,7 @@ class ASTIdentifier : public ASTWithAlias
 public:
     explicit ASTIdentifier(const String & short_name, ASTPtr && name_param = {});
     explicit ASTIdentifier(std::vector<String> && name_parts, bool special = false, ASTs && name_params = {});
+    explicit ASTIdentifier(IdentifierName name_parts_, bool special = false, ASTs && name_params = {});
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name()); }
@@ -46,7 +51,7 @@ public:
 
     /// The composite identifier will have a concatenated name (of the form a.b.c),
     /// and individual components will be available inside the name_parts.
-    const String & shortName() const { return name_parts.back(); }
+    const String & shortName() const { return name_parts.back().spelling; }
     const String & name() const;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_alias) const override;
@@ -55,7 +60,7 @@ public:
     boost::intrusive_ptr<ASTTableIdentifier> createTable() const;  // returns |nullptr| if identifier is not table.
 
     String full_name;
-    std::vector<String> name_parts;
+    IdentifierName name_parts;
 
 protected:
     std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
@@ -79,6 +84,7 @@ class ASTTableIdentifier : public ASTIdentifier
 public:
     explicit ASTTableIdentifier(const String & table_name, ASTs && name_params = {});
     explicit ASTTableIdentifier(const StorageID & table_id, ASTs && name_params = {});
+    explicit ASTTableIdentifier(IdentifierName name_parts_, ASTs && name_params = {});
     ASTTableIdentifier(const String & database_name, const String & table_name, ASTs && name_params = {});
 
     String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }

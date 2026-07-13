@@ -276,11 +276,11 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
     auto & name_parts = ast_identifier->name_parts;
     for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
     {
-        if (name_parts[i].empty())
+        if (name_parts[i].spelling.empty())
         {
             const auto & ast_param = ast_identifier->children[j++]->as<ASTQueryParameter &>();
-            name_parts[i] = getParamValue(ast_param.name);
-            if (name_parts[i].empty())
+            name_parts[i].spelling = getParamValue(ast_param.name);
+            if (name_parts[i].spelling.empty())
                 throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "Empty Identifier part after parameter {} substitution",
                     backQuote(ast_param.name));
             replaced_parameter = true;
@@ -293,7 +293,7 @@ void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)
 
     /// FIXME: what should this mean?
     if (!ast_identifier->semantic->special && name_parts.size() >= 2)
-        ast_identifier->semantic->table = ast_identifier->name_parts.end()[-2];
+        ast_identifier->semantic->table = ast_identifier->name_parts.end()[-2].spelling;
 
     ast_identifier->resetFullName();
     ast_identifier->children.clear();

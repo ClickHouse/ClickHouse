@@ -35,9 +35,9 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
     alias = identifier.tryGetAlias();
 
     if (identifier.name_parts.size() == 2)
-        std::tie(database, table) = std::tie(identifier.name_parts[0], identifier.name_parts[1]);
+        std::tie(database, table) = std::tie(identifier.name_parts[0].spelling, identifier.name_parts[1].spelling);
     else if (identifier.name_parts.size() == 1)
-        table = identifier.name_parts[0];
+        table = identifier.name_parts[0].spelling;
     else
         throw Exception(ErrorCodes::INVALID_IDENTIFIER, "Invalid identifier {}", backQuote(identifier.name()));
 

@@ -666,12 +666,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
     if (const auto * ast_identifier = expression->as<ASTIdentifier>())
     {
-        auto identifier = Identifier(ast_identifier->name_parts);
+        auto identifier = Identifier(ast_identifier->name_parts.spellings());
         result = std::make_shared<IdentifierNode>(std::move(identifier));
     }
     else if (const auto * table_identifier = expression->as<ASTTableIdentifier>())
     {
-        auto identifier = Identifier(table_identifier->name_parts);
+        auto identifier = Identifier(table_identifier->name_parts.spellings());
         result = std::make_shared<IdentifierNode>(std::move(identifier));
     }
     else if (const auto * asterisk = expression->as<ASTAsterisk>())
@@ -683,7 +683,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     {
         auto & qualified_identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
         auto column_transformers = buildColumnTransformers(qualified_asterisk->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_transformers));
+        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts.spellings()), std::move(column_transformers));
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
@@ -721,7 +721,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                             function->formatForErrorMessage(),
                             lambda_argument_identifier->full_name);
 
-                    const auto & argument_name = lambda_argument_identifier->name_parts[0];
+                    const auto & argument_name = lambda_argument_identifier->name_parts[0].spelling;
                     auto [_, inserted] = lambda_arguments_set.insert(argument_name);
                     if (!inserted)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -816,7 +816,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         for (auto & column_list_child : columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
-            column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
+            column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts.spellings()});
         }
 
         auto column_transformers = buildColumnTransformers(columns_list_matcher->transformers, context);
@@ -826,7 +826,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     {
         auto & qualified_identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
         auto column_transformers = buildColumnTransformers(qualified_columns_regexp_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
+        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts.spellings()), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
     }
     else if (const auto * qualified_columns_list_matcher = expression->as<ASTQualifiedColumnsListMatcher>())
     {
@@ -838,11 +838,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         for (auto & column_list_child : qualified_columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
-            column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
+            column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts.spellings()});
         }
 
         auto column_transformers = buildColumnTransformers(qualified_columns_list_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_list_identifiers), std::move(column_transformers));
+        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts.spellings()), std::move(column_list_identifiers), std::move(column_transformers));
     }
     else if (const auto * query_parameter = expression->as<ASTQueryParameter>())
     {
@@ -991,7 +991,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             if (table_expression.database_and_table_name)
             {
                 auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
-                auto storage_identifier = Identifier(table_identifier_typed.name_parts);
+                auto storage_identifier = Identifier(table_identifier_typed.name_parts.spellings());
                 QueryTreeNodePtr table_identifier_node;
 
                 if (table_expression_modifiers)

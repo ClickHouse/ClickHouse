@@ -1,4 +1,5 @@
 #include <Databases/DatabaseOverlay.h>
+#include <set>
 
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -40,6 +41,34 @@ bool DatabaseOverlay::isTableExist(const String & table_name, ContextPtr context
             return true;
     }
     return false;
+}
+
+FoldedNameIndex::ResolutionResult DatabaseOverlay::resolveTableName(const IdentifierPart & name, ContextPtr context_) const
+{
+    /// Merge the children's resolutions; the same canonical name in several children is one
+    /// object for our purposes (the earlier child shadows the later, as in tryGetTable).
+    std::set<String> canonical_names;
+    for (const auto & db : databases)
+    {
+        auto child = db->resolveTableName(name, context_);
+        if (child.outcome == FoldedNameIndex::Outcome::Matched)
+            canonical_names.insert(child.canonical);
+        else if (child.outcome == FoldedNameIndex::Outcome::Ambiguous)
+            canonical_names.insert(child.candidates.begin(), child.candidates.end());
+    }
+
+    FoldedNameIndex::ResolutionResult result;
+    if (canonical_names.empty())
+        return result;
+    if (canonical_names.size() == 1)
+    {
+        result.outcome = FoldedNameIndex::Outcome::Matched;
+        result.canonical = *canonical_names.begin();
+        return result;
+    }
+    result.outcome = FoldedNameIndex::Outcome::Ambiguous;
+    result.candidates.assign(canonical_names.begin(), canonical_names.end());
+    return result;
 }
 
 StoragePtr DatabaseOverlay::tryGetTable(const String & table_name, ContextPtr context_) const
