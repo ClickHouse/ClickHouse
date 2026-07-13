@@ -93,6 +93,22 @@ size_t AggregatedDataVariants::size() const
     }
 }
 
+bool AggregatedDataVariants::topKHeapEverRejected() const
+{
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            return false;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            return (NAME)->top_k_heap.everRejected();
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+}
+
 size_t AggregatedDataVariants::sizeWithoutOverflowRow() const
 {
     switch (type)

@@ -313,6 +313,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// Number of rows (different keys).
     size_t size() const;
     size_t sizeWithoutOverflowRow() const;
+    /// Whether the top-K heap ever skipped a row or evicted a key; false when
+    /// the heap never ran.  See `TopKAggregationHeap::everRejected`.
+    bool topKHeapEverRejected() const;
     const char * getMethodName() const;
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;

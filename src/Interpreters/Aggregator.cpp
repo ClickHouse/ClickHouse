@@ -148,6 +148,18 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     if (!params.isCollectionAndUseEnabled())
         return;
 
+    /// A top-K heap that skipped rows or evicted keys pruned the hash tables,
+    /// so their sizes are far below the query's true group counts - recording
+    /// them would poison the size hint for later runs of the same query
+    /// without the optimization.  A heap that never rejected anything left
+    /// exactly the groups a plain aggregation would have produced, so those
+    /// sizes are true and worth recording: the next top-K run reads them in
+    /// the `Aggregator` constructor and disables the heap up front when the
+    /// cardinality cannot reach the limit.
+    for (const auto & variants : data_variants)
+        if (variants->topKHeapEverRejected())
+            return;
+
     std::vector<size_t> sizes(data_variants.size());
     for (size_t i = 0; i < data_variants.size(); ++i)
         sizes[i] = data_variants[i]->size();
@@ -747,6 +759,26 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     #undef M
         default:
             ;
+    }
+
+    /// The top-K heap only pays off when it can reject rows, which needs more
+    /// groups than the limit.  When the size-hint statistics from a previous
+    /// run of this query say the cardinality cannot reach the heap's capacity,
+    /// skip the heap entirely.  `sum_of_sizes` counts a key once per thread
+    /// that saw it, so it only over-estimates the group count of the run that
+    /// recorded it.  The hint is recorded by runs whose heap never rejected
+    /// anything, or by runs without the optimization - see `updateStatistics`.
+    /// The plan-hash key ignores literal constants, so same-shaped queries
+    /// over different data can share an entry; a mis-gated run is
+    /// self-correcting, since it executes as plain aggregation and records the
+    /// true sizes, un-gating the next run.
+    if (params.top_k && params.stats_collecting_params.isCollectionAndUseEnabled())
+    {
+        if (const auto hint = DB::getHashTablesStatistics<DB::AggregationEntry>().getSizeHint(params.stats_collecting_params);
+            hint
+            && static_cast<Float64>(hint->sum_of_sizes)
+                <= static_cast<Float64>(params.top_k->keys) * params.top_k->load_factor)
+            params.top_k.reset();
     }
 
     HashMethodContext::Settings cache_settings;
