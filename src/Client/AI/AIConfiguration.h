@@ -36,8 +36,10 @@ struct AIConfiguration
     /// Custom system prompt (optional)
     std::string system_prompt;
 
-    /// Maximum steps for multi-step tool calling
-    size_t max_steps = 5;
+    /// Maximum steps for multi-step tool calling. The model's final answer also takes
+    /// a step: exploring the schema of a few tables can easily take five steps, and when
+    /// the limit is reached before the model produced its answer, no query is generated.
+    size_t max_steps = 10;
 
     /// Enable schema access - allows AI to query database/table information
     bool enable_schema_access = true;

@@ -4,6 +4,7 @@
 #include <Client/AI/AIToolExecutionDisplay.h>
 #include <base/terminalColors.h>
 #include <Common/Exception.h>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -90,9 +91,21 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
         {
             display.showProgress("✨ SQL query generated successfully!");
         }
+        else if (result.finish_reason == ai::kFinishReasonToolCalls)
+        {
+            /// The generation ended by exhausting `max_steps` while the model was still
+            /// calling schema exploration tools, before it produced its final answer.
+            display.showProgress(fmt::format(
+                "⚠️  No SQL query was generated: the schema exploration step limit was reached (ai.max_steps = {})",
+                config.max_steps));
+        }
         else
         {
             display.showProgress("⚠️  No SQL query was generated");
+            /// The model replied with prose instead of a query (e.g. an explanation of
+            /// why it cannot be answered) - show it to the user.
+            if (!result.text.empty())
+                output_stream << result.text << std::endl;
         }
 
         return sql;
@@ -131,18 +144,23 @@ std::string AISQLGenerator::buildCompletePrompt(const std::string & user_prompt)
 
 std::string AISQLGenerator::cleanSQL(const std::string & sql)
 {
-    std::string cleaned = sql;
+    /// The model is instructed to wrap the final query in `<sql>` tags, and in a
+    /// multi-step generation the SDK concatenates the text of all steps, so the text
+    /// can contain explanatory prose before the query. Extract the last tagged block -
+    /// it is the one produced by the final step. No tags means no query was generated:
+    /// return an empty string rather than mistaking the prose for SQL.
+    static constexpr std::string_view open_tag = "<sql>";
+    static constexpr std::string_view close_tag = "</sql>";
 
-    // Extract SQL from <sql> tags
-    size_t start_tag = cleaned.find("<sql>");
-    size_t end_tag = cleaned.find("</sql>");
+    const size_t end_tag = sql.rfind(close_tag);
+    if (end_tag == std::string::npos)
+        return {};
+    const size_t start_tag = sql.rfind(open_tag, end_tag);
+    if (start_tag == std::string::npos)
+        return {};
 
-    if (start_tag != std::string::npos && end_tag != std::string::npos)
-    {
-        // Extract content between tags
-        start_tag += 5; // Length of "<sql>"
-        cleaned = cleaned.substr(start_tag, end_tag - start_tag);
-    }
+    const size_t query_begin = start_tag + open_tag.size();
+    std::string cleaned = sql.substr(query_begin, end_tag - query_begin);
 
     // Trim whitespace
     cleaned.erase(0, cleaned.find_first_not_of(" \n\r\t"));
