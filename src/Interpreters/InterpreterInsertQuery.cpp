@@ -1064,6 +1064,14 @@ BlockIO InterpreterInsertQuery::execute()
     const auto & http_header_columns = context->getHTTPHeaderColumns();
     if (!http_header_columns.empty())
     {
+        /// http_column_* is only supported for pure FORMAT inserts.
+        /// INSERT ... SELECT already has getClientHTTPHeader for reading headers.
+        if (query.select)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "http_column_* URL parameters are not supported with INSERT ... SELECT. "
+                "Use getClientHTTPHeader() in the SELECT clause instead");
+
         const auto & table_columns = metadata_snapshot->getColumns();
         if (!query.columns)
             query.columns = make_intrusive<ASTExpressionList>();

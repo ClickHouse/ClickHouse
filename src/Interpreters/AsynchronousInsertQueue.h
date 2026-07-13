@@ -98,6 +98,10 @@ public:
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
+        /// Column names injected from HTTP headers via http_column_* URL params.
+        /// Part of the batching key so that requests with header-mapped columns
+        /// are never coalesced with requests that provide those columns in the body.
+        Names http_header_column_names;
         UInt128 hash{};
 
         InsertQuery(
@@ -108,7 +112,8 @@ public:
             const String & initial_user_,
             const String & authenticated_user_,
             const Settings & settings_,
-            AsynchronousInsertQueueDataKind data_kind_);
+            AsynchronousInsertQueueDataKind data_kind_,
+            Names http_header_column_names_ = {});
 
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
@@ -116,7 +121,7 @@ public:
         StorageID getStorageID() const;
 
     private:
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes, http_header_column_names); }
 
         std::vector<SettingChange> setting_changes;
     };
@@ -171,7 +176,10 @@ private:
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
-            NameToNameMap http_header_columns;  /// column_name -> header_value, from http_column_* URL params
+            /// Pre-parsed single-row columns from http_column_* URL params.
+            /// Parsed at push time so type errors surface immediately to the client.
+            /// At flush time the values are just replicated for each entry's row count.
+            std::vector<std::pair<String, ColumnPtr>> parsed_http_header_columns;
 
             Entry(
                 DataChunk && chunk_,

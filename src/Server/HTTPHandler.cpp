@@ -306,9 +306,10 @@ void HTTPHandler::processQuery(
 
     /// Parse http_column_* params: map HTTP request header values to INSERT columns.
     /// URL param format: http_column_<Header-Name>=<column_name>
-    /// The header value is resolved from the current request and stored on the context
-    /// so that both sync and async INSERT paths can inject it as column data.
+    /// Values are sourced from ClientInfo::http_headers (populated by authenticateUserByHTTP),
+    /// which already filters out sensitive headers (Authorization, X-ClickHouse-*).
     {
+        const auto & http_headers = context->getClientInfo().http_headers;
         NameToNameMap http_header_columns;
         for (const auto & [key, value] : params)
         {
@@ -316,7 +317,8 @@ void HTTPHandler::processQuery(
             {
                 String header_name(key.substr(HTTP_COLUMN_PREFIX.size()));
                 String column_name = value;
-                String header_value = request.get(header_name, "");
+                auto it = http_headers.find(header_name);
+                String header_value = (it != http_headers.end()) ? it->second : "";
                 http_header_columns.emplace(column_name, header_value);
             }
         }

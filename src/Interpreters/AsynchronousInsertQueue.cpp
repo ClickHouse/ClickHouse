@@ -123,7 +123,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const String & initial_user_,
     const String & authenticated_user_,
     const Settings & settings_,
-    AsynchronousInsertQueueDataKind data_kind_)
+    AsynchronousInsertQueueDataKind data_kind_,
+    Names http_header_column_names_)
     : query(query_->clone())
     , query_str(query->formatWithSecretsOneLine())
     , user_id(user_id_)
@@ -133,6 +134,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , authenticated_user(authenticated_user_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
+    , http_header_column_names(std::move(http_header_column_names_))
 {
     SipHash siphash;
 
@@ -171,6 +173,12 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         }
     }
 
+    for (const auto & col_name : http_header_column_names)
+    {
+        siphash.update(col_name.size());
+        siphash.update(col_name);
+    }
+
     hash = siphash.get128();
 }
 
@@ -185,6 +193,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     authenticated_user = other.authenticated_user;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
+    http_header_column_names = other.http_header_column_names;
     hash = other.hash;
     setting_changes = other.setting_changes;
 }
@@ -203,6 +212,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         authenticated_user = other.authenticated_user;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
+        http_header_column_names = other.http_header_column_names;
         hash = other.hash;
         setting_changes = other.setting_changes;
     }
@@ -576,8 +586,27 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     if (insert_query.format == "Values")
         entry->query_parameters = query_context->getQueryParameters();
 
-    /// Store HTTP header-to-column mappings per entry for injection at flush time.
-    entry->http_header_columns = query_context->getHTTPHeaderColumns();
+    /// Parse HTTP header values into typed columns at push time.
+    /// Errors (e.g. "not-a-number" for UInt64) surface immediately to the client.
+    const auto & http_header_columns = query_context->getHTTPHeaderColumns();
+    Names http_col_names;
+    if (!http_header_columns.empty())
+    {
+        auto table = DatabaseCatalog::instance().getTable(insert_query.table_id, query_context);
+        auto metadata = table->getInMemoryMetadataPtr(query_context, false);
+        FormatSettings format_settings;
+        http_col_names.reserve(http_header_columns.size());
+        for (const auto & [col_name, str_value] : http_header_columns)
+        {
+            const auto & col_type = metadata->getColumns().get(col_name).type;
+            auto parsed = col_type->createColumn();
+            ReadBufferFromString buf(str_value);
+            col_type->getDefaultSerialization()->deserializeWholeText(*parsed, buf, format_settings);
+            entry->parsed_http_header_columns.emplace_back(col_name, std::move(parsed));
+            http_col_names.push_back(col_name);
+        }
+        std::sort(http_col_names.begin(), http_col_names.end());
+    }
 
     const auto & client_info = query_context->getClientInfo();
     InsertQuery key{
@@ -588,7 +617,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         client_info.initial_user,
         client_info.authenticated_user,
         settings,
-        data_kind};
+        data_kind,
+        std::move(http_col_names)};
     InsertDataPtr data_to_process;
     std::future<ResultProgress> progress_future;
 
@@ -1364,14 +1394,33 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
 
-    /// Track per-entry row counts for http_header_column injection.
-    struct EntryRowInfo
+    /// Build a lookup: header column name → position in entry's parsed_http_header_columns
+    /// and column index in the pipeline header. Built once before the entry loop.
+    struct InjectedColumnInfo
     {
-        size_t num_rows;
-        const NameToNameMap * http_header_columns;
+        size_t header_col_idx;   /// Position in the pipeline header / result_columns.
+        size_t entry_parsed_idx; /// Position in entry->parsed_http_header_columns.
+        DataTypePtr type;
     };
-    std::vector<EntryRowInfo> entry_row_infos;
-    bool has_http_header_columns = false;
+    std::vector<InjectedColumnInfo> injected_column_infos;
+    if (!data->entries.empty() && !data->entries.front()->parsed_http_header_columns.empty())
+    {
+        /// Map column names from the first entry's parsed columns to header positions.
+        /// All entries share the same column name set (enforced by the batching key).
+        const auto & first_parsed = data->entries.front()->parsed_http_header_columns;
+        for (size_t parsed_idx = 0; parsed_idx < first_parsed.size(); ++parsed_idx)
+        {
+            const auto & col_name = first_parsed[parsed_idx].first;
+            if (header.has(col_name))
+            {
+                size_t header_idx = header.getPositionByName(col_name);
+                injected_column_infos.push_back({header_idx, parsed_idx, header.getByPosition(header_idx).type});
+            }
+        }
+    }
+
+    /// Track per-entry row counts for column replication after the loop.
+    std::vector<size_t> entry_num_rows;
 
     for (const auto & entry : data->entries)
     {
@@ -1389,16 +1438,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         size_t num_rows = executor.execute(*buffer, num_bytes);
 
         total_rows += num_rows;
-
-        if (!entry->http_header_columns.empty())
-        {
-            has_http_header_columns = true;
-            entry_row_infos.push_back({num_rows, &entry->http_header_columns});
-        }
-        else
-        {
-            entry_row_infos.push_back({num_rows, nullptr});
-        }
+        entry_num_rows.push_back(num_rows);
 
         /// it is ok if total_rows is 0 here or async_dedup_token is empty
         deduplication_info->setUserToken(entry->async_dedup_token, num_rows);
@@ -1413,55 +1453,22 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     auto result_columns = executor.getResultColumns();
 
     /// Overwrite columns that were mapped from HTTP headers (http_column_* URL params).
-    /// The format + AddingDefaultsTransform filled these with defaults; replace them
-    /// with the actual per-entry header values so each row carries its request's headers.
-    if (has_http_header_columns)
+    /// Values were pre-parsed at push time, so just replicate per-entry.
+    if (!injected_column_infos.empty())
     {
-        for (size_t col_idx = 0; col_idx < header.columns(); ++col_idx)
+        for (const auto & info : injected_column_infos)
         {
-            const auto & col_name = header.getByPosition(col_idx).name;
-
-            /// Check if any entry has this column in its http_header_columns.
-            /// All entries that use http_column_* share the same column names
-            /// (the URL pattern is the same), so checking the first non-null suffices.
-            bool is_injected = false;
-            for (const auto & info : entry_row_infos)
-            {
-                if (info.http_header_columns && info.http_header_columns->contains(col_name))
-                {
-                    is_injected = true;
-                    break;
-                }
-            }
-            if (!is_injected)
-                continue;
-
-            /// Build a replacement column with per-entry header values.
-            /// Deserialize each value through the column type's text serialization
-            /// so that non-String types (UInt64, Array, etc.) are parsed correctly.
-            const auto & col_type = header.getByPosition(col_idx).type;
-            const auto & serialization = col_type->getDefaultSerialization();
-            auto new_col = col_type->createColumn();
+            auto new_col = info.type->createColumn();
             new_col->reserve(total_rows);
-            for (const auto & info : entry_row_infos)
+            size_t entry_idx = 0;
+            for (const auto & entry : data->entries)
             {
-                String value;
-                if (info.http_header_columns)
-                {
-                    auto it = info.http_header_columns->find(col_name);
-                    if (it != info.http_header_columns->end())
-                        value = it->second;
-                }
-                /// Parse the string value into the target column type.
-                MutableColumnPtr parsed = col_type->createColumn();
-                ReadBufferFromString buf(value);
-                FormatSettings format_settings;
-                serialization->deserializeWholeText(*parsed, buf, format_settings);
-
-                for (size_t row = 0; row < info.num_rows; ++row)
-                    new_col->insertFrom(*parsed, 0);
+                const auto & parsed_col = entry->parsed_http_header_columns[info.entry_parsed_idx].second;
+                size_t num_rows = entry_num_rows[entry_idx++];
+                for (size_t row = 0; row < num_rows; ++row)
+                    new_col->insertFrom(*parsed_col, 0);
             }
-            result_columns[col_idx] = std::move(new_col);
+            result_columns[info.header_col_idx] = std::move(new_col);
         }
     }
 
