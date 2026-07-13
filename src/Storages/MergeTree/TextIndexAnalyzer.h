@@ -12,6 +12,19 @@ namespace DB
 class TextIndexAnalyzer
 {
 public:
+    struct ReadableRows
+    {
+    public:
+        explicit ReadableRows(std::vector<RowsRange> ranges_);
+        std::optional<RowsRange> clipRowsRange(const RowsRange & rows_range) const;
+        PostingList clipPostings(const PostingList & postings);
+        size_t getSizeInBytes() const;
+
+    private:
+        std::vector<RowsRange> ranges;
+        PostingList ranges_bitmap;
+    };
+
     /// Per-query mutable analysis state. Updated as the dictionary scan delivers
     /// token info, missing-token notifications, and materialized posting lists.
     struct QueryBuilder
@@ -31,13 +44,15 @@ public:
         bool is_bypassed = false;
         /// Number of tokens whose posting list has already been folded into `postings`.
         size_t num_read_postings = 0;
+        /// Declared tokens (`query->tokens`) that may still contribute to an `Any` query.
+        size_t num_live_tokens = 0;
 
         void markFailed();
         void markBypassed();
-        void addMissingToken();
-        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
+        void addMissingToken(std::string_view token);
+        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info, RowsRange token_rows_range);
         void addRowsRange(RowsRange token_rows_range);
-        void addPostings(PostingListPtr token_postings);
+        void addPostings(const PostingList & token_postings);
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
     };
 
@@ -57,6 +72,8 @@ public:
     void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
     void addPostings(std::string_view token, PostingListPtr postings);
 
+    /// Pushes the row ranges still readable after the analysis of the primary key and prior skip indexes.
+    void setReadableRows(std::vector<RowsRange> readable_ranges);
     /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
@@ -98,6 +115,8 @@ private:
     absl::flat_hash_set<String> missing_tokens;
     /// Tokens whose posting list has been added (embedded or read from disk).
     absl::flat_hash_set<String> tokens_with_postings;
+    /// Row ranges still readable after the analysis of the primary key and prior skip indexes.
+    std::optional<ReadableRows> readable_rows;
 };
 
 }

@@ -2,6 +2,7 @@
 
 #include <ranges>
 #include <IO/copyData.h>
+#include <fmt/ranges.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
@@ -395,6 +396,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_policies", [&](const JSONObjectType & value) { max_policies = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_hypotheticals", [&](const JSONObjectType & value) { max_hypotheticals = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_dictionaries", [&](const JSONObjectType & value) { max_dictionaries = static_cast<uint32_t>(value.getUInt64()); }},
@@ -672,7 +674,7 @@ ORDER BY f.name)sql";
 
     String buf;
     static const std::unordered_set<String> nulls_clause_funcs = {"any", "anyLast", "first_value", "last_value"};
-    static const std::unordered_set<String> common_func_names = {"arrayJoin", "if", "materialize", "toNullable", "toLowCardinality"};
+    static const std::unordered_set<String> common_func_names = {"if", "materialize", "toNullable", "toLowCardinality"};
     static const std::unordered_set<String> two_arg_aggrs
         = {"analysisOfVariance",
            "approx_top_count",
@@ -814,7 +816,6 @@ ORDER BY f.name)sql";
             else
             {
                 CHFunction func(name, lambda_kind, min_args, max_args);
-                /// arrayJoin may not be deterministic
                 if (common_func_names.contains(name))
                     common_funcs.push_back(func);
                 if (is_deterministic)
@@ -889,6 +890,12 @@ ORDER BY f.name)sql";
 void FuzzConfig::loadServerConfigurations()
 {
     loadServerSettings<String>(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
+    loadServerSettings<String>(this->in_formats, "input formats", R"(SELECT "name" FROM "system"."formats" WHERE "is_input" = 1)");
+    loadServerSettings<String>(this->out_formats, "output formats", R"(SELECT "name" FROM "system"."formats" WHERE "is_output" = 1)");
+    loadServerSettings<String>(
+        this->in_out_formats,
+        "input and output formats",
+        R"(SELECT "name" FROM "system"."formats" WHERE "is_input" = 1 AND "is_output" = 1)");
     loadServerSettings<String>(
         this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
     loadServerSettings<String>(
@@ -923,15 +930,37 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
-    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion - The server aborts legitimately, can't be used
+    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion, trigger_sanitizer_error - The server aborts legitimately, can't be used
     /// terminate_with_exception, terminate_with_std_exception - Terminates the server
+    /// tcp_handler_fail_connection_setup - Fails every new TCP connection setup, so once enabled the fuzzer can neither
+    ///     reconnect nor disable it again over its TCP connection (it would deadlock; the test controls it over HTTP)
     loadServerSettings<String>(
         this->failpoints,
         "failpoints",
         "SELECT \"name\" FROM \"system\".\"fail_points\""
         " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
-        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
+        "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
+        "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup')");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
+    /// Probe which function_implementation values the server supports. They depend on how the binary
+    /// was compiled and on the host CPU (e.g. no x86-64 tag is available on aarch64 builds), and an
+    /// unsupported value raises NO_SUITABLE_FUNCTION_IMPLEMENTATION, so test each candidate. Only
+    /// default, x86-64-v3 and x86-64-v4 implementations are registered in the server's source.
+    this->function_implementations.clear();
+    for (const auto & entry : {"default", "x86-64-v3", "x86-64-v4"})
+    {
+        if (processServerQuery(
+                false, fmt::format("SELECT ignore(sipHash64(materialize(1))) SETTINGS function_implementation = '{}' FORMAT Null;", entry)))
+        {
+            this->function_implementations.emplace_back(entry);
+        }
+    }
+    LOG_INFO(
+        log,
+        "Found {} entries for function implementations{}{}",
+        this->function_implementations.size(),
+        this->function_implementations.empty() ? "" : ": ",
+        fmt::join(this->function_implementations, ", "));
     loadFunctions();
 }
 
@@ -1211,6 +1240,16 @@ String FuzzConfig::tableGetRandomProjection(const uint64_t rand_val, const Strin
     return tableGetRandomSystemName(rand_val, "projections", database, table);
 }
 
+uint32_t FuzzConfig::tableCountConstraints(const String & database, const String & table)
+{
+    return tableCountSystemRows("constraints", database, table);
+}
+
+String FuzzConfig::tableGetRandomConstraint(const uint64_t rand_val, const String & database, const String & table)
+{
+    return tableGetRandomSystemName(rand_val, "constraints", database, table);
+}
+
 void FuzzConfig::validateClickHouseHealth()
 {
     if (processServerQuery(
@@ -1229,8 +1268,9 @@ void FuzzConfig::validateClickHouseHealth()
                 " countIf(message ILIKE concat('%','REPLICA','_ALREADY','_EXISTS','%')),"
                 " countIf(message ILIKE concat('%','LOGICAL','_ERROR','%')),"
                 " countIf(message ILIKE concat('%','CORRUPTED','_DATA','%')),"
-                " countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%'))],"
-                "[toUInt64(3),toUInt64(8),toUInt64(10),toUInt64(11),toUInt64(12)])) AS t"
+                " countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%')),"
+                " countIf(message ILIKE concat('%','DATA','_AFTER','_MERGE','_DIFF','_FROM','_EXPECTED','%'))],"
+                "[toUInt64(3),toUInt64(8),toUInt64(10),toUInt64(11),toUInt64(12),toUInt64(13)])) AS t"
                 " FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60)) tlog)"
                 " UNION ALL "
                 "(SELECT count() x, 4 y FROM clusterAllReplicas(default, \"system\".\"clusters\")"
@@ -1245,6 +1285,9 @@ void FuzzConfig::validateClickHouseHealth()
                 " WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)"
                 " UNION ALL "
                 "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE \"last_exception\" != '')"
+                " UNION ALL "
+                "(SELECT count() x, 14 y FROM \"system\".\"replication_queue\""
+                " WHERE \"last_exception\" != '' AND \"num_tries\" > 5)"
                 ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
                 "TabSeparated;",
                 fuzzer_out_file.generic_string())))
@@ -1264,7 +1307,9 @@ void FuzzConfig::validateClickHouseHealth()
                "replication queue exception(s)",
                "LOGICAL_ERROR(s) in text_log",
                "CORRUPTED_DATA(s) in text_log",
-               "CHECKSUM_DOESNT_MATCH error(s) in text_log"};
+               "CHECKSUM_DOESNT_MATCH error(s) in text_log",
+               "DATA_AFTER_MERGE_DIFF_FROM_EXPECTED error(s) in text_log",
+               "stuck replication queue task(s) (>5 retries)"};
         static const DB::Strings detail_queries = {
             R"(SELECT "database", "table", "name" FROM "system"."detached_parts" WHERE startsWith("name", 'broken') LIMIT 3)",
             R"(SELECT "database", "table", "lost_part_count" FROM "system"."replicas" WHERE "lost_part_count" > 0 LIMIT 3)",
@@ -1277,7 +1322,9 @@ void FuzzConfig::validateClickHouseHealth()
             R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE "last_exception" != '' LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)"};
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'DATA', '_AFTER', '_MERGE', '_DIFF', '_FROM', '_EXPECTED', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "database", "table", "type", "last_exception", "num_tries" FROM "system"."replication_queue" WHERE "last_exception" != '' AND "num_tries" > 5 ORDER BY "num_tries" DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {

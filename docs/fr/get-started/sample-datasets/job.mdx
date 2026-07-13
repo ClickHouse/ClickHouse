@@ -1,0 +1,130 @@
+---
+description: 'Jeu de données et requêtes du Join Order Benchmark (JOB).'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['example dataset', 'job', 'join order benchmark', 'benchmark', 'performance testing', 'query optimizer', 'join ordering']
+---
+
+Le Join Order Benchmark (JOB) met à rude épreuve l’optimiseur de requêtes avec 113 requêtes analytiques sur un jeu de données réel fortement corrélé (un instantané d’IMDb). Depuis son introduction, le benchmark JOB est devenu la norme de facto pour évaluer les performances des optimiseurs de requêtes des SGBD relationnels, notamment pour l’estimation de cardinalité et l’optimisation de l’ordre des jointures. Contrairement aux benchmarks synthétiques qui supposent des données uniformes et indépendantes, JOB utilise des données réelles avec une distribution asymétrique et des corrélations, ce qui en fait un test exigeant pour l’ordre des jointures et l’estimation de cardinalité.
+
+Le jeu de données contient environ 74 millions de lignes réparties sur 21 tables et occupe environ 1,15 GiB une fois compressé dans ClickHouse.
+
+Les 113 requêtes sont organisées en 33 familles (`1`–`33`). Les requêtes d’une même famille (`a`, `b`, `c`, ...) partagent le même graphe de jointure, mais diffèrent par leurs prédicats de sélection.
+
+**Références**
+
+* [How Good Are Query Optimizers, Really?](https://www.vldb.org/pvldb/vol9/p204-leis.pdf) (Leis et al., VLDB 2015)
+* Dépôt [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark)
+
+<div id="creating-tables">
+  ## Création des tables
+</div>
+
+Le jeu de données JOB est un instantané d’IMDb comprenant 21 tables. Les définitions des tables sont disponibles dans [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) du dépôt ClickHouse.
+
+Chaque table utilise le moteur [`MergeTree`](/engines/table-engines/mergetree-family/mergetree), avec un tri sur sa colonne de clé primaire `id`, en miroir du schéma PostgreSQL d’origine dans lequel chaque table déclare `id integer NOT NULL PRIMARY KEY`. Les colonnes PostgreSQL pouvant contenir des valeurs NULL sont mappées sur des types `Nullable(...)`.
+
+Créez les tables :
+
+```bash
+curl -O https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/tests/benchmarks/job/init_cloud.sql
+clickhouse client --query "CREATE DATABASE IF NOT EXISTS job"
+clickhouse client --database job --queries-file init_cloud.sql
+```
+
+<div id="loading-the-data">
+  ## Chargement des données
+</div>
+
+Les données proviennent de l’instantané IMDb d’origine utilisé par JOB, distribué sous la forme d’un fichier CSV par table (`aka_name.csv`, `title.csv`, ...).
+Ces fichiers CSV utilisent la sémantique `COPY` de PostgreSQL avec `ESCAPE '\'` : un backslash n’échappe le caractère de guillemet qu’à l’intérieur d’un champ entre guillemets, tandis qu’en dehors des guillemets, un backslash est un caractère littéral.
+ClickHouse attend des CSV conformes à la RFC 4180 (guillemets doublés, sans échappement par backslash), les fichiers doivent donc d’abord être réencodés.
+
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) effectue ce réencodage.
+Il lit le CSV d’origine sur stdin et écrit un CSV standard sur stdout, en doublant les guillemets internes et en conservant les champs vides non entre guillemets (que ClickHouse associe à `NULL` pour les colonnes `Nullable`).
+
+Pour créer les tables à partir des CSV d’origine :
+
+* Créez les tables (voir ci-dessus).
+* Téléchargez le jeu de données IMDb sous la forme d’un fichier `imdb.tgz`, en suivant les instructions du dépôt Join Order Benchmark.
+* Convertissez et importez les données :
+
+```bash
+set -euo pipefail
+
+for table in aka_name aka_title cast_info char_name comp_cast_type company_name \
+             company_type complete_cast info_type keyword kind_type link_type \
+             movie_companies movie_info movie_info_idx movie_keyword movie_link \
+             name person_info role_type title; do
+    echo "Loading ${table} ..."
+    python3 convert_csv.py < "${table}.csv" > "${table}.clean.csv"
+    clickhouse client --database job --query "INSERT INTO ${table} FORMAT CSV" < "${table}.clean.csv"
+done
+```
+
+Une fois les tables alimentées, elles peuvent être exportées au format Parquet pour être réimportées plus rapidement par la suite, par exemple.
+`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+
+Tailles détaillées des tables :
+
+| Table                  | taille (en lignes) | taille (compressée dans ClickHouse) |
+| ---------------------- | ------------------ | ----------------------------------- |
+| aka&#95;name           | 901,343            | 31.86 MiB                           |
+| aka&#95;title          | 361,472            | 14.32 MiB                           |
+| cast&#95;info          | 36,244,344         | 296.25 MiB                          |
+| char&#95;name          | 3,140,339          | 107.95 MiB                          |
+| comp&#95;cast&#95;type | 4                  | 132.00 B                            |
+| company&#95;name       | 234,997            | 8.38 MiB                            |
+| company&#95;type       | 4                  | 162.00 B                            |
+| complete&#95;cast      | 135,086            | 748.80 KiB                          |
+| info&#95;type          | 113                | 1.25 KiB                            |
+| keyword                | 134,170            | 1.88 MiB                            |
+| kind&#95;type          | 7                  | 177.00 B                            |
+| link&#95;type          | 18                 | 284.00 B                            |
+| movie&#95;companies    | 2,609,129          | 21.20 MiB                           |
+| movie&#95;info         | 14,835,720         | 300.46 MiB                          |
+| movie&#95;info&#95;idx | 1,380,035          | 8.01 MiB                            |
+| movie&#95;keyword      | 4,523,930          | 21.06 MiB                           |
+| movie&#95;link         | 29,997             | 178.21 KiB                          |
+| name                   | 4,167,491          | 131.16 MiB                          |
+| person&#95;info        | 2,963,664          | 154.12 MiB                          |
+| role&#95;type          | 12                 | 246.00 B                            |
+| title                  | 2,528,312          | 78.04 MiB                           |
+| **Total**              | **74,190,187**     | **1.15 GiB**                        |
+
+(Les tailles compressées dans ClickHouse proviennent de `system.tables.total_bytes` et sont basées sur les définitions de table ci-dessus.)
+
+<div id="queries">
+  ## Requêtes
+</div>
+
+Les 113 requêtes JOB sont disponibles [ici](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) dans le dépôt ClickHouse.
+Les paramètres utilisés pour les exécuter se trouvent dans [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json).
+Consultez le [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) pour connaître les problèmes connus et les remarques concernant certaines requêtes.
+
+Les requêtes font référence aux tables par leur nom ; exécutez-les donc sur la base de données `job` (par exemple avec `clickhouse client --database job`).
+
+Exemple de requête (`1a`) :
+
+```sql
+SELECT MIN(mc.note) AS production_note,
+       MIN(t.title) AS movie_title,
+       MIN(t.production_year) AS movie_year
+FROM company_type AS ct,
+     info_type AS it,
+     movie_companies AS mc,
+     movie_info_idx AS mi_idx,
+     title AS t
+WHERE ct.kind = 'production companies'
+  AND it.info = 'top 250 rank'
+  AND mc.note NOT LIKE '%(as Metro-Goldwyn-Mayer Pictures)%'
+  AND (mc.note LIKE '%(co-production)%'
+       OR mc.note LIKE '%(presents)%')
+  AND ct.id = mc.company_type_id
+  AND t.id = mc.movie_id
+  AND t.id = mi_idx.movie_id
+  AND mc.movie_id = mi_idx.movie_id
+  AND it.id = mi_idx.info_type_id;
+```

@@ -300,7 +300,7 @@ def test_add_policy(started_cluster):
         add_policy(node1, "cool_policy", {"volume1": ["jbod3", "jbod4"]})
         node1.query("SYSTEM RELOAD CONFIG")
 
-        disks = set(node1.query("SELECT name FROM system.disks").splitlines())
+        set(node1.query("SELECT name FROM system.disks").splitlines())
         assert "cool_policy" in set(
             node1.query("SELECT policy_name FROM system.storage_policies").splitlines()
         )

@@ -1,0 +1,95 @@
+---
+title: SSH鍵を使用して ClickHouse に接続する方法
+description: "SSH鍵を使用して ClickHouse と ClickHouse Cloud に接続する方法"
+date: 2024-07-25
+tags: ['Cloud の管理', 'セキュリティと認証']
+keywords: ['Cloud', 'SSH']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## 質問
+</div>
+
+SSH鍵認証を使用して ClickHouse に接続するにはどうすればよいですか？
+
+<Note>
+  ここでは ClickHouse Cloud を例にしていますが、この例は oss ClickHouse でも利用できます。
+</Note>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Rhe-kUyrFUE?si=JgcAusW1TcEyRqPr" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="answer">
+  ## 回答
+</div>
+
+1. ssh-keygen を使用してキーペアを作成します。例:
+
+```
+➜  new ssh-keygen \
+-t ed25519 \
+> -f /Users/testuser/.ssh/ch_key
+公開鍵/秘密鍵の ed25519 キーペアを生成しています。
+パスフレーズを入力してください（パスフレーズなしの場合は空のまま）:
+同じパスフレーズをもう一度入力してください:
+秘密鍵が /Users/testuser/.ssh/ch_key に保存されました
+公開鍵が /Users/testuser/.ssh/ch_key.pub に保存されました
+.....
+```
+
+2. 公開鍵 (上記の例では ch&#95;key.pub) を使って USER を作成します。
+
+```sql
+clickhouse-cloud :) CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY 'AAAABBBcdE1lZDI1NTE5AAAAIISdl4CrGM8mckXBUXLjL3ef9XwnycDWEvBPu3toB40m' TYPE 'ssh-ed25519';
+
+CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY AAAABBBcdE1lZDI1NTE5AAAAIISdl4CrGM8mckXBUXLjL3ef9XwnycDWEvBPu3toB40m TYPE `ssh-ed25519`
+
+Query id: 34c6aad6-5f88-4c80-af7a-7d37c91ba7d5
+
+Ok.
+```
+
+3. ユーザーが作成されたことを確認するため、`SHOW users` を実行します。
+
+4. ユーザーに default&#95;role を付与します (任意) 。
+
+```sql
+clickhouse-cloud :) grant default_role to abcuser;
+
+GRANT default_role TO abcuser
+
+Query id: 4a054003-220a-4dea-8e8d-eb1f08ee7b10
+
+Ok.
+
+0 rows in set. Elapsed: 0.137 sec.
+```
+
+5. 次に、秘密鍵を使用してサービスに認証します。
+
+```sql
+➜  new ./clickhouse client --host myhost.us-central1.gcp.clickhouse.cloud --secure --user abcuser --ssh-key-file '/Users/testuser/.ssh/ch_key'
+ClickHouse client version 23.12.1.863 (official build).
+秘密鍵のパスフレーズを入力してください（パスフレーズなしの場合は空欄のままにしてください）:
+ユーザー abcuser として myhost.us-central1.gcp.clickhouse.cloud:9440 に接続しています。
+ClickHouse server バージョン 23.9.2 に接続しました。
+
+clickhouse-cloud :) select currentUser();
+
+SELECT currentUser()
+
+Query id: d4b6bb60-ef45-47d3-8740-db9f2941dcd2
+
+┌─currentUser()─┐
+│ abcuser       │
+└───────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+
+clickhouse-cloud :)
+```

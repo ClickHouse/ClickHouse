@@ -1,0 +1,67 @@
+---
+slug: /faq/operations/delete-old-data
+title: 'Est-il possible de supprimer d’anciens enregistrements d’une table ClickHouse ?'
+toc_hidden: true
+toc_priority: 20
+description: 'Cette page répond à la question de savoir s’il est possible de supprimer d’anciens enregistrements d’une table ClickHouse'
+doc_type: 'reference'
+keywords: ['supprimer des données', 'TTL', 'rétention des données', 'nettoyage', 'cycle de vie des données']
+---
+
+La réponse courte est « oui ». ClickHouse dispose de plusieurs mécanismes qui permettent de libérer de l’espace disque en supprimant les données anciennes. Chacun est adapté à des scénarios différents.
+
+<div id="ttl">
+  ## TTL
+</div>
+
+ClickHouse permet de supprimer automatiquement des valeurs lorsqu&#39;une condition donnée est remplie. Cette condition est définie sous forme d&#39;expression basée sur n&#39;importe quelle colonne, généralement un simple décalage statique appliqué à une colonne `timestamp`.
+
+Le principal avantage de cette approche est qu&#39;elle ne nécessite aucun système externe pour être déclenchée : une fois le TTL configuré, la suppression des données s&#39;effectue automatiquement en arrière-plan.
+
+<Note>
+  Le TTL peut également être utilisé pour déplacer des données non seulement vers [/dev/null](https://en.wikipedia.org/wiki/Null_device), mais aussi entre différents systèmes de stockage, par exemple d&#39;un SSD vers un HDD.
+</Note>
+
+Pour plus de détails, consultez la [configuration du TTL](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
+
+<div id="delete-from">
+  ## DELETE FROM
+</div>
+
+[DELETE FROM](/fr/reference/statements/delete) permet d&#39;exécuter des requêtes DELETE standard dans ClickHouse. Les lignes ciblées par la clause de filtre sont marquées comme supprimées et exclues des jeux de résultats ultérieurs. Le nettoyage de ces lignes s&#39;effectue de manière asynchrone.
+
+<Note>
+  DELETE FROM est disponible de manière générale à partir de la version 23.3. Dans les versions antérieures, il est expérimental et doit être activé avec :
+
+  ```sql
+  SET allow_experimental_lightweight_delete = true;
+  ```
+</Note>
+
+<div id="alter-delete">
+  ## ALTER DELETE
+</div>
+
+ALTER DELETE supprime des lignes au moyen d’opérations par lot asynchrones. Contrairement à DELETE FROM, les requêtes exécutées après l’ALTER DELETE et avant la fin des opérations par lot incluront les lignes visées par la suppression. Pour plus de détails, consultez la documentation [ALTER DELETE](/fr/reference/statements/alter/delete).
+
+`ALTER DELETE` peut être utilisé pour supprimer d’anciennes données de manière flexible. Si vous devez le faire régulièrement, le principal inconvénient est qu’il faut disposer d’un système externe pour soumettre la requête. Il faut également tenir compte de certaines implications en matière de performances, car les mutations réécrivent des parties entières même lorsqu’une seule ligne doit être supprimée.
+
+Il s’agit de l’approche la plus courante pour rendre votre système basé sur ClickHouse conforme au [RGPD](https://gdpr-info.eu).
+
+Pour plus de détails, voir [mutations](/fr/reference/statements/alter/index#mutations).
+
+<div id="drop-partition">
+  ## DROP PARTITION
+</div>
+
+`ALTER TABLE ... DROP PARTITION` offre une solution peu coûteuse pour supprimer une partition entière. Cette méthode n&#39;est pas très flexible et nécessite qu&#39;un schéma de partitionnement approprié soit défini lors de la création de la table, mais elle couvre malgré tout la plupart des cas courants. Comme les mutations, elle doit être exécutée depuis un système externe pour un usage régulier.
+
+Pour plus de détails, consultez la section [manipulation des partitions](/fr/reference/statements/alter/partition).
+
+<div id="truncate">
+  ## TRUNCATE
+</div>
+
+Supprimer toutes les données d&#39;une table est une mesure assez radicale, mais dans certains cas, c&#39;est peut-être exactement ce qu&#39;il vous faut.
+
+Plus de détails sur le [TRUNCATE d&#39;une table](/fr/reference/statements/truncate).

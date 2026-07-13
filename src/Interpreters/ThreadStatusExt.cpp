@@ -4,6 +4,8 @@
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
@@ -11,21 +13,21 @@
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/TraceCollector.h>
 #include <Parsers/queryNormalization.h>
-#include <Common/MemoryTracker.h>
-#include <Common/VariableContext.h>
+#include <base/errnoToString.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/SignalUnsafeMutationGuard.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/setThreadName.h>
-#include <Common/noexcept_scope.h>
-#include <Common/DateLUT.h>
+#include <Common/VariableContext.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
-#include <base/errnoToString.h>
-#include <Core/ServerSettings.h>
+#include <Common/noexcept_scope.h>
+#include <Common/setThreadName.h>
 
 #if defined(OS_LINUX)
 #   include <sys/time.h>
@@ -38,6 +40,11 @@
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char attach_to_group_failure[];
+}
+
 namespace Setting
 {
     extern const SettingsBool calculate_text_stack_trace;
@@ -73,6 +80,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker & memory_tracker, const Settings & settings)
@@ -112,6 +120,14 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
             }
             return false;
     };
+    shared_data.throw_if_query_canceled_predicate = [this] ()
+    {
+        if (auto context_locked = query_context.lock())
+        {
+            if (auto elem = context_locked->getProcessListElementSafe())
+                elem->throwIfKilled();
+        }
+    };
 }
 
 // c-tor for method createForMaterializedView
@@ -145,6 +161,14 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
             return context_locked->isCurrentQueryKilled();
         }
         return false;
+    };
+    shared_data.throw_if_query_canceled_predicate = [this] ()
+    {
+        if (auto context_locked = query_context.lock())
+        {
+            if (auto elem = context_locked->getProcessListElementSafe())
+                elem->throwIfKilled();
+        }
     };
 }
 
@@ -295,6 +319,10 @@ void CurrentThread::attachQueryForLog(const String & query_)
 
 void ThreadStatus::applyGlobalSettings()
 {
+    /// Runs on every attach (after memory_tracker is parented to the group), so non-query threads
+    /// still pick up total_memory_tracker_sample_probability; query threads refine it in applyQuerySettings.
+    resolveMemorySampleConfig();
+
     auto global_context_ptr = global_context.lock();
     if (!global_context_ptr)
         return;
@@ -314,7 +342,10 @@ void ThreadStatus::applyQuerySettings()
 
     DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
 
-    query_id = query_context_ptr->getCurrentQueryId();
+    {
+        SignalUnsafeMutationGuard guard(is_query_id_usable);
+        query_id = query_context_ptr->getCurrentQueryId();
+    }
     initQueryProfiler();
 
     untracked_memory_limit = settings[Setting::max_untracked_memory];
@@ -325,10 +356,7 @@ void ThreadStatus::applyQuerySettings()
     /// (we cannot do this for all threads, even though it is no-op, since it is a data-race)
     if (thread_group->master_thread_id == thread_id)
         configureMemoryTrackerFromSettings(query_context_ptr->hasTraceCollector(), thread_group->memory_tracker, settings);
-    auto sample_config = memory_tracker.getResolvedSampleConfig();
-    sample_probability = sample_config.probability;
-    sample_min_allocation_size = sample_config.min_allocation_size;
-    sample_max_allocation_size = sample_config.max_allocation_size;
+    resolveMemorySampleConfig();
 
 #if USE_JEMALLOC
     if (settings[Setting::jemalloc_enable_profiler])
@@ -346,27 +374,39 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
     thread_attach_time.setUp();
 
-    /// Attach or init current thread to thread group and copy useful information from it
+    thread_group_->linkThread(thread_id);
     thread_group = thread_group_;
-    thread_group->linkThread(thread_id);
-
-    performance_counters.setParent(&thread_group->performance_counters);
-    memory_tracker.setParent(&thread_group->memory_tracker);
-
-    query_context = thread_group->query_context;
-    global_context = thread_group->global_context;
-
-    fatal_error_callback = thread_group->fatal_error_callback;
-
-    local_data = thread_group->getSharedData();
-
-    applyGlobalSettings();
-    applyQuerySettings();
-    initPerformanceCounters();
-
-    if (thread_group->os_threads_nice_value != 0)
+    try
     {
-        OSThreadNiceValue::set(thread_group->os_threads_nice_value);
+        performance_counters.setParent(&thread_group->performance_counters);
+        memory_tracker.setParent(&thread_group->memory_tracker);
+
+        query_context = thread_group->query_context;
+        global_context = thread_group->global_context;
+
+        fatal_error_callback = thread_group->fatal_error_callback;
+
+        local_data = thread_group->getSharedData();
+
+        applyGlobalSettings();
+        applyQuerySettings();
+
+        fiu_do_on(FailPoints::attach_to_group_failure,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in attachToGroupImpl");
+        });
+
+        initPerformanceCounters();
+
+        if (thread_group->os_threads_nice_value != 0)
+        {
+            OSThreadNiceValue::set(thread_group->os_threads_nice_value);
+        }
+    }
+    catch (...)
+    {
+        detachFromGroup();
+        throw;
     }
 }
 
@@ -388,6 +428,9 @@ void ThreadStatus::detachFromGroup()
     memory_tracker.reset();
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
+    /// Refresh the cache for the new parent so the detached thread honors
+    /// total_memory_tracker_sample_probability rather than the query's stale config.
+    resolveMemorySampleConfig();
 
     thread_group->unlinkThread();
 
@@ -411,7 +454,7 @@ void ThreadStatus::detachFromGroup()
     Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
 
-    query_id.clear();
+    clearQueryId();
     query_context.reset();
 
     local_data = {};

@@ -53,7 +53,7 @@ class RandomQueryKiller:
         try:
             # Get a random query_id, excluding our own queries and system queries
             result = check_output(
-                "clickhouse client -q \""
+                "clickhouse client --receive_timeout=5 -q \""
                 "SELECT query_id FROM system.processes "
                 "WHERE query NOT LIKE '%system.processes%' "
                 "AND query NOT LIKE '%KILL QUERY%' "
@@ -66,7 +66,7 @@ class RandomQueryKiller:
             if query_id:
                 logging.info("Killing random query: %s", query_id)
                 call(
-                    f"clickhouse client -q \"KILL QUERY WHERE query_id = '{query_id}' ASYNC\" 2>/dev/null",
+                    f"clickhouse client --receive_timeout=5 -q \"KILL QUERY WHERE query_id = '{query_id}' ASYNC\" 2>/dev/null",
                     shell=True,
                     timeout=5,
                 )
@@ -134,7 +134,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         options.append("--no-random-merge-tree-settings")
 
     # allow constraint
-    client_options.append(f"enable_analyzer=1")
+    client_options.append("enable_analyzer=1")
 
     if i > 0:
         options.append("--order=random")
@@ -243,10 +243,44 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         f"query_plan_optimize_join_order_algorithm={random.choice(join_order_algorithm_combinations)}"
     )
 
+    # Pin max_parser_backtracks on the client command line. Its pre-24.3 default is 0, so the
+    # randomized compatibility='NN.N' above reverts it to 0 in the client, which then sends 0 to
+    # the server and trips the <min>1</min> limit-recursion constraint on every query. A
+    # command-line value survives applyCompatibilitySetting, unlike a users.d profile value.
+    client_options.append("max_parser_backtracks=1000000")
+
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 
     return " ".join(options)
+
+
+def install_thread_pool_fault_injection() -> None:
+    """Install `cannot_allocate_thread_injection.xml` and reload config so
+    `cannot_allocate_thread_fault_injection_probability` becomes active.
+    Fail-close on persistent reload failure or inactive setting after reload."""
+    src = "/repo/tests/config/config.d/cannot_allocate_thread_injection.xml"
+    dst = "/etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml"
+
+    if not os.path.exists(src):
+        raise RuntimeError(f"Thread-pool fault-injection source config not found at {src}")
+
+    logging.info("Installing thread-pool fault-injection config: %s -> %s", src, dst)
+    subprocess.run(["ln", "-sf", src, dst], check=True)
+    call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5)
+
+    # Fail-close: `call_with_retry` is silent on persistent failure, so verify
+    # the injector probability is actually non-zero after reload.
+    verify_query = make_query_command(
+        "SELECT value FROM system.server_settings "
+        "WHERE name = 'cannot_allocate_thread_fault_injection_probability'"
+    )
+    value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+    if not value or float(value) <= 0:
+        raise RuntimeError(
+            f"cannot_allocate_thread_fault_injection_probability is {value!r} after reload"
+        )
+    logging.info("Thread-pool fault injection active: probability=%s", value)
 
 
 def run_func_test(
@@ -264,6 +298,10 @@ def run_func_test(
     global_time_limit_option = (
         f"--global_time_limit={global_time_limit}" if global_time_limit else ""
     )
+    # --stress-tests loops until global_time_limit; cap the smoke check so
+    # clickhouse-test exits on its own within the execute_bash timeout (180s).
+    smoke_time_limit = min(global_time_limit, 120) if global_time_limit else 120
+    smoke_time_limit_option = f"--global_time_limit={smoke_time_limit}"
 
     output_paths = [
         output_prefix / f"stress_test_run_{i}.txt" for i in range(num_processes)
@@ -274,16 +312,19 @@ def run_func_test(
     for i, path in enumerate(output_paths):
         # Validate that simple tests work across all randomizations.
         # IF THIS FAILS, THE STRESS TESTS ARE BROKEN
-        full_command = (
-            f"{cmd} --stress-tests {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
+        options = get_options(i, upgrade_check, encrypted_storage)
+        base_command = (
+            f"{cmd} --stress-tests {options} "
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
         )
+        full_command = f"{base_command} {global_time_limit_option} "
         commands.append(full_command)
-        # Disable server-side AST fuzzer for the smoke check: fuzzed queries
-        # produce expected errors in stderr, which would fail these tests.
-        smoke_command = full_command.replace(
+        # Smoke check: disable AST fuzzer (fuzzed queries produce expected
+        # errors in stderr) and cap global_time_limit so clickhouse-test
+        # exits on its own within the execute_bash timeout.
+        smoke_command = base_command.replace(
             "--client-option ", "--client-option ast_fuzzer_runs=0 ", 1
-        )
+        ) + f" {smoke_time_limit_option} "
         check_command = (
             smoke_command
             + "--server-logs-level fatal --jobs 1 00001_select_1 00234_disjunctive_equality_chains_optimization"
@@ -295,10 +336,10 @@ def run_func_test(
             logging.info("Smoke check stdout:\n%s", e.stdout)
             logging.info("Smoke check stderr:\n%s", e.stderr)
 
-            # Ignore fault injects and transient errors, but most of the time tests should complete successfully
+            # Thread-pool fault injection is off during smoke check, so the
+            # tolerated transients are ZK fault injection + per-worker
+            # `memory_tracker_fault_probability` only.
             ignored_errors = [
-                "CANNOT_SCHEDULE_TASK",
-                "Fault injection",
                 "Query memory tracker: fault injected",
                 "KEEPER_EXCEPTION",
                 "DATABASE_REPLICATION_FAILED",
@@ -316,6 +357,12 @@ def run_func_test(
                 f"stdout:\n{e.stdout}\n"
                 f"stderr:\n{e.stderr}"
             ) from e
+
+    # Smoke check passed: activate thread-pool fault injection for the real
+    # stress test. Upgrade-check never had it (old binary may not support
+    # the setting), so keep that behavior.
+    if not upgrade_check:
+        install_thread_pool_fault_injection()
 
     # Start the query killer after smoke check completes, before actual stress test
     if query_killer is not None:
@@ -395,7 +442,7 @@ def execute_bash(full_command, timeout=120):
 
 def make_query_command(query: str) -> str:
     return (
-        f'clickhouse client -q "{query}" --max_untracked_memory=1Gi '
+        f'clickhouse client -q "{query}" --receive_timeout=15 --max_untracked_memory=1Gi '
         "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000 "
         "--enable-progress-table-toggle=0"
     )
@@ -424,7 +471,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
-        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client -q 'SELECT 1 FORMAT Null'"
+        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client --receive_timeout=5 -q 'SELECT 1 FORMAT Null'"
     )
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
@@ -523,7 +570,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = 'clickhouse client -q "SELECT count() FROM system.processes where elapsed > 300" '
+        query = 'clickhouse client --receive_timeout=30 -q "SELECT count() FROM system.processes where elapsed > 300" '
         output = (
             check_output(query, shell=True, stderr=STDOUT, timeout=30)
             .decode("utf-8")
@@ -584,7 +631,7 @@ def main():
         query_killer = RandomQueryKiller(interval=3.0)
 
     try:
-        func_pipes = run_func_test(
+        run_func_test(
             args.test_cmd,
             args.output_folder,
             args.num_parallel,

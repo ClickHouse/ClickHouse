@@ -1,0 +1,98 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources
+title: '字典源'
+sidebarTitle: '概述'
+doc_type: '参考'
+description: '字典源类型配置'
+---
+
+import CloudDetails from '/snippets/zh/_snippet_dictionary_in_cloud.mdx';
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="dictionary-sources">
+  ## 语法
+</div>
+
+<CloudDetails />
+
+字典可通过多种不同的源接入 ClickHouse。
+源可在配置文件的 `source` 部分中配置，也可通过 DDL 语句中的 `SOURCE` 子句指定。
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (...)
+    ...
+    SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- 源配置
+    ...
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <clickhouse>
+      <dictionary>
+        ...
+        <source>
+          <source_type>
+            <!-- 源配置 -->
+          </source_type>
+        </source>
+        ...
+      </dictionary>
+      ...
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="supported-dictionary-sources">
+  ## 支持的字典源
+</div>
+
+支持以下源类型 (`SOURCE_TYPE`/`source_type`) ：
+
+* [本地文件](/zh/reference/statements/create/dictionary/sources/local-file)
+* [可执行文件](/zh/reference/statements/create/dictionary/sources/executable-file)
+* [可执行池](/zh/reference/statements/create/dictionary/sources/executable-pool)
+* [HTTP(S)](/zh/reference/statements/create/dictionary/sources/http)
+* DBMS
+  * [ODBC](/zh/reference/statements/create/dictionary/sources/odbc)
+  * [MySQL](/zh/reference/statements/create/dictionary/sources/mysql)
+  * [ClickHouse](/zh/reference/statements/create/dictionary/sources/clickhouse)
+  * [MongoDB](/zh/reference/statements/create/dictionary/sources/mongodb)
+  * [Redis](/zh/reference/statements/create/dictionary/sources/redis)
+  * [Cassandra](/zh/reference/statements/create/dictionary/sources/cassandra)
+  * [PostgreSQL](/zh/reference/statements/create/dictionary/sources/postgresql)
+  * [YTsaurus](/zh/reference/statements/create/dictionary/sources/ytsaurus)
+* [YAMLRegExpTree](/zh/reference/statements/create/dictionary/sources/yamlregexptree)
+* [Null](/zh/reference/statements/create/dictionary/sources/null)
+
+对于 [本地文件](/zh/reference/statements/create/dictionary/sources/local-file)、[可执行文件](/zh/reference/statements/create/dictionary/sources/executable-file)、[HTTP(s)](/zh/reference/statements/create/dictionary/sources/http)、[ClickHouse](/zh/reference/statements/create/dictionary/sources/clickhouse) 这几种字典源类型，
+可以使用可选设置：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql highlight={2}
+    SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+    SETTINGS(format_csv_allow_single_quotes = 0)
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml highlight={7}
+    <source>
+      <file>
+        <path>/opt/dictionaries/os.tsv</path>
+        <format>TabSeparated</format>
+      </file>
+      <settings>
+          <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+      </settings>
+    </source>
+    ```
+  </Tab>
+</Tabs>

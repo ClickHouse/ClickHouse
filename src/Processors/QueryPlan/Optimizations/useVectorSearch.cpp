@@ -16,6 +16,14 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -183,12 +191,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
                 continue;
 
             /// Read value from column
-            const ColumnPtr & column = child->column;
-            const auto * literal_column = typeid_cast<const ColumnConst *>(column.get());
-            if (!literal_column || literal_column->size() != 1)
-                continue;
-            Field field;
-            literal_column->get(0, field);
+            Field field = child->column->getField();
             Field::Types::Which field_type = field.getType();
             if (field_type != Field::Types::Array)
                 continue;
@@ -227,6 +230,13 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     if (!has_vector_similarity_index)
         return no_layers_updated;
+
+    /// The `_distance` column is an internal virtual column populated by the vector search optimization.
+    /// It must not be referenced directly in queries.
+    if (read_from_mergetree_step->isVectorColumnReplaced())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
+            "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
 
     /// All set for 2nd pass
     auto vector_search_parameters = std::make_optional<VectorSearchParameters>(search_column, distance_function, n, reference_vector, additional_filters_present, true);
@@ -313,6 +323,13 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     auto vector_search_parameters = read_from_mergetree_step->getVectorSearchParameters();
     if (!vector_search_parameters.has_value())
         return false;
+
+    /// The `_distance` column is an internal virtual column populated by the vector search optimization.
+    /// It must not be referenced directly in queries.
+    if (read_from_mergetree_step->isVectorColumnReplaced())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
+            "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
 
     /// The optimization is only possible if the index-analyis and query execution
     /// are both executed on the same node.

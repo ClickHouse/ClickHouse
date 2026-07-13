@@ -1,0 +1,258 @@
+---
+sidebarTitle: 'ClickPipes for GCP Pub/Sub'
+description: 'اربط موضوعات Google Cloud Pub/Sub الخاصة بك بـ ClickHouse Cloud بسلاسة.'
+slug: /integrations/clickpipes/pubsub
+title: 'دمج Google Pub/Sub مع ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['clickpipes', 'pubsub', 'gcp pub/sub', 'google cloud pub/sub', 'streaming', 'gcp', 'إدخال البيانات', 'الضغط', 'gzip', 'zstd', 'lz4', 'snappy']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<Note>
+  يمكنك الانضمام إلى قائمة انتظار المعاينة الخاصة [من هنا](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview).
+</Note>
+
+يمكن نشر Pub/Sub ClickPipes وإدارتها يدويًا باستخدام واجهة ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="prerequisite">
+  ## المتطلب المسبق
+</div>
+
+يجب أن تكون قد اطّلعت على [مقدمة ClickPipes](/ar/integrations/clickpipes/home)، وأن يكون لديك وصول إلى مشروع GCP يتضمن الموضوع الذي تريد الاستيراد منه، وأن تكون قد أنشأت حساب خدمة لديه أذونات Pub/Sub المناسبة. اتبع [دليل أذونات IAM لـ Pub/Sub](/ar/integrations/clickpipes/pubsub/auth) لمعرفة مجموعة الأذونات الدقيقة التي يتطلبها ClickPipes.
+
+<div id="creating-your-first-clickpipe">
+  ## إنشاء أول ClickPipe لك
+</div>
+
+1. افتح SQL Console لخدمة ClickHouse Cloud الخاصة بك.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="lg" border />
+
+2. اختر زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;Set up a ClickPipe&quot;
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="تحديد عمليات الاستيراد" size="lg" border />
+
+3. اختر **GCP Pub/Sub** كمصدر للبيانات.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp" alt="تحديد GCP Pub/Sub كمصدر للبيانات" size="lg" border />
+
+4. املأ النموذج بإدخال اسم لـ ClickPipe، و**GCP Project ID**، و**ملف JSON لحساب الخدمة** الخاص بحساب الخدمة الذي مُنِح حق الوصول إلى Pub/Sub. يجب أن يتكون Project ID من 6 إلى 30 حرفًا، ويمكن أن يحتوي على أحرف صغيرة وأرقام وواصلات، ويجب أن يبدأ بحرف، ولا يجوز أن ينتهي بواصلة.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
+
+5. اختر **موضوع Pub/Sub** الذي تريد إدخال البيانات منه. تُعبَّأ القائمة المنسدلة تلقائيًا من الموضوعات الموجودة في مشروع GCP الخاص بك (مرتبة أبجديًا) بمجرد التحقق من صحة بيانات الاعتماد.
+
+   * **تنسيق البيانات.** يستعلم ClickPipes سجل المخططات في Pub/Sub عند اختيار موضوع. إذا كان الموضوع يحتوي على مخطط Avro أو Protobuf أصلي مرفق، فسيتم اكتشاف تنسيق البيانات والمخطط تلقائيًا، وستُثبَّت المحددات على أحدث مخطط في الموضوع. أما الموضوعات التي لا تحتوي على مخطط أصلي فستُضبط افتراضيًا على JSONEachRow.
+   * **الإزاحة الابتدائية.** اختر نقطة بدء الاستهلاك. الخيارات المتاحة هي **Latest** (الرسائل الجديدة فقط) و**Earliest** (أقدم الرسائل المحتفظ بها) و**Seek to Timestamp** (مع منتقي تاريخ ووقت بتوقيت UTC).
+   * **تعبير التصفية (اختياري).** [عامل تصفية اشتراك](https://cloud.google.com/pubsub/docs/subscription-message-filter) في Pub/Sub على سمات الرسائل — على سبيل المثال، `attributes.type = "telemetry"`. تُطبَّق عوامل التصفية على سمات الرسائل فقط، وليس على الحمولة، ولا يمكن تغييرها بعد إنشاء الـ pipe (يتطلب تغيير عامل التصفية إعادة إنشاء الـ pipe).
+   * ستعرض واجهة المستخدم رسالة نموذجية من الموضوع المحدد، مع مفتاح **تسطيح الكائن** الذي يتيح لك معاينة كيفية تسطيح JSON المتداخل في جهة الوجهة.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp" alt="تعيين موضوع Pub/Sub والتنسيق والإزاحة الابتدائية" size="lg" border />
+
+6. في الخطوة التالية، يمكنك اختيار ما إذا كنت تريد إدخال البيانات إلى جدول ClickHouse جديد أو إعادة استخدام جدول موجود. اتبع الإرشادات الظاهرة على الشاشة لتعديل اسم الجدول والمخطط والإعدادات. ويمكنك رؤية معاينة فورية لتغييراتك في جدول العينة بالأعلى.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="تعيين الجدول والمخطط والإعدادات" size="lg" border />
+
+يمكنك أيضًا تخصيص الإعدادات المتقدمة باستخدام عناصر التحكم المتاحة
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="تعيين عناصر التحكم المتقدمة" size="lg" border />
+
+7. بدلاً من ذلك، يمكنك اختيار إدخال بياناتك في جدول ClickHouse موجود. في هذه الحالة، ستتيح لك واجهة المستخدم ربط الحقول من المصدر بحقول ClickHouse في جدول الوجهة المحدد.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="استخدام جدول موجود" size="lg" border />
+
+8. أخيرًا، يمكنك تهيئة الأذونات لمستخدم ClickPipes الداخلي.
+
+**الأذونات:** سينشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى جدول الوجهة. يمكنك اختيار دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المحددة مسبقًا:
+
+* `Full access`: مع وصول كامل إلى الـ cluster. قد يكون هذا مفيدًا إذا كنت تستخدم materialized view أو Dictionary مع جدول الوجهة.
+  * `Only destination table`: مع أذونات `INSERT` على جدول الوجهة فقط.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="الأذونات" border />
+
+9. عند النقر على &quot;Complete Setup&quot;، سيسجل النظام ClickPipe الخاص بك، وستتمكن من رؤيته مدرجًا في جدول الملخص.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="إشعار النجاح" size="sm" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="إشعار الإزالة" size="lg" border />
+
+يوفّر جدول الملخّص عناصر تحكّم لعرض بيانات عيّنة من المصدر أو من الجدول الهدف في ClickHouse
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="عرض الوجهة" size="lg" border />
+
+بالإضافة إلى عناصر تحكّم لإزالة ClickPipe وعرض ملخّص لمهمة إدخال البيانات.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="عرض النظرة العامة" size="lg" border />
+
+10. **تهانينا!** لقد أعددت بنجاح أول ClickPipe لـ Pub/Sub. وسيعمل بشكل مستمر، مع إدخال البيانات في الوقت الفعلي من موضوع ‏Pub/Sub إلى خدمة ClickHouse Cloud الخاصة بك.
+
+<div id="managed-subscriptions">
+  ## الاشتراكات المُدارة
+</div>
+
+تُستهلك رسائل Pub/Sub عبر الاشتراكات، وليس مباشرةً من الـ مواضيع. ينشئ ClickPipes اشتراكًا مخصصًا ويديره لكل pipe — وكل ما تختاره أنت هو موضوع.
+
+* يُسمّى الاشتراك المُدار `clickpipes-{pipeID}` ويُنشأ على الـ موضوع عند بدء تشغيل الـ pipe.
+* يُضبط بمهلة مهلة الإقرار مدتها 60 ثانية، مع الاحتفاظ بالرسائل لمدة 7 أيام، وتمكين ترتيب الرسائل.
+* يكون إنشاء الاشتراك قابلاً للتكرار بأمان — إذ تعيد عمليات إعادة تشغيل الـ pipe وإعادة جدولة الـ نسخة المتماثلة استخدام اشتراك موجود إذا كان يشير بالفعل إلى الـ موضوع المُهيأ.
+* أثناء اكتشاف الـ موضوع وأخذ عينات من الرسائل، ينشئ ClickPipes أيضًا اشتراكات ephemeral قصيرة العمر (`clickpipes-discovery-{uuid}`) تُحذف فور اكتمال أخذ العينات.
+* عند حذف الـ pipe، يحذف ClickPipes الاشتراك المُدار كجزء من عملية الإزالة.
+
+لذلك، يجب أن يمتلك حساب الخدمة الذي توفّره permission لإنشاء الاشتراكات وحذفها على المشروع، بالإضافة إلى استهلاك الرسائل منها. راجع [دليل IAM permissions في Pub/Sub](/ar/integrations/clickpipes/pubsub/auth) للاطلاع على القائمة الكاملة.
+
+<div id="supported-data-formats">
+  ## تنسيقات البيانات المدعومة
+</div>
+
+التنسيقات المدعومة هي:
+
+* [JSON](/ar/reference/formats/JSON/JSON)
+* [Avro](/ar/reference/formats/Avro/Avro) — عبر مخططات Pub/Sub الأصلية (ترميز BINARY)
+* [Protobuf](/ar/reference/formats/Protobuf/Protobuf) — عبر مخططات Pub/Sub الأصلية (ترميز BINARY)
+
+بالنسبة إلى Avro وProtobuf، يُستمد المخطط من سجل مخططات Pub/Sub المرتبط بالموضوع. تستخدم الـ pipe دائمًا أحدث revision من مخطط الموضوع؛ ويكون محدد المخطط في واجهة المستخدم للقراءة فقط بحكم التصميم.
+
+<div id="compression">
+  ## الضغط
+</div>
+
+يكتشف ClickPipes for Pub/Sub الرسائل المضغوطة ويفك ضغطها تلقائيًا. يسلّم عميل Pub/Sub بايتات خامًا — ويتولى ClickPipes فك الضغط نيابةً عنك من دون الحاجة إلى أي تهيئة.
+
+ترميزات الضغط التالية مدعومة:
+
+* **gzip**
+* **zstd**
+* **lz4**
+* **snappy** (تنسيق بإطارات)
+
+يُكتشف الضغط تلقائيًا من خلال البايتات المميِّزة في كل رسالة. وإذا لم يُعثر على بصمة ضغط معروفة، فتُعامَل الرسالة على أنها غير مضغوطة. كما يُعرض نوع الضغط المكتشَف أثناء استدلال المخطط أيضًا، بحيث تُظهر معاينة بيانات العيّنة في واجهة المستخدم الحمولة بعد فك الضغط بشكل صحيح.
+
+<Note>
+  يُعد الاكتشاف التلقائي آمنًا للتنسيقات النصية مثل JSON، لأن محارف ASCII القابلة للطباعة لن تتطابق أبدًا مع البايتات المميِّزة للضغط. ويقتصر حجم الحمولة بعد فك الضغط على 64MB.
+</Note>
+
+<div id="supported-data-types">
+  ## أنواع البيانات المدعومة
+</div>
+
+<div id="standard-types-support">
+  ### دعم الأنواع القياسية
+</div>
+
+أنواع البيانات التالية في ClickHouse مدعومة حاليًا في ClickPipes:
+
+* الأنواع الرقمية الأساسية - [U]Int8/16/32/64 و Float32/64 و BFloat16
+* أنواع الأعداد الصحيحة الكبيرة - [U]Int128/256
+* أنواع Decimal
+* Boolean
+* String
+* FixedString
+* Date و Date32
+* DateTime و DateTime64 (المناطق الزمنية UTC فقط)
+* Enum8/Enum16
+* UUID
+* IPv4
+* IPv6
+* جميع أنواع LowCardinality في ClickHouse
+* Map بمفاتيح وقيم تستخدم أيًا من الأنواع المذكورة أعلاه (بما في ذلك Nullable)
+* Tuple و Array بعناصر تستخدم أيًا من الأنواع المذكورة أعلاه (بما في ذلك Nullable، وعلى عمق مستوى واحد فقط)
+* أنواع SimpleAggregateFunction (لوجهات AggregatingMergeTree أو SummingMergeTree)
+
+<div id="variant-type-support">
+  ### دعم النوع Variant
+</div>
+
+يمكنك تحديد نوع Variant يدويًا (مثل `Variant(String, Int64, DateTime)`) لأي حقل JSON
+ضمن تدفق بيانات المصدر. ونظرًا إلى الطريقة التي يحدد بها ClickPipes النوع الفرعي الصحيح من Variant المطلوب استخدامه، لا يمكن استخدام أكثر من نوع واحد فقط من أنواع الأعداد الصحيحة أو أنواع التاريخ والوقت
+في تعريف Variant — على سبيل المثال، `Variant(Int64, UInt32)` غير مدعوم.
+
+<div id="json-type-support">
+  ### دعم نوع JSON
+</div>
+
+يمكن إسناد حقول JSON التي تكون دائمًا كائنات JSON إلى عمود وجهة من نوع JSON. سيتعين عليك تغيير
+عمود الوجهة يدويًا إلى نوع JSON المطلوب، بما في ذلك أي مسارات ثابتة أو مُتخطاة.
+
+<div id="pubsub-virtual-columns">
+  ## الأعمدة الافتراضية في Pub/Sub
+</div>
+
+تدعم موضوعات Pub/Sub الأعمدة الافتراضية التالية. وعند إنشاء جدول وجهة جديد، يمكن إضافة أعمدة افتراضية باستخدام الزر `Add Column`.
+
+| الاسم                 | الوصف                                                               | نوع البيانات الموصى به |
+| --------------------- | ------------------------------------------------------------------- | ---------------------- |
+| &#95;message&#95;id   | معرّف رسالة Pub/Sub الذي يحدده الوسيط                               | String                 |
+| &#95;publish&#95;time | الطابع الزمني لنشر Pub/Sub (بدقة الملّي ثانية، UTC)                 | DateTime64(3)          |
+| &#95;ordering&#95;key | مفتاح الترتيب في Pub/Sub (سلسلة فارغة إذا لم يُعيَّن مفتاح للرسالة) | String                 |
+| &#95;attributes       | سمات رسائل Pub/Sub المعرّفة من المستخدم                             | Map(String, String)    |
+| &#95;raw&#95;message  | حمولة رسالة Pub/Sub الكاملة (مُعطَّل افتراضيًا)                     | String                 |
+
+يمكن استخدام الحقل `_raw_message` في الحالات التي تكون فيها حمولة رسالة Pub/Sub الكاملة وحدها مطلوبة (مثل استخدام دوال ClickHouse [`JsonExtract*`](/ar/reference/functions/regular-functions/json-functions#jsonextract-functions) لملء عرض مادي في مرحلة لاحقة). وفي مثل هذه الـ pipes، قد يؤدي حذف جميع الأعمدة &quot;غير الافتراضية&quot; إلى تحسين أداء ClickPipes.
+
+<div id="limitations">
+  ## القيود
+</div>
+
+* ‏[DEFAULT](/ar/reference/statements/create/table#default) غير مدعوم.
+* يقتصر حجم الرسالة الواحدة افتراضيًا على 16MB (غير مضغوطة) عند التشغيل بأصغر حجم نسخة متماثلة ‏(XS)، وعلى 32MB (غير مضغوطة) مع الـ نسخ المتماثلة الأكبر. ستُرفض الرسائل التي تتجاوز هذا الحد مع ظهور خطأ. إذا كنت بحاجة إلى رسائل أكبر، فيُرجى التواصل مع الدعم.
+* عوامل تصفية اشتراك Pub/Sub ثابتة — ويتطلب تغيير تعبير التصفية إعادة إنشاء الـ pipe.
+* تُطبَّق عوامل التصفية على سمات الرسالة فقط، وليس على حمولة الرسالة.
+
+<div id="performance">
+  ## الأداء
+</div>
+
+<div id="batching">
+  ### التجميع على دفعات
+</div>
+
+تُدرِج ClickPipes البيانات في ClickHouse على دفعات. يهدف ذلك إلى تجنّب إنشاء عدد كبير جدًا من الأجزاء في قاعدة البيانات، مما قد يؤدي إلى مشكلات في أداء العنقود.
+
+تُدرَج الدفعات عند استيفاء أحد المعايير التالية:
+
+* وصول حجم الدفعة إلى الحد الأقصى (100,000 صف أو 32MB لكل 1GB من ذاكرة النسخة المتماثلة)
+* بقاء الدفعة مفتوحة للمدة القصوى (5 ثوانٍ)
+
+<div id="latency">
+  ### زمن الاستجابة
+</div>
+
+يعتمد زمن الاستجابة (المُعرَّف بأنه الوقت بين نشر رسالة في Pub/Sub وتوفّرها في ClickHouse) على عدد من العوامل (زمن استجابة الناشر، وزمن استجابة الشبكة، وحجم الرسالة/تنسيقها). كما أن [التجميع على دفعات](#batching) الموضَّح في القسم أعلاه سيؤثر أيضًا في زمن الاستجابة. ونوصي دائمًا باختبار حالة الاستخدام الخاصة بك لفهم زمن الاستجابة الذي يمكنك توقّعه.
+
+إذا كانت لديك متطلبات محددة لزمن استجابة منخفض، يُرجى [التواصل معنا](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="ordering-keys">
+  ### مفاتيح الترتيب
+</div>
+
+يضمن Pub/Sub تسليم الرسائل التي تشترك في [مفتاح الترتيب](https://cloud.google.com/pubsub/docs/ordering) نفسه إلى مشترك واحد بحسب ترتيب نشرها. ويُفعِّل ClickPipes الترتيب في اشتراكاته المُدارة افتراضيًا — فعندما تتضمّن الرسائل مفاتيح ترتيب، يتلقّاها المشتركون بالترتيب نفسه؛ وعندما لا تتضمّن الرسائل مفاتيح ترتيب، يبقى السلوك كما هو.
+
+إذا كان المُنتِج ينشر جميع الرسائل باستخدام عدد قليل من مفاتيح الترتيب (أو مفتاح واحد)، فسيوجّه Pub/Sub هذه الرسائل إلى عدد قليل من المشتركين، ما قد يحدّ من الإنتاجية عند التوسّع الأفقي. نوصي إمّا بعدم استخدام مفاتيح الترتيب عندما لا تكون هناك حاجة إلى الترتيب، أو باستخدام مفتاح ترتيب عالي التعددية.
+
+<div id="scaling">
+  ### التوسّع
+</div>
+
+صُمِّم ClickPipes for Pub/Sub ليتوسّع أفقيًا وعموديًا. يستخدم كل pipe اشتراك Pub/Sub مُدارًا واحدًا — ولا يمكن تهيئة ذلك. افتراضيًا، يسحب مستهلك واحد من هذا الاشتراك؛ ويمكنك زيادة عدد المستهلكين أثناء إنشاء ClickPipe، أو في أي وقت لاحق ضمن **الإعدادات** -&gt; **الإعدادات المتقدمة** -&gt; **التوسّع**. يوزّع ClickPipes الرسائل من الاشتراك تلقائيًا على المستهلكين قيد التشغيل — ولا حاجة إلى أي تنسيق إضافي.
+
+يوفّر ClickPipes التوافر العالي من خلال معمارية موزّعة عبر مناطق التوافر؛ ويتطلّب ذلك التوسّع إلى مستهلكين اثنين على الأقل.
+
+وبغضّ النظر عن عدد المستهلكين قيد التشغيل، فإن تحمّل الأعطال متاح بحكم التصميم. فإذا تعطّل أحد المستهلكين أو البنية التحتية الأساسية التابعة له، فسيُعيد ClickPipes تشغيله تلقائيًا ويواصل معالجة الرسائل.
+
+<div id="delivery-semantics">
+  ### ضمانات التسليم
+</div>
+
+يوفّر ClickPipes for Pub/Sub تسليمًا **مرة واحدة على الأقل**. لا يتم تأكيد استلام رسالة Pub/Sub إلا بعد إدراج الصف المقابل في ClickHouse (أو كتابته في جدول الأخطاء إذا كان السجل غير صالح)؛ كما يتم تأكيد جميع الرسائل بعد معالجتها — بما في ذلك السجلات غير الصالحة التي تُوجَّه إلى جدول الأخطاء — لمنع إعادة تسليمها إلى ما لا نهاية. إذا تعطّلت نسخة متماثلة بعد الإدراج ولكن قبل أن يصل تأكيد الاستلام إلى Pub/Sub، فستُعاد الرسالة بعد مهلة الإقرار وتُدرَج مرة أخرى، لذا يجب أن يتحمّل المستهلكون اللاحقون وجود تكرارات. إذا كنت بحاجة إلى دلالات exactly-once، فأزل التكرارات في المرحلة اللاحقة باستخدام العمود الافتراضي `_message_id` (يكون معرّف كل رسالة Pub/Sub فريدًا داخل الموضوع).
+
+<div id="authentication">
+  ## المصادقة
+</div>
+
+يُجري ClickPipes for Pub/Sub المصادقة مع GCP باستخدام مفتاح JSON لحساب خدمة. ترفع ملف المفتاح عند إنشاء الـ pipe؛ ويشفّر ClickPipes هذا المفتاح عند تخزينه ويستخدمه في وقت التشغيل لاستهلاك الرسائل وإدارة دورة حياة الاشتراك المُدار.
+
+للاطلاع على القائمة الدقيقة بأذونات IAM المطلوبة وتعريف دور مخصص مُوصى به، راجع [دليل أذونات IAM لـ Pub/Sub](/ar/integrations/clickpipes/pubsub/auth).

@@ -3,8 +3,10 @@ import json
 import os
 import random
 import subprocess
+import zlib
 from pathlib import Path
 
+from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.find_tests import Targeting
@@ -16,6 +18,7 @@ from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
+
 
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
@@ -33,7 +36,7 @@ def parse_args():
     )
     parser.add_argument(
         "--options",
-        help="Comma-separated options. Examples: parallel|sequential|BATCH_NUM/BATCH_TOT|s3 storage|DatabaseReplicated|azure|AsyncInsert|BugfixValidation|coverage",
+        help="Comma-separated options. Examples: parallel|sequential|BATCH_NUM/BATCH_TOT|s3 storage|DBReplicated|azure|AsyncInsert|BugfixValidation|coverage",
         default="",
     )
     parser.add_argument(
@@ -82,6 +85,7 @@ def run_tests(
     rerun_count=1,
     random_order=False,
     global_time_limit=0,
+    build_type=None,
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
     if batch_num and batch_total:
@@ -93,7 +97,12 @@ def run_tests(
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    memory_limit = 10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
+    # During bugfix validation the same job runs several build types, so the
+    # memory limit must follow the binary under test (`build_type`) rather than
+    # the job name. Otherwise an `amd_asan_ubsan` run gets the 5 GiB default and
+    # a master-side memory-limit failure would be inverted as a reproduced bug.
+    limit_source = build_type if build_type is not None else Info().job_name
+    memory_limit = 10 * 2**30 if "asan_ubsan" in limit_source else 5 * 2**30
     # Hand the time budget to `clickhouse-test` itself via `--global_time_limit`
     # so it stops *gracefully* between tests and exits with
     # `GLOBAL_TIME_LIMIT_EXIT_CODE` - reported as a benign "time limit reached"
@@ -130,7 +139,7 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
     "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
-    "DatabaseReplicated": "--db-replicated",
+    "DBReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
     "ParallelReplicas": "--parallel-rep",
@@ -145,7 +154,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
-    "DatabaseReplicated": " --no-stateful --replicated-database",
+    "DBReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
@@ -154,43 +163,87 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
 }
 
 
-def invert_bugfix_validation_status(test_result: Result) -> None:
+def invert_bugfix_validation_status(test_result: Result) -> bool:
     """Invert FAIL/OK in `test_result.results` for bugfix validation.
 
     On master HEAD a regression test for the bug is expected to FAIL; the
-    inverter flips that to OK so the job reads as "bug reproduced". A clean
-    OK means the test does not catch the bug and is flipped to FAIL with
-    "Failed to reproduce the bug".
+    inverter flips that to OK so the job reads as "bug reproduced".
+
+    Returns True iff the bug did not reproduce on this arch (no-repro). In
+    that case the caller must propagate `SKIPPED` to the top-level result so
+    the per-arch job exits 0 without being counted as a validation by the
+    `new_tests_check.py` post-hook (which uses strict `is_success`). This is
+    the per-arch contract: a regression test that passes on master HEAD on
+    one arch (e.g. an x86-only fix validated on aarch64 where the bug never
+    existed) must not block the PR - another arch can still validate it.
 
     When the run ended in `Result.Status.ERROR` (runner did not finish,
     e.g. server crash without proper exit code, Python exception,
     infrastructure outage) the per-test list is empty or partial and the
     pre-inversion `ERROR` already tells the truth. Preserve it instead of
-    overwriting with "Failed to reproduce the bug". See #105789.
+    overwriting with a validation verdict - an infra-induced failure is
+    never counted as a validation. See #105789.
+
+    The aggregate check is not enough: `FTResultsProcessor` can leave the
+    top-level status `OK` while still emitting `ERROR` per-test rows
+    (parser failure for a single test, unexpected runner termination
+    propagated as a row). A mix of `FAIL` + `ERROR` rows would otherwise
+    set `has_failure = True` from the `FAIL` rows and call `set_success`,
+    masking the `ERROR` and flipping the job to green. Treat any per-row
+    `ERROR` the same as an aggregate `ERROR`. Mirrors the `has_error`
+    dominant guard in `integration_test_job.py`.
+
+    Rows produced by `check_fatal_messages_in_logs` (labelled `LOG_CHECK`:
+    "Lost s3 keys", "OOM in dmesg", "Exception in test runner", etc.) are
+    server-log / runner health checks, not test cases. A LOG_CHECK *failure*
+    on the validated binary is itself evidence the bug reproduced (a crash /
+    sanitizer assert / lost key triggered by the regression test), so it is
+    flipped like a test failure. But a *clean* LOG_CHECK must stay `OK`: the
+    absence of a fatal is not "failed to reproduce", and flipping it to
+    `FAIL` is what produced the spurious xfail rows.
     """
-    if test_result.status == Result.Status.ERROR:
+    if test_result.status == Result.Status.ERROR or any(
+        r.status == Result.Status.ERROR for r in test_result.results
+    ):
         for r in test_result.results:
             r.set_label(Result.Label.XFAIL)
         print(
             "Bugfix validation inconclusive: the test runner did not "
-            "finish; preserving ERROR rather than reporting "
-            "'Failed to reproduce the bug'."
+            "finish; preserving ERROR rather than reporting a validation "
+            "verdict."
         )
-        return
+        return False
 
     has_failure = False
     for r in test_result.results:
+        if r.status == Result.Status.OK and r.has_label(Result.Label.LOG_CHECK):
+            # A clean health check is not a test that "failed to reproduce";
+            # leave it untouched so it does not become a spurious failure.
+            continue
         r.set_label(Result.Label.XFAIL)
         if r.status == Result.Status.FAIL:
+            # A failing test, or a fatal / sanitizer assert / lost key on the
+            # validated binary, both mean the bug was reproduced.
             r.status = Result.Status.OK
             has_failure = True
         elif r.status == Result.Status.OK:
             r.status = Result.Status.FAIL
     if not has_failure:
-        print("Failed to reproduce the bug")
-        test_result.set_failed().set_info("Failed to reproduce the bug")
-    else:
-        test_result.set_success()
+        # The bug did not reproduce on this arch - every regression test case
+        # still passed on master HEAD here. Report SKIPPED so the per-arch job
+        # exits 0 (`Result.is_ok` includes SKIPPED) and the GitHub status is
+        # not red. The post-hook in `new_tests_check.py` uses `is_success`
+        # (strict - `OK`/`XFAIL` only), so a SKIPPED per-arch job does NOT
+        # count as a validation, preserving the contract that at least one
+        # arch must reproduce the bug. The caller propagates this SKIPPED to
+        # the top-level `R` (see `bugfix_validation_no_repro`).
+        print("Bug does not reproduce on this arch - bugfix validation N/A")
+        test_result.set_status(Result.Status.SKIPPED).set_info(
+            "Bug does not reproduce on this arch - bugfix validation N/A"
+        )
+        return True
+    test_result.set_success()
+    return False
 
 
 def main():
@@ -259,12 +312,91 @@ def main():
             is_s3_storage = True
         if "azure" in to:
             is_azure_storage = True
-        if "DatabaseReplicated" in to:
+        if "DBReplicated" in to:
             is_database_replicated = True
         if "SharedCatalog" in to:
             is_shared_catalog = True
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
+
+    # If this PR only touches test files (no production/config code changed),
+    # this job only needs to run if one of the changed tests would even be
+    # selected here - and, when the job is also hash-batched (N/M), only the
+    # batch(es) containing a changed test need to run. Other jobs/batches
+    # would produce results identical to master and can be skipped. Note:
+    # "parallel"/"sequential" job flavors need no batch number of their own
+    # (e.g. "amd_debug, parallel") - the flavor-applicability check below must
+    # not be gated on batching being active.
+    if (
+        not is_flaky_check
+        and not is_targeted_check
+        and not is_bugfix_validation
+        and not is_per_test_coverage
+        and not args.test
+    ):
+        changed_files = info.get_changed_files()
+        if changed_files and all(
+            Targeting.is_functional_test_file(f)
+            or Targeting.is_integration_test_file(f)
+            or Targeting.is_ci_job_script(f)
+            for f in changed_files
+        ):
+            changed_functional_files = [
+                f for f in changed_files if Targeting.is_functional_test_file(f)
+            ]
+            if not changed_functional_files:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only non-functional test files changed in this PR - nothing for this job to run",
+                ).complete_job()
+            # "parallel"/"sequential" is a second, independent sharding dimension:
+            # each is hash-batched separately (--no-sequential/--no-parallel), and
+            # a test tagged no-parallel/sequential never runs under the "parallel"
+            # flavor (and vice versa) regardless of batch. Restrict to the changed
+            # tests that this job flavor would even select before checking batches.
+            is_parallel_flavor = "parallel" in test_options
+            is_sequential_flavor = "sequential" in test_options
+            hash_batch_files = []
+            for f in changed_functional_files:
+                hash_batch_file = Targeting.functional_test_hash_batch_file(f)
+                if hash_batch_file is None:
+                    # Could not resolve to a concrete test source file (e.g. an
+                    # orphan data file) - be conservative and run the batch normally.
+                    hash_batch_files = None
+                    break
+                is_sequential_test = Targeting.is_sequential_functional_test(
+                    hash_batch_file
+                )
+                if is_parallel_flavor and is_sequential_test:
+                    continue
+                if is_sequential_flavor and not is_sequential_test:
+                    continue
+                hash_batch_files.append(hash_batch_file)
+            if hash_batch_files is not None and not hash_batch_files:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed tests apply to this job's parallel/sequential flavor",
+                ).complete_job()
+            if (
+                hash_batch_files is not None
+                and batch_num
+                and total_batches > 1
+                and not any(
+                    zlib.crc32(f.encode("utf-8")) % total_batches == batch_num - 1
+                    for f in hash_batch_files
+                )
+            ):
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed tests fall into this batch",
+                ).complete_job()
+
+    if is_llvm_coverage:
+        # Pin random-by-default fault injection seeds server-side (in the default
+        # profile) so coverage is deterministic, instead of injecting them as
+        # per-query client settings (which broke tests that switch to readonly
+        # mode mid-session). See tests/config/users.d/coverage_fault_injection_seeds.xml.
+        config_installs_args += " --llvm-coverage"
 
     if is_shared_catalog or is_parallel_replicas:
         pass
@@ -276,6 +408,11 @@ def main():
             nproc = int(Utils.cpu_count() * 0.4)
         elif "msan" in args.options:
             # MSan is slow
+            nproc = int(Utils.cpu_count() * 0.4)
+        elif is_azure_storage:
+            # azure FT runs only under ASan; concurrent heavy queries overrun the
+            # shared server memory cap, so the OvercommitTracker kills queries across
+            # all co-scheduled tests. Lower concurrency to keep peak total RSS under it.
             nproc = int(Utils.cpu_count() * 0.4)
         elif is_per_test_coverage:
             cidb_cluster = CIDBCluster()
@@ -346,19 +483,41 @@ def main():
 
     if (is_azure_storage or is_s3_storage) and is_encrypted_storage:
         config_installs_args += " --encrypted-storage"
-        runner_options += f" --encrypted-storage"
+        runner_options += " --encrypted-storage"
 
     if is_bugfix_validation:
         os.environ["GLOBAL_TAGS"] = "no-random-settings"
         ch_path = temp_dir
-        if not info.is_local_run or not (Path(temp_dir) / "clickhouse").is_file():
-            link_arch = "aarch64" if Utils.is_arm() else "amd64"
-            link_to_master_head_binary = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{link_arch}/clickhouse"
-            Shell.run(
-                f"wget -nv -P {temp_dir} {link_to_master_head_binary}",
-                verbose=True,
-                strict=True,
+        # Download the master-HEAD binaries matching this job's runner arch:
+        # the aarch64 job runs on an ARM runner and must use the ARM builds.
+        build_types = bugfix_build_types(info.job_name)
+        bt_paths = {bt: f"{temp_dir}/clickhouse_{bt}" for bt in build_types}
+        # In local runs, only reuse existing binaries; probing master commits in S3
+        # depends on `master_commits` workflow data populated by CI workflow hooks
+        # and is not available locally.
+        if info.is_local_run:
+            missing = [str(p) for p in bt_paths.values() if not Path(p).is_file()]
+            assert not missing, (
+                "Local bugfix validation requires all build-type binaries to be "
+                f"present under {temp_dir}; missing: {missing}"
             )
+            build_urls = None
+        else:
+            build_urls = find_master_builds(build_types)
+            assert build_urls, "Could not find master builds in S3"
+        if build_urls:
+            for bt, url in build_urls.items():
+                bt_path = bt_paths[bt]
+                if not info.is_local_run or not Path(bt_path).is_file():
+                    Shell.run(
+                        f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
+                    )
+                    Shell.run(f"chmod +x {bt_path}", verbose=True)
+        Shell.run(
+            f"cp {temp_dir}/clickhouse_{build_types[0]} {temp_dir}/clickhouse",
+            verbose=True,
+            strict=True,
+        )
     elif args.path:
         assert Path(args.path).is_dir(), f"Path [{args.path}] is not a directory"
         ch_path = str(Path(args.path).absolute())
@@ -393,8 +552,8 @@ def main():
     else:
         stages.remove(JobStages.COLLECT_LOGS)
     if is_per_test_coverage or info.is_local_run or is_bugfix_validation:
-        # For bugfix validation, we intentionally skip the check error stage (checks FATAL messages):
-        # regular test failures are assumed to be sufficient to validate the test
+        # For bugfix validation, fatal message checking is done per-build-type
+        # inside the bugfix validation loop below, so skip the outer stage.
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -507,9 +666,9 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
-            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
+            "rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
-            f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
+            "mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-client",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-compressor",
@@ -519,9 +678,9 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-format",
             f"ln -sf {ch_path}/clickhouse {ch_path}/ch",
             f"ln -sf /usr/bin/clickhouse-odbc-bridge {ch_path}/clickhouse-odbc-bridge",
-            f"cp programs/server/config.xml programs/server/users.xml /etc/clickhouse-server/",
+            "cp programs/server/config.xml programs/server/users.xml /etc/clickhouse-server/",
             f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client {config_installs_args}",
-            f"clickhouse-server --version",
+            "clickhouse-server --version",
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
             CH.set_random_timezone,
         ]
@@ -553,34 +712,77 @@ def main():
         step_name = "Start ClickHouse Server"
         print(step_name)
 
+        # Reasons recorded by the setup closure that must reach the persisted
+        # Result.info (CIDB test_context_raw) even when setup ultimately
+        # succeeds - e.g. a non-fatal minio log-table/restart failure that would
+        # otherwise be invisible in CIDB (only visible as a report-page warning).
+        setup_notes = []
+
         def start():
-            res = CH.start_minio(test_type="stateless") and CH.start_azurite()
-            res = res and CH.start()
-            res = res and CH.wait_ready()
-            if res:
-                if not CH.start_kafka():
-                    info.add_workflow_warning("Failed to start Kafka")
-                    print("Failed to start Kafka")
-                    # Fail fast on infra setup errors so we don't burn time
-                    # triaging Kafka/Avro test failures caused by a broken setup.
-                    return False
+            # `from_commands_run` captures this closure's stdout into the step
+            # Result.info (hence CIDB test_context_raw) only when it returns a
+            # failing value. Print a concise "SETUP FAILURE: <sub-step>" marker
+            # at each failure point so the opaque "Start ClickHouse Server"
+            # umbrella can be split into measurable sub-causes (minio /
+            # wait_ready / kafka / stateful) instead of one bucket.
+            if not (CH.start_minio(test_type="stateless") and CH.start_azurite()):
+                print("SETUP FAILURE: minio/azurite did not start")
+                return False
+            if not CH.start():
+                print("SETUP FAILURE: clickhouse-server process did not start")
+                return False
+            if not CH.wait_ready():
+                # wait_ready() already tails the server err log to stdout on
+                # timeout; the marker just names the sub-step for triage.
+                print("SETUP FAILURE: clickhouse-server not ready (wait_ready)")
+                return False
 
-                if not Info().is_local_run:
-                    if not CH.start_log_exports(stop_watch.start_time):
-                        info.add_workflow_warning("Failed to start log export")
-                        print("Failed to start log export")
-                if not CH.create_minio_log_tables():
-                    info.add_workflow_warning("Failed to create minio log tables")
-                    print("Failed to create minio log tables")
+            if not CH.start_kafka():
+                info.add_workflow_warning("Failed to start Kafka")
+                print("SETUP FAILURE: kafka did not start")
+                # Fail fast on infra setup errors so we don't burn time
+                # triaging Kafka/Avro test failures caused by a broken setup.
+                return False
 
-                if has_stateful_tests:
-                    res = (
-                        CH.prepare_stateful_data(
-                            with_s3_storage=is_s3_storage,
-                            is_db_replicated=is_database_replicated,
+            if not Info().is_local_run:
+                if not CH.start_log_exports(stop_watch.start_time):
+                    info.add_workflow_warning("Failed to start log export")
+                    print("Failed to start log export")
+            # MinIO log tables are non-fatal (tests still run without the
+            # webhook log tables), so keep going - but record the concrete
+            # failure reason (the real clickminio restart status, carried out of
+            # create_minio_log_tables via CH.minio_setup_error) so broken minio
+            # restarts are visible in test_context_raw rather than silently
+            # collapsing into the umbrella.
+            if not CH.create_minio_log_tables():
+                info.add_workflow_warning("Failed to create minio log tables")
+                note = "SETUP WARNING: " + (
+                    CH.minio_setup_error or "failed to create minio log tables"
+                )
+                print(note)
+                # Keep it for the persisted Result too: on the success path
+                # from_commands_run does not capture this closure's stdout, so
+                # without this the minio failure would not reach CIDB.
+                setup_notes.append(note)
+
+            res = True
+            if has_stateful_tests:
+                if not CH.prepare_stateful_data(
+                    with_s3_storage=is_s3_storage,
+                    is_db_replicated=is_database_replicated,
+                    build_type=build_types[0] if is_bugfix_validation else None,
+                ):
+                    print(
+                        "SETUP FAILURE: "
+                        + (
+                            CH.stateful_setup_error
+                            or "prepare_stateful_data failed"
                         )
-                        and CH.insert_system_zookeeper_config()
                     )
+                    res = False
+                elif not CH.insert_system_zookeeper_config():
+                    print("SETUP FAILURE: insert_system_zookeeper_config failed")
+                    res = False
             if res:
                 print("stateful data prepared")
             return res
@@ -591,6 +793,10 @@ def main():
                 command=start,
             )
         )
+        # Surface non-fatal setup notes (e.g. minio) into the persisted Result
+        # so they are queryable in CIDB test_context_raw even on the success path.
+        for note in setup_notes:
+            results[-1].set_info(note)
         res = results[-1].is_ok()
 
     test_result = None
@@ -653,9 +859,187 @@ def main():
                 random_order=is_bugfix_validation,
                 rerun_count=rerun_count,
                 global_time_limit=global_time_limit,
+                build_type=build_types[0] if is_bugfix_validation else None,
             )
 
         test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)
+
+        # Run additional build types for bugfix validation.
+        # Exit early on first failure to avoid duplicate test names,
+        # workspace pollution, and to preserve logs for analysis.
+        # Fatal message checking (CHECK_ERRORS) is done per-build-type here
+        # rather than in the outer CHECK_ERRORS stage, so that crashes in any
+        # build type are detected even when logs are cleaned between builds.
+        if is_bugfix_validation:
+            for r in test_result.results:
+                r.set_label(build_types[0])
+
+            # Check fatal messages for the first build type before cleaning logs
+            first_bt_fatals = CH.check_fatal_messages_in_logs()
+            for r in first_bt_fatals:
+                r.set_label(build_types[0])
+            # `extend_sub_results` recomputes the aggregate status from child
+            # rows only, which would erase a runner-level `ERROR` set by
+            # `FTResultsProcessor` (e.g. `not s.success_finish`) when the
+            # parsed rows are all `OK`/`FAIL`. Restore it so that
+            # `invert_bugfix_validation_status` still sees the error and
+            # does not flip a harness-level termination into green.
+            runner_level_error = test_result.is_error()
+            test_result.extend_sub_results(first_bt_fatals)
+            if runner_level_error:
+                test_result.status = Result.Status.ERROR
+
+            if test_result.is_ok():
+                for bugfix_bt in build_types[1:]:
+                    print(f"\n=== Bugfix validation with {bugfix_bt} ===")
+                    # Stop the server before overwriting the binary: on Linux,
+                    # `cp` over a running ELF fails with `Text file busy`,
+                    # and `strict=True` ensures a failed switch is not ignored.
+                    # Use `stop_server` rather than `terminate` so the auxiliary
+                    # services (Kafka/Redpanda, MinIO and its webhooks) started
+                    # in the outer setup keep running for the next build type;
+                    # `terminate` would tear them down, making Kafka/MinIO tests
+                    # spuriously "reproduce" a bug under later build types.
+                    # `stop_server` does not guarantee that every descendant
+                    # process (transient `clickhouse-client` invocations, stray
+                    # workers) has released the binary by the time we replace
+                    # it, so unlink the destination first: any process still
+                    # holding the old inode keeps executing from it, while
+                    # `cp` creates a fresh inode for the new binary.
+                    CH.stop_server()
+                    Shell.run(
+                        f"rm -f {ch_path}/clickhouse && "
+                        f"cp {temp_dir}/clickhouse_{bugfix_bt} {ch_path}/clickhouse",
+                        verbose=True,
+                        strict=True,
+                    )
+                    Shell.run(
+                        f"chmod +x {ch_path}/clickhouse",
+                        verbose=True,
+                        strict=True,
+                    )
+                    # The downloaded build-type binaries are self-extracting:
+                    # the first invocation decompresses the real ELF in place.
+                    # Trigger that synchronously here - exactly as the install
+                    # stage does via `clickhouse-server --version` - instead of
+                    # letting the server self-extract during `start`.
+                    # Decompressing a sanitizer binary takes longer than
+                    # `start`'s 15s pid-file wait, so the swap would otherwise
+                    # time out; worse, a later `clickhouse local` (log scraping)
+                    # racing the half-written binary fails with
+                    # `open: Is a directory`.
+                    Shell.run(
+                        "clickhouse-server --version",
+                        verbose=True,
+                        strict=True,
+                    )
+                    CH.clean_logs()
+                    # Fail closed if the server cannot come back up after the
+                    # binary swap: running tests against a dead server would
+                    # produce `Server died` FAILs that the bugfix inverter
+                    # then flips into a successful reproduction, even though
+                    # the selected binary never became ready. Record an ERROR
+                    # row (preserved by `invert_bugfix_validation_status`) and
+                    # stop before running tests for this build type.
+                    if not (CH.start() and CH.wait_ready()):
+                        startup_error = Result(
+                            name=f"Server startup ({bugfix_bt})",
+                            status=Result.Status.ERROR,
+                            info="Server failed to start after switching to the "
+                            f"{bugfix_bt} binary",
+                        )
+                        startup_error.set_label(bugfix_bt)
+                        test_result.results.append(startup_error)
+                        test_result.status = Result.Status.ERROR
+                        break
+
+                    # `start` wipes the server data directory (`run_path0`), so
+                    # the environment built once in the START stage is gone:
+                    # re-create the MinIO log tables and, for stateful suites,
+                    # reload the stateful data and the `system.zookeeper`
+                    # config. Auxiliary services (Kafka/Redpanda, MinIO) keep
+                    # running across `stop_server`, so only the server-side
+                    # state has to be rebuilt. Without this a stateful changed
+                    # test fails only because `test.hits`/`datasets`/the
+                    # auxiliary ZooKeeper row disappeared, and the bugfix
+                    # inverter reports that false failure as a successful bug
+                    # reproduction.
+                    reprepared = CH.create_minio_log_tables()
+                    reprepare_error = CH.minio_setup_error
+                    if reprepared and has_stateful_tests:
+                        # Split the two sub-steps like the START stage does so the
+                        # persisted Environment setup row names the operation that
+                        # actually failed instead of collapsing both into the
+                        # generic "failed to re-prepare stateful data" bucket.
+                        if not CH.prepare_stateful_data(
+                            with_s3_storage=is_s3_storage,
+                            is_db_replicated=is_database_replicated,
+                            build_type=bugfix_bt,
+                        ):
+                            # Prefer the concrete sub-command + ClickHouse error
+                            # captured by prepare_stateful_data() over the generic
+                            # message, so the (intermittent, msan) re-prepare
+                            # failure is diagnosable in CIDB test_context_raw.
+                            reprepared = False
+                            reprepare_error = (
+                                CH.stateful_setup_error
+                                or "failed to re-prepare stateful data"
+                            )
+                        elif not CH.insert_system_zookeeper_config():
+                            reprepared = False
+                            reprepare_error = "insert_system_zookeeper_config failed"
+                    if not reprepared:
+                        info_text = (
+                            "Failed to re-prepare the test environment "
+                            f"after switching to the {bugfix_bt} binary"
+                        )
+                        if reprepare_error:
+                            info_text += f" ({reprepare_error})"
+                        setup_error = Result(
+                            name=f"Environment setup ({bugfix_bt})",
+                            status=Result.Status.ERROR,
+                            info=info_text,
+                        )
+                        setup_error.set_label(bugfix_bt)
+                        test_result.results.append(setup_error)
+                        test_result.status = Result.Status.ERROR
+                        break
+
+                    ft_res_processor_bt = FTResultsProcessor(wd=temp_dir)
+                    bt_runner_exit_code = run_tests(
+                        batch_num=0,
+                        batch_total=0,
+                        tests=tests,
+                        extra_args=runner_options,
+                        random_order=True,
+                        rerun_count=1,
+                        build_type=bugfix_bt,
+                    )
+                    bt_result = ft_res_processor_bt.run(
+                        runner_exit_code=bt_runner_exit_code
+                    )
+
+                    # Check fatal messages for this build type
+                    bt_fatals = CH.check_fatal_messages_in_logs()
+                    for r in bt_fatals:
+                        r.set_label(bugfix_bt)
+                    # As with the first build type above: keep a runner-level
+                    # `ERROR` from being recomputed away by
+                    # `extend_sub_results` before it is copied into
+                    # `test_result.status` and checked by the inverter.
+                    bt_runner_level_error = bt_result.is_error()
+                    bt_result.extend_sub_results(bt_fatals)
+                    if bt_runner_level_error:
+                        bt_result.status = Result.Status.ERROR
+
+                    for r in bt_result.results:
+                        r.set_label(bugfix_bt)
+                    test_result.results = bt_result.results
+                    test_result.status = bt_result.status
+                    debug_files += ft_res_processor_bt.debug_files
+
+                    if not bt_result.is_ok():
+                        break
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -792,7 +1176,6 @@ def main():
             reset_success = True
 
     if test_result and JobStages.CHECK_ERRORS in stages:
-        # must not be performed for a test validation - test must fail and log errors are not respected
         print("Check fatal errors")
         sw_ = Utils.Stopwatch()
         results.append(
@@ -808,8 +1191,16 @@ def main():
         results[-1].results = []
 
     # invert result status for bugfix validation
+    bugfix_validation_no_repro = False
     if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
-        invert_bugfix_validation_status(test_result)
+        # `invert_bugfix_validation_status` returns True when the bug did not
+        # reproduce on this arch. In that case it sets `test_result` to
+        # SKIPPED; the SKIPPED status must also be propagated to the top-level
+        # `R` below, because `Result.create_from` treats SKIPPED child results
+        # as benign and defaults the parent status to OK - which would let the
+        # post-hook in `new_tests_check.py` count this per-arch job as a
+        # validation via `is_success()`.
+        bugfix_validation_no_repro = invert_bugfix_validation_status(test_result)
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
@@ -828,7 +1219,7 @@ def main():
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False
-    if "parallel" in test_options and test_result:
+    if test_result:
         failures_cnt = len([r for r in test_result.results if not r.is_ok()])
         if failures_cnt > 0 and failures_cnt < 4:
             print(
@@ -844,6 +1235,23 @@ def main():
         # do not block pipeline on amd_llvm_coverage job failures
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
         force_ok_exit = True
+    if is_bugfix_validation:
+        # Per-arch bugfix-validation jobs are advisory: their pass/fail status
+        # records "did the bug reproduce on this arch?", not whether the PR
+        # should be blocked. Setting `do_not_block_pipeline_on_failure=True`
+        # marks the job as non-blocking so downstream jobs are not dropped
+        # when this job reports FAIL. The process itself still exits with
+        # the natural status (`Result.complete_job` calls `sys.exit(1)` on
+        # non-OK results); the non-blocking flag is metadata for the
+        # pipeline scheduler. The PR-merge-blocking decision lives in the
+        # `new_tests_check.py` workflow post-hook, which OR's the per-arch
+        # bugfix-validation job statuses.
+        print(
+            "NOTE: Bugfix validation job - marking as non-blocking; "
+            "failure here will not block downstream pipeline jobs "
+            "(process exit code still reflects the actual job status)"
+        )
+        force_ok_exit = True
 
     if test_result:
         test_result.sort()
@@ -854,6 +1262,17 @@ def main():
         files=CH.logs + debug_files,
         info=job_info,
     )
+
+    if bugfix_validation_no_repro:
+        # See the comment above where `bugfix_validation_no_repro` is set.
+        # `R` is otherwise OK because `Result.create_from` skips over SKIPPED
+        # children when deriving the parent status. Mirror the per-arch
+        # integration-test path (`integration_test_job.py`) and set SKIPPED on
+        # `R` directly so the post-hook does not treat this arch as a
+        # validation.
+        R.set_status(Result.Status.SKIPPED).set_info(
+            "Bug does not reproduce on this arch - bugfix validation N/A"
+        )
 
     if is_llvm_coverage and not is_per_test_coverage:
         print("Collecting and merging LLVM coverage files...")

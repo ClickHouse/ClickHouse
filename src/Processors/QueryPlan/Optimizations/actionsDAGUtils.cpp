@@ -129,7 +129,7 @@ MatchedTrees::Matches matchTrees(
                 {
                     if (frame.mapped_children[i])
                         any_child = frame.mapped_children[i];
-                    else if (!frame.node->children[i]->column || !isColumnConst(*frame.node->children[i]->column))
+                    else if (!frame.node->children[i]->column)
                         found_all_children = false;
                 }
 
@@ -186,13 +186,11 @@ MatchedTrees::Matches matchTrees(
                                         {
                                             const auto * inner_col = children[i]->column.get();
                                             const auto * outer_col = frame.node->children[i]->column.get();
-                                            if (!inner_col || !isColumnConst(*inner_col)
-                                                || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
+                                            if (!inner_col || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
                                             {
                                                 all_children_matched = false;
                                             }
-                                            else if (const auto * inner_set = typeid_cast<const ColumnSet *>(
-                                                         &assert_cast<const ColumnConst &>(*inner_col).getDataColumn()))
+                                            else if (const auto * inner_set = typeid_cast<const ColumnSet *>(&inner_col->getDataColumn()))
                                             {
                                                 /// `ColumnSet::operator[]` returns an empty `Field{}` regardless of
                                                 /// set contents, so `getField()` cannot distinguish different
@@ -202,8 +200,7 @@ MatchedTrees::Matches matchTrees(
                                                 /// non-matching: their content isn't known at planning time, and
                                                 /// matching them structurally here would be unsound.
                                                 all_children_matched = false;
-                                                const auto * outer_set = outer_col ? typeid_cast<const ColumnSet *>(
-                                                    &assert_cast<const ColumnConst &>(*outer_col).getDataColumn()) : nullptr;
+                                                const auto * outer_set = outer_col ? typeid_cast<const ColumnSet *>(&outer_col->getDataColumn()) : nullptr;
                                                 if (outer_set && max_size_for_sets_from_tuple_to_compare > 0)
                                                 {
                                                     const auto * inner_tuple = typeid_cast<const FutureSetFromTuple *>(
@@ -227,9 +224,7 @@ MatchedTrees::Matches matchTrees(
                                             }
                                             else
                                             {
-                                                all_children_matched =
-                                                    assert_cast<const ColumnConst &>(*inner_col).getField()
-                                                    == assert_cast<const ColumnConst &>(*outer_col).getField();
+                                                all_children_matched = inner_col->getField() == outer_col->getField();
                                             }
                                         }
                                         else

@@ -231,7 +231,8 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
             return false;
 
         access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
-        auto structure = t->getInMemoryMetadataPtr(query_context, false)->getColumns();
+        auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
+        auto structure = table_metadata->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
         {
@@ -312,6 +313,11 @@ bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predica
 bool StorageMerge::supportsPrewhere() const
 {
     return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
+}
+
+bool StorageMerge::supportsOptimizationToSubcolumns() const
+{
+    return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToSubcolumns(); }) == nullptr;
 }
 
 bool StorageMerge::canMoveConditionsToPrewhere() const
@@ -408,17 +414,34 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
             if (table && table.get() != this)
             {
                 ++selected_table_size;
+                const auto table_metadata = table->getInMemoryMetadataPtr(local_context, false);
                 stage_in_source_tables = std::max(
                     stage_in_source_tables,
                     table->getQueryProcessingStage(local_context, to_stage,
-                        table->getStorageSnapshot(table->getInMemoryMetadataPtr(local_context, false), local_context), query_info));
+                        table->getStorageSnapshot(table_metadata, local_context), query_info));
             }
 
             iterator->next();
         }
     }
 
-    return selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
+    auto stage = selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
+
+    /// Caller asked for WithMergeableState but a child reported a higher stage
+    /// (e.g. Distributed with `distributed_group_by_no_merge=1` reports Complete).
+    /// Cap to WithMergeableState so we don't emit finalized values where the caller
+    /// expects AggregateFunction states - otherwise `convertAndFilterSourceStream`
+    /// throws CANNOT_CONVERT_TYPE. The multi-table branch above already caps at
+    /// WithMergeableState for the same reason; this extends it to the single-table branch.
+    ///
+    /// Only when the caller asked for exactly WithMergeableState: for FetchColumns the
+    /// caller wants raw columns, the child's higher stage (Complete from a single-shard
+    /// Distributed) is fine, and raising it to WithMergeableState routes the child onto a
+    /// path that keeps the analyzer-qualified `__table1.name` header (THERE_IS_NO_COLUMN
+    /// under serialize_query_plan).
+    if (to_stage == QueryProcessingStage::WithMergeableState && stage > to_stage)
+        stage = QueryProcessingStage::WithMergeableState;
+    return stage;
 }
 
 VirtualColumnsDescription StorageMerge::createVirtuals()
@@ -431,7 +454,7 @@ VirtualColumnsDescription StorageMerge::createVirtuals()
     return desc;
 }
 
-StorageMetadataPtr StorageMerge::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
     auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
     if (!query_context)
@@ -1258,6 +1281,13 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
         /// However, it's needed for Materialized...SQL and it's unlikely that someone will use it with Merge tables.
         modified_select.setFinal();
+
+        if (modified_query_info.query_tree)
+        {
+            if (!modified_query_info.table_expression_modifiers)
+                modified_query_info.table_expression_modifiers.emplace();
+            modified_query_info.table_expression_modifiers->setHasFinal(true);
+        }
     }
 
     bool use_analyzer = modified_context->getSettingsRef()[Setting::allow_experimental_analyzer];
@@ -1337,7 +1367,8 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     std::shared_ptr<DB::IStorage> storage,
     ContextPtr local_context)
 {
-    storage_metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, false);
+    const auto storage_metadata = storage->getInMemoryMetadataPtr(local_context, false);
+    storage_metadata_snapshot = storage_metadata;
     auto storage_columns = storage_metadata_snapshot->getColumns();
     auto needed_columns = storage_columns.getAll();
 
@@ -1503,7 +1534,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
 
         for (const auto & db : databases)
         {
@@ -1547,7 +1578,8 @@ void StorageMerge::alter(
 {
     auto table_id = getStorageID();
 
-    StorageInMemoryMetadata storage_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata storage_metadata = *metadata_snapshot;
     params.apply(storage_metadata, local_context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, storage_metadata, /*validate_new_create_query=*/true);
     storage_metadata.setVirtuals(createVirtuals());
@@ -1868,7 +1900,110 @@ void registerStorageMerge(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true
-    });
+    },
+    Documentation{
+        .description = R"DOCS_MD(
+The `Merge` engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.
+
+Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
+```
+
+## Engine parameters {#engine-parameters}
+
+### `db_name` {#db_name}
+
+`db_name` — Possible values:
+    - database name,
+    - constant expression that returns a string with a database name, for example, `currentDatabase()`,
+    - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
+
+### `tables_regexp` {#tables_regexp}
+
+`tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
+
+Regular expressions — [re2](https://github.com/google/re2) (supports a subset of PCRE), case-sensitive.
+See the notes about escaping symbols in regular expressions in the "match" section.
+
+## Usage {#usage}
+
+When selecting tables to read, the `Merge` table itself is not selected, even if it matches the regex. This is to avoid loops.
+It is possible to create two `Merge` tables that will endlessly try to read each others' data, but this is not a good idea.
+
+The typical way to use the `Merge` engine is for working with a large number of `TinyLog` tables as if with a single table.
+
+## Examples {#examples}
+
+**Example 1**
+
+Consider two databases `ABC_corporate_site` and `ABC_store`. The `all_visitors` table will contain IDs from the tables `visitors` in both databases.
+
+```sql
+CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
+```
+
+**Example 2**
+
+Let's say you have an old table `WatchLog_old` and decided to change partitioning without moving data to a new table `WatchLog_new`, and you need to see data from both tables.
+
+```sql
+CREATE TABLE WatchLog_old(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+ORDER BY (date, UserId, EventType);
+
+INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
+
+CREATE TABLE WatchLog_new(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+PARTITION BY date
+ORDER BY (UserId, EventType)
+SETTINGS index_granularity=8192;
+
+INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
+
+CREATE TABLE WatchLog AS WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
+
+SELECT * FROM WatchLog;
+```
+
+```text
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-01 │      1 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-02 │      2 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+```
+
+## Virtual columns {#virtual-columns}
+
+- `_table` — The name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
+
+    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
+
+- `_database` — Contains the name of the database from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
+
+**See Also**
+
+- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [merge](../../../sql-reference/table-functions/merge.md) table function
+)DOCS_MD",
+        .syntax = "ENGINE = Merge(db_name, tables_regexp)",
+        .related = {"Distributed"}});
 }
 
 }

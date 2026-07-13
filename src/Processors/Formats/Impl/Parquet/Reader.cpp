@@ -3,9 +3,14 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/checkStackSize.h>
+#include <Common/HashTable/HashSet.h>
+#include <Common/ProfileEvents.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
@@ -43,6 +48,25 @@ namespace ProfileEvents
 
 namespace DB::Parquet
 {
+
+/// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
+/// input file is malformed. Loading such an enum directly is undefined behavior (caught by
+/// -fsanitize=enum); reading the raw underlying integer via memcpy is well-defined. We use it to
+/// validate page-header enums up front, so the rest of the reader only ever loads valid values.
+template <typename E>
+static int thriftEnumToInt(const E & e)
+{
+    std::underlying_type_t<E> v;
+    memcpy(&v, &e, sizeof(v));
+    return static_cast<int>(v);
+}
+
+template <typename E>
+static void checkThriftEnum(const E & e, const std::map<int, const char *> & valid_values, const char * what)
+{
+    if (!valid_values.contains(thriftEnumToInt(e)))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid {} in Parquet metadata", what);
+}
 
 static void decompressLZ4Raw(const char * data, size_t compressed_size, size_t uncompressed_size, char * out)
 {
@@ -408,7 +432,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     if (row_groups.empty())
         return; // all row groups were skipped
 
-    if (options.format.parquet.bloom_filter_push_down && format_filter_info->key_condition)
+    /// prepareBloomFilterCondition computes the query-constant hashes used by both the bloom filter
+    /// and the dictionary filter, so run it if either is enabled.
+    if ((options.format.parquet.bloom_filter_push_down || options.dictionary_filter_limit_bytes != 0)
+        && format_filter_info->key_condition)
         prepareBloomFilterCondition();
 
     if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
@@ -430,11 +457,28 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     initializePrefetches();
 }
 
+/// Glue to convert thrift types to equivalent arrow types because arrow felt the need to
+/// duplicate them for some reason. Our parquetTryHashColumn is called from both the
+/// arrow-based reader v0 and this reader v3, so arrow types are the common denominator.
+/// Warning: this requires that we use the same thrift-generated types as arrow; if we
+/// ever switch to thrift-generating our own code from parquet.thrift (e.g. to use a
+/// newer version), this will stop working.
+static parquet::ColumnDescriptor makeColumnDescriptor(const parq::FileMetaData & file_metadata, const Reader::PrimitiveColumnInfo & column_info)
+{
+    const parquet::format::SchemaElement * schema_element = &file_metadata.schema.at(column_info.schema_idx);
+    auto node = parquet::schema::PrimitiveNode::FromParquet(static_cast<const void *>(schema_element));
+    return parquet::ColumnDescriptor(std::move(node), column_info.levels.back().def, column_info.levels.back().rep);
+}
+
 void Reader::prepareBloomFilterCondition()
 {
     /// Index in output block -> arrow column info.
     std::vector<std::optional<std::pair</*primitive_idx*/ size_t, parquet::ColumnDescriptor>>>
         bf_eligible_columns(extended_sample_block.columns());
+    /// Index in output block -> whether at least one surviving row group can use the dictionary page
+    /// for this column. Used below to exempt the exact dictionary filter from the bloom filter's
+    /// set-size cap (see hash_many).
+    std::vector<bool> dict_filter_eligible_columns(extended_sample_block.columns(), false);
     bool any_column_eligible_for_bf = false;
     for (size_t primitive_idx = 0; primitive_idx < primitive_columns.size(); ++primitive_idx)
     {
@@ -442,22 +486,36 @@ void Reader::prepareBloomFilterCondition()
         if (!column_info.used_by_key_condition)
             continue;
 
-        /// Check for presence of bloom filter only in first row group, expecting that usually
-        /// either all or none of the row groups have bloom filter for any given column.
-        const parq::ColumnChunk * column_chunk_meta = row_groups[0].columns[primitive_idx].meta;
-        if (!column_chunk_meta->meta_data.__isset.bloom_filter_offset)
+        /// We hash query constants for any column that has either a bloom filter or a usable
+        /// dictionary page in at least one surviving row group, so that the same hashes can later be
+        /// looked up in whichever of the two we end up using. The per-row-group decision is made
+        /// again in initializePrefetches (via columnChunkCanUseDictionaryFilter and the bloom filter
+        /// offset); here we only need to know whether hashing the constants can ever be useful for
+        /// this column. Encoding is a per-row-group property - a high-cardinality row group can fall
+        /// back to PLAIN (and, unless bloom filters are written, becomes ineligible) while a
+        /// low-cardinality one stays dictionary-encoded - so we must scan all row groups rather than
+        /// assume the first one is representative, otherwise later row groups silently lose pruning.
+        bool any_row_group_eligible = false;
+        bool any_row_group_dict_eligible = false;
+        for (const RowGroup & row_group : row_groups)
+        {
+            const parq::ColumnChunk * column_chunk_meta = row_group.columns[primitive_idx].meta;
+            bool has_bloom_filter = options.format.parquet.bloom_filter_push_down
+                && column_chunk_meta->meta_data.__isset.bloom_filter_offset;
+            bool dict_eligible = columnChunkCanUseDictionaryFilter(*column_chunk_meta);
+            any_row_group_eligible |= has_bloom_filter || dict_eligible;
+            any_row_group_dict_eligible |= dict_eligible;
+            /// Dictionary eligibility already implies overall eligibility, so once we have seen it
+            /// there is nothing left to learn from the remaining row groups.
+            if (any_row_group_dict_eligible)
+                break;
+        }
+        if (!any_row_group_eligible)
             continue;
 
-        /// Glue to convert thrift types to equivalent arrow types because arrow felt the need to
-        /// duplicate them for some reason. Our parquetTryHashColumn is called from both the
-        /// arrow-based reader v0 and this reader v3, so arrow types are the common denominator.
-        /// Warning: this requires that we use the same thrift-generated types as arrow; if we
-        /// ever switch to thrift-generating our own code from parquet.thrift (e.g. to use a
-        /// newer version), this will stop working.
-        const parquet::format::SchemaElement * schema_element = &file_metadata.schema.at(column_info.schema_idx);
-        auto node = parquet::schema::PrimitiveNode::FromParquet(static_cast<const void *>(schema_element));
-        parquet::ColumnDescriptor desc(std::move(node), column_info.levels.back().def, column_info.levels.back().rep);
+        parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
         bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
+        dict_filter_eligible_columns[column_info.idx_in_output_block] = any_row_group_dict_eligible;
         any_column_eligible_for_bf = true;
     }
 
@@ -487,7 +545,16 @@ void Reader::prepareBloomFilterCondition()
             const auto & pair = bf_eligible_columns.at(column_idx);
             if (!pair.has_value())
                 return std::nullopt;
-            if (column->size() > options.bloom_filter_max_set_size)
+            /// The `bloom_filter_max_set_size` cutoff exists because a large queried set is unlikely to
+            /// be ruled out by a probabilistic bloom filter and would make us read many filter blocks
+            /// for nothing. The dictionary filter is exact and reads no extra data per value, so that
+            /// rationale does not apply: capping here would silently disable dictionary pruning for
+            /// `IN` lists with more than `bloom_filter_max_set_size` elements, which is exactly the
+            /// workload this feature targets. So for a column that can use nothing but the bloom filter
+            /// we keep the cap (skip entirely); for a dictionary-eligible column we still hash the large
+            /// set so the dictionary filter can use it, but must not let the bloom filter probe it.
+            bool exceeds_bloom_filter_cap = column->size() > options.bloom_filter_max_set_size;
+            if (exceeds_bloom_filter_cap && !dict_filter_eligible_columns[column_idx])
                 return std::nullopt;
             const auto & [primitive_idx, descriptor] = *pair;
             auto hashes = parquetTryHashColumn(column.get(), &descriptor);
@@ -496,7 +563,15 @@ void Reader::prepareBloomFilterCondition()
 
             PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
             column_info.use_bloom_filter = true;
-            column_info.bloom_filter_hashes.insert(column_info.bloom_filter_hashes.end(), hashes->begin(), hashes->end());
+            if (!exceeds_bloom_filter_cap)
+                /// Register the hashes for bloom-filter prefetching. For an over-cap set we skip this:
+                /// the hashes are still returned (and reach the exact dictionary filter via the
+                /// query-condition RPN, which reads no extra data per value), but the probabilistic
+                /// bloom filter must not read a block per value on row groups that fall back to it.
+                /// `initializePrefetches` keeps the bloom filter enabled for the column as long as some
+                /// other atom registered hashes here, and `BloomFilterLookup::findAnyHash` treats the
+                /// unregistered over-cap hashes as possibly present.
+                column_info.bloom_filter_hashes.insert(column_info.bloom_filter_hashes.end(), hashes->begin(), hashes->end());
             any_column_uses_bf = true;
             return hashes;
         };
@@ -532,25 +607,31 @@ void Reader::initializePrefetches()
                 column.dictionary_page_prefetch = prefetcher.registerRange(
                     start, dict_page_length, /*likely_to_be_used=*/ true);
 
-                /// Dictionary filter.
-                if (primitive_columns[column_idx].used_by_key_condition &&
-                    dict_page_length < options.dictionary_filter_limit_bytes &&
-                    column.meta->meta_data.__isset.encoding_stats)
-                {
-                    bool all_pages_are_dictionary_encoded = true;
-                    for (const parq::PageEncodingStats & s : column.meta->meta_data.encoding_stats)
-                        all_pages_are_dictionary_encoded &=
-                            (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2) ||
-                            s.encoding == parq::Encoding::PLAIN_DICTIONARY ||
-                            s.encoding == parq::Encoding::RLE_DICTIONARY ||
-                            s.count == 0;
-                    column.use_dictionary_filter = all_pages_are_dictionary_encoded;
-                }
+                /// Dictionary filter. We only enable it if prepareBloomFilterCondition produced query
+                /// hashes for this column (use_bloom_filter), i.e. the condition has an equality/IN on
+                /// a hashable type; otherwise the dictionary lookup, which relies on those hashes,
+                /// couldn't filter anything anyway. This also guarantees that `bloom_filter_condition`
+                /// is non-null whenever any column has use_dictionary_filter set.
+                if (primitive_columns[column_idx].use_bloom_filter)
+                    column.use_dictionary_filter = columnChunkCanUseDictionaryFilter(*column.meta);
             }
 
             /// Bloom filter.
+            /// `PrimitiveColumnInfo::use_bloom_filter` only means "we hashed the query constants for
+            /// this column"; it is also set for dictionary filtering, even when bloom filter push-down
+            /// is disabled. So we must re-check the setting here, otherwise a row group that is not
+            /// dictionary-filter eligible but has a bloom filter would use it despite the user
+            /// disabling `input_format_parquet_bloom_filter_push_down`.
+            /// `bloom_filter_hashes` is empty when the only query constants for this column come from
+            /// `IN` sets larger than `bloom_filter_max_set_size`, which were hashed only for the exact
+            /// dictionary filter; a bloom filter over that many values would read a block per value for
+            /// little benefit, so we keep it disabled on row groups (like this one) that fall back to
+            /// it. If some smaller atom did register hashes, we still enable it for those - the
+            /// unregistered over-cap hashes are handled conservatively in `BloomFilterLookup::findAnyHash`.
             if (!column.use_dictionary_filter &&
+                options.format.parquet.bloom_filter_push_down &&
                 primitive_columns[column_idx].use_bloom_filter &&
+                !primitive_columns[column_idx].bloom_filter_hashes.empty() &&
                 column.meta->meta_data.__isset.bloom_filter_offset)
             {
                 /// Have to guess the header size upper bound.
@@ -846,9 +927,12 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
         throw Exception(ErrorCodes::INCORRECT_DATA, "Dictionary page size out of bounds: {} > {}", header.compressed_page_size, data.size());
     data = data.subspan(0, size_t(header.compressed_page_size));
 
+    checkThriftEnum(column.meta->meta_data.codec, parq::_CompressionCodec_VALUES_TO_NAMES, "compression codec");
     auto codec = column.meta->meta_data.codec;
     if (codec != parq::CompressionCodec::UNCOMPRESSED)
     {
+        if (header.uncompressed_page_size < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative uncompressed dictionary page size");
         size_t uncompressed_size = size_t(header.uncompressed_page_size);
         auto & buf = column.dictionary.decompressed_buf;
         buf.resize(uncompressed_size);
@@ -856,6 +940,10 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
         data = std::span(buf.data(), buf.size());
     }
 
+    /// Signed i32 from the thrift header; a negative count would sign-extend to a huge size_t and
+    /// drive a huge `reserve`/`resize` inside Dictionary::decode.
+    if (header.dictionary_page_header.num_values < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in dictionary page");
     column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.decoded_type);
 }
 
@@ -866,9 +954,13 @@ bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes
     {
         size_t block_idx = ((h >> 32) * num_blocks) >> 32;
         auto it = std::partition_point(column.bloom_filter_blocks.begin(), column.bloom_filter_blocks.end(), [&](const BloomFilterBlock & block) { return block.block_idx < block_idx; });
-        /// All hashes must've been preregistered in bloom_filter_hashes, and their blocks prefetched.
+        /// This value's block was not prefetched. That happens for values from an `IN` set larger than
+        /// `bloom_filter_max_set_size`: such sets are hashed only for the exact dictionary filter and
+        /// deliberately kept out of `bloom_filter_hashes` (see prepareBloomFilterCondition), so probing
+        /// them here would read one filter block per value for little benefit. A bloom filter can only
+        /// ever rule a value out, so a value we did not probe must be treated as possibly present.
         if (it == column.bloom_filter_blocks.end() || it->block_idx != block_idx)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected hash in bloom filter lookup");
+            return true;
 
         auto data = prefetcher.getRangeData(it->prefetch);
 
@@ -891,21 +983,178 @@ bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes
     return false;
 }
 
+bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const
+{
+    if (options.dictionary_filter_limit_bytes == 0)
+        return false;
+    /// We deliberately require a declared `dictionary_page_offset`. Some legacy writers omit it and
+    /// point `data_page_offset` at the dictionary page instead (the "undeclared dictionary page"
+    /// shape handled in `initializeDataPage`); dictionary filtering stays disabled for those files.
+    /// Determining the dictionary page's byte range in that shape needs the offset index (its page
+    /// locations), which is not available at this pruning stage, and such files also typically lack
+    /// the `encoding_stats` that this check requires below. The cost of the limitation is only a
+    /// missed optimization (a full row-group scan), never a wrong result.
+    if (!column_meta.meta_data.__isset.dictionary_page_offset)
+        return false;
+    /// We assume that the dictionary page is immediately followed by the first data page.
+    size_t dict_page_length = size_t(column_meta.meta_data.data_page_offset) - size_t(column_meta.meta_data.dictionary_page_offset);
+    /// The limit is the maximum dictionary page size for which pruning applies, so the boundary is
+    /// inclusive: a dictionary page of exactly `dictionary_filter_limit_bytes` is still eligible.
+    if (dict_page_length > options.dictionary_filter_limit_bytes)
+        return false;
+    /// We can only use the dictionary if it holds the complete set of column values, i.e. all data
+    /// pages are dictionary-encoded. Without encoding stats we can't tell, so we don't risk it.
+    if (!column_meta.meta_data.__isset.encoding_stats)
+        return false;
+    /// Require positive proof, not just the absence of a contradiction: there must be at least one
+    /// non-empty data page and every non-empty data page must use a dictionary encoding. A present
+    /// but incomplete list (empty, or describing only the dictionary page and no data pages) does
+    /// not prove anything - the column chunk could still contain plain data pages whose values are
+    /// not in the dictionary, and pruning from such an incomplete value set would silently drop
+    /// matching rows. Empty data pages (count == 0) carry no values, so their encoding is irrelevant.
+    bool has_dictionary_data_page = false;
+    for (const parq::PageEncodingStats & s : column_meta.meta_data.encoding_stats)
+    {
+        /// An empty entry (`count == 0`) describes no pages, so nothing about it - neither its
+        /// `page_type` nor its `encoding` - is relevant to eligibility. Skip it before validating those
+        /// Thrift enums, otherwise a garbage enum value on an advisory empty entry would turn a file
+        /// that reads fine (with a full scan) into a hard `INCORRECT_DATA` failure under the default-on
+        /// dictionary filter. A negative count is genuine corruption, not an empty page, so it is
+        /// rejected; `count` is a plain integer, so reading it needs no enum validation.
+        if (s.count < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative page count in Parquet metadata");
+        if (s.count == 0)
+            continue;
+        /// The remaining fields come from Thrift metadata, so a malformed file can carry out-of-range
+        /// enum values just like `PageHeader` can. Validate each one right before comparing it:
+        /// `checkThriftEnum` reads the underlying integer via `memcpy`, avoiding the `-fsanitize=enum`
+        /// undefined behavior of loading an out-of-range enumerator, and rejects malformed metadata as
+        /// `INCORRECT_DATA`.
+        checkThriftEnum(s.page_type, parq::_PageType_VALUES_TO_NAMES, "page type");
+        if (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2)
+            continue;
+        checkThriftEnum(s.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+        if (s.encoding != parq::Encoding::PLAIN_DICTIONARY && s.encoding != parq::Encoding::RLE_DICTIONARY)
+            return false;
+        has_dictionary_data_page = true;
+    }
+    return has_dictionary_data_page;
+}
+
+/// Hash all values of an already-decoded dictionary the same way query constants are hashed for
+/// bloom filters, so the two can be compared. Returns nullopt if the values can't be hashed (in
+/// which case the dictionary can't be used for filtering).
+static std::optional<HashSet<UInt64>> hashDictionaryValues(
+    const parq::FileMetaData & file_metadata, const ReadOptions & options,
+    Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info)
+{
+    chassert(column.dictionary.isInitialized());
+    size_t count = column.dictionary.count;
+
+    /// Materialize all dictionary values into a column of the decoded type.
+    auto indexes = ColumnUInt32::create();
+    auto & indexes_data = indexes->getData();
+    indexes_data.resize_exact(count);
+    for (size_t i = 0; i < count; ++i)
+        indexes_data[i] = static_cast<UInt32>(i);
+
+    auto values = column_info.decoded_type->createColumn();
+    values->reserve(count);
+    column.dictionary.index(*indexes, *values);
+
+    /// Hash them the same way query constants are hashed (see prepareBloomFilterCondition).
+    parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
+    auto hashes = parquetTryHashColumn(values.get(), &desc);
+    if (!hashes.has_value())
+        return std::nullopt;
+    HashSet<UInt64> value_hashes;
+    value_hashes.reserve(hashes->size());
+    for (UInt64 h : *hashes)
+        value_hashes.insert(h);
+
+    /// The dictionary holds only the non-null values of the column chunk, so we must account for how
+    /// nulls are read into the output, mirroring the conservative null handling of the min/max path in
+    /// `adjustRangeFromIndexIfNeeded`.
+    bool nullable = column_info.levels.back().def > 0;
+    bool can_be_null = !column.meta->meta_data.statistics.__isset.null_count
+        || column.meta->meta_data.statistics.null_count != 0;
+    if (nullable && can_be_null && !column_info.output_nullable)
+    {
+        if (options.format.null_as_default)
+        {
+            /// Under `input_format_null_as_default`, null values are decoded as the type's default
+            /// value, which is not in the dictionary; without accounting for it we'd wrongly skip a
+            /// row group whose nulls match the queried default (e.g. `WHERE x = 0` over an optional
+            /// column read as non-nullable `UInt64`). So add the default value's hash.
+            auto default_hash = parquetTryHashField(column_info.output_type->getDefault(), &desc);
+            /// If the default value can't be hashed, we can't rule out a match.
+            if (!default_hash.has_value())
+                return std::nullopt;
+            value_hashes.insert(*default_hash);
+        }
+        else
+        {
+            /// Reading a null into a non-nullable column raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`
+            /// during decoding. Skipping the row group would suppress that error and change the query
+            /// result, so we must not prune: report that we can't rule out a match.
+            return std::nullopt;
+        }
+    }
+
+    return value_hashes;
+}
+
+struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
+{
+    Reader & reader;
+    ColumnChunk & column;
+    const PrimitiveColumnInfo & column_info;
+
+    bool computed = false;
+    std::optional<HashSet<UInt64>> value_hashes;
+
+    DictionaryLookup(Reader & reader_, ColumnChunk & column_, const PrimitiveColumnInfo & column_info_)
+        : reader(reader_), column(column_), column_info(column_info_) {}
+
+    bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+};
+
+bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
+{
+    if (!computed)
+    {
+        value_hashes = hashDictionaryValues(reader.file_metadata, reader.options, column, column_info);
+        computed = true;
+    }
+    /// If the dictionary values couldn't be hashed, we can't rule out a match.
+    if (!value_hashes.has_value())
+        return true;
+    for (UInt64 h : hashes)
+        if (value_hashes->contains(h))
+            return true;
+    return false;
+}
+
 bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group)
 {
-    /// TODO [parquet]: Dictionary filter.
-
     KeyCondition::ColumnIndexToBloomFilter filter_map;
     for (size_t i = 0; i < row_group.columns.size(); ++i)
     {
-        if (row_group.columns[i].use_bloom_filter)
+        ColumnChunk & column = row_group.columns[i];
+        /// use_dictionary_filter takes precedence over use_bloom_filter, and the two are never set
+        /// together for the same column chunk (see initializePrefetches).
+        if (column.use_dictionary_filter)
             filter_map.emplace(
                 primitive_columns[i].idx_in_output_block,
-                std::make_unique<BloomFilterLookup>(prefetcher, row_group.columns[i]));
+                std::make_unique<DictionaryLookup>(*this, column, primitive_columns[i]));
+        else if (column.use_bloom_filter)
+            filter_map.emplace(
+                primitive_columns[i].idx_in_output_block,
+                std::make_unique<BloomFilterLookup>(prefetcher, column));
     }
-    /// We use both the min/max statistics and bloom filter. For the case where condition has
-    /// something like `x < 42 OR y = 1337`, where `x < 42` is ruled out by min/max, and `y = 1337`
-    /// is ruled out by bloom filter.
+    /// We use both the min/max statistics and bloom/dictionary filters. For the case where condition
+    /// has something like `x < 42 OR y = 1337`, where `x < 42` is ruled out by min/max, and
+    /// `y = 1337` is ruled out by the filter.
     /// (I'm guessing this hardly ever comes up in practice, but it was easy enough to support.)
     return bloom_filter_condition->checkInHyperrectangle(
         row_group.hyperrectangle, extended_sample_block_data_types, filter_map).can_be_true;
@@ -1432,7 +1681,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition/definition levels for arrays in column {}", column_info.name);
     }
 
-    if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default)
+    if (subchunk.null_map && !column_info.output_nullable && !column_info.group_nullable && !options.format.null_as_default)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
         /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
@@ -1445,7 +1694,21 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (subchunk.null_map)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
+        /// Fill defaults at null rows so the column reaches full size. For a group_nullable leaf,
+        /// the null map is the group null map: defaults fill the struct-null rows.
         subchunk.column->expand(null_map, /*inverted*/ true);
+    }
+
+    if (column_info.group_nullable && subchunk.null_map)
+    {
+        /// Leaf of a physically-nullable struct read as Nullable(Tuple(...)): its def-level null map
+        /// is the group null map. Move it aside now, before the output_nullable block below can
+        /// consume `null_map` into a leaf-level ColumnNullable. formOutputColumn reads it from the
+        /// group's first leaf to wrap the assembled ColumnTuple in ColumnNullable. If the leaf is
+        /// itself Nullable, it gets a fresh all-non-null map below (the file leaf is REQUIRED, so it
+        /// has no element-level nulls; the struct nulls are represented by the outer ColumnNullable).
+        subchunk.group_null_map = std::move(subchunk.null_map);
+        subchunk.null_map.reset();
     }
 
     if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
@@ -1536,6 +1799,27 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
 {
     parq::PageHeader header;
     data_ptr += deserializeThriftStruct(header, data_ptr, data_end - data_ptr);
+
+    /// Validate enum fields before anything loads them (a malformed file can carry out-of-range
+    /// values, and loading an unscoped enum out of range is undefined behavior).
+    checkThriftEnum(header.type, parq::_PageType_VALUES_TO_NAMES, "page type");
+    switch (header.type)
+    {
+        case parq::PageType::DATA_PAGE:
+            checkThriftEnum(header.data_page_header.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+            checkThriftEnum(header.data_page_header.definition_level_encoding, parq::_Encoding_VALUES_TO_NAMES, "definition level encoding");
+            checkThriftEnum(header.data_page_header.repetition_level_encoding, parq::_Encoding_VALUES_TO_NAMES, "repetition level encoding");
+            break;
+        case parq::PageType::DATA_PAGE_V2:
+            checkThriftEnum(header.data_page_header_v2.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+            break;
+        case parq::PageType::DICTIONARY_PAGE:
+            checkThriftEnum(header.dictionary_page_header.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+            break;
+        default:
+            break;
+    }
+
     size_t compressed_page_size = size_t(header.compressed_page_size);
     if (header.compressed_page_size < 0 || compressed_page_size > size_t(data_end - data_ptr))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Page size out of bounds: {} > {}", header.compressed_page_size, data_end - data_ptr);
@@ -1574,12 +1858,24 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
     /// Check if all rows of the page are filtered out, if we have enough information.
 
+    /// These signed i32 row counts are consumed below to compute `page.end_row_idx` (and the
+    /// row-skip shortcut returns before the later num_values check). A negative value would
+    /// sign-extend to a huge size_t and wrap `next_row_idx + num_rows`, moving the row cursor
+    /// backwards or skipping the page instead of failing, so reject it here.
     std::optional<size_t> num_rows_in_page;
     if (header.type == parq::PageType::DATA_PAGE_V2)
+    {
+        if (header.data_page_header_v2.num_rows < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of rows in DataPageV2");
         num_rows_in_page = header.data_page_header_v2.num_rows;
+    }
     else if (header.type == parq::PageType::DATA_PAGE &&
              column_info.levels.back().rep == 0) // no arrays => num_values == num_rows
+    {
+        if (header.data_page_header.num_values < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in data page");
         num_rows_in_page = header.data_page_header.num_values;
+    }
 
     if (num_rows_in_page.has_value())
     {
@@ -1597,8 +1893,13 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
     /// Get information about page layout and encoding out of page header.
 
+    checkThriftEnum(column.meta->meta_data.codec, parq::_CompressionCodec_VALUES_TO_NAMES, "compression codec");
     page.codec = column.meta->meta_data.codec;
-    page.values_uncompressed_size = header.uncompressed_page_size;
+    /// Signed i32 from the thrift header; a negative value would sign-extend to a huge size_t and
+    /// later cause a huge allocation in decompressPageIfCompressed.
+    if (header.uncompressed_page_size < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Negative uncompressed page size");
+    page.values_uncompressed_size = size_t(header.uncompressed_page_size);
 
     if (page.codec == parq::CompressionCodec::UNCOMPRESSED && header.uncompressed_page_size != header.compressed_page_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "No compression, but compressed and uncompressed page size are different");
@@ -1612,7 +1913,9 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
     if (header.type == parq::PageType::DATA_PAGE)
     {
-        page.num_values = header.data_page_header.num_values;
+        if (header.data_page_header.num_values < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in data page");
+        page.num_values = size_t(header.data_page_header.num_values);
         page.encoding = header.data_page_header.encoding;
         def_encoding = header.data_page_header.definition_level_encoding;
         rep_encoding = header.data_page_header.repetition_level_encoding;
@@ -1653,10 +1956,20 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     }
     else if (header.type == parq::PageType::DATA_PAGE_V2)
     {
-        page.num_values = header.data_page_header_v2.num_values;
+        if (header.data_page_header_v2.num_values < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in data page");
+        page.num_values = size_t(header.data_page_header_v2.num_values);
         page.encoding = header.data_page_header_v2.encoding;
-        encoded_def_size = header.data_page_header_v2.definition_levels_byte_length;
-        encoded_rep_size = header.data_page_header_v2.repetition_levels_byte_length;
+
+        /// These come from the thrift header as signed i32. A negative value would sign-extend to a
+        /// huge size_t, so reject it before assigning to the size_t fields. Otherwise the bounds
+        /// check below could be bypassed by integer overflow, and a huge std::span would reach the
+        /// rep/def level decoder, reading far past the page buffer (heap out-of-bounds read).
+        if (header.data_page_header_v2.definition_levels_byte_length < 0 ||
+            header.data_page_header_v2.repetition_levels_byte_length < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative definition/repetition levels byte length in DataPageV2");
+        encoded_def_size = size_t(header.data_page_header_v2.definition_levels_byte_length);
+        encoded_rep_size = size_t(header.data_page_header_v2.repetition_levels_byte_length);
 
         if (header.data_page_header_v2.__isset.is_compressed &&
             !header.data_page_header_v2.is_compressed)
@@ -1664,12 +1977,15 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
             page.codec = parq::CompressionCodec::UNCOMPRESSED;
         }
 
-        if (encoded_def_size + encoded_rep_size > page.data.size())
+        /// Non-wrapping bounds check: `encoded_def_size + encoded_rep_size` could overflow.
+        if (encoded_rep_size > page.data.size() || encoded_def_size > page.data.size() - encoded_rep_size)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Page data is too short (def+rep)");
         encoded_rep = page.data.data();
         encoded_def = page.data.data() + encoded_rep_size;
         size_t uncompressed_part = encoded_def_size + encoded_rep_size;
         page.data = page.data.subspan(uncompressed_part);
+        if (page.values_uncompressed_size < uncompressed_part)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "DataPageV2 uncompressed page size is smaller than the rep/def levels");
         page.values_uncompressed_size -= uncompressed_part;
     }
     else if (header.type == parq::PageType::DICTIONARY_PAGE)
@@ -2043,6 +2359,10 @@ void Reader::decompressPageIfCompressed(PageState & page)
 
 MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows)
 {
+    /// Recurses over the nested output column tree, whose depth is bounded by SchemaConverter's
+    /// recursion limit; guard the native stack here too as defense in depth.
+    checkStackSize();
+
     const OutputColumnInfo & output_info = output_columns.at(output_column_idx);
     MutableColumnPtr res;
 
@@ -2062,7 +2382,26 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         return res;
     }
 
-    TypeIndex kind = output_info.input_type->getColumnType();
+    /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
+    /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
+    /// the group null map. Every leaf shares the same def-level null map (the subtree is
+    /// all-REQUIRED), which decodePrimitiveColumn moved into `group_null_map` on each leaf before
+    /// any leaf-level Nullable wrapping could consume it. Take it from the first leaf. Dispatch on
+    /// the unwrapped type.
+    MutableColumnPtr nullable_group_null_map;
+    if (output_info.nullable_group)
+    {
+        ColumnSubchunk & first_leaf = row_subgroup.columns.at(output_info.primitive_start);
+        if (first_leaf.group_null_map)
+            nullable_group_null_map = IColumn::mutate(std::move(first_leaf.group_null_map));
+        else
+            /// No struct-level nulls (all rows defined): all-non-null map.
+            nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
+    }
+
+    TypeIndex kind = output_info.nullable_group
+        ? removeNullable(output_info.input_type)->getColumnType()
+        : output_info.input_type->getColumnType();
 
     if (output_info.is_primitive)
     {
@@ -2120,6 +2459,13 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         chassert(output_info.nested_columns.size() == 1);
         MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), num_rows);
         res = ColumnMap::create(std::move(nested));
+    }
+
+    if (output_info.nullable_group)
+    {
+        /// Wrap the assembled ColumnTuple in ColumnNullable using the reconstructed group null map.
+        chassert(nullable_group_null_map->size() == res->size());
+        res = ColumnNullable::create(std::move(res), std::move(nullable_group_null_map));
     }
 
     chassert(res->getDataType() == output_info.input_type->getColumnType());

@@ -20,11 +20,13 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_,
+    size_t limit_hint_,
     RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
     : AggregatingInOrderTransform(std::move(header), std::move(params_),
         sort_description_for_merging, group_by_description_,
         max_block_size_, max_block_bytes_,
         std::make_unique<ManyAggregatedData>(1), 0,
+        limit_hint_,
         std::move(dataflow_cache_updater_))
 {
 }
@@ -35,6 +37,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_,
     ManyAggregatedDataPtr many_data_, size_t current_variant,
+    size_t limit_hint_,
     RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
     : IProcessor({std::move(header)}, {params_->getCustomHeader(false)})
     , max_block_size(max_block_size_)
@@ -45,6 +48,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
+    , limit_hint(limit_hint_)
     , dataflow_cache_updater(std::move(dataflow_cache_updater_))
 {
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
@@ -187,14 +191,30 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             if (!group_by_key)
                 params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
 
-            /// If max_block_size is reached we have to stop consuming and generate the block. Save the extra rows into new chunk.
-            if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes)
+            /// If max_block_size or limit_hint is reached we have to stop consuming and generate the block. Save the extra rows into new chunk.
+            if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes
+                || (limit_hint && cur_block_size + res_rows >= limit_hint))
             {
                 if (group_by_key)
                     group_by_chunk
                         = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false).chunk;
                 cur_block_bytes += current_memory_usage;
-                finalizeCurrentChunk(std::move(chunk), key_end);
+
+                /// When limit is reached, don't save leftover rows — we're done.
+                /// Set block_end_reached + need_generate to trigger generate(),
+                /// which will produce the output and then set is_consume_finished
+                /// via the limit check after res_rows is updated.
+                if (limit_hint && cur_block_size + res_rows >= limit_hint)
+                {
+                    block_end_reached = true;
+                    need_generate = true;
+                    variants.invalidate();
+                }
+                else
+                {
+                    finalizeCurrentChunk(std::move(chunk), key_end);
+                }
+
                 if (rows_before_aggregation)
                     rows_before_aggregation->add(key_end);
                 return;
@@ -270,6 +290,17 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         }
 
         output.push(std::move(to_push_chunk));
+
+        /// When limit is reached, we set is_consume_finished in generate()
+        /// and don't save leftover rows. Finish immediately after pushing.
+        if (is_consume_finished)
+        {
+            output.finish();
+            input.close();
+            LOG_DEBUG(log, "Aggregated. {} to {} rows (from {})", src_rows, res_rows, formatReadableSizeWithBinarySuffix(src_bytes));
+            return Status::Finished;
+        }
+
         return Status::Ready;
     }
 
@@ -358,6 +389,10 @@ void AggregatingInOrderTransform::generate()
 
     res_rows += to_push_chunk.getNumRows();
     need_generate = false;
+
+    /// If we have emitted enough groups, stop consuming more input.
+    if (limit_hint && res_rows >= limit_hint)
+        is_consume_finished = true;
 }
 
 FinalizeAggregatedTransform::FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_)

@@ -1,0 +1,54 @@
+----------
+Expression (Project names)
+  GatherExchange (sorted by (__table1.path ASC, __table1.hits ASC, __table3.path ASC, __table3.hits ASC))
+    Sorting (Sorting for ORDER BY)
+      ScatterExchange (any scatter)
+        Expression ((Before ORDER BY + Projection))
+          GatherExchange
+            JoinLogical
+              ScatterExchange (by hash([__table1.path]))
+                Expression
+                  GatherExchange
+                    Aggregating
+                      ScatterExchange (by hash([__table2.path]))
+                        Expression
+                          GatherExchange
+                            ReadFromMergeTree (default.test)
+              ScatterExchange (by hash([__table3.path]))
+                BuildRuntimeFilter (Build runtime join filter on __table3.path)
+                  Expression ((Change column names to column identifiers + (Project names + Projection)))
+                    GatherExchange
+                      Aggregating
+                        ScatterExchange (by hash([__table4.path]))
+                          Expression (Before GROUP BY)
+                            Expression ((WHERE + Change column names to column identifiers))
+                              GatherExchange
+                                ReadFromMergeTree (default.test)
+----------
+Expression (Project names)
+  GatherExchange (sorted by (__table1.path ASC, __table1.hits ASC, __table3.path ASC, __table3.hits ASC))
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        JoinLogical
+          ShuffleExchange (by hash([__table1.path]))
+            Expression
+              Aggregating
+                ShuffleExchange (by hash([__table2.path]))
+                  Expression
+                    ReadFromMergeTree (default.test)
+          ShuffleExchange (by hash([__table3.path]))
+            BuildRuntimeFilter (Build runtime join filter on __table3.path)
+              Expression ((Change column names to column identifiers + (Project names + Projection)))
+                Aggregating
+                  ShuffleExchange (by hash([__table4.path]))
+                    Expression (Before GROUP BY)
+                      Expression ((WHERE + Change column names to column identifiers))
+                        ReadFromMergeTree (default.test)
+----------
+path_0	0	path_0	12
+path_1	2	path_1	8
+path_2	4	path_2	6
+----------
+path_0	16	0	24
+path_1	12	12	16
+path_2	12	24	12

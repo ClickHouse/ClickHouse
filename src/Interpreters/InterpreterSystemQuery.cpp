@@ -23,6 +23,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <Functions/pointInPolygon.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/AsynchronousMetricLog.h>
@@ -40,6 +41,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/JIT/CHJIT.h>
+#include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
@@ -70,6 +72,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
@@ -93,6 +96,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <base/sleep.h>
 
 #include "config.h"
@@ -297,7 +301,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     }
     else
     {
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             startStopActionInDatabase(action_type, start, elem.first, elem.second, getContext(), log);
         }
@@ -481,6 +485,10 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
 #endif
+        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE);
+            clearPointInPolygonCache();
+            break;
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -529,6 +537,12 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->clearQueryConditionCache();
             break;
         }
+        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_ENCRYPTION_HEADERS_CACHE);
+            getContext()->clearEncryptionHeaderCache();
+            break;
+        }
         case Type::CLEAR_QUERY_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
@@ -551,6 +565,7 @@ BlockIO InterpreterSystemQuery::execute()
             resetExpressionJITInstance();
             resetAggregatorJITInstance();
             resetSortDescriptionJITInstance();
+            resetRegexpJITInstance();
             /// Clearing the cache invokes `~JITModuleMemoryManager` for every entry, which runs LLVM's
             /// per-module destructors and frees their bookkeeping into the dedicated JIT arena. Purge dirty
             /// pages from that arena so the freed memory is returned to the OS without waiting for the
@@ -974,6 +989,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
             break;
+        case Type::WAIT_QUERY_RUNNER:
+            waitQueryRunner();
+            break;
         case Type::SCHEDULE_MERGE:
             scheduleMerge(query);
             break;
@@ -996,6 +1014,11 @@ BlockIO InterpreterSystemQuery::execute()
 
             break;
         }
+        case Type::RESTART_DISK:
+        {
+            restartDisk(query.disk);
+            break;
+        }
         case Type::FLUSH_LOGS:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
@@ -1005,16 +1028,12 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::STOP_LISTEN:
         {
-            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
-                throw Exception::createDeprecated("SYSTEM STOP LISTEN query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
             getContext()->stopServers(query.server_type);
             break;
         }
         case Type::START_LISTEN:
         {
-            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
-                throw Exception::createDeprecated("SYSTEM START LISTEN query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
             getContext()->startServers(query.server_type);
             break;
@@ -1244,6 +1263,7 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
 
         case Type::RESET_DDL_WORKER:
+            getContext()->checkAccess(AccessType::SYSTEM_RESET_DDL_WORKER);
             getContext()->getDDLWorker().requestToResetState();
             break;
         default:
@@ -1493,7 +1513,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_RESTART_REPLICA);
     bool show_tables_is_granted_globally = access->isGranted(AccessType::SHOW_TABLES);
 
-    for (auto & elem : catalog.getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (auto & elem : catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (elem.second->isExternal())
             continue;
@@ -1555,7 +1575,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     }
     else if (query.is_drop_whole_replica)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -1596,15 +1616,33 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
         String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
 
+        /// query.replica_zk_path keeps the legacy one-slash normalization so the drop below targets the
+        /// same live znode that tables store (a full collapse here would regress dropping a remote replica
+        /// of a table created with a trailing slash). For the self-protection comparison, collapse both
+        /// sides so a self-drop spelled with extra trailing slashes still matches the local table.
+        const String canonical_remote_replica_path
+            = fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query.replica_zk_path, /*check_starts_with_slash*/ false))
+            / "replicas" / query.replica;
+
         /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
                 {
-                    if (storage_replicated->getReplicaPath() == remote_replica_path)
+                    /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
+                    /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
+                    /// past this guard against a query path canonicalized to "/a/replicas/...".
+                    const String local_replica_path
+                        = fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(
+                              storage_replicated->getZooKeeperPath(), /*check_starts_with_slash*/ false))
+                        / "replicas" / storage_replicated->getReplicaName();
+                    /// Match the keeper too: a table on a different keeper with the same path string is a
+                    /// different znode, so it must not block a drop targeting query.zk_name.
+                    if (local_replica_path == canonical_remote_replica_path
+                        && storage_replicated->getZooKeeperName() == query.zk_name)
                         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                                         "There is a local table {}, which has the same table path in ZooKeeper. "
                                         "Please check the path in query. "
@@ -1616,7 +1654,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             }
         }
 
-        auto zookeeper = getContext()->getZooKeeper();
+        auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(query.zk_name);
 
         bool looks_like_table_path = zookeeper->exists(query.replica_zk_path + "/replicas") ||
                                      zookeeper->exists(query.replica_zk_path + "/dropped");
@@ -1877,7 +1915,21 @@ std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(
         info.level = 0;
         replica_name = getContext()->getMacros()->expand(replica_name, info);
 
-        if (engine_zookeeper_path != query_.replica_zk_path)
+        if (engine_zookeeper_path.empty())
+            continue;
+
+        /// The raw engine argument may carry an auxiliary keeper prefix ("aux:/path"), so extract the
+        /// keeper name and fully collapse the path, then match on BOTH. Comparing the raw argument against
+        /// the query path would both false-match a default-keeper database at the same path (blocking a
+        /// valid auxiliary-keeper drop) and never match a detached auxiliary-keeper database (silently
+        /// failing this guard). query_.replica_zk_path keeps the legacy one-slash normalization for the
+        /// actual drop, so collapse it here too to compare canonical forms.
+        String engine_zookeeper_name = zkutil::extractZooKeeperName(engine_zookeeper_path);
+        engine_zookeeper_path = zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(engine_zookeeper_path, /*check_starts_with_slash*/ false);
+        const String canonical_query_zk_path
+            = zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query_.replica_zk_path, /*check_starts_with_slash*/ false);
+
+        if (engine_zookeeper_name != query_.zk_name || engine_zookeeper_path != canonical_query_zk_path)
             continue;
 
         String full_replica_name
@@ -1898,11 +1950,25 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropDatabaseReplica");
     const String full_replica_name
         = query.shard.empty() ? query.replica : DatabaseReplicated::getFullReplicaName(query.shard, query.replica);
-    const fs::path & query_replica_zk_path = fs::path(query.replica_zk_path);
-    auto check_not_local_replica
-        = [](const DatabaseReplicated * replicated, const String & full_replica_name_, const fs::path & query_replica_zk_path_)
+    /// query.replica_zk_path keeps the legacy one-slash normalization so DatabaseReplicated::dropReplica
+    /// below targets the same live znode a Replicated database stores. Collapse it here only for the
+    /// self-protection comparison, so a self-drop spelled with extra trailing slashes still matches.
+    const fs::path query_replica_zk_path
+        = query.replica_zk_path.empty()
+        ? fs::path{}
+        : fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query.replica_zk_path, /*check_starts_with_slash*/ false));
+    auto check_not_local_replica = [](const DatabaseReplicated * replicated, const String & full_replica_name_,
+                                       const fs::path & query_replica_zk_path_, const String & query_zk_name_)
     {
-        if (!query_replica_zk_path_.empty() && fs::path(replicated->getZooKeeperPath()) != query_replica_zk_path_)
+        /// When a ZKPATH is given, a database on a different keeper (or path) is a different znode and must
+        /// not block a drop targeting query_zk_name_. Canonicalize the database path the same way we
+        /// canonicalize query_replica_zk_path_: getZooKeeperPath() only strips a single trailing slash, so a
+        /// database created from "/a///" metadata keeps "/a/" and would otherwise slip past this guard.
+        const String replicated_zk_path
+            = zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(replicated->getZooKeeperPath(), /*check_starts_with_slash*/ false);
+        if (!query_replica_zk_path_.empty()
+            && (fs::path(replicated_zk_path) != query_replica_zk_path_
+                || replicated->getZooKeeperName() != query_zk_name_))
             return;
         if (replicated->getFullReplicaName() != full_replica_name_)
             return;
@@ -1918,7 +1984,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
         if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
         {
-            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
+            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path, query.zk_name);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
             DatabaseReplicated::dropReplica(
@@ -1930,7 +1996,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     }
     else if (query.is_drop_whole_replica)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -1946,7 +2012,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 continue;
             }
 
-            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
+            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path, query.zk_name);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
             DatabaseReplicated::dropReplica(
@@ -1963,9 +2029,9 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
 
         /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
-                check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
+                check_not_local_replica(replicated, full_replica_name, query_replica_zk_path, query.zk_name);
 
         if (query.with_tables)
         {
@@ -2080,6 +2146,70 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
+void InterpreterSystemQuery::waitQueryRunner()
+{
+    getContext()->checkAccess(AccessType::SYSTEM_WAIT_QUERY_RUNNER, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+    if (auto * query_runner = dynamic_cast<StorageQueryRunner *>(table.get()))
+        query_runner->waitForQueriesToFinish(getContext()->getProcessListElement());
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Command WAIT QUERY RUNNER is supported only for QueryRunner table, but got: {}", table->getName());
+}
+
+void InterpreterSystemQuery::restartDisk(const String & disk_name)
+{
+    getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
+
+    auto disk = getContext()->getDisk(disk_name);
+
+    /// A loaded `MergeTree` caches its set of active parts and never re-scans it on its own, so
+    /// reloading the disk alone would not surface new parts until the table is re-attached. For
+    /// every already-loaded table that uses this disk and whose data is entirely on readonly disks
+    /// (i.e. a readonly replica of data written elsewhere), re-scan the data directory -- the same
+    /// work the background `refresh_parts_interval` task performs. `refreshDataPartsOnce` reloads
+    /// the disk metadata first (for a `plain_rewritable` object-storage disk this re-reads the path
+    /// map, so directories written by another writer process become visible), passing 0 to bypass
+    /// the time-based refresh throttle. Tables with a writable disk own their part set and must not
+    /// have it rebuilt here.
+    bool disk_refreshed = false;
+    for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    {
+        /// skip_not_loaded: act only on already-loaded tables, do not block on async loading.
+        for (auto it = elem.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+        {
+            auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get());
+            if (!merge_tree)
+                continue;
+
+            auto policy = merge_tree->getStoragePolicy();
+            if (!policy->tryGetDiskByName(disk_name))
+                continue;
+
+            bool all_disks_are_readonly = true;
+            for (const auto & table_disk : policy->getDisks())
+            {
+                if (!table_disk->isReadOnly())
+                {
+                    all_disks_are_readonly = false;
+                    break;
+                }
+            }
+            if (!all_disks_are_readonly)
+                continue;
+
+            merge_tree->refreshDataPartsOnce(/*interval_milliseconds=*/ 0);
+            disk_refreshed = true;
+        }
+    }
+
+    /// No readonly table re-scanned this disk above, but the user still asked to restart it, so
+    /// reload its in-memory metadata directly. Passing 0 bypasses the time-based refresh throttle.
+    if (!disk_refreshed)
+        disk->refresh(/*not_sooner_than_milliseconds=*/ 0);
+}
+
 namespace
 {
 
@@ -2186,7 +2316,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
         LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
 
-        for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+        for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
@@ -2281,10 +2411,13 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
     auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
+    if (query.sync_replica_mode != SyncReplicaMode::DEFAULT && query.sync_replica_mode != SyncReplicaMode::STRICT)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM SYNC DATABASE REPLICA supports only DEFAULT and STRICT modes");
+
     if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in the database replica's (name: {}) queue with the log", database_name);
-        if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds()))
+        if (!ptr->waitForReplicaToProcessAllEntries(getContext()->getSettingsRef()[Setting::receive_timeout].totalMilliseconds(), query.sync_replica_mode))
         {
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC DATABASE REPLICA {}: database is readonly or command timed out. " \
                     "See the 'receive_timeout' setting", database_name);
@@ -2311,7 +2444,12 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
     if (query.query_settings)
         settings_changes = query.query_settings->as<ASTSetQuery>()->changes;
 
-    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
+    /// Keep the StoragePtr alive for the whole flush: the table holds no other owning
+    /// reference here (DROP on an Atomic database does not take the exclusive drop_lock,
+    /// and the flush does not hold an async-insert lock), so a concurrent DROP could
+    /// otherwise destroy the table while flushClusterNodesAllData is still running.
+    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(table.get()))
         storage_distributed->flushClusterNodesAllData(getContext(), settings_changes);
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not distributed", table_id.getNameForLogs());
@@ -2418,9 +2556,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
+        case Type::CLEAR_POINT_IN_POLYGON_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
         case Type::CLEAR_QUERY_CACHE:
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
         case Type::CLEAR_UNCOMPRESSED_CACHE:
@@ -2658,6 +2798,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_WAIT_LOADING_PARTS, query.getDatabase(), query.getTable());
             break;
         }
+        case Type::WAIT_QUERY_RUNNER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_WAIT_QUERY_RUNNER, query.getDatabase(), query.getTable());
+            break;
+        }
         case Type::PREWARM_MARK_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
@@ -2665,7 +2810,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
-            required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
+            required_access.emplace_back(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, query.getDatabase(), query.getTable());
             break;
         }
         case Type::SYNC_DATABASE_REPLICA:
@@ -2699,6 +2844,10 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::RESTART_DISK:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESTART_DISK);
+            break;
+        }
         case Type::WAIT_BLOBS_CLEANUP:
         {
             required_access.emplace_back(AccessType::SYSTEM_WAIT_BLOBS_CLEANUP);
@@ -2759,6 +2908,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
+        case Type::RESET_DDL_WORKER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESET_DDL_WORKER);
+            break;
+        }
         case Type::ALLOCATE_MEMORY:
         case Type::FREE_MEMORY:
         {
@@ -2774,7 +2928,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESET_COVERAGE:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
-        case Type::RESET_DDL_WORKER:
         case Type::END: break;
     }
     return required_access;
