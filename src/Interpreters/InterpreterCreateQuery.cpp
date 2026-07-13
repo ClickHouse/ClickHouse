@@ -36,6 +36,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -758,6 +759,13 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 }
 
 
+namespace
+{
+    /// Defined below; forward-declared so the normalization path can materialize dictionary attribute types.
+    void materializeUUIDTypeVersion(ASTCreateQuery & create, UInt64 uuid_type_version);
+}
+
+
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
@@ -771,6 +779,19 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
         normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
+
+    /// Materialize the `uuid_type_version` setting into dictionary attribute types on the initiator. Dictionary
+    /// attributes live in `dictionary_attributes_list` rather than `columns_list`, so they are not covered by
+    /// `getColumnsDescription`; without this a bare `UUID` dictionary attribute would ignore the setting. This is
+    /// gated exactly like the column path (a primary, user-issued CREATE only), so a normalized query re-executed
+    /// on a DDL worker or restored from a backup keeps its already-materialized types.
+    if (create.is_dictionary
+        && mode < LoadingStrictnessLevel::SECONDARY_CREATE
+        && !getContext()->isDDLOrOnClusterInternal()
+        && !is_restore_from_backup)
+    {
+        materializeUUIDTypeVersion(create, getContext()->getSettingsRef()[Setting::uuid_type_version]);
+    }
 
     TableProperties properties;
     TableLockHolder as_storage_lock;
@@ -2658,16 +2679,43 @@ namespace
   */
 void materializeUUIDTypeVersion(ASTCreateQuery & create, UInt64 uuid_type_version)
 {
-    if (uuid_type_version != 2 || !create.columns_list || !create.columns_list->columns)
+    if (uuid_type_version != 2)
         return;
 
-    for (const auto & child : create.columns_list->columns->children)
+    if (create.columns_list && create.columns_list->columns)
     {
-        auto * col_decl = child->as<ASTColumnDeclaration>();
-        if (!col_decl)
-            continue;
-        if (auto type_ast = col_decl->getType())
-            col_decl->setType(applyUUIDTypeVersion(type_ast, uuid_type_version));
+        for (const auto & child : create.columns_list->columns->children)
+        {
+            auto * col_decl = child->as<ASTColumnDeclaration>();
+            if (!col_decl)
+                continue;
+            if (auto type_ast = col_decl->getType())
+                col_decl->setType(applyUUIDTypeVersion(type_ast, uuid_type_version));
+        }
+    }
+
+    /// Dictionaries keep their typed attributes in a separate `dictionary_attributes_list`, so a bare `UUID`
+    /// there must be materialized to `UUID2` on the initiator as well - otherwise the setting would be silently
+    /// ignored for `CREATE DICTIONARY`.
+    if (create.dictionary_attributes_list)
+    {
+        for (const auto & child : create.dictionary_attributes_list->children)
+        {
+            auto * attr_decl = child->as<ASTDictionaryAttributeDeclaration>();
+            if (!attr_decl || !attr_decl->type)
+                continue;
+
+            const auto old_type = attr_decl->type;
+            auto new_type = applyUUIDTypeVersion(old_type, uuid_type_version);
+            if (new_type == old_type)
+                continue;
+
+            /// `type` is also referenced from `children` (used by AST visitors and tree hashing), so keep both in sync.
+            for (auto & attr_child : attr_decl->children)
+                if (attr_child == old_type)
+                    attr_child = new_type;
+            attr_decl->type = std::move(new_type);
+        }
     }
 }
 
