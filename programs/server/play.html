@@ -5744,13 +5744,16 @@ async function postMulti(posted_request_num, parsed, params_restore_pending)
     /// "Run all" output (not just the queries), the same way a single query's result is kept.
     /// Mirror the single-query 100 KB cap, but on the TOTAL size across all statements: above
     /// it we store no data (`multi: null`) and the run is query-only (re-running reproduces it).
-    /// Images stream as a blob (their `reply` stays empty) and cannot be re-rendered from text,
-    /// so they are stored with `data: null` and restore as empty, exactly like a single image.
+    /// A non-framed image streams as a blob (its `reply` stays empty) and cannot be re-rendered
+    /// from text, so it is stored with `data: null` and restores as empty, exactly like a single
+    /// image. A framed image comes from an `EventStream` with a base64 payload, so its `reply`
+    /// is a replayable snapshot (`renderEventStreamText` reconstructs the picture on restore)
+    /// and is persisted like any other statement, the same way the single-query path keeps it.
     let multi = collected.map((r, i) => ({
         query: parsed[i].query,
         format: r ? r.format : null,
         ok: r ? !!r.response_ok : false,
-        data: (r && !r.is_image) ? r.reply : null,
+        data: (r && (!r.is_image || r.is_base64)) ? r.reply : null,
         base64: r ? !!r.is_base64 : false,
     }));
     let multi_size = 0;
