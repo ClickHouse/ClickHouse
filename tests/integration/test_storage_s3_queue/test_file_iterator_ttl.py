@@ -37,7 +37,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_release_bucket_locks_on_ttl(started_cluster):
+def test_refresh_bucket_locks_on_ttl(started_cluster):
     node = started_cluster.instances["instance"]
 
     table_name = f"test_file_iterator_ttl_{uuid.uuid4().hex[:8]}"
@@ -47,10 +47,10 @@ def test_release_bucket_locks_on_ttl(started_cluster):
     files_path = f"{table_name}_data"
     files_to_generate = 300
 
-    # With TTL = 2 sec bucket locks must be released once the oldest of them
-    # is held for 1 sec. Commit after every file makes processing slow enough
-    # for one streamToViews execution to certainly last longer than that,
-    # so the locks must be released and re-acquired several times
+    # With TTL = 2 sec a bucket lock must be refreshed once it was not
+    # refreshed for 1 sec, otherwise the TTL cleanup can remove it as
+    # abandoned. Commit after every file makes processing slow enough
+    # for the locks to certainly be refreshed several times
     # before all files are done.
     create_table(
         started_cluster,
@@ -83,10 +83,10 @@ def test_release_bucket_locks_on_ttl(started_cluster):
         time.sleep(1)
     assert get_count() == files_to_generate
 
-    # Bucket locks must have been released by the TTL check at least once.
-    assert node.contains_in_log("reached half of persistent processing node TTL")
+    # Bucket locks must have been refreshed at least once.
+    assert node.contains_in_log("Refreshed bucket lock")
 
-    # Every file must be processed exactly once regardless of the lock releases.
+    # Every file must be processed exactly once.
     assert files_to_generate == int(
         node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}")
     )

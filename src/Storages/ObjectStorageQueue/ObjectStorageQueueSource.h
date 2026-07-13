@@ -71,17 +71,9 @@ public:
         /// In fact, they could be released in destructors of BucketHolder,
         /// but we anyway try to release them explicitly,
         /// because we want to be able to rethrow exceptions if they might happen.
-        /// If `force_release_unfinished` is true, also release a non-finished
-        /// bucket holder. Allowed only when no one is processing files of its bucket;
-        /// the bucket is re-acquired when needed.
-        void releaseFinishedBuckets(bool force_release_unfinished);
+        void releaseFinishedBuckets();
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
-
-        /// Age of the oldest currently held bucket lock (0 if none is held).
-        /// Used to bound the lock hold time, so that a lock still in use
-        /// is not cleaned up as abandoned.
-        double getOldestBucketLockAgeSeconds();
 
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
@@ -145,6 +137,11 @@ public:
         };
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
         std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
+
+        /// Refresh bucket locks which were not refreshed
+        /// for more than half of the TTL, after which they are cleaned up
+        /// as abandoned (the TTL is meant to remove locks of dead servers).
+        void refreshExpiringBucketLocks() TSA_REQUIRES(mutex);
         BucketHolderPtr tryAcquireBucket(
             size_t bucket,
             BucketInfo & bucket_info,

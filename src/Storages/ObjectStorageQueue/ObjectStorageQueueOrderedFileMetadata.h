@@ -179,8 +179,12 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     void setFinished() { finished = true; }
     bool isFinished() const { return finished; }
 
-    /// How long the bucket lock is held (it is acquired in the constructor).
+    /// Time since the bucket lock node was created or last refreshed.
     double getAgeSeconds() const { return age_watch.elapsedSeconds(); }
+
+    /// Update mtime of the bucket lock node,
+    /// so that it is not removed as abandoned by the TTL cleanup.
+    void refresh();
 
     bool checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
     std::optional<std::string> getProcessorInfo(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
@@ -189,7 +193,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 
 private:
     BucketInfoPtr bucket_info;
-    const Stopwatch age_watch;
+    Stopwatch age_watch;
     bool released = false;
     bool finished = false;
     LoggerPtr log;

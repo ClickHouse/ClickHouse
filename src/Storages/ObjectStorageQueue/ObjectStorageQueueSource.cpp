@@ -597,17 +597,19 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     }
 }
 
-double ObjectStorageQueueSource::FileIterator::getOldestBucketLockAgeSeconds()
+void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
 {
-    std::lock_guard lock(mutex);
-    double max_age = 0;
-    for (const auto & [processor, holders] : bucket_holders)
-        for (const auto & holder : *holders)
-            max_age = std::max(max_age, holder->getAgeSeconds());
-    return max_age;
+    const size_t ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
+    if (!ttl_seconds)
+        return;
+
+    for (auto & [processor, holders] : bucket_holders)
+        for (auto & holder : *holders)
+            if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 2)
+                holder->refresh();
 }
 
-void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets(bool force_release_unfinished)
+void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
     std::lock_guard lock(mutex);
     for (auto & [processor, holders] : bucket_holders)
@@ -621,7 +623,7 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets(bool force_r
             /// Only the last holder in the list of holders can be non-finished.
             if (std::next(it) == holders->end())
             {
-                if (!holder->isFinished() && !force_release_unfinished)
+                if (!holder->isFinished())
                 {
                     /// Do not release non-finished bucket holder. We will continue processing it.
                     LOG_TEST(log, "Bucket {} is not finished yet, will not release it", bucket);
@@ -704,6 +706,8 @@ std::string ObjectStorageQueueSource::FileIterator::bucketHoldersToString() cons
 ObjectStorageQueueSource::FileIterator::NextKeyFromBucket
 ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processor)
 {
+    refreshExpiringBucketLocks();
+
     std::shared_ptr<BucketHolders> acquired_buckets = [this, processor]() TSA_REQUIRES(mutex)
     {
         auto it = bucket_holders.find(processor);
