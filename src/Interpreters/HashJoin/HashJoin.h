@@ -110,15 +110,15 @@ class HashJoinMethods;
 /// Weight (approximate size in bytes) of a decompressed block stored in the decompressed-columns cache.
 struct DecompressedColumnsWeightFunction
 {
-    size_t operator()(const ColumnsInfo & info) const;
+    size_t operator()(const StoredBlock & info) const;
 };
 
 /// Cache of decompressed right-side blocks, used during the probe phase when
 /// `enable_join_in_memory_compression` compressed the stored blocks. Keyed by the address of the
-/// stored (compressed) `ColumnsInfo`, which is stable for the lifetime of the join.
+/// stored (compressed) `StoredBlock`, which is stable for the lifetime of the join.
 using DecompressedColumnsCache
-    = CacheBase<const ColumnsInfo *, ColumnsInfo, std::hash<const ColumnsInfo *>, DecompressedColumnsWeightFunction>;
-using DecompressedColumnsPtr = std::shared_ptr<const ColumnsInfo>;
+    = CacheBase<const StoredBlock *, StoredBlock, std::hash<const StoredBlock *>, DecompressedColumnsWeightFunction>;
+using DecompressedColumnsPtr = std::shared_ptr<const StoredBlock>;
 
 class HashJoin : public IJoin
 {
@@ -556,10 +556,10 @@ public:
     /// as an ordinary column.
     void setHaveCompressed(bool value) { have_compressed = value; }
 
-    /// Returns a decompressed view of the given stored (compressed) `ColumnsInfo`, using an internal
+    /// Returns a decompressed view of the given stored (compressed) `StoredBlock`, using an internal
     /// per-join cache so that the same block is not decompressed repeatedly during the probe phase.
     /// Must only be called when `haveCompressed()` is true.
-    DecompressedColumnsPtr getDecompressedColumns(const ColumnsInfo * compressed) const;
+    DecompressedColumnsPtr getDecompressedColumns(const StoredBlock * compressed) const;
 
     void setEnableLazyColumnsIndexing(bool value) override { enable_lazy_columns_indexing = value; }
 
