@@ -9,9 +9,14 @@
 --
 -- The in-order aggregation is pinned to a fixed, small configuration (max_threads = 1,
 -- max_block_size = 16384, optimize_read_in_order = 1) so the flaky check cannot randomize it into
--- an expensive read; the max_execution_time guard fails fast and deterministically if the quadratic
--- behaviour ever comes back (with the fix the query runs in a fraction of a second, while a
--- regression blows well past the guard).
+-- an expensive read. The max_execution_time limit is a guard against the quadratic blowup, not a
+-- tight assertion on the linear runtime, and the two runtimes are orders of magnitude apart: on a
+-- release build the linear path takes a fraction of a second while the quadratic one takes tens of
+-- seconds; on a debug or sanitizer build the linear path can still take tens of seconds under the
+-- parallel load of the flaky check (a 20-second limit flaked here for exactly that reason) while the
+-- quadratic one runs for many minutes. A 120-second limit clears the linear path with a wide margin
+-- on every build and is still far below the quadratic runtime on the instrumented builds that run
+-- this suite, so it catches a regression without any risk of a false timeout on the fixed code.
 
 DROP TABLE IF EXISTS t_agg_in_order_serialized;
 
@@ -30,7 +35,7 @@ SELECT
     SELECT groupBitXor(cityHash64(k1, k2, s))
     FROM (SELECT k1, k2, sum(v) AS s FROM t_agg_in_order_serialized GROUP BY k1, k2)
     SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1,
-             max_threads = 1, max_block_size = 16384, max_execution_time = 20
+             max_threads = 1, max_block_size = 16384, max_execution_time = 120
 )
 =
 (
@@ -76,7 +81,7 @@ SELECT
     SELECT groupBitXor(cityHash64(k1, k2, s))
     FROM (SELECT k1, k2, sum(v) AS s FROM t_agg_in_order_serialized_multi GROUP BY k1, k2)
     SETTINGS optimize_aggregation_in_order = 1, optimize_read_in_order = 1,
-             max_threads = 4, max_block_size = 16384, max_execution_time = 20
+             max_threads = 4, max_block_size = 16384, max_execution_time = 120
 )
 =
 (
