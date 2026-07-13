@@ -3644,6 +3644,8 @@ This trades probe-time CPU (right-side blocks must be decompressed on the fly, w
 )", 0) \
     DECLARE(UInt64, join_decompressed_columns_cache_bytes, 128_MiB, R"(
 Maximum size in bytes of the per-join cache of decompressed right-side blocks used when `enable_join_in_memory_compression` is on. The cache avoids decompressing the same block repeatedly during the probe phase. A larger cache reduces decompression work but uses more memory.
+
+This setting bounds the cache that provides reuse of decompressed blocks across output batches; it is not a hard cap on the total decompressed data in memory. Independently of the cache, each distinct stored block referenced by the output batch currently being materialized stays decompressed until that batch is finished, because the batched fill reads all of its source blocks in one pass. That per-batch working set is limited to the distinct stored blocks one output batch references (at most one block per output row), released as soon as the batch is materialized, and accounted by the query memory tracker as usual.
 )", 0) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
 Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
