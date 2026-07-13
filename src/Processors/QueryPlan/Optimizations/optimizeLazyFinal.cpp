@@ -475,7 +475,12 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// both for the non-intersecting split and for the set/true-branch plans.
     /// The WHERE filter was already pushed by optimizePrimaryKeyConditionAndLimit,
     /// so selectRangesToRead uses the PK condition for index analysis.
-    auto analyzed_result = reading_step->selectRangesToRead();
+    /// Reuse an analysis result memoized by join-order estimation: the PK conditions
+    /// were pushed before that pass as well, so re-running the analysis would repeat
+    /// the same part/PK/index work and produce the same ranges.
+    auto analyzed_result = reading_step->getAnalyzedResult();
+    if (!analyzed_result)
+        analyzed_result = reading_step->selectRangesToRead();
     if (reading_step->getParts().empty())
         return;
 
