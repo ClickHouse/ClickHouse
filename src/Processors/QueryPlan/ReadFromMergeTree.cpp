@@ -1627,13 +1627,24 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         /// across parts downstream. But with a single part, collapsing all streams
         /// into 1 destroys downstream parallelism (distinct, sort, expression
         /// transforms all become single-threaded).
+        ///
+        /// It is also incompatible with per-block virtual rows
+        /// (`read_in_order_use_virtual_row_per_block`). That mode relies on a per-block
+        /// virtual row being observed by `MergingSortedTransform` before any later real
+        /// chunk from the same source is read, so `MergingSortedTransform` can reprioritize
+        /// inputs and avoid reading past the boundary. `PrefetchingConcatProcessor` pulls
+        /// eagerly from every input with no virtual-row stop logic, so it would buffer the
+        /// following real chunk behind a virtual row before that virtual row is emitted,
+        /// reintroducing read-past-boundary behavior. When per-block virtual rows are
+        /// active we therefore fall back to the non-prefetching path.
         const bool can_use_per_part_prefetching =
             !output_each_partition_through_separate_port
             && input_order_info->limit == 0
             && !has_outer_limit
             && !prefer_multiple_streams
             && num_streams > 1
-            && parts_with_ranges.size() > 1;
+            && parts_with_ranges.size() > 1
+            && !(settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion);
 
         /// Even without PrefetchingConcat, split parts into multiple streams
         /// when the downstream wants parallel streams (e.g. aggregation-in-order).

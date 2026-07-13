@@ -1,6 +1,8 @@
 agg_in_order_no_prefetching_merge	1
 distinct_in_order_no_prefetching_merge	1
 plain_read_in_order_prefetching_merge	1
+virtual_row_per_block_reads_in_order	1
+virtual_row_per_block_no_prefetching	1
 join_outer_limit_reads_in_order	1
 join_outer_limit_no_prefetching_merge	1
 correctness

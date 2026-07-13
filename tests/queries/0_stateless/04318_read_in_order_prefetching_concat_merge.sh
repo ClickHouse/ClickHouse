@@ -54,6 +54,7 @@ QID_AGG="${CLICKHOUSE_DATABASE}_agg"
 QID_DISTINCT="${CLICKHOUSE_DATABASE}_distinct"
 QID_PLAIN="${CLICKHOUSE_DATABASE}_plain"
 QID_JOIN="${CLICKHOUSE_DATABASE}_join"
+QID_VROW="${CLICKHOUSE_DATABASE}_vrow"
 
 # Aggregation-in-order over a `Merge` table on top of a multi-part table.
 $CLICKHOUSE_CLIENT --query_id "$QID_AGG" --query \
@@ -66,6 +67,16 @@ $CLICKHOUSE_CLIENT --query_id "$QID_DISTINCT" --query \
 # A plain read-in-order through the `Merge` table (no aggregation/distinct).
 $CLICKHOUSE_CLIENT --query_id "$QID_PLAIN" --query \
     "SELECT * FROM t_concat_merge WHERE value LIKE '%5%' ORDER BY key FORMAT Null SETTINGS $SETTINGS"
+
+# A direct multi-part read-in-order with per-block virtual rows enabled. Per-block virtual rows
+# require `MergingSortedTransform` to observe a block's virtual row before any later real chunk
+# from that source is read, and `PrefetchingConcatProcessor` cannot honor that (it pulls eagerly
+# from all inputs without virtual-row stop logic). So per-part `PrefetchingConcat` must NOT appear
+# in this mode; the read still goes in order (via `VirtualRowTransform`). We read the underlying
+# table directly here because virtual rows are only emitted on the direct `MergeTree` read path.
+$CLICKHOUSE_CLIENT --query_id "$QID_VROW" --query \
+    "SELECT * FROM t_concat_merge_data WHERE value LIKE '%5%' ORDER BY key FORMAT Null
+     SETTINGS $SETTINGS, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1"
 
 # Read-in-order through a `JOIN` with an outer `LIMIT` over the `Merge` table. The outer
 # `LIMIT` cannot be pushed to the reader through the `LEFT JOIN`, so it becomes `has_outer_limit`
@@ -85,6 +96,12 @@ SELECT 'distinct_in_order_no_prefetching_merge', countIf(name = 'PrefetchingConc
     FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_DISTINCT';
 SELECT 'plain_read_in_order_prefetching_merge', countIf(name = 'PrefetchingConcat') > 0
     FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_PLAIN';
+-- With per-block virtual rows the read still goes in order (guards against a vacuous pass) ...
+SELECT 'virtual_row_per_block_reads_in_order', countIf(name LIKE '%algorithm: InOrder%') > 0
+    FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_VROW';
+-- ... but per-part PrefetchingConcat is disabled to preserve the virtual-row boundary contract.
+SELECT 'virtual_row_per_block_no_prefetching', countIf(name = 'PrefetchingConcat') = 0
+    FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_VROW';
 -- The JOIN case still reads the Merge child in order (guards against a vacuous pass) ...
 SELECT 'join_outer_limit_reads_in_order', countIf(name LIKE '%algorithm: InOrder%') > 0
     FROM system.processors_profile_log WHERE event_date >= today() - 1 AND query_id = '$QID_JOIN';
