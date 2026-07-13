@@ -412,6 +412,8 @@ Estimate ColumnStatistics::getEstimate() const
             if (!basic_stats.getMax().isNull())
                 info.estimated_max = basic_stats.getMax();
         }
+        if (basic_stats.hasNullCount())
+            info.estimated_null_count = basic_stats.getNullCount();
         if (basic_stats.hasDefaultCount())
             info.estimated_default_count = basic_stats.getDefaultCount();
     }
