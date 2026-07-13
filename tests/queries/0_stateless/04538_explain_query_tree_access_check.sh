@@ -41,6 +41,9 @@ run "EXPLAIN PLAN"       "EXPLAIN PLAN SELECT * FROM ${CLICKHOUSE_DATABASE}.x"
 run "EXPLAIN QUERY TREE" "EXPLAIN QUERY TREE SELECT * FROM ${CLICKHOUSE_DATABASE}.x"
 run "EXPLAIN PIPELINE"   "EXPLAIN PIPELINE SELECT * FROM ${CLICKHOUSE_DATABASE}.x"
 run "SUBQUERY IN WHERE"  "EXPLAIN QUERY TREE SELECT 1 WHERE 1 IN (SELECT y FROM ${CLICKHOUSE_DATABASE}.x)"
+# Trivial-count queries select no explicit column, so the check falls back to "at least one accessible
+# column". It must still be denied for a user without any grant, exactly as the planner denies the SELECT.
+run "COUNT"              "EXPLAIN QUERY TREE SELECT count() FROM ${CLICKHOUSE_DATABASE}.x"
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.x TO ${user}"
 
@@ -56,5 +59,7 @@ echo "-- Column-level grant: allowed for granted columns, denied otherwise (as f
 run "EXPLAIN QUERY TREE (y)" "EXPLAIN QUERY TREE SELECT y FROM ${CLICKHOUSE_DATABASE}.x"
 run "EXPLAIN QUERY TREE (z)" "EXPLAIN QUERY TREE SELECT z FROM ${CLICKHOUSE_DATABASE}.x"
 run "EXPLAIN QUERY TREE (*)" "EXPLAIN QUERY TREE SELECT * FROM ${CLICKHOUSE_DATABASE}.x"
+# A trivial-count query is allowed once at least one column is accessible.
+run "COUNT"                  "EXPLAIN QUERY TREE SELECT count() FROM ${CLICKHOUSE_DATABASE}.x"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${user}"

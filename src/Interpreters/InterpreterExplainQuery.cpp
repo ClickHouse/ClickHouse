@@ -625,10 +625,6 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
 
         const auto & storage_id = table_node->getStorageID();
 
-        /// In case of cross-replication we don't know what database is used for the table on the initiator.
-        if (!storage_id.hasDatabase())
-            continue;
-
         if (!checked_tables.emplace(table_node).second)
             continue;
 
@@ -637,11 +633,18 @@ void checkAccessRightsForQueryTree(QueryTreeNodePtr & query_tree, const ContextP
         auto column_names = collectSelectedColumnsForTableNode(query_tree, *table_node, scope_context);
         if (!column_names.empty())
         {
-            scope_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+            /// In case of cross-replication we don't know what database is used for the table on the
+            /// initiator, so the explicit-column check is skipped there, exactly as the planner does
+            /// (`PlannerJoinTree::checkAccessRights` only guards this branch with `hasDatabase`).
+            if (storage_id.hasDatabase())
+                scope_context->checkAccess(AccessType::SELECT, storage_id, column_names);
             continue;
         }
 
         /// For trivial queries like "SELECT count() FROM table" access is granted if at least one column is accessible.
+        /// This fallback runs even for empty-database table nodes: the planner enforces it unconditionally, and
+        /// `ContextAccess` resolves an empty database name to the current database, so skipping it here (as the
+        /// early `hasDatabase` guard used to) would let `count()`-style queries bypass the check.
         auto access = scope_context->getAccess();
         bool has_accessible_column = false;
         for (const auto & column : table_node->getStorageSnapshot()->metadata->getColumns())
