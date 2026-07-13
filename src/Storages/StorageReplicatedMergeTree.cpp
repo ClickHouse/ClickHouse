@@ -4138,33 +4138,68 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
                 /// that can happen, and only one of them needs repair:
                 ///  (a) a synthetic orphan left by an earlier recovery attempt that created the znode and then
                 ///      failed before queue.insert() (the retry path never reloads the queue), or
-                ///  (b) a real ALTER_METADATA that normal processing just finished: removeProcessedEntry erases
+                ///  (b) a real ALTER_METADATA that normal processing already finished: removeProcessedEntry erases
                 ///      the entry from RAM first and only then deletes its znode, without pull_logs_to_queue_mutex,
                 ///      so between those two steps the znode still exists while the entry is already gone from RAM.
                 /// In case (b) the alter has already been applied locally (executeMetadataAlter -> setTableStructure
                 /// runs before removeProcessedEntry), so re-inserting it would reopen the same alter_version in the
-                /// alters sequence and re-execute an already-applied entry. Distinguish the two by comparing the
-                /// actual local structure against the structure THIS entry (alter_version = queued->alter_version)
-                /// carries: if the local structure already equals the entry's own metadata_str/columns_str, that
-                /// specific alter has been applied (case b) and there is nothing to repair; if it still differs, the
-                /// alter is not applied and this is a genuine orphan (case a) to materialize.
+                /// alters sequence and re-execute an already-applied entry. Case (b) has two shapes: V was the last
+                /// applied (live structure is exactly V), or V finished and a later V+1 already applied on top of it
+                /// (live structure is at V+1). Both are "already applied"; only case (a) needs repair.
                 ///
-                /// Compare against the ENTRY's own metadata_str/columns_str, NOT the live zookeeper_path/metadata
-                /// znode. The entry is fixed at version queued->alter_version, but the /metadata znode is a moving
-                /// target: another replica can commit a newer version V+1 while we classify. If this V entry just
-                /// finished (RAM-removed, znode not yet deleted) and a concurrent V+1 lands, the local structure is
-                /// at V but the /metadata znode is already at V+1, so a live-vs-Keeper compare would report "still
-                /// lags" and wrongly resurrect the completed V entry -- reopening a finished alter_version in the
-                /// alters sequence. Comparing to the entry's own strings pins the check to exactly the version being
-                /// classified and is immune to concurrent later alters.
+                /// Distinguish them with a version check FIRST, then a structural compare (see the two checks below),
+                /// because neither signal alone is sufficient:
+                ///   - a structural compare against the ENTRY's own metadata_str/columns_str only recognises the
+                ///     "live == V" shape. If V finished and V+1 already applied locally, the live structure is at
+                ///     V+1 != V, so the compare reports "still lags" and would wrongly resurrect the completed V --
+                ///     reopening a finished alter_version in the alters sequence. (Comparing against the live
+                ///     zookeeper_path/metadata znode has the same flaw, and is additionally a moving target.)
+                ///   - a version-only "up to date" guard is also unsafe: fixReplicaMetadataVersionIfNeeded bumps
+                ///     replica_path/metadata_version (and the in-memory version) to the ZK /metadata version at
+                ///     startup whenever no ALTER_METADATA is queued, even while the on-disk structure is still stale
+                ///     -- exactly the single-missed-ALTER case this function repairs. So the version can read "past"
+                ///     an entry whose structure is not applied.
+                /// The version check handles only the strictly-greater "superseded" shape (immune to that startup
+                /// bump because a bump advances only to the current version, never past a not-yet-applied one), and
+                /// the equal case falls through to the structural compare, which is authoritative when the version
+                /// is not ahead. Together they cover both case-(b) shapes without misclassifying a case-(a) orphan.
                 ///
                 /// Re-read the LIVE in-memory metadata here rather than reusing metadata_snapshot captured before the
                 /// queue scan: in case (b) executeMetadataAlter -> setTableStructure -> setInMemoryMetadata has already
-                /// committed the new structure, and the pre-scan snapshot still holds the old pre-alter structure. The
-                /// storage metadata is multiversion, so getInMemoryMetadataPtr(bypass_metadata_cache = true) returns the
-                /// latest committed version without a lock. Comparing the stale snapshot would always report "still
-                /// lags" and resurrect the just-finished entry.
+                /// committed the new structure and version, and the pre-scan snapshot still holds the old pre-alter
+                /// values. The storage metadata is multiversion, so getInMemoryMetadataPtr(bypass_metadata_cache =
+                /// true) returns the latest committed version without a lock. Comparing the stale snapshot would
+                /// always report "still lags" and resurrect the finished entry.
                 auto live_metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
+
+                /// Case (b) has two sub-shapes and the version-anchored check below covers the one that a
+                /// structural compare against this entry misses. executeMetadataAlter applies each ALTER_METADATA
+                /// under setTableStructure(..., alter_version), which calls setMetadataVersion(alter_version), so
+                /// the live in-memory metadata version equals the alter_version of the last applied entry. Metadata
+                /// alters finish strictly in order (ReplicatedMergeTreeAltersSequence keeps one slot per version and
+                /// finishMetadataAlter asserts the head equals the finishing version), so the version only ever
+                /// advances by applying V, then V+1, then V+2 in sequence. Therefore:
+                ///   live metadata version >  queued->alter_version  =>  this entry (V) and every version up to the
+                ///       live one has already been applied and finished. Even if V just finished (RAM-removed, znode
+                ///       not yet deleted) and a concurrent replica's V+1 already committed AND was applied locally,
+                ///       the live structure is at V+1 and a compare against V's own strings would falsely report
+                ///       "still lags" and resurrect the finished V. The version check catches exactly this and skips.
+                ///   live metadata version == queued->alter_version  =>  V is the last applied; fall through to the
+                ///       structural compare (defends the version counter being bumped without the structure, see
+                ///       fixReplicaMetadataVersionIfNeeded, which advances replica_path/metadata_version to the ZK
+                ///       /metadata version at startup when no ALTER_METADATA is queued while the structure is stale).
+                ///   live metadata version <  queued->alter_version  =>  V is not applied; genuine orphan (case a).
+                /// A version-only "up to date" guard is unsafe on its own (that startup bump can lie), which is why
+                /// the strictly-greater case is a separate skip and the equal case still verifies the structure.
+                if (live_metadata_snapshot->getMetadataVersion() > queued->alter_version)
+                {
+                    LOG_INFO(log, "An ALTER_METADATA entry with alter_version {} exists in {} but not in the in-memory "
+                                  "queue; the live metadata version ({}) is already past it, so this alter was applied "
+                                  "and superseded by a later one (removeProcessedEntry removes it from memory before "
+                                  "ZooKeeper). Not materializing it.",
+                             queued->alter_version, queue_entry_paths[i], live_metadata_snapshot->getMetadataVersion());
+                    return false;
+                }
 
                 /// Parse the entry's own columns/metadata and normalize the same way checkTableStructureAttempt does
                 /// for the ZooKeeper snapshot (parseAndNormalize + checkEquals, non-strict so a mismatch returns
