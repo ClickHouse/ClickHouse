@@ -89,7 +89,9 @@ def test_backward_compatability(start_cluster):
     # the same data from every replica would rely on cross-version insert deduplication, which the
     # new build (unified hash only) no longer shares with the old replicas.
     nodes[0].query("insert into t select number % 100000 from numbers_mt(1000000) ORDER BY ALL")
-    nodes[0].query("optimize table t final")
+    # No OPTIMIZE FINAL: a single insert is one part, so FINAL is a no-op merge whose MERGE_PARTS entry
+    # the old replicas cannot reproduce byte-identically across versions and can hang for minutes. The
+    # assertions below do not depend on part layout.
     for node in nodes:
         node.query("system sync replica t")
 

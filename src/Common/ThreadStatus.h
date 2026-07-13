@@ -15,7 +15,6 @@
 #include <boost/noncopyable.hpp>
 
 #include <atomic>
-#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <unordered_set>
@@ -75,8 +74,8 @@ class ThreadGroup
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
-
-    bool isBorrowed() const;
+    explicit ThreadGroup(ThreadGroupPtr parent);
+    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -90,9 +89,6 @@ public:
     const Int32 os_threads_nice_value;
 
     MemorySpillScheduler::Ptr memory_spill_scheduler;
-
-    /// Borrowed child groups (`createForMaterializedView` / `createForFlushAsyncInsertQueue`) keep
-    /// raw accounting pointers into the parent group. They are valid only while the parent is alive.
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -145,14 +141,6 @@ public:
     void unlinkThread();
 
 private:
-    enum class ThreadGroupKind : uint8_t
-    {
-        Root,
-        Borrowed,
-    };
-
-    const ThreadGroupKind kind = ThreadGroupKind::Root;
-
     mutable std::mutex mutex;
 
     /// Set up at creation, no race when reading
@@ -169,9 +157,6 @@ private:
 
     Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
     UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
-
-    explicit ThreadGroup(ThreadGroupPtr parent);
-    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 };

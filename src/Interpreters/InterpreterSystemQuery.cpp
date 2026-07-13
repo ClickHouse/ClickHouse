@@ -72,6 +72,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
@@ -540,6 +541,12 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->clearQueryConditionCache();
             break;
         }
+        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_ENCRYPTION_HEADERS_CACHE);
+            getContext()->clearEncryptionHeaderCache();
+            break;
+        }
         case Type::CLEAR_QUERY_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
@@ -985,6 +992,9 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
+            break;
+        case Type::WAIT_QUERY_RUNNER:
+            waitQueryRunner();
             break;
         case Type::SCHEDULE_MERGE:
             scheduleMerge(query);
@@ -2140,6 +2150,18 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
+void InterpreterSystemQuery::waitQueryRunner()
+{
+    getContext()->checkAccess(AccessType::SYSTEM_WAIT_QUERY_RUNNER, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+    if (auto * query_runner = dynamic_cast<StorageQueryRunner *>(table.get()))
+        query_runner->waitForQueriesToFinish(getContext()->getProcessListElement());
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Command WAIT QUERY RUNNER is supported only for QueryRunner table, but got: {}", table->getName());
+}
+
 void InterpreterSystemQuery::restartDisk(const String & disk_name)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
@@ -2542,6 +2564,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
         case Type::CLEAR_QUERY_CACHE:
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
         case Type::CLEAR_COLUMNS_CACHE:
@@ -2778,6 +2801,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_LOADING_PARTS:
         {
             required_access.emplace_back(AccessType::SYSTEM_WAIT_LOADING_PARTS, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::WAIT_QUERY_RUNNER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_WAIT_QUERY_RUNNER, query.getDatabase(), query.getTable());
             break;
         }
         case Type::PREWARM_MARK_CACHE:
