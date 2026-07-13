@@ -66,75 +66,75 @@ Time in seconds spent for calculation of asynchronous metrics (this is the overh
 
 Metrics update interval
 
-### AsyncLogging*metric_first*QueueSize {#asyncloggingmetric_firstqueuesize}
+### AsyncLogging*channel*QueueSize {#asyncloggingchannelqueuesize}
 
 Number of async messages queued pending for logging in this channel
 
-### BlockActiveTime_*name* {#blockactivetime_name}
+### BlockActiveTime_*device* {#blockactivetime_device}
 
 Time in seconds the block device had the IO requests queued. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockActiveTimePerOp_*name* {#blockactivetimeperop_name}
+### BlockActiveTimePerOp_*device* {#blockactivetimeperop_device}
 
 Similar to the `BlockActiveTime` metrics, but the value is divided to the number of IO operations to count the per-operation time.
 
-### BlockDiscardBytes_*name* {#blockdiscardbytes_name}
+### BlockDiscardBytes_*device* {#blockdiscardbytes_device}
 
 Number of discarded bytes on the block device. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockDiscardMerges_*name* {#blockdiscardmerges_name}
+### BlockDiscardMerges_*device* {#blockdiscardmerges_device}
 
 Number of discard operations requested from the block device and merged together by the OS IO scheduler. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockDiscardOps_*name* {#blockdiscardops_name}
+### BlockDiscardOps_*device* {#blockdiscardops_device}
 
 Number of discard operations requested from the block device. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockDiscardTime_*name* {#blockdiscardtime_name}
+### BlockDiscardTime_*device* {#blockdiscardtime_device}
 
 Time in seconds spend in discard operations requested from the block device, summed across all the operations. These operations are relevant for SSD. Discard operations are not used by ClickHouse, but can be used by other processes on the system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockInFlightOps_*name* {#blockinflightops_name}
+### BlockInFlightOps_*device* {#blockinflightops_device}
 
 This value counts the number of I/O requests that have been issued to the device driver but have not yet completed. It does not include IO requests that are in the queue but not yet issued to the device driver. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockQueueTime_*name* {#blockqueuetime_name}
+### BlockQueueTime_*device* {#blockqueuetime_device}
 
 This value counts the number of milliseconds that IO requests have waited on this block device. If there are multiple IO requests waiting, this value will increase as the product of the number of milliseconds times the number of requests waiting. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockQueueTimePerOp_*name* {#blockqueuetimeperop_name}
+### BlockQueueTimePerOp_*device* {#blockqueuetimeperop_device}
 
 Similar to the `BlockQueueTime` metrics, but the value is divided to the number of IO operations to count the per-operation time.
 
-### BlockReadBytes_*name* {#blockreadbytes_name}
+### BlockReadBytes_*device* {#blockreadbytes_device}
 
 Number of bytes read from the block device. It can be lower than the number of bytes read from the filesystem due to the usage of the OS page cache, that saves IO. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockReadMerges_*name* {#blockreadmerges_name}
+### BlockReadMerges_*device* {#blockreadmerges_device}
 
 Number of read operations requested from the block device and merged together by the OS IO scheduler. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockReadOps_*name* {#blockreadops_name}
+### BlockReadOps_*device* {#blockreadops_device}
 
 Number of read operations requested from the block device. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockReadTime_*name* {#blockreadtime_name}
+### BlockReadTime_*device* {#blockreadtime_device}
 
 Time in seconds spend in read operations requested from the block device, summed across all the operations. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockWriteBytes_*name* {#blockwritebytes_name}
+### BlockWriteBytes_*device* {#blockwritebytes_device}
 
 Number of bytes written to the block device. It can be lower than the number of bytes written to the filesystem due to the usage of the OS page cache, that saves IO. A write to the block device may happen later than the corresponding write to the filesystem due to write-through caching. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockWriteMerges_*name* {#blockwritemerges_name}
+### BlockWriteMerges_*device* {#blockwritemerges_device}
 
 Number of write operations requested from the block device and merged together by the OS IO scheduler. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockWriteOps_*name* {#blockwriteops_name}
+### BlockWriteOps_*device* {#blockwriteops_device}
 
 Number of write operations requested from the block device. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
-### BlockWriteTime_*name* {#blockwritetime_name}
+### BlockWriteTime_*device* {#blockwritetime_device}
 
 Time in seconds spend in write operations requested from the block device, summed across all the operations. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Source: `/sys/block`. See https://www.kernel.org/doc/Documentation/block/stat.txt
 
@@ -178,7 +178,7 @@ Configured maximum bytes of the compiled-expression cache. Available headroom = 
 
 Configured maximum entries of the compiled-expression cache. Available headroom = this minus `CompiledExpressionCacheCount` (CurrentMetric).
 
-### CPUFrequencyMHz_*core_id* {#cpufrequencymhz_core_id}
+### CPUFrequencyMHz_*core* {#cpufrequencymhz_core}
 
 The current frequency of the CPU, in MHz. Most of the modern CPUs adjust the frequency dynamically for power saving and Turbo Boosting.
 
@@ -190,43 +190,43 @@ The maximum delay (in seconds) of dictionary update
 
 Number of errors since last successful loading in all dictionaries.
 
-### DiskAvailable_*name* {#diskavailable_name}
+### DiskAvailable_*disk* {#diskavailable_disk}
 
 Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB.
 
-### DiskGetObjectThrottlerAvailable_*name* {#diskgetobjectthrottleravailable_name}
+### DiskGetObjectThrottlerAvailable_*disk* {#diskgetobjectthrottleravailable_disk}
 
 Number of GetObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information.
 
-### DiskGetObjectThrottlerRPS_*name* {#diskgetobjectthrottlerrps_name}
+### DiskGetObjectThrottlerRPS_*disk* {#diskgetobjectthrottlerrps_disk}
 
 GetObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information.
 
-### DiskPutObjectThrottlerAvailable_*name* {#diskputobjectthrottleravailable_name}
+### DiskPutObjectThrottlerAvailable_*disk* {#diskputobjectthrottleravailable_disk}
 
 Number of PutObject requests that can be currently issued without hitting throttling limit on the disk (virtual filesystem). Local filesystems may not provide this information.
 
-### DiskPutObjectThrottlerRPS_*name* {#diskputobjectthrottlerrps_name}
+### DiskPutObjectThrottlerRPS_*disk* {#diskputobjectthrottlerrps_disk}
 
 PutObject Request throttling limit on the disk in requests per second (virtual filesystem). Local filesystems may not provide this information.
 
-### DiskTotal_*name* {#disktotal_name}
+### DiskTotal_*disk* {#disktotal_disk}
 
 The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB.
 
-### DiskUnreserved_*name* {#diskunreserved_name}
+### DiskUnreserved_*disk* {#diskunreserved_disk}
 
 Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information and can show a large value like 16 EiB.
 
-### DiskUsed_*name* {#diskused_name}
+### DiskUsed_*disk* {#diskused_disk}
 
 Used bytes on the disk (virtual filesystem). Remote filesystems do not always provide this information.
 
-### EDAC*i*_Correctable {#edaci_correctable}
+### EDAC*controller*_Correctable {#edaccontroller_correctable}
 
 The number of correctable ECC memory errors. A high number of this value indicates bad RAM which has to be immediately replaced, because in presence of a high number of corrected errors, a number of silent errors may happen as well, leading to data corruption. Source: `/sys/devices/system/edac/mc/`
 
-### EDAC*i*_Uncorrectable {#edaci_uncorrectable}
+### EDAC*controller*_Uncorrectable {#edaccontroller_uncorrectable}
 
 The number of uncorrectable ECC memory errors. A non-zero number of this value indicates bad RAM which has to be immediately replaced, because it indicates potential data corruption. Source: `/sys/devices/system/edac/mc/`
 
@@ -318,11 +318,11 @@ The number of times the prediction of a hash table size was correct.
 
 The number of times the prediction of a hash table size was incorrect.
 
-### HTTPConnectionPool*group_name*TCPRcvBufTotalBytes {#httpconnectionpoolgroup_nametcprcvbuftotalbytes}
+### HTTPConnectionPool*group*TCPRcvBufTotalBytes {#httpconnectionpoolgrouptcprcvbuftotalbytes}
 
 Total kernel TCP receive buffer memory (sk_rmem_alloc) across all HTTP connection pool sockets.
 
-### HTTPConnectionPool*group_name*TCPSndBufTotalBytes {#httpconnectionpoolgroup_nametcpsndbuftotalbytes}
+### HTTPConnectionPool*group*TCPSndBufTotalBytes {#httpconnectionpoolgrouptcpsndbuftotalbytes}
 
 Total kernel TCP transmit buffer memory (sk_wmem_alloc) across all HTTP connection pool sockets.
 
@@ -704,35 +704,35 @@ Number of rejected connections for the MySQL compatibility protocol.
 
 Number of threads in the server of the MySQL compatibility protocol.
 
-### NetworkReceiveBytes_*interface_name* {#networkreceivebytes_interface_name}
+### NetworkReceiveBytes_*interface* {#networkreceivebytes_interface}
 
 Number of bytes received via the network interface. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
-### NetworkReceiveDrop_*interface_name* {#networkreceivedrop_interface_name}
+### NetworkReceiveDrop_*interface* {#networkreceivedrop_interface}
 
 Number of bytes a packet was dropped while received via the network interface. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
-### NetworkReceiveErrors_*interface_name* {#networkreceiveerrors_interface_name}
+### NetworkReceiveErrors_*interface* {#networkreceiveerrors_interface}
 
 Number of times error happened receiving via the network interface. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
-### NetworkReceivePackets_*interface_name* {#networkreceivepackets_interface_name}
+### NetworkReceivePackets_*interface* {#networkreceivepackets_interface}
 
 Number of network packets received via the network interface. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
-### NetworkSendBytes_*interface_name* {#networksendbytes_interface_name}
+### NetworkSendBytes_*interface* {#networksendbytes_interface}
 
 Number of bytes sent via the network interface. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
-### NetworkSendDrop_*interface_name* {#networksenddrop_interface_name}
+### NetworkSendDrop_*interface* {#networksenddrop_interface}
 
 Number of times a packed was dropped while sending via the network interface. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
-### NetworkSendErrors_*interface_name* {#networksenderrors_interface_name}
+### NetworkSendErrors_*interface* {#networksenderrors_interface}
 
 Number of times error (e.g. TCP retransmit) happened while sending via the network interface. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
-### NetworkSendPackets_*interface_name* {#networksendpackets_interface_name}
+### NetworkSendPackets_*interface* {#networksendpackets_interface}
 
 Number of network packets sent via the network interface. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
@@ -748,7 +748,7 @@ Total number of unique remote addresses of network sockets used on the server ac
 
 Total number of network sockets used on the server across TCPv4 and TCPv6, in all states.
 
-### NetworkTCPSockets_*description* {#networktcpsockets_description}
+### NetworkTCPSockets_*state* {#networktcpsockets_state}
 
 Total number of network sockets in the specific state on the server across TCPv4 and TCPv6.
 
@@ -796,7 +796,7 @@ The number of context switches that the system underwent on the host machine. Th
 
 Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics.
 
-### OSGuestNiceTime*cpu_suffix* {#osguestnicetimecpu_suffix}
+### OSGuestNiceTime*cpu* {#osguestnicetimecpu}
 
 The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel, when a guest was set to a higher priority (See `man procfs`). This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. This metric is irrelevant for ClickHouse, but still exists for completeness. The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores].
 
@@ -804,7 +804,7 @@ The ratio of time spent running a virtual CPU for guest operating systems under 
 
 The value is similar to `OSGuestNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
-### OSGuestTime*cpu_suffix* {#osguesttimecpu_suffix}
+### OSGuestTime*cpu* {#osguesttimecpu}
 
 The ratio of time spent running a virtual CPU for guest operating systems under the control of the Linux kernel (See `man procfs`). This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. This metric is irrelevant for ClickHouse, but still exists for completeness. The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores].
 
@@ -812,7 +812,7 @@ The ratio of time spent running a virtual CPU for guest operating systems under 
 
 The value is similar to `OSGuestTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
-### OSIdleTime*cpu_suffix* {#osidletimecpu_suffix}
+### OSIdleTime*cpu* {#osidletimecpu}
 
 The ratio of time the CPU core was idle (not even ready to run a process waiting for IO) from the OS kernel standpoint. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. This does not include the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline stalls, branch mispredictions, running another SMT core). The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores].
 
@@ -824,7 +824,7 @@ The value is similar to `OSIdleTime` but divided to the number of CPU cores to b
 
 The number of interrupts on the host machine. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
-### OSIOWaitTime*cpu_suffix* {#osiowaittimecpu_suffix}
+### OSIOWaitTime*cpu* {#osiowaittimecpu}
 
 The ratio of time the CPU core was not running the code but when the OS kernel did not run any other process on this CPU as the processes were waiting for IO. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores].
 
@@ -832,7 +832,7 @@ The ratio of time the CPU core was not running the code but when the OS kernel d
 
 The value is similar to `OSIOWaitTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
-### OSIrqTime*cpu_suffix* {#osirqtimecpu_suffix}
+### OSIrqTime*cpu* {#osirqtimecpu}
 
 The ratio of time spent for running hardware interrupt requests on the CPU. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. A high number of this metric may indicate hardware misconfiguration or a very high network load. The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores].
 
@@ -868,7 +868,7 @@ The amount of memory in swap that was also loaded in RAM. Swap should be disable
 
 The total amount of memory on the host system, in bytes.
 
-### OSNiceTime*cpu_suffix* {#osnicetimecpu_suffix}
+### OSNiceTime*cpu* {#osnicetimecpu}
 
 The ratio of time the CPU core was running userspace code with higher priority. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores].
 
@@ -892,7 +892,7 @@ The number of processes created. This is a system-wide metric, it includes all t
 
 The number of runnable (running or ready to run) threads by the operating system. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server.
 
-### OSSoftIrqTime*cpu_suffix* {#ossoftirqtimecpu_suffix}
+### OSSoftIrqTime*cpu* {#ossoftirqtimecpu}
 
 The ratio of time spent for running software interrupt requests on the CPU. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. A high number of this metric may indicate inefficient software running on the system. The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores].
 
@@ -900,7 +900,7 @@ The ratio of time spent for running software interrupt requests on the CPU. This
 
 The value is similar to `OSSoftIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
-### OSStealTime*cpu_suffix* {#osstealtimecpu_suffix}
+### OSStealTime*cpu* {#osstealtimecpu}
 
 The ratio of time spent in other operating systems by the CPU when running in a virtualized environment. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. Not every virtualized environments present this metric, and most of them don't. The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores].
 
@@ -908,7 +908,7 @@ The ratio of time spent in other operating systems by the CPU when running in a 
 
 The value is similar to `OSStealTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of the number of cores. This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is non-uniform, and still get the average resource utilization metric. If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, and in that case the value of this metric may exceed 1 at some moments.
 
-### OSSystemTime*cpu_suffix* {#ossystemtimecpu_suffix}
+### OSSystemTime*cpu* {#ossystemtimecpu}
 
 The ratio of time the CPU core was running OS kernel (system) code. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores].
 
@@ -928,7 +928,7 @@ The total number of threads, as the OS kernel scheduler seeing it.
 
 The uptime of the host server (the machine where ClickHouse is running), in seconds.
 
-### OSUserTime*cpu_suffix* {#osusertimecpu_suffix}
+### OSUserTime*cpu* {#osusertimecpu}
 
 The ratio of time the CPU core was running userspace code. This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server. This includes also the time when the CPU was under-utilized due to the reasons internal to the CPU (memory loads, pipeline stalls, branch mispredictions, running another SMT core). The value for a single CPU core will be in the interval [0..1]. The value for all CPU cores is calculated as a sum across them [0..num cores].
 
@@ -964,7 +964,7 @@ Number of rejected connections for the Prometheus endpoint. Note: prometheus end
 
 Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports.
 
-### PSI_*type*_*stall_type* {#psi_type_stall_type}
+### PSI_*resource*_*stall* {#psi_resource_stall}
 
 Microseconds of stall time since last measurement.Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them
 
@@ -1028,15 +1028,15 @@ Number of threads in the server of the TCP protocol (with TLS).
 
 Number of threads in the server of the TCP protocol (without TLS).
 
-### Temperature*i* {#temperaturei}
+### Temperature*zone* {#temperaturezone}
 
 The temperature of the corresponding device in ℃. A sensor can return an unrealistic value. Source: `/sys/class/thermal`
 
-### Temperature_*hwmon_name* {#temperature_hwmon_name}
+### Temperature_*hwmon* {#temperature_hwmon}
 
 The temperature reported by the corresponding hardware monitor in ℃. A sensor can return an unrealistic value. Source: `/sys/class/hwmon`
 
-### Temperature_*hwmon_name*_*sensor_name* {#temperature_hwmon_name_sensor_name}
+### Temperature_*hwmon*_*sensor* {#temperature_hwmon_sensor}
 
 The temperature reported by the corresponding hardware monitor and the corresponding sensor in ℃. A sensor can return an unrealistic value. Source: `/sys/class/hwmon`
 

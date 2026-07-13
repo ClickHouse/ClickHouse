@@ -28,6 +28,38 @@ SOURCE_FILES = [
 ]
 
 
+# Dynamic metric names are parsed from C++ expressions first, so their raw
+# placeholders reflect implementation identifiers such as `metric.first` or
+# `stall_type`.  Keep the published vocabulary independent of those names by
+# explicitly describing every dynamic family that the generator supports.
+# An unrecognised family fails generation in `normalize_metric_name` instead
+# of leaking a new implementation detail into the documentation.
+DYNAMIC_METRIC_NAME_REPLACEMENTS = (
+    (r"AsyncLogging\*[^*]+\*QueueSize", "AsyncLogging*channel*QueueSize"),
+    (r"(Block[A-Za-z0-9]+)_\*[^*]+\*", r"\1_*device*"),
+    (r"CPUFrequencyMHz_\*[^*]+\*", "CPUFrequencyMHz_*core*"),
+    (r"(Disk[A-Za-z0-9]+)_\*[^*]+\*", r"\1_*disk*"),
+    (r"EDAC\*[^*]+\*_(Correctable|Uncorrectable)", r"EDAC*controller*_\1"),
+    (
+        r"HTTPConnectionPool\*[^*]+\*(TCP(?:Rcv|Snd)BufTotalBytes)",
+        r"HTTPConnectionPool*group*\1",
+    ),
+    (
+        r"(Network(?:Receive|Send)(?:Bytes|Drop|Errors|Packets))_\*[^*]+\*",
+        r"\1_*interface*",
+    ),
+    (r"NetworkTCPSockets_\*[^*]+\*", "NetworkTCPSockets_*state*"),
+    (
+        r"(OS(?:GuestNice|Guest|Idle|IOWait|Irq|Nice|SoftIrq|Steal|System|User)Time)\*[^*]+\*",
+        r"\1*cpu*",
+    ),
+    (r"PSI_\*[^*]+\*_\*[^*]+\*", "PSI_*resource*_*stall*"),
+    (r"Temperature_\*[^*]+\*_\*[^*]+\*", "Temperature_*hwmon*_*sensor*"),
+    (r"Temperature_\*[^*]+\*", "Temperature_*hwmon*"),
+    (r"Temperature\*[^*]+\*", "Temperature*zone*"),
+)
+
+
 def parse_macros(text):
     """Find `#define NAME ... \\` blocks whose body is a multi-line string
     literal and return a `{name: joined_string}` map (the pattern used for
@@ -286,6 +318,25 @@ def parse_description_expression(expr):
     return _join_string_literals(expr)
 
 
+def normalize_metric_name(name):
+    """Replace parser-derived wildcards with stable, user-facing names."""
+    if "*" not in name:
+        return name
+
+    # Generic helpers whose complete key is supplied by their call sites are
+    # documented from those call sites instead.
+    if re.fullmatch(r"\*\w+\*", name):
+        return None
+
+    for pattern, replacement in DYNAMIC_METRIC_NAME_REPLACEMENTS:
+        if re.fullmatch(pattern, name):
+            return re.sub(pattern, replacement, name)
+
+    raise ValueError(
+        f"dynamic metric name {name!r} has no stable documentation placeholder"
+    )
+
+
 # Metric-registration call shapes we recognise. The key and description
 # expressions span multiple lines so we match non-greedy up to the closing
 # punctuation and then balance brackets in Python.
@@ -381,10 +432,11 @@ def extract_metrics_from_source(text, macros, source_path):
         name = parse_key_expression(m.group("key"), locals_map)
         if name is None:
             continue
-        # Skip purely-placeholder keys: these come from generic helper
-        # functions (e.g. saveJemallocMetricImpl) where the actual metric
-        # names are produced at call sites and captured elsewhere.
-        if re.fullmatch(r"\*\w+\*", name):
+        try:
+            name = normalize_metric_name(name)
+        except ValueError as ex:
+            raise ValueError(f"{source_path}: {ex}") from ex
+        if name is None:
             continue
         # description is the last argument (value comes first).
         desc = parse_description_expression(body_args[-1])
