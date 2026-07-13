@@ -6793,6 +6793,8 @@ void StorageReplicatedMergeTree::alter(
 
     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     StorageInMemoryMetadata future_metadata = *metadata_snapshot;
+    /// Snapshot the sorting key before applying commands, to compare with the resolved future one.
+    KeyDescription old_sorting_key = future_metadata.sorting_key;
 
     removeImplicitStatistics(future_metadata.columns);
     commands.apply(future_metadata, query_context);
@@ -6858,7 +6860,9 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
-    if (!query_settings[Setting::allow_suspicious_primary_key])
+    /// Only re-verify the sorting key on ALTERs that can actually change it (see StorageMergeTree::alter).
+    if (!query_settings[Setting::allow_suspicious_primary_key]
+        && MergeTreeData::sortingKeyChanged(old_sorting_key, future_metadata.sorting_key))
     {
         MergeTreeData::verifySortingKey(future_metadata.sorting_key);
     }
