@@ -1211,9 +1211,21 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     const auto & mutation_entry = current_mutation_it->second;
 
     auto txn = tryGetTransactionForMutation(mutation_entry, log.load());
-    /// There's no way a transaction may finish before a mutation that was started by the transaction.
-    /// But sometimes we need to check status of an unrelated mutation, in this case we don't care about transactions.
-    chassert(txn || mutation_entry.tid.isNonTransactional() || from_another_mutation);
+    if (!txn && !mutation_entry.tid.isNonTransactional() && !from_another_mutation)
+    {
+        /// The transaction that started this mutation reached a terminal state.
+        /// If it committed, the mutation is still valid and its status can be reported
+        /// as usual. Otherwise it was rolled back, and the entry is either about to be
+        /// removed by `killMutation`, or is an orphaned entry left by a race between
+        /// mutation registration and `KILL TRANSACTION` (see the failpoint in
+        /// `startMutation`) that `selectPartsToMutate` removes when it encounters it.
+        /// Either way the mutation will never be executed, so report it as killed.
+        CSN mutation_csn = mutation_entry.csn;
+        if (mutation_csn == Tx::UnknownCSN)
+            mutation_csn = TransactionLog::getCSN(mutation_entry.tid);
+        if (mutation_csn == Tx::UnknownCSN || mutation_csn == Tx::RolledBackCSN)
+            return {};
+    }
 
     /// Check deadlock: if this mutation belongs to a transaction, check if there are
     /// intermediate mutations between it and an earlier mutation from the same transaction
