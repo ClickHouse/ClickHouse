@@ -71,7 +71,10 @@ public:
         /// In fact, they could be released in destructors of BucketHolder,
         /// but we anyway try to release them explicitly,
         /// because we want to be able to rethrow exceptions if they might happen.
-        void releaseFinishedBuckets();
+        /// If `force_release_unfinished` is true, release even a non-finished
+        /// bucket holder (allowed only when no one is processing files
+        /// of this bucket, the bucket will be re-acquired when needed).
+        void releaseFinishedBuckets(bool force_release_unfinished);
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
 

@@ -597,7 +597,7 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     }
 }
 
-void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
+void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets(bool force_release_unfinished)
 {
     std::lock_guard lock(mutex);
     for (auto & [processor, holders] : bucket_holders)
@@ -611,7 +611,7 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
             /// Only the last holder in the list of holders can be non-finished.
             if (std::next(it) == holders->end())
             {
-                if (!holder->isFinished())
+                if (!holder->isFinished() && !force_release_unfinished)
                 {
                     /// Do not release non-finished bucket holder. We will continue processing it.
                     LOG_TEST(log, "Bucket {} is not finished yet, will not release it", bucket);

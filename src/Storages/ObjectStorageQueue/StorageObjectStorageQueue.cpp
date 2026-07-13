@@ -935,14 +935,30 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                 "persistent processing node TTL ({} sec)",
                 watch.elapsedSeconds(), ttl_seconds);
 
-            /// Drop the shared iterator, so that all buckets it still holds
-            /// (releaseFinishedBuckets keeps a non-finished one) are released
-            /// as soon as the last streaming task stops using it,
-            /// and the next execution starts with a fresh iterator,
-            /// re-acquiring bucket locks.
             std::lock_guard streaming_lock(streaming_mutex);
             if (streaming_file_iterator == file_iterator)
-                streaming_file_iterator.reset();
+            {
+                /// While `streaming_mutex` is held, no other streaming task can copy
+                /// the shared iterator, so use_count == 2 (the member + our local copy)
+                /// means we are its only user.
+                if (file_iterator.use_count() == 2)
+                {
+                    /// Release all held buckets, including a non-finished one.
+                    /// The iterator remains cached and will re-acquire buckets
+                    /// (with fresh lock nodes) on the next execution.
+                    file_iterator->releaseFinishedBuckets(/*force_release_unfinished=*/true);
+                }
+                else
+                {
+                    /// Other streaming tasks are still using the iterator,
+                    /// so releasing a non-finished bucket is not safe - they can have
+                    /// in-flight files from it. Drop the shared iterator instead:
+                    /// held buckets are released (in BucketHolder destructors) as soon as
+                    /// the last streaming task stops using it, and the next execution
+                    /// starts with a fresh iterator, re-acquiring bucket locks.
+                    streaming_file_iterator.reset();
+                }
+            }
             break;
         }
 
@@ -1030,7 +1046,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                     getCurrentExceptionMessage(true),
                     getCurrentExceptionCode());
 
-                file_iterator->releaseFinishedBuckets();
+                file_iterator->releaseFinishedBuckets(/*force_release_unfinished=*/false);
 
                 /// Halve the global batch size so that on the next iteration the bad file
                 /// ends up in a smaller batch, eventually alone (batch size 1),
@@ -1061,7 +1077,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         });
 
         commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
-        file_iterator->releaseFinishedBuckets();
+        file_iterator->releaseFinishedBuckets(/*force_release_unfinished=*/false);
         max_files_override = 0;
         total_rows += rows;
     }
