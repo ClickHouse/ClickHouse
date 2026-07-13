@@ -277,9 +277,14 @@ BlockIO InterpreterCreateUserQuery::execute()
 
         auto make_absolute_valid_until = [](time_t deadline) -> ASTPtr
         {
+            /// Serialize the deadline in `UTC` and keep the `UTC` suffix in the literal. Every replica
+            /// parses the resulting `VALID UNTIL` string with `parseDateTimeBestEffort`, which honours the
+            /// explicit time zone, so the deadline maps to the same instant everywhere. Without the zone,
+            /// a bare `'2026-07-14 12:00:00'` would be interpreted in each replica's own default time zone
+            /// and the stored `valid_until` would diverge on mixed-time-zone clusters.
             WriteBufferFromOwnString out;
-            writeDateTimeText(deadline, out);
-            return make_intrusive<ASTLiteral>(out.str());
+            writeDateTimeText(deadline, out, DateLUT::instance("UTC"));
+            return make_intrusive<ASTLiteral>(out.str() + " UTC");
         };
 
         if (cluster_query.global_valid_until_is_interval)

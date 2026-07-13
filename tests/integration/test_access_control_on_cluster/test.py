@@ -27,6 +27,19 @@ ch3 = cluster.add_instance(
     ],
     with_zookeeper=True,
 )
+# `ch4` runs in a different server time zone than the other nodes on purpose, to check that
+# `VALID FOR <interval> ON CLUSTER` stores the same absolute deadline regardless of node time zone.
+ch4 = cluster.add_instance(
+    "ch4",
+    main_configs=[
+        "configs/config.d/clusters.xml",
+        "configs/config.d/timezone.xml",
+    ],
+    user_configs=[
+        "configs/users.d/users.xml",
+    ],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -136,3 +149,40 @@ def test_valid_for_on_cluster():
     assert ch3.query("SHOW CREATE USER valid_for_user") == altered
 
     ch1.query("DROP USER valid_for_user ON CLUSTER 'cluster'")
+
+
+def test_valid_for_on_cluster_mixed_timezone():
+    # `cluster_tz` spans `ch1` and `ch4`, which run in different server time zones. The initiator
+    # resolves `VALID FOR <interval>` to an absolute deadline and must serialize it with an explicit
+    # time zone; otherwise every replica would re-interpret the bare wall-clock literal in its own
+    # default time zone, so the stored epoch would diverge across the cluster. We compare the raw
+    # `valid_until` epoch (which is time-zone independent, unlike the rendered `SHOW CREATE USER`).
+    def stored_epoch(node):
+        return node.query(
+            "SELECT toUInt32(valid_until[1]) FROM system.users WHERE name = 'valid_for_tz_user'"
+        ).strip()
+
+    ch1.query("DROP USER IF EXISTS valid_for_tz_user ON CLUSTER 'cluster_tz'")
+
+    # Create from a node in the default time zone.
+    ch1.query_with_retry(
+        "CREATE USER valid_for_tz_user ON CLUSTER 'cluster_tz' "
+        "IDENTIFIED WITH plaintext_password BY 'x' VALID FOR INTERVAL 1 YEAR",
+        retry_count=5,
+    )
+    epoch_ch1 = stored_epoch(ch1)
+    epoch_ch4 = stored_epoch(ch4)
+    assert epoch_ch1 != "0"
+    assert epoch_ch1 == epoch_ch4, (epoch_ch1, epoch_ch4)
+
+    # Re-issue from the node in the other time zone; the deadline must still match on both nodes.
+    ch4.query_with_retry(
+        "ALTER USER valid_for_tz_user ON CLUSTER 'cluster_tz' VALID FOR INTERVAL 2 YEAR",
+        retry_count=5,
+    )
+    altered_ch1 = stored_epoch(ch1)
+    altered_ch4 = stored_epoch(ch4)
+    assert altered_ch1 != epoch_ch1
+    assert altered_ch1 == altered_ch4, (altered_ch1, altered_ch4)
+
+    ch1.query("DROP USER valid_for_tz_user ON CLUSTER 'cluster_tz'")
