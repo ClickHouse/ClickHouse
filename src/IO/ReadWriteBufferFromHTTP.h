@@ -223,7 +223,6 @@ class BuilderRWBufferFromHTTP
     bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
     bool delay_initialization = true;
-    std::string bearer_token{};
 
 public:
     explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
@@ -253,14 +252,20 @@ public:
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
-    /// Attach the token as an `Authorization: Bearer` header. A bearer token and HTTP
-    /// Basic credentials occupy the same header, so a request carries one or the other:
-    /// a non-empty token takes precedence and `create` does not apply its credentials.
-    setterMember(withBearerToken, bearer_token)
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 
+    /// Authenticate with HTTP Basic credentials (no header is sent when they are empty).
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
+
+    /// Authenticate with a bearer token (`Authorization: Bearer <token>`; no header is
+    /// sent when it is empty).
+    ReadWriteBufferFromHTTPPtr create(const std::string & bearer_token_);
+
+    /// Authenticate with the bearer token when it is non-empty and with the Basic
+    /// credentials otherwise: both occupy the `Authorization` header, so a request
+    /// carries one or the other, never both.
+    ReadWriteBufferFromHTTPPtr create(const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & credentials_);
 };
 
 /// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).

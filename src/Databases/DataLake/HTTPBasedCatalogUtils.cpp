@@ -32,9 +32,6 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     if (!params.empty())
         url.setQueryParameters(params);
 
-    /// Catalogs authenticate with a bearer token; there are no HTTP Basic credentials.
-    static const Poco::Net::HTTPBasicCredentials no_credentials;
-
     return DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withSettings(context->getReadSettings())
@@ -45,8 +42,7 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         .withSkipNotFound(false)
         .withMethod(method)
         .withOutCallback(out_stream_callaback)
-        .withBearerToken(bearer_token)
-        .create(no_credentials);
+        .create(bearer_token);
 }
 
 std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(

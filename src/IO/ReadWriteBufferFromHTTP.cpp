@@ -812,6 +812,18 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
 
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTPBasicCredentials & credentials_)
 {
+    return create(/*bearer_token_=*/ "", credentials_);
+}
+
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const std::string & bearer_token_)
+{
+    /// The buffer keeps a reference to the credentials, hence the immutable static.
+    static const Poco::Net::HTTPBasicCredentials no_credentials;
+    return create(bearer_token_, no_credentials);
+}
+
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & credentials_)
+{
     ProxyConfiguration proxy_configuration;
 
     if (!bypass_proxy)
@@ -825,8 +837,8 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
     /// precedence and the Basic credentials are not applied. The buffer keeps a
     /// reference to the credentials, hence the immutable static for the empty case.
     static const Poco::Net::HTTPBasicCredentials no_credentials;
-    if (!bearer_token.empty())
-        http_header_entries.emplace_back("Authorization", "Bearer " + bearer_token);
+    if (!bearer_token_.empty())
+        http_header_entries.emplace_back("Authorization", "Bearer " + bearer_token_);
 
     // todo it could be a problem if ReadWriteBufferFromHTTP throws
     std::unique_ptr<ReadWriteBufferFromHTTP> ptr(new ReadWriteBufferFromHTTP(
@@ -836,7 +848,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         proxy_configuration,
         read_settings,
         timeouts,
-        bearer_token.empty() ? credentials_ : no_credentials,
+        bearer_token_.empty() ? credentials_ : no_credentials,
         remote_host_filter,
         buffer_size,
         max_redirects,
