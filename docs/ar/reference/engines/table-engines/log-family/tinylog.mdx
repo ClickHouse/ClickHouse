@@ -1,0 +1,94 @@
+---
+description: 'توثيق محرك الجدول TinyLog'
+slug: /engines/table-engines/log-family/tinylog
+toc_priority: 34
+toc_title: 'TinyLog'
+title: 'محرك الجدول TinyLog'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+ينتمي هذا المحرك إلى عائلة محركات السجل. راجع [عائلة محركات السجل](/ar/reference/engines/table-engines/log-family/index) للاطلاع على الخصائص المشتركة لمحركات السجل والفروق بينها.
+
+يُستخدم محرك الجدول هذا عادةً وفق أسلوب الكتابة لمرة واحدة: اكتب البيانات مرة واحدة، ثم اقرأها بعد ذلك كلما دعت الحاجة. على سبيل المثال، يمكنك استخدام جداول من النوع `TinyLog` للبيانات الوسيطة التي تُعالَج على دفعات صغيرة. لاحظ أن تخزين البيانات في عدد كبير من الجداول الصغيرة غير فعّال.
+
+تُنفَّذ الاستعلامات ضمن تدفق واحد. وبعبارة أخرى، فهذا المحرك مخصص للجداول الصغيرة نسبيًا (حتى نحو 1,000,000 صف). ومن المنطقي استخدام محرك الجدول هذا إذا كان لديك الكثير من الجداول الصغيرة، لأنه أبسط من محرك [Log](/ar/reference/engines/table-engines/log-family/log) (إذ يلزم فتح عدد أقل من الملفات).
+
+<div id="characteristics">
+  ## الخصائص
+</div>
+
+* **بنية أبسط**: بخلاف محرك Log، لا يستخدم TinyLog ملفات العلامات. يقلّل ذلك من التعقيد، لكنه يحدّ أيضًا من إمكانات تحسين الأداء لمجموعات البيانات الكبيرة.
+* **استعلامات أحادية التدفق**: تُنفَّذ الاستعلامات على جداول TinyLog ضمن تدفق واحد، مما يجعله مناسبًا للجداول الصغيرة نسبيًا، عادةً حتى 1,000,000 صف.
+* **فعّال للجداول الصغيرة**: تجعل بساطة محرك TinyLog منه خيارًا مناسبًا عند إدارة عدد كبير من الجداول الصغيرة، إذ يتطلّب عمليات ملفات أقل مقارنةً بمحرك Log.
+
+بخلاف محرك Log، لا يستخدم TinyLog ملفات العلامات. يقلّل ذلك من التعقيد، لكنه يحدّ أيضًا من إمكانات تحسين الأداء لمجموعات البيانات الأكبر.
+
+<div id="table_engines-tinylog-creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = TinyLog
+```
+
+راجع الوصف التفصيلي لاستعلام [CREATE TABLE](/ar/reference/statements/create/table).
+
+<div id="table_engines-tinylog-writing-the-data">
+  ## كتابة البيانات
+</div>
+
+يخزّن المحرّك `TinyLog` جميع الأعمدة في ملف واحد. ومع كل استعلام `INSERT`، يُلحق ClickHouse كتلة البيانات بنهاية ملف الجدول، مع كتابة الأعمدة واحدًا تلو الآخر.
+
+لكل جدول، يكتب ClickHouse الملفات التالية:
+
+* `<column>.bin`: ملف بيانات لكل عمود، يحتوي على بيانات مُسلسلة ومضغوطة.
+
+لا يدعم المحرّك `TinyLog` عمليتَي `ALTER UPDATE` و`ALTER DELETE`.
+
+<div id="table_engines-tinylog-example-of-use">
+  ## مثال للاستخدام
+</div>
+
+إنشاء جدول:
+
+```sql
+CREATE TABLE tiny_log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = TinyLog
+```
+
+إدخال البيانات:
+
+```sql
+INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+استخدمنا استعلامين من نوع `INSERT` لإنشاء كتلتين من البيانات داخل ملفات `<column>.bin`.
+
+يستخدم ClickHouse تدفقًا واحدًا عند تحديد البيانات. ونتيجةً لذلك، يتطابق ترتيب كتل الصفوف في الناتج مع ترتيب الكتل نفسها في الإدخال. على سبيل المثال:
+
+```sql
+SELECT * FROM tiny_log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2024-12-10 13:11:58 │ REGULAR      │ The first regular message  │
+│ 2024-12-10 13:12:12 │ REGULAR      │ The second regular message │
+│ 2024-12-10 13:12:12 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```

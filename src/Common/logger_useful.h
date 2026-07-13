@@ -12,7 +12,7 @@
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/LoggingHelpers.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsLogger.h>
 #include <Common/Stopwatch.h>
 
 

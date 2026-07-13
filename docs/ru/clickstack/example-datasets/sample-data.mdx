@@ -1,0 +1,305 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/sample-data
+title: 'Примеры журналов, трассировок и метрик'
+description: 'Начало работы с ClickStack и демонстрационным набором данных с журналами, сеансами, трассировками и метриками'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'демонстрационные данные', 'демонстрационный набор данных', 'журналы', 'обсервабилити']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+В этом руководстве демонстрируются как ClickStack с открытым исходным кодом, так и Управляемый ClickStack на примере набора данных.
+
+<Tabs>
+  <Tab title="Управляемый ClickStack">
+    В этом руководстве предполагается, что вы выполнили [руководство по началу работы с Управляемым ClickStack](/ru/clickstack/deployment/managed) и [сохранили учётные данные для подключения](/ru/clickstack/getting-started/managed#next-steps).
+
+    <Steps>
+      <Step>
+        ### Выберите сервис
+
+        На главной странице ClickHouse Cloud выберите сервис с Управляемым ClickStack.
+
+        <Image img="/images/clickstack/select_service.webp" alt="Выберите сервис" size="lg" />
+      </Step>
+
+      <Step>
+        ### Перейдите в интерфейс ClickStack (HyperDX)
+
+        Выберите `ClickStack` в левом меню, чтобы перейти в интерфейс ClickStack, где вы будете автоматически авторизованы.
+
+        <Image img="/images/use-cases/observability/hyperdx.webp" alt="Интерфейс ClickStack" size="lg" />
+      </Step>
+
+      <Step>
+        ### Скачайте пример данных
+
+        Чтобы заполнить интерфейс примером данных, скачайте следующий файл:
+
+        [Пример данных](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+        ```shell
+        # curl
+        curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+        # или
+        # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+        ```
+
+        Этот файл содержит примеры журналов, метрик и трассировок из нашего публичного [демо-приложения OpenTelemetry](https://github.com/ClickHouse/opentelemetry-demo) — простого интернет-магазина на микросервисах. Скопируйте этот файл в любой каталог по вашему выбору.
+      </Step>
+
+      <Step>
+        ### Загрузка тестовых данных
+
+        Чтобы загрузить эти данные, достаточно отправить их в HTTP-конечную точку развернутого OTel collector OpenTelemetry.
+
+        Выполните следующую команду, чтобы отправить данные в OTel collector:
+
+        ```shell
+        for filename in $(tar -tf sample.tar.gz); do
+          endpoint="http://localhost:4318/v1/${filename%.json}"
+          echo "loading ${filename%.json}"
+          tar -xOf sample.tar.gz "$filename" | while read -r line; do
+            printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
+            -H "Content-Type: application/json" \
+            -H "authorization: ${CLICKSTACK_API_KEY}" \
+            --data-binary @-
+          done
+        done
+        ```
+
+        Это имитирует отправку данных из источников логов, трасс и метрик OTLP в OTel collector. В рабочей среде такими источниками могут быть клиентские библиотеки для разных языков или даже другие OTel collector.
+
+        Вернувшись к представлению `Search`, вы должны увидеть, что данные начали загружаться (если данные не отображаются, установите временной диапазон `Last 1 hour`):
+
+        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="Поиск HyperDX" size="lg" />
+
+        Загрузка данных займет несколько минут. Дождитесь ее завершения, прежде чем переходить к следующим шагам.
+      </Step>
+
+      <Step>
+        ### Изучение сеансов
+
+        Предположим, нам поступают сообщения о том, что у пользователей возникают проблемы с оплатой товаров. Мы можем просмотреть их действия с помощью функции воспроизведения сеанса в HyperDX.
+
+        Выберите `Client Sessions` в левом меню.
+
+        <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="Сеансы" size="lg" />
+
+        В этом представлении отображаются фронтенд-сеансы для нашего интернет-магазина. Сеансы остаются Anonymous, пока пользователи не переходят к оформлению заказа и не пытаются завершить покупку.
+
+        Обратите внимание, что некоторые сеансы с адресами электронной почты связаны с ошибкой, что может подтверждать сообщения о неудачных транзакциях.
+
+        Выберите трейс со сбоем и связанным с ним адресом электронной почты. В следующем представлении можно воспроизвести сеанс пользователя и разобраться в его проблеме. Нажмите play, чтобы просмотреть сеанс.
+
+        <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="Воспроизведение сеанса" size="lg" />
+
+        На записи видно, как пользователь перемещается по сайту и добавляет товары в корзину. При желании можно перейти к более позднему моменту сеанса, где он пытается завершить оплату.
+
+        <Tip>
+          Все ошибки помечены на временной шкале красным цветом.
+        </Tip>
+
+        Пользователь не смог оформить заказ, при этом явной ошибки не видно. Прокрутите левую панель вниз — в ней показаны сетевые события и события консоли из браузера пользователя. Вы заметите, что при вызове `/api/checkout` возникла ошибка 500.
+
+        <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="Ошибка в сеансе" size="lg" />
+
+        Выберите эту ошибку `500`. Ни `Overview`, ни `Column Values` не указывают на источник проблемы, кроме того, что ошибка является неожиданной и приводит к `Internal Error`.
+      </Step>
+
+      <Step>
+        ### Explore: трассировки
+
+        Перейдите на вкладку `Trace`, чтобы увидеть полную распределённую трассировку.
+
+        <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="Трассировка сеанса" size="lg" />
+
+        Прокрутите трассировку вниз, чтобы увидеть источник ошибки — спан сервиса `checkout`. Выберите спан сервиса `Payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="Спан" size="lg" />
+
+        Выберите вкладку `Column Values` и прокрутите вниз. Видно, что проблема связана с переполнением кэша.
+
+        <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="Значения столбцов" size="lg" />
+
+        Прокрутив вверх и вернувшись к трассировке, мы видим, что журналы коррелируются со спаном благодаря ранее заданной конфигурации. Они дают дополнительный контекст.
+
+        <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="Коррелированный журнал" size="lg" />
+
+        Мы установили, что в платёжном сервисе переполняется кэш, из-за чего платежи не могут завершиться.
+      </Step>
+
+      <Step>
+        ### Просмотр журналов в Explore
+
+        Чтобы узнать больше, можно вернуться к `Search`:
+
+        Выберите `Logs` в списке источников и примените фильтр по сервису `payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-18.webp" alt="Журналы" size="lg" />
+
+        Мы видим, что, хотя проблема возникла недавно, количество затронутых платежей велико. Кроме того, похоже, что проблемы вызывает кэш, связанный с платежами Visa.
+      </Step>
+
+      <Step>
+        ### Метрики графика
+
+        Хотя в код явно внесли ошибку, мы можем использовать метрики, чтобы подтвердить размер кэша. Перейдите в представление `Chart Explorer`.
+
+        Выберите `Metrics` в качестве источника данных. В конструкторе графиков постройте `Maximum` для `visa_validation_cache.size (Gauge)` и нажмите кнопку `play`. До достижения максимального размера кэш явно увеличивался, после чего начали появляться ошибки.
+
+        <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="Метрики" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack с открытым исходным кодом">
+    В следующем примере предполагается, что вы запустили Open Source ClickStack по [инструкциям для образа all-in-one](/ru/clickstack/getting-started/oss) и подключились к [локальному экземпляру ClickHouse](/ru/clickstack/getting-started/oss#complete-connection-credentials).
+
+    <Steps>
+      <Step>
+        ### Перейдите в интерфейс ClickStack (HyperDX)
+
+        Чтобы открыть интерфейс ClickStack, перейдите по адресу [http://localhost:8080](http://localhost:8080).
+
+        <Image img="/images/use-cases/observability/hyperdx.webp" alt="Интерфейс ClickStack" size="lg" />
+      </Step>
+
+      <Step>
+        ### Скопируйте ключ API для приёма данных
+
+        Перейдите в [`Team Settings`](http://localhost:8080/team) и скопируйте `Ingestion API Key` из раздела `API Keys`. Этот ключ API обеспечивает безопасный приём данных через OpenTelemetry Collector.
+
+        <Image img="/images/use-cases/observability/copy_api_key.webp" alt="Копирование ключа API" size="lg" />
+      </Step>
+
+      <Step>
+        ### Скачайте пример данных
+
+        Чтобы заполнить интерфейс тестовыми данными, скачайте следующий файл:
+
+        [Пример данных](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+        ```shell
+        # curl
+        curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+        # или
+        # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+        ```
+
+        Этот файл содержит примеры журналов, метрик и трассировок из нашего публичного [демо-приложения OpenTelemetry](https://github.com/ClickHouse/opentelemetry-demo) — простого интернет-магазина на микросервисах. Скопируйте этот файл в любой выбранный вами каталог.
+      </Step>
+
+      <Step>
+        ### Загрузка примера данных
+
+        Чтобы загрузить эти данные, просто отправьте их на HTTP-конечную точку развернутого коллектора OpenTelemetry (OTel).
+
+        Сначала экспортируйте API-ключ, скопированный выше.
+
+        ```shell
+        # экспорт API key
+        export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
+        ```
+
+        Выполните следующую команду, чтобы отправить данные в OTel collector:
+
+        ```shell
+        for filename in $(tar -tf sample.tar.gz); do
+          endpoint="http://localhost:4318/v1/${filename%.json}"
+          echo "loading ${filename%.json}"
+          tar -xOf sample.tar.gz "$filename" | while read -r line; do
+            printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
+            -H "Content-Type: application/json" \
+            -H "authorization: ${CLICKSTACK_API_KEY}" \
+            --data-binary @-
+          done
+        done
+        ```
+
+        Это имитирует отправку данных в OTel collector из OTLP-источников логов, трассировок и метрик. В рабочей среде такими источниками могут быть клиентские библиотеки разных языков или даже другие экземпляры OTel collector.
+
+        Вернувшись к представлению `Search`, вы должны увидеть, что данные начали загружаться (измените временной диапазон на `Last 1 hour`, если данные не отображаются):
+
+        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="Поиск HyperDX" size="lg" />
+
+        Загрузка данных займет несколько минут. Прежде чем переходить к следующим шагам, дождитесь ее завершения.
+      </Step>
+
+      <Step>
+        ### Изучение сеансов
+
+        Предположим, нам поступают сообщения о том, что у пользователей возникают проблемы с оплатой товаров. Мы можем посмотреть, что происходило, с помощью функции воспроизведения сеанса в HyperDX.
+
+        Выберите [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572) в левом меню.
+
+        <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="Сеансы" size="lg" />
+
+        В этом представлении можно увидеть фронтенд-сеансы нашего интернет-магазина. Сеансы остаются анонимными, пока пользователи не переходят к оформлению заказа и не пытаются завершить покупку.
+
+        Обратите внимание: у некоторых сеансов, связанных с адресами электронной почты, есть ошибка, что может подтверждать сообщения о неуспешных транзакциях.
+
+        Выберите трассировку со сбоем и связанным адресом электронной почты. В следующем представлении можно воспроизвести сеанс пользователя и изучить проблему. Нажмите play, чтобы просмотреть сеанс.
+
+        <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="Воспроизведение сеанса" size="lg" />
+
+        На записи видно, как пользователь перемещается по сайту и добавляет товары в корзину. При желании можно перейти к более позднему моменту сеанса, где он пытается завершить оплату.
+
+        <Tip>
+          Все ошибки помечены на временной шкале красным цветом.
+        </Tip>
+
+        Пользователь не смог оформить заказ, хотя явной ошибки не видно. Прокрутите левую панель вниз — в ней показаны события Network и консоли из браузера пользователя. Вы увидите, что при вызове `/api/checkout` была сгенерирована ошибка 500.
+
+        <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="Ошибка в сеансе" size="lg" />
+
+        Выберите эту ошибку `500`. Ни `Overview`, ни `Column Values` не указывают на источник проблемы, кроме того, что ошибка является неожиданной и приводит к `Internal Error`.
+      </Step>
+
+      <Step>
+        ### Просмотр трассировок
+
+        Перейдите на вкладку `Trace`, чтобы увидеть полную распределенную трассировку.
+
+        <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="Трассировка сеанса" size="lg" />
+
+        Прокрутите трассировку вниз, чтобы увидеть источник ошибки — спан сервиса `checkout`. Выберите спан сервиса `Payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="Спан" size="lg" />
+
+        Выберите вкладку `Column Values` и прокрутите вниз. Мы видим, что проблема связана с переполнением кэша.
+
+        <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="Значения столбцов" size="lg" />
+
+        Если прокрутить вверх и вернуться к трассировке, видно, что журналы коррелируются со спаном благодаря выполненной ранее настройке. Это дает дополнительный контекст.
+
+        <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="Скоррелированный журнал" size="lg" />
+
+        Мы установили, что в сервисе Payment заполняется кэш, из-за чего платежи не могут завершиться.
+      </Step>
+
+      <Step>
+        ### Просмотр журналов
+
+        Чтобы получить больше сведений, можно вернуться к представлению [`Search`](http://localhost:8080/search):
+
+        В списке источников выберите `Logs` и примените фильтр по сервису `payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-18.webp" alt="Журналы" size="lg" />
+
+        Мы видим, что, хотя проблема возникла недавно, число затронутых платежей велико. Кроме того, похоже, проблемы вызывает кэш, связанный с платежами Visa.
+      </Step>
+
+      <Step>
+        ### Метрики диаграммы
+
+        Хотя в коде явно была внесена ошибка, мы можем использовать метрики, чтобы проверить размер кэша. Перейдите в представление `Chart Explorer`.
+
+        Выберите `Metrics` в качестве источника данных. Настройте диаграмму в конструкторе так, чтобы построить `Maximum` для `visa_validation_cache.size (Gauge)`, и нажмите кнопку play. До достижения максимального размера кэш явно рос, после чего начали возникать ошибки.
+
+        <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="Метрики" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

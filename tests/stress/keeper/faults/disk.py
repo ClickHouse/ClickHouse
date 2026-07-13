@@ -270,7 +270,7 @@ def dm_delay(node, ms=3):
     finally:
         # --- CLEANUP: SIGKILL instead of SIGSTOP to avoid stale fd EIO ---
         #
-        # SIGSTOP + dmsetup remove -f leaves RocksDB and NuRaft file descriptors
+        # SIGSTOP + dmsetup remove -f leaves NuRaft file descriptors
         # pointing at the removed block device.  When the process resumes via SIGCONT
         # those stale fds return EIO, crashing the keeper and expiring all sessions.
         # SIGKILL causes the kernel to close all fds immediately, so the dm device
@@ -326,7 +326,7 @@ def dm_delay(node, ms=3):
         #    journal hasn't been replayed, resulting in an empty /mnt/{dm_name} and an
         #    empty coordination directory that prevents keeper from starting.
         #  - Clear destination first: cp -a does not delete stale files.  Leftover
-        #    RocksDB SST/WAL files from before the fault confuse keeper on restart.
+        #    changelog/snapshot files from before the fault confuse keeper on restart.
         if backend_dev and not ram:
             sh_root_strict(node, f"mkdir -p /var/lib/clickhouse/coordination /mnt/{dm_name}", timeout=10)
             # Strict mount: a silently-failed mount means cp reads an empty

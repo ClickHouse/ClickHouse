@@ -1,0 +1,117 @@
+---
+description: 'HTTP に関するドキュメント'
+slug: /operations/external-authenticators/http
+title: 'HTTP'
+doc_type: 'reference'
+---
+
+import SelfManaged from '/snippets/ja/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+HTTPサーバーを使用して、ClickHouseユーザーを認証できます。HTTP認証は、`users.xml` またはローカルのアクセス制御パスで定義された既存ユーザーに対する外部認証方式としてのみ使用できます。現在サポートされているのは、GETメソッドを使用する [Basic](https://datatracker.ietf.org/doc/html/rfc7617) 認証スキームです。
+
+<div id="http-auth-server-definition">
+  ## HTTP認証サーバーの定義
+</div>
+
+HTTP認証サーバーを定義するには、`config.xml` に `http_authentication_servers` セクションを追加します。
+
+**例**
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <http_authentication_servers>
+        <basic_auth_server>
+          <uri>http://localhost:8000/auth</uri>
+          <connection_timeout_ms>1000</connection_timeout_ms>
+          <receive_timeout_ms>1000</receive_timeout_ms>
+          <send_timeout_ms>1000</send_timeout_ms>
+          <max_tries>3</max_tries>
+          <retry_initial_backoff_ms>50</retry_initial_backoff_ms>
+          <retry_max_backoff_ms>1000</retry_max_backoff_ms>
+          <forward_headers>
+            <name>Custom-Auth-Header-1</name>
+            <name>Custom-Auth-Header-2</name>
+          </forward_headers>
+
+        </basic_auth_server>
+    </http_authentication_servers>
+</clickhouse>
+
+```
+
+なお、`http_authentication_servers` セクションでは、異なる名前を付けて複数の HTTP サーバーを定義できます。
+
+**パラメータ**
+
+* `uri` - 認証リクエストの送信先 URI
+
+サーバーとの通信に使用するソケットのタイムアウト (ミリ秒) :
+
+* `connection_timeout_ms` - デフォルト: 1000 ms。
+* `receive_timeout_ms` - デフォルト: 1000 ms。
+* `send_timeout_ms` - デフォルト: 1000 ms。
+
+再試行パラメータ:
+
+* `max_tries` - 認証リクエストを行う最大試行回数。デフォルト: 3
+* `retry_initial_backoff_ms` - 再試行時のバックオフの初期間隔。デフォルト: 50 ms
+* `retry_max_backoff_ms` - バックオフの最大間隔。デフォルト: 1000 ms
+
+転送ヘッダー:
+
+この部分では、クライアントのリクエストヘッダーから外部 HTTP 認証サービスに転送するヘッダーを定義します。ヘッダーは設定内のヘッダーと大文字・小文字を区別せずに照合されますが、転送時にはそのまま、つまり変更されずに送られます。
+
+<div id="enabling-http-auth-in-users-xml">
+  ### `users.xml` で HTTP 認証を有効にする
+</div>
+
+ユーザーの HTTP 認証を有効にするには、ユーザー定義で `password` などのセクションの代わりに、`http_authentication` セクションを指定します。
+
+パラメータ:
+
+* `server` - 前述のとおり、メインの `config.xml` ファイルで設定した HTTP 認証サーバーの名前。
+* `scheme` - HTTP 認証スキーム。現在サポートされているのは `Basic` のみです。デフォルト: Basic
+
+例 (`users.xml` に記述) :
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <my_user>
+        <!- ... -->
+        <http_authentication>
+            <server>basic_server</server>
+            <scheme>basic</scheme>
+        </http_authentication>
+    </test_user_2>
+</clickhouse>
+```
+
+<Note>
+  HTTP認証は、他のどの認証方式とも併用できない点に注意してください。`http_authentication` と並んで `password` などの別のセクションが存在すると、ClickHouse は強制的にシャットダウンします。
+</Note>
+
+<div id="enabling-http-auth-using-sql">
+  ### SQL を使用した HTTP 認証の有効化
+</div>
+
+ClickHouse で [SQL ベースの Access Control and Account Management](/ja/concepts/features/security/access-rights#access-control-usage) が有効になっている場合は、HTTP 認証で識別されるユーザーも SQL ステートメントを使って作成できます。
+
+```sql
+CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'Basic'
+```
+
+...または、スキームを明示的に定義しない場合は `Basic` がデフォルトです
+
+```sql
+CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
+```
+
+<div id="passing-session-settings">
+  ### セッション設定の受け渡し
+</div>
+
+HTTP認証サーバーからのレスポンスボディがJSON形式で、`settings` サブオブジェクトを含んでいる場合、ClickHouseはその key: value ペアを文字列の値としてパースし、認証済みユーザーの現在のセッションのセッション設定として適用を試みます。パースに失敗した場合、サーバーからのレスポンスボディは無視されます。

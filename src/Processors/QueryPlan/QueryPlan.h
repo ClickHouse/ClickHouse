@@ -100,7 +100,10 @@ public:
     const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context);
+    /// max_type_complexity guards binary type decoding of the plan (0 == unlimited). Client QueryPlan packets
+    /// (TCPHandler::receiveQueryPlan) pass the effective input_format_binary_max_type_complexity; trusted
+    /// server-to-server plans pass 0.
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity);
 
     /// Local-only serialization for the query plan cache. It may use a newer private
     /// format than the distributed query plan protocol.
@@ -196,10 +199,10 @@ private:
     struct SerializationFlags;
 
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
-    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags);
+    static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
-    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context);
+    static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
 
     QueryPlanResourceHolder resources;
     Nodes nodes;

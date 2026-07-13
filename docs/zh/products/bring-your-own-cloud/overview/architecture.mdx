@@ -1,0 +1,136 @@
+---
+title: '架构'
+slug: /cloud/reference/byoc/architecture
+sidebarTitle: '架构'
+keywords: ['BYOC', '云', '自备 Cloud']
+description: '在您自有的云基础设施上部署 ClickHouse'
+doc_type: '参考'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="key-concepts">
+  ## 关键概念
+</div>
+
+下图展示了 ClickHouse Cloud 组织、云账户和 BYOC 基础设施之间的关系。
+
+<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="BYOC 组织层级" />
+
+* **ClickHouse Cloud 组织：** ClickHouse Cloud 中的顶层实体，用于管理用户、计费以及非 BYOC 的 ClickHouse 服务。组织中的用户既可以访问标准 Cloud 服务，也可以访问 BYOC 服务。
+* **ClickHouse BYOC 组织：** 一个专门用于管理 BYOC 部署的独立组织。它与 Cloud 组织共享用户，但会关联到一个或多个部署了 BYOC 基础设施的云账户。
+* **云账户 / 项目：** 客户自有的 AWS 账户或 GCP 项目，BYOC 基础设施就在其中预配。每个账户或项目都可以在一个或多个区域中承载 BYOC 部署。为实现隔离，建议每个 BYOC 部署使用独立的账户或项目。
+* **BYOC 基础设施：** 部署在云账户某个特定区域内的一组云资源，包括 VPC、Kubernetes 集群 (EKS/GKE) 、存储桶、IAM 角色以及相关支持服务。单个云账户可以在不同区域中包含多个 BYOC 基础设施。
+* **ClickHouse 服务：** 在某个 BYOC 基础设施内运行的单个 ClickHouse 集群。同一个 BYOC 基础设施内可以运行多个服务。
+
+<Note>
+  只有未通过[云服务提供商市场](/zh/products/cloud/reference/billing/marketplace/overview)完成开通的客户，才能在同一组织下混合使用 AWS 账户和 GCP 项目。
+</Note>
+
+<div id="glossary">
+  ## 术语表
+</div>
+
+* **ClickHouse VPC:** ClickHouse Cloud 拥有的 VPC。
+* **Customer BYOC VPC:** 归客户云账户所有、由 ClickHouse Cloud 预配和管理，且专用于 ClickHouse Cloud BYOC 部署的 VPC。
+* **Customer VPC:** 归客户云账户所有的其他 VPC，用于运行需要连接到 Customer BYOC VPC 的应用程序。
+
+<div id="architecture">
+  ## 技术架构
+</div>
+
+BYOC 将运行在 ClickHouse VPC 中的 **ClickHouse 控制平面** 与完全运行在您的云账户中的 **数据平面** 分离开来。ClickHouse VPC 承载 ClickHouse Cloud 控制台、身份验证、用户管理、API、计费、基础设施管理组件 (如 BYOC 控制器) 以及告警/事件处理工具。这些服务负责对您的部署进行编排和监控，但并不存储您的数据。
+
+在您的 **Customer BYOC VPC** 中，ClickHouse 会预配一个运行 ClickHouse 数据平面的 Kubernetes 集群 (例如 Amazon EKS) 。如图所示，其中包括 ClickHouse 集群本身、ClickHouse Operator，以及入口、DNS、证书管理、状态导出器和抓取器等配套服务。专用监控栈 (Prometheus、Grafana、AlertManager 和 Thanos) 也运行在您的 VPC 中，确保指标和告警都产生于并保留在您的环境内。
+
+<br />
+
+<Image img="/images/cloud/reference/byoc-1.webp" size="lg" alt="BYOC 架构" background="black" />
+
+<br />
+
+ClickHouse Cloud 将在您的账户中部署的主要云资源包括：
+
+* **VPC:** 专用于您的 ClickHouse 部署的虚拟私有云。它既可以由 ClickHouse 管理，也可以由您 (客户) 管理，并且通常会与您的应用 VPC 建立对等连接。
+* **IAM roles and policies:** Kubernetes、ClickHouse 服务和监控栈所需的 IAM 角色和策略。这些可以由 ClickHouse 预配，也可以由客户提供。
+* **Storage buckets:** 用于存储数据分区片段、备份，以及 (可选的) 长期指标和日志归档。
+* **Kubernetes cluster:** 根据您的云提供商不同，它可以是 Amazon EKS、Google GKE 或 Azure AKS，并承载架构图中显示的 ClickHouse 服务器及配套服务。
+
+默认情况下，ClickHouse Cloud 会预配一个新的专用 VPC，并设置所需的 IAM 角色，以确保 Kubernetes 服务安全运行。对于有更高级网络或安全需求的组织，也可以选择自行管理 VPC 和 IAM 角色。这样可以更灵活地自定义网络配置，并更精细地控制权限。不过，选择自行管理这些资源也会增加您的运维责任。
+
+<div id="data-storage">
+  ### 数据存储
+</div>
+
+所有 ClickHouse 数据、备份和可观测性数据都保留在您的云账户内。数据分区片段和备份存储在您的对象存储中 (例如亚马逊 S3) ，而日志则存储在附加到 ClickHouse 节点的存储卷上。在未来的更新中，日志将写入 LogHouse，这是一项基于 ClickHouse 的日志服务，也运行在您的 BYOC VPC 内。指标可以存储在本地，或存储在您的 BYOC VPC 中独立的存储桶内，以便长期保留。ClickHouse VPC 与您的 BYOC VPC 之间的控制平面连接通过安全且严格受限的通道建立 (例如图中所示的 Tailscale) ；该通道仅用于管理操作，不承载查询流量。
+
+<div id="control-plane-communication">
+  ### 控制平面通信
+</div>
+
+ClickHouse VPC 通过 HTTPS (端口 443) 与你的 BYOC VPC 通信，用于服务管理操作，包括配置更改、健康检查和部署命令。这些流量仅承载用于编排的控制平面数据。关键遥测数据和告警会从你的 BYOC VPC 流向 ClickHouse VPC，以实现资源利用率与健康状况监控。
+
+<div id="key-requirements">
+  ## BYOC 的关键要求
+</div>
+
+BYOC 部署模型需要具备两个关键组成部分，以确保运行可靠、便于维护且安全：
+
+<div id="cross-account-iam-permissions">
+  ### 跨账户 IAM 权限
+</div>
+
+ClickHouse Cloud 需要跨账户 IAM 权限，以便在您的云账户中预配和管理资源。这使 ClickHouse 能够：
+
+* **预配基础设施**：创建并配置 VPC、子网、安全组及其他网络组件
+* **管理 Kubernetes 集群**：部署并维护 EKS/GKE 集群、节点组和集群组件
+* **创建存储资源**：预配 S3 存储桶或等效的对象存储，用于存放数据和备份
+* **管理 IAM 角色**：为 Kubernetes 服务账号及配套服务创建并配置 IAM 角色
+* **运行配套服务**：部署并管理监控栈、入口控制器及其他基础设施组件
+
+这些权限通过您在初始引导流程中创建的跨账户 IAM 角色 (AWS) 或服务账号 (GCP) 授予。该角色遵循最小权限原则，权限范围仅限于 BYOC 操作所必需的内容。
+
+有关所需具体权限的详细信息，请参阅 [BYOC Privilege Reference](/zh/products/bring-your-own-cloud/reference/privilege)。
+
+<div id="tailscale-private-network">
+  ### Tailscale 私有网络连接
+</div>
+
+Tailscale 在 ClickHouse Cloud 的管理服务与您的 BYOC 部署之间提供安全的零信任私有网络连接。此连接可实现：
+
+* **持续监控**：ClickHouse 工程师可访问部署在您的 BYOC VPC 中的 Prometheus 监控栈，以监控服务健康状况和性能
+* **主动维护**：工程师可执行例行维护、升级和故障排查操作
+* **紧急支持**：发生服务问题时，工程师可快速访问您的环境以诊断并解决问题
+* **基础设施管理**：管理服务可与您的 BYOC 基础设施协同执行自动化操作
+
+Tailscale 连接仅从您的 BYOC VPC 发起**出站连接**，无需任何入站连接，从而降低安全暴露风险。所有访问均具有以下特性：
+
+* **经批准且可审计**：工程师必须通过内部审批系统申请访问权限
+* **有时间限制**：访问会在设定期限后自动失效
+* **受限**：工程师只能访问系统表和基础设施组件，绝不会访问客户数据
+* **已加密**：所有通信均采用端到端加密
+
+有关 Tailscale 在 BYOC 中的工作方式及安全控制的详细信息，请参阅[网络安全文档](/zh/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)。
+
+<div id="why-requirements-matter">
+  ### 为什么这些要求很重要
+</div>
+
+这两个组件结合使用后，可让 ClickHouse Cloud 实现：
+
+* **保障可靠性**：主动监控并维护您的部署，防患于未然
+* **确保安全**：采用最小权限访问，并实现完整审计
+* **简化运维**：在您保持控制权的同时，实现基础设施管理自动化
+* **提供支持**：在问题发生时快速响应并解决
+
+所有客户数据都保留在您的云账户中，绝不会通过这些管理通道被访问或传输。
+
+**其他建议与注意事项：**
+
+* 确保您的 BYOC VPC 的 CIDR 网段不会与任何计划建立对等连接的现有 VPC 重叠。
+* 为资源添加清晰的标签，以简化管理和支持。
+* 为实现高可用性，请合理规划子网规模，并将其分布在各个可用区。
+* 查阅[安全手册](/zh/products/cloud/guides/security/audit-logging/byoc-security-playbook)，了解当 ClickHouse Cloud 在您的环境中运行时的共享责任和最佳实践。
+* 查阅完整的入门指南，获取有关初始账户设置、VPC 配置、网络连接 (例如 VPC peering) 以及 IAM 角色委派的分步说明。
+
+如果您有特殊要求或约束，请联系 ClickHouse 支持团队，获取有关高级网络配置或自定义 IAM 策略的指导。

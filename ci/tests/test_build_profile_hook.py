@@ -2,15 +2,22 @@
 
 See ClickHouse/ClickHouse#84159.
 
-Two layers are covered:
+Layers covered:
 
 * The producer (``utils/prepare-time-trace/prepare-time-trace.sh``): for a build
   with no readable objects (cross-arch/non-Linux) it must leave
   ``binary_sizes.txt`` empty, not write a junk ``0`` row that no consumer can
   parse.
+* The build subset gate (``_should_profile``): telemetry is collected only for
+  an explicit subset of builds (amd_release, arm_release) so that ~25 Build
+  variants do not upload at once and cross the shared cluster's per-user memory
+  limit.
 * The hook artifact selection (``_has_data`` / ``_upload_profile_artifacts``):
   no-op for builds without profile data, upload for builds that have it, and
-  propagate any genuine upload error so the caller fails loudly.
+  propagate (not swallow) an upload rejection so lost telemetry stays visible.
+* The upload transport (``LogCluster.do_query``): the telemetry INSERT runs
+  with parallel parsing disabled so its peak parse memory stays under the
+  shared cluster's per-user limit.
 """
 
 import os
@@ -18,12 +25,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.scripts.job_hooks.build_profile_hook import (
     _has_data,
+    _should_profile,
     _upload_profile_artifacts,
 )
+from ci.jobs.scripts.log_cluster import LogCluster
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _PRODUCER = _REPO_ROOT / "utils" / "prepare-time-trace" / "prepare-time-trace.sh"
@@ -60,6 +71,19 @@ def test_producer_no_objects_leaves_binary_sizes_empty(tmp_path):
     binary_sizes = out_dir / "binary_sizes.txt"
     assert binary_sizes.exists()
     assert binary_sizes.read_bytes() == b""
+
+
+# --- build subset gate ----------------------------------------------------
+
+
+def test_should_profile_only_release_builds():
+    """Telemetry is collected only for the explicit release-build subset."""
+    assert _should_profile("amd_release")
+    assert _should_profile("arm_release")
+    assert not _should_profile("amd_debug")
+    assert not _should_profile("amd_asan_ubsan")
+    assert not _should_profile("arm_tsan")
+    assert not _should_profile("amd_darwin")
 
 
 # --- hook artifact selection ----------------------------------------------
@@ -116,7 +140,7 @@ def test_cross_arch_build_no_data_is_noop(tmp_path):
     recorded = []
     insert = _record_inserts(recorded)
     _upload_profile_artifacts(
-        "amd_darwin",
+        "arm_release",
         "2026-06-11 00:00:00",
         [
             (insert, tmp_path / "profile.json"),
@@ -139,7 +163,7 @@ def test_native_build_uploads_all(tmp_path):
     recorded = []
     insert = _record_inserts(recorded)
     _upload_profile_artifacts(
-        "amd_debug",
+        "amd_release",
         "2026-06-11 00:00:00",
         [(insert, f) for f in files],
     )
@@ -147,18 +171,56 @@ def test_native_build_uploads_all(tmp_path):
     assert recorded == [str(f) for f in files]
 
 
-def test_upload_error_propagates(tmp_path):
-    """A genuine upload failure must not be swallowed by the selector."""
+def test_upload_rejection_propagates(tmp_path):
+    """An upload rejection must NOT be swallowed: it propagates to the caller.
+
+    With the upload restricted to a small build subset the per-user-limit
+    contention is gone, so a genuine INSERT rejection now means a real lost
+    upload. It must surface (the hook fails loudly) rather than be reported as
+    success.
+    """
     f = tmp_path / "binary_sizes.txt"
     f.write_text("1 a.o")
 
     def failing_insert(build_name, start_time, file):
         raise AssertionError("upload rejected")
 
-    try:
+    with pytest.raises(AssertionError):
         _upload_profile_artifacts(
-            "amd_debug", "2026-06-11 00:00:00", [(failing_insert, f)]
+            "amd_release", "2026-06-11 00:00:00", [(failing_insert, f)]
         )
-    except AssertionError:
-        return
-    raise AssertionError("expected the upload error to propagate")
+
+
+# --- upload transport: parallel parsing disabled --------------------------
+
+
+def test_do_query_disables_parallel_parsing():
+    """The telemetry INSERT must run with parallel parsing off.
+
+    Parallel parsing buffers many chunks at once; that peak is what crosses the
+    shared cluster's per-user memory limit when all Build variants upload at
+    once (Code 241 MEMORY_LIMIT_EXCEEDED While executing
+    ParallelParsingBlockInputFormat). do_query must send
+    input_format_parallel_parsing=0 so the INSERT is accepted and the telemetry
+    is kept.
+    """
+
+    class _Resp:
+        ok = True
+
+    class _Session:
+        def __init__(self):
+            self.params = None
+
+        def post(self, url, params, data, headers, timeout):
+            self.params = params
+            return _Resp()
+
+    cluster = LogCluster()
+    cluster.is_ready = lambda: True
+    cluster.url = "https://example"
+    cluster._auth = {}
+    cluster._session = _Session()
+
+    assert cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"")
+    assert cluster._session.params["input_format_parallel_parsing"] == 0

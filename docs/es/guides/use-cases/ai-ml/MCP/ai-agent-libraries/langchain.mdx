@@ -1,0 +1,201 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/langchain
+sidebarTitle: 'Integrar LangChain'
+title: 'Cómo crear un agente de IA con LangChain/LangGraph usando el servidor MCP de ClickHouse.'
+description: 'Aprende a crear un agente de IA con LangChain/LangGraph que pueda interactuar con el SQL playground de ClickHouse usando el servidor MCP de ClickHouse.'
+keywords: ['ClickHouse', 'MCP', 'LangChain', 'LangGraph']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+En esta guía, aprenderás a crear un agente de IA con [LangChain/LangGraph](https://github.com/langchain-ai/langgraph) que
+pueda interactuar con el [SQL playground de ClickHouse](https://sql.clickhouse.com/) mediante el [servidor MCP de ClickHouse](https://github.com/ClickHouse/mcp-clickhouse).
+
+<Info>
+  **Notebook de ejemplo**
+
+  Puedes encontrar este ejemplo como un notebook en el [repositorio de ejemplos](https://github.com/ClickHouse/examples/blob/main/ai/mcp/langchain/langchain.ipynb).
+</Info>
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Debes tener Python instalado en tu sistema.
+* Debes tener `pip` instalado en tu sistema.
+* Necesitarás una clave de API de Anthropic o una clave de API de otro proveedor de LLM.
+
+Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un script.
+
+<Steps>
+  <Step>
+    ## Instalar bibliotecas
+
+    Instale las bibliotecas requeridas ejecutando los siguientes comandos:
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q langchain-mcp-adapters langgraph "langchain[anthropic]"
+    ```
+  </Step>
+
+  <Step>
+    ## Configura las credenciales
+
+    A continuación, tendrás que proporcionar tu clave de API de Anthropic:
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="Response"
+    Enter Anthropic API Key: ········
+    ```
+
+    <Info>
+      **Uso de otro proveedor de LLM**
+
+      Si no tienes una clave de API de Anthropic y quieres usar otro proveedor de LLM,
+      puedes consultar las instrucciones para configurar tus credenciales en la [documentación de proveedores de LangChain](https://python.langchain.com/docs/integrations/providers/)
+    </Info>
+  </Step>
+
+  <Step>
+    ## Inicialice el servidor MCP
+
+    Ahora configure el ClickHouse MCP server para que apunte al ClickHouse SQL playground:
+
+    ```python
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    server_params = StdioServerParameters(
+        command="uv",
+        args=[
+            "run",
+            "--with", "mcp-clickhouse",
+            "--python", "3.13",
+            "mcp-clickhouse"
+        ],
+        env={
+            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+            "CLICKHOUSE_PORT": "8443",
+            "CLICKHOUSE_USER": "demo",
+            "CLICKHOUSE_PASSWORD": "",
+            "CLICKHOUSE_SECURE": "true"
+        }
+    )
+    ```
+  </Step>
+
+  <Step>
+    ## Configura el manejador del flujo
+
+    Al trabajar con Langchain y ClickHouse MCP server, los resultados de las consultas suelen
+    devolverse como datos en streaming en lugar de una única respuesta. En el caso de grandes conjuntos de datos o
+    consultas analíticas complejas cuyo procesamiento puede llevar tiempo, es importante configurar
+    un manejador del flujo. Sin un manejo adecuado, esta salida en streaming puede ser difícil
+    de utilizar en tu aplicación.
+
+    Configura el manejador para la salida en streaming de modo que sea más fácil de procesar:
+
+    ```python
+    class UltraCleanStreamHandler:
+        def __init__(self):
+            self.buffer = ""
+            self.in_text_generation = False
+            self.last_was_tool = False
+            
+        def handle_chunk(self, chunk):
+            event = chunk.get("event", "")
+            
+            if event == "on_chat_model_stream":
+                data = chunk.get("data", {})
+                chunk_data = data.get("chunk", {})
+                
+                # Solo manejar contenido de texto real, omitir flujos de invocación de herramientas
+                if hasattr(chunk_data, 'content'):
+                    content = chunk_data.content
+                    if isinstance(content, str) and not content.startswith('{"'):
+                        # Agregar espacio tras la finalización de la herramienta si es necesario
+                        if self.last_was_tool:
+                            print(" ", end="", flush=True)
+                            self.last_was_tool = False
+                        print(content, end="", flush=True)
+                        self.in_text_generation = True
+                    elif isinstance(content, list):
+                        for item in content:
+                            if (isinstance(item, dict) and 
+                                item.get('type') == 'text' and 
+                                'partial_json' not in str(item)):
+                                text = item.get('text', '')
+                                if text and not text.startswith('{"'):
+                                    # Agregar espacio tras la finalización de la herramienta si es necesario
+                                    if self.last_was_tool:
+                                        print(" ", end="", flush=True)
+                                        self.last_was_tool = False
+                                    print(text, end="", flush=True)
+                                    self.in_text_generation = True
+                                    
+            elif event == "on_tool_start":
+                if self.in_text_generation:
+                    print(f"\n🔧 {chunk.get('name', 'tool')}", end="", flush=True)
+                    self.in_text_generation = False
+                    
+            elif event == "on_tool_end":
+                print(" ✅", end="", flush=True)
+                self.last_was_tool = True
+    ```
+  </Step>
+
+  <Step>
+    ## Llama al agente
+
+    Por último, llama a tu agente y pregúntale quién ha aportado más código a ClickHouse:
+
+    ```python
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await load_mcp_tools(session)
+            agent = create_react_agent("anthropic:claude-sonnet-4-0", tools)
+            
+            handler = UltraCleanStreamHandler()        
+            async for chunk in agent.astream_events(
+                {"messages": [{"role": "user", "content": "Who's committed the most code to ClickHouse?"}]}, 
+                version="v1"
+            ):
+                handler.handle_chunk(chunk)
+                
+            print("\n")
+    ```
+
+    Deberías ver una respuesta similar a la que se muestra a continuación:
+
+    ```response title="Response"
+    Te ayudaré a encontrar quién ha realizado más confirmaciones de código en ClickHouse explorando las bases de datos y tablas disponibles para localizar los datos de confirmaciones de git.
+    🔧 list_databases ✅ Puedo ver que existe una base de datos `git` que probablemente contiene información sobre las confirmaciones de git. Voy a explorar las tablas de esa base de datos:
+    🔧 list_tables ✅ ¡Perfecto! Puedo ver que la tabla `clickhouse_commits` en la base de datos git contiene datos de confirmaciones de ClickHouse con 80.644 confirmaciones. Esta tabla tiene información sobre cada confirmación, incluido el autor, las líneas añadidas/eliminadas, los archivos modificados, etc. Voy a consultar esta tabla para encontrar quién ha realizado más confirmaciones de código según distintas métricas.
+    🔧 run_select_query ✅ Veamos también solo las líneas añadidas para ver quién ha contribuido con más código nuevo:
+    🔧 run_select_query ✅ Según los datos de confirmaciones de git de ClickHouse, **Alexey Milovidov** ha realizado más confirmaciones de código en ClickHouse por varios criterios:
+
+    ## Estadísticas clave:
+
+    1. **Mayor número total de líneas modificadas**: Alexey Milovidov con **1.696.929 líneas modificadas en total** (853.049 añadidas + 843.880 eliminadas)
+    2. **Mayor número de líneas añadidas**: Alexey Milovidov con **853.049 líneas añadidas**
+    3. **Mayor número de confirmaciones**: Alexey Milovidov con **15.375 confirmaciones**
+    4. **Mayor número de archivos modificados**: Alexey Milovidov con **73.529 archivos modificados**
+
+    ## Principales contribuidores por líneas añadidas:
+
+    1. **Alexey Milovidov**: 853.049 líneas añadidas (15.375 confirmaciones)
+    2. **s-kat**: 541.609 líneas añadidas (50 confirmaciones)
+    3. **Nikolai Kochetov**: 219.020 líneas añadidas (4.218 confirmaciones)
+    4. **alesapin**: 193.566 líneas añadidas (4.783 confirmaciones)
+    5. **Vitaly Baranov**: 168.807 líneas añadidas (1.152 confirmaciones)
+
+    Alexey Milovidov es claramente el contribuidor más prolífico de ClickHouse, lo cual tiene sentido dado que es uno de los creadores originales y desarrolladores principales del proyecto. Su contribución supera ampliamente a la de los demás tanto en volumen total de código como en número de confirmaciones, con casi 16.000 confirmaciones y más de 850.000 líneas de código añadidas al proyecto.
+    ```
+  </Step>
+</Steps>
