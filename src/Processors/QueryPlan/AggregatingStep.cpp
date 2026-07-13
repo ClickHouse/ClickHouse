@@ -354,6 +354,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         /// It is incorrect for in order aggregation.
         params.stats_collecting_params.disable();
+
+        /// Aggregation in order rebuilds the aggregation-method state for every run of equal
+        /// order-key values, so the whole-block `prealloc_serialized` method would make it
+        /// quadratic. Fall back to the plain `serialized` method (see `Params::aggregation_in_order`).
+        params.aggregation_in_order = true;
     }
 
     if (!allow_to_use_two_level_group_by)
