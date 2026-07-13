@@ -145,10 +145,25 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     }
     if (tracks_string)
         string_total_bytes += other->string_total_bytes;
-    /// A merged default count is trustworthy only if both sides carry one; otherwise the sum would
-    /// silently undercount (e.g. an old part that predates default-count tracking).
-    default_count += other->default_count;
-    has_default_count = has_default_count && other->has_default_count;
+
+    /// The MergeTask pipeline merges built parts into an empty collector created by
+    /// `ColumnsStatistics(metadata)`.  An empty accumulator (`row_count == 0`) has
+    /// `has_default_count == false` because nothing has been built yet; applying the
+    /// conjunction below would permanently clear the flag even when `other` has a valid
+    /// count.  Special-case that state: adopt the other side wholesale.  The symmetric
+    /// case (other empty) requires no action — the accumulator is unchanged.  Only when
+    /// both sides are non-empty does the conjunction rule apply (to handle legacy parts
+    /// that predate `default_count` tracking).
+    if (row_count == 0)
+    {
+        default_count = other->default_count;
+        has_default_count = other->has_default_count;
+    }
+    else if (other->row_count > 0)
+    {
+        default_count += other->default_count;
+        has_default_count = has_default_count && other->has_default_count;
+    }
 
     row_count += other->row_count;
 }

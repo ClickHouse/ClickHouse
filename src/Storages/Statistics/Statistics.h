@@ -93,7 +93,11 @@ struct Estimate
     std::optional<UInt64> estimated_cardinality;
     std::optional<Field> estimated_min;
     std::optional<Field> estimated_max;
-    std::optional<UInt64> estimated_null_count;
+    /// Number of rows equal to the column's storage default (`NULL` for `Nullable`, `0`/`''`/... for
+    /// non-`Nullable`).  Populated whenever `StatisticsBasic::hasDefaultCount()` is true, i.e. for
+    /// any column that carries a `basic` statistic built by the current code.  For a `Nullable`
+    /// column this equals the NULL count; for a non-`Nullable` column it is the type-default count.
+    std::optional<UInt64> estimated_default_count;
 };
 
 using Estimates = std::unordered_map<String, Estimate>;
