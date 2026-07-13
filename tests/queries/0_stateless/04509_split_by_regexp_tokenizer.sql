@@ -52,6 +52,12 @@ SELECT tokens('a→b→c', 'splitByRegexp', '→');
 SELECT tokens('aba', 'splitByRegexp', '^a');
 -- The $ anchor matches only at the true end of the string
 SELECT tokens('banana', 'splitByRegexp', 'a$');
+-- A letter as a separator splits around every occurrence
+SELECT tokens('banana', 'splitByRegexp', 'a');
+-- Matching is case-sensitive: only the upper-case X splits
+SELECT tokens('aXbxc', 'splitByRegexp', 'X');
+-- Non-word characters as separator (\W keeps '_' as a word character)
+SELECT tokens('the_lazy dog-cat', 'splitByRegexp', '\\W+');
 -- Issue #103783: keep special-character tokens such as C++ and C# (separator is any run of characters
 -- that are not letters, digits, '#' or '+'), which splitByNonAlpha would otherwise reduce to 'c'
 SELECT tokens('We use C++ for our backend systems', 'splitByRegexp', '[^\\p{L}\\p{N}#+]+');

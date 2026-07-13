@@ -35,3 +35,7 @@ special: hasAnyTokens([C#]) -> 2
 special: hasAnyTokens([C]) -> 3, 4 (plain C only)
 3
 4
+phrase: hasPhrase([C# and]) -> 2 (not row 1 with C++)
+2
+phrase: hasPhrase([C++ and]) -> 1
+1
