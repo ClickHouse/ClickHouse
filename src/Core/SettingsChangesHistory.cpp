@@ -57,6 +57,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_block_size", 1048576, 1048576, "New experimental setting to configure the chained-buffer node / block size of the ReaderExecutor."},
             {"reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New experimental setting: fixed plan-window size for the ReaderExecutor (floored at reader_executor_window_size, default one window); raise it to plan further ahead."},
             {"reader_executor_hold_consumed", 0, 0, "New experimental setting: trailing retention window of the ReaderExecutor read buffer - consumed bytes kept in memory for cheap backward seeks."},
+            {"optimize_or_like_chain", false, true, "Enable by default: optimize OR chains of LIKE/ILIKE/match into multiSearchAny (pure-substring patterns) or multiMatchAny (other patterns, when Hyperscan/Vectorscan is permitted); when neither fast path applies the original OR chain is kept unchanged."},
+            {"optimize_or_like_chain_min_patterns", 0, 10, "New setting controlling the minimum number of non-pure-substring LIKE/ILIKE/match branches (sharing the same LHS expression) required for optimize_or_like_chain to rewrite a chain into multiMatchAny. Shorter chains are kept as-is because the multiMatchAny (Hyperscan) rewrite only becomes faster than short-circuit OR evaluation from about nine branches."},
+            {"optimize_or_like_chain_min_substrings", 0, 4, "New setting controlling the minimum number of pure-substring (%needle%) LIKE/ILIKE branches (sharing the same LHS expression) required for optimize_or_like_chain to rewrite a chain into multiSearchAny."},
             {"input_format_arrow_use_native_reader", false, true, "New setting to use the native ClickHouse reader for the Arrow and ArrowStream formats instead of the Apache Arrow library."},
             {"output_format_arrow_use_native_writer", false, true, "New setting to use the native ClickHouse writer for the Arrow and ArrowStream formats instead of the Apache Arrow library."},
             {"allow_minmax_index_for_json", true, false, "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"},
@@ -73,10 +76,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
             {"compile_regular_expressions", false, true, "New setting to enable JIT compilation of simple regular expressions in functions like `match` and `extract`."},
             {"min_count_to_compile_regular_expression", 3, 3, "New setting controlling how many times a regular expression must be used before it is JIT-compiled."},
+            {"allow_aggregate_partitions_independently", false, true, "Enable independent per-partition aggregation by default when the partition key suits the GROUP BY key. The existing runtime heuristics in `ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregation` already skip the optimization when the partition layout is unfavorable (too few partitions, too many partitions, or significantly skewed partition sizes), so enabling the setting is safe in the cases where it would otherwise be a no-op."},
             {"text_index_lazy_intersection_density_threshold", 0.2, 0.2, "Renamed from `text_index_density_threshold` (kept as an alias); selects the posting list intersection algorithm in lazy posting list apply mode."},
             {"allow_experimental_text_index_lazy_apply", false, true, "Lazy posting list apply mode for the text index is no longer experimental; the setting is now obsolete and has no effect (lazy mode is selected via `text_index_posting_list_apply_mode = 'lazy'`)."},
             {"allow_experimental_url_wildcard_from_index_pages", false, false, "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages."},
             {"url_wildcard_max_directories_to_read", 100000, 100000, "New setting to limit the number of directories read when expanding wildcards in the `url` table function."},
+            {"allow_experimental_eval_table_function", false, false, "New setting to enable the experimental table function `eval`."},
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
             {"reader_executor_use_long_connections", false, false, "New experimental ReaderExecutor setting (off by default): reuse a held source connection across sequential windows."},
             {"reader_executor_min_bytes_for_seek", 2097152, 2097152, "New experimental ReaderExecutor setting: forward-gap bound for bridging on a held source connection."},
@@ -1303,9 +1308,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
+            {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
             {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
             {"allow_minmax_index_for_json", true, false, "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"},
-            {"allow_experimental_text_index_positions", false, false, "New setting"},
             {"allow_dimensions_outside_sorting_key", true, false, "AggregatingMergeTree now rejects, at table creation, schemas where a column is neither part of the sorting key nor an aggregate-state measure; previously such schemas were accepted (the old behavior corresponds to the value 'true')."},
             {"deduplication_hashes_cache_update_wait_ms", 100, 100, "New setting. The properly-named replacement for async_block_ids_cache_update_wait_ms; controls how long an insert waits for the unified deduplication_hashes cache to refresh."},
         });
