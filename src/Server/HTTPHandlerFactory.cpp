@@ -267,7 +267,16 @@ static inline auto createHandlersFactoryFromConfig(
             }
             else if (handler_type == "webterminal")
             {
-                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
+                /// Build the handler through a creator lambda (like `addDefaultHandlersFactory`)
+                /// so that a composable HTTP endpoint exposing the web terminal via a custom
+                /// `handlers` section honors the per-endpoint `default_session_user` override
+                /// (including an empty override, which disables anonymous access) instead of
+                /// falling back to the global setting.
+                auto webterminal_creator = [&server, default_session_user] () -> std::unique_ptr<WebTerminalRequestHandler>
+                {
+                    return std::make_unique<WebTerminalRequestHandler>(server, default_session_user);
+                };
+                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(std::move(webterminal_creator));
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
@@ -342,7 +351,7 @@ HTTPRequestHandlerFactoryPtr createHandlerFactory(
     if (name == "PrometheusHandler-factory")
         return createPrometheusHandlerFactory(server, config, async_metrics, name, default_session_user);
     if (name == "KeeperPrometheusHandler-factory")
-        return createKeeperPrometheusHandlerFactory(server, config, async_metrics, name);
+        return createKeeperPrometheusHandlerFactory(server, config, async_metrics, name, default_session_user);
 #if CLICKHOUSE_CLOUD
     if (name == "CloudHandler-factory")
         return createCloudMainHandlerFactory(server, config, name);

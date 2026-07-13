@@ -120,10 +120,12 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRuleDefaults(
 
 /// Makes a handler factory to handle prometheus protocols.
 /// Supports the "metrics" protocol only.
+/// @param default_session_user - overrides the `default_session_user` server setting for this listener
 HTTPRequestHandlerFactoryPtr createKeeperPrometheusHandlerFactory(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const AsynchronousMetrics & asynchronous_metrics,
-    const String & name);
+    const String & name,
+    const std::optional<String> & default_session_user = {});
 
 }
