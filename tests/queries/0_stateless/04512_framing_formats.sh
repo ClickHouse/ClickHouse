@@ -144,3 +144,31 @@ echo '--- JSONEachPacketBase64 carries raw output formats (RawBLOB)'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketBase64${SINGLE_BLOCK}" \
     -d "SELECT toString(number) FROM numbers(3) FORMAT RawBLOB" \
     | grep -c '"packet":"data"'
+
+# Some formats produce raw bytes only under certain settings: `CustomSeparated` with the `Raw` escaping
+# rule writes the column bytes verbatim (like `TSVRaw`), so it is treated the same as the other raw
+# passthrough formats. This is detected with a settings-aware capability check.
+echo '--- JSONEachPacketString is rejected for CustomSeparated with the Raw escaping rule'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_custom_escaping_rule=Raw" \
+    -d "SELECT number FROM numbers(3) FORMAT CustomSeparated" \
+    | grep -o -m1 'is not compatible with the output format CustomSeparated'
+
+echo '--- EventStream base64-encodes CustomSeparated with the Raw escaping rule'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&format_custom_escaping_rule=Raw" \
+    -d "SELECT toString(number) FROM numbers(3) FORMAT CustomSeparated"
+
+echo '--- JSONEachPacketString accepts CustomSeparated with an escaping rule that escapes (Escaped)'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_custom_escaping_rule=Escaped" \
+    -d "SELECT number FROM numbers(3) FORMAT CustomSeparated" | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'CustomSeparated (Escaped) accepted: OK'
+
+# When the failure is the framing/output-format compatibility check itself, the error is still delivered
+# as a framed `exception` packet (the exception is always JSON regardless of the output format), rather
+# than a plain HTTP error body, so the client can always parse the response as a stream of packets.
+echo '--- a compatibility error is delivered as a framed exception packet (streaming)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT number FROM numbers(3) FORMAT RowBinary" | grep -c '"packet":"exception"'
+
+echo '--- a compatibility error is delivered as a framed exception packet (wait_end_of_query)'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&framing_output_format=JSONEachPacketString" \
+    -d "SELECT number FROM numbers(3) FORMAT RowBinary" | grep -c '"packet":"exception"'

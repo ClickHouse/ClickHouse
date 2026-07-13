@@ -144,6 +144,11 @@ private:
     /// The checker should return true if format support append.
     using AppendSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
+    /// Some formats may produce raw (non-UTF-8) bytes depending on settings, for example
+    /// `CustomSeparated` with `format_custom_escaping_rule = 'Raw'`. The checker should return true
+    /// when the current settings make the output format write bytes verbatim (see `may_produce_raw_bytes`).
+    using MayProduceRawBytesChecker = std::function<bool(const FormatSettings & settings)>;
+
     /// Obtain HTTP content-type for the output format.
     using ContentTypeGetter = std::function<String(const std::optional<FormatSettings> & settings)>;
 
@@ -186,6 +191,8 @@ private:
         /// embedded into a text framing format (see `IFramingFormat::requiresTextPayload`), even though the
         /// format advertises a textual content type. Binary formats are detected by their content type instead.
         bool may_produce_raw_bytes{false};
+        /// The same, but settings-dependent (for example `CustomSeparated` with a `Raw` escaping rule).
+        MayProduceRawBytesChecker may_produce_raw_bytes_checker;
         ContentTypeGetter content_type = [](const std::optional<FormatSettings> &){ return "text/plain; charset=UTF-8"; };
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
@@ -343,6 +350,7 @@ public:
     void markOutputFormatPrefersLargeBlocks(const String & name);
     void markOutputFormatNotTTYFriendly(const String & name);
     void markOutputFormatMayProduceRawBytes(const String & name);
+    void registerOutputFormatMayProduceRawBytesChecker(const String & name, MayProduceRawBytesChecker checker);
 
     void setContentType(const String & name, const String & content_type);
     void setContentType(const String & name, ContentTypeGetter content_type);
@@ -359,7 +367,7 @@ public:
     bool checkIfFormatHasAnySchemaReader(const String & name) const;
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
     bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
-    bool checkIfOutputFormatMayProduceRawBytes(const String & name) const;
+    bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
 

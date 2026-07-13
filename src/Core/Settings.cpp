@@ -2499,7 +2499,7 @@ The setting currently applies to the HTTP protocol and is ignored for other inte
 Possible values:
 
 - `None` - transparently routes everything applicable (data, totals, extremes, progress) to the output format, and ignores everything that is not applicable (metrics, logs), so everything works as it is by default.
-- `EventStream` - frames packets as HTTP server-sent events (`text/event-stream`). Every packet is sent as an event with the corresponding name: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. The formatted data becomes the `data` fields of the event, and progress and other auxiliary packets are sent as JSON. Suitable only for text output formats.
+- `EventStream` - frames packets as HTTP server-sent events (`text/event-stream`). Every packet is sent as an event with the corresponding name: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. The formatted data becomes the `data` fields of the event, and progress and other auxiliary packets are sent as JSON. Output formats that may produce non-UTF-8 bytes (binary formats such as `Native`, and raw passthrough formats such as `RawBLOB` or `TSVRaw`) are base64-encoded, signalled by a `payload=base64` parameter in the `Content-Type`.
 - `JSONEachPacketBase64` - every packet is a JSON object on a separate line, and the formatted data is base64-encoded, e.g. `{"packet":"data","data":"eyJ4IjoxfQo="}`. Suitable for binary output formats.
 - `JSONEachPacketString` - every packet is a JSON object on a separate line, and the formatted data is put into a string, e.g. `{"packet":"data","data":"{\"x\":1}\n"}`.
 

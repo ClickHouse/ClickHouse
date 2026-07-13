@@ -117,6 +117,13 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
         {
             return settings.custom.result_after_delimiter.empty();
         });
+
+        /// With the `Raw` escaping rule the fields are written verbatim (like `TSVRaw`), so the output
+        /// is not guaranteed to be valid UTF-8 text and cannot be embedded into a text framing format.
+        factory.registerOutputFormatMayProduceRawBytesChecker(format_name, [](const FormatSettings & settings)
+        {
+            return settings.custom.escaping_rule == FormatSettings::EscapingRule::Raw;
+        });
     };
 
     registerWithNamesAndTypes("CustomSeparated", register_func);
