@@ -5315,12 +5315,18 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns) const
 {
+    return getConditionSelectivityEstimator(required_columns, analyzed_result_ptr);
+}
+
+ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns, const AnalysisResultPtr & analyzed_result) const
+{
     /// Just attempting to read statistics files on disk can increase query latencies
     /// First check the in-memory metadata if statistics are present at all
     if (!getStorageMetadata()->hasStatistics())
         return nullptr;
 
-    return data.getConditionSelectivityEstimator(getParts(), required_columns, getContext());
+    const RangesInDataParts & parts = analyzed_result ? analyzed_result->parts_with_ranges : getParts();
+    return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
 }
 
 bool ReadFromMergeTree::canRemoveUnusedColumns() const

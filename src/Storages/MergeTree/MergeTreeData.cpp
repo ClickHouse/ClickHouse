@@ -919,7 +919,18 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         std::lock_guard<std::mutex> lock(stats_mutex);
         if (local_context->getSettingsRef()[Setting::use_statistics_cache]
             && cached_estimator)
-            return cached_estimator;
+        {
+            /// The cached estimator is built by refreshStatistics() over all active parts.
+            /// Return it only if the query reads exactly that part set; a query pruned by
+            /// partition/PK analysis must compose statistics over the surviving parts
+            /// (issue #110281).
+            DataPartsVector query_parts;
+            query_parts.reserve(parts.size());
+            for (const auto & part : parts)
+                query_parts.push_back(part.data_part);
+            if (!cached_estimator->isStale(query_parts))
+                return cached_estimator;
+        }
     }
 
     LOG_DEBUG(log, "Loading statistics");

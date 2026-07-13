@@ -419,6 +419,9 @@ public:
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
+    /// Compose statistics over the part set of the given partition/PK analysis result
+    /// instead of all prepared parts. Passing nullptr falls back to getParts().
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const AnalysisResultPtr & analyzed_result) const;
 
     static void buildIndexes(
         std::optional<ReadFromMergeTree::Indexes> & indexes,
