@@ -2215,10 +2215,6 @@
                     }
                   ],
                   "root": "ja/products/cloud/guides/index"
-                },
-                {
-                  "group": "API リファレンス",
-                  "openapi": "https://api.clickhouse.cloud/v1"
                 }
               ]
             },

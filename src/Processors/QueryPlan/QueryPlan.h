@@ -11,17 +11,12 @@
 
 #include <list>
 #include <memory>
-#include <optional>
+#include <unordered_map>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
-
-class AnalyzeStepsStats;
-
-struct PrettyNames;
-struct PrettyNamesPerPlan;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
@@ -53,7 +48,7 @@ struct DeserializedSetsRegistry;
 
 class SettingsChanges;
 
-/// Options from EXPLAIN queries based on plan.
+/// Options from EXPLAIN PLAN query.
 struct ExplainPlanOptions
 {
     /// Add output header to step.
@@ -78,8 +73,7 @@ struct ExplainPlanOptions
     bool compact = false;
     /// Print query plan with pretty formatting
     bool pretty = false;
-    /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
-    bool processors_profile = false;
+
 
     SettingsChanges toSettingsChanges() const;
 };
@@ -144,17 +138,13 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
-
     void explainPlan(
         WriteBuffer & buffer,
         const ExplainPlanOptions & options,
         size_t offset = 0,
         size_t max_description_length = 0,
-        const PrettyNamesPerPlan * precomputed_pretty_names = nullptr,
         const std::string & parent_tree_prefix = "",
-        bool is_last_child_plan = true,
-        AnalyzeStepsStats * steps_to_stats = nullptr) const;
-
+        bool is_last_child_plan = true) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
