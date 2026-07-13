@@ -1293,8 +1293,10 @@ private:
         auto & idx0 = indexes0->getData();
         auto & idx1 = indexes1->getData();
 
-        PaddedPODArray<UInt64> common_lengths(input_rows_count); /// stores the aligned prefix length both arrays share
-        PaddedPODArray<Int8> length_cmp(input_rows_count); /// whether array0 is shorter(-1), equals(0), bigger(1) than array1 
+        /// stores the aligned prefix length both arrays share
+        PaddedPODArray<UInt64> common_lengths(input_rows_count);
+        /// whether array0 is shorter(-1), equals(0), bigger(1) than array1
+        PaddedPODArray<Int8> length_cmp(input_rows_count);
 
         ColumnArray::Offset prev0 = 0;
         ColumnArray::Offset prev1 = 0;
@@ -1333,15 +1335,13 @@ private:
         ColumnsWithTypeAndName element_args{
             {column_array0.getDataPtr()->index(*indexes0, 0), nested_type0, "left"},
             {column_array1.getDataPtr()->index(*indexes1, 0), nested_type1, "right"}};
-        
-        /// Recurse over indexes to compare flat columns at element-level
-        auto run = [&](auto function) -> ColumnPtr
-        {
-            auto resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(function));
-            auto impl = resolver->build(element_args);
-            return impl->execute(element_args, impl->getResultType(), num_elements, /*dry_run=*/false)
-                  ->convertToFullColumnIfConst();
-        };
+            auto run = [&](auto function) -> ColumnPtr
+            {   /// Recurse over indexes to compare flat columns at element-level
+                auto resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(function));
+                auto impl = resolver->build(element_args);
+                return impl->execute(element_args, impl->getResultType(), num_elements, /*dry_run=*/false)
+                ->convertToFullColumnIfConst();
+            };
 
         /// With lexicographic check we can support all the operations below
         constexpr bool is_equals = IsOperation<Op>::equals;
@@ -1354,8 +1354,7 @@ private:
         /// run(FunctionComparison<EqualsOp>) and fetch the positions with matches
         ColumnPtr equals_col = run(std::make_shared<FunctionComparison<EqualsOp, NameEquals>>(params));
         const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
-
-        /// handle run(FunctionComparison<LessOp>) or run(FunctionComparison<GreaterOp>) if apply  
+        /// handle run(FunctionComparison<LessOp>) or run(FunctionComparison<GreaterOp>) if apply
         ColumnPtr order_col;
         if constexpr (is_less || is_less_or_equals)
             order_col = run(std::make_shared<FunctionComparison<LessOp, NameLess>>(params));
@@ -1367,7 +1366,7 @@ private:
 
         /// Now, lets build the output result
         auto result = ColumnUInt8::create(input_rows_count);
-        auto & res = result->getData(); 
+        auto & res = result->getData();
 
         size_t pos = 0;
         // For each row from both Arrays
