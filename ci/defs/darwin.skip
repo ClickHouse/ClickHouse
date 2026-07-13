@@ -51,6 +51,11 @@
 03394_pr_insert_select
 03404_lazy_materialization_distributed
 
+# Uses remote('127.0.0.2', ...): the Darwin environment has only 127.0.0.1 on the loopback
+# interface, so the server cannot connect to the second loopback address.
+04095_future_set_inplace_build_restore_global_in
+04401_count_global_in_transfer_limit
+
 # Needs a `ch` symlink (clickhouse) on PATH, which the Darwin fast test env does not provide.
 03536_ch_as_client_and_local
 

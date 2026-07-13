@@ -59,6 +59,13 @@ void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr &
 /// Builds ordered sets used by ActionsDAG inplace.
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
+/// Returns true if the DAG references a subquery set (`FutureSetFromSubquery`) that is not built yet.
+/// A `GLOBAL IN` set backed by a temporary external table may decline the in-place build (it defers
+/// to the streaming path so that `max_rows_to_transfer` is enforced on the full payload), and is then
+/// left not ready. Synchronous evaluators that cannot route to the streaming path must detect this and
+/// avoid executing `IN` against a not-ready set.
+bool hasUnbuiltSubquerySet(const ActionsDAG & dag);
+
 /// Checks if all functions used in DAG are deterministic.
 bool isDeterministic(const ActionsDAG::Node * node);
 

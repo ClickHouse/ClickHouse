@@ -3,6 +3,7 @@
 #include <city.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -149,10 +150,13 @@ using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
 class FutureSetFromSubquery final : public FutureSet
 {
 public:
+    using QueryPlanBuilder = std::function<std::unique_ptr<QueryPlan>(const ContextPtr &)>;
+
     FutureSetFromSubquery(
         Hash hash_,
         ASTPtr ast_,
         std::unique_ptr<QueryPlan> source_,
+        QueryPlanBuilder query_plan_builder_,
         StoragePtr external_table,
         std::shared_ptr<FutureSetFromSubquery> external_table_set_,
         bool transform_null_in,
@@ -189,20 +193,26 @@ public:
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
+    void setQueryPlanBuilder(QueryPlanBuilder query_plan_builder_);
 
-    void buildExternalTableFromInplaceSet(StoragePtr external_table_);
+    void buildExternalTableFromInplaceSet(StoragePtr external_table_, const SizeLimits & network_transfer_limits);
     void setExternalTable(StoragePtr external_table_);
 
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
 
 private:
+    SetAndKeyPtr createTemporarySetAndKeyForInplaceBuild(bool keep_explicit_set_elements) const;
+    std::unique_ptr<QueryPlan> createQueryPlanForRetry(const ContextPtr & context) const;
+    void restoreQueryPlanForRetry(std::unique_ptr<QueryPlan> source_for_retry);
+
     Hash hash;
     ASTPtr ast;
     SetAndKeyPtr set_and_key;
     std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
     std::unique_ptr<QueryPlan> source;
+    QueryPlanBuilder query_plan_builder;
     QueryTreeNodePtr query_tree;
 };
 
@@ -230,6 +240,7 @@ public:
         const Hash & key,
         ASTPtr ast,
         std::unique_ptr<QueryPlan> source,
+        FutureSetFromSubquery::QueryPlanBuilder query_plan_builder,
         StoragePtr external_table,
         FutureSetFromSubqueryPtr external_table_set,
         const Settings & settings);
