@@ -143,14 +143,14 @@ public:
 
     Pipe read(
         const Names & /*column_names*/,
-        const StorageSnapshotPtr & /*storage_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & /*query_info*/,
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         size_t /*num_streams*/) override
     {
-        const SharedHeader header = std::make_shared<const Block>(getInMemoryMetadataPtr()->getSampleBlock());
+        const SharedHeader header = std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock());
         return Pipe(std::make_shared<WaitSource>(context, header, wait_args));
     }
 
@@ -273,7 +273,7 @@ public:
         return ColumnsDescription();
     }
 
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const override
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const override
     {
         return {0};
     }
@@ -353,7 +353,7 @@ private:
 void registerTableFunctionWaitUntil(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionWaitUntil>(
-        TableFunctionProperties{FunctionDocumentation{
+        FunctionDocumentation{
             .description = R"(
 waitUntil is a control-flow table function that repeatedly evaluates a condition expression or scalar subquery until the condition is
 satisfied or a maximum number of attempts is reached. The function blocks execution by sleeping between attempts and returns a single-row
@@ -411,8 +411,7 @@ FROM waitUntil((SELECT count() > 10 FROM tab), 10, 2.5);
 
 1 row in set. Elapsed: 22.613 sec.
 )"}},
-            .category = FunctionDocumentation::Category::TableFunction}},
-        TableFunctionFactory::Case::Sensitive);
+            .category = FunctionDocumentation::Category::TableFunction});
 }
 
 }
