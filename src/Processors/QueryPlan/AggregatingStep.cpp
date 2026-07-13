@@ -612,13 +612,20 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             /// Stage 2: streaming in-order aggregation per shard. Keys are disjoint across shards, so each
             /// shard aggregates independently and emits completed key groups as it goes (O(1) memory).
+            /// Each per-shard transform produces part of the aggregation step's final output, so they all
+            /// feed the step's `dataflow_cache_updater`: without it the aggregation step would report
+            /// `output_bytes == 0` and `considerEnablingParallelReplicas` would underestimate the cost of
+            /// shipping the aggregated result on later executions. Sharing one updater across the shards is
+            /// safe - it samples output chunks under its own mutex - and mirrors both the single-stream
+            /// in-order path below (which passes the updater to its `AggregatingInOrderTransform`) and the
+            /// multi-stream funnel path (which passes it to every `MergingAggregatedBucketTransform`).
             pipeline.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<AggregatingInOrderTransform>(
                     header, transform_params,
                     sort_description_for_merging, group_by_sort_description,
                     max_block_size, aggregation_in_order_max_block_bytes,
-                    limit_hint, nullptr);
+                    limit_hint, dataflow_cache_updater);
             });
             pipeline.addSimpleTransform([&](const SharedHeader & header)
             {
