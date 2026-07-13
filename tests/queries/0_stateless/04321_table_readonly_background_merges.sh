@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Tags: long, no-random-detach
-# ^ long: waits for the background merge pool to make progress within a bounded time window.
+# ^ long: waits for the background merge pool to make progress within a bounded time window. The
+# window is generous (up to 120 s per control wait): under heavy load - e.g. a parallel test run with
+# random DETACH/ATTACH enabled suite-wide, which adds background-pool and metadata-lock contention -
+# the background merge/TTL scheduler can take much longer than usual to make progress on a table.
 # no-random-detach: the test polls a control table until a background merge / TTL merge makes progress
 # within a bounded time window; a random DETACH/ATTACH before a polling query restarts the table's
 # background merge scheduling, so the merge may never complete in time and the test flakes.
@@ -43,7 +46,7 @@ SYSTEM START MERGES t_writable;
 # Wait until the writable table gets its parts merged in the background.
 # This proves the background merge pool is actively making progress right now.
 merged=0
-for _ in $(seq 1 120); do
+for _ in $(seq 1 240); do
     count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_writable' AND active")
     if [[ "$count" -lt 10 ]]; then
         merged=1
@@ -102,7 +105,7 @@ SYSTEM START MERGES t_writable_ttl;
 # Wait until the writable control table drops its expired part via a background TTL merge.
 # This proves the background TTL merge path is actively making progress right now.
 dropped=0
-for _ in $(seq 1 120); do
+for _ in $(seq 1 240); do
     count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_writable_ttl")
     if [[ "$count" -eq 1 ]]; then
         dropped=1
