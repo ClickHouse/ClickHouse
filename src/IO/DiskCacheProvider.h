@@ -177,21 +177,26 @@ public:
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
     bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
-    /// Round a miss fetch to the whole cache SEGMENT at both edges, so a cold miss
-    /// populates a full segment (head AND tail, beyond the served range) and
-    /// concurrent readers of any part of it fetch the SAME segment and dedup on its
-    /// downloader - the disk analogue of the page tier rounding to a whole block.
-    /// `fetchWindowAt` clamps each edge to the miss run, so a partially-cached
-    /// segment fills only its missing part. NOT first-writer-wins: the segment is
-    /// still incrementally appended (`fillsWholeCell()` stays false), so a connection
-    /// covering only a prefix appends it.
-    size_t fetchHeadAlignment() const override { return cache->getMaxFileSegmentSize(); }
-    size_t fetchTailAlignment() const override { return cache->getMaxFileSegmentSize(); }
+    /// Fetch shaping. Segment STARTS are quantized by `boundary_alignment` (the
+    /// max segment size only caps a cell's length), so the head floors to the
+    /// boundary grid - flooring to a coarser grid would overshoot into slack that
+    /// lands mid-cell and populates nothing (an append-only cell refuses a write
+    /// past its offset). The tail ceils to the OPTIMAL fill cell (the extent
+    /// `planResidencyView` tiles virgin holes into), so a cold fetch finishes the
+    /// touched cell. `fetchWindowAt` clamps each edge to the miss run, so a
+    /// partially-cached segment fills only its missing part. NOT first-writer-wins:
+    /// the segment is still incrementally appended (`fillsWholeCell()` stays false),
+    /// so a connection covering only a prefix appends it.
+    size_t fetchHeadAlignment() const override;
+    size_t fetchTailAlignment() const override;
 
     /// One `cache->get` (no segment creation): each resident sub-range becomes
     /// a `HitEntry`, each gap a cache-aligned writer-null `MissEntry`. A
     /// concurrently-DOWNLOADING segment credits its committed prefix as a hit
-    /// and misses only the tail.
+    /// and misses only the tail. Miss runs are TILED into optimal fill cells
+    /// (`optimalFillCell`) on the absolute grid; a cut never falls inside an
+    /// EXISTING segment, so each emitted range maps to whole cells and
+    /// `openWriteBuffers` never hands two writers the same segment.
     CacheViewPtr planResidencyView(
         const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override;
 
@@ -201,6 +206,15 @@ public:
         const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) override;
 
 private:
+    /// The cache boundary grid: the quantum of segment starts/extents (as
+    /// `getOrSet` resolves it).
+    size_t resolvedBoundaryAlignment() const;
+    /// The extent virgin miss runs are tiled into: the S3-optimal request size
+    /// (~8 MiB - past it the per-request cost is amortized and larger cells
+    /// mostly risk dying partial at query end), clamped to the cache's max
+    /// segment size and kept a multiple of the boundary grid.
+    size_t optimalFillCell() const;
+
     FileCachePtr cache;
     FilesystemCacheSettings cache_settings;
     /// Forwarded into each `DiskCacheReader` so cache-file reads honour

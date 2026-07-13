@@ -680,6 +680,31 @@ DiskCacheProvider::DiskCacheProvider(
     query_context_holder = cache->getQueryContextHolder(query_id_, cache_settings);
 }
 
+size_t DiskCacheProvider::resolvedBoundaryAlignment() const
+{
+    return std::max<size_t>(1, cache_settings.boundary_alignment.value_or(cache->getBoundaryAlignment()));
+}
+
+size_t DiskCacheProvider::optimalFillCell() const
+{
+    static constexpr size_t optimal_fill_cell_bytes = 8ULL * 1024 * 1024;
+    const size_t boundary = resolvedBoundaryAlignment();
+    const size_t capped = std::min<size_t>(optimal_fill_cell_bytes, cache->getMaxFileSegmentSize());
+    if (capped <= boundary)
+        return boundary;
+    return capped / boundary * boundary;
+}
+
+size_t DiskCacheProvider::fetchHeadAlignment() const
+{
+    return resolvedBoundaryAlignment();
+}
+
+size_t DiskCacheProvider::fetchTailAlignment() const
+{
+    return optimalFillCell();
+}
+
 CacheViewPtr DiskCacheProvider::planResidencyView(
     const StoredObject & object,
     size_t object_file_offset,
@@ -742,7 +767,10 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
 
     /// Walk segments in ascending order with prefix/tail gap logic. `cache->get`
     /// returns a contiguous tiling padded with EMPTY/DETACHED placeholders for
-    /// gaps, but stay defensive about gaps.
+    /// gaps, but stay defensive about gaps. `existing_obj` collects the FULL
+    /// extents of real (metadata-backed) segments - the tiling pass below must
+    /// not cut inside one.
+    VectorWithMemoryTracking<ByteRange> existing_obj;
     size_t cursor = req_obj_start;
     for (const auto & segment : *read_holder)
     {
@@ -751,6 +779,13 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
         /// Pre-segment gap within the request → miss.
         if (seg_range.left > cursor)
             add_miss_obj(cursor, seg_range.left);
+
+        /// Everything except a DETACHED hole placeholder is metadata-backed with a
+        /// fixed extent - including an EMPTY segment another reader created but has
+        /// not written yet.
+        const auto state = segment->state();
+        if (state != FileSegmentState::DETACHED)
+            existing_obj.push_back(ByteRange{seg_range.left, seg_range.right + 1 - seg_range.left});
 
         if (seg_range.left >= req_obj_end)
         {
@@ -761,7 +796,6 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
         const size_t seg_left = std::max<size_t>(seg_range.left, req_obj_start);
         const size_t seg_end = seg_range.right + 1;
 
-        const auto state = segment->state();
         if (state == FileSegmentState::DOWNLOADED)
         {
             add_hit(seg_left, seg_end);
@@ -817,7 +851,36 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
         else
             merged_obj.push_back(ByteRange{a_off, a_end - a_off});
     }
-    for (const auto & m : merged_obj)
+
+    /// Tile each merged run into optimal fill cells on the ABSOLUTE grid, so the
+    /// cells `openWriteBuffers` creates in virgin holes coincide with the fetch
+    /// tail grid (`fetchTailAlignment`) by construction. A cut falling inside an
+    /// EXISTING segment is pushed past it - one range per real cell, so two
+    /// writers never hold the same segment. Cuts advance monotonically, so a
+    /// single forward index over `existing_obj` suffices.
+    const size_t opt_cell = optimalFillCell();
+    VectorWithMemoryTracking<ByteRange> tiled_obj;
+    size_t next_existing = 0;
+    auto inside_existing = [&](size_t cut)
+    {
+        while (next_existing < existing_obj.size() && existing_obj[next_existing].end() <= cut)
+            ++next_existing;
+        return next_existing < existing_obj.size()
+            && existing_obj[next_existing].offset < cut && cut < existing_obj[next_existing].end();
+    };
+    for (const auto & run : merged_obj)
+    {
+        size_t pos = run.offset;
+        while (pos < run.end())
+        {
+            size_t cut = std::min<size_t>(run.end(), FileCacheUtils::roundUpToMultiple(pos + 1, opt_cell));
+            while (cut < run.end() && inside_existing(cut))
+                cut = std::min<size_t>(run.end(), FileCacheUtils::roundUpToMultiple(cut + 1, opt_cell));
+            tiled_obj.push_back(ByteRange{pos, cut - pos});
+            pos = cut;
+        }
+    }
+    for (const auto & m : tiled_obj)
         view->miss_entries.push_back(
             MissEntry{ByteRange{m.offset + object_file_offset, m.size}, /*writer=*/nullptr});
 

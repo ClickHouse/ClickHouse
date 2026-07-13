@@ -692,3 +692,91 @@ TEST_F(DiskCacheBuffers, NestedClaimDoesNotReleaseOuterRoles)
     EXPECT_EQ(writer.write(std::move(chain)), payload.size())
         << "the outer claim's role must survive the nested claim's drop";
 }
+
+/// Virgin miss runs are TILED into optimal fill cells, one MissEntry per cell,
+/// so the cells `openWriteBuffers` creates coincide with the fetch tail grid.
+/// In this fixture boundary == max segment == 4 KiB, so the optimal cell is one
+/// segment and a 3-segment virgin probe yields exactly 3 single-segment tiles.
+TEST_F(DiskCacheBuffers, VirginMissRunsTileIntoOptimalCells)
+{
+    auto provider = makeProvider();
+    EXPECT_EQ(provider->fetchHeadAlignment(), kSegmentSize);
+    EXPECT_EQ(provider->fetchTailAlignment(), kSegmentSize);
+
+    const size_t object_size = 3 * kSegmentSize;
+    auto object = makeObject("obj_tile", object_size);
+
+    auto view = provider->planResidencyView(object, /*object_file_offset=*/0, ByteRange{0, object_size});
+    EXPECT_TRUE(view->allMiss());
+    ASSERT_EQ(view->misses().size(), 3u);
+    for (size_t i = 0; i < 3; ++i)
+    {
+        EXPECT_EQ(view->misses()[i].range.offset, i * kSegmentSize);
+        EXPECT_EQ(view->misses()[i].range.size, kSegmentSize);
+    }
+
+    /// One writer per tile; each writer's range is its own cell.
+    VectorWithMemoryTracking<ByteRange> ranges;
+    for (const auto & m : view->misses())
+        ranges.push_back(m.range);
+    auto writers = provider->openWriteBuffers(object, /*object_file_offset=*/0, ranges);
+    ASSERT_EQ(writers.size(), 3u);
+    for (size_t i = 0; i < 3; ++i)
+        EXPECT_EQ(writers[i].writer->range().offset, i * kSegmentSize);
+}
+
+/// A tile cut must never fall INSIDE an existing segment - two writers would
+/// alias it. A wide EMPTY segment (created by a concurrent reader, unwritten)
+/// straddling the optimal-grid cut swallows the cut: the run stays one range.
+TEST_F(DiskCacheBuffers, TileCutsRespectExistingSegments)
+{
+    /// A dedicated cache where cells can span the optimal grid: max segment
+    /// 16 KiB, boundary 4 KiB -> optimal cell 16 KiB.
+    namespace fs = std::filesystem;
+    auto wide_path = fs::temp_directory_path() / "disk_cache_buffers_wide";
+    fs::remove_all(wide_path);
+    fs::create_directories(wide_path);
+    SCOPE_EXIT_SAFE({ fs::remove_all(wide_path); });
+
+    FileCacheSettings settings;
+    settings[FileCacheSetting::path] = wide_path.string();
+    settings[FileCacheSetting::max_size] = 1024 * 1024;
+    settings[FileCacheSetting::max_elements] = 64;
+    settings[FileCacheSetting::max_file_segment_size] = 4 * kSegmentSize;
+    settings[FileCacheSetting::boundary_alignment] = kSegmentSize;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    auto wide_cache = std::make_shared<FileCache>("disk_cache_buffers_wide", settings);
+    wide_cache->initialize();
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+    cache_settings.boundary_alignment = kSegmentSize;
+    auto provider = std::make_shared<DiskCacheProvider>(wide_cache, cache_settings, /*query_id_=*/String{});
+    EXPECT_EQ(provider->fetchHeadAlignment(), kSegmentSize);
+    EXPECT_EQ(provider->fetchTailAlignment(), 4 * kSegmentSize);
+
+    const size_t object_size = 8 * kSegmentSize;
+    auto object = makeObject("obj_wide", object_size);
+
+    /// A concurrent reader created (but never wrote) a wide segment
+    /// [1, 5) * kSegmentSize - it straddles the optimal-grid cut at 4 * kSegmentSize.
+    auto concurrent = wide_cache->getOrSet(
+        FileCacheKey::fromPath(object.remote_path),
+        kSegmentSize,
+        4 * kSegmentSize,
+        object_size,
+        CreateFileSegmentSettings{},
+        /*file_segments_limit=*/0,
+        FileCache::getCommonOrigin(),
+        /*boundary_alignment_=*/kSegmentSize);
+    ASSERT_EQ(concurrent->size(), 1u);   /// one wide segment spanning the grid cut
+
+    auto view = provider->planResidencyView(object, /*object_file_offset=*/0, ByteRange{0, object_size});
+    EXPECT_TRUE(view->allMiss());
+    /// The cut at 4 * kSegmentSize is interior to the wide segment -> suppressed;
+    /// the next grid cut is the run end. One range, one future writer: no aliasing.
+    ASSERT_EQ(view->misses().size(), 1u);
+    EXPECT_EQ(view->misses()[0].range.offset, 0u);
+    EXPECT_EQ(view->misses()[0].range.size, object_size);
+}
