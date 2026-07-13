@@ -58,6 +58,8 @@ groupBloomFilterOrDefaultState(value)
 
 These combinators require a meaningful finalized result, while `groupBloomFilter` intentionally only produces an aggregate state.
 
+The `-Distinct` combinator is not supported, including state-only chains such as `groupBloomFilterDistinctState` and `groupBloomFilterDistinctMergeState`. Duplicate values do not change a Bloom filter, and the additional `Distinct` state cannot be consumed by `bloomFilterContains`.
+
 ## Parameters {#parameters}
 
 | Parameter | Description | Default |

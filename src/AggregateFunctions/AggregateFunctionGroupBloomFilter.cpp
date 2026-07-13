@@ -427,6 +427,8 @@ it is interpreted as `false_positive_rate`; otherwise, it is interpreted as `num
 with `-If`, `-Array`, or `-ArrayIf`; the resulting states can be used with `bloomFilterContains`.
 Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, including the condition, must not be
 `Nullable`.
+The `-Distinct` combinator is not supported because duplicate values do not change a Bloom filter and its
+additional state cannot be consumed by `bloomFilterContains`.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 groupBloomFilter(column)

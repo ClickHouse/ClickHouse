@@ -19,3 +19,18 @@ FROM numbers(1); -- { serverError BAD_ARGUMENTS }
 
 SELECT groupBloomFilterIfOrDefaultState(1000)(number, toUInt8(1))
 FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+-- `Distinct` keeps an additional set state that cannot be consumed by `bloomFilterContains`.
+SELECT groupBloomFilterDistinctState(1000)(number)
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
+
+SELECT groupBloomFilterDistinctMergeState(1000)(state)
+FROM
+(
+    SELECT groupBloomFilterState(1000)(number) AS state
+    FROM numbers(1)
+); -- { serverError BAD_ARGUMENTS }
+
+-- Reject `Distinct` recursively when it wraps another supported combinator.
+SELECT groupBloomFilterIfDistinctState(1000)(number, number = 0)
+FROM numbers(1); -- { serverError BAD_ARGUMENTS }
