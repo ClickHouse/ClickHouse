@@ -44,3 +44,12 @@ SELECT valid_until[1] BETWEEN now() + INTERVAL 35 HOUR AND now() + INTERVAL 37 H
 FROM system.users WHERE name = 'user_04537_valid_for';
 
 DROP USER user_04537_valid_for;
+
+-- All VALID FOR clauses of one statement resolve against a single reference time, so two identical
+-- intervals produce identical deadlines instead of two independently sampled `now` values.
+CREATE USER user_04537_valid_for
+    IDENTIFIED WITH plaintext_password BY 'a' VALID FOR INTERVAL 1 DAY,
+                    plaintext_password BY 'b' VALID FOR INTERVAL 1 DAY;
+SELECT length(valid_until) = 2 AND valid_until[1] = valid_until[2]
+FROM system.users WHERE name = 'user_04537_valid_for';
+DROP USER user_04537_valid_for;

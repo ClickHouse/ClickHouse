@@ -18,7 +18,15 @@ namespace DB
         extern const int CANNOT_CLOCK_GETTIME;
     }
 
-    time_t getValidUntilFromAST(ASTPtr valid_until, ContextPtr context, bool is_interval)
+    time_t sampleValidForBaseTime()
+    {
+        timespec spec{};
+        if (clock_gettime(CLOCK_REALTIME, &spec))
+            throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+        return spec.tv_sec;
+    }
+
+    time_t getValidUntilFromAST(ASTPtr valid_until, ContextPtr context, bool is_interval, std::optional<time_t> now)
     {
         if (is_interval)
         {
@@ -32,11 +40,11 @@ namespace DB
             if (!context)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "VALID FOR requires a query context to evaluate the interval");
 
-            timespec spec{};
-            if (clock_gettime(CLOCK_REALTIME, &spec))
-                throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+            /// Use the reference time supplied by the caller when available, so that all `VALID FOR`
+            /// clauses of one statement resolve against a single `now`; otherwise sample it here.
+            const time_t now_seconds = now.has_value() ? *now : sampleValidForBaseTime();
 
-            auto now_literal = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(spec.tv_sec)));
+            auto now_literal = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(now_seconds)));
             auto scale_literal = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0)));
             valid_until = makeASTFunction("toString",
                 makeASTFunction("plus", makeASTFunction("toDateTime64", now_literal, scale_literal), valid_until));

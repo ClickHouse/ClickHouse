@@ -222,18 +222,25 @@ BlockIO InterpreterCreateUserQuery::execute()
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
 
+    /// Capture one reference time for the whole statement, so every `VALID FOR <interval>` clause (the
+    /// global one and each per-authentication one) resolves against the same `now`. Otherwise each
+    /// clause would take its own `CLOCK_REALTIME` sample while methods are built one by one (interleaved
+    /// with e.g. bcrypt hashing), and two identical `VALID FOR INTERVAL 1 DAY` clauses could end up with
+    /// slightly different deadlines.
+    const time_t valid_for_base_time = sampleValidForBaseTime();
+
     std::vector<AuthenticationData> authentication_methods;
     if (!query.authentication_methods.empty())
     {
         for (const auto & authentication_method_ast : query.authentication_methods)
         {
-            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, getContext(), !query.attach));
+            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, getContext(), !query.attach, valid_for_base_time));
         }
     }
 
     std::optional<time_t> global_valid_until;
     if (query.global_valid_until)
-        global_valid_until = getValidUntilFromAST(query.global_valid_until, getContext(), query.global_valid_until_is_interval);
+        global_valid_until = getValidUntilFromAST(query.global_valid_until, getContext(), query.global_valid_until_is_interval, valid_for_base_time);
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)

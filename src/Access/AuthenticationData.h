@@ -10,6 +10,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 
+#include <ctime>
+#include <optional>
 #include <vector>
 #include <base/types.h>
 
@@ -85,7 +87,9 @@ public:
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
-    static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate);
+    /// When `now` is provided, it is used as the reference time for a per-authentication
+    /// `VALID FOR <interval>` clause, so that all `VALID FOR` clauses of one statement share one `now`.
+    static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now = std::nullopt);
     boost::intrusive_ptr<ASTAuthenticationData> toAST() const;
 
     struct Util

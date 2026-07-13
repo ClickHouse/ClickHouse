@@ -479,13 +479,13 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 }
 
 
-AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate)
+AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now)
 {
     time_t valid_until = 0;
 
     if (query.valid_until)
     {
-        valid_until = getValidUntilFromAST(query.valid_until, context, query.valid_until_is_interval);
+        valid_until = getValidUntilFromAST(query.valid_until, context, query.valid_until_is_interval, now);
     }
 
     if (query.type && query.type == AuthenticationType::NO_PASSWORD)
