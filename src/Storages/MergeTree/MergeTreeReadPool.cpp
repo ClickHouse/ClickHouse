@@ -73,27 +73,59 @@ MergeTreeReadPool::MergeTreeReadPool(
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
-    /// A cut may be fully dropped by the ranges refiner; in that case take the next one.
     while (true)
     {
         size_t part_idx = 0;
-        MarkRanges ranges_to_get_from_part;
+        size_t thread_idx = 0;
+        size_t need_marks = 0;
+        MarkRanges cut_ranges;
 
-        if (!cutRangesToRead(task_idx, part_idx, ranges_to_get_from_part))
+        if (!cutRangesToRead(task_idx, part_idx, thread_idx, need_marks, cut_ranges))
             return nullptr;
 
-        /// Refinement may block (e.g. building a projection index bitmap on the first use for
-        /// the part), so it happens outside of the mutex.
-        ranges_to_get_from_part = refineReadRanges(*per_part_infos[part_idx], std::move(ranges_to_get_from_part));
-        if (ranges_to_get_from_part.empty())
+        MarkRanges task_ranges;
+        if (!ranges_refiner)
+        {
+            task_ranges = std::move(cut_ranges);
+        }
+        else
+        {
+            /// Marks dropped by the refiner do not count towards the task size: keep cutting
+            /// more marks from the same part until the task reaches its intended size in
+            /// surviving marks or the part has nothing more to cut. Refinement may block
+            /// (e.g. building a projection index bitmap on the first use for the part),
+            /// so it always happens outside of the mutex.
+            while (true)
+            {
+                auto refined = refineReadRanges(*per_part_infos[part_idx], std::move(cut_ranges));
+                for (const auto & range : refined)
+                {
+                    if (!task_ranges.empty() && task_ranges.back().end == range.begin)
+                        task_ranges.back().end = range.end;
+                    else
+                        task_ranges.push_back(range);
+                }
+
+                size_t marks_collected = task_ranges.getNumberOfMarks();
+                if (marks_collected >= need_marks)
+                    break;
+
+                cut_ranges.clear();
+                if (!cutMoreRangesToRead(thread_idx, part_idx, need_marks - marks_collected, cut_ranges))
+                    break;
+            }
+        }
+
+        /// Everything was refined away, take the next portion (possibly of another part).
+        if (task_ranges.empty())
             continue;
 
         /// createTask() is costly and not needed guarded by mutex.
-        return createTask(per_part_infos[part_idx], std::move(ranges_to_get_from_part), previous_task, updater);
+        return createTask(per_part_infos[part_idx], std::move(task_ranges), previous_task, updater);
     }
 }
 
-bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, MarkRanges & ranges_to_get_from_part)
+bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks, MarkRanges & ranges_to_get_from_part)
 {
     const std::lock_guard lock{mutex};
 
@@ -109,7 +141,7 @@ bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, Mark
         return false;
 
     /// Steal task if nothing to do and it's not prohibited
-    auto thread_idx = task_idx;
+    thread_idx = task_idx;
     if (!tasks_remaining_for_this_thread)
     {
         auto it = remaining_thread_tasks.lower_bound(backoff_state.current_threads);
@@ -130,17 +162,39 @@ bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, Mark
     }
 
     auto & thread_tasks = threads_tasks[thread_idx];
-    auto & thread_task = thread_tasks.parts_and_ranges.back();
 
-    part_idx = thread_task.part_idx;
-    auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
+    part_idx = thread_tasks.parts_and_ranges.back().part_idx;
+    const auto marks_in_part = thread_tasks.sum_marks_in_parts.back();
     const auto min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
 
-    size_t need_marks = 0;
     if (is_part_on_remote_disk[part_idx] && !pool_settings.use_const_size_tasks_for_remote_reading)
         need_marks = marks_in_part;
     else /// Get whole part to read if it is small enough.
         need_marks = std::min(marks_in_part, min_marks_per_task);
+
+    cutFromThreadTask(thread_tasks, thread_idx, need_marks, ranges_to_get_from_part);
+    return true;
+}
+
+bool MergeTreeReadPool::cutMoreRangesToRead(size_t thread_idx, size_t part_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part)
+{
+    const std::lock_guard lock{mutex};
+
+    /// Continue only while the same part is on top of the same thread's queue: a read task
+    /// must not span multiple parts. The queue may have been consumed or stolen concurrently.
+    auto & thread_tasks = threads_tasks[thread_idx];
+    if (thread_tasks.parts_and_ranges.empty() || thread_tasks.parts_and_ranges.back().part_idx != part_idx)
+        return false;
+
+    cutFromThreadTask(thread_tasks, thread_idx, need_marks, ranges_to_get_from_part);
+    return true;
+}
+
+void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thread_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part)
+{
+    auto & thread_task = thread_tasks.parts_and_ranges.back();
+    auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
+    const auto min_marks_per_task = per_part_infos[thread_task.part_idx]->min_marks_per_task;
 
     /// Do not leave too little rows in part for next time.
     if (marks_in_part > need_marks && marks_in_part - need_marks < min_marks_per_task / 2)
@@ -149,7 +203,7 @@ bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, Mark
     /// Get whole part to read if it is small enough.
     if (marks_in_part <= need_marks)
     {
-        ranges_to_get_from_part = thread_task.ranges;
+        ranges_to_get_from_part = std::move(thread_task.ranges);
         marks_in_part = 0;
 
         thread_tasks.parts_and_ranges.pop_back();
@@ -177,8 +231,6 @@ bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, Mark
             need_marks -= marks_to_get_from_range;
         }
     }
-
-    return true;
 }
 
 void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info)
