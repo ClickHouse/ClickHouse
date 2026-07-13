@@ -4143,11 +4143,21 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
                 ///      so between those two steps the znode still exists while the entry is already gone from RAM.
                 /// In case (b) the alter has already been applied locally (executeMetadataAlter -> setTableStructure
                 /// runs before removeProcessedEntry), so re-inserting it would reopen the same alter_version in the
-                /// alters sequence and re-execute an already-applied entry. Distinguish the two by re-checking the
-                /// actual local structure against the ZooKeeper snapshot: if it now matches, a real alter just
-                /// finished (case b) and there is nothing to repair; only if the local structure still lags do we
-                /// materialize the entry (case a). checkTableStructureAttempt is non-strict, exactly like the guard
-                /// above.
+                /// alters sequence and re-execute an already-applied entry. Distinguish the two by comparing the
+                /// actual local structure against the structure THIS entry (alter_version = queued->alter_version)
+                /// carries: if the local structure already equals the entry's own metadata_str/columns_str, that
+                /// specific alter has been applied (case b) and there is nothing to repair; if it still differs, the
+                /// alter is not applied and this is a genuine orphan (case a) to materialize.
+                ///
+                /// Compare against the ENTRY's own metadata_str/columns_str, NOT the live zookeeper_path/metadata
+                /// znode. The entry is fixed at version queued->alter_version, but the /metadata znode is a moving
+                /// target: another replica can commit a newer version V+1 while we classify. If this V entry just
+                /// finished (RAM-removed, znode not yet deleted) and a concurrent V+1 lands, the local structure is
+                /// at V but the /metadata znode is already at V+1, so a live-vs-Keeper compare would report "still
+                /// lags" and wrongly resurrect the completed V entry -- reopening a finished alter_version in the
+                /// alters sequence. Comparing to the entry's own strings pins the check to exactly the version being
+                /// classified and is immune to concurrent later alters.
+                ///
                 /// Re-read the LIVE in-memory metadata here rather than reusing metadata_snapshot captured before the
                 /// queue scan: in case (b) executeMetadataAlter -> setTableStructure -> setInMemoryMetadata has already
                 /// committed the new structure, and the pre-scan snapshot still holds the old pre-alter structure. The
@@ -4155,12 +4165,28 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
                 /// latest committed version without a lock. Comparing the stale snapshot would always report "still
                 /// lags" and resurrect the just-finished entry.
                 auto live_metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
-                Int32 recheck_metadata_version = 0;
-                if (checkTableStructureAttempt(zookeeper_path, live_metadata_snapshot, &recheck_metadata_version, /* strict_check */ false))
+
+                /// Parse the entry's own columns/metadata and normalize the same way checkTableStructureAttempt does
+                /// for the ZooKeeper snapshot (parseAndNormalize + checkEquals, non-strict so a mismatch returns
+                /// false instead of throwing). columns must be parsed from the entry's own columns_str, matching the
+                /// column set the entry's metadata_str describes (see parseAndNormalize contract).
+                auto entry_columns = ColumnsDescription::parse(queued->columns_str);
+                auto entry_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+                    queued->metadata_str, entry_columns,
+                    live_metadata_snapshot->add_minmax_index_for_numeric_columns,
+                    live_metadata_snapshot->add_minmax_index_for_string_columns,
+                    getContext());
+                ReplicatedMergeTreeTableMetadata local_metadata(*this, live_metadata_snapshot);
+                bool metadata_matches = local_metadata.checkEquals(
+                    entry_metadata, live_metadata_snapshot->columns, live_metadata_snapshot->virtuals,
+                    getStorageID().getNameForLogs(), getContext(),
+                    /* check_index_granularity */ true, /* strict_check */ false, log.load());
+                if (metadata_matches && live_metadata_snapshot->getColumns() == entry_columns)
                 {
                     LOG_INFO(log, "An ALTER_METADATA entry with alter_version {} exists in {} but not in the in-memory "
-                                  "queue; the local structure now matches ZooKeeper, so a real alter just finished "
-                                  "(removeProcessedEntry removes it from memory before ZooKeeper). Not materializing it.",
+                                  "queue; the local structure already matches this entry's own structure, so this alter "
+                                  "was already applied (removeProcessedEntry removes it from memory before ZooKeeper). "
+                                  "Not materializing it.",
                              queued->alter_version, queue_entry_paths[i]);
                     return false;
                 }
