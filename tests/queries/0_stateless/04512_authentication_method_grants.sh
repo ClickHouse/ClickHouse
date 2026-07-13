@@ -12,6 +12,8 @@ user2="u2_04512_${CLICKHOUSE_DATABASE}"
 user3="u3_04512_${CLICKHOUSE_DATABASE}"
 user4="u4_04512_${CLICKHOUSE_DATABASE}"
 user5="u5_04512_${CLICKHOUSE_DATABASE}"
+user6="u6_04512_${CLICKHOUSE_DATABASE}"
+user7="u7_04512_${CLICKHOUSE_DATABASE}"
 role="r_04512_${CLICKHOUSE_DATABASE}"
 role2="r2_04512_${CLICKHOUSE_DATABASE}"
 
@@ -32,11 +34,11 @@ function login_expect_error()
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP USER IF EXISTS ${user6}" -q "DROP USER IF EXISTS ${user7}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
 }
 trap cleanup EXIT
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP USER IF EXISTS ${user6}" -q "DROP USER IF EXISTS ${user7}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t1 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "CREATE TABLE t2 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "INSERT INTO t1 VALUES (1)" -q "INSERT INTO t2 VALUES (2)"
 
 # The second authentication method is a 'token': it limits the access rights to a subset of the grants.
@@ -164,3 +166,24 @@ ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user5}" 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user5}&password=full5" -d "CREATE TEMPORARY TABLE tmp5 (x UInt64) ENGINE = Memory"
 # The token's SELECT-only intersection does not imply CREATE TEMPORARY TABLE, so the implicit expansion cannot bring it back.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user5}&password=token5" -d "CREATE TEMPORARY TABLE tmp5 (x UInt64) ENGINE = Memory" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
+
+# Authentication returns the first matching method, so a broader method that accepts the same effective credential
+# could otherwise shadow a later token-style one. Here both methods are sha256_password of the same plaintext, but the
+# CREATE assigns each a different random salt, so a structural comparison would not detect the duplicate. The session
+# must still be limited to the intersection of the GRANTS of all matching methods (fail-close), so the broad first
+# method cannot restore the rights the token drops.
+echo "-- An ambiguous credential (two methods, same password) is limited to the intersection of the matching grants"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user6} IDENTIFIED WITH sha256_password BY 'shared6', sha256_password BY 'shared6' GRANTS (SELECT ON t1)"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user6}" -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t2 TO ${user6}"
+# The credential is limited to SELECT ON t1 by the second method even though it is accepted by the first (unrestricted) one.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user6}&password=shared6" -d "SELECT x FROM t1"
+# t2 is granted to the user, but the token's grants omit it, so it stays denied instead of being served by the broad method.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user6}&password=shared6" -d "SELECT x FROM t2" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
+
+# When the same credential is accepted by methods with disjoint grants, the intersection grants nothing. This must be
+# an explicit deny-all (USAGE ON *.*), not an absent limit that would restore the full user rights.
+echo "-- An ambiguous credential with disjoint grants is denied everything (empty intersection is deny-all, not no limit)"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user7} IDENTIFIED WITH sha256_password BY 'shared7' GRANTS (SELECT ON t1), sha256_password BY 'shared7' GRANTS (SELECT ON t2)"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user7}" -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t2 TO ${user7}"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user7}&password=shared7" -d "SELECT x FROM t1" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user7}&password=shared7" -d "SELECT x FROM t2" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
