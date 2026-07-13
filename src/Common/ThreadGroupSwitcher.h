@@ -20,24 +20,28 @@ class ThreadStatus;
 ThreadGroupPtr getCurrentThreadGroup();
 
 /**
- * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
+ * RAII wrapper that switches the current thread's attribution for the duration of a scope:
+ * the thread group (CurrentThread::attachToGroup/detachFromGroupIfNotDetached) and the
+ * thread name (setThreadName). The two are independent: the name is switched and restored
+ * even when there is no group to attach to.
  *
  * Typically used for inheriting thread group when scheduling tasks on a thread pool:
- *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
+ *   pool->scheduleOrThrow([thread_group = getCurrentThreadGroup()]()
  *       {
- *           ThreadGroupSwitcher switcher(thread_group, "MyThread");
+ *           ThreadGroupSwitcher switcher(thread_group, ThreadName::MY_THREAD);
  *           ...
  *       });
  */
 class ThreadGroupSwitcher : private boost::noncopyable
 {
 public:
-    /// If thread_group_ is nullptr or equal to current thread group, does nothing.
+    /// Name: if thread_name is not UNKNOWN, calls setThreadName and restores the previous name
+    /// in the destructor, regardless of the group logic below.
+    /// Group: if thread_group_ is nullptr or equal to the current thread group, does nothing.
     /// allow_existing_group:
     ///  * If false, asserts that the thread is not already attached to a different group.
     ///    Use this when running a task in a thread pool.
-    ///  * If true, remembers the current group and thread name and restores them in destructor.
-    /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
+    ///  * If true, remembers the current group and restores it in the destructor.
     ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher();
 
@@ -45,8 +49,8 @@ private:
     ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
-    /// Name of a borrowed thread (allow_existing_group=true), saved before renaming and restored in the
-    /// destructor. A separate bool gates the restore because UNKNOWN is a valid saved name, not a sentinel.
+    /// Name before the rename, restored in the destructor. A separate bool gates the restore
+    /// because UNKNOWN is a valid saved name, not a sentinel.
     ThreadName prev_thread_name = ThreadName::UNKNOWN;
     bool should_restore_prev_thread_name = false;
 };

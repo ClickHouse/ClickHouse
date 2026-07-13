@@ -53,8 +53,8 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
         }
 
         /// --- Starting attached to G0 and named: every failed allow_existing_group switch must
-        /// restore both G0 and the original name (post_attach_failure throws after setThreadName
-        /// has already renamed the thread, so the catch block must put the name back too). ---
+        /// restore G0 in the catch block and the original name in the destructor (the thread is
+        /// renamed before the attach is attempted, and the name outlives a failed attach). ---
         setThreadName(ThreadName::TCP_HANDLER);
         CurrentThread::attachToGroupIfDetached(G0);
 
@@ -77,8 +77,8 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
             << "Post-attach failure must restore the original name after setThreadName renamed the thread";
 
         /// --- Same post-attach failure, but the borrowed thread starts UNKNOWN (initially unnamed).
-        /// UNKNOWN is a valid previous name, not a "nothing to restore" sentinel, so the catch must
-        /// still put it back rather than leave the thread renamed to MERGE_MUTATE. ---
+        /// UNKNOWN is a valid previous name, not a "nothing to restore" sentinel, so the destructor
+        /// must still put it back rather than leave the thread renamed to MERGE_MUTATE. ---
         setThreadName(ThreadName::UNKNOWN); /// writes "Unknown" to the OS name; getThreadName() now reports UNKNOWN
         ASSERT_EQ(getThreadName(), ThreadName::UNKNOWN);
         FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_post_attach_failure);
@@ -126,6 +126,39 @@ TEST(ThreadGroupSwitcher, RestoresBorrowedThreadName)
                 << "borrowed thread's name must be restored, not left as the async-pool name";
             CurrentThread::detachFromGroupIfNotDetached();
         }
+    });
+    t.join();
+}
+
+/// The name switch must not depend on group attachment: it must happen (and be undone) both
+/// with no group to attach to and when already attached to the target group.
+TEST(ThreadGroupSwitcher, SwitchesNameIndependentlyOfGroup)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        setThreadName(ThreadName::TCP_HANDLER);
+
+        {
+            ThreadGroupSwitcher switcher(nullptr, ThreadName::S3_COPY_POOL);
+            EXPECT_EQ(getThreadName(), ThreadName::S3_COPY_POOL)
+                << "the name must be switched even with no group to attach to";
+            EXPECT_EQ(getCurrentThreadGroup(), nullptr);
+        }
+        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER);
+
+        auto context = getContext().context;
+        auto G0 = std::make_shared<ThreadGroup>(context, 0);
+        CurrentThread::attachToGroupIfDetached(G0);
+        {
+            ThreadGroupSwitcher switcher(G0, ThreadName::S3_COPY_POOL);
+            EXPECT_EQ(getThreadName(), ThreadName::S3_COPY_POOL)
+                << "the name must be switched even when already attached to the target group";
+            EXPECT_EQ(getCurrentThreadGroup(), G0);
+        }
+        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER);
+        EXPECT_EQ(getCurrentThreadGroup(), G0);
+        CurrentThread::detachFromGroupIfNotDetached();
     });
     t.join();
 }
