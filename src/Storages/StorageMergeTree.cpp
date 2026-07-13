@@ -1853,15 +1853,14 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             if (!txn)
             {
                 /// The transaction that started this mutation is no longer running.
-                /// The mutation entry's `csn` field is only an in-memory cache; it is
-                /// filled in by `setMutationCSN` on commit and by `loadMutations` on
-                /// startup. The authoritative source of whether the transaction committed
-                /// is the transaction log, so consult it if the cached value is still
-                /// unknown (the same check that `loadMutations` and `clearOldMutations` do).
-                /// Without this, a mutation whose transaction has committed but whose cached
-                /// CSN was not updated would raise a spurious `LOGICAL_ERROR` and, in
-                /// particular, could abort the server via a background job after a restart.
-                /// See https://github.com/ClickHouse/ClickHouse/issues/83252
+                /// The mutation entry's `csn` field is only an in-memory cache and may be
+                /// stale; the transaction log is the authoritative source, so consult it
+                /// before deciding (the same check that `loadMutations` and `clearOldMutations`
+                /// do). If it committed, the mutation may proceed; otherwise (rolled back, or
+                /// an orphaned entry left by a race between mutation registration and
+                /// `KILL TRANSACTION`) the mutation must not be applied, so skip the part
+                /// instead of raising a `LOGICAL_ERROR`.
+                /// Related: https://github.com/ClickHouse/ClickHouse/issues/83252
                 CSN mutation_csn = mutations_begin_it->second.csn;
                 if (mutation_csn == Tx::UnknownCSN)
                     mutation_csn = TransactionLog::getCSN(first_mutation_tid);
