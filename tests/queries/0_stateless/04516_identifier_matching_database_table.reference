@@ -48,3 +48,18 @@ NewTable	1	PRIMARY	1	x	A	0	\N	\N	\N	PRIMARY			YES
 AMBIGUOUS_IDENTIFIER
 AMBIGUOUS_IDENTIFIER
 AMBIGUOUS_IDENTIFIER
+--- standard: EXCHANGE TABLES folds both operands
+1
+--- standard: sibling destination makes EXCHANGE ambiguous
+AMBIGUOUS_IDENTIFIER
+--- standard: RENAME folds the source and keeps the new name as written
+1
+0
+--- standard: SYSTEM STOP MERGES folds, double-quoted wrong case stays exact
+UNKNOWN_DATABASE
+--- standard: ALTER DATABASE folds the database name
+folded alter
+--- standard: sibling databases make ALTER DATABASE ambiguous
+AMBIGUOUS_IDENTIFIER
+--- standard: implicit current database stays exact with a case sibling
+0

@@ -2364,6 +2364,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
     auto ast_drop = make_intrusive<ASTDropQuery>();
     String table_to_replace_name = create.getTable();
+    /// Keep the user's quote pin for the replace target; `create.table` is overwritten below.
+    const IdentifierPartQuote table_to_replace_quote = identifierPartQuoteFromAST(create.table);
 
     {
         auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
@@ -2421,9 +2423,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         const String tmp_replace_table_name = TemporaryReplaceTableName{.name_hash = name_hash, .random_suffix = random_suffix}.toString();
         create.setTable(tmp_replace_table_name);
 
-        ast_drop->setTable(create.getTable());
+        /// The temporary table name and the (already canonicalized) database are exact; pin them
+        /// so the drop does not re-fold them against case siblings.
+        ast_drop->setTable(create.getTable(), IdentifierPartQuote::DoubleQuoted);
         ast_drop->is_dictionary = create.is_dictionary;
-        ast_drop->setDatabase(create.getDatabase());
+        ast_drop->setDatabase(create.getDatabase(), IdentifierPartQuote::DoubleQuoted);
         ast_drop->kind = ASTDropQuery::Drop;
     }
 
@@ -2449,18 +2453,26 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         bool with_interactive_cancel = create.isCreateQueryWithImmediateInsertSelect();
         executeTrivialBlockIO(fill_io, getContext(), with_interactive_cancel);
 
-        /// Replace target table with created one
+        /// Replace target table with created one. The database and the temporary table name are
+        /// exact; the replace target keeps the user's quote pin so it resolves like an exchange
+        /// destination.
+        auto make_identifier = [](const String & name, IdentifierPartQuote quote)
+        {
+            IdentifierName parts(std::vector<String>{name});
+            parts.front().quote = quote;
+            return make_intrusive<ASTIdentifier>(std::move(parts));
+        };
         ASTRenameQuery::Element elem
         {
             ASTRenameQuery::Table
             {
-                create.getDatabase().empty() ? nullptr : make_intrusive<ASTIdentifier>(create.getDatabase()),
-                make_intrusive<ASTIdentifier>(create.getTable())
+                create.getDatabase().empty() ? nullptr : make_identifier(create.getDatabase(), IdentifierPartQuote::DoubleQuoted),
+                make_identifier(create.getTable(), IdentifierPartQuote::DoubleQuoted)
             },
             ASTRenameQuery::Table
             {
-                create.getDatabase().empty() ? nullptr : make_intrusive<ASTIdentifier>(create.getDatabase()),
-                make_intrusive<ASTIdentifier>(table_to_replace_name)
+                create.getDatabase().empty() ? nullptr : make_identifier(create.getDatabase(), IdentifierPartQuote::DoubleQuoted),
+                make_identifier(table_to_replace_name, table_to_replace_quote)
             }
         };
 

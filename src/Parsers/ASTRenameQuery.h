@@ -142,11 +142,14 @@ public:
 
     void addElement(const String & from_db, const String & from_table, const String & to_db, const String & to_table)
     {
+        /// Callers pass exact catalog names; pin them so they are not re-folded against case siblings.
         auto identifier = [&](const String & name) -> ASTPtr
         {
             if (name.empty())
                 return nullptr;
-            ASTPtr ast = make_intrusive<ASTIdentifier>(name);
+            IdentifierName parts(std::vector<String>{name});
+            parts.front().quote = IdentifierPartQuote::DoubleQuoted;
+            ASTPtr ast = make_intrusive<ASTIdentifier>(std::move(parts));
             children.push_back(ast);
             return ast;
         };

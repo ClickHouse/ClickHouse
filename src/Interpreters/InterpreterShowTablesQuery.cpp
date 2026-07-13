@@ -163,8 +163,11 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary && !query.getFrom().empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`");
 
-    String database = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
-        getContext()->resolveDatabase(query.getFrom()), identifierPartQuoteFromAST(query.from), getContext());
+    /// An empty FROM means the current database, which is canonical already.
+    String database = getContext()->resolveDatabase(query.getFrom());
+    if (query.from)
+        database = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+            database, identifierPartQuoteFromAST(query.from), getContext());
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     WriteBufferFromOwnString rewritten_query;
@@ -233,8 +236,11 @@ BlockIO InterpreterShowTablesQuery::execute()
         return res;
     }
     auto rewritten_query = getRewrittenQuery();
-    String database = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
-        getContext()->resolveDatabase(query.getFrom()), identifierPartQuoteFromAST(query.from), getContext());
+    /// An empty FROM means the current database, which is canonical already.
+    String database = getContext()->resolveDatabase(query.getFrom());
+    if (query.from)
+        database = DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+            database, identifierPartQuoteFromAST(query.from), getContext());
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");

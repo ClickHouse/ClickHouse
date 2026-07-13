@@ -27,7 +27,17 @@ namespace ErrorCodes
 
 BlockIO InterpreterOptimizeQuery::execute()
 {
-    const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
+    auto & ast = query_ptr->as<ASTOptimizeQuery &>();
+
+    /// Resolve the canonical names first and write them back, so the ON CLUSTER access check and
+    /// DDL entry, as well as the local access check, see the object the query acts on.
+    auto resolved_id = getContext()->tryResolveStorageID(ast);
+    if (resolved_id && resolved_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        if (ast.database)
+            ast.setDatabase(resolved_id.database_name, IdentifierPartQuote::DoubleQuoted);
+        ast.setTable(resolved_id.table_name, IdentifierPartQuote::DoubleQuoted);
+    }
 
     if (!ast.cluster.empty())
     {
@@ -36,7 +46,6 @@ BlockIO InterpreterOptimizeQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    /// Resolve the canonical names first, so the access check sees the same object the query acts on.
     auto table_id = getContext()->resolveStorageID(ast);
     getContext()->checkAccess(AccessType::OPTIMIZE, table_id.database_name, table_id.table_name);
 

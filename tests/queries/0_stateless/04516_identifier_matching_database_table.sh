@@ -96,3 +96,38 @@ ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_TWO}"
 ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE_FOLDED}.T2 (x Int32) ENGINE = Memory" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
 ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "EXISTS TABLE ${DB_ONE_FOLDED}.newtable" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
 ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SHOW COLUMNS FROM ${DB_ONE_FOLDED}.newtable" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
+
+echo '--- standard: EXCHANGE TABLES folds both operands'
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB_TWO}"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.Foo (x Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.Bar (y Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO ${DB_ONE}.Foo VALUES (1)"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "EXCHANGE TABLES ${DB_ONE_FOLDED}.foo AND ${DB_ONE_FOLDED}.bar"
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${DB_ONE}.Bar"
+
+echo '--- standard: sibling destination makes EXCHANGE ambiguous'
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE}.\"bar\" (z Int32) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "EXCHANGE TABLES ${DB_ONE_FOLDED}.foo AND ${DB_ONE_FOLDED}.bar" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
+
+echo '--- standard: RENAME folds the source and keeps the new name as written'
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${DB_ONE}.\"bar\""
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "RENAME TABLE ${DB_ONE_FOLDED}.foo TO ${DB_ONE_FOLDED}.RenamedTo"
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${DB_ONE}.RenamedTo"
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${DB_ONE}.Foo"
+
+echo '--- standard: SYSTEM STOP MERGES folds, double-quoted wrong case stays exact'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SYSTEM STOP MERGES ${DB_ONE_FOLDED}.newtable"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SYSTEM START MERGES ${DB_ONE_FOLDED}.newtable"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SYSTEM STOP MERGES \"${DB_ONE_FOLDED}\".newtable" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
+
+echo '--- standard: ALTER DATABASE folds the database name'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "ALTER DATABASE ${DB_ONE_FOLDED} MODIFY COMMENT 'folded alter'"
+${CLICKHOUSE_CLIENT} --query "SELECT comment FROM system.databases WHERE name = '${DB_ONE}'"
+
+echo '--- standard: sibling databases make ALTER DATABASE ambiguous'
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_TWO}"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "ALTER DATABASE ${DB_ONE_FOLDED} MODIFY COMMENT 'x'" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
+
+echo '--- standard: implicit current database stays exact with a case sibling'
+CLIENT_IN_DB_ONE=${CLICKHOUSE_CLIENT/--database=$CLICKHOUSE_DATABASE/--database=$DB_ONE}
+${CLIENT_IN_DB_ONE} --database_and_table_name_matching=standard --query "SELECT count() FROM NewTable"

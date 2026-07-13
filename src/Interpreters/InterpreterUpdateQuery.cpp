@@ -91,7 +91,14 @@ BlockIO InterpreterUpdateQuery::execute()
     /// update. Resolve the table best-effort (null for a non-local ON CLUSTER target) and fail closed.
     StoragePtr table_for_access;
     if (auto table_id_for_access = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary))
+    {
         table_for_access = DatabaseCatalog::instance().tryGetTable(table_id_for_access, getContext());
+        /// Write the canonical names back, so the ON CLUSTER access check and DDL entry see the
+        /// object the query acts on.
+        if (update_query.database)
+            update_query.setDatabase(table_id_for_access.database_name, IdentifierPartQuote::DoubleQuoted);
+        update_query.setTable(table_id_for_access.table_name, IdentifierPartQuote::DoubleQuoted);
+    }
     const bool row_exists_is_marker = InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(table_for_access, getContext());
 
     bool deletes_via_row_exists = false;
@@ -127,8 +134,8 @@ BlockIO InterpreterUpdateQuery::execute()
     /// Resolve the canonical names first, so the access check sees the same object the query acts on.
     auto table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
     getContext()->checkAccess(make_required_access(table_id.database_name, table_id.table_name));
-    update_query.setDatabase(table_id.database_name);
-    update_query.setTable(table_id.table_name);
+    update_query.setDatabase(table_id.database_name, IdentifierPartQuote::DoubleQuoted);
+    update_query.setTable(table_id.table_name, IdentifierPartQuote::DoubleQuoted);
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());

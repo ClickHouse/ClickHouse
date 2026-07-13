@@ -33,17 +33,30 @@ InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Contex
 {
 }
 
+namespace
+{
+
+/// Write a resolved canonical spelling back into an identifier node and pin it as exact.
+void writeCanonicalNameBack(const ASTPtr & node, const String & canonical)
+{
+    auto * identifier = node ? node->as<ASTIdentifier>() : nullptr;
+    if (!identifier || canonical.empty())
+        return;
+    identifier->setShortName(canonical);
+    identifier->name_parts.front().quote = IdentifierPartQuote::DoubleQuoted;
+}
+
+/// An implicit database taken from the session context is canonical already.
+IdentifierPartQuote quoteForDatabaseNode(const ASTPtr & node)
+{
+    return node ? identifierPartQuoteFromAST(node) : IdentifierPartQuote::DoubleQuoted;
+}
+
+}
 
 BlockIO InterpreterRenameQuery::execute()
 {
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
-
-    if (!rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
-    {
-        DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-    }
 
     String current_database = getContext()->getCurrentDatabase();
 
@@ -64,23 +77,46 @@ BlockIO InterpreterRenameQuery::execute()
         descriptions.emplace_back(elem, current_database);
         auto & description = descriptions.back();
 
-        /// Resolve the canonical spellings of the source and the destination database;
-        /// the destination table (or database) name is a new name and stays as written.
+        /// Resolve the canonical spellings of everything that refers to an existing object and write
+        /// them back into the AST, so access checks, ON CLUSTER dispatch, DDL guards and the rename
+        /// itself all act on the same object. A new name stays as written.
         if (rename.database)
         {
             description.from_database_name = database_catalog.resolveDatabaseNameSpelling(
                 description.from_database_name, identifierPartQuoteFromAST(elem.from.database), getContext());
+            writeCanonicalNameBack(elem.from.database, description.from_database_name);
         }
         else
         {
             StorageID from_id{description.from_database_name, description.from_table_name};
-            from_id.database_name_quote = identifierPartQuoteFromAST(elem.from.database);
+            from_id.database_name_quote = quoteForDatabaseNode(elem.from.database);
             from_id.table_name_quote = identifierPartQuoteFromAST(elem.from.table);
             from_id = database_catalog.resolveStorageIDNames(std::move(from_id), getContext());
             description.from_database_name = from_id.database_name;
             description.from_table_name = from_id.table_name;
-            description.to_database_name = database_catalog.resolveDatabaseNameSpelling(
-                description.to_database_name, identifierPartQuoteFromAST(elem.to.database), getContext());
+            writeCanonicalNameBack(elem.from.database, description.from_database_name);
+            writeCanonicalNameBack(elem.from.table, description.from_table_name);
+
+            if (rename.exchange || rename.rename_if_cannot_exchange)
+            {
+                /// The destination of an exchange refers to an existing object too. For a rename that
+                /// may fall back to exchange, a unique match selects the object to exchange with,
+                /// an ambiguous one throws, and an absent one keeps the new name as written.
+                StorageID to_id{description.to_database_name, description.to_table_name};
+                to_id.database_name_quote = quoteForDatabaseNode(elem.to.database);
+                to_id.table_name_quote = identifierPartQuoteFromAST(elem.to.table);
+                to_id = database_catalog.resolveStorageIDNames(std::move(to_id), getContext());
+                description.to_database_name = to_id.database_name;
+                description.to_table_name = to_id.table_name;
+                writeCanonicalNameBack(elem.to.database, description.to_database_name);
+                writeCanonicalNameBack(elem.to.table, description.to_table_name);
+            }
+            else
+            {
+                description.to_database_name = database_catalog.resolveDatabaseNameSpelling(
+                    description.to_database_name, quoteForDatabaseNode(elem.to.database), getContext());
+                writeCanonicalNameBack(elem.to.database, description.to_database_name);
+            }
         }
 
         UniqueTableName from(description.from_database_name, description.from_table_name);
@@ -88,6 +124,13 @@ BlockIO InterpreterRenameQuery::execute()
 
         table_guards[from];
         table_guards[to];
+    }
+
+    if (!rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     /// Check access against the resolved names, so the check covers the object the query acts on.

@@ -495,6 +495,15 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
+
+    /// Resolve the canonical database spelling first and write it back, so the access check,
+    /// the ON CLUSTER dispatch and the DDL guard all act on the same object.
+    if (alter.database)
+        query_ptr->as<ASTAlterQuery &>().setDatabase(
+            DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+                alter.getDatabase(), identifierPartQuoteFromAST(alter.database), getContext()),
+            IdentifierPartQuote::DoubleQuoted);
+
     /// ALTER DATABASE has no table and no UPDATE commands, so the `_row_exists` marker check never applies.
     getContext()->checkAccess(getRequiredAccess(nullptr));
     AlterCommands alter_commands;

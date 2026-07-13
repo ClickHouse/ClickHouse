@@ -50,6 +50,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -374,6 +375,10 @@ BlockIO InterpreterSystemQuery::execute()
     else if (query.table)
     {
         StorageID id_in_query(query.getDatabase(), query.getTable());
+        /// Carry the quote pins into resolution, so double-quoted parts stay exact and the
+        /// access checks below act on the canonical names.
+        id_in_query.database_name_quote = identifierPartQuoteFromAST(query.database);
+        id_in_query.table_name_quote = identifierPartQuoteFromAST(query.table);
         /// `IF EXISTS` (currently parsed for `SYSTEM SYNC REPLICA`) must suppress
         /// `UNKNOWN_DATABASE` in addition to `UNKNOWN_TABLE`. Plain `resolveStorageID`
         /// throws on a missing database before the per-handler `if_exists` check is

@@ -98,6 +98,23 @@ BlockIO InterpreterDropQuery::execute()
 BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
 {
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
+
+    /// Resolve the canonical names first and write them back, so the ON CLUSTER access check and
+    /// DDL entry, as well as the local execution, all act on the same object.
+    if (drop.table && drop.database && !drop.isTemporary())
+    {
+        auto table_id = DatabaseCatalog::instance().resolveStorageIDNames(StorageID(drop), getContext());
+        drop.setDatabase(table_id.database_name, IdentifierPartQuote::DoubleQuoted);
+        drop.setTable(table_id.table_name, IdentifierPartQuote::DoubleQuoted);
+    }
+    else if (drop.database && !drop.table)
+    {
+        drop.setDatabase(
+            DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+                drop.getDatabase(), identifierPartQuoteFromAST(drop.database), getContext()),
+            IdentifierPartQuote::DoubleQuoted);
+    }
+
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
@@ -164,7 +181,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
-        query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
+        /// The implicit current database is canonical already; keep it exact.
+        query.setDatabase(table_id.database_name = context_->getCurrentDatabase(), IdentifierPartQuote::DoubleQuoted);
+        table_id.database_name_quote = IdentifierPartQuote::DoubleQuoted;
     }
 
     if (query.isTemporary())
@@ -868,9 +887,10 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
         /// We create and execute `drop` query for internal table.
+        /// The names are exact catalog names; pin them so they are not re-folded against case siblings.
         auto drop_query = make_intrusive<ASTDropQuery>();
-        drop_query->setDatabase(target_table_id.database_name);
-        drop_query->setTable(target_table_id.table_name);
+        drop_query->setDatabase(target_table_id.database_name, IdentifierPartQuote::DoubleQuoted);
+        drop_query->setTable(target_table_id.table_name, IdentifierPartQuote::DoubleQuoted);
         drop_query->kind = kind;
         drop_query->sync = sync;
         drop_query->if_exists = true;
