@@ -36,6 +36,12 @@ SET input_format_read_datetime_number_as_raw_value = 1;
 SELECT t FROM format(JSONEachRow, 't DateTime', '{"t":1703363853.7}'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 SET input_format_read_datetime_number_as_raw_value = 0;
 
+SELECT '-- DateTime64: a fractional number is seconds by default, but rejected in compatibility mode';
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":1703363853.035}');
+SET input_format_read_datetime_number_as_raw_value = 1;
+SELECT t FROM format(JSONEachRow, 't DateTime64(3)', '{"t":1703363853.035}'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
+SET input_format_read_datetime_number_as_raw_value = 0;
+
 SELECT '-- JSONExtract: an unquoted integer for DateTime64 is seconds, consistent with a float';
 SELECT JSONExtract('{"t":1703363853}', 't', 'DateTime64(3)');
 SELECT JSONExtract('{"t":1703363853.035}', 't', 'DateTime64(3)');

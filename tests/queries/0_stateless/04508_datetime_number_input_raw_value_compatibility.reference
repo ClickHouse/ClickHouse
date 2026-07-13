@@ -12,6 +12,8 @@
 2023-12-23 20:37:33
 -- DateTime: a fractional number is truncated by default, but rejected in compatibility mode
 2023-12-23 20:37:33
+-- DateTime64: a fractional number is seconds by default, but rejected in compatibility mode
+2023-12-23 20:37:33.035
 -- JSONExtract: an unquoted integer for DateTime64 is seconds, consistent with a float
 2023-12-23 20:37:33.000
 2023-12-23 20:37:33.035
