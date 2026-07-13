@@ -22,7 +22,7 @@ namespace DataLake
 DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const std::string & endpoint,
     DB::ContextPtr context,
-    const Poco::Net::HTTPBasicCredentials & credentials,
+    const std::string & bearer_token,
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers,
     const std::string & method,
@@ -31,6 +31,9 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     Poco::URI url(endpoint);
     if (!params.empty())
         url.setQueryParameters(params);
+
+    /// Catalogs authenticate with a bearer token; there are no HTTP Basic credentials.
+    static const Poco::Net::HTTPBasicCredentials no_credentials;
 
     return DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
@@ -42,13 +45,14 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         .withSkipNotFound(false)
         .withMethod(method)
         .withOutCallback(out_stream_callaback)
-        .create(credentials);
+        .withBearerToken(bearer_token)
+        .create(no_credentials);
 }
 
 std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const std::string & endpoint,
     DB::ContextPtr context,
-    const Poco::Net::HTTPBasicCredentials & credentials,
+    const std::string & bearer_token,
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers,
     const std::string & method,
@@ -59,7 +63,7 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
         throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database");
     });
 
-    auto buf = createReadBuffer(endpoint, context, credentials, params, headers, method, out_stream_callaback);
+    auto buf = createReadBuffer(endpoint, context, bearer_token, params, headers, method, out_stream_callaback);
     if (buf->eof())
         return {};
 

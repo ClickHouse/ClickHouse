@@ -10,7 +10,7 @@ namespace DataLake
 DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const std::string & endpoint,
     DB::ContextPtr context,
-    const Poco::Net::HTTPBasicCredentials & credentials,
+    const std::string & bearer_token,
     const Poco::URI::QueryParameters & params = {},
     const DB::HTTPHeaderEntries & headers = {},
     const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
@@ -19,7 +19,7 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
 std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const std::string & endpoint,
     DB::ContextPtr context,
-    const Poco::Net::HTTPBasicCredentials & credentials,
+    const std::string & bearer_token,
     const Poco::URI::QueryParameters & params = {},
     const DB::HTTPHeaderEntries & headers = {},
     const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
