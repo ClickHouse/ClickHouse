@@ -8,6 +8,10 @@ SELECT count() FROM tab WHERE a = ['x'] SETTINGS use_skip_indexes = 1;
 SELECT count() FROM tab WHERE a = ['x'] SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE a != ['x'] SETTINGS use_skip_indexes = 1;
 SELECT count() FROM tab WHERE a != ['x'] SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE startsWith(a, ['x']) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab WHERE startsWith(a, ['x']) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE endsWith(a, ['x']) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab WHERE endsWith(a, ['x']) SETTINGS use_skip_indexes = 0;
 DROP TABLE tab;
 
 SELECT 'tokenbf_v1';
@@ -18,6 +22,10 @@ SELECT count() FROM tab WHERE a = ['x'] SETTINGS use_skip_indexes = 1;
 SELECT count() FROM tab WHERE a = ['x'] SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE a != ['x'] SETTINGS use_skip_indexes = 1;
 SELECT count() FROM tab WHERE a != ['x'] SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE startsWith(a, ['x']) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab WHERE startsWith(a, ['x']) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE endsWith(a, ['x']) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab WHERE endsWith(a, ['x']) SETTINGS use_skip_indexes = 0;
 DROP TABLE tab;
 
 SELECT 'ngrambf_v1';
@@ -28,5 +36,9 @@ SELECT count() FROM tab WHERE a = ['x'] SETTINGS use_skip_indexes = 1;
 SELECT count() FROM tab WHERE a = ['x'] SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE a != ['x'] SETTINGS use_skip_indexes = 1;
 SELECT count() FROM tab WHERE a != ['x'] SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE startsWith(a, ['x']) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab WHERE startsWith(a, ['x']) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE endsWith(a, ['x']) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab WHERE endsWith(a, ['x']) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
