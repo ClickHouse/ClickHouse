@@ -40,7 +40,9 @@ public:
     }
 
     /// Record a `len`-byte window served forward from `start_pos`: extends the run when
-    /// it continues the frontier (within `bridgeable_gap`), else closes the run first.
+    /// it continues the frontier (within `bridgeable_gap`); a far-forward range closes
+    /// the run first. A range from the past is a re-declaration, not a pattern signal:
+    /// the covered part is skipped and only the tail past the frontier feeds the run.
     void recordReadRange(size_t start_pos, size_t len);
 
     /// Record a seek to `new_pos`: a forward gap within `bridgeable_gap` keeps the run; any

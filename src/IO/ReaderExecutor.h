@@ -665,8 +665,8 @@ private:
     bool clampAllowsAhead(size_t ri) const;
 
     /// Feed the plan SCHEDULE's predicted source reads (the `Source::Remote`
-    /// retrieves, in offset order, only past `continuity_fed_end`) into
-    /// `continuity_tracker`, then advance the watermark. A Remote retrieve's range
+    /// retrieves, in offset order) into `continuity_tracker`; the tracker skips
+    /// spans an earlier overlapping plan already fed. A Remote retrieve's range
     /// already spans bridged holes (<= `min_bytes_for_seek`) as over-read, and
     /// `bridgeable_gap == min_bytes_for_seek`, so feeding the range as one read counts
     /// that over-read exactly as a read-through would.
@@ -861,9 +861,6 @@ private:
     /// bridged gap counts identically whether modeled as a read-through or a seek.
     /// `predictedEnd` sizes the long source connection (see `longConnectionBound`).
     ReadContinuityTracker continuity_tracker;
-    /// Highest physical offset already fed to `continuity_tracker` from a plan, so
-    /// overlapping re-plans never double-feed. Reset to the target on seek.
-    size_t continuity_fed_end = 0;
     /// CONSUMPTION-pattern estimator: unlike `continuity_tracker` (planned source reads,
     /// sizes connections), it is fed every SERVED window and every seek, so it predicts
     /// how far the consumer will actually go. `fetchAllowance` keys past-extent prefetch

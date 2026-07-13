@@ -353,11 +353,10 @@ void ReaderExecutor::seek(size_t new_position)
     }
 
     cancelMachine(/*cancelled=*/true);
-    /// Feed the seek to the continuity estimator and rewind the plan-feed watermark,
-    /// so the post-seek plan re-feeds its predicted reads from here.
+    /// Feed the seek to both estimators; it resets their frontier, so the post-seek
+    /// plan's predicted reads feed from here.
     continuity_tracker.recordSeek(new_physical);
     consume_tracker.recordSeek(new_physical);
-    continuity_fed_end = new_physical;
 
     /// A seek away from the current frontier strands the in-flight fill segment;
     /// drop its pin (the next window re-establishes it).
@@ -2690,8 +2689,9 @@ void ReaderExecutor::feedScheduleToContinuity(const PlanSchedule & schedule)
 {
     /// The predicted SOURCE reads are the `Source::Remote` retrieves; upper-tier
     /// reads and promotes open no source connection, so a wide upper hit between
-    /// them correctly breaks the run. Feed in offset order, only past the
-    /// watermark, so overlapping re-plans never double-feed.
+    /// them correctly breaks the run. Feed in offset order (the tracker's gap
+    /// bridging wants a monotone stream); the tracker itself skips spans an
+    /// earlier overlapping plan already fed.
     VectorWithMemoryTracking<ByteRange> source_reads;
     for (const auto & r : schedule.retrieves)
         if (r.source == PlanSchedule::Source::Remote)
@@ -2700,13 +2700,7 @@ void ReaderExecutor::feedScheduleToContinuity(const PlanSchedule & schedule)
         [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
 
     for (const auto & range : source_reads)
-    {
-        const size_t start = std::max(range.offset, continuity_fed_end);
-        if (start >= range.end())
-            continue;  /// already fed by an earlier (overlapping) plan
-        continuity_tracker.recordReadRange(start, range.end() - start);
-        continuity_fed_end = range.end();
-    }
+        continuity_tracker.recordReadRange(range.offset, range.size);
 }
 
 bool ReaderExecutor::planReachesEnd() const

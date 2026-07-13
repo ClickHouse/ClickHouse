@@ -7,8 +7,18 @@ namespace DB
 
 void ReadContinuityTracker::recordReadRange(size_t start_pos, size_t len)
 {
-    /// A backward or far-forward jump (gap > bridgeable_gap) is a discontinuity: close the run first.
-    if (last_pos && (start_pos < *last_pos || start_pos - *last_pos > options.bridgeable_gap))
+    /// A range from the past is a re-declaration (overlapping feeds re-declare the
+    /// same span), not a pattern signal: skip the covered part, feed only the new
+    /// tail. Genuine backward jumps arrive as `recordSeek`.
+    if (last_pos && start_pos < *last_pos)
+    {
+        if (start_pos + len <= *last_pos)
+            return;
+        len = start_pos + len - *last_pos;
+        start_pos = *last_pos;
+    }
+    /// A far-forward jump (gap > bridgeable_gap) is a discontinuity: close the run first.
+    if (last_pos && start_pos - *last_pos > options.bridgeable_gap)
         closeRun();
     /// Only a continuation of a NON-EMPTY run confirms anything: the first read
     /// after a seek also lands exactly at the frontier but carries no evidence.

@@ -137,3 +137,22 @@ TEST(ReadContinuityTracker, UnbrokenScanWarmsTheEstimate)
     EXPECT_EQ(j.estimate(), 50u);
 }
 
+TEST(ReadContinuityTracker, RangesFromThePastAreSkipped)
+{
+    /// Overlapping feeds re-declare spans an earlier feed already covered (the plan
+    /// window slides over the same region); the covered part is a re-declaration,
+    /// not a pattern signal - it must neither fold the run nor extend it. Only the
+    /// tail past the frontier feeds, and it counts as an exact continuation.
+    auto t = makeTracker(/*bridgeable_gap=*/100, /*alpha=*/0.5);
+    t.recordReadRange(0, 100);
+    t.recordReadRange(0, 100);       /// fully covered -> no-op
+    EXPECT_EQ(t.currentRun(), 100u);
+    EXPECT_EQ(t.estimate(), 0u);
+    t.recordReadRange(50, 100);      /// overlaps the frontier: feeds only [100, 150)
+    EXPECT_EQ(t.currentRun(), 150u);
+    EXPECT_EQ(t.estimate(), 75u);    /// the clipped tail continued the run -> checkpoint: 0.5 * 150
+    t.recordReadRange(500, 50);      /// a far-forward range still breaks the run
+    EXPECT_EQ(t.currentRun(), 50u);
+    EXPECT_EQ(t.estimate(), 112u);   /// close folded the 150-run: 0.5 * 150 + 0.5 * 75
+}
+
