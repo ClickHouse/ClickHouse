@@ -4,10 +4,14 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/ErrnoException.h>
+#include <Common/assert_cast.h>
 
+#include <algorithm>
 #include <ctime>
 
 namespace DB
@@ -39,6 +43,27 @@ namespace DB
             /// the year-2106 boundary of `DateTime` and instead saturate at the `DateTime64` upper bound.
             if (!context)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "VALID FOR requires a query context to evaluate the interval");
+
+            /// `VALID FOR` accepts only interval expressions (e.g. `INTERVAL 1 DAY` or
+            /// `INTERVAL 1 DAY + INTERVAL 2 HOUR`), because the deadline is computed as `now` plus this value.
+            /// The parser accepts an arbitrary expression, so a bare number such as `VALID FOR 365` would
+            /// otherwise be resolved by `plus(DateTime64, Number)` as `addSeconds`, silently setting a
+            /// 365-second lifetime instead of failing. Reject anything whose folded type is neither
+            /// an `Interval` nor a tuple of `Interval`s (the latter is produced by summing intervals).
+            const auto interval_type = evaluateConstantExpression(valid_until, context).second;
+            bool is_interval_type = WhichDataType(*interval_type).isInterval();
+            if (!is_interval_type && WhichDataType(*interval_type).isTuple())
+            {
+                const auto & elements = assert_cast<const DataTypeTuple &>(*interval_type).getElements();
+                is_interval_type = !elements.empty()
+                    && std::all_of(elements.begin(), elements.end(), [](const auto & element) { return WhichDataType(*element).isInterval(); });
+            }
+            if (!is_interval_type)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "VALID FOR expects an interval expression (for example, INTERVAL 1 DAY), but got an expression of type {}. "
+                    "Use VALID UNTIL to specify an absolute point in time",
+                    interval_type->getName());
 
             /// Use the reference time supplied by the caller when available, so that all `VALID FOR`
             /// clauses of one statement resolve against a single `now`; otherwise sample it here.
