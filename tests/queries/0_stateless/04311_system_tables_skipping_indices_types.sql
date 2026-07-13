@@ -49,3 +49,29 @@ FROM system.tables
 WHERE is_temporary AND name = 't_tmp_skip_idx';
 
 DROP TEMPORARY TABLE t_tmp_skip_idx;
+
+-- Implicitly created skip indices (via add_minmax_index_for_numeric_columns) must NOT be
+-- reported: the column lists only skip indices explicitly defined on the table.
+DROP TABLE IF EXISTS t_implicit_minmax;
+DROP TABLE IF EXISTS t_implicit_and_explicit;
+
+CREATE TABLE t_implicit_minmax (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS add_minmax_index_for_numeric_columns = 1;
+
+-- Same auto-minmax setting, but also one explicitly defined set index: only 'set' is reported.
+CREATE TABLE t_implicit_and_explicit
+(
+    a UInt64,
+    b String,
+    INDEX idx_set b TYPE set(100) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY a
+SETTINGS add_minmax_index_for_numeric_columns = 1;
+
+SELECT name, skipping_indices_types
+FROM system.tables
+WHERE database = currentDatabase() AND name IN ('t_implicit_minmax', 't_implicit_and_explicit')
+ORDER BY name;
+
+DROP TABLE t_implicit_minmax;
+DROP TABLE t_implicit_and_explicit;
