@@ -65,6 +65,8 @@ Union
 - `QUERY TREE` — Query tree after Query Tree level optimizations.
 - `PLAN` — Query execution plan.
 - `PIPELINE` — Query execution pipeline.
+- `ESTIMATE` — Estimated number of rows, marks and parts to be read from the tables while processing the query.
+- `TABLE OVERRIDE` — Validated result of a table override on a table-function schema.
 
 ### EXPLAIN AST {#explain-ast}
 
