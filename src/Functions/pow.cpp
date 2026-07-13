@@ -59,6 +59,13 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
+    /// Matches FunctionMathBinaryFloat64 so that pow(Dynamic, ...) keeps returning Nullable(Float64)
+    /// instead of Dynamic once fast_float_math routes through this implementation.
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto f64 = std::make_shared<DataTypeFloat64>();
@@ -120,12 +127,15 @@ private:
         }
 
         /// General integer power by squaring (handles n == 1, n >= 3, and negative n).
+        /// For negative exponents we reciprocate the base up front rather than inverting the final
+        /// product: `x^-n = (1/x)^n`. Inverting at the end would let the intermediate `x^n` overflow
+        /// to +Inf (then `1/Inf == 0`), erasing results that are actually representable subnormals.
         const bool negative = n < 0;
         auto exponent = static_cast<UInt64>(negative ? -n : n);
         for (size_t i = 0; i < rows; ++i)
         {
             Float64 acc = 1.0;
-            Float64 b = base[i];
+            Float64 b = negative ? 1.0 / base[i] : base[i];
             UInt64 e = exponent;
             while (e != 0)
             {
@@ -134,7 +144,7 @@ private:
                 b *= b;
                 e >>= 1u;
             }
-            res[i] = negative ? 1.0 / acc : acc;
+            res[i] = acc;
         }
         return dst;
     }

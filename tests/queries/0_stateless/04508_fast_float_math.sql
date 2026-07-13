@@ -31,6 +31,12 @@ SELECT sum(pow(number, 2) = number * number) = count() FROM numbers(1000);
 SELECT sum(pow(number, 0) = 1) = count() FROM numbers(1000);
 -- pow special values with integer exponent.
 SELECT pow(inf, 2) = inf AND isNaN(pow(nan, 3)) AND pow(0, 3) = 0 AND pow(0, -1) = inf;
+-- Negative integer exponent near the underflow boundary: computing x^|n| then inverting would let
+-- the intermediate overflow to +Inf and collapse the reciprocal to 0, wiping out this representable
+-- subnormal. The result must stay non-zero and match precise pow.
+SELECT pow(65698.5552524023369, -64) > 0 AND abs(pow(65698.5552524023369, -64) / 4.74709109243818793e-309 - 1) < 1e-9;
+-- pow over a Dynamic argument keeps returning Nullable(Float64), not Dynamic.
+SELECT toTypeName(pow(2::Dynamic, 3)) = 'Nullable(Float64)';
 
 -- pow, constant positive base: b^y = exp2(y * log2(b)).
 SELECT abs(pow(10, 2) - 100) / 100 < 1e-9 AND abs(pow(2.0, 0.5) - sqrt(2)) / sqrt(2) < 1e-9;
