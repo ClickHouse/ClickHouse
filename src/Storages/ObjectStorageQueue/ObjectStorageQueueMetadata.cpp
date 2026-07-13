@@ -1528,7 +1528,14 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     }
 
     auto current_time = getCurrentTime();
-    std::vector<std::pair<String, int32_t>> nodes_to_remove;
+    struct NodeToRemove
+    {
+        String path;
+        int32_t version;
+        /// `mtime` age at selection time, logged for attribution of the removal.
+        Int64 mtime_age_seconds;
+    };
+    std::vector<NodeToRemove> nodes_to_remove;
     Strings get_batch;
     auto get_paths = [&]
     {
@@ -1552,7 +1559,10 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
                 get_batch[i], response[i].stat.mtime, persistent_processing_node_ttl_seconds.load(), current_time);
 
             if (response[i].stat.mtime / 1000 + persistent_processing_node_ttl_seconds < current_time)
-                nodes_to_remove.emplace_back(get_batch[i], response[i].stat.version);
+                nodes_to_remove.emplace_back(NodeToRemove{
+                    .path = get_batch[i],
+                    .version = response[i].stat.version,
+                    .mtime_age_seconds = current_time - response[i].stat.mtime / 1000});
         }
         get_batch.clear();
     };
@@ -1582,11 +1592,13 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     }
 
     size_t removed = 0;
-    for (const auto & node_with_version : nodes_to_remove)
+    for (const auto & node_to_remove : nodes_to_remove)
     {
-        const auto & node = node_with_version.first;
-        const auto version = node_with_version.second;
-        LOG_INFO(log, "Removing stale processing node: {}", node);
+        const auto & node = node_to_remove.path;
+        const auto version = node_to_remove.version;
+        LOG_INFO(
+            log, "Removing stale processing node: {} (mtime age: {} sec, ttl: {} sec)",
+            node, node_to_remove.mtime_age_seconds, persistent_processing_node_ttl_seconds.load());
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {

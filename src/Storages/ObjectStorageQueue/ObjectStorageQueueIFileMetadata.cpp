@@ -496,6 +496,8 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedFiles);
 
+    finalizeProcessedImpl();
+
     SCOPE_EXIT({
         file_status->onProcessed();
         created_processing_node = false;

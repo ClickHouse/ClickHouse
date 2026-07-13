@@ -225,7 +225,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
         .processor_info = processor_info_,
         .zookeeper_name = zookeeper_name_,
         .lock_czxid = lock_czxid_,
-        .lock_acquired_time = lock_acquired_time_ }))
+        .lock_acquired_time = lock_acquired_time_,
+        .last_heartbeat_time = lock_acquired_time_ }))
     , log(log_)
 {
     /// Note: we do not assert ownership here. The lock node can legitimately disappear right after
@@ -822,6 +823,8 @@ bool ObjectStorageQueueOrderedFileMetadata::prepareBucketOwnershipCheckRequests(
         /// another processor.
         requests.push_back(zkutil::makeSetRequest(
             bucket_info->bucket_lock_path, bucket_info->processor_info, /* version */-1));
+        /// Recorded before the commit is sent, so it stays a lower bound on the actual `mtime`.
+        pending_bucket_heartbeat_time = currentTimeSeconds();
         return true;
     }
 
@@ -831,6 +834,22 @@ bool ObjectStorageQueueOrderedFileMetadata::prepareBucketOwnershipCheckRequests(
     /// commit instead stays correct via the version-pinned processed pointer, and lost ownership is
     /// surfaced (non-atomically) by `stillOwnsBucket` on the error path.
     return false;
+}
+
+void ObjectStorageQueueOrderedFileMetadata::finalizeProcessedImpl()
+{
+    if (!pending_bucket_heartbeat_time || !bucket_info)
+        return;
+
+    /// The commit containing the heartbeat `Set` succeeded: promote the pre-commit timestamp.
+    /// Keep the maximum, since files of the same bucket can finalize out of order.
+    auto & last_heartbeat_time = bucket_info->last_heartbeat_time;
+    Int64 prev = last_heartbeat_time.load();
+    while (prev < pending_bucket_heartbeat_time
+        && !last_heartbeat_time.compare_exchange_weak(prev, pending_bucket_heartbeat_time))
+    {
+    }
+    pending_bucket_heartbeat_time = 0;
 }
 
 bool ObjectStorageQueueOrderedFileMetadata::stillOwnsBucket() const

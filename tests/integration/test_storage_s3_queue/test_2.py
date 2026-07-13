@@ -566,6 +566,15 @@ def _setup_slow_ordered_bucket_lock_test(started_cluster, table_name, extra_sett
     return node1, node2, keeper_path, dst_table_name
 
 
+def skip_if_non_release_build(started_cluster):
+    # These tests force removal of a *live* bucket lock, which intentionally trips `chassert`
+    # ownership validations in debug/sanitizer builds. Run them in release builds only, where
+    # the same paths recover gracefully.
+    node = started_cluster.instances["instance"]
+    if node.is_debug_build() or node.is_built_with_sanitizer():
+        pytest.skip("runs in release build only (trips chassert in debug/sanitizer builds)")
+
+
 def _assert_recovered_without_already_processed_error(
     started_cluster, table_name, node1, node2, dst_table_name, total_values
 ):
@@ -615,6 +624,7 @@ def test_ordered_bucket_lock_deleted_during_commit(started_cluster):
     # deleting it from Keeper while a slow consumer still holds it, so the other replica takes the
     # bucket over. The commit-time `czxid` ownership check must turn this into a clean retry
     # instead of the "File is already processed" LOGICAL_ERROR, with no data loss.
+    skip_if_non_release_build(started_cluster)
     table_name = f"test_lock_deleted_{generate_random_string()}"
     node1, node2, keeper_path, dst_table_name = _setup_slow_ordered_bucket_lock_test(
         started_cluster,
@@ -655,6 +665,7 @@ def test_ordered_bucket_lock_cleaned_by_ttl(started_cluster):
     # lets the cleanup task remove a *live* bucket lock (the batch never commits before the TTL, so
     # there is no heartbeat), and the other replica takes over. Same guarantee as option A, but via
     # the real TTL cleanup path.
+    skip_if_non_release_build(started_cluster)
     table_name = f"test_lock_ttl_{generate_random_string()}"
     node1, node2, keeper_path, dst_table_name = _setup_slow_ordered_bucket_lock_test(
         started_cluster,
@@ -674,7 +685,7 @@ def test_ordered_bucket_lock_cleaned_by_ttl(started_cluster):
         started_cluster, table_name, node1, node2, dst_table_name, total_values
     )
 
-    # The cleanup must actually have removed a stale node for this test to be meaningful.
-    assert node1.contains_in_log("Removing stale processing node") or node2.contains_in_log(
-        "Removing stale processing node"
-    )
+    # The cleanup must have removed a stale node of *this* table for the test to be meaningful
+    # (instances are shared between tests, so match the table-specific Keeper path).
+    log_line = f"Removing stale processing node: {keeper_path}"
+    assert node1.contains_in_log(log_line) or node2.contains_in_log(log_line)

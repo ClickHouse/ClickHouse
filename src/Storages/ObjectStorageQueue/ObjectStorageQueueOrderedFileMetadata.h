@@ -30,6 +30,11 @@ public:
         /// Wall-clock time (seconds since epoch) when this bucket lock was acquired, so we can
         /// report how long it had been held when ownership is found to be lost.
         Int64 lock_acquired_time = 0;
+        /// Local time (seconds since epoch) of the last confirmed heartbeat of the lock node:
+        /// acquisition time, refreshed by committed heartbeats. Recorded before the commit is sent
+        /// and promoted only on success, so it is a conservative lower bound on the node's `mtime`.
+        /// `mutable` because `BucketInfoPtr` is a pointer-to-const shared with per-file metadata.
+        mutable std::atomic<Int64> last_heartbeat_time{0};
         std::string toString() const;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
@@ -126,7 +131,13 @@ private:
     /// global version-pinning and for writes via doPrepareProcessedRequests.
     const std::string processed_bucket_path;
 
+    /// Taken right before adding the heartbeat `Set` to the commit requests; promoted into
+    /// `bucket_info->last_heartbeat_time` once the commit succeeds. `0` means none pending.
+    Int64 pending_bucket_heartbeat_time = 0;
+
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
+
+    void finalizeProcessedImpl() override;
 
     void prepareProcessedRequestsImpl(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes) override;

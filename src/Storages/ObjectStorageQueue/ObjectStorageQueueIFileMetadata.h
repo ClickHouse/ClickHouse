@@ -213,6 +213,8 @@ protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes) = 0;
+    /// Called from `finalizeProcessed` once the commit is confirmed as successful.
+    virtual void finalizeProcessedImpl() {}
 
     virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &,
         const std::string &)

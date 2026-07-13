@@ -25,6 +25,7 @@
 #include <Storages/HivePartitioningUtils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <chrono>
 
 
 namespace ProfileEvents
@@ -722,10 +723,23 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         });
         if (!still_owns)
         {
-            /// The lock was cleaned up by the TTL cleanup (or taken over by another processor)
-            /// while we held the bucket. Drop the stale holder and re-acquire instead of asserting:
-            /// the lock can legitimately disappear, and the commit path's atomic ownership check is
-            /// what guarantees correctness.
+            /// The TTL cleanup may only reclaim a lock whose `mtime` aged past the TTL, and
+            /// `last_heartbeat_time` is a lower bound on the `mtime`. Losing a lock younger than
+            /// the TTL therefore indicates a bug: the cleanup removing fresh nodes, a broken
+            /// heartbeat refresh, or an external deletion.
+            const Int64 believed_heartbeat_age = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count()
+                - current_bucket_holder->getBucketInfo()->last_heartbeat_time.load();
+            const auto ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
+            chassert(
+                believed_heartbeat_age >= static_cast<Int64>(ttl_seconds),
+                fmt::format(
+                    "Lost ownership of bucket {} while its believed heartbeat age ({} sec) "
+                    "is younger than the TTL ({} sec)",
+                    current_bucket_holder->getBucket(), believed_heartbeat_age, ttl_seconds));
+
+            /// Legitimate TTL reclaim (we failed to heartbeat for the whole TTL): drop the stale
+            /// holder and re-acquire. Correctness is guaranteed by the commit-time ownership check.
             LOG_TEST(log, "Lost ownership of bucket {}, will re-acquire",
                      current_bucket_holder->getBucket());
             current_bucket_holder->setFinished();
