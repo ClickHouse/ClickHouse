@@ -69,6 +69,10 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
@@ -363,7 +367,20 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// surviving pruning, not over all active parts (issue #110281), and the index-based
         /// fallback below needs the same analysis result anyway.
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
-        analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
+        if (!analyzed_result)
+        {
+            const auto & settings = reading->getContext()->getSettingsRef();
+            const bool has_throwing_row_limit
+                = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+                || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
+
+            /// `optimizeReadInOrder` runs after join optimization and may exempt the final read from
+            /// row limits. Under throwing limits, keep this analysis local and let the final read
+            /// analyze again after its input order is known.
+            analyzed_result = has_throwing_row_limit
+                ? reading->selectRangesToReadForEstimation()
+                : reading->selectRangesToRead();
+        }
 
         /// Early index-analysis returns have no `index_stats`, but an exact empty result
         /// must not degrade from zero rows to unknown in the fallback below.
