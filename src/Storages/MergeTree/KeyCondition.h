@@ -135,13 +135,18 @@ public:
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
     /// key_bounds - optional per-column bounds the key values are known to lie within (e.g. the part's
     /// partition minmax). A key without a bound defaults to (-inf, +inf).
+    /// reverse_flags - per key column, whether it is stored in descending order (reverse sorting key),
+    /// indexed by key column position; an empty vector means all columns ascending. For a reverse column,
+    /// `left_keys`/`right_keys` are the mark-range boundary values in storage order (opposite of value
+    /// order) and are decomposed accordingly.
     BoolMask checkInRange(
         size_t key_size,
         const FieldRef * left_keys,
         const FieldRef * right_keys,
         const DataTypes & data_types,
         BoolMask initial_mask = BoolMask(false, false),
-        const Hyperrectangle * key_bounds = nullptr) const;
+        const Hyperrectangle * key_bounds = nullptr,
+        const std::vector<bool> & reverse_flags = {}) const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// However, `equal_boundaries_mask` must have the information about all/prefix keys. `equal_boundaries_mask` specifies whether ith key's
@@ -159,6 +164,9 @@ public:
     /// present in the in-memory index but bounded by the part's partition minmax). Such columns are constant
     /// coordinates: their range is `(*key_bounds)[key_index]` for the whole call, they do not participate in
     /// the hyperrectangle enumeration, and their entries in `sparse_left_keys`/`sparse_right_keys` are ignored.
+    /// reverse_flags - per full key column, whether it is stored in descending order (reverse sorting key),
+    /// indexed by full key column position; an empty vector means all columns ascending. See the other
+    /// checkInRange overload.
     BoolMask checkInRange(
         const std::vector<size_t> & sparse_key_indices,
         const FieldRef * sparse_left_keys,
@@ -166,7 +174,8 @@ public:
         const DataTypes & sparse_data_types,
         const std::vector<UInt8> & equal_boundaries_mask,
         BoolMask initial_mask,
-        const Hyperrectangle * key_bounds = nullptr) const;
+        const Hyperrectangle * key_bounds = nullptr,
+        const std::vector<bool> & reverse_flags = {}) const;
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.

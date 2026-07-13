@@ -1998,12 +1998,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
 
-                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
-                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
-
-                        create_field_ref(range.begin, key_col, left);
-
-                        right = POSITIVE_INFINITY;
+                        /// Feed storage-order endpoints unchanged; `KeyCondition` reinterprets reverse
+                        /// columns via `reverse_flags`. The storage-order right endpoint of the last mark is
+                        /// "beyond the last row": that is +inf for an ascending column and -inf for a
+                        /// descending (reverse) one.
+                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
+                        sparse_key_right[sparse_pos] = reverse_flags[key_col] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
                     }
                 }
                 else
@@ -2025,11 +2025,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
 
-                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
-                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
-
-                        create_field_ref(range.begin, key_col, left);
-                        create_field_ref(range.end, key_col, right);
+                        /// Feed storage-order endpoints unchanged; `KeyCondition` reinterprets reverse
+                        /// columns via `reverse_flags`.
+                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
+                        create_field_ref(range.end, key_col, sparse_key_right[sparse_pos]);
                     }
                 }
 
@@ -2040,42 +2039,49 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     sparse_key_types,
                     equal_boundaries_mask,
                     initial_mask,
-                    &index_bounds);
+                    &index_bounds,
+                    reverse_flags);
             }
 
+            /// Feed storage-order endpoints unchanged; `KeyCondition` reinterprets reverse columns via
+            /// `reverse_flags`. `index_left` = value at range.begin, `index_right` = value at range.end.
             if (range.end == marks_count)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
-                        create_field_ref(range.begin, i, left);
+                        create_field_ref(range.begin, i, index_left[i]);
                     else
-                        left = index_bounds[i].left;
+                        /// Unloaded column: its per-range boundary at the storage begin is the low end of
+                        /// its (ascending) partition-minmax bound for an ascending column, and the high end
+                        /// for a descending one (storage begin holds the largest value).
+                        index_left[i] = reverse_flags[i] ? index_bounds[i].right : index_bounds[i].left;
 
-                    right = index_bounds[i].right;
+                    /// Storage-order right endpoint of the last mark is "beyond the last row": +inf for an
+                    /// ascending column, -inf for a descending one.
+                    index_right[i] = reverse_flags[i] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
                 }
             }
             else
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
                     {
-                        create_field_ref(range.begin, i, left);
-                        create_field_ref(range.end, i, right);
+                        create_field_ref(range.begin, i, index_left[i]);
+                        create_field_ref(range.end, i, index_right[i]);
                     }
                     else
                     {
-                        left = index_bounds[i].left;
-                        right = index_bounds[i].right;
+                        /// Unloaded column: use its partition-minmax bound. `index_bounds` is stored in
+                        /// value-ascending order, so for a descending column swap the two ends to keep
+                        /// storage-order semantics (begin = high value, end = low value).
+                        index_left[i] = reverse_flags[i] ? index_bounds[i].right : index_bounds[i].left;
+                        index_right[i] = reverse_flags[i] ? index_bounds[i].left : index_bounds[i].right;
                     }
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
+            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds, reverse_flags);
         };
 
         auto check_part_offset_condition = [&]()

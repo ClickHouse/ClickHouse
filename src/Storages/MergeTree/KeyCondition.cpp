@@ -4305,11 +4305,41 @@ static BoolMask forAnyHyperrectangle(
     size_t prefix_size,
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds,
+    const std::vector<bool> & reverse_flags,
     F && callback)
 {
     auto universe = [&](size_t i) -> Range
     {
         return key_bounds ? (*key_bounds)[i] : Range::createWholeUniverseTypeAware(data_types[i]);
+    };
+
+    /// Whether key column `i` is stored in descending order (reverse sorting key). For such a column
+    /// `left_keys[i]` (value at the mark-range begin) and `right_keys[i]` (value at the mark-range end)
+    /// are the endpoints in storage order, which for a descending column is the opposite of value order.
+    /// So the value-space range is built with the two ends and the bound direction swapped.
+    auto is_reverse = [&](size_t i) -> bool { return i < reverse_flags.size() && reverse_flags[i]; };
+
+    /// Build the value-space Range for the varying key column at `prefix_size` from the storage-order
+    /// endpoints, honouring the column's sort direction. `included` distinguishes the closed range of the
+    /// last key column from the open interval used for an intermediate column.
+    auto make_varying_range = [&](size_t i, bool lb, bool rb, bool included) -> Range
+    {
+        if (is_reverse(i))
+        {
+            /// Descending: storage-begin holds the larger value, storage-end the smaller one, so the
+            /// left/right roles and the bound direction are swapped relative to the ascending case.
+            if (lb && rb)
+                return Range(right_keys[i], included, left_keys[i], included);
+            if (lb)
+                return Range::createRightBounded(left_keys[i], included, universe(i));
+            return Range::createLeftBounded(right_keys[i], included, universe(i));
+        }
+
+        if (lb && rb)
+            return Range(left_keys[i], included, right_keys[i], included);
+        if (lb)
+            return Range::createLeftBounded(left_keys[i], included, universe(i));
+        return Range::createRightBounded(right_keys[i], included, universe(i));
     };
 
     if (!left_bounded && !right_bounded)
@@ -4322,7 +4352,7 @@ static BoolMask forAnyHyperrectangle(
         {
             if (left_keys[prefix_size] == right_keys[prefix_size])
             {
-                /// Point ranges.
+                /// Point ranges. (Direction does not matter for a single point.)
                 hyperrectangle[prefix_size] = Range(left_keys[prefix_size]);
                 ++prefix_size;
             }
@@ -4336,24 +4366,13 @@ static BoolMask forAnyHyperrectangle(
 
     if (prefix_size + 1 == key_size)
     {
-        if (left_bounded && right_bounded)
-            hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
-        else if (left_bounded)
-            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, universe(prefix_size));
-        else if (right_bounded)
-            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, universe(prefix_size));
-
+        hyperrectangle[prefix_size] = make_varying_range(prefix_size, left_bounded, right_bounded, true);
         return callback(hyperrectangle);
     }
 
     /// (x1 .. x2) × (-inf .. +inf)
 
-    if (left_bounded && right_bounded)
-        hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
-    else if (left_bounded)
-        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false, universe(prefix_size));
-    else if (right_bounded)
-        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false, universe(prefix_size));
+    hyperrectangle[prefix_size] = make_varying_range(prefix_size, left_bounded, right_bounded, false);
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
         hyperrectangle[i] = universe(i);
@@ -4365,7 +4384,7 @@ static BoolMask forAnyHyperrectangle(
     if (result.isComplete())
         return result;
 
-    /// [x1]       × [y1 .. +inf)
+    /// [x1]       × [y1 .. +inf)   (the storage-begin fixed point and everything after it in storage order)
 
     if (left_bounded)
     {
@@ -4373,13 +4392,13 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
+                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, reverse_flags, callback));
 
         if (result.isComplete())
             return result;
     }
 
-    /// [x2]       × (-inf .. y2]
+    /// [x2]       × (-inf .. y2]   (the storage-end fixed point and everything before it in storage order)
 
     if (right_bounded)
     {
@@ -4387,7 +4406,7 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
+                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, reverse_flags, callback));
     }
 
     return result;
@@ -4430,6 +4449,7 @@ static BoolMask forAnySparseHyperrectangle(
     size_t prefix_size,
     BoolMask initial_mask,
     const Hyperrectangle * key_bounds,
+    const std::vector<bool> & reverse_flags,
     F && callback)
 {
     /// The enumeration walks only the leading key columns that have per-range boundary values (the prefix
@@ -4442,6 +4462,32 @@ static BoolMask forAnySparseHyperrectangle(
     auto universe = [&](size_t sparse_pos, size_t key_index) -> Range
     {
         return key_bounds ? (*key_bounds)[key_index] : Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]);
+    };
+
+    /// Whether full-key column `key_index` is stored in descending order (reverse sorting key). For such a
+    /// column `sparse_left_keys` (value at the mark-range begin) and `sparse_right_keys` (value at the
+    /// mark-range end) are the endpoints in storage order, i.e. opposite of value order, so the value-space
+    /// range is built with the two ends and the bound direction swapped. See `forAnyHyperrectangle`.
+    auto is_reverse = [&](size_t key_index) -> bool { return key_index < reverse_flags.size() && reverse_flags[key_index]; };
+
+    /// Build the value-space Range for the varying used key column at full position `key_index`
+    /// (sparse position `sparse_pos`) from the storage-order endpoints, honouring the column's direction.
+    auto make_varying_range = [&](size_t sparse_pos, size_t key_index, bool lb, bool rb, bool included) -> Range
+    {
+        if (is_reverse(key_index))
+        {
+            if (lb && rb)
+                return Range(sparse_right_keys[sparse_pos], included, sparse_left_keys[sparse_pos], included);
+            if (lb)
+                return Range::createRightBounded(sparse_left_keys[sparse_pos], included, universe(sparse_pos, key_index));
+            return Range::createLeftBounded(sparse_right_keys[sparse_pos], included, universe(sparse_pos, key_index));
+        }
+
+        if (lb && rb)
+            return Range(sparse_left_keys[sparse_pos], included, sparse_right_keys[sparse_pos], included);
+        if (lb)
+            return Range::createLeftBounded(sparse_left_keys[sparse_pos], included, universe(sparse_pos, key_index));
+        return Range::createRightBounded(sparse_right_keys[sparse_pos], included, universe(sparse_pos, key_index));
     };
 
 #ifndef NDEBUG
@@ -4489,20 +4535,7 @@ static BoolMask forAnySparseHyperrectangle(
         if (is_key_col_used)
         {
             const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
-            if (left_bounded && right_bounded)
-            {
-                sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos], true, sparse_right_keys[sparse_pos], true);
-            }
-            else if (left_bounded)
-            {
-                sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
-                    sparse_left_keys[sparse_pos], true, universe(sparse_pos, prefix_size));
-            }
-            else if (right_bounded)
-            {
-                sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
-                    sparse_right_keys[sparse_pos], true, universe(sparse_pos, prefix_size));
-            }
+            sparse_hyperrectangle[sparse_pos] = make_varying_range(sparse_pos, prefix_size, left_bounded, right_bounded, true);
         }
 
         return callback(sparse_hyperrectangle);
@@ -4513,20 +4546,7 @@ static BoolMask forAnySparseHyperrectangle(
     if (is_key_col_used)
     {
         const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
-        if (left_bounded && right_bounded)
-        {
-            sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos], false, sparse_right_keys[sparse_pos], false);
-        }
-        else if (left_bounded)
-        {
-            sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
-                sparse_left_keys[sparse_pos], false, universe(sparse_pos, prefix_size));
-        }
-        else if (right_bounded)
-        {
-            sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
-                sparse_right_keys[sparse_pos], false, universe(sparse_pos, prefix_size));
-        }
+        sparse_hyperrectangle[sparse_pos] = make_varying_range(sparse_pos, prefix_size, left_bounded, right_bounded, false);
     }
 
     /// Tail coordinates in (prefix_size, enumerated_key_prefix_size) for sparse columns become their known bound (whole universe
@@ -4574,6 +4594,7 @@ static BoolMask forAnySparseHyperrectangle(
                 prefix_size + 1,
                 initial_mask,
                 key_bounds,
+                reverse_flags,
                 callback));
 
         if (result.isComplete())
@@ -4605,6 +4626,7 @@ static BoolMask forAnySparseHyperrectangle(
                 prefix_size + 1,
                 initial_mask,
                 key_bounds,
+                reverse_flags,
                 callback));
     }
 
@@ -4617,14 +4639,15 @@ BoolMask KeyCondition::checkInRange(
     const FieldRef * right_keys,
     const DataTypes & data_types,
     BoolMask initial_mask,
-    const Hyperrectangle * key_bounds) const
+    const Hyperrectangle * key_bounds,
+    const std::vector<bool> & reverse_flags) const
 {
     Hyperrectangle key_ranges;
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
         key_ranges.push_back(Range::createWholeUniverseTypeAware(data_types[i]));
 
-    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask, key_bounds,
+    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask, key_bounds, reverse_flags,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
@@ -4639,7 +4662,8 @@ BoolMask KeyCondition::checkInRange(
     const DataTypes & sparse_data_types,
     const std::vector<UInt8> & equal_boundaries_mask,
     BoolMask initial_mask,
-    const Hyperrectangle * key_bounds) const
+    const Hyperrectangle * key_bounds,
+    const std::vector<bool> & reverse_flags) const
 {
     const size_t sparse_keys_size = sparse_key_indices.size();
 
@@ -4696,6 +4720,7 @@ BoolMask KeyCondition::checkInRange(
         /*prefix_size*/ 0,
         initial_mask,
         key_bounds,
+        reverse_flags,
         [&](const Hyperrectangle & key_ranges_hyperrectangle)
         {
             return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);
