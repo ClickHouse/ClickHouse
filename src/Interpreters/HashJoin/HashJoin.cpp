@@ -3,9 +3,8 @@
 #include <memory>
 #include <vector>
 
-#ifdef OS_LINUX
-#    include <unistd.h>
-#endif
+#include <base/getL2CacheSize.h>
+#include <base/scope_guard.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -63,17 +62,9 @@ extern const int INVALID_JOIN_ON_EXPRESSION;
 
 size_t getMinBytesForPrefetchInJoin()
 {
-    /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-    /// Threshold: 4 * max(L2 cache size, 256KB). Cached after first call.
-    static const size_t result = []
-    {
-        size_t l2_size = 0;
-#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
-        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
-            l2_size = ret;
-#endif
-        return 4 * std::max<size_t>(l2_size, 256 * 1024);
-    }();
+    /// Enable prefetch once the hash table no longer fits in L2; below that it
+    /// is cache resident and prefetching is pure overhead. Cached after first call.
+    static const size_t result = getL2CacheSize();
     return result;
 }
 
@@ -157,6 +148,39 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
 }
 
 static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes, bool use_two_level_maps);
+static std::optional<HashJoin::Type> tryGetLowCardinalityMethod(const ColumnPtr & column);
+
+/// A multi-disjunct (OR) join shares a single data->type across all disjuncts. When the disjuncts
+/// pick different packed fixed-key maps (e.g. keys32 for a (UInt16, UInt16) clause and keys64 for a
+/// (UInt32, UInt32) clause), use the widest packed map that can hold all of them instead of
+/// downgrading the whole join to the generic `hashed` map: a narrower packing always fits into a
+/// wider fixed-key map. Only genuinely different key kinds fall back to `hashed`.
+static HashJoin::Type mergeJoinMethods(HashJoin::Type lhs, HashJoin::Type rhs)
+{
+    using Type = HashJoin::Type;
+
+    /// Rank within a packing family (single-level and two-level are ranked separately); 0 = not a
+    /// packed fixed-key map. Within one join all disjuncts are the same level, so two packed types
+    /// being merged always belong to the same family.
+    auto packed_rank = [](Type type) -> int
+    {
+        switch (type)
+        {
+            case Type::keys32: case Type::two_level_keys32:   return 1;
+            case Type::keys64: case Type::two_level_keys64:   return 2;
+            case Type::keys128: case Type::two_level_keys128: return 3;
+            case Type::keys256: case Type::two_level_keys256: return 4;
+            default:                                          return 0;
+        }
+    };
+
+    const int lhs_rank = packed_rank(lhs);
+    const int rhs_rank = packed_rank(rhs);
+    if (lhs_rank != 0 && rhs_rank != 0)
+        return lhs_rank >= rhs_rank ? lhs : rhs;
+
+    return Type::hashed;
+}
 
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
@@ -164,7 +188,8 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps)
+    bool use_two_level_maps,
+    const StatsCollectingParams & stats_collecting_params_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -180,6 +205,7 @@ HashJoin::HashJoin(
     , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
     , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
     , enable_prefetch(table_join->enableSoftwarePrefetchInJoin())
+    , stats_collecting_params(stats_collecting_params_)
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -233,6 +259,16 @@ HashJoin::HashJoin(
         sample_block_with_columns_to_add = right_table_keys = materializeBlock(right_sample_block);
     }
 
+    /// Detect a single non-nullable LowCardinality key before the keys are materialized below, so it
+    /// can use a dictionary-aware map. Restricted to a single disjunct and non-two-level maps for now.
+    std::optional<Type> low_cardinality_method;
+    if (table_join->oneDisjunct() && !use_two_level_maps && strictness != JoinStrictness::Asof)
+    {
+        const auto & only_clause_key_names = table_join->getOnlyClause().key_names_right;
+        if (only_clause_key_names.size() == 1)
+            low_cardinality_method = tryGetLowCardinalityMethod(right_table_keys.getByName(only_clause_key_names[0]).column);
+    }
+
     materializeBlockInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block);
@@ -276,10 +312,15 @@ HashJoin::HashJoin(
         {
             /// Choose data structure to use for JOIN.
             auto current_join_method = chooseMethod(kind, key_columns, key_sizes.emplace_back(), use_two_level_maps);
+            if (low_cardinality_method)
+            {
+                current_join_method = *low_cardinality_method;
+                LOG_TRACE(log, "Using a dictionary-aware hash map for the single LowCardinality join key");
+            }
             if (data->type == Type::EMPTY)
                 data->type = current_join_method;
             else if (data->type != current_join_method)
-                data->type = Type::hashed;
+                data->type = mergeJoinMethods(data->type, current_join_method);
         }
     }
 
@@ -299,21 +340,6 @@ HashJoin::HashJoin(
             ++pos;
         }
     }
-}
-
-size_t HashJoin::ScatteredColumns::allocatedBytes() const
-{
-    if (columns_info.columns.empty())
-        return 0;
-
-    size_t rows = columns_info.columns.front()->size();
-    if (rows == 0)
-        return 0;
-
-    size_t res = 0;
-    for (const auto & column : columns_info.columns)
-        res += column->allocatedBytes();
-    return res * selector.size() / rows;
 }
 
 size_t HashJoin::NullMapHolder::allocatedBytes() const
@@ -375,6 +401,10 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
+    if (all_fixed && keys_bytes <= 4)
+        return Type::keys32;
+    if (all_fixed && keys_bytes <= 8)
+        return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
     if (all_fixed && keys_bytes <= 32)
@@ -417,6 +447,10 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
             return Type::two_level_key32;
         case Type::key64:
             return Type::two_level_key64;
+        case Type::keys32:
+            return Type::two_level_keys32;
+        case Type::keys64:
+            return Type::two_level_keys64;
         case Type::keys128:
             return Type::two_level_keys128;
         case Type::keys256:
@@ -430,6 +464,35 @@ static HashJoin::Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_colu
         default:
             return type;
     }
+}
+
+/// If the column is a single non-nullable LowCardinality key, return the dictionary-aware map type
+/// to use for it. LowCardinality(Nullable(T)) and wide numeric dictionaries fall back to the regular
+/// (materialized) path. Mirrors the single-LowCardinality branch of AggregatedDataVariants::chooseMethod.
+static std::optional<HashJoin::Type> tryGetLowCardinalityMethod(const ColumnPtr & column)
+{
+    using Type = HashJoin::Type;
+
+    const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(column.get());
+    if (!low_cardinality_column)
+        return {};
+
+    if (low_cardinality_column->getDictionary().nestedColumnIsNullable())
+        return {};
+
+    const auto * nested = low_cardinality_column->getDictionary().getNestedNotNullableColumn().get();
+
+    /// Numeric keys are intentionally not routed here. A materialized numeric key uses the key* maps,
+    /// which (with `enable_join_fixed_hash_table_conversion`) convert a dense small range to a
+    /// `range*_key*` FixedHashMap after build and can publish the shared fixed-hash-table runtime
+    /// filter; the dictionary-aware map skips both for no measurable gain. The benefit of the
+    /// dictionary-aware map is concentrated on variable-length string keys.
+    if (typeid_cast<const ColumnString *>(nested))
+        return Type::low_cardinality_key_string;
+    if (typeid_cast<const ColumnFixedString *>(nested))
+        return Type::low_cardinality_key_fixed_string;
+
+    return {};
 }
 
 template <typename KeyGetter, bool is_asof_join>
@@ -667,9 +730,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 
-    /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
+    /// RowRef::row_no is UInt32 (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
-    if (unlikely(selector.size() > std::numeric_limits<RowRef::SizeT>::max()))
+    if (unlikely(selector.size() > std::numeric_limits<decltype(RowRef::row_no)>::max()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", selector.size());
 
     /** We do not allocate memory for stored blocks inside HashJoin, only for hash table.
@@ -722,7 +785,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     for (const auto & column_name : right_key_names)
     {
         const auto & column = block.getByName(column_name).column;
-        all_key_columns[column_name] = removeSpecialRepresentations(column->convertToFullColumnIfConst())->convertToFullColumnIfLowCardinality();
+        auto prepared_key_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
+        /// Keep the dictionary for the single-LowCardinality-column maps; their key getter needs it.
+        if (!isLowCardinalityType(data->type))
+            prepared_key_column = prepared_key_column->convertToFullColumnIfLowCardinality();
+        all_key_columns[column_name] = prepared_key_column;
     }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
@@ -767,8 +834,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         }
 
         doDebugAsserts();
-        data->columns.emplace_back(ColumnsInfo(block_to_save.getColumns()), std::move(selector));
-        const auto * stored_columns = &data->columns.back();
+        data->columns.emplace_back(block_to_save.getColumns(), std::move(selector));
+        auto * stored_columns = &data->columns.back();
+        stored_columns->block_no = data->stored_columns_index->add(stored_columns);
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         data->allocated_size += data_allocated_bytes;
         doDebugAsserts();
@@ -846,7 +914,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             map,
                             key_columns,
                             key_sizes[onexpr_idx],
-                            &stored_columns->columns_info,
+                            stored_columns->block_no,
                             stored_columns->selector,
                             null_map,
                             join_mask_col,
@@ -855,7 +923,8 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             all_values_unique);
 
                         if (flag_per_row)
-                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns_info.columns, stored_columns->selector);
+                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(
+                                stored_columns->block_no, stored_columns->columns.at(0)->size(), stored_columns->selector);
                     });
             }
 
@@ -879,6 +948,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
                 data->allocated_size -= data_allocated_bytes;
                 data->rows_to_join -= rows;
+                /// Nothing was inserted, so no refs to this block exist; null the index entry so
+                /// that a stale ref trips the chassert in `StoredColumnsIndex::at` in debug builds
+                /// (and dereferences nullptr deterministically in release builds) instead of
+                /// silently reading freed memory.
+                data->stored_columns_index->clearEntry(stored_columns->block_no);
                 data->columns.pop_back();
                 doDebugAsserts();
             }
@@ -928,6 +1002,13 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         ReadableSize(query_memory_usage_delta),
         max_total_bytes_for_query ? fmt::format("/ {}", ReadableSize(max_total_bytes_for_query)) : "");
 
+    /// Each cloneResized below replaces a stored column object in place, so any emit table built by a
+    /// prior query (a persistent StorageJoin builds one per SELECT, then OPTIMIZE/insert runs this) is
+    /// left with dangling `const IColumn *`. Bump the generation on every exit - including the exception
+    /// paths, where some columns were already replaced - so the next probe rebuilds it against the new
+    /// columns. invalidateEmitTable only takes a mutex and increments a counter, so it is unwind-safe.
+    SCOPE_EXIT({ data->stored_columns_index->invalidateEmitTable(); });
+
     for (auto & stored_columns : data->columns)
     {
         doDebugAsserts();
@@ -936,12 +1017,12 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 
         try
         {
-            for (auto & column : stored_columns.columns_info.columns)
+            for (auto & column : stored_columns.columns)
                 column = column->cloneResized(column->size());
 
             /// `cloneResized` replaces each column with a new object.
             /// The raw pointers in `replicated_columns` pointed at the old objects and are now dangling.
-            stored_columns.columns_info.rebuildReplicatedColumns();
+            stored_columns.rebuildReplicatedColumns();
         }
         catch (...)
         {
@@ -949,7 +1030,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
             /// some columns may have already been replaced with shrunk copies while
             /// data->allocated_size still reflects the old sizes. Recalculate to stay consistent.
             /// Also rebuild replicated_columns for columns that were already replaced, to avoid dangling pointers.
-            stored_columns.columns_info.rebuildReplicatedColumns();
+            stored_columns.rebuildReplicatedColumns();
             size_t partial_new_size = stored_columns.allocatedBytes();
             if (old_size >= partial_new_size)
                 data->allocated_size -= old_size - partial_new_size;
@@ -998,7 +1079,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 class CrossJoinResult final : public IJoinResult
 {
     size_t left_row = 0;
-    std::optional<HashJoin::ScatteredColumnsList::iterator> right_block_it;
+    std::optional<HashJoin::StoredBlocksList::iterator> right_block_it;
     std::optional<TemporaryBlockStreamReaderHolder> reader;
     Block block;
     const HashJoin & join;
@@ -1056,7 +1137,7 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
         if (enough_data())
             break;
 
-        auto process_right_block = [&](const ColumnsInfo & columns_info, size_t rows_right)
+        auto process_right_block = [&](const StoredBlock & stored_block, size_t rows_right)
         {
             rows_added += rows_right;
 
@@ -1065,14 +1146,14 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
 
             for (size_t col_num = 0; col_num < num_columns_to_add; ++col_num)
             {
-                if (const auto * replicated_column_right = columns_info.replicated_columns[col_num])
+                if (const auto * replicated_column_right = stored_block.replicated_columns[col_num])
                 {
                     for (size_t row = 0; row != rows_right; ++row)
                         dst_columns[num_existing_columns + col_num]->insertFrom(*replicated_column_right->getNestedColumn(), replicated_column_right->getIndexes().getIndexAt(row));
                 }
                 else
                 {
-                    const IColumn & column_right = *columns_info.columns[col_num];
+                    const IColumn & column_right = *stored_block.columns[col_num];
                     dst_columns[num_existing_columns + col_num]->insertRangeFrom(column_right, 0, rows_right);
                 }
             }
@@ -1098,18 +1179,18 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
             /// The following statement cannot be substituted with `process_right_block(!have_compressed ? block_right : block_right.decompress())`
             /// because it will lead to copying of `block_right` even if its branch is taken (because common type of `block_right` and `block_right.decompress()` is `Block`).
             if (!join.have_compressed)
-                process_right_block(scattered_columns.columns_info, scattered_columns.selector.size());
+                process_right_block(scattered_columns, scattered_columns.selector.size());
             else
             {
-                chassert(scattered_columns.columns_info.columns.empty()
-                    || scattered_columns.selector.size() == scattered_columns.columns_info.columns.at(0)->size()); /// Compression only happens for cross join and scattering only for concurrent hash
+                chassert(scattered_columns.columns.empty()
+                    || scattered_columns.selector.size() == scattered_columns.columns.at(0)->size()); /// Compression only happens for cross join and scattering only for concurrent hash
 
                 Columns new_columns;
-                new_columns.reserve(scattered_columns.columns_info.columns.size());
-                for (const auto & column : scattered_columns.columns_info.columns)
+                new_columns.reserve(scattered_columns.columns.size());
+                for (const auto & column : scattered_columns.columns)
                     new_columns.emplace_back(column->decompress());
 
-                process_right_block(ColumnsInfo(std::move(new_columns)), scattered_columns.selector.size());
+                process_right_block(StoredBlock(std::move(new_columns)), scattered_columns.selector.size());
             }
         }
 
@@ -1133,7 +1214,7 @@ IJoinResult::JoinResultBlock CrossJoinResult::next()
                     break;
                 }
 
-                process_right_block(ColumnsInfo(block_right.getColumns()), block_right.rows());
+                process_right_block(StoredBlock(block_right.getColumns()), block_right.rows());
             }
         }
 
@@ -1357,6 +1438,21 @@ HashJoin::~HashJoin()
         LOG_TEST(log, "{}Join data has been already released", instance_log_id);
         return;
     }
+
+    try
+    {
+        if (build_phase_finished && stats_collecting_params.isCollectionAndUseEnabled())
+        {
+            if (const auto ht_size = getTotalRowCount())
+                getHashTablesStatistics<HashJoinEntry>().update(
+                    {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
     LOG_TEST(
         log,
         "{}Join data is being destroyed, {} bytes and {} rows in hash table",
@@ -1417,7 +1513,11 @@ void HashJoin::updateNonJoinedRowsStatus()
 template <typename Mapped>
 struct CollectorNonJoined
 {
-    static void collect(const Mapped & mapped, VectorWithMemoryTracking<const ColumnsInfo *> & columns_infos, VectorWithMemoryTracking<UInt32> & row_numbers)
+    static void collect(
+        const Mapped & mapped,
+        const StoredBlock * const * stored_columns,
+        VectorWithMemoryTracking<const StoredBlock *> & blocks,
+        VectorWithMemoryTracking<UInt32> & row_numbers)
     {
         constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
         [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, RowRef>;
@@ -1428,15 +1528,16 @@ struct CollectorNonJoined
         }
         else if constexpr (mapped_one)
         {
-            columns_infos.push_back(mapped.columns_info);
-            row_numbers.push_back(mapped.row_num);
+            blocks.push_back(stored_columns[mapped.blockNo()]);
+            row_numbers.push_back(mapped.rowNo());
         }
         else
         {
             for (auto it = mapped.begin(); it.ok(); ++it)
             {
-                columns_infos.push_back(it->columns_info);
-                row_numbers.push_back(it->row_num);
+                const UInt64 ref_word = *it;
+                blocks.push_back(stored_columns[refWordBlockNo(ref_word)]);
+                row_numbers.push_back(refWordRowNo(ref_word));
             }
         }
     }
@@ -1508,28 +1609,28 @@ private:
 
     std::any position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
-    std::optional<HashJoin::ScatteredColumnsList::const_iterator> used_position;
+    std::optional<HashJoin::StoredBlocksList::const_iterator> used_position;
 
     bool isBucketInRange(size_t bucket) const
     {
         return num_buckets <= 1 || (bucket % num_buckets) == bucket_idx;
     }
 
-    size_t fillColumnsFromData(const HashJoin::ScatteredColumnsList & columns, MutableColumns & columns_right)
+    size_t fillColumnsFromData(const HashJoin::StoredBlocksList & columns, MutableColumns & columns_right)
     {
         if (!position.has_value())
-            position = std::make_any<HashJoin::ScatteredColumnsList::const_iterator>(columns.begin());
+            position = std::make_any<HashJoin::StoredBlocksList::const_iterator>(columns.begin());
 
-        auto & block_it = std::any_cast<HashJoin::ScatteredColumnsList::const_iterator &>(position);
+        auto & block_it = std::any_cast<HashJoin::StoredBlocksList::const_iterator &>(position);
         auto end = columns.end();
 
         size_t rows_added = 0;
         for (; block_it != end; ++block_it)
         {
-            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, block_it->columns_info.columns.at(0)->size() - current_block_start);
+            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, block_it->columns.at(0)->size() - current_block_start);
             for (size_t j = 0; j < columns_right.size(); ++j)
             {
-                if (const auto * replicated_column = block_it->columns_info.replicated_columns[j])
+                if (const auto * replicated_column = block_it->replicated_columns[j])
                 {
                     size_t current_block_end = current_block_start + rows_from_block;
                     for (size_t row = current_block_start; row < current_block_end; ++row)
@@ -1537,7 +1638,7 @@ private:
                 }
                 else
                 {
-                    const auto & col = block_it->columns_info.columns[j];
+                    const auto & col = block_it->columns[j];
                     columns_right[j]->insertRangeFrom(*col, current_block_start, rows_from_block);
                 }
             }
@@ -1547,7 +1648,7 @@ private:
             {
                 /// How many rows have been read
                 current_block_start += rows_from_block;
-                if (block_it->columns_info.columns.at(0)->size() <= current_block_start)
+                if (block_it->columns.at(0)->size() <= current_block_start)
                 {
                     /// current block was fully read
                     ++block_it;
@@ -1600,13 +1701,13 @@ private:
             for (auto & it = *used_position; it != end && row_nums.size() < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
-                size_t rows = mapped_block.columns_info.columns.at(0)->size();
+                size_t rows = mapped_block.columns.at(0)->size();
 
                 for (size_t row = 0; row < rows; ++row)
                 {
-                    if (!parent.isUsed(&mapped_block.columns_info.columns, row))
+                    if (!parent.isUsed(mapped_block.block_no, row))
                     {
-                        many_columns.push_back(&mapped_block.columns_info);
+                        many_columns.push_back(&mapped_block);
                         row_nums.push_back(static_cast<UInt32>(row));
                     }
                 }
@@ -1623,6 +1724,7 @@ private:
 
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
+            const StoredBlock * const * stored_columns = parent.data->stored_columns_index->blocksData();
 
             /// case: two-level hash tables with parallel iteration
             if constexpr (requires { it.getBucket(); map.NUM_BUCKETS; })
@@ -1651,7 +1753,7 @@ private:
                     if (!parent.isUsed(offset))
                     {
                         const Mapped & mapped = it->getMapped();
-                        CollectorNonJoined<Mapped>::collect(mapped, many_columns, row_nums);
+                        CollectorNonJoined<Mapped>::collect(mapped, stored_columns, many_columns, row_nums);
                     }
 
                     ++it;
@@ -1671,7 +1773,7 @@ private:
                         continue;
 
                     const Mapped & mapped = it->getMapped();
-                    CollectorNonJoined<Mapped>::collect(mapped, many_columns, row_nums);
+                    CollectorNonJoined<Mapped>::collect(mapped, stored_columns, many_columns, row_nums);
 
                     if (row_nums.size() >= max_block_size)
                     {
@@ -1717,7 +1819,7 @@ private:
             {
                 if (nullmap && (*nullmap)[row])
                 {
-                    many_columns.push_back(&columns->columns_info);
+                    many_columns.push_back(columns);
                     row_nums.push_back(static_cast<UInt32>(row));
                 }
             }
@@ -1804,12 +1906,12 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     LOG_TRACE(
         log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
-    auto extract_source_blocks = [](ScatteredColumnsList && columns_list, const Block & sample_block)
+    auto extract_source_blocks = [](StoredBlocksList && columns_list, const Block & sample_block)
     {
         BlocksList result;
         for (auto & columns : columns_list)
         {
-            Block block = sample_block.cloneWithColumns(columns.columns_info.columns);
+            Block block = sample_block.cloneWithColumns(columns.columns);
             /// When used with ConcurrentHashJoin, each slot stores full original block columns
             /// with a selector indicating which rows belong to that slot. Apply the selector
             /// to materialize only the selected rows, avoiding duplication across slots.
@@ -1820,7 +1922,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         return result;
     };
 
-    ScatteredColumnsList right_columns = std::move(data->columns);
+    StoredBlocksList right_columns = std::move(data->columns);
     if (!restructure)
     {
         auto sample_block = std::move(data->sample_block);
@@ -1852,7 +1954,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         for (size_t i = 0; i < positions.size(); ++i)
         {
             auto column = data->sample_block.getByPosition(positions[i]);
-            column.column = saved_columns.columns_info.columns[positions[i]];
+            column.column = saved_columns.columns[positions[i]];
             correctNullabilityInplace(column, is_nullable[i]);
             restored_block.insert(column);
         }
@@ -1913,9 +2015,9 @@ bool HashJoin::isUsed(size_t off) const
     return used_flags->getUsedSafe(off);
 }
 
-bool HashJoin::isUsed(const Columns * columns_ptr, size_t row_idx) const
+bool HashJoin::isUsed(UInt32 block_no, size_t row_idx) const
 {
-    return used_flags->getUsedSafe(columns_ptr, row_idx);
+    return used_flags->getUsedSafe(block_no, row_idx);
 }
 
 bool HashJoin::needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const
@@ -1940,49 +2042,71 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Only left or inner join table can be reranged.");
     else
     {
-        auto merge_rows_into_one_block = [&](ScatteredColumnsList & columns_list, RowRefList & rows_ref)
+        const StoredBlock * const * stored_columns = data->stored_columns_index->blocksData();
+
+        auto merge_rows_into_one_block = [&](StoredBlocksList & columns_list, RowRefList & rows_ref)
         {
             auto it = rows_ref.begin();
             if (!it.ok())
                 return;
 
-            if (columns_list.empty() || columns_list.back().columns_info.columns.at(0)->size() >= DEFAULT_BLOCK_SIZE)
+            const StoredBlock * head_block = stored_columns[refWordBlockNo(*it)];
+
+            if (columns_list.empty() || columns_list.back().columns.at(0)->size() >= DEFAULT_BLOCK_SIZE)
             {
                 Columns columns;
-                columns.reserve(it->columns_info->columns.size());
-                for (const auto & col : (*it)->columns_info->columns)
+                columns.reserve(head_block->columns.size());
+                for (const auto & col : head_block->columns)
                     columns.push_back(col->cloneEmpty());
-                columns_list.emplace_back(ColumnsInfo(std::move(columns)), ScatteredBlock::Selector());
+                columns_list.emplace_back(std::move(columns), ScatteredBlock::Selector());
+                columns_list.back().block_no = data->stored_columns_index->add(&columns_list.back());
+                /// The index storage might have been reallocated by the append.
+                stored_columns = data->stored_columns_index->blocksData();
             }
 
-            auto & columns_info = columns_list.back().columns_info;
-            size_t start_row = columns_info.columns.at(0)->size();
+            auto & merged = columns_list.back();
+            size_t start_row = merged.columns.at(0)->size();
+
+            /// Detach all destination columns once (COW-safe: clones only if shared) and append through the
+            /// mutable handles, then move them back. This keeps the per-row append loop free of COW plumbing.
+            MutableColumns mutable_columns;
+            mutable_columns.reserve(merged.columns.size());
+            for (auto & column : merged.columns)
+                mutable_columns.push_back(IColumn::mutate(std::move(column)));
+
             for (; it.ok(); ++it)
             {
-                for (size_t i = 0; i < columns_info.columns.size(); ++i)
+                const UInt64 ref_word = *it;
+                const StoredBlock * src_block = stored_columns[refWordBlockNo(ref_word)];
+                const size_t src_row = refWordRowNo(ref_word);
+                for (size_t i = 0; i < mutable_columns.size(); ++i)
                 {
-                    auto & col = columns_info.columns[i]->assumeMutableRef();
+                    auto & col = *mutable_columns[i];
                     /// Check if we insert into non replicated column from a replicated column.
-                    if (!columns_info.replicated_columns[i] && it->columns_info->replicated_columns[i])
+                    if (!merged.replicated_columns[i] && src_block->replicated_columns[i])
                     {
-                        const auto * src_replicated_column = it->columns_info->replicated_columns[i];
-                        col.insertFrom(*src_replicated_column->getNestedColumn(), src_replicated_column->getIndexes().getIndexAt(it->row_num));
+                        const auto * src_replicated_column = src_block->replicated_columns[i];
+                        col.insertFrom(*src_replicated_column->getNestedColumn(), src_replicated_column->getIndexes().getIndexAt(src_row));
                     }
                     else
                     {
-                        col.insertFrom(*(it->columns_info->columns[i]), it->row_num);
+                        col.insertFrom(*(src_block->columns[i]), src_row);
                     }
                 }
             }
-            size_t new_rows = columns_info.columns.at(0)->size();
+
+            for (size_t i = 0; i < mutable_columns.size(); ++i)
+                merged.columns[i] = std::move(mutable_columns[i]);
+
+            size_t new_rows = merged.columns.at(0)->size();
             if (new_rows > start_row)
             {
-                RowRefList new_rows_ref(&columns_info, start_row, new_rows - start_row);
-                rows_ref = std::move(new_rows_ref);
+                const size_t merged_rows = new_rows - start_row;
+                rows_ref.setRange(RowRef(merged.block_no, start_row).encode(), merged_rows, data->pool);
             }
         };
 
-        auto visit_rows_map = [&](ScatteredColumnsList & columns, MapsAll & rows_map)
+        auto visit_rows_map = [&](StoredBlocksList & columns, MapsAll & rows_map)
         {
             switch (data->type)
             {
@@ -1997,14 +2121,18 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
                     break;
             }
         };
-        ScatteredColumnsList sorted_columns;
+        StoredBlocksList sorted_columns;
         visit_rows_map(sorted_columns, map);
         doDebugAsserts();
         data->columns.swap(sorted_columns);
+        /// The replaced blocks are destroyed below; null their index entries so that any stale
+        /// ref fails loudly instead of reading freed memory. All live cells were rewritten above.
+        for (const auto & old_columns : sorted_columns)
+            data->stored_columns_index->clearEntry(old_columns.block_no);
         size_t new_blocks_allocated_size = 0;
         for (auto & columns : data->columns)
         {
-            columns.selector = ScatteredBlock::Selector(columns.columns_info.columns.at(0)->size());
+            columns.selector = ScatteredBlock::Selector(columns.columns.at(0)->size());
             new_blocks_allocated_size += columns.allocatedBytes();
         }
         data->allocated_size = new_blocks_allocated_size;
@@ -2344,7 +2472,7 @@ void HashJoin::publishSharedRuntimeFilters()
         return;
     shared_runtime_filters_publish_attempted = true;
 
-    if (!table_join->enableJoinRuntimeFilterSharedFixedHashTable())
+    if (!table_join->joinRuntimeFilterFromFixedHashTable())
         return;
 
     const auto & descriptors = table_join->getSharedRuntimeFilterDescriptors();
@@ -2499,13 +2627,15 @@ void HashJoin::publishSharedRuntimeFilters()
     if (!probe_fn)
         return;
 
-    /// Replace any Set/BloomFilter that BuildRuntimeFilterStep installed earlier.
-    for (const auto & [filter_name, descr_build_key] : descriptors)
+    /// Replace any Set/BloomFilter that BuildRuntimeFilterStep installed earlier. The descriptor's
+    /// first element is the rendezvous key (the same key `BuildRuntimeFilterTransform` registered the
+    /// filter under and the probe-side `__applyFilter` looks it up by), not the stable display name.
+    for (const auto & [filter_key, descr_build_key] : descriptors)
     {
         if (descr_build_key != build_key_name)
             continue;
 
-        auto existing = lookup->find(filter_name);
+        auto existing = lookup->find(filter_key);
         if (!existing)
             continue;
 
@@ -2525,7 +2655,9 @@ void HashJoin::publishSharedRuntimeFilters()
             existing->getPassRatioThresholdForDisabling(),
             existing->getBlocksToSkipBeforeReenabling(),
             probe_fn);
-        lookup->replace(filter_name, std::move(filter));
+        /// `replace` keeps the original registration's display name in the lookup, so stats stay legible.
+        LOG_TRACE(getLogger("HashJoin"), "Published shared fixed-hash-table runtime filter under key '{}'", filter_key);
+        lookup->replace(filter_key, std::move(filter));
     }
 }
 
@@ -2577,6 +2709,8 @@ void HashJoin::onBuildPhaseFinish()
     }
     updateNonJoinedRowsStatus();
 
+    build_phase_finished = true;
+
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
 }
 
@@ -2587,7 +2721,7 @@ bool HashJoin::hasPostBuildPhase() const
     const bool needs_shared_filter_publish =
         data && data->rows_to_join && data->maps.size() == 1
         && (data->type == Type::key8 || data->type == Type::key16)
-        && table_join->enableJoinRuntimeFilterSharedFixedHashTable()
+        && table_join->joinRuntimeFilterFromFixedHashTable()
         && !table_join->getSharedRuntimeFilterDescriptors().empty();
 
     return rightTableCanBeReranged() || canConvertToFixedHashMap() || needs_shared_filter_publish;

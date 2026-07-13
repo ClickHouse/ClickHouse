@@ -1,0 +1,91 @@
+---
+description: 'Évalue une requête Prometheus à partir des données d’une table TimeSeries.'
+sidebarTitle: 'prometheusQuery'
+slug: /sql-reference/table-functions/prometheusQuery
+title: 'prometheusQuery'
+doc_type: 'reference'
+---
+
+Évalue une requête Prometheus à partir des données d’une table TimeSeries.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+prometheusQuery('db_name', 'time_series_table', 'promql_query', evaluation_time)
+prometheusQuery(db_name.time_series_table, 'promql_query', evaluation_time)
+prometheusQuery('time_series_table', 'promql_query', evaluation_time)
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+* `db_name` - Le nom de la base de données dans laquelle se trouve une table TimeSeries.
+* `time_series_table` - Le nom d’une table TimeSeries.
+* `promql_query` - Une requête écrite en [syntaxe PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/).
+* `evaluation_time - L’horodatage d’évaluation. Pour évaluer une requête à l’instant présent, utilisez `now()`comme`evaluation&#95;time&#96;.
+
+<div id="returned_value">
+  ## Valeur renvoyée
+</div>
+
+La fonction peut renvoyer des colonnes différentes selon le type de résultat de la requête passée au paramètre `promql_query` :
+
+| Type de résultat | Colonnes renvoyées                                                                        | Exemple                                             |
+| ---------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector           | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix           | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar           | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string           | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+
+<div id="supported-promql-features">
+  ## Fonctionnalités PromQL prises en charge
+</div>
+
+<div id="selectors">
+  ### Sélecteurs
+</div>
+
+Sélecteurs instantanés, sélecteurs d’intervalle, correspondances de labels (`=`, `!=`, `=~`, `!~`), modificateurs de décalage, modificateurs d’horodatage `@` et sous-requêtes.
+
+<div id="functions">
+  ### Fonctions
+</div>
+
+| Catégorie     | Fonctions                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| Plage         | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| Maths         | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
+| Trigonométrie | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
+| DateTime      | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
+| Type          | `scalar`, `vector`                                                                               |
+| Histogramme   | `histogram_quantile`                                                                             |
+| Autre         | `time`, `pi`                                                                                     |
+
+**Remarque** : `histogram_quantile` utilise une interpolation linéaire sur les classes des histogrammes classiques (repérées par le label `le`). Les histogrammes natifs ne sont pas encore pris en charge, et l’argument `phi` (niveau de quantile) doit actuellement être une constante scalaire — les expressions qui varient d’un pas à l’autre, telles que `histogram_quantile(time() / 1000, ...)`, sont rejetées avec l’erreur `NOT_IMPLEMENTED`.
+
+<div id="operators">
+  ### Opérateurs
+</div>
+
+Tous les opérateurs binaires arithmétiques (`+`, `-`, `*`, `/`, `%`, `^`), de comparaison (`==`, `!=`, `<`, `>`, `<=`, `>=` avec `bool` facultatif) et logiques (`and`, `or`, `unless`), avec les modificateurs `on()`/`ignoring()` et `group_left()`/`group_right()`.
+
+Opérateurs unaires `+` et `-`.
+
+<div id="aggregation-operators">
+  ### Opérateurs d’agrégation
+</div>
+
+`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — avec les modificateurs facultatifs `by()` ou `without()`.
+
+Pas encore pris en charge : `count_values`.
+
+<div id="example">
+  ## Exemple
+</div>
+
+```sql
+SELECT * FROM prometheusQuery(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now())
+```

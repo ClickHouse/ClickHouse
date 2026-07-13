@@ -1,0 +1,58 @@
+---
+title: Utilisation des agrégats filtrés dans ClickHouse
+description: Découvrez comment utiliser les agrégats filtrés dans ClickHouse avec les combinateurs d'agrégation `-If` et `-Distinct` afin de simplifier la syntaxe des requêtes et d'améliorer l'analyse des données.
+date: 2023-03-01
+tags: ['Fonctions']
+keywords: ['Agrégats filtrés']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="using-filtered-aggregates">
+  ## Utilisation des agrégats filtrés
+</div>
+
+ClickHouse offre un moyen simple et intuitif d’écrire des *agrégats filtrés*.
+
+Par exemple, comparez la manière standard en SQL d’écrire des agrégats filtrés (qui fonctionne très bien dans ClickHouse) à la syntaxe abrégée utilisant le [combinateur de fonction d’agrégation](/fr/reference/functions/aggregate-functions/combinators) `-If`, qui peut être ajouté à n’importe quelle fonction d’agrégation :
+
+```sql
+--standard SQL
+SELECT
+   avg(number)
+FILTER (WHERE number > 50)
+FROM numbers(100)
+
+--ClickHouse using an aggregate combinator
+SELECT
+   avgIf(number, number > 50)
+FROM numbers(100)
+```
+
+De même, il existe un combinateur d’agrégation `-Distinct` :
+
+```sql
+--standard SQL
+SELECT avg(DISTINCT number)
+
+--ClickHouse using an aggregate combinator
+SELECT avgDistinct(number)
+```
+
+Pourquoi les agrégats filtrés sont-ils importants ? Parce qu’ils permettent de mettre en œuvre la fonctionnalité de **&quot;comparaison de segments&quot;** dans les services d’analyse web.
+Par exemple :
+
+```sql
+WITH
+   Region = 'us' AS segment1,
+   Browser = 'Chrome' AS segment2
+SELECT
+   uniqIf(UserID, segment1),
+   uniqIf(UserID, segment2)
+WHERE segment1 OR segment2
+```
+
+Consultez la page [combinateur de fonction d’agrégation](/fr/reference/functions/aggregate-functions/combinators) de la documentation
+pour plus de détails.

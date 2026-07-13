@@ -4,10 +4,13 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
+#include <Common/BitPackedStringArray.h>
+#include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Formats/MarkInCompressedFile.h>
 
 #include <absl/container/btree_map.h>
@@ -15,6 +18,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
+#include <variant>
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -78,7 +82,9 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
+    size_t positions = 0;
     ASTPtr preprocessor;
+    ASTPtr postprocessor;
     bool has_block_index = true;
     bool enable_phrase_query_support = false;
 };
@@ -146,7 +152,14 @@ private:
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
-using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
+/// A token paired with its posting/position builder views.
+struct SortedToken
+{
+    std::string_view token;
+    PostingListBuilder * postings = nullptr;
+    PositionListBuilder * positions = nullptr; /// nullptr unless text index has `support_phrase_search` enabled
+};
+using SortedTokens = std::vector<SortedToken>;
 struct TokenPostingsInfo;
 
 struct PostingsSerialization
@@ -168,6 +181,8 @@ struct PostingsSerialization
         /// If set, each compressed segment has a V2 Index Section with per-block metadata
         /// (last_row_id + relative_offset arrays) enabling binary-search in PostingListCursor.
         HasBlockIndex = 1ULL << 4,
+        /// If set, the token has positional data in the .pos file.
+        HasPositions = 1ULL << 5,
     };
 
     void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
@@ -218,6 +233,11 @@ struct TokenPostingsInfo : public TokenInfoBase
     absl::InlinedVector<UInt64, 1> offsets;
     PostingListPtr embedded_postings;
 
+    /// Position data offset in the .pos file
+    UInt64 position_offset = 0;
+    /// Number of Roaringish UInt64 entries in position data.
+    UInt32 position_cardinality = 0;
+
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
     size_t bytesAllocated() const override;
@@ -226,35 +246,47 @@ struct TokenPostingsInfo : public TokenInfoBase
 using TokenPostingsInfoPtr = std::shared_ptr<TokenPostingsInfo>;
 using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfoPtr>;
 
-struct DictionaryBlockBase
-{
-    ColumnPtr tokens;
-
-    DictionaryBlockBase() = default;
-    explicit DictionaryBlockBase(ColumnPtr tokens_) : tokens(std::move(tokens_)) {}
-
-    bool empty() const;
-    size_t size() const;
-    size_t upperBound(std::string_view token) const;
-};
-
-struct DictionaryBlock : public DictionaryBlockBase
+struct DictionaryBlock
 {
     DictionaryBlock() = default;
     DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_);
 
+    bool empty() const;
+    size_t size() const;
+
+    ColumnPtr tokens;
     std::vector<TokenPostingsInfo> token_infos;
     UInt64 tokens_format = 0;
 };
 
-struct DictionarySparseIndex : public DictionaryBlockBase
+class DictionarySparseIndex
 {
+public:
     DictionarySparseIndex() = default;
     DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
+
+    bool empty() const { return size() == 0; }
+    size_t size() const;
+    size_t upperBound(std::string_view token) const;
+
+    std::string_view getToken(size_t idx) const;
     UInt64 getOffsetInFile(size_t idx) const;
     size_t memoryUsageBytes() const;
 
-    ColumnPtr offsets_in_file;
+    /// Returns the raw tokens column. Throws if tokens were bit-packed by optimize.
+    ColumnPtr getTokensColumn() const;
+    /// Returns the raw offsets column. Throws if offsets were bit-packed by optimize.
+    ColumnPtr getOffsetsColumn() const;
+
+    /// Decomposes the tokens column into chars and bit-packed offsets
+    /// and bit-packs the offsets in file to reduce memory usage.
+    void optimize();
+
+private:
+    /// Tokens and offsets in the dictionary file to the beginning of each block.
+    /// Stored as raw columns after creation and bit-packed after optimize.
+    std::variant<ColumnPtr, BitPackedStringArray> tokens;
+    std::variant<ColumnPtr, BitPackedUInt64Array> offsets_in_file;
 };
 
 using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
@@ -266,10 +298,13 @@ struct TextIndexHeader
     {
         Initial = 0,
         WithCodec = 1,
+        WithPositions = 2,
     };
 
     MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
+    /// Persisted for version >= WithPositions.
+    bool has_positions = false;
     DictionarySparseIndex sparse_index;
 };
 
@@ -289,9 +324,12 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr);
+    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
+    /// Reads only the version and posting list codec from the start of the header, without the
+    /// (potentially large) sparse index. The returned header has an empty `sparse_index`.
+    static TextIndexHeader deserializeHeaderPrefix(ReadBuffer & istr);
     /// If postings_serialization is null, embedded postings are skipped.
     static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, PostingsSerialization * postings_serialization);
     static void skipTokenInfo(ReadBuffer & istr);
@@ -392,10 +430,11 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     MergeTreeIndexGranuleTextWritable(
         MergeTreeIndexTextParams params_,
         IPostingListCodec::Type posting_list_codec_type_,
-        SortedTokensAndPostings && tokens_and_postings_,
         TokenToPostingsBuilderMap && tokens_map_,
         std::list<PostingList> && posting_lists_,
-        std::unique_ptr<Arena> && arena_);
+        std::unique_ptr<Arena> && arena_,
+        std::unique_ptr<TokenToPositionListMap> && position_map_,
+        SortedTokens && sorted_tokens_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
@@ -403,18 +442,19 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return tokens_and_postings.empty(); }
+    bool empty() const override { return sorted_tokens.empty(); }
     size_t memoryUsageBytes() const override;
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     IPostingListCodec::Type posting_list_codec_type = IPostingListCodec::Type::None;
-    /// Pointers to tokens and posting lists in the granule.
-    SortedTokensAndPostings tokens_and_postings;
-    /// tokens_and_postings has references to data held in the fields below.
     TokenToPostingsBuilderMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
+    /// Owns the PositionListBuilders referenced by sorted_tokens (phrase query support).
+    std::unique_ptr<TokenToPositionListMap> position_map;
+    /// Sorted view of tokens with their posting/position builders (non-owning; references the fields above).
+    SortedTokens sorted_tokens;
     LoggerPtr logger;
 };
 
@@ -430,6 +470,9 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
+    // Adds a document to the granule. The document is inserted directly as a single token.
+    void addToken(std::string_view token, UInt32 token_position);
+
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }
 
@@ -450,10 +493,16 @@ struct MergeTreeIndexTextGranuleBuilder
     std::list<PostingList> posting_lists;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
+    /// Position data for phrase query support.
+    /// Only allocated when params.positions is true.
+    std::unique_ptr<TokenToPositionListMap> position_map;
 };
 
 class MergeTreeIndexTextPreprocessor;
 using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
+
+class MergeTreeIndexTextPostprocessor;
+using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPostprocessor>;
 
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 {
@@ -462,7 +511,8 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
         MergeTreeIndexTextParams params_,
         TokenizerPtr tokenizer_,
         const IPostingListCodec * posting_list_codec_,
-        MergeTreeIndexTextPreprocessorPtr preprocessor_);
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        MergeTreeIndexTextPostprocessorPtr postprocessor_);
 
     ~MergeTreeIndexAggregatorText() override = default;
 
@@ -472,18 +522,24 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
     UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
 
+private:
+    /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
+    template <bool tokenize>
+    void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read);
+
     String index_column_name;
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
-    const IPostingListCodec * posting_list_codec = nullptr;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexText(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         MergeTreeIndexTextParams params_,
         std::unique_ptr<ITokenizer> tokenizer_,
@@ -495,7 +551,10 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;
+    MergeTreeIndexFormat getDeserializedFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const std::string & path_prefix,
+        const IDataPartStorage * storage) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
@@ -508,6 +567,7 @@ public:
     std::unique_ptr<ITokenizer> tokenizer;
     std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
 };
 
 }

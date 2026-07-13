@@ -1,0 +1,312 @@
+---
+slug: /migrations/postgresql/data-modeling-techniques
+title: 'Techniques de modélisation des données'
+description: 'Partie 3 d’un guide de migration de PostgreSQL vers ClickHouse'
+keywords: ['postgres', 'postgresql']
+show_related_blogs: true
+sidebarTitle: 'Partie 3'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+> Voici la **partie 3** d&#39;un guide sur la migration de PostgreSQL vers ClickHouse. À l&#39;aide d&#39;un exemple concret, ce guide montre comment modéliser les données dans ClickHouse lors d&#39;une migration depuis PostgreSQL.
+
+Nous recommandons aux utilisateurs migrant depuis Postgres de lire [le guide sur la modélisation des données dans ClickHouse](/fr/guides/clickhouse/data-modelling/schema-design). Ce guide utilise le même Stack Overflow dataset et présente plusieurs approches à l&#39;aide des fonctionnalités de ClickHouse.
+
+<div id="primary-ordering-keys-in-clickhouse">
+  ## Clés primaires (de tri) dans ClickHouse
+</div>
+
+Les utilisateurs venant de bases de données OLTP recherchent souvent un concept équivalent dans ClickHouse. En voyant que ClickHouse prend en charge la syntaxe `PRIMARY KEY`, ils peuvent être tentés de définir le schéma de leur table en utilisant les mêmes clés que dans leur base de données OLTP source. Ce n’est pas adapté.
+
+<div id="how-are-clickhouse-primary-keys-different">
+  ### En quoi les clés primaires de ClickHouse sont-elles différentes ?
+</div>
+
+Pour comprendre pourquoi il n’est pas approprié d’utiliser votre clé primaire OLTP dans ClickHouse, il faut comprendre les bases de l’indexation dans ClickHouse. Nous prenons Postgres comme point de comparaison, mais ces concepts généraux s’appliquent à d’autres bases de données OLTP.
+
+* Les clés primaires de Postgres sont, par définition, uniques pour chaque ligne. L’utilisation de [structures B-tree](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales) permet de retrouver efficacement des lignes individuelles à partir de cette clé. Bien que ClickHouse puisse être optimisé pour retrouver une ligne unique, les charges de travail analytiques nécessitent généralement de lire quelques colonnes sur un grand nombre de lignes. Le plus souvent, les filtres doivent identifier **un sous-ensemble de lignes** sur lequel une agrégation sera effectuée.
+* L’efficacité en mémoire et sur disque est primordiale à l’échelle à laquelle ClickHouse est souvent utilisé. Les données sont écrites dans les tables ClickHouse par blocs appelés parts, qui sont ensuite fusionnés en arrière-plan selon certaines règles. Dans ClickHouse, chaque part possède son propre index primaire. Lorsque des parts sont fusionnées, leurs index primaires le sont également. Contrairement à Postgres, ces index ne sont pas construits pour chaque ligne. À la place, l’index primaire d’une part contient une entrée d’index par groupe de lignes : cette technique s’appelle **l’indexation éparse**.
+* **L’indexation éparse** est possible parce que ClickHouse stocke sur disque les lignes d’une part dans l’ordre d’une clé spécifiée. Au lieu de localiser directement des lignes individuelles (comme avec un index basé sur un B-Tree), l’index primaire épars lui permet d’identifier rapidement, via une recherche binaire sur les entrées d’index, des groupes de lignes susceptibles de correspondre à la requête. Les groupes de lignes potentiellement correspondantes ainsi localisés sont ensuite transmis en parallèle au moteur ClickHouse afin de trouver les correspondances. Cette conception permet de conserver un index primaire compact (il tient entièrement en mémoire principale) tout en accélérant significativement le temps d’exécution des requêtes, en particulier pour les requêtes sur des plages de valeurs, typiques des cas d’usage analytiques.
+
+Pour plus de détails, nous recommandons ce [guide approfondi](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes).
+
+<Image img="/images/migrations/postgres-b-tree.webp" size="lg" alt="Index B-Tree PostgreSQL" />
+
+<Image img="/images/migrations/postgres-sparse-index.webp" size="lg" alt="Index épars PostgreSQL" />
+
+La clé sélectionnée dans ClickHouse déterminera non seulement l’index, mais aussi l’ordre dans lequel les données sont écrites sur disque. De ce fait, elle peut avoir un impact considérable sur les niveaux de compression, ce qui peut à son tour affecter les performances des requêtes. Une clé de tri qui amène les valeurs de la plupart des colonnes à être écrites dans un ordre contigu permettra à l’algorithme de compression sélectionné (et aux codecs) de compresser les données plus efficacement.
+
+> Toutes les colonnes d’une table seront triées selon la valeur de la clé de tri spécifiée, qu’elles soient incluses ou non dans la clé elle-même. Par exemple, si `CreationDate` est utilisée comme clé, l’ordre des valeurs dans toutes les autres colonnes correspondra à l’ordre des valeurs de la colonne `CreationDate`. Plusieurs clés de tri peuvent être spécifiées : le tri suivra alors la même logique qu’une clause `ORDER BY` dans une requête `SELECT`.
+
+<div id="choosing-an-ordering-key">
+  ### Choisir une clé de tri
+</div>
+
+Pour connaître les points à considérer et les étapes du choix d’une clé de tri, en prenant la table Posts comme exemple, consultez [cette section](/fr/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key).
+
+Lorsque vous utilisez la réplication en temps réel avec CDC, des contraintes supplémentaires s’appliquent. Consultez cette [documentation](/fr/integrations/clickpipes/postgres/ordering-keys) pour découvrir comment personnaliser les clés de tri avec CDC.
+
+<div id="partitions">
+  ## Partitions
+</div>
+
+Si vous venez de Postgres, le concept de partitionnement de table vous est familier : il permet d’améliorer les performances et la facilité de gestion des grandes bases de données en divisant les tables en ensembles plus petits et plus faciles à administrer, appelés partitions. Ce partitionnement peut être mis en place à l’aide d’une plage de valeurs sur une colonne donnée (par exemple des dates), de listes définies ou d’un hash sur une clé. Cela permet aux administrateurs d’organiser les données selon des critères précis, comme des plages de dates ou des zones géographiques. Le partitionnement contribue à améliorer les performances des requêtes en accélérant l’accès aux données grâce au partition pruning et à une indexation plus efficace. Il facilite aussi les tâches de maintenance, comme les sauvegardes et les purges de données, en permettant d’effectuer des opérations sur des partitions individuelles plutôt que sur la table entière. En outre, le partitionnement peut considérablement améliorer la scalabilité des bases de données PostgreSQL en répartissant la charge entre plusieurs partitions.
+
+Dans ClickHouse, le partitionnement est défini sur une table lors de sa création initiale via la clause `PARTITION BY`. Cette clause peut contenir une expression SQL portant sur n’importe quelles colonnes, dont le résultat détermine vers quelle partition une ligne est envoyée.
+
+<Image img="/images/migrations/postgres-partitions.webp" size="md" alt="Partitions PostgreSQL vers partitions ClickHouse" />
+
+Les data parts sont associées logiquement à chaque partition sur le disque et peuvent être interrogées isolément. Dans l’exemple ci-dessous, nous partitionnons la table `posts` par année à l’aide de l’expression `toYear(CreationDate)`. À mesure que des lignes sont insérées dans ClickHouse, cette expression est évaluée pour chaque ligne et la ligne est dirigée vers la partition correspondante si elle existe (si c’est la première ligne pour une année donnée, la partition sera créée).
+
+```sql
+ CREATE TABLE posts
+(
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+...
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+PARTITION BY toYear(CreationDate)
+```
+
+Pour une description complète du partitionnement, voir [&quot;Partitions de table&quot;](/fr/concepts/core-concepts/partitions).
+
+<div id="applications-of-partitions">
+  ### Applications des partitions
+</div>
+
+Le partitionnement dans ClickHouse a des usages similaires à ceux de Postgres, avec toutefois quelques différences subtiles. Plus précisément :
+
+* **Gestion des données** - Dans ClickHouse, vous devez avant tout considérer le partitionnement comme une fonctionnalité de gestion des données, et non comme une technique d’optimisation des requêtes. En séparant logiquement les données selon une clé, chaque partition peut être gérée indépendamment, par exemple supprimée. Cela vous permet de déplacer efficacement des partitions, et donc des sous-ensembles, entre les [niveaux de stockage](/fr/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) en fonction du temps ou de faire expirer des données/[les supprimer efficacement du cluster](/fr/reference/statements/alter/partition). Dans l’exemple ci-dessous, nous supprimons les posts de 2008.
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'posts'
+```
+
+```response
+┌─partition─┐
+│ 2008      │
+│ 2009      │
+│ 2010      │
+│ 2011      │
+│ 2012      │
+│ 2013      │
+│ 2014      │
+│ 2015      │
+│ 2016      │
+│ 2017      │
+│ 2018      │
+│ 2019      │
+│ 2020      │
+│ 2021      │
+│ 2022      │
+│ 2023      │
+│ 2024      │
+└───────────┘
+
+17 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+ALTER TABLE posts
+(DROP PARTITION '2008')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.103 sec.
+```
+
+* **Optimisation des requêtes** - Bien que le partitionnement puisse améliorer les performances des requêtes, cela dépend fortement des schémas d’accès. Si les requêtes ne ciblent qu’un petit nombre de partitions (idéalement une seule), les performances peuvent s’améliorer. Cela n’est généralement utile que si la clé de partitionnement ne fait pas partie de la clé primaire et que vous filtrez dessus. En revanche, les requêtes qui doivent parcourir de nombreuses partitions peuvent être moins performantes qu’en l’absence de partitionnement (car celui-ci peut entraîner la création d’un plus grand nombre de parts). L’intérêt de cibler une seule partition sera encore moins marqué, voire nul, si la clé de partitionnement figure déjà parmi les premiers éléments de la clé primaire. Le partitionnement peut aussi être utilisé pour [optimiser les requêtes GROUP BY](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key) si les valeurs de chaque partition sont uniques. Cependant, de manière générale, vous devez vous assurer que la clé primaire est optimisée et n’envisager le partitionnement comme technique d’optimisation des requêtes que dans des cas exceptionnels, lorsque les schémas d’accès portent sur un sous-ensemble spécifique et prévisible des données, par exemple un partitionnement par jour, avec la plupart des requêtes sur le dernier jour.
+
+<div id="recommendations-for-partitions">
+  ### Recommandations pour les partitions
+</div>
+
+Considérez le partitionnement comme une technique de gestion des données. Il est particulièrement adapté lorsqu&#39;il faut supprimer des données du cluster, par exemple avec des données de séries temporelles, car la partition la plus ancienne peut [simplement être supprimée](/fr/reference/statements/alter/partition#drop-partitionpart).
+
+**Important :** assurez-vous que votre expression de clé de partitionnement n&#39;aboutit pas à un ensemble de cardinalité élevée, c.-à-d. qu&#39;il faut éviter de créer plus de 100 partitions. Par exemple, ne partitionnez pas vos données selon des colonnes à cardinalité élevée telles que des identifiants ou des noms de client. À la place, faites d&#39;un identifiant ou d&#39;un nom de client la première colonne de l&#39;expression ORDER BY.
+
+> En interne, ClickHouse [crée des parts](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design) pour les données insérées. À mesure que davantage de données sont insérées, le nombre de parts augmente. Afin d&#39;éviter un nombre excessivement élevé de parts, ce qui dégradera les performances des requêtes (davantage de fichiers à lire), les parts sont fusionnées dans un processus asynchrone en arrière-plan. Si le nombre de parts dépasse une limite préconfigurée, ClickHouse lèvera alors une exception lors de l&#39;insert, sous la forme d&#39;une erreur « too many parts ». Cela ne devrait pas se produire dans des conditions normales de fonctionnement et n&#39;arrive que si ClickHouse est mal configuré ou utilisé incorrectement, p. ex. avec de nombreux petits inserts.
+
+> Comme les parts sont créées indépendamment pour chaque partition, augmenter le nombre de partitions entraîne une hausse du nombre de parts, c.-à-d. qu&#39;il s&#39;agit d&#39;un multiple du nombre de partitions. Les clés de partitionnement à cardinalité élevée peuvent donc provoquer cette erreur et doivent être évitées.
+
+<div id="materialized-views-vs-projections">
+  ## Vues matérialisées vs projections
+</div>
+
+Postgres permet de créer plusieurs index sur une même table, ce qui permet d’optimiser différents schémas d’accès. Cette flexibilité permet aux administrateurs et aux développeurs d’adapter les performances de la base de données à des requêtes précises et à des besoins opérationnels spécifiques. Le concept de projections dans ClickHouse, bien qu’il ne soit pas totalement analogue, permet toutefois de définir plusieurs clauses `ORDER BY` pour une table.
+
+Dans la [documentation sur la modélisation des données](/fr/guides/clickhouse/data-modelling/schema-design) de ClickHouse, nous expliquons comment les vues matérialisées peuvent être utilisées dans ClickHouse pour précalculer des agrégations, transformer des lignes et optimiser les requêtes pour différents schémas d’accès.
+
+Pour ce second cas, nous avons fourni [un exemple](/fr/concepts/features/materialized-views/incremental-materialized-view#lookup-table) dans lequel la vue matérialisée envoie les lignes vers une table cible dont la clé de tri diffère de celle de la table d’origine qui reçoit les insertions.
+
+Par exemple, considérez la requête suivante :
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+   ┌──────────avg(Score)─┐
+1. │ 0.18181818181818182 │
+   └─────────────────────┘
+
+1 row in set. Elapsed: 0.040 sec. Processed 90.38 million rows, 361.59 MB (2.25 billion rows/s., 9.01 GB/s.)
+Peak memory usage: 201.93 MiB.
+```
+
+Cette requête nécessite d’analyser l’ensemble des 90 millions de lignes (certes rapidement), car `UserId` n&#39;est pas la clé de tri.
+Nous avons précédemment résolu ce problème à l’aide d’une vue matérialisée servant de table de correspondance pour `PostId`. Le même problème peut être résolu
+avec une [projection](/fr/concepts/features/projections/projections). La commande ci-dessous ajoute une
+projection sur `ORDER BY user_id`.
+
+```sql
+ALTER TABLE comments ADD PROJECTION comments_user_id (
+SELECT * ORDER BY UserId
+)
+
+ALTER TABLE comments MATERIALIZE PROJECTION comments_user_id
+```
+
+Notez qu’il faut d’abord créer la projection, puis la matérialiser. Cette seconde commande entraîne le stockage des données deux fois sur disque, selon deux ordres différents. La projection peut également être définie au moment de la création des données, comme indiqué ci-dessous, et sera automatiquement maintenue à mesure que des données sont insérées.
+
+```sql
+CREATE TABLE comments
+(
+        `Id` UInt32,
+        `PostId` UInt32,
+        `Score` UInt16,
+        `Text` String,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `UserId` Int32,
+        `UserDisplayName` LowCardinality(String),
+        PROJECTION comments_user_id
+        (
+        SELECT *
+        ORDER BY UserId
+        )
+)
+ENGINE = MergeTree
+ORDER BY PostId
+```
+
+Si la projection est créée via un `ALTER`, sa création est asynchrone lorsque la commande `MATERIALIZE PROJECTION` est exécutée. Vous pouvez suivre l’avancement de cette opération avec la requête suivante, en attendant que `is_done=1`.
+
+```sql
+SELECT
+        parts_to_do,
+        is_done,
+        latest_fail_reason
+FROM system.mutations
+WHERE (`table` = 'comments') AND (command LIKE '%MATERIALIZE%')
+```
+
+```response
+   ┌─parts_to_do─┬─is_done─┬─latest_fail_reason─┐
+1. │           1 │       0 │                    │
+   └─────────────┴─────────┴────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+Si nous répétons la requête ci-dessus, nous pouvons constater que les performances se sont nettement améliorées, au prix d’un stockage supplémentaire.
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+   ┌──────────avg(Score)─┐
+1. │ 0.18181818181818182 │
+   └─────────────────────┘
+
+1 row in set. Elapsed: 0.008 sec. Processed 16.36 thousand rows, 98.17 KB (2.15 million rows/s., 12.92 MB/s.)
+Peak memory usage: 4.06 MiB.
+```
+
+Avec une commande `EXPLAIN`, nous confirmons également que la projection a bien été utilisée pour traiter cette requête :
+
+```sql
+EXPLAIN indexes = 1
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+    ┌─explain─────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY))         │
+ 2. │   Aggregating                                       │
+ 3. │   Filter                                            │
+ 4. │           ReadFromMergeTree (comments_user_id)      │
+ 5. │           Indexes:                                  │
+ 6. │           PrimaryKey                                │
+ 7. │           Keys:                                     │
+ 8. │           UserId                                    │
+ 9. │           Condition: (UserId in [8592047, 8592047]) │
+10. │           Parts: 2/2                                │
+11. │           Granules: 2/11360                         │
+    └─────────────────────────────────────────────────────┘
+
+11 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="when-to-use-projections">
+  ### Quand utiliser les projections
+</div>
+
+Les projections constituent une fonctionnalité intéressante pour les nouveaux utilisateurs, car elles sont automatiquement
+mises à jour à mesure que les données sont insérées. De plus, les requêtes peuvent simplement être envoyées à une seule
+table, les projections étant exploitées lorsque c&#39;est possible pour accélérer le temps
+de réponse.
+
+<Image img="/images/migrations/postgres-projections.webp" size="md" alt="Projections PostgreSQL dans ClickHouse" />
+
+À l&#39;inverse des vues matérialisées, l&#39;utilisateur doit alors sélectionner la
+table cible optimisée appropriée ou réécrire sa requête, selon les filtres.
+Cela reporte davantage la charge sur les applications utilisateur et accroît la complexité côté client.
+
+Malgré ces avantages, les projections présentent certaines [limitations intrinsèques](/fr/concepts/features/projections/projections#when-to-use-projections)
+dont vous devez être conscient ; elles doivent donc être déployées avec parcimonie.
+
+Nous recommandons d&#39;utiliser des projections lorsque :
+
+* Une réorganisation complète des données est nécessaire. Bien que l&#39;expression de la
+  projection puisse, en théorie, utiliser un `GROUP BY,` les vues matérialisées sont plus
+  efficaces pour maintenir des agrégats. L&#39;optimiseur de requêtes est également plus susceptible
+  d&#39;exploiter des projections qui reposent sur une simple réorganisation, c.-à-d. `SELECT * ORDER BY x`.
+  Vous pouvez sélectionner un sous-ensemble de colonnes dans cette expression afin de réduire l&#39;empreinte de stockage.
+* Les utilisateurs acceptent l&#39;augmentation correspondante de l&#39;empreinte de stockage et le
+  surcoût lié à l&#39;écriture des données en double. Testez l&#39;impact sur la vitesse d&#39;insertion et
+  [évaluez le surcoût de stockage](/fr/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
+
+<Note>
+  Depuis la version 25.5, ClickHouse prend en charge la colonne virtuelle `_part_offset` dans les
+  projections. Cela permet de stocker les projections de manière plus économe en espace.
+
+  Pour plus de détails, voir [« Projections »](/fr/concepts/features/projections/projections)
+</Note>
+
+<div id="denormalization">
+  ## Dénormalisation
+</div>
+
+Comme Postgres est une base de données relationnelle, son modèle de données est fortement [normalisé](https://en.wikipedia.org/wiki/Database_normalization), avec souvent des centaines de tables. Dans ClickHouse, la dénormalisation peut parfois s’avérer utile pour optimiser les performances des JOIN.
+
+Vous pouvez consulter ce [guide](/fr/guides/clickhouse/data-modelling/denormalization), qui présente les avantages de la dénormalisation du Stack Overflow dataset dans ClickHouse.
+
+Ceci conclut notre guide d’introduction si vous migrez de Postgres vers ClickHouse. Nous vous recommandons de lire le [guide de modélisation des données dans ClickHouse](/fr/guides/clickhouse/data-modelling/schema-design) pour en savoir plus sur les fonctionnalités avancées de ClickHouse.

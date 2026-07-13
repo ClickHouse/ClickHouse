@@ -2,21 +2,16 @@
 -- ^ no-fasttest: azure/s3/hdfs table functions are gated on build flags
 -- ^ no-msan: `delta-kernel-rs` is disabled under MSan, so `DeltaLakeAzure` is unavailable
 
--- Regression test for STID 4283-5f31:
--- BuzzHouse hit `Logical error: Expected 3 to 10 arguments in table function azureBlobStorage, got 1`
--- via `CREATE TABLE ... ENGINE = DeltaLakeAzure(<single-arg>)`. The defensive arg-count check
--- inside `addStructureAndFormatToArgsIfNeededAzure` (and its S3/HDFS/file-like siblings) used
--- `LOGICAL_ERROR`, which `abortOnFailedAssertion` aborts in debug builds and is treated as a
--- server bug.
+-- Regression test for STID 4283-5f31 (fixed in PR #103544): a bad argument count
+-- for the object-storage table functions and engines (file/url/s3/hdfs/azureBlobStorage
+-- and the DeltaLake* engines) must raise NUMBER_OF_ARGUMENTS_DOESNT_MATCH, not a
+-- LOGICAL_ERROR that aborts debug builds.
 --
--- The same anti-pattern existed in 4 places:
---   src/Storages/ObjectStorage/Azure/Configuration.cpp  - addStructureAndFormatToArgsIfNeededAzure
---   src/Storages/ObjectStorage/HDFS/Configuration.cpp   - addStructureAndFormatToArgsIfNeededHDFS
---   src/Storages/ObjectStorage/S3/Configuration.cpp     - addStructureAndFormatToArgsIfNeededS3
---   src/TableFunctions/ITableFunctionFileLike.h         - updateStructureAndFormatArgumentsIfNeeded
---
--- All four now throw `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` instead, matching the upstream
--- `*StorageParsedArguments::fromAST` validation and giving users a graceful, well-typed error.
+-- NOTE: every query below throws on purpose, so the server logs its full query text
+-- (this comment included) at Error level. Keep this file free of the verbatim crash
+-- message that ci/jobs/scripts/log_parser.py greps the server log for, otherwise the
+-- scanner false-matches this comment and reports a bogus failure. Refer to the error
+-- by its code name LOGICAL_ERROR; never spell out the runtime message text.
 
 -- ---- Table function paths ----
 

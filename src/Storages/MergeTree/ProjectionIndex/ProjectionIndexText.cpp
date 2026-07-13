@@ -151,7 +151,7 @@ std::shared_ptr<MergeTreeSettings> ProjectionIndexText::getDefaultSettings() con
     /// posting list metadata produced by the text-index aggregator.
     const auto * decl = index_ast->as<ASTIndexDeclaration>();
     const ASTPtr text_index_arguments = (decl && decl->getType()) ? decl->getType()->arguments : nullptr;
-    UInt64 dictionary_block_size = getTextIndexDictionaryBlockSizeFromAST(text_index_arguments);
+    UInt64 dictionary_block_size = getTextIndexDictionaryBlockSizeFromAST(text_index_arguments, *settings);
     settings->set("index_granularity", dictionary_block_size);
     /// TODO(amos): Maybe adaptive is better
     settings->set("index_granularity_bytes", std::numeric_limits<UInt64>::max());
