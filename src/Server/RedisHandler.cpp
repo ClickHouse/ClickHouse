@@ -1,26 +1,22 @@
-#include <cstddef>
 #include <memory>
-#include <Poco/Format.h>
-#include <Poco/Net/TCPServerConnection.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Columns/IColumn_fwd.h>
 
-#include "Columns/IColumn.h"
-#include "RedisHandler.h"
-#include "Common/Exception.h"
-#include "Common/logger_useful.h"
-#include "Common/setThreadName.h"
-#include "Core/Field.h"
-#include "Interpreters/ClientInfo.h"
-#include "Interpreters/Session.h"
-#include "Server/RedisProtocolMapping.h"
-#include "Server/RedisProtocolRequest.h"
-#include "Server/RedisProtocolResponse.h"
-#include "Storages/IStorage.h"
-#include "Storages/PartitionCommands.h"
-#include "Storages/RedisCommon.h"
-#include "base/scope_guard.h"
+#include <Poco/Exception.h>
+
+#include <Columns/IColumn.h>
+#include <Core/Field.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Session.h>
+#include <Server/RedisHandler.h>
+#include <Server/RedisProtocolMapping.h>
+#include <Server/RedisProtocolRequest.h>
+#include <Server/RedisProtocolResponse.h>
+#include <Server/TCPServer.h>
+#include <Storages/IStorage.h>
+#include <base/scope_guard.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -41,15 +37,20 @@ RedisHandler::RedisHandler(IServer & server_, TCPServer & tcp_server_, const Poc
 
 void RedisHandler::run()
 {
-    setThreadName("RedisHandler");
+    setThreadName(ThreadName::REDIS_HANDLER);
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::REDIS);
     SCOPE_EXIT({ session.reset(); });
 
     while (tcp_server.isOpen())
     {
-        while (in->eof());
-        try {
-            if (!processRequest()) { return; }
+        /// Blocks until the next request arrives (or the peer closes the connection).
+        if (in->eof())
+            break;
+
+        try
+        {
+            if (!processRequest())
+                break;
         }
         catch (const Poco::Exception & exc)
         {
@@ -59,8 +60,9 @@ void RedisHandler::run()
             out->next();
         }
     }
+
     out->finalize();
-    LOG_DEBUG(log, "redis connection closed");
+    LOG_DEBUG(log, "Redis connection closed");
 }
 
 bool RedisHandler::processRequest()
@@ -70,27 +72,28 @@ bool RedisHandler::processRequest()
     req.deserialize(*in);
     switch (req.getCommand())
     {
-        // Necessary for working with cli-clients in interactive mode
+        /// Necessary for working with cli clients in interactive mode.
         case RedisProtocol::CommandType::COMMAND:
         {
             LOG_DEBUG(log, "COMMAND request");
             RedisProtocol::CommandRequest cmd_request(req);
             cmd_request.deserialize(*in);
 
-            // Just ignoring it for now.
+            /// Just ignore it for now.
 
             RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
             resp.serialize(*out);
             return true;
         }
-        // Necessary for working with python-clients
+        /// Necessary for working with python clients.
         case RedisProtocol::CommandType::CLIENT:
         {
             LOG_DEBUG(log, "CLIENT request");
             RedisProtocol::CommandRequest client_request(req);
             client_request.deserialize(*in);
 
-            // Just ignore it for now.
+            /// Just ignore it for now.
+
             RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
             resp.serialize(*out);
             return true;
@@ -98,7 +101,10 @@ bool RedisHandler::processRequest()
         case RedisProtocol::CommandType::AUTH:
         {
             LOG_DEBUG(log, "AUTH request");
-            // TODO add authentication
+            RedisProtocol::CommandRequest auth_request(req);
+            auth_request.deserialize(*in);
+
+            /// TODO: add authentication.
 
             RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
             resp.serialize(*out);
@@ -138,24 +144,19 @@ bool RedisHandler::processRequest()
             select_request.deserialize(*in);
 
             auto selected_db = select_request.getDB();
-            if (redis_click_house_mapping.find(selected_db) != redis_click_house_mapping.end())
+            if (!redis_clickhouse_mapping.contains(selected_db))
             {
-                db = selected_db;
-                RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
-                resp.serialize(*out);
-                return true;
-            }
-
-            if (config->db_mapping.find(selected_db) != config->db_mapping.end())
-            {
+                if (!config->db_mapping.contains(selected_db))
+                {
+                    RedisProtocol::ErrorResponse resp(RedisProtocol::Message::NO_SUCH_DB);
+                    resp.serialize(*out);
+                    return true;
+                }
                 initDB(selected_db);
-                db = selected_db;
-                RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
-                resp.serialize(*out);
-                return true;
             }
 
-            RedisProtocol::ErrorResponse resp(RedisProtocol::Message::NO_SUCH_DB);
+            db = selected_db;
+            RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
             resp.serialize(*out);
             return true;
         }
@@ -165,30 +166,16 @@ bool RedisHandler::processRequest()
             RedisProtocol::GetRequest get_request(req);
             get_request.deserialize(*in);
 
-            isDBSet();
+            checkDBSet();
 
-            auto redis_db = redis_click_house_mapping[db];
-            auto db_type = redis_db->getType();
-            if (db_type != RedisProtocol::DBType::STRING)
-            {
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
-                    "GET command can only be applied to STRING db"
-                );
-            }
+            auto redis_db = redis_clickhouse_mapping[db];
+            if (redis_db->getType() != RedisProtocol::DBType::STRING)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "GET command can only be applied to a database of type string");
 
             auto table = redis_db->getTable();
-            if (!table->supportsGetRequests())
-            {
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
-                    "Configured clickhouse table do not support get requests"
-                );
-            }
-
-            auto value_column = std::dynamic_pointer_cast<RedisProtocol::RedisStringMapping>(table)->getValueColumnName();
+            auto value_column = std::static_pointer_cast<RedisProtocol::RedisStringMapping>(redis_db)->getValueColumnName();
             auto result_chunk = table->getChunkByKeys({get_request.getKey()}, {value_column}, server.context());
-            auto result = result_chunk.getColumns()[0]->getDataAt(0).toString();
+            auto result = String(result_chunk.getColumns()[0]->getDataAt(0));
 
             RedisProtocol::BulkStringResponse resp(result);
             resp.serialize(*out);
@@ -200,34 +187,21 @@ bool RedisHandler::processRequest()
             RedisProtocol::MGetRequest mget_request(req);
             mget_request.deserialize(*in);
 
-            isDBSet();
+            checkDBSet();
 
-            auto redis_db = redis_click_house_mapping[db];
-            auto db_type = redis_db->getType();
-            if (db_type != RedisProtocol::DBType::STRING)
-            {
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
-                    "GET command can only be applied to STRING db"
-                );
-            }
+            auto redis_db = redis_clickhouse_mapping[db];
+            if (redis_db->getType() != RedisProtocol::DBType::STRING)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MGET command can only be applied to a database of type string");
 
             auto table = redis_db->getTable();
-            if (!table->supportsGetRequests())
-            {
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
-                    "Configured clickhouse table do not support get requests"
-                );
-            }
+            auto value_column = std::static_pointer_cast<RedisProtocol::RedisStringMapping>(redis_db)->getValueColumnName();
 
-            size_t n = mget_request.getKeys().size();
             std::vector<String> result;
-            for (size_t i = 0; i < n; ++i)
+            result.reserve(mget_request.getKeys().size());
+            for (const auto & key : mget_request.getKeys())
             {
-                auto value_column = std::dynamic_pointer_cast<RedisProtocol::RedisStringMapping>(table)->getValueColumnName();
-                auto result_chunk = table->getChunkByKeys({mget_request.getKeys()[i]}, {value_column}, server.context());
-                result.push_back(result_chunk.getColumns()[0]->getDataAt(0).toString());
+                auto result_chunk = table->getChunkByKeys({key}, {value_column}, server.context());
+                result.push_back(String(result_chunk.getColumns()[0]->getDataAt(0)));
             }
 
             RedisProtocol::ArrayResponse resp(result);
@@ -240,32 +214,15 @@ bool RedisHandler::processRequest()
             RedisProtocol::HGetRequest hget_request(req);
             hget_request.deserialize(*in);
 
-            isDBSet();
+            checkDBSet();
 
-            auto redis_db = redis_click_house_mapping[db];
-            auto db_type = redis_db->getType();
-            if (db_type != RedisProtocol::DBType::HASH)
-            {
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
-                    "HGET command can only be applied to HASH db"
-                );
-            }
+            auto redis_db = redis_clickhouse_mapping[db];
+            if (redis_db->getType() != RedisProtocol::DBType::HASH)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HGET command can only be applied to a database of type hash");
 
             auto table = redis_db->getTable();
-            if (!table->supportsGetRequests())
-            {
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
-                    "Configured clickhouse table do not support get requests"
-                );
-            }
-
             auto result_chunk = table->getChunkByKeys({hget_request.getKey()}, {hget_request.getField()}, server.context());
-
-            auto result_column = result_chunk.getColumns()[0];
-
-            auto result = result_column->getDataAt(0).toString();
+            auto result = String(result_chunk.getColumns()[0]->getDataAt(0));
 
             RedisProtocol::BulkStringResponse resp(result);
             resp.serialize(*out);
@@ -277,34 +234,19 @@ bool RedisHandler::processRequest()
             RedisProtocol::HMGetRequest hmget_request(req);
             hmget_request.deserialize(*in);
 
-            isDBSet();
+            checkDBSet();
 
-            auto redis_db = redis_click_house_mapping[db];
-            auto db_type = redis_db->getType();
-            if (db_type != RedisProtocol::DBType::HASH)
-            {
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
-                    "HMGET command can only be applied to HASH db"
-                );
-            }
+            auto redis_db = redis_clickhouse_mapping[db];
+            if (redis_db->getType() != RedisProtocol::DBType::HASH)
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HMGET command can only be applied to a database of type hash");
 
             auto table = redis_db->getTable();
-            if (!table->supportsGetRequests())
-            {
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_METHOD,
-                    "Configured clickhouse table do not support get requests"
-                );
-            }
-
             auto result_chunk = table->getChunkByKeys({hmget_request.getKey()}, hmget_request.getFields(), server.context());
-            auto result_column = result_chunk.getColumns()[0];
+
             std::vector<String> result;
-            for (size_t i = 0; i < result_column->size(); ++i)
-            {
-                result.push_back(result_column->getDataAt(i).toString());
-            }
+            result.reserve(result_chunk.getNumColumns());
+            for (const auto & column : result_chunk.getColumns())
+                result.push_back(String(column->getDataAt(0)));
 
             RedisProtocol::ArrayResponse resp(result);
             resp.serialize(*out);
@@ -315,61 +257,44 @@ bool RedisHandler::processRequest()
 
 void RedisHandler::initDB(UInt32 db_)
 {
-    auto mapping = config->db_mapping[db_];
+    const auto & mapping = config->db_mapping[db_];
 
     auto db_ptr = DatabaseCatalog::instance().getDatabase(mapping.clickhouse_db, server.context());
     if (db_ptr == nullptr)
-    {
-        throw Exception(
-            ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "clickhouse_db {} not exists",
-            mapping.clickhouse_db
-        );
-    }
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Database {} does not exist", mapping.clickhouse_db);
 
     auto table_ptr = db_ptr->getTable(mapping.clickhouse_table, server.context());
     if (table_ptr == nullptr)
-    {
         throw Exception(
             ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "clickhouse_table {} not exists in db {}",
-            mapping.clickhouse_table, mapping.clickhouse_db
-        );
-    }
+            "Table {} does not exist in database {}", mapping.clickhouse_table, mapping.clickhouse_db);
+
+    if (!table_ptr->supportsGetRequests())
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Table {} configured for Redis database {} does not support get requests",
+            mapping.clickhouse_table, db_);
 
     switch (mapping.db_type)
     {
         case RedisProtocol::DBType::STRING:
         {
-            auto string_db = std::make_shared<RedisProtocol::RedisStringMapping>(mapping.db_type, table_ptr, mapping.key_column, mapping.value_column);
-            redis_click_house_mapping[db_] = std::move(string_db);
+            redis_clickhouse_mapping[db_]
+                = std::make_shared<RedisProtocol::RedisStringMapping>(mapping.db_type, table_ptr, mapping.key_column, mapping.value_column);
             break;
         }
         case RedisProtocol::DBType::HASH:
         {
-            auto hash_db = std::make_shared<RedisProtocol::RedisHashMapping>(mapping.db_type, table_ptr, mapping.key_column);
-            redis_click_house_mapping[db_] = std::move(hash_db);
+            redis_clickhouse_mapping[db_] = std::make_shared<RedisProtocol::RedisHashMapping>(mapping.db_type, table_ptr, mapping.key_column);
             break;
         }
     }
 }
 
-std::vector<std::string> RedisHandler::getValueByKey(const String & key)
-{
-    auto mapping = redis_click_house_mapping[db];
-    auto table = mapping->getTable();
-
-    table->getChunkByKeys({Field(key)}, {"surname"}, server.context());
-
-    return {};
-}
-
-void RedisHandler::isDBSet() const
+void RedisHandler::checkDBSet() const
 {
     if (db == RedisProtocol::DB_MAX_NUM)
-        throw Exception(
-        ErrorCodes::INVALID_STATE,
-        "Redis db not set"
-    );
+        throw Exception(ErrorCodes::INVALID_STATE, "Redis db not set");
 }
+
 }

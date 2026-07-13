@@ -18,9 +18,8 @@
 #include <Common/ActionLock.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
-#include "Core/ColumnsWithTypeAndName.h"
-#include "Core/Field.h"
-#include "Processors/Chunk.h"
+#include <Core/Field.h>
+#include <Processors/Chunk.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <expected>
@@ -486,10 +485,11 @@ public:
         renameInMemory(new_table_id);
     }
 
-    /** Gets chunk with values by keys.
-      * Need to support redis protocol and key-value semantics
+    /** Get a single-row chunk with the values of the requested columns for the given key.
+      * Key-value point lookup used by the Redis wire protocol.
+      * Supported only if supportsGetRequests returns true.
       */
-    virtual Chunk getChunkByKeys(const std::vector<Field> & /*keys*/, const Names & /*key and value columns names*/, ContextPtr /*context*/) { return {}; }
+    virtual Chunk getChunkByKeys(const std::vector<Field> & /*keys*/, const Names & /*column_names*/, ContextPtr /*context*/) { return {}; }
 
     /**
      * Just updates names of database and table without moving any data on disk

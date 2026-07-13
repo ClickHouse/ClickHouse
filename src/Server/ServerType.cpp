@@ -131,7 +131,7 @@ bool ServerType::shouldStop(const std::string & port_name) const
     else if (port_name == "postgresql_port")
         port_type = Type::POSTGRESQL;
 
-    else if (port_name == "redis_port")
+    else if (port_name == "redis.port")
         port_type = Type::REDIS;
 
     else if (port_name == "grpc_port")

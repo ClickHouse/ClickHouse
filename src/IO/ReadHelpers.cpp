@@ -406,12 +406,6 @@ void readStringUntilEOF(String & s, ReadBuffer & buf)
     readStringUntilEOFInto(s, buf);
 }
 
-void readStringUntilCR(String & s, ReadBuffer & buf)
-{
-    s.clear();
-    readStringUntilCharsInto<'\r'>(s, buf);
-}
-
 template <typename Vector>
 void readEscapedStringUntilEOLInto(Vector & s, ReadBuffer & buf)
 {
@@ -2101,25 +2095,6 @@ void skipToCarriageReturnOrEOF(ReadBuffer & buf)
     }
 }
 
-void skipToCRLFOrEOF(ReadBuffer & buf)
-{
-    while (!buf.eof())
-    {
-        char * next_pos = find_first_symbols<'\r'>(buf.position(), buf.buffer().end());
-        buf.position() = next_pos;
-
-        if (!buf.hasPendingData())
-        {
-            continue;
-        }
-
-        if (*buf.position() == '\r' && buf.available() && *(buf.position() + 1) == '\n')
-        {
-            buf.position() += 2;
-            return;
-        }
-    }
-}
 
 void skipToNextLineOrEOF(ReadBuffer & buf)
 {

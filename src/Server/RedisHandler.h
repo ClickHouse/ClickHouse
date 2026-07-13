@@ -1,21 +1,21 @@
 #pragma once
 
+#include <map>
 #include <memory>
-#include <Poco/Logger.h>
+
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/TCPServerConnection.h>
 
-#include "IO/ReadBufferFromPocoSocket.h"
-#include "IO/WriteBufferFromPocoSocket.h"
-#include "IServer.h"
-#include "Server/TCPServer.h"
-#include "RedisProtocolMapping.h"
-#include "base/types.h"
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
+#include <Server/IServer.h>
+#include <Server/RedisProtocolMapping.h>
+#include <base/types.h>
+#include <Common/Logger.h>
 
 namespace DB
 {
 
-class ReadBufferFromPocoSocket;
 class Session;
 class TCPServer;
 
@@ -27,13 +27,11 @@ public:
     void run() final;
 
 private:
-
+    /// Returns false when the client has asked to close the connection.
     bool processRequest();
 
     void initDB(UInt32 db_);
-    void isDBSet() const;
-
-    std::vector<std::string> getValueByKey(const String & key);
+    void checkDBSet() const;
 
     IServer & server;
     TCPServer & tcp_server;
@@ -43,9 +41,9 @@ private:
 
     RedisProtocol::ConfigPtr config;
     UInt32 db = RedisProtocol::DB_MAX_NUM;
-    std::map<UInt32, RedisProtocol::MappingPtr> redis_click_house_mapping;
+    std::map<UInt32, RedisProtocol::MappingPtr> redis_clickhouse_mapping;
 
-    Poco::Logger * log = &Poco::Logger::get("RedisHandler");
+    LoggerPtr log = getLogger("RedisHandler");
 };
 
 }

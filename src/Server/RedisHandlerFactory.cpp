@@ -1,108 +1,83 @@
-#include <Poco/Util/LayeredConfiguration.h>
 #include <memory>
 
-#include "RedisHandlerFactory.h"
-#include "RedisHandler.h"
-#include "RedisProtocolMapping.h"
-#include "Common/Exception.h"
-#include "Common/logger_useful.h"
+#include <Poco/Net/StreamSocket.h>
+#include <Poco/Util/LayeredConfiguration.h>
+
+#include <IO/ReadHelpers.h>
+#include <Server/RedisHandler.h>
+#include <Server/RedisHandlerFactory.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int INVALID_CONFIG_PARAMETER;
-    }
 
-    RedisHandlerFactory::RedisHandlerFactory(IServer &_server) :
-        server(_server), logger(&Poco::Logger::get("RedisHandlerFactory"))
-    {
-        config = std::make_shared<RedisProtocol::Config>();
-        parse_config();
-    }
+namespace ErrorCodes
+{
+    extern const int INVALID_CONFIG_PARAMETER;
+}
 
-    Poco::Net::TCPServerConnection* RedisHandlerFactory::createConnection(const Poco::Net::StreamSocket &socket, TCPServer &tcp_server)
-    {
-        LOG_TRACE(logger, "Redis connection. Address: {}", socket.peerAddress().toString());
-        return new RedisHandler(server, tcp_server, socket, config);
-    }
+RedisHandlerFactory::RedisHandlerFactory(IServer & server_)
+    : server(server_), log(getLogger("RedisHandlerFactory"))
+{
+    config = std::make_shared<RedisProtocol::Config>();
+    parseConfig();
+}
 
-    void RedisHandlerFactory::parse_config()
-    {
-        config->enable_ssl = server.config().getBool("redis.enable_ssl");
+Poco::Net::TCPServerConnection * RedisHandlerFactory::createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server)
+{
+    LOG_TRACE(log, "Redis connection. Address: {}", socket.peerAddress().toString());
+    return new RedisHandler(server, tcp_server, socket, config);
+}
 
-        Poco::Util::AbstractConfiguration::Keys keys;
-        server.config().keys("redis.db", keys);
-        for (auto& key : keys)
+void RedisHandlerFactory::parseConfig()
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    server.config().keys("redis.db", keys);
+    for (const auto & key : keys)
+    {
+        /// Config keys cannot start with a digit, so the database number is written as e.g. `_0`.
+        UInt32 db_num = parse<UInt32>(key.substr(1));
+        if (db_num >= RedisProtocol::DB_MAX_NUM)
+            throw Exception(
+                ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "Redis database number {} is greater than the maximum allowed value {}",
+                db_num, RedisProtocol::DB_MAX_NUM);
+
+        RedisProtocol::MapDescription description;
+
+        String type = server.config().getString(fmt::format("redis.db.{}.db_type", key));
+        description.db_type = RedisProtocol::toDBType(type);
+
+        description.clickhouse_db = server.config().getString(fmt::format("redis.db.{}.clickhouse_db", key));
+        if (description.clickhouse_db.empty())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "clickhouse_db is not set for Redis database {}", key);
+
+        description.clickhouse_table = server.config().getString(fmt::format("redis.db.{}.clickhouse_table", key));
+        if (description.clickhouse_table.empty())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "clickhouse_table is not set for Redis database {}", key);
+
+        description.key_column = server.config().getString(fmt::format("redis.db.{}.key_column", key));
+        if (description.key_column.empty())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "key_column is not set for Redis database {}", key);
+
+        switch (description.db_type)
         {
-            UInt32 db_num = static_cast<UInt32>(std::stoul(key.substr(1)));
-            if (db_num >= RedisProtocol::DB_MAX_NUM)
+            case RedisProtocol::DBType::STRING:
             {
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "db number {} is greater than the maximum allowed value {}",
-                    db_num, RedisProtocol::DB_MAX_NUM
-                );
+                description.value_column = server.config().getString(fmt::format("redis.db.{}.value_column", key));
+                if (description.value_column.empty())
+                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "value_column is not set for Redis database {}", key);
+                break;
             }
-
-            RedisProtocol::MapDescription description;
-
-            String type = server.config().getString(fmt::format("redis.db.{}.db_type", key));
-            description.db_type = RedisProtocol::toDBType(type);
-
-            description.clickhouse_db = server.config().getString(fmt::format("redis.db.{}.clickhouse_db", key));
-            if (description.clickhouse_db.empty())
+            case RedisProtocol::DBType::HASH:
             {
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "clickhouse_db not set for {}",
-                    key
-                );
+                break;
             }
-
-
-            description.clickhouse_table = server.config().getString(fmt::format("redis.db.{}.clickhouse_table", key));
-            if (description.clickhouse_table.empty())
-            {
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "clickhouse_table not set for {}",
-                    key
-                );
-            }
-
-
-            description.key_column = server.config().getString(fmt::format("redis.db.{}.key_column", key));
-            if (description.key_column.empty())
-            {
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "key_column not set for {}",
-                    key
-                );
-            }
-
-            switch (description.db_type)
-            {
-                case RedisProtocol::DBType::STRING:
-                {
-                    description.value_column = server.config().getString(fmt::format("redis.db.{}.value_column", key));
-                    if (description.value_column.empty())
-                    {
-                        throw Exception(
-                            ErrorCodes::INVALID_CONFIG_PARAMETER,
-                            "value_column not set for {}",
-                            key
-                        );
-                    }
-                    break;
-                }
-                case RedisProtocol::DBType::HASH:
-                {
-                    break;
-                }
-            }
-            config->db_mapping[db_num] = std::move(description);
         }
+
+        config->db_mapping[db_num] = std::move(description);
     }
+}
+
 }

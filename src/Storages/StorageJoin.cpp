@@ -16,8 +16,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
-#include "Columns/IColumn_fwd.h"
-#include "Core/Block.h"
+#include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
@@ -934,15 +933,14 @@ private:
 
 Chunk StorageJoin::getChunkByKeys(const std::vector<Field> & keys, const Names & column_names, ContextPtr context)
 {
-    // for composite key, check that all necessary data has been provided
+    /// For a composite key, check that all necessary data has been provided.
     if (keys.size() != key_names.size())
-    {
-       throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mismatched number of keys and join key columns");
-    }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mismatched number of keys ({}) and join key columns ({})", keys.size(), key_names.size());
 
-    // Build a single-row key block
+    /// Build a single-row key block.
     Block key_block;
-    auto cur_sample_block = getInMemoryMetadataPtr()->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto cur_sample_block = metadata_snapshot->getSampleBlock();
 
     for (size_t i = 0; i < key_names.size(); ++i)
     {
@@ -958,18 +956,23 @@ Chunk StorageJoin::getChunkByKeys(const std::vector<Field> & keys, const Names &
         key_block.insert({std::move(column), type, key_name});
     }
 
-    Block filtered_block;
-    for (const auto & name: column_names)
+    /// `joinGet` returns a single column, so request the columns one by one.
+    Columns result_columns;
+    result_columns.reserve(column_names.size());
+    UInt64 num_rows = 0;
+
+    for (const auto & name : column_names)
     {
-        if (cur_sample_block.has(name))
-        {
-            filtered_block.insert(cur_sample_block.getByName(name));
-        }
+        if (!cur_sample_block.has(name))
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table {}", name, getStorageID().getNameForLogs());
+
+        Block block_with_column_to_add({cur_sample_block.getByName(name)});
+        auto result = joinGet(key_block, block_with_column_to_add, context);
+        num_rows = result.column->size();
+        result_columns.push_back(std::move(result.column));
     }
 
-    auto result = joinGet(key_block, filtered_block, context);
-    auto row_cnt = result.column->size();
-    return Chunk({std::move(result.column)}, row_cnt);
+    return Chunk(std::move(result_columns), num_rows);
 }
 
 // TODO: multiple stream read and index read
