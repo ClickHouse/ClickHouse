@@ -532,7 +532,7 @@ def test_reload_cluster_config_if_host_address_change(cluster_ready):
         look_behind_lines=10,
     )
     assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "1\n"
-    assert node.query("SELECT ip_address FROM system.dns_cache WHERE hostname='node8'") == "127.0.0.1\n192.168.1.1\n192.168.1.2\n"
+    assert node.query("SELECT ip_address FROM system.dns_cache WHERE hostname='node8'") == "192.168.1.1\n192.168.1.2\n127.0.0.1\n"
 
     # Change the resolved IPs' order of node8
     node.exec_in_container(["bash", "-c", "echo -e '192.168.1.2 node8\n192.168.1.1 node8\n127.0.0.1 node8' > /etc/hosts"], privileged=True, user="root")
@@ -543,7 +543,7 @@ def test_reload_cluster_config_if_host_address_change(cluster_ready):
     )
     assert node.count_in_log("DNSCacheUpdater: IPs of host name node8 have been changed") == "2\n"
     assert node.query("SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'") == "1\n"
-    assert node.query("SELECT ip_address FROM system.dns_cache WHERE hostname='node8'") == "127.0.0.1\n192.168.1.2\n192.168.1.1\n"
+    assert node.query("SELECT ip_address FROM system.dns_cache WHERE hostname='node8'") == "192.168.1.2\n192.168.1.1\n127.0.0.1\n"
 
     # Reset the node8 state
     node.exec_in_container(["bash", "-c", f"echo '{hosts_bak}' > /etc/hosts"], privileged=True, user="root")
