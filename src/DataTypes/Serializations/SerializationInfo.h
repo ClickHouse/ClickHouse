@@ -82,6 +82,9 @@ public:
     virtual void toJSON(Poco::JSON::Object & object) const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
+    virtual size_t getBytesAllocated() const;
+    virtual size_t getTotalSerializationInfos() const { return 1; }
+
     void setKindStack(ISerialization::KindStack kind_stack_) { kind_stack = kind_stack_; }
     void appendToKindStack(ISerialization::Kind kind) { kind_stack.push_back(kind); }
     const SerializationInfoSettings & getSettings() const { return settings; }
@@ -139,6 +142,9 @@ public:
     MergeTreeSerializationInfoVersion getVersion() const;
 
     bool needsPersistence() const;
+
+    size_t getBytesAllocated() const;
+    size_t getTotalSerializationInfos() const;
 
     static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
 

@@ -59,6 +59,13 @@ String NameAndTypePair::getSubcolumnName() const
     return name.substr(*subcolumn_delimiter_position + 1, name.size() - *subcolumn_delimiter_position);
 }
 
+size_t NameAndTypePair::getBytesAllocated() const
+{
+    /// Count only memory owned directly by `NameAndTypePair`.
+    /// Referenced `IDataType` graphs are accounted separately by `IMergeTreeDataPart::getDataTypesBytesAllocated`.
+    return name.capacity();
+}
+
 String NameAndTypePair::dump() const
 {
     WriteBufferFromOwnString out;
@@ -124,6 +131,18 @@ void NamesAndTypesList::writeText(WriteBuffer & buf) const
         writeString(it.type->getName(), buf);
         writeChar('\n', buf);
     }
+}
+
+size_t NamesAndTypesList::getBytesAllocated() const
+{
+    size_t res = 0;
+    for (const auto & column : *this)
+    {
+        /// `NamesAndTypesList` is a `std::list`, so estimate the list node as the stored
+        /// `NameAndTypePair` plus two pointer-sized links, `prev` and `next`.
+        res += sizeof(NameAndTypePair) + 2 * sizeof(void *) + column.getBytesAllocated();
+    }
+    return res;
 }
 
 String NamesAndTypesList::toString() const
