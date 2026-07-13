@@ -1345,6 +1345,12 @@ class SettingsRandomizer:
         "fsync_metadata": lambda: random.randint(0, 1),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
         "input_format_parallel_parsing": lambda: random.randint(0, 1),
+        # Exercise the disabled path (0), a small limit that only applies to tiny dictionaries, and
+        # the default limit for the Parquet v3 dictionary-based row group filter. Tests that depend
+        # on a fixed pruning behaviour set this setting explicitly (per query or per session).
+        "input_format_parquet_dictionary_filter_push_down": lambda: random.choices(
+            [0, 256, 1048576], weights=[1, 1, 3]
+        )[0],
         "min_chunk_bytes_for_parallel_parsing": lambda: max(
             1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))
         ),
