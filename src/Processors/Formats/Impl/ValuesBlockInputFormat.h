@@ -71,6 +71,7 @@ private:
     /// unchanged and the buffer rolled back to the checkpoint at the beginning of the value.
     std::optional<bool> tryReadValueStreaming(IColumn & column, size_t column_idx);
     std::optional<bool> tryReadValueStreamingWithExceptions(IColumn & column, size_t column_idx);
+    bool shouldUseStreamingParserWithExceptions(size_t column_idx) const;
 
     bool parseExpression(IColumn & column, size_t column_idx);
 

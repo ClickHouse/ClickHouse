@@ -314,7 +314,7 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
 
 bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 {
-    std::optional<bool> read = column_nests_decimal[column_idx]
+    std::optional<bool> read = shouldUseStreamingParserWithExceptions(column_idx)
         ? tryReadValueStreamingWithExceptions(column, column_idx)
         : tryReadValueStreaming(column, column_idx);
 
@@ -348,6 +348,22 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 
     /// Switch to SQL parser and don't try to use streaming parser for complex expressions
     return parseExpression(column, column_idx);
+}
+
+bool ValuesBlockInputFormat::shouldUseStreamingParserWithExceptions(size_t column_idx) const
+{
+    bool use_exceptions_for_decimal_overflow = column_nests_decimal[column_idx];
+    if (use_exceptions_for_decimal_overflow && !buf->eof())
+    {
+        WhichDataType which(removeNullable(removeLowCardinality(types[column_idx])));
+        const char first_char = *buf->position();
+        if ((which.isArray() && first_char != '[')
+            || (which.isMap() && first_char != '{')
+            || (which.isTuple() && first_char != '('))
+            use_exceptions_for_decimal_overflow = false;
+    }
+
+    return use_exceptions_for_decimal_overflow;
 }
 
 /// The streaming parser that does not create exceptions for values it cannot read.
@@ -583,30 +599,14 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         /// It's possible that streaming parsing has failed on some row (e.g. because of '+' sign before integer),
         /// but it still can parse the following rows
         /// Check if we can use fast streaming parser instead if using templates
-        bool rollback_on_exception = false;
-        bool ok = false;
-        try
-        {
-            const auto & serialization = serializations[column_idx];
-            serialization->deserializeTextQuoted(column, *buf, format_settings);
-            rollback_on_exception = true;
-            skipWhitespaceIfAny(*buf);
-            if (checkDelimiterAfterValue(column_idx))
-                ok = true;
-        }
-        catch (const Exception & e)
-        {
-            bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
-            if (!isParseError(e.code()) || decimal_overflow)
-                throw;
-        }
-        if (ok)
+        std::optional<bool> read = shouldUseStreamingParserWithExceptions(column_idx)
+            ? tryReadValueStreamingWithExceptions(column, column_idx)
+            : tryReadValueStreaming(column, column_idx);
+        if (read)
         {
             parser_type_for_column[column_idx] = ParserType::Streaming;
-            return true;
+            return *read;
         }
-        if (rollback_on_exception)
-            column.popBack(1);
     }
 
     parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;

@@ -9,7 +9,12 @@ no new parse errors
 --- dynamic data ---
 2021-01-01	Date
 192.168.0.1	IPv4
+--- nested decimal data ---
+[1.23]	{'k':3}
+[2.34]	{'q':4.56}
 --- decimal overflow still fails ---
+ARGUMENT_OUT_OF_BOUND
+--- nested decimal overflow still fails ---
 ARGUMENT_OUT_OF_BOUND
 --- decimal data ---
 1.23
