@@ -1293,8 +1293,8 @@ private:
         auto & idx0 = indexes0->getData();
         auto & idx1 = indexes1->getData();
 
-        std::vector<UInt64> common_lengths(input_rows_count); /// stores the aligned prefix length both arrays share
-        std::vector<Int8> length_cmp(input_rows_count); /// whether array0 is shorter(-1), equals(0), bigger(1) than array1 
+        PaddedPODArray<UInt64> common_lengths(input_rows_count); /// stores the aligned prefix length both arrays share
+        PaddedPODArray<Int8> length_cmp(input_rows_count); /// whether array0 is shorter(-1), equals(0), bigger(1) than array1 
 
         ColumnArray::Offset prev0 = 0;
         ColumnArray::Offset prev1 = 0;
