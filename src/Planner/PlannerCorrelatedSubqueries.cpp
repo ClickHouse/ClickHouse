@@ -33,6 +33,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -70,6 +71,9 @@ extern const SettingsBool join_use_nulls;
 extern const SettingsBool use_variant_as_common_type;
 extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
 extern const SettingsMaxThreads max_threads;
+extern const SettingsUInt64 max_rows_in_distinct;
+extern const SettingsUInt64 max_bytes_in_distinct;
+extern const SettingsOverflowMode distinct_overflow_mode;
 extern const SettingsNonZeroUInt64 max_block_size;
 
 }
@@ -244,6 +248,24 @@ QueryPlan decorrelateQueryPlan(
             context.query_plan.getRootNode(),
             context.correlated_subquery.correlated_column_identifiers));
         rhs_plan.getRootNode()->step->setStepDescription("Input for " + context.correlated_subquery.action_node_name, 100);
+
+        /// The decorrelation domain must be the DISTINCT set of correlated column values (Neumann/Kemper
+        /// unnesting). CommonSubplanReferenceStep streams every outer row, so when the outer query has
+        /// duplicate correlated values (e.g. from a CROSS JOIN) the inner subplan is evaluated once per
+        /// duplicate, inflating aggregates. Deduplicate here; the outer duplicates are restored by the
+        /// final equi-join back onto the full outer plan.
+        {
+            SizeLimits distinct_limits(
+                settings[Setting::max_rows_in_distinct],
+                settings[Setting::max_bytes_in_distinct],
+                settings[Setting::distinct_overflow_mode]);
+            rhs_plan.addStep(std::make_unique<DistinctStep>(
+                rhs_plan.getCurrentHeader(),
+                distinct_limits,
+                /*limit_hint_=*/0,
+                context.correlated_subquery.correlated_column_identifiers,
+                /*pre_distinct_=*/false));
+        }
 
         if (default_join_kind == DecorrelationJoinKind::LEFT)
             std::swap(lhs_plan, rhs_plan);

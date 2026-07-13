@@ -1,0 +1,41 @@
+-- substitute=0, no cross join --
+0	1
+1	\N
+2	\N
+-- substitute=0, cross join (count must match above) --
+0	0	1
+0	1	1
+0	2	1
+1	0	\N
+1	1	\N
+1	2	\N
+2	0	\N
+2	1	\N
+2	2	\N
+-- substitute=0, cross join, sum --
+0	0	0
+0	1	0
+0	2	0
+1	0	\N
+1	1	\N
+1	2	\N
+2	0	\N
+2	1	\N
+2	2	\N
+-- substitute=1, cross join (count must match) --
+0	0	1
+0	1	1
+0	2	1
+1	0	\N
+1	1	\N
+1	2	\N
+2	0	\N
+2	1	\N
+2	2	\N
+-- exists must not be affected by duplicates --
+0	0	1
+0	1	1
+1	0	0
+1	1	0
+2	0	0
+2	1	0
