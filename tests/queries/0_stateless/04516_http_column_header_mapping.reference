@@ -16,3 +16,7 @@ star	multi1
 star	multi2
 --- error: non-existent column
 NO_SUCH_COLUMN_IN_TABLE
+--- sync: non-String column types
+42	['important','urgent']	3.14	typed-test
+--- async: non-String column types
+100	['async']	2.72	async-typed

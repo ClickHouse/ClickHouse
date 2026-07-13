@@ -1437,7 +1437,11 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                 continue;
 
             /// Build a replacement column with per-entry header values.
-            auto new_col = header.getByPosition(col_idx).type->createColumn();
+            /// Deserialize each value through the column type's text serialization
+            /// so that non-String types (UInt64, Array, etc.) are parsed correctly.
+            const auto & col_type = header.getByPosition(col_idx).type;
+            const auto & serialization = col_type->getDefaultSerialization();
+            auto new_col = col_type->createColumn();
             new_col->reserve(total_rows);
             for (const auto & info : entry_row_infos)
             {
@@ -1448,8 +1452,14 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
                     if (it != info.http_header_columns->end())
                         value = it->second;
                 }
+                /// Parse the string value into the target column type.
+                MutableColumnPtr parsed = col_type->createColumn();
+                ReadBufferFromString buf(value);
+                FormatSettings format_settings;
+                serialization->deserializeWholeText(*parsed, buf, format_settings);
+
                 for (size_t row = 0; row < info.num_rows; ++row)
-                    new_col->insert(value);
+                    new_col->insertFrom(*parsed, 0);
             }
             result_columns[col_idx] = std::move(new_col);
         }

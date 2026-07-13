@@ -95,3 +95,38 @@ ${CLICKHOUSE_CURL} -sS \
     -d '{"payload":"err"}' 2>&1 | grep -o 'NO_SUCH_COLUMN_IN_TABLE'
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_http_columns"
+
+# Test non-String column types: values are deserialized through the column type's
+# text serialization, so UInt64, Array, Date, etc. should parse correctly.
+${CLICKHOUSE_CLIENT} -q "
+    DROP TABLE IF EXISTS test_http_columns_typed;
+    CREATE TABLE test_http_columns_typed (
+        count UInt64,
+        tags Array(String),
+        rate Float64,
+        payload String
+    ) ENGINE = MergeTree ORDER BY tuple();
+"
+
+echo "--- sync: non-String column types"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Count: 42' \
+    -H "X-Tags: ['important','urgent']" \
+    -H 'X-Rate: 3.14' \
+    "${CLICKHOUSE_URL}&query=INSERT+INTO+test_http_columns_typed+(payload)+FORMAT+JSONEachRow&http_column_X-Count=count&http_column_X-Tags=tags&http_column_X-Rate=rate" \
+    -d '{"payload":"typed-test"}'
+
+${CLICKHOUSE_CLIENT} -q "SELECT count, tags, rate, payload FROM test_http_columns_typed"
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE test_http_columns_typed"
+
+echo "--- async: non-String column types"
+${CLICKHOUSE_CURL} -sS \
+    -H 'X-Count: 100' \
+    -H "X-Tags: ['async']" \
+    -H 'X-Rate: 2.72' \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&query=INSERT+INTO+test_http_columns_typed+(payload)+FORMAT+JSONEachRow&http_column_X-Count=count&http_column_X-Tags=tags&http_column_X-Rate=rate" \
+    -d '{"payload":"async-typed"}'
+
+${CLICKHOUSE_CLIENT} -q "SELECT count, tags, rate, payload FROM test_http_columns_typed"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_http_columns_typed"
