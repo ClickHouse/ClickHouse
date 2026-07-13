@@ -84,6 +84,12 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
     tracks_numeric = data_type->isValueRepresentedByNumber();
     tracks_string = isStringOrFixedString(data_type);
     is_nullable = isNullableOrLowCardinalityNullable(data_type_);
+
+    /// Compute the column-level default once so `estimateEqual` can compare against the same
+    /// value that `build` counts via `IColumn::isDefaultAt`.
+    auto default_col = data_type->createColumn();
+    default_col->insertDefault();
+    column_default_field = (*default_col)[0];
 }
 
 void StatisticsBasic::build(const ColumnPtr & column)
@@ -228,9 +234,11 @@ std::optional<Float64> StatisticsBasic::estimateEqual(const Field & val) const
     if (converted.isNull())
         return std::nullopt;
 
-    /// `default_count` is the exact number of rows equal to the type's default value; use it only
-    /// when `val` is that default, otherwise fall through to more general statistics.
-    if (converted != data_type->getDefault())
+    /// `default_count` was built via `IColumn::isDefaultAt` (column-level zero). Compare the
+    /// converted value against the same column-level default rather than `IDataType::getDefault()`,
+    /// which can differ: `FixedString(N)` has column default N zero bytes vs. type default "",
+    /// and `Enum` has column default raw 0 vs. type default the first enumerator name.
+    if (converted != column_default_field)
         return std::nullopt;
 
     return static_cast<Float64>(default_count);

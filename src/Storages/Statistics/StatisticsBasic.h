@@ -74,6 +74,11 @@ private:
     UInt64 row_count = 0;
 
     DataTypePtr data_type; /// stored with LowCardinality and Nullable removed
+    /// Column-level default: the Field produced by `IColumn::insertDefault()`. Used in
+    /// `estimateEqual` to match what `getNumberOfDefaultRows` / `isDefaultAt` counts during
+    /// `build`. This differs from `IDataType::getDefault()` for types such as `FixedString(N)`
+    /// (N zero bytes vs. "") and `Enum` (raw integer 0 vs. first enumerator name).
+    Field column_default_field;
     bool tracks_numeric = false;
     bool tracks_string = false;
     bool is_nullable = false;    /// column is Nullable / LowCardinality(Nullable) -> default is NULL

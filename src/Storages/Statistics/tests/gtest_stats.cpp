@@ -10,7 +10,9 @@
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -627,6 +629,88 @@ TEST(Statistics, BasicDefaultCountNonNullable)
 
     /// A non-default value has no exact answer from `basic` alone.
     EXPECT_FALSE(stats->estimateEqual(Field(Int64(3))).has_value());
+}
+
+/// `basic` on a `FixedString(N)` column: the column-level default is N zero bytes. `estimateEqual`
+/// must fire for `col = ''` (padded by `tryConvertFieldToType` to N zero bytes, matching the
+/// column default) and return nullopt for any non-zero value. Previously the comparison used
+/// `IDataType::getDefault()` which returns "" (not padded), causing a Field mismatch and making
+/// the fast path unreachable.
+TEST(Statistics, BasicDefaultCountFixedString)
+{
+    auto data_type = std::make_shared<DataTypeFixedString>(4);
+    MutableColumnPtr col = data_type->createColumn();
+    /// 6 rows: 3 all-zero (default), 3 non-zero.
+    col->insertDefault();                           /// "\0\0\0\0"
+    col->insertDefault();                           /// "\0\0\0\0"
+    col->insertDefault();                           /// "\0\0\0\0"
+    col->insert(Field(String("abc\0", 4)));         /// non-default
+    col->insert(Field(String("xyz\0", 4)));         /// non-default
+    col->insert(Field(String("hi\0\0", 4)));        /// non-default
+    auto stats = createTestStats({StatisticsType::Basic}, data_type);
+    stats->build(std::move(col));
+
+    EXPECT_EQ(stats->estimateDefaults(), 3u);
+
+    /// col = '' should match the 3 zero rows ('' gets padded to N zero bytes by tryConvertFieldToType).
+    auto eq_empty = stats->estimateEqual(Field(String("")));
+    ASSERT_TRUE(eq_empty.has_value());
+    EXPECT_DOUBLE_EQ(*eq_empty, 3.0);
+
+    /// A non-default value should fall through.
+    EXPECT_FALSE(stats->estimateEqual(Field(String("abc\0", 4))).has_value());
+}
+
+/// `basic` on an `Enum` column: the column-level default is raw integer 0 (from `isDefaultAt`).
+/// `estimateEqual` must fire only for the enumerator that maps to raw 0, not for the first
+/// enumerator regardless of its value. Previously the comparison used `IDataType::getDefault()`
+/// which returns the first enumerator name, causing a wrong answer when that enumerator's raw
+/// value is not 0.
+TEST(Statistics, BasicDefaultCountEnum)
+{
+    DataTypeEnum8::Values values_zero_default{{"a", 0}, {"b", 1}};
+    auto enum_zero = std::make_shared<DataTypeEnum8>(values_zero_default);
+
+    /// 5 rows: 3 'a' (raw 0, the column default) and 2 'b' (raw 1).
+    /// Insert via raw integer values — ColumnVector<Int8> does not accept String fields directly.
+    {
+        MutableColumnPtr col = enum_zero->createColumn();
+        col->insert(Field(Int64(0)));  /// 'a'
+        col->insert(Field(Int64(1)));  /// 'b'
+        col->insert(Field(Int64(0)));  /// 'a'
+        col->insert(Field(Int64(0)));  /// 'a'
+        col->insert(Field(Int64(1)));  /// 'b'
+        auto stats = createTestStats({StatisticsType::Basic}, enum_zero);
+        stats->build(std::move(col));
+
+        EXPECT_EQ(stats->estimateDefaults(), 3u);  /// 3 rows with raw value 0 ('a')
+
+        /// col = 'a' — 'a' maps to raw 0, which is the column default → exact count.
+        auto eq_a = stats->estimateEqual(Field(String("a")));
+        ASSERT_TRUE(eq_a.has_value());
+        EXPECT_DOUBLE_EQ(*eq_a, 3.0);
+
+        /// col = 'b' — 'b' maps to raw 1, not the column default → fall through.
+        EXPECT_FALSE(stats->estimateEqual(Field(String("b"))).has_value());
+    }
+
+    /// Enum where the first enumerator has a non-zero raw value: raw 0 is not a valid enumerator,
+    /// so default_count = 0 and estimateEqual must return nullopt for any enumerator (not 0).
+    DataTypeEnum8::Values values_nonzero_default{{"a", 1}, {"b", 2}};
+    auto enum_nonzero = std::make_shared<DataTypeEnum8>(values_nonzero_default);
+    {
+        MutableColumnPtr col = enum_nonzero->createColumn();
+        for (int i = 0; i < 100; ++i)
+            col->insert(Field(Int64(1)));  /// 100 rows of 'a' (raw 1)
+        auto stats = createTestStats({StatisticsType::Basic}, enum_nonzero);
+        stats->build(std::move(col));
+
+        EXPECT_EQ(stats->estimateDefaults(), 0u);  /// no rows with raw value 0
+
+        /// col = 'a' — 'a' is the first enumerator but maps to raw 1, not the column default.
+        /// Must return nullopt, not 0 (which would suppress `col = 'a'` predicates entirely).
+        EXPECT_FALSE(stats->estimateEqual(Field(String("a"))).has_value());
+    }
 }
 
 /// On a Nullable column the type default is NULL, so the default count is exactly the NULL count and
