@@ -84,7 +84,33 @@ def get_last_lightweight_delete_task_entry():
     ).strip()
 
 
-def test_delete_on_cluster_marks_task_executed_with_inactive_replica(started_cluster):
+def get_last_metadata_alter_task_entry():
+    return node1.query(
+        f"""
+        SELECT entry
+        FROM system.distributed_ddl_queue
+        WHERE cluster = '{CLUSTER}'
+          AND position(query, 'metadata_column') > 0
+        ORDER BY entry DESC
+        LIMIT 1
+        FORMAT TSVRaw
+        """
+    ).strip()
+
+
+def assert_task_executed(zk, entry):
+    assert entry
+    assert (
+        zk.exists(f"/clickhouse/task_queue/ddl/{entry}/shards/{SHARD_ID}/executed")
+        is not None
+    )
+    assert sorted(zk.get_children(f"/clickhouse/task_queue/ddl/{entry}/finished")) == [
+        "node1:9000",
+        "node2:9000",
+    ]
+
+
+def test_leader_only_ddl_marks_task_executed_with_inactive_replica(started_cluster):
     try:
         node1.query(
             f"DROP DATABASE IF EXISTS {DB} ON CLUSTER {CLUSTER} SYNC",
@@ -128,16 +154,24 @@ def test_delete_on_cluster_marks_task_executed_with_inactive_replica(started_clu
 
             assert exc_info.value.returncode == 779
 
-            entry = get_last_lightweight_delete_task_entry()
-            assert entry
-            assert (
-                zk.exists(f"/clickhouse/task_queue/ddl/{entry}/shards/{SHARD_ID}/executed")
-                is not None
-            )
-            assert sorted(zk.get_children(f"/clickhouse/task_queue/ddl/{entry}/finished")) == [
-                "node1:9000",
-                "node2:9000",
-            ]
+            assert_task_executed(zk, get_last_lightweight_delete_task_entry())
+
+            with pytest.raises(
+                QueryRuntimeException,
+                match="replicas are inactive right now",
+            ) as exc_info:
+                node1.query(
+                    f"ALTER TABLE {DB}.{TABLE} ON CLUSTER {CLUSTER} ADD COLUMN metadata_column UInt8",
+                    settings={
+                        **DDL_SETTINGS,
+                        "alter_sync": 2,
+                        "replication_wait_for_inactive_replica_timeout": 0,
+                    },
+                    timeout=30,
+                )
+
+            assert exc_info.value.returncode == 779
+            assert_task_executed(zk, get_last_metadata_alter_task_entry())
         finally:
             zk.stop()
             zk.close()
