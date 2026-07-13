@@ -16,7 +16,7 @@ struct ClusterFunctionReadTaskResponse
 {
     ClusterFunctionReadTaskResponse() = default;
     explicit ClusterFunctionReadTaskResponse(const std::string & path_);
-    explicit ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context);
+    ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context, bool read_pins_generation_ = false);
 
     /// Data path (object path, in case of object storage).
     String path;
@@ -41,6 +41,12 @@ struct ClusterFunctionReadTaskResponse
     bool is_size_known = true;
     UInt64 last_modified_epoch_us = 0;
     bool is_last_modified_known = true;
+
+    /// Coordinator-side only (NOT serialized): whether this backend's read actually pins to the
+    /// propagated ETag generation (only S3 enforces `StoredObject::etag` on the GET via `If-Match`).
+    /// Gates the old-worker fail-close in `serialize` — a backend that never pins (Azure, HDFS, ...)
+    /// loses no generation-pinning semantics on a `< 9` worker, so it must not be rejected.
+    bool read_pins_generation = false;
 
     /// Convert received response into ObjectInfo.
     ObjectInfoPtr getObjectInfo() const;

@@ -26,7 +26,8 @@ namespace Setting
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
 }
 
-ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
+ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context, bool read_pins_generation_)
+    : read_pins_generation(read_pins_generation_)
 {
     if (!object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`object` cannot be null");
@@ -193,12 +194,14 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             writeBinary(is_last_modified_known, out);
         }
     }
-    else if (file_bucket_info && !etag.empty())
+    else if (file_bucket_info && !etag.empty() && read_pins_generation)
     {
         /// Fail closed: a bucket-split task carries offsets computed from the generation this ETag
         /// identifies. A worker that cannot receive the ETag would pin nothing (or its own fresh HEAD)
         /// and could apply those offsets to different bytes after a concurrent overwrite - the very
-        /// misread the propagation exists to prevent.
+        /// misread the propagation exists to prevent. Only gated for backends whose read actually pins
+        /// to the ETag (S3); a backend that never pins (Azure, HDFS, ...) loses nothing on an old worker,
+        /// so rejecting it would needlessly break mixed-version rolling upgrades.
         throw Exception(
             ErrorCodes::UNKNOWN_PROTOCOL,
             "Worker protocol version {} cannot carry the object metadata required to pin a bucket-split "
