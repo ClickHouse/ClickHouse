@@ -181,7 +181,9 @@ private:
     /// lock (via its `czxid`) together with a `Set` that refreshes the lock's mtime (a heartbeat,
     /// so the TTL cleanup does not clean up a lock that is actively committing). No-op when buckets are
     /// not used, when the lock `czxid` is unknown, or when Keeper has no `CheckStat` support.
-    /// Returns true if the assertion was added (so the caller can map a failed op back to it).
+    /// Returns true if the assertion was added. A failed `CheckStat` surfaces as a generic Keeper
+    /// multi error (the batch fails and is retried), not as `OBJECT_STORAGE_QUEUE_BUCKET_OWNERSHIP_LOST`,
+    /// which is thrown only on the prepare-time "processed pointer already advanced" path.
     bool prepareBucketOwnershipCheckRequests(Coordination::Requests & requests);
 
     /// Whether this processor still owns its bucket lock (the lock node still exists with the

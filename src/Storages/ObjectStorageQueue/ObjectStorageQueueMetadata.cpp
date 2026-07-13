@@ -1532,6 +1532,9 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     {
         String path;
         int32_t version;
+        /// `czxid` at selection time: pins the removal to the exact node observed as stale,
+        /// so we never delete a node that was removed and recreated after the scan.
+        int64_t czxid;
         /// `mtime` age at selection time, logged for attribution of the removal.
         Int64 mtime_age_seconds;
     };
@@ -1562,7 +1565,8 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
                 nodes_to_remove.emplace_back(NodeToRemove{
                     .path = get_batch[i],
                     .version = response[i].stat.version,
-                    .mtime_age_seconds = current_time - response[i].stat.mtime / 1000});
+                    .czxid = response[i].stat.czxid,
+                    .mtime_age_seconds = static_cast<Int64>(current_time) - response[i].stat.mtime / 1000});
         }
         get_batch.clear();
     };
@@ -1602,7 +1606,35 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
         {
-            code = getZooKeeper()->tryRemove(node, version);
+            auto zk_client = getZooKeeper();
+            /// The data `version` alone cannot detect a node that was removed and recreated after
+            /// the scan (a recreated node starts at version 0 again). When Keeper supports
+            /// `CheckStat`, pin the removal to the scanned node's `czxid` as well.
+            if (zk_client->isFeatureEnabled(KeeperFeatureFlag::CHECK_STAT))
+            {
+                Coordination::Stat match{};
+                match.czxid = node_to_remove.czxid;
+                match.mzxid = -1;
+                match.ctime = -1;
+                match.mtime = -1;
+                match.version = -1;
+                match.cversion = -1;
+                match.aversion = -1;
+                match.ephemeralOwner = -1;
+                match.dataLength = -1;
+                match.numChildren = -1;
+                match.pzxid = -1;
+
+                Coordination::Requests requests;
+                requests.push_back(zkutil::makeCheckRequest(node, /* version */-1, /* not_exists */false, match));
+                requests.push_back(zkutil::makeRemoveRequest(node, version));
+                Coordination::Responses responses;
+                code = zk_client->tryMulti(requests, responses);
+            }
+            else
+            {
+                code = zk_client->tryRemove(node, version);
+            }
         });
         if (code == Coordination::Error::ZOK)
             ++removed;

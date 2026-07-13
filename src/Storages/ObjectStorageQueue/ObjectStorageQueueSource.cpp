@@ -721,13 +721,15 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             /// The TTL cleanup may only reclaim a lock whose `mtime` aged past the TTL, and
             /// `last_heartbeat_time` is a lower bound on the `mtime`. Losing a lock younger than
             /// the TTL therefore indicates a bug: the cleanup removing fresh nodes, a broken
-            /// heartbeat refresh, or an external deletion.
+            /// heartbeat refresh, or an external deletion. The slack absorbs clock skew between
+            /// the replicas and Keeper (the `mtime` and the cleanup's clock are not ours).
             const Int64 believed_heartbeat_age = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count()
                 - current_bucket_holder->getBucketInfo()->last_heartbeat_time.load();
-            const auto ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
+            const Int64 ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
+            const Int64 slack_seconds = std::max<Int64>(5, ttl_seconds / 10);
             chassert(
-                believed_heartbeat_age >= static_cast<Int64>(ttl_seconds),
+                believed_heartbeat_age + slack_seconds >= ttl_seconds,
                 fmt::format(
                     "Lost ownership of bucket {} while its believed heartbeat age ({} sec) "
                     "is younger than the TTL ({} sec)",
@@ -738,6 +740,11 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             LOG_TEST(log, "Lost ownership of bucket {}, will re-acquire",
                      current_bucket_holder->getBucket());
             current_bucket_holder->setFinished();
+            /// Reset the cached bucket processor (as `releaseFinishedBuckets` does), so the
+            /// bucket's cached keys do not stay skipped until the next commit.
+            auto cached_info = keys_cache_per_bucket.find(current_bucket_holder->getBucket());
+            if (cached_info != keys_cache_per_bucket.end())
+                cached_info->second->processor.reset();
             current_bucket_holder = nullptr;
         }
     }

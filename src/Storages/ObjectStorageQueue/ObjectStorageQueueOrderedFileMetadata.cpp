@@ -152,7 +152,9 @@ std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
     WriteBufferFromOwnString wb;
     wb << "bucket " << bucket << ", ";
     wb << "processor info " << processor_info << ", ";
-    wb << "lock czxid " << lock_czxid;
+    wb << "lock czxid " << lock_czxid << ", ";
+    wb << "lock acquired time " << lock_acquired_time << ", ";
+    wb << "last heartbeat time " << last_heartbeat_time.load();
     return wb.str();
 }
 
@@ -219,7 +221,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     Int64 lock_acquired_time_,
     LoggerPtr log_,
     const std::string & zookeeper_name_)
-    : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
+    /// Constructed in place (not via `make_shared`): the atomic member makes `BucketInfo` non-copyable.
+    : bucket_info(std::shared_ptr<const BucketInfo>(new BucketInfo{
         .bucket = bucket_,
         .bucket_lock_path = bucket_lock_path_,
         .processor_info = processor_info_,
@@ -590,6 +593,10 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     const auto bucket_lock_path = bucket_path / "lock";
     const auto processor_info = getProcessorInfo(generateProcessingID());
 
+    /// Taken before the create is sent, so it is a lower bound on the lock node's `mtime`
+    /// (the create can land on an earlier retry than the one that reports success).
+    const auto lock_acquire_time = currentTimeSeconds();
+
     Coordination::Error code = {};
     zk_retry.resetFailures();
     zk_retry.retryLoop([&]
@@ -617,6 +624,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
 
         /// Capture the lock node's `czxid` for the commit-time ownership check (see `lock_czxid`).
         /// `-1` (e.g. if we cannot read it) just disables the check, falling back to prior behaviour.
+        /// If this loop throws, the created lock leaks with no holder to release it; the TTL
+        /// cleanup is the backstop.
         int64_t lock_czxid = -1;
         bool ownership_lost = false;
         zk_retry.resetFailures();
@@ -649,7 +658,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
             bucket_lock_path,
             processor_info,
             lock_czxid,
-            currentTimeSeconds(),
+            lock_acquire_time,
             log_,
             zookeeper_name_);
     }
@@ -788,6 +797,9 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedAtStartRequests(Coor
 
 bool ObjectStorageQueueOrderedFileMetadata::prepareBucketOwnershipCheckRequests(Coordination::Requests & requests)
 {
+    /// Reset a possibly stale value from a previous failed commit attempt.
+    pending_bucket_heartbeat_time = 0;
+
     if (!useBucketsForProcessing() || !bucket_info || bucket_info->lock_czxid < 0)
         return false;
 
