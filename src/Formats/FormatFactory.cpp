@@ -1128,6 +1128,14 @@ void FormatFactory::registerOutputFormatMayProduceRawBytesChecker(const String &
     target = std::move(checker);
 }
 
+void FormatFactory::markOutputFormatMayEmitCarriageReturns(const String & name)
+{
+    auto & target = getOrCreateCreators(name).may_emit_carriage_returns;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as emitting carriage returns", name);
+    target = true;
+}
+
 void FormatFactory::registerOutputFormatMayEmitCarriageReturnChecker(const String & name, MayEmitCarriageReturnChecker checker)
 {
     auto & target = getOrCreateCreators(name).may_emit_carriage_return_checker;
@@ -1239,6 +1247,8 @@ bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name, c
 bool FormatFactory::checkIfOutputFormatMayEmitCarriageReturn(const String & name, const FormatSettings & settings) const
 {
     const auto & target = getCreators(name);
+    if (target.may_emit_carriage_returns)
+        return true;
     return target.may_emit_carriage_return_checker && target.may_emit_carriage_return_checker(settings);
 }
 

@@ -213,6 +213,11 @@ void registerOutputFormatVertical(FormatFactory & factory)
 
     factory.markOutputFormatSupportsParallelFormatting("Vertical");
 
+    /// The values are written with `serializeText`, which passes the bytes of a `String` value through
+    /// verbatim, including carriage returns. Those cannot survive the text `EventStream` framing, so
+    /// the output is base64-encoded there (see `checkIfOutputFormatMayEmitCarriageReturn`).
+    factory.markOutputFormatMayEmitCarriageReturns("Vertical");
+
     factory.setDocumentation("Vertical", Documentation{
         .description = R"DOCS_MD(
 | Input | Output | Alias |

@@ -886,6 +886,12 @@ void registerOutputFormatPretty(FormatFactory & factory)
                         && (format_settings.pretty.glue_chunks == 1 || (format_settings.pretty.glue_chunks == 2 && format_settings.is_writing_to_terminal));
                     return std::make_shared<PrettyBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, style, mono_block, color, glue_chunks);
                 });
+
+                /// The values are written with `serializeText`, which passes the bytes of a `String`
+                /// value through verbatim, including carriage returns. Those cannot survive the text
+                /// `EventStream` framing, so the output is base64-encoded there (see
+                /// `checkIfOutputFormatMayEmitCarriageReturn`).
+                factory.markOutputFormatMayEmitCarriageReturns(name);
             }
         }
     }
