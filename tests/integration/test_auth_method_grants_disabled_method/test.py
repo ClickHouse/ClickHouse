@@ -9,9 +9,14 @@ cluster = ClickHouseCluster(__file__)
 # The plaintext method is then disabled via `allow_plaintext_password = 0` and the server is restarted. A disabled
 # method must be ignored entirely - both in the primary authentication loop and in the fail-close ambiguity scan -
 # so it must not be able to narrow the rights of the still-allowed method's login.
+#
+# The `default` user of the integration framework is defined with a plaintext password in `users.xml`, which would
+# make the server refuse to start once `allow_plaintext_password = 0`, so it is switched to `no_password` here
+# (`allow_no_password` stays enabled).
 node = cluster.add_instance(
     "node",
     main_configs=["configs/allow_plaintext.yaml"],
+    user_configs=["users/default_no_password.yaml"],
     stay_alive=True,
 )
 
@@ -27,17 +32,14 @@ def start_cluster():
 
 def test_disabled_method_does_not_narrow_allowed_login(start_cluster):
     node.query("DROP USER IF EXISTS u_disabled_grants")
-    node.query("CREATE TABLE IF NOT EXISTS default.t_disabled_grants (x UInt64) ENGINE = Memory")
+    # The table must survive the server restart below, so `Memory` is not suitable here.
+    node.query("CREATE TABLE IF NOT EXISTS default.t_disabled_grants (x UInt64) ENGINE = MergeTree ORDER BY x")
     node.query("INSERT INTO default.t_disabled_grants VALUES (1)")
 
     # The `sha256_password` method is always allowed and carries no `GRANTS` clause (so on its own it is unrestricted).
     # The `plaintext_password` method shares the same secret but is limited to a different table, so if it participates
     # in the fail-close ambiguity scan the session is narrowed away from t_disabled_grants.
-    node.query(
-        "CREATE USER u_disabled_grants "
-        "IDENTIFIED WITH sha256_password BY 'shared', "
-        "plaintext_password BY 'shared' GRANTS (SELECT ON default.other_table)"
-    )
+    node.query("CREATE USER u_disabled_grants IDENTIFIED WITH sha256_password BY 'shared', plaintext_password BY 'shared' GRANTS (SELECT ON default.other_table)")
     node.query("GRANT SELECT ON default.t_disabled_grants TO u_disabled_grants")
 
     # While plaintext passwords are allowed, the plaintext method participates in the ambiguity scan and narrows the
