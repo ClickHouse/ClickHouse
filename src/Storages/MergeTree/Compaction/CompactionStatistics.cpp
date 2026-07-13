@@ -154,11 +154,12 @@ size_t countPartStreams(const IMergeTreeDataPart & part)
 /// ever raises the estimate for semi-structured columns.
 ///
 /// The per-column union can still miss dynamic substreams that live only in an old source part without
-/// columns_substreams.txt (there the default serialization collapses JSON / Dynamic to a single stream).
-/// Guard against that by flooring the result at the widest source part's actual stream count: the merged
-/// part is never narrower than any single source part, and countPartStreams reads an old wide part's real
-/// stream count from its on-disk .bin files. For simple columns and modern parts this floor equals the
-/// union count, so it never raises the estimate above what the union already accounts for.
+/// columns_substreams.txt (there the default serialization collapses JSON / Dynamic to a single stream, and
+/// tryGetColumnSubstreams returns nothing). Those old parts' dynamic streams are added back explicitly below
+/// (see unrecorded_dynamic_streams), so a mixed old/new merge with disjoint dynamic paths is not undercounted.
+/// The result is also floored at the widest source part's actual stream count (countPartStreams reads an old
+/// wide part's real .bin count), since the merged part is never narrower than any single source part. For
+/// simple columns and modern parts both adjustments are no-ops.
 size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeTreeDataPartsVector & source_parts)
 {
     size_t streams = 0;
@@ -179,6 +180,46 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
         streams += recorded ? union_substreams.size() : countColumnStreams({column});
     }
 
+    /// The per-column union above can only see substreams recorded in columns_substreams.txt. A source part
+    /// written before that file existed (a pre-25.8 upgrade path) records nothing, so the dynamic substreams
+    /// of its JSON / Dynamic columns are invisible to the union. When such an old part is merged with newer
+    /// parts, its dynamic paths can be disjoint from theirs (old part has path 'a', new part has 'b', and the
+    /// merged part writes both), so the union - which only saw the newer part's 'b' - undercounts the result.
+    /// The whole-part max floor below does not close this: neither the old part nor the new part is on its own
+    /// as wide as their union. Add each old wide part's unrecorded dynamic streams to the estimate instead:
+    /// they are the part's on-disk stream count minus the streams accountable to its non-dynamic columns
+    /// (whose layout is fixed and is already covered by the union). Treating those dynamic streams as disjoint
+    /// from every other part is the safe direction for a reservation. For parts written after
+    /// columns_substreams.txt exists, and for merges of only simple columns, this adds nothing.
+    size_t unrecorded_dynamic_streams = 0;
+    for (const auto & part : source_parts)
+    {
+        if (part->getType() != MergeTreeDataPartType::Wide || !part->getColumnsSubstreams().empty())
+            continue;
+
+        NamesAndTypesList non_dynamic_columns;
+        bool has_dynamic_column = false;
+        for (const auto & column : part->getColumns())
+        {
+            if (column.type->hasDynamicSubcolumns())
+                has_dynamic_column = true;
+            else
+                non_dynamic_columns.push_back(column);
+        }
+
+        if (!has_dynamic_column)
+            continue;
+
+        const size_t total_streams = countPartStreams(*part);
+        const size_t non_dynamic_streams = countColumnStreams(non_dynamic_columns);
+        if (total_streams > non_dynamic_streams)
+            unrecorded_dynamic_streams += total_streams - non_dynamic_streams;
+    }
+    streams += unrecorded_dynamic_streams;
+
+    /// The merged wide part is never narrower than any single source part, so floor the estimate at the
+    /// widest source part's actual stream count. For simple columns and modern parts this floor equals the
+    /// per-column union, so it never raises the estimate above what the union already accounts for.
     size_t max_source_streams = 0;
     for (const auto & part : source_parts)
         max_source_streams = std::max(max_source_streams, countPartStreams(*part));
