@@ -11,6 +11,21 @@ def get_array(query_result: str):
     return sorted([int(x) for x in query_result.strip().split("\n") if x])
 
 
+def expected_complex_ids():
+    ids = list(range(20, 90)) + list(range(100, 150))
+    ids += [x for x in range(200, 250) if x not in {205, 210, 220}]
+    return sorted(ids)
+
+
+def upload_table(cluster, storage_type, table_name):
+    default_upload_directory(
+        cluster,
+        storage_type,
+        f"/iceberg_data/default/{table_name}/",
+        f"/iceberg_data/default/{table_name}/",
+    )
+
+
 @pytest.mark.parametrize("run_on_cluster", [False, True])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_deletion_vectors(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
@@ -38,12 +53,7 @@ def test_deletion_vectors(started_cluster_iceberg_with_spark, storage_type, run_
         f"DELETE FROM {table_name} WHERE id IN ({', '.join(str(x) for x in deleted_ids)})"
     )
 
-    default_upload_directory(
-        started_cluster_iceberg_with_spark,
-        storage_type,
-        f"/iceberg_data/default/{table_name}/",
-        f"/iceberg_data/default/{table_name}/",
-    )
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
 
     expression = get_creation_expression(
         storage_type,
@@ -57,3 +67,94 @@ def test_deletion_vectors(started_cluster_iceberg_with_spark, storage_type, run_
     assert get_array(instance.query(f"SELECT id FROM {expression}")) == [
         x for x in range(200) if x not in deleted_ids
     ]
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_deletion_vectors_complex(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    table_name = "test_deletion_vectors_complex_" + storage_type + "_" + get_uuid_str()
+    expected_ids = expected_complex_ids()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint, data string) USING iceberg
+        PARTITIONED BY (bucket(5, id))
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(
+        f"INSERT INTO {table_name} SELECT id, char(id + ascii('a')) FROM range(10, 100)"
+    )
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+
+    expression = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+    )
+
+    assert int(instance.query(f"SELECT count(id) FROM {expression}")) == 90
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(10, 100))
+
+    spark.sql(f"DELETE FROM {table_name} WHERE id < 20")
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(20, 100))
+
+    spark.sql(f"DELETE FROM {table_name} WHERE id >= 90")
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(20, 90))
+
+    spark.sql(
+        f"INSERT INTO {table_name} SELECT id, char(id + ascii('a')) FROM range(100, 200)"
+    )
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(20, 90)) + list(
+        range(100, 200)
+    )
+
+    spark.sql(f"DELETE FROM {table_name} WHERE id >= 150")
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(20, 90)) + list(
+        range(100, 150)
+    )
+
+    spark.sql(f"ALTER TABLE {table_name} ADD COLUMNS (label string)")
+    spark.sql(
+        f"""
+        INSERT INTO {table_name}
+        SELECT id, char(id + ascii('a')), 'new'
+        FROM range(200, 250)
+        """
+    )
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(20, 90)) + list(
+        range(100, 150)
+    ) + list(range(200, 250))
+    assert int(instance.query(f"SELECT count(id) FROM {expression} WHERE label = 'new'")) == 50
+
+    spark.sql(f"DELETE FROM {table_name} WHERE id IN (205, 210, 220)")
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == expected_ids
+    assert int(instance.query(f"SELECT count(id) FROM {expression}")) == len(expected_ids)
+
+    spark.sql(f"UPDATE {table_name} SET label = 'updated' WHERE id = 25")
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+    assert instance.query(f"SELECT label FROM {expression} WHERE id = 25").strip() == "updated"
+    assert int(instance.query(f"SELECT count(id) FROM {expression} WHERE label = 'updated'")) == 1
+
+    spark.sql(f"CALL system.rewrite_data_files(table => '{table_name}')")
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == expected_ids
+
+    assert get_array(
+        instance.query(
+            f"SELECT id FROM {expression} WHERE id % 3 = 0"
+        )
+    ) == sorted([x for x in expected_ids if x % 3 == 0])
