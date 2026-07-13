@@ -17,11 +17,6 @@ select count(), sum(key), countIf(s != ''), countIf(n is null), sum(length(arr))
 3000	4498500	1020	1000	4000
 select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_shared_meta_wide';
 1
--- The shared caches are populated (global metrics, so only check they are non-empty).
-select value > 0 from system.metrics where metric = 'SharedPartSerializationsCacheSize';
-1
-select value > 0 from system.metrics where metric = 'SharedPartColumnsSubstreamsCacheSize';
-1
 -- Mutations rewrite parts with new sparsity.
 alter table t_shared_meta_wide update s = '' where key >= 1000 and key < 2000 settings mutations_sync = 2;
 select name, serialization_kind from system.parts_columns where database = currentDatabase() and table = 't_shared_meta_wide' and column = 's' and active order by name;

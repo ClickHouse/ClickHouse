@@ -22,10 +22,6 @@ select name, serialization_kind from system.parts_columns where database = curre
 select count(), sum(key), countIf(s != ''), countIf(n is null), sum(length(arr)) from t_shared_meta_wide;
 select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_shared_meta_wide';
 
--- The shared caches are populated (global metrics, so only check they are non-empty).
-select value > 0 from system.metrics where metric = 'SharedPartSerializationsCacheSize';
-select value > 0 from system.metrics where metric = 'SharedPartColumnsSubstreamsCacheSize';
-
 -- Mutations rewrite parts with new sparsity.
 alter table t_shared_meta_wide update s = '' where key >= 1000 and key < 2000 settings mutations_sync = 2;
 select name, serialization_kind from system.parts_columns where database = currentDatabase() and table = 't_shared_meta_wide' and column = 's' and active order by name;

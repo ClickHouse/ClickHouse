@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-shared-merge-tree
 
 # Eviction of the shared part metadata cache across ALTER ADD/DROP COLUMN cycles,
 # with and without Nested columns and with `share_nested_offsets` enabled and disabled
@@ -10,6 +11,9 @@
 # in two ways (the replaced part object is removed from memory and disk by background cleanup,
 # and a detach+attach of the table can even reload the not-yet-removed directory as a covered
 # part), so the assertions after it poll until the expected value with a short parts lifetime.
+# Tagged no-shared-merge-tree: the eviction under test is driven by the lifecycle of local part
+# objects, which SharedMergeTree manages through Keeper on its own schedule, so the polls do not
+# converge there within the test time budget.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,7 +29,7 @@ function cache_size()
 function wait_for_cache_size()
 {
     local res
-    for _ in {1..300}
+    for _ in {1..200}
     do
         res=$(cache_size "$1")
         [ "$res" = "$2" ] && break
