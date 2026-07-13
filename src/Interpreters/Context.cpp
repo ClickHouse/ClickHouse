@@ -7453,6 +7453,16 @@ void Context::addQueryParameters(const NameToNameMap & parameters)
         query_parameters.insert_or_assign(name, value);
 }
 
+const NameToNameMap & Context::getHTTPHeaderColumns() const
+{
+    return http_header_columns;
+}
+
+void Context::setHTTPHeaderColumns(NameToNameMap mapping)
+{
+    http_header_columns = std::move(mapping);
+}
+
 
 IHostContextPtr & Context::getHostContext()
 {

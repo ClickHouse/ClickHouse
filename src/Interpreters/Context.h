@@ -682,6 +682,10 @@ protected:
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
 
+    NameToNameMap http_header_columns;  /// HTTP header values mapped to INSERT columns via
+                                        /// http_column_<Header>=<column> URL params.
+                                        /// (key=column_name, value=header_value)
+
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
                                    /// logger, some query identification information, profiling guards, etc. This field is
@@ -1804,6 +1808,10 @@ public:
 
     /// Overrides values of existing parameters.
     void addQueryParameters(const NameToNameMap & parameters);
+
+    /// HTTP header-to-column mappings for INSERT (set by http_column_* URL params).
+    const NameToNameMap & getHTTPHeaderColumns() const;
+    void setHTTPHeaderColumns(NameToNameMap mapping);
 
 
     IHostContextPtr & getHostContext();

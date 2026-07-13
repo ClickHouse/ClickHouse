@@ -266,6 +266,8 @@ void HTTPHandler::processQuery(
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
+    static constexpr std::string_view HTTP_COLUMN_PREFIX = "http_column_";
+
     auto param_could_be_skipped = [&] (const String & name)
     {
         /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
@@ -279,6 +281,10 @@ void HTTPHandler::processQuery(
             "database", "default_format"};
 
         if (reserved_param_names.contains(name))
+            return true;
+
+        /// http_column_* params are processed separately (header-to-column mapping).
+        if (name.starts_with(HTTP_COLUMN_PREFIX))
             return true;
 
         if (has_external_data)
@@ -297,6 +303,26 @@ void HTTPHandler::processQuery(
 
         return false;
     };
+
+    /// Parse http_column_* params: map HTTP request header values to INSERT columns.
+    /// URL param format: http_column_<Header-Name>=<column_name>
+    /// The header value is resolved from the current request and stored on the context
+    /// so that both sync and async INSERT paths can inject it as column data.
+    {
+        NameToNameMap http_header_columns;
+        for (const auto & [key, value] : params)
+        {
+            if (key.starts_with(HTTP_COLUMN_PREFIX))
+            {
+                String header_name(key.substr(HTTP_COLUMN_PREFIX.size()));
+                String column_name = value;
+                String header_value = request.get(header_name, "");
+                http_header_columns.emplace(column_name, header_value);
+            }
+        }
+        if (!http_header_columns.empty())
+            context->setHTTPHeaderColumns(std::move(http_header_columns));
+    }
 
     /// Settings can be overridden in the query.
     SettingsChanges settings_changes;

@@ -171,6 +171,7 @@ private:
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
+            NameToNameMap http_header_columns;  /// column_name -> header_value, from http_column_* URL params
 
             Entry(
                 DataChunk && chunk_,

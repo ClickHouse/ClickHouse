@@ -1,0 +1,18 @@
+--- sync: basic header-to-column mapping
+push	sha256=abc123	hello
+--- sync: multiple rows
+release	sha256=def456	row1
+release	sha256=def456	row2
+release	sha256=def456	row3
+--- sync: case-insensitive header name
+issues	case-test
+--- sync: missing header produces empty string
+	no-header
+--- async: header-to-column mapping with batching
+push	sig1	async1
+release	sig2	async2
+--- async: multiple rows per entry
+star	multi1
+star	multi2
+--- error: non-existent column
+NO_SUCH_COLUMN_IN_TABLE

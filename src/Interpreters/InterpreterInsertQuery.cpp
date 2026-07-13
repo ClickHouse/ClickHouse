@@ -25,6 +25,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -36,6 +37,7 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Transforms/HTTPHeaderColumnsTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -833,6 +835,16 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 chain.getInputSharedHeader()));
     }
 
+    /// For http_column_* mappings: inject a transform that replaces the mapped columns
+    /// with the HTTP header values from the originating request. For the sync path all
+    /// rows share the same header values, so one constant-fill transform suffices.
+    const auto & http_header_columns = context->getHTTPHeaderColumns();
+    if (!http_header_columns.empty())
+    {
+        chain.addSource(std::make_shared<HTTPHeaderColumnsTransform>(
+            *chain.getInputSharedHeader(), http_header_columns));
+    }
+
     auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota(), context->getNormalizedQueryHash());
     counting->setProcessListElement(context->getProcessListElement());
     counting->setProgressCallback(context->getProgressCallback());
@@ -1043,6 +1055,35 @@ BlockIO InterpreterInsertQuery::execute()
 
     table->updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+
+    /// If http_column_* URL params mapped HTTP headers to column names, add those
+    /// columns to the INSERT's column list so getSampleBlock includes them in the
+    /// pipeline header. This tells the pipeline that these columns are client-provided,
+    /// skipping DEFAULT expressions. For the sync path the actual values are injected
+    /// via a transform added in buildInsertPipeline.
+    const auto & http_header_columns = context->getHTTPHeaderColumns();
+    if (!http_header_columns.empty())
+    {
+        const auto & table_columns = metadata_snapshot->getColumns();
+        if (!query.columns)
+            query.columns = make_intrusive<ASTExpressionList>();
+
+        NameSet existing_columns;
+        for (const auto & child : query.columns->children)
+            existing_columns.insert(child->getColumnName());
+
+        for (const auto & [col_name, _] : http_header_columns)
+        {
+            if (!table_columns.has(col_name))
+                throw Exception(
+                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                    "http_column mapping references column '{}' which does not exist in table '{}'",
+                    col_name, query.table_id.getFullTableName());
+            if (!existing_columns.contains(col_name))
+                query.columns->children.push_back(make_intrusive<ASTIdentifier>(col_name));
+        }
+    }
+
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
     /// For table functions we check access while executing
     /// getTable() -> ITableFunction::execute().

@@ -104,6 +104,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 static const NameSet settings_to_skip
@@ -412,6 +413,34 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 
     auto table = interpreter.getTable(insert_query);
     const auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
+
+    /// If http_column_* URL params mapped HTTP headers to column names, add those
+    /// columns to the INSERT's column list so getSampleBlock includes them in the
+    /// pipeline header. This tells the pipeline that these columns are client-provided,
+    /// skipping DEFAULT expressions. The actual values are injected per-entry at flush.
+    const auto & http_header_columns = query_context->getHTTPHeaderColumns();
+    if (!http_header_columns.empty())
+    {
+        const auto & table_columns = metadata_snapshot->getColumns();
+        if (!insert_query.columns)
+            insert_query.columns = make_intrusive<ASTExpressionList>();
+
+        NameSet existing_columns;
+        for (const auto & child : insert_query.columns->children)
+            existing_columns.insert(child->getColumnName());
+
+        for (const auto & [col_name, _] : http_header_columns)
+        {
+            if (!table_columns.has(col_name))
+                throw Exception(
+                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                    "http_column mapping references column '{}' which does not exist in table '{}'",
+                    col_name, insert_query.table_id.getFullTableName());
+            if (!existing_columns.contains(col_name))
+                insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(col_name));
+        }
+    }
+
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
         insert_query,
         table,
@@ -546,6 +575,9 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     /// Query parameters make sense only for format Values.
     if (insert_query.format == "Values")
         entry->query_parameters = query_context->getQueryParameters();
+
+    /// Store HTTP header-to-column mappings per entry for injection at flush time.
+    entry->http_header_columns = query_context->getHTTPHeaderColumns();
 
     const auto & client_info = query_context->getClientInfo();
     InsertQuery key{
@@ -1332,6 +1364,15 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
 
+    /// Track per-entry row counts for http_header_column injection.
+    struct EntryRowInfo
+    {
+        size_t num_rows;
+        const NameToNameMap * http_header_columns;
+    };
+    std::vector<EntryRowInfo> entry_row_infos;
+    bool has_http_header_columns = false;
+
     for (const auto & entry : data->entries)
     {
         current_entry = entry;
@@ -1349,6 +1390,16 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
         total_rows += num_rows;
 
+        if (!entry->http_header_columns.empty())
+        {
+            has_http_header_columns = true;
+            entry_row_infos.push_back({num_rows, &entry->http_header_columns});
+        }
+        else
+        {
+            entry_row_infos.push_back({num_rows, nullptr});
+        }
+
         /// it is ok if total_rows is 0 here or async_dedup_token is empty
         deduplication_info->setUserToken(entry->async_dedup_token, num_rows);
 
@@ -1359,7 +1410,52 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     LOG_DEBUG(logger, "Processed {} rows with parsing them for {} entries", total_rows, data->entries.size());
 
-    Chunk chunk(executor.getResultColumns(), total_rows);
+    auto result_columns = executor.getResultColumns();
+
+    /// Overwrite columns that were mapped from HTTP headers (http_column_* URL params).
+    /// The format + AddingDefaultsTransform filled these with defaults; replace them
+    /// with the actual per-entry header values so each row carries its request's headers.
+    if (has_http_header_columns)
+    {
+        for (size_t col_idx = 0; col_idx < header.columns(); ++col_idx)
+        {
+            const auto & col_name = header.getByPosition(col_idx).name;
+
+            /// Check if any entry has this column in its http_header_columns.
+            /// All entries that use http_column_* share the same column names
+            /// (the URL pattern is the same), so checking the first non-null suffices.
+            bool is_injected = false;
+            for (const auto & info : entry_row_infos)
+            {
+                if (info.http_header_columns && info.http_header_columns->contains(col_name))
+                {
+                    is_injected = true;
+                    break;
+                }
+            }
+            if (!is_injected)
+                continue;
+
+            /// Build a replacement column with per-entry header values.
+            auto new_col = header.getByPosition(col_idx).type->createColumn();
+            new_col->reserve(total_rows);
+            for (const auto & info : entry_row_infos)
+            {
+                String value;
+                if (info.http_header_columns)
+                {
+                    auto it = info.http_header_columns->find(col_name);
+                    if (it != info.http_header_columns->end())
+                        value = it->second;
+                }
+                for (size_t row = 0; row < info.num_rows; ++row)
+                    new_col->insert(value);
+            }
+            result_columns[col_idx] = std::move(new_col);
+        }
+    }
+
+    Chunk chunk(std::move(result_columns), total_rows);
     chunk.getChunkInfos().add(std::move(deduplication_info));
     return chunk;
 }
