@@ -320,7 +320,7 @@ TEST_F(AsynchronousBoundedReadBufferTest, overlappingReadBigAtRacesSequentialNex
             while (!go.load())
                 ;
             out.resize(read_buffer.read(out.data(), out.size()));
-            if (out != contents.substr(0, out.size()))
+            if (!contents.starts_with(out))
                 all_ok.store(false);
         });
 
