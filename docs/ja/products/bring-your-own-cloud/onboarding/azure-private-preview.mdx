@@ -1,0 +1,74 @@
+---
+title: 'Azure プライベートプレビュー'
+slug: /cloud/reference/byoc/onboarding/azure-private-preview
+sidebarTitle: 'Azure（プライベートプレビュー）'
+keywords: ['BYOC', 'クラウド', 'Bring Your Own Cloud', 'Azure']
+description: 'Terraform モジュールとクロステナント認証を使用して、Azure 上で ClickHouse BYOC のオンボーディングを行います'
+doc_type: 'リファレンス'
+---
+
+import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+<Note>
+  Azure での BYOC は **プライベートプレビュー** です。参加をご希望の場合は、[ClickHouse チームまでお問い合わせください](https://clickhouse.com/cloud/bring-your-own-cloud)。
+</Note>
+
+<div id="overview">
+  ## 概要
+</div>
+
+Azure での BYOC では、お客様自身の Azure サブスクリプションで ClickHouse を実行できます。オンボーディングでは Terraform モジュールを使用して、ClickHouse Cloud のプロビジョナーがお客様のテナントおよびサブスクリプション内で Azure リソースを作成・管理するために必要なクロステナント認証をプロビジョニングします。
+
+[アーキテクチャ](/ja/products/bring-your-own-cloud/overview/architecture)、[ネットワークセキュリティ](/ja/products/bring-your-own-cloud/reference/network-security)、[機能](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview#features)、[接続](/ja/products/bring-your-own-cloud/configuration/connect) など、デプロイメントのその他の側面は、AWS および GCP の BYOC と概ね共通しています。詳細については、それぞれのページを参照してください。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* BYOC デプロイメントをホストする Azure の**サブスクリプション**と**テナント**
+* ClickHouse チームに共有する**サブスクリプション ID**と**テナント ID**
+
+<div id="onboarding">
+  ## オンボーディング
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Terraform モジュールを適用する
+
+    BYOC Azure のオンボーディングを開始するには、ClickHouse が提供する [Azure 向け Terraform モジュール](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) を**ターゲット テナントおよびターゲット サブスクリプション**に適用します。
+
+    必要な変数と適用手順については、モジュールのドキュメントを参照してください。適用後、このモジュールにより Azure 環境に必要な ID と権限が設定されます。
+  </Step>
+
+  <Step>
+    ### 2. ID を ClickHouse に提供する
+
+    以下の情報を ClickHouse チームに共有してください。
+
+    * **ターゲット サブスクリプション ID** — BYOC リソースを作成する Azure サブスクリプション
+    * **ターゲット テナント ID** — そのサブスクリプションを所有する Azure AD (Entra) テナント
+    * **リージョン** — ClickHouseサービスをデプロイする Azure リージョン
+    * **VNet CIDR 範囲** — BYOC VNet に使用する IP アドレス範囲
+
+    ClickHouse チームはこれらの情報を使用して BYOC インフラストラクチャを作成し、オンボーディングを完了します
+  </Step>
+</Steps>
+
+<div id="cross-tenant-auth">
+  ### クロステナント認証の仕組み
+</div>
+
+[クロステナント認証に関する Azure のガイダンス](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps)に従い、この Terraform モジュールは次の処理を行います。
+
+1. ターゲット テナント内に、**マルチテナント アプリケーション**を**Enterprise Application** (サービス プリンシパル) として**作成**します
+2. そのアプリケーションに必要な**権限**を割り当て、ターゲット サブスクリプションのスコープに設定します
+
+これにより、ClickHouse Cloud コントロールプレーンは、Azure の資格情報を ClickHouse に保存することなく、お客様のサブスクリプション内で Azure リソース (リソース グループ、AKS、ストレージ、ネットワークなど) を作成および管理できます。
+
+Azure におけるマルチテナント アプリとクロステナント シナリオの詳細については、以下を参照してください。
+
+* [Microsoft Entra ID のシングルテナント アプリとマルチテナント アプリ](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps)
+* [クロステナント アクセスを承認する (Azure SignalR の例) ](https://learn.microsoft.com/en-us/azure/azure-signalr/signalr-howto-authorize-cross-tenant)

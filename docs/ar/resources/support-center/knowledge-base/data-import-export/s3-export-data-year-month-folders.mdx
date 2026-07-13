@@ -1,0 +1,88 @@
+---
+date: 2023-03-24
+title: "كيف يمكنني إجراء كتابة مقسّمة حسب السنة والشهر على S3؟"
+description: "تعرّف على كيفية كتابة بيانات مقسّمة حسب السنة والشهر إلى حاوية S3 في ClickHouse، باستخدام بنية مسار مخصّصة لتنظيم البيانات."
+tags: ['تصدير البيانات', 'العملاء والواجهات الأصلية']
+keywords: ['S3', 'كتابة مقسّمة حسب الأقسام']
+---
+
+<div id="learn-how-to-do-partitioned-writes-by-year-and-month-on-s3">
+  ## تعرّف على كيفية تنفيذ كتابة مقسّمة حسب السنة والشهر على S3
+</div>
+
+أريد تصدير البيانات مع تقسيم المسار في حاوية S3 بحيث يتبع بنية مثل:
+
+* 2022
+  * 1
+  * 2
+  * ...
+  * 12
+* 2021
+  * 1
+  * 2
+  * ...
+  * 12
+
+وهكذا ...
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+بالنظر إلى جدول ClickHouse:
+
+```sql
+CREATE TABLE sample_data (
+    `name` String,
+    `age` Int,
+    `time` DateTime
+) ENGINE = MergeTree
+ORDER BY
+    name
+```
+
+أضف 10000 سجل:
+
+```sql
+INSERT INTO
+    sample_data
+SELECT
+    *
+FROM
+    generateRandom(
+        'name String, age Int, time DateTime',
+        10,
+        10,
+        10
+    )
+LIMIT
+    10000;
+```
+
+نفّذ هذا لإنشاء البنية المطلوبة في حاوية S3 ‏`my_bucket` (لاحظ أن هذا المثال يكتب ملفات بتنسيق Parquet):
+
+```sql
+INSERT INTO
+    FUNCTION s3(
+        'https://s3-host:4321/my_bucket/{_partition_id}/file.parquet.gz',
+        's3-access-key',
+        's3-secret-access-key',
+        Parquet,
+        'name String, age Int, time DateTime'
+    ) PARTITION BY concat(
+        formatDateTime(time, '%Y'),
+        '/',
+        formatDateTime(time, '%m')
+    )
+SELECT
+    name,
+    age,
+    time
+FROM
+    sample_data
+Query id: 55adcf22-f6af-491e-b697-d09694bbcc56
+
+Ok.
+
+0 rows in set. Elapsed: 15.579 sec. Processed 10.00 thousand rows, 219.93 KB (641.87 rows/s., 14.12 KB/s.)
+```

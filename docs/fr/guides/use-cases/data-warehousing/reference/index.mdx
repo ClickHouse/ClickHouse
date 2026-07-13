@@ -1,0 +1,18 @@
+---
+description: 'Guides de référence pour connecter ClickHouse à des catalogues de lac de données, notamment AWS Glue, Unity, REST, Lakekeeper, Nessie et OneLake.'
+slug: /use-cases/data-lake/reference
+title: 'Guides de catalogues'
+keywords: ['lac de données', 'lakehouse', 'catalogue', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'landing-page'
+---
+
+ClickHouse s’intègre à un ensemble de catalogues de lac de données via le moteur de base de données [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake). Les guides suivants expliquent comment connecter ClickHouse à chaque catalogue pris en charge, avec des exemples de configuration, d’authentification et de requêtes.
+
+| Catalogue                                                                    | Description                                                                                                 |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| [AWS Glue](/fr/guides/use-cases/data-warehousing/glue-catalog)                  | Interrogez des tables Iceberg enregistrées dans AWS Glue Data Catalog à partir de données stockées dans S3. |
+| [Databricks Unity Catalog](/fr/guides/use-cases/data-warehousing/unity-catalog) | Connectez-vous à Databricks Unity Catalog pour les tables Delta Lake et Iceberg.                            |
+| [Iceberg REST Catalog](/fr/guides/use-cases/data-warehousing/rest-catalog)      | Utilisez n’importe quel catalogue implémentant la spécification REST d’Iceberg, comme Tabular.              |
+| [Lakekeeper](/fr/guides/use-cases/data-warehousing/lakekeeper-catalog)          | Connectez-vous à Lakekeeper Catalog pour les tables Iceberg.                                                |
+| [Project Nessie](/fr/guides/use-cases/data-warehousing/nessie-catalog)          | Interrogez des tables Iceberg à l’aide de Nessie Catalog avec un versionnage des données de type Git.       |
+| [Microsoft OneLake](/fr/guides/use-cases/data-warehousing/onelake-catalog)      | Interrogez des tables Iceberg dans Microsoft Fabric OneLake.                                                |

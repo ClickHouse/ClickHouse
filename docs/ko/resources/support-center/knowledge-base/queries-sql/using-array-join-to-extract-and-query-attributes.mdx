@@ -1,0 +1,148 @@
+---
+title: 맵 키와 값으로 가변 속성을 추출하고 쿼리하는 array join 사용 방법
+description: "맵 키와 값으로 가변 속성을 추출하고 쿼리하는 array join 사용 방법을 보여주는 간단한 예시"
+date: 2024-06-21
+tags: ['함수']
+keywords: ['arrayJoin']
+---
+
+{frontMatter.description}
+
+{/* 생략 */}
+
+<div id="question">
+  ## 질문
+</div>
+
+맵 타입을 사용하는 컬럼에 다양한 속성이 있을 때, 이를 어떻게 추출해 쿼리에서 사용할 수 있습니까?
+
+<div id="answer">
+  ## 답변
+</div>
+
+이는 가변적인 속성 필드에서 키와 값을 추출하는 기본 예시입니다.
+이 메서드는 소스/raw 테이블의 각 행에서 겉보기에는 중복처럼 보이는 항목을 생성합니다. 하지만 키와 값을 추출해 두면 이를 프라이머리 키(Primary Key)나 블룸 필터와 같은 인덱스가 있는 보조 키에 포함할 수 있습니다.
+
+이 예시에서는 메트릭 테이블을 생성하는 소스가 있으며, 이 소스에는 맵이 포함된 attributes 필드에 적용될 수 있는 여러 속성이 있습니다. 레코드에 항상 존재하는 속성이 있다면, 이를 별도의 컬럼으로 분리해 채우는 것이 더 좋습니다.
+
+출력이 어떻게 나오는지와 이 경우 materialized view가 어떤 역할을 하는지 확인할 수 있도록 그대로 복사해 붙여 넣으면 됩니다.
+
+샘플 데이터베이스를 생성합니다:
+
+```
+create database db1;
+```
+
+행과 속성을 저장할 초기 테이블을 생성하세요:
+
+```
+create table db1.table1_metric_map
+(
+  id UInt32,
+  timestamp DateTime,
+  metric_name String,
+  metric_value Int32,
+  attributes Map(String, String)
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+테이블(table)에 샘플 행을 삽입하세요.  샘플 수는 의도적으로 적게 설정했으므로 materialized view가 생성되면 각 속성별로 행이 어떻게 늘어나는지 확인할 수 있습니다.
+
+```
+insert into db1.table1_metric_map
+VALUES
+(1, '2023-09-20 00:01:00', 'ABC', 10, {'env':'prod','app':'app1','server':'server1'}),
+(2, '2023-09-20 00:01:00', 'ABC', 20,{'env':'prod','app':'app2','server':'server1','dc':'dc1'}),
+(3, '2023-09-20 00:01:00', 'ABC', 30,{'env':'qa','app':'app1','server':'server1'}),
+(4, '2023-09-20 00:01:00', 'ABC', 40,{'env':'qa','app':'app2','server':'server1','dc':'dc1'}),
+(5, '2023-09-20 00:01:00', 'DEF', 50,{'env':'prod','app':'app1','server':'server2'}),
+(6, '2023-09-20 00:01:00', 'DEF', 60, {'env':'prod','app':'app2','server':'server1'}),
+(7, '2023-09-20 00:01:00', 'DEF', 70,{'env':'qa','app':'app1','server':'server1'}),
+(8, '2023-09-20 00:01:00', 'DEF', 80,{'env':'qa','app':'app2','server':'server1'}),
+(9, '2023-09-20 00:02:00', 'ABC', 90,{'env':'prod','app':'app1','server':'server1'}),
+(10, '2023-09-20 00:02:00', 'ABC', 100,{'env':'prod','app':'app1','server':'server2'}),
+(11, '2023-09-20 00:02:00', 'ABC', 110,{'env':'qa','app':'app1','server':'server1'}),
+(12, '2023-09-20 00:02:00', 'ABC', 120,{'env':'qa','app':'app1','server':'server1'}),
+(13, '2023-09-20 00:02:00', 'DEF', 130,{'env':'prod','app':'app1','server':'server1'}),
+(14, '2023-09-20 00:02:00', 'DEF', 140,{'env':'prod','app':'app2','server':'server1','dc':'dc1'}),
+(15, '2023-09-20 00:02:00', 'DEF', 150,{'env':'qa','app':'app1','server':'server2'}),
+(16, '2023-09-20 00:02:00', 'DEF', 160,{'env':'qa','app':'app1','server':'server1','dc':'dc1'}),
+(17, '2023-09-20 00:03:00', 'ABC', 170,{'env':'prod','app':'app1','server':'server1'}),
+(18, '2023-09-20 00:03:00', 'ABC', 180,{'env':'prod','app':'app1','server':'server1'}),
+(19, '2023-09-20 00:03:00', 'ABC', 190,{'env':'qa','app':'app1','server':'server1'}),
+(20, '2023-09-20 00:03:00', 'ABC', 200,{'env':'qa','app':'app1','server':'server2'}),
+(21, '2023-09-20 00:03:00', 'DEF', 210,{'env':'prod','app':'app1','server':'server1'}),
+(22, '2023-09-20 00:03:00', 'DEF', 220,{'env':'prod','app':'app1','server':'server1'}),
+(23, '2023-09-20 00:03:00', 'DEF', 230,{'env':'qa','app':'app1','server':'server1'}),
+(24, '2023-09-20 00:03:00', 'DEF', 240,{'env':'qa','app':'app1','server':'server1'});
+```
+
+그런 다음 array join을 사용한 materialized view를 생성하여 맵 속성을 키와 값 컬럼으로 추출할 수 있습니다.  설명을 위해 아래 예시에서는 암묵적 테이블(POPULATE 명령 및 `.inner.{uuid}...` 같은 기반 테이블 사용)을 사용합니다.  하지만 권장되는 모범 사례는 먼저 테이블을 정의한 다음, 그 위에 `TO` 명령으로 materialized view를 생성하는 명시적 테이블을 사용하는 것입니다.
+
+```
+CREATE MATERIALIZED VIEW db1.table1_metric_map_mv
+ORDER BY id
+POPULATE AS
+select 
+  *, 
+  attributes.keys as attribute_keys, 
+  attributes.values as attribute_values
+from db1.table1_metric_map
+array join attributes
+where notEmpty(attributes.keys);
+```
+
+새 테이블에는 더 많은 행이 포함되며, 키도 다음과 같이 추출됩니다:
+
+```
+SELECT *
+FROM db1.table1_metric_map_mv
+LIMIT 5
+
+Query id: b7384381-53af-4e3e-bc54-871f61c033a6
+
+┌─id─┬───────────timestamp─┬─metric_name─┬─metric_value─┬─attributes───────────┬─attribute_keys─┬─attribute_values─┐
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('env','prod')       │ env            │ prod             │
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('app','app1')       │ app            │ app1             │
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('server','server1') │ server         │ server1          │
+│  2 │ 2023-09-20 00:01:00 │ ABC         │           20 │ ('env','prod')       │ env            │ prod             │
+│  2 │ 2023-09-20 00:01:00 │ ABC         │           20 │ ('app','app2')       │ app            │ app2             │
+└────┴─────────────────────┴─────────────┴──────────────┴──────────────────────┴────────────────┴──────────────────┘
+```
+
+여기서부터는 특정 속성을 가진 행을 쿼리하려면 다음과 같이 하면 됩니다:
+
+```
+SELECT
+    t1_app.id AS id,
+    timestamp,
+    metric_name,
+    metric_value
+FROM
+(
+    SELECT *
+    FROM db1.table1_metric_map_mv
+    WHERE (attribute_keys = 'app') AND (attribute_values = 'app1') AND (metric_name = 'ABC')
+) AS t1_app
+INNER JOIN
+(
+    SELECT *
+    FROM db1.table1_metric_map_mv
+    WHERE (attribute_keys = 'server') AND (attribute_values = 'server1')
+) AS t2_server ON t1_app.id = t2_server.id
+
+Query id: 72ce7f19-b02a-4b6e-81e7-a955f257436d
+
+┌─id─┬───────────timestamp─┬─metric_name─┬─metric_value─┐
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │
+│  3 │ 2023-09-20 00:01:00 │ ABC         │           30 │
+│  9 │ 2023-09-20 00:02:00 │ ABC         │           90 │
+│ 11 │ 2023-09-20 00:02:00 │ ABC         │          110 │
+│ 12 │ 2023-09-20 00:02:00 │ ABC         │          120 │
+│ 17 │ 2023-09-20 00:03:00 │ ABC         │          170 │
+│ 18 │ 2023-09-20 00:03:00 │ ABC         │          180 │
+│ 19 │ 2023-09-20 00:03:00 │ ABC         │          190 │
+└────┴─────────────────────┴─────────────┴──────────────┘
+```
