@@ -7,6 +7,15 @@ back: the editor shows the draft
 back: the entry result snapshot is adopted
 forward: the draft survives the round-trip
 forward: the entry result snapshot is adopted
+param back: the draft query is preserved
+param back: the draft params are preserved
+param back: the param inputs keep the draft bindings
+param forward: the draft query survives the round-trip
+param forward: the draft params survive the round-trip
+clean param back: the entry query is restored
+clean param back: the entry params are restored verbatim
+clean param forward: the entry query is restored
+clean param forward: the entry params are restored verbatim
 back with a clean editor: the entry query is restored
 forward with a clean editor: the entry query is restored
 OK

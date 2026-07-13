@@ -14,7 +14,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     last-run snapshot (and the refreshed entry must drop the `run=1` marker);
 #   - a same-session Back-then-Forward round-trip must preserve a newer unrun draft
 #     instead of clobbering it with the entry's older query, while a clean editor
-#     (no draft) keeps restoring entries verbatim.
+#     (no draft) keeps restoring entries verbatim;
+#   - the preserved draft carries its parameter bindings too: Back must not restore the
+#     older entry's params under the newer draft query (with a clean editor, entry params
+#     keep restoring verbatim).
 # The harness extracts the real tab/history functions from the served /play page and
 # drives them under node with stub DOM/history objects, asserting on the observable
 # state: history entries, the active tab, and the editor.
@@ -74,18 +77,24 @@ const sandbox = {
     query_area: { value: '', focus() {} },
     document: { title: '', documentElement: { style: { setProperty() {} } } },
     location: { origin: 'http://localhost:8123', pathname: '/play', href: 'http://localhost:8123/play' },
-    getParamValues: () => ({}),
+    /// The live parameter inputs, keyed by name; `getParamValues` snapshots them like the
+    /// real one reads the `param_*` DOM inputs.
+    param_inputs: {},
+    getParamValues: () => ({ ...sandbox.param_inputs }),
     endFlight: () => {},
     renderTabBar: () => {},
     queryToColor: () => '',
     persist: async () => {},
     /// Mimic the editor-facing contract of the real `restoreFromHistory`: set the editor
-    /// to the state's query; the synthetic 'input' event it dispatches syncs the active tab.
+    /// and the parameter inputs to the state's query/params (the real one resets every
+    /// detected param, absent -> ''); the synthetic 'input' event it dispatches syncs the
+    /// active tab, and the restored param snapshot is captured into it.
     restoreFromHistory: async state =>
     {
         sandbox.query_area.value = state.query;
+        sandbox.param_inputs = { ...(state.params || {}) };
         const tab = sandbox.tabs.find(t => t.id === sandbox.activeTabId);
-        if (tab) tab.query = sandbox.query_area.value;
+        if (tab) { tab.query = sandbox.query_area.value; tab.params = sandbox.getParamValues(); }
     },
 };
 sandbox.url_elem = { value: sandbox.location.origin };
@@ -120,6 +129,13 @@ function assert_eq(label, actual, expected)
     console.log(label);
 }
 
+/// Compare parameter objects by a canonical (key-sorted) serialization.
+const canon = obj => JSON.stringify(Object.fromEntries(Object.entries(obj || {}).sort()));
+function assert_params(label, actual, expected)
+{
+    assert_eq(label, canon(actual), canon(expected));
+}
+
 /// A keystroke reaches the page as a DOM edit plus the 'input' listener syncing the
 /// active tab in memory; browser history and the URL are deliberately not touched.
 function type(q)
@@ -127,6 +143,15 @@ function type(q)
     sandbox.query_area.value = q;
     const tab = active();
     if (tab) tab.query = q;
+}
+
+/// A trusted edit of a parameter input: the real `param-` input handler persists the
+/// values into the active tab and stamps the current history entry via `syncHistory`.
+function setParam(name, value)
+{
+    sandbox.param_inputs[name] = value;
+    const tab = active();
+    if (tab) { tab.params = sandbox.getParamValues(); sandbox.syncHistory(); }
 }
 
 /// A successful run: the editor holds the query and `saveHistory` records the result
@@ -146,6 +171,7 @@ function reset()
     sandbox.history.stack.length = 0;
     sandbox.history.idx = -1;
     sandbox.query_area.value = '';
+    sandbox.param_inputs = {};
     sandbox.document.title = '';
     const tab = sandbox.makeTab();
     sandbox.tabs.push(tab);
@@ -183,6 +209,42 @@ function reset()
     await drain();
     assert_eq('forward: the draft survives the round-trip', active().query, 'SELECT 2');
     assert_eq('forward: the entry result snapshot is adopted', active().result && active().result.query, 'SELECT 1');
+
+    /// The preserved draft carries its parameter bindings too: Back must not restore the
+    /// older entry's params under the newer draft query — that would silently drop edited
+    /// values and let the scheduled save persist an incoherent query/params pair.
+    reset();
+    await run('SELECT 0');
+    type('SELECT {x:Int32}');
+    setParam('x', '1');
+    await run('SELECT {x:Int32}');
+    type('SELECT {x:Int32} + {y:Int32}');
+    setParam('y', '2');
+    sandbox.history.back();
+    await drain();
+    assert_eq('param back: the draft query is preserved', active().query, 'SELECT {x:Int32} + {y:Int32}');
+    assert_params('param back: the draft params are preserved', active().params, { x: '1', y: '2' });
+    assert_params('param back: the param inputs keep the draft bindings', sandbox.param_inputs, { x: '1', y: '2' });
+    sandbox.history.forward();
+    await drain();
+    assert_eq('param forward: the draft query survives the round-trip', active().query, 'SELECT {x:Int32} + {y:Int32}');
+    assert_params('param forward: the draft params survive the round-trip', active().params, { x: '1', y: '2' });
+
+    /// Control: with a clean editor (the tab still reflects its run), entry params keep
+    /// restoring verbatim, including dropping bindings the older entry does not carry.
+    reset();
+    await run('SELECT 0');
+    type('SELECT {x:Int32}');
+    setParam('x', '1');
+    await run('SELECT {x:Int32}');
+    sandbox.history.back();
+    await drain();
+    assert_eq('clean param back: the entry query is restored', active().query, 'SELECT 0');
+    assert_params('clean param back: the entry params are restored verbatim', active().params, {});
+    sandbox.history.forward();
+    await drain();
+    assert_eq('clean param forward: the entry query is restored', active().query, 'SELECT {x:Int32}');
+    assert_params('clean param forward: the entry params are restored verbatim', active().params, { x: '1' });
 
     /// Control: with a clean editor (no draft), Back/Forward restore entries verbatim.
     reset();

@@ -5914,8 +5914,9 @@ window.onpopstate = function(event) {
     activeTabId = tab.id;
     /// Prefer a newer unrun in-memory draft over this entry's older query. After removing the
     /// per-keystroke history refresh, a tab's browser-history entry no longer tracks edits made
-    /// after its last run / structural change; `captureActiveTab` above kept the live draft in
-    /// `tab.query`. Blindly restoring `event.state.query` here would clobber that draft on an
+    /// after its last run / structural change; `captureActiveTab` above kept the live draft
+    /// (query text and parameter values) in `tab.query`/`tab.params`. Blindly restoring
+    /// `event.state.query` here would clobber that draft on an
     /// ordinary same-session Back/Forward round-trip: run `SELECT 1`, type `SELECT 2`, press Back
     /// to an older entry, then Forward — the forward entry still carries `SELECT 1`. Keep the draft
     /// when it diverges from the entry AND does not merely reflect the entry's own produced result
@@ -5933,7 +5934,12 @@ window.onpopstate = function(event) {
     /// tracks the URL, not the editor, so it stays aligned with the entry even when a draft is
     /// preserved above (a subsequent reload still restores the entry's query, per the contract).
     tab.lastSavedQuery = event.state.query;
-    if (event.state.params) tab.params = event.state.params;
+    /// The preserved draft keeps its own parameter bindings too: `captureActiveTab` above
+    /// snapshotted the live `param_*` inputs into `tab.params` together with the draft query.
+    /// Overwriting them from the older entry would keep the newer query text but restore (and
+    /// then persist, via `scheduleSave` below) the older entry's values under it — an
+    /// incoherent query/params pair and a silent loss of edited bindings.
+    if (event.state.params && !preserve_draft) tab.params = event.state.params;
     /// Adopt the entry's result snapshot (its own producing query/params), or clear it. This
     /// avoids leaving a stale snapshot attached to a different query. Modern entries nest the
     /// snapshot under `result`; legacy flat entries (predating per-tab state) store the produced
@@ -5959,9 +5965,12 @@ window.onpopstate = function(event) {
     } else {
         tab.result = null;
     }
-    /// When preserving an unrun draft, restore it as the editor text while still rendering the
-    /// entry's (already-normalized) result snapshot in `tab.result`; otherwise restore verbatim.
-    const restore_state = preserve_draft ? { ...event.state, query: tab.query, result: tab.result } : event.state;
+    /// When preserving an unrun draft, restore it as the editor text and parameter inputs while
+    /// still rendering the entry's (already-normalized) result snapshot in `tab.result`;
+    /// otherwise restore verbatim.
+    const restore_state = preserve_draft
+        ? { ...event.state, query: tab.query, params: tab.params, result: tab.result }
+        : event.state;
     restoreFromHistory(restore_state, token).then(() => {
         if (token !== request_num) return; /// a newer navigation/run superseded this one
         /// Mirror `activateTab`: always recolor the page (and thus the active-tab slab) to this
