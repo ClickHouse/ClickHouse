@@ -1506,6 +1506,13 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     {
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
+        /// The monotonic key function is resolved against the plain (non-LowCardinality) key type, but the
+        /// index column can still be LowCardinality (e.g. a Merge table with a plain header over a source
+        /// whose key column is LowCardinality). Strip LowCardinality from the column and its type in lockstep
+        /// so the function does not receive an LC column dispatched as its plain type. The sibling
+        /// `applyFunctionChainToColumn` already does the same.
+        args[0].column = args[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        args[0].type = removeLowCardinality(args[0].type);
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size(), /* dry_run = */ false);
     }
