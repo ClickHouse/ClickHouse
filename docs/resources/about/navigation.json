@@ -1,14 +1,14 @@
 {
-  "item": "About",
-  "icon": "/images/icons/icon-about.svg",
   "groups": [
     {
       "group": "About ClickHouse",
-      "root": "resources/about/index",
       "pages": [
         "resources/about/adopters",
         "resources/about/support"
-      ]
+      ],
+      "root": "resources/about/index"
     }
-  ]
+  ],
+  "icon": "/images/icons/icon-about.svg",
+  "item": "About"
 }
