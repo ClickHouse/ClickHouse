@@ -682,7 +682,12 @@ def main():
             # create_minio_log_tables via CH.minio_setup_error) so broken minio
             # restarts are visible in test_context_raw rather than silently
             # collapsing into the umbrella.
-            if not CH.create_minio_log_tables():
+            # Skip entirely under flaky check: the webhook streams every S3 call into a
+            # MergeTree table that then competes with the tests' own tables for the shared
+            # background merge/mutate pool, which is exactly the kind of interference a
+            # timing-sensitive repeated rerun can't afford. Audit trails are far less useful
+            # here anyway, since flaky check already narrows failures down to one known test.
+            if not is_flaky_check and not CH.create_minio_log_tables():
                 info.add_workflow_warning("Failed to create minio log tables")
                 note = "SETUP WARNING: " + (
                     CH.minio_setup_error or "failed to create minio log tables"
