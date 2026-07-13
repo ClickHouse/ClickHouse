@@ -1601,8 +1601,13 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
         /// the stored key would leave `Distributed(..., <old column>)` in the metadata file and
         /// `SHOW CREATE TABLE`, referencing a column that no longer exists. Reject it - as the classic form does -
         /// to keep the stored definition consistent.
-        IdentifierNameSet sharding_key_columns;
-        sharding_key->collectIdentifierNames(sharding_key_columns);
+        /// Collect only the real source columns referenced by the ignored key. `RequiredSourceColumnsVisitor`
+        /// resolves them semantically and excludes lambda parameters, unlike the purely syntactic
+        /// `collectIdentifierNames` which would, for example, treat the `x` in `arrayExists(x -> x = 1, arr)` as
+        /// the column `x` and wrongly reject `DROP COLUMN x` even though that `x` is only the lambda variable.
+        RequiredSourceColumnsVisitor::Data columns_context;
+        RequiredSourceColumnsVisitor(columns_context).visit(sharding_key);
+        const NameSet sharding_key_columns = columns_context.requiredColumns();
         for (const auto & command : commands)
         {
             const bool renames_key_column

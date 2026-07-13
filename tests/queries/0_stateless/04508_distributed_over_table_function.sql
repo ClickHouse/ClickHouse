@@ -322,3 +322,16 @@ CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, currentData
 ALTER TABLE dist_over_tf RENAME COLUMN number TO n; -- { serverError UNKNOWN_IDENTIFIER }
 DROP TABLE dist_over_tf;
 DROP TABLE dist_over_tf_local;
+
+-- Only the real source columns of the ignored key are protected against a stale reference, not every syntactic
+-- identifier: a lambda parameter that happens to share a name with a real column must not block dropping that
+-- column. Here `x` appears in the key only as the lambda variable of `arrayExists`, so `DROP COLUMN x` is
+-- allowed, while `arr` is genuinely referenced by the key, so renaming / dropping it is still rejected. The
+-- extra column `y` keeps the table non-empty so dropping `arr` reaches the sharding-key guard rather than the
+-- generic "cannot drop all columns" check.
+CREATE TABLE dist_over_tf (x UInt64, arr Array(UInt64), y String) ENGINE = Distributed(test_cluster_two_shards_localhost, numbers(10), arrayExists(x -> x = 1, arr));
+ALTER TABLE dist_over_tf DROP COLUMN x;
+ALTER TABLE dist_over_tf RENAME COLUMN arr TO arr2; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE dist_over_tf DROP COLUMN arr; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 'dist_over_tf' ORDER BY name;
+DROP TABLE dist_over_tf;

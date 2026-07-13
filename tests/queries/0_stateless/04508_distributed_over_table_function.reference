@@ -36,3 +36,5 @@
 1
 number	String
 y	String
+arr	Array(UInt64)
+y	String
