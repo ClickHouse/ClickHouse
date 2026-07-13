@@ -171,7 +171,13 @@ TRAP(vlimit)
 //TRAP(wcrtomb) // Used by Standard C++ library
 TRAP(wcsnrtombs)
 TRAP(wcsrtombs)
+#ifndef USE_MUSL
+/// In a static musl link this trap wins over musl's own definition and is then reached from
+/// inside libc itself: musl's iconv calls wctomb when converting to UTF-8 (used by libarchive
+/// for pax headers during BACKUP to tar archives). musl's implementation is a stateless
+/// wrapper around wcrtomb (musl has no shift states), so it is not harmful there.
 TRAP(wctomb)
+#endif
 TRAP(basename)
 TRAP(catgets)
 TRAP(dbm_clearerr)
