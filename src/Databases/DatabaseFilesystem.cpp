@@ -69,19 +69,17 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
         /// reported as missing). Normalize only lexically in that case, preserving the
         /// disk-root prefix so the path stays resolvable through `IDisk`.
         ///
-        /// `getCreateDatabaseQueryImpl` serializes the already-normalized `path` (which
-        /// carries the disk-root prefix) back into metadata. For an object-storage disk
-        /// the root is itself relative, so on reload `path` is relative again - prepending
-        /// the disk root a second time would produce `<disk_root>/<disk_root>/...` and the
-        /// database would fail to load. Only prepend when the path is not already inside
-        /// the disk root, keeping normalization idempotent across restarts.
+        /// A relative path is always resolved against the disk root, mirroring
+        /// `getPathsListOnDisk`: for an object-storage disk the root is itself a
+        /// relative object-key prefix, so a relative path that begins with that prefix
+        /// (e.g. `Filesystem('<prefix>/nested')`) is legitimate user input naming
+        /// `<prefix>/<prefix>/nested` - it must not be mistaken for an already-qualified
+        /// path, or the database would silently point at a different directory at the
+        /// disk root. Reloading is idempotent: database metadata preserves the original
+        /// user input, and `getCreateDatabaseQueryImpl` serializes the disk-relative
+        /// form, so the root is prepended exactly once per load either way.
         if (user_files_volume)
-        {
-            if (pathStartsWith(path, user_files_path))
-                path = fs::path(path).lexically_normal().string();
-            else
-                path = (fs::path(user_files_path) / path).lexically_normal().string();
-        }
+            path = (fs::path(user_files_path) / path).lexically_normal().string();
         else
             path = fs::absolute(fs::path(user_files_path) / path).lexically_normal().string();
     }
@@ -268,7 +266,22 @@ bool DatabaseFilesystem::empty() const
 ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(database_name), path);
+
+    /// For an object-storage user-files disk the qualified `path` is relative (the disk
+    /// root is an object-key prefix), and the constructor always resolves a relative path
+    /// against the disk root. Serialize the disk-relative form so that replaying this
+    /// query (e.g. on RESTORE) prepends the root exactly once instead of doubling it.
+    /// A qualified path on a local disk is host-absolute and is re-normalized by the
+    /// absolute branch of the constructor, so it is serialized as is.
+    String serialized_path = path;
+    if (auto user_files_volume = getContext()->getUserFilesVolume())
+    {
+        auto [disk, disk_relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+        if (disk && !fs::path(disk->getPath()).is_absolute())
+            serialized_path = disk_relative_path;
+    }
+
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Filesystem('{}')", backQuoteIfNeed(database_name), serialized_path);
 
     ParserCreateQuery parser;
     ASTPtr ast

@@ -509,11 +509,10 @@ def test_s3_filesystem_database():
 
 
 def test_s3_filesystem_database_survives_restart():
-    """`getCreateDatabaseQueryImpl` serializes the normalized (disk-root-prefixed) path
-    into metadata. For an object-storage disk the root is itself relative, so on reload
-    the path is relative again; prefixing it a second time would produce
-    `<disk_root>/<disk_root>/...` and the database would fail to load. The constructor
-    must keep normalization idempotent so the database still loads after a restart."""
+    """Database metadata preserves the original user input of `CREATE DATABASE`, so on
+    reload the constructor sees the same relative path again and must resolve it against
+    the disk root exactly as it did at creation time, keeping the database loadable and
+    pointing at the same directory after a restart."""
     node_s3.query(
         "INSERT INTO FUNCTION file('fsdb_s3_restart/t.csv', 'CSV', 'x UInt64') SELECT 42"
     )
@@ -576,6 +575,61 @@ def test_s3_relative_path_starting_with_disk_root_prefix():
         or "Cannot stat" in short_read
         or "doesn't exist" in short_read
     ), short_read
+
+
+def test_s3_filesystem_database_relative_path_starting_with_disk_root_prefix():
+    """Mirrors `test_s3_relative_path_starting_with_disk_root_prefix` for the
+    `Filesystem` database engine: a relative database path that begins with the
+    s3_plain disk's own key prefix must resolve under the disk root, i.e.
+    `CREATE DATABASE db ENGINE = Filesystem('<prefix>/nested')` names
+    `<prefix>/<prefix>/nested`.
+
+    Regression for the relative-prefix ambiguity in the `DatabaseFilesystem`
+    constructor: previously such input was mistaken for an already-disk-qualified
+    metadata path and left unchanged, so the database silently pointed at the
+    *different* directory `<prefix>/nested` at the disk root."""
+    disk_path = node_s3.query(
+        "SELECT path FROM system.disks WHERE name = 'disk_s3_plain'"
+    ).strip()
+    # The bug premise only holds when the disk root is a relative key prefix.
+    assert disk_path, "disk_s3_plain has no path"
+    assert not disk_path.startswith("/"), f"unexpected absolute disk path: {disk_path}"
+
+    long_rel_dir = disk_path.rstrip("/") + "/prefix_db_collision"
+
+    # The directory the database must point at: <disk_root>/<prefix>/prefix_db_collision.
+    node_s3.query(
+        f"INSERT INTO FUNCTION file('{long_rel_dir}/t.csv', 'CSV', 'x UInt64') SELECT 777"
+    )
+    # Decoy directory at the disk root: <disk_root>/prefix_db_collision. With the bug,
+    # the database was silently retargeted here and this read would return 888.
+    node_s3.query(
+        "INSERT INTO FUNCTION file('prefix_db_collision/t.csv', 'CSV', 'x UInt64') SELECT 888"
+    )
+
+    node_s3.query("DROP DATABASE IF EXISTS test_fs_db_prefix_collision")
+    node_s3.query(
+        f"CREATE DATABASE test_fs_db_prefix_collision ENGINE = Filesystem('{long_rel_dir}')"
+    )
+    assert (
+        node_s3.query("SELECT * FROM test_fs_db_prefix_collision.`t.csv`").strip()
+        == "777"
+    )
+
+    # `SHOW CREATE DATABASE` serializes the disk-relative form of the qualified path,
+    # which the constructor maps back to the same directory (round-trip safe for RESTORE).
+    show_create = node_s3.query("SHOW CREATE DATABASE test_fs_db_prefix_collision")
+    assert f"Filesystem('{long_rel_dir}')" in show_create, show_create
+
+    # Reloading from metadata (which preserves the original user input) must resolve to
+    # the same directory instead of stripping or doubling the prefix.
+    node_s3.query("DETACH DATABASE test_fs_db_prefix_collision")
+    node_s3.query("ATTACH DATABASE test_fs_db_prefix_collision")
+    assert (
+        node_s3.query("SELECT * FROM test_fs_db_prefix_collision.`t.csv`").strip()
+        == "777"
+    )
+    node_s3.query("DROP DATABASE test_fs_db_prefix_collision")
 
 
 def test_local_disk_glob_recursion_depth_guarded():
