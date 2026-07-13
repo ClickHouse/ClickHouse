@@ -98,6 +98,11 @@ Resolving merge markers is not always enough. If the branch is long-stale, the m
 3. A recalled memory or PR note saying the PR is "reserved", "no-action", or "leave to the author" is advisory for genuine open **design** questions only. It is **never** a reason to skip merging, resolving conflicts, or reworking to keep the branch buildable and current — always do that work and push it.
 4. Only when a full rework is genuinely infeasible in this environment — e.g. a submodule points at a fork that cannot be fetched or built here — do the most you can (merge, resolve conflicts, rework whatever you can build), push it, and state plainly what could not be verified and what remains blocked (e.g. the submodule needs a ClickHouse-org fork).
 
+**A `CONFLICTING` PR must not be left unresolved whenever you can push.** Resolve the conflicts (steps above) and push:
+- For your own PRs / branches in the main repo, and for **fork PRs where `maintainerCanModify` is true**, push the resolved branch — to the fork's remote for fork PRs (step 7). A `contested`, `reserved`, `NA`, `dsgn`, or "superseded" note does **not** block the mechanical conflict resolution and push; it only reserves the final *design / merge* decision. Resolving conflicts means keeping the author's intended change merge-clean against current master — it does **not** require the PR's design to be correct (that stays the human's call).
+- Only when you genuinely cannot push — a fork with `maintainerCanModify=false`, or you otherwise lack permission — resolve the conflicts locally anyway, then report that **specific** blocker (e.g. "resolved locally but the fork has maintainer edits disabled — the author must enable them or rebase"). Do not report a bare "needs attention" or claim it is done.
+- Check push access up front with `gh pr view <n> --json maintainerCanModify,headRepositoryOwner,headRepository` so you know before starting whether a resolved branch can land.
+
 ### 4. Analyze CI status and fix failures
 
 Use the CI analysis tool to fetch reports:
