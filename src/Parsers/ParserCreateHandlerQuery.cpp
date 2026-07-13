@@ -57,6 +57,7 @@ bool ParserCreateHandlerQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
     ParserKeyword s_on(Keyword::ON);
     ParserKeyword s_protocol(Keyword::PROTOCOL);
+    ParserKeyword s_any(Keyword::ANY);
     ParserKeyword s_url(Keyword::URL);
     ParserKeyword s_prefix(Keyword::PREFIX);
     ParserKeyword s_regexp(Keyword::REGEXP);
@@ -99,10 +100,19 @@ bool ParserCreateHandlerQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     if (s_protocol.ignore(pos, expected))
     {
-        ASTPtr protocol_ast;
-        if (!name_p.parse(pos, protocol_ast, expected))
-            return false;
-        query->protocol = getIdentifierName(protocol_ast);
+        /// PROTOCOL ANY resets the handler to the default "active on all HTTP endpoints" behavior.
+        /// A composable protocol literally named "any" can still be referenced with back quotes.
+        if (s_any.ignore(pos, expected))
+        {
+            query->reset_protocol = true;
+        }
+        else
+        {
+            ASTPtr protocol_ast;
+            if (!name_p.parse(pos, protocol_ast, expected))
+                return false;
+            query->protocol = getIdentifierName(protocol_ast);
+        }
     }
 
     if (s_url.ignore(pos, expected))

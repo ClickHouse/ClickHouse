@@ -136,6 +136,23 @@ SELECT url_match_type, url, query FROM system.handlers WHERE name = 'h04305_a';
 ALTER HANDLER h04305_a METHODS (GET, POST, PUT, DELETE);
 SELECT methods FROM system.handlers WHERE name = 'h04305_a';
 
+-- ALTER: restrict the handler to a protocol, then remove the restriction with PROTOCOL ANY.
+ALTER HANDLER h04305_a PROTOCOL some_proto_04305;
+SELECT protocol FROM system.handlers WHERE name = 'h04305_a';
+ALTER HANDLER h04305_a PROTOCOL ANY;
+SELECT protocol, create_query FROM system.handlers WHERE name = 'h04305_a';
+
+-- PROTOCOL ANY on CREATE is the same as omitting the clause and is normalized away.
+CREATE HANDLER h04305_pany PROTOCOL ANY URL '/test_04305/pany' AS SELECT 1;
+SELECT protocol, create_query FROM system.handlers WHERE name = 'h04305_pany';
+DROP HANDLER h04305_pany;
+
+-- A protocol literally named "any" is referenced with back quotes and survives the
+-- format/parse round-trip of the persisted statement (it is not confused with PROTOCOL ANY).
+CREATE HANDLER h04305_pliteral PROTOCOL `any` URL '/test_04305/pliteral' AS SELECT 1;
+SELECT protocol, create_query FROM system.handlers WHERE name = 'h04305_pliteral';
+DROP HANDLER h04305_pliteral;
+
 -- ALTER into ambiguity with an existing handler must fail.
 CREATE HANDLER h04305_amb1 URL '/test_04305/amb1' AS SELECT 1;
 CREATE HANDLER h04305_amb2 URL '/test_04305/amb2' AS SELECT 1;

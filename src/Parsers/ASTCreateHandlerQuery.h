@@ -11,7 +11,7 @@ namespace DB
 {
 
 /// CREATE [IF NOT EXISTS] HANDLER name [PROTOCOL p] URL [PREFIX|REGEXP] '/x' [METHODS (GET, POST)] [TYPE query] AS SELECT ...
-/// ALTER HANDLER name [PROTOCOL p] [URL ...] [METHODS ...] [TYPE ...] [AS ...]
+/// ALTER HANDLER name [PROTOCOL p|ANY] [URL ...] [METHODS ...] [TYPE ...] [AS ...]
 ///
 /// The same AST is used for CREATE and ALTER. For ALTER (is_alter == true) the clauses are optional and
 /// only the specified ones are updated; the unspecified clauses keep their previous values.
@@ -33,6 +33,11 @@ public:
 
     /// Optional PROTOCOL clause. std::nullopt - not specified.
     std::optional<String> protocol;
+
+    /// PROTOCOL ANY - reset the handler to the default "active on all HTTP endpoints" behavior.
+    /// Mutually exclusive with a non-empty `protocol`. Meaningful for ALTER (removes a previously set
+    /// protocol restriction); on CREATE it is equivalent to omitting the clause.
+    bool reset_protocol = false;
 
     /// URL clause. Mandatory for CREATE, optional for ALTER.
     bool has_url = false;

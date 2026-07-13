@@ -150,6 +150,8 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     normalized_create.is_alter = false;
     normalized_create.if_not_exists = false;
     normalized_create.cluster.clear();
+    /// PROTOCOL ANY is the same as an omitted clause on CREATE, so it is normalized away.
+    normalized_create.reset_protocol = false;
     normalized_create.methods = handler->methods;
     normalized_create.handler_type = type;
     handler->create_statement = normalized_create.formatWithSecretsOneLine();
@@ -161,6 +163,8 @@ void mergeAlterIntoCreateHandler(ASTCreateHandlerQuery & create, const ASTCreate
 {
     if (alter.protocol)
         create.protocol = alter.protocol;
+    else if (alter.reset_protocol)
+        create.protocol.reset();
 
     if (alter.has_url)
     {

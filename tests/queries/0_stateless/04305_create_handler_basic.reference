@@ -17,5 +17,9 @@ h04305_post_a	['POST']
 /test_04305/a	['GET']	SELECT 42 AS y
 prefix	/test_04305/a_new	SELECT 42 AS y
 ['GET','POST','PUT','DELETE']
+some_proto_04305
+\N	CREATE HANDLER h04305_a URL PREFIX \'/test_04305/a_new\' METHODS (GET, POST, PUT, DELETE) TYPE query AS SELECT 42 AS y
+\N	CREATE HANDLER h04305_pany URL \'/test_04305/pany\' METHODS (GET) TYPE query AS SELECT 1
+any	CREATE HANDLER h04305_pliteral PROTOCOL `any` URL \'/test_04305/pliteral\' METHODS (GET) TYPE query AS SELECT 1
 3
 0

@@ -13,7 +13,7 @@ Creates a custom HTTP handler defined from SQL, without editing the server confi
 
 ```sql
 CREATE HANDLER [IF NOT EXISTS] name
-[PROTOCOL protocol_name]
+[PROTOCOL protocol_name|ANY]
 URL [PREFIX|REGEXP] '/path'
 [METHODS (GET, POST)]
 [TYPE query]
@@ -24,7 +24,7 @@ Creates a handler with a specified `name`. The name is used for managing handler
 
 ## Clauses {#clauses}
 
-- `PROTOCOL` — optional. If a protocol name is specified, the handler is active only for the specified [composable protocol](/operations/settings/composable-protocols). Otherwise, the handler is active on all HTTP endpoints: the built-in `http`/`https` ports and every HTTP-type [composable protocol](/operations/settings/composable-protocols) listener.
+- `PROTOCOL` — optional. If a protocol name is specified, the handler is active only for the specified [composable protocol](/operations/settings/composable-protocols). Otherwise, the handler is active on all HTTP endpoints: the built-in `http`/`https` ports and every HTTP-type [composable protocol](/operations/settings/composable-protocols) listener. `PROTOCOL ANY` explicitly selects the latter default behavior; in `ALTER HANDLER` it removes a previously set protocol restriction. A protocol literally named `any` can be referenced with back quotes: ``PROTOCOL `any` ``.
 - `URL` — mandatory. Can be in the form of an exact URL, a `URL PREFIX`, or a `URL REGEXP`. For exact URLs and prefixes, ambiguity is checked at creation/alter time and an exception is thrown if there is ambiguity. For regexp, ambiguity cannot be checked. The URL is matched without the `?` query string and the `#` fragment identifier.
 - `METHODS` — optional. The list of allowed HTTP methods. By default, it is only `GET`. The supported methods are `GET`, `POST`, `PUT` and `DELETE`. The mutating methods `POST`, `PUT` and `DELETE` are allowed to run modifying queries; the safe methods such as `GET` and `HEAD` are always executed in `readonly` mode. Consequently, a handler whose query modifies data (for example `INSERT` or DDL) must allow at least one mutating method - creating such a handler with only read-only methods (for example the default `GET`) throws an exception.
 - `TYPE` — optional. The only supported type for now is `query`.
@@ -70,14 +70,14 @@ With Keeper storage, handlers are kept in sync across all replicas automatically
 
 ```sql
 ALTER HANDLER name
-[PROTOCOL protocol_name]
+[PROTOCOL protocol_name|ANY]
 [URL [PREFIX|REGEXP] '/path']
 [METHODS (GET, POST)]
 [TYPE query]
 [AS SELECT ...]
 ```
 
-Replaces the handler with a new one. The `ALTER` query can include only a subset of clauses, e.g., it can be used to only change the URL or the query. The unspecified clauses keep their previous values.
+Replaces the handler with a new one. The `ALTER` query can include only a subset of clauses, e.g., it can be used to only change the URL or the query. The unspecified clauses keep their previous values. `PROTOCOL ANY` removes an existing protocol restriction, making the handler active on all HTTP endpoints again.
 
 ## DROP HANDLER {#drop-handler}
 

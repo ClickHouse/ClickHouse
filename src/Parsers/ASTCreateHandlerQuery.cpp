@@ -2,6 +2,7 @@
 
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -29,7 +30,18 @@ void ASTCreateHandlerQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSet
     formatOnCluster(ostr, settings);
 
     if (protocol)
-        ostr << " PROTOCOL " << backQuoteIfNeed(*protocol);
+    {
+        /// A protocol literally named "any" must be back-quoted, otherwise it would be parsed back
+        /// as the PROTOCOL ANY reset clause.
+        if (Poco::icompare(*protocol, "any") == 0)
+            ostr << " PROTOCOL " << backQuote(*protocol);
+        else
+            ostr << " PROTOCOL " << backQuoteIfNeed(*protocol);
+    }
+    else if (reset_protocol)
+    {
+        ostr << " PROTOCOL ANY";
+    }
 
     if (has_url)
     {
