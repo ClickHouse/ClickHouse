@@ -27,6 +27,10 @@
     "json": {
       "include": [
         "./docs.json"
+      ],
+      "exclude": [
+        "./_specs/**",
+        "./products/cloud/api-reference/navigation.json"
       ]
     },
     "js": {
@@ -71,7 +75,17 @@
         "./**/GOVERNANCE.md",
         "./**/AGENTS.md",
         "./**/OWNERS.md",
-        "./**/MAINTAINERS.md"
+        "./**/MAINTAINERS.md",
+        "./_description_templates/**/*.md",
+        "./_description_templates/**/*.mdx",
+        "./_includes/**/*.md",
+        "./_includes/**/*.mdx",
+        "./changelogs/**/*.md",
+        "./changelogs/**/*.mdx",
+        "./en/**/*.md",
+        "./en/**/*.mdx",
+        "./products/cloud/api-reference/**/*.md",
+        "./products/cloud/api-reference/**/*.mdx"
       ]
     }
   },
