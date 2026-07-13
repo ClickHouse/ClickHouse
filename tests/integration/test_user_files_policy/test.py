@@ -618,7 +618,10 @@ def test_s3_filesystem_database_relative_path_starting_with_disk_root_prefix():
 
     # `SHOW CREATE DATABASE` serializes the disk-relative form of the qualified path,
     # which the constructor maps back to the same directory (round-trip safe for RESTORE).
-    show_create = node_s3.query("SHOW CREATE DATABASE test_fs_db_prefix_collision")
+    # TSV output escapes the quotes of the string literal, so unescape before matching.
+    show_create = node_s3.query("SHOW CREATE DATABASE test_fs_db_prefix_collision").replace(
+        "\\'", "'"
+    )
     assert f"Filesystem('{long_rel_dir}')" in show_create, show_create
 
     # Reloading from metadata (which preserves the original user input) must resolve to
