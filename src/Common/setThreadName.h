@@ -25,6 +25,7 @@ namespace DB
     M(AZURE_LIST_POOL, "AzureObjList") \
     M(BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, "BgBufSchPool") \
     M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
+    M(BACKGROUND_STREAMING_SCHEDULE_POOL, "BgStrmSchPool") \
     M(BACKUP_ASYNC, "BackupAsync") \
     M(BACKUP_ASYNC_INTERNAL, "BackupAsyncInt") \
     M(BACKUP_COLLECTOR, "BackupCollect") \
@@ -39,7 +40,6 @@ namespace DB
     M(CONFIG_RELOADER, "ConfigReloader") \
     M(CONCURRENT_JOIN, "ConcurrentJoin") \
     M(CREATE_TABLES, "CreateTables") \
-    M(CUSTOM_RESOURCE_MANAGER, "CustomResMgr") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
     M(DATABASE_REPLICAS, "DBReplicas") \
