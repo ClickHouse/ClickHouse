@@ -26,5 +26,12 @@ SELECT CAST('{"t":1703363853.035}', 'JSON(t DateTime64(3))');
 -- A number that does not fit DateTime64 yields the default value instead of an exception.
 SELECT JSONExtract('{"t":1e300}', 't', 'DateTime64(3)');
 
+-- The same applies to an oversized integer number: the integer path must fail softly like the
+-- fractional path, rather than throwing DECIMAL_OVERFLOW. 9223372036854775808 = 2^63 is read as a
+-- UInt64 and overflows the DateTime64 range once scaled. JSONExtract yields the default value, while
+-- the typed JSON path reports a clean INCORRECT_DATA parse error (not an internal arithmetic overflow).
+SELECT JSONExtract('{"t":9223372036854775808}', 't', 'DateTime64(3)');
+SELECT CAST('{"t":9223372036854775808}', 'JSON(t DateTime64(3))'); -- { serverError INCORRECT_DATA }
+
 -- The compatibility setting only affects integers (raw ticks); a fractional number is still seconds.
 SELECT JSONExtract('{"t":0.58}', 't', 'DateTime64(2)') SETTINGS input_format_read_datetime_number_as_raw_value = 1;

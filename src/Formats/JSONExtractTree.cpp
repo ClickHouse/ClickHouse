@@ -971,14 +971,22 @@ public:
                 case ElementType::UINT64:
                     if (format_settings.read_datetime_number_as_raw_value)
                         value.value = element.getUInt64();
-                    else
-                        value = convertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DateTime64>>(element.getUInt64(), scale);
+                    /// Use the non-throwing conversion so that an out-of-range timestamp degrades to the default
+                    /// value, matching the `DOUBLE` case above and the best-effort contract of `JSONExtract`.
+                    else if (!tryConvertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DateTime64>>(element.getUInt64(), scale, value))
+                    {
+                        error = fmt::format("cannot convert UInt64 value {} to DateTime64", element.getUInt64());
+                        return false;
+                    }
                     break;
                 case ElementType::INT64:
                     if (format_settings.read_datetime_number_as_raw_value)
                         value.value = element.getInt64();
-                    else
-                        value = convertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DateTime64>>(element.getInt64(), scale);
+                    else if (!tryConvertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DateTime64>>(element.getInt64(), scale, value))
+                    {
+                        error = fmt::format("cannot convert Int64 value {} to DateTime64", element.getInt64());
+                        return false;
+                    }
                     break;
                 default:
                     error = fmt::format("cannot read DateTime64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
