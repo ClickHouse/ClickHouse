@@ -2274,7 +2274,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         res.search_algorithm = MarkRanges::SearchAlgorithm::BinarySearch;
         ProfileEvents::increment(ProfileEvents::IndexBinarySearchAlgorithm);
-        LOG_TRACE(log, "Running binary search on index range for part {} ({} marks)", part_name, marks_count);
+        LOG_TEST(log, "Running binary search on index range for part {} ({} marks)", part_name, marks_count);
 
         size_t steps = 0;
 
@@ -2302,7 +2302,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 ++steps;
             }
             result_range.begin = searched_left;
-            LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
+            LOG_TEST(log, "Found (LEFT) boundary mark: {}", searched_left);
 
             /// Invariant:  check_in_range(searched_left..part_range.end).can_be_true
             ///            !check_in_range(searched_right..part_range.end).can_be_true
@@ -2319,7 +2319,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 ++steps;
             }
             result_range.end = searched_right;
-            LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
+            LOG_TEST(log, "Found (RIGHT) boundary mark: {}", searched_right);
 
             if (result_range.begin < result_range.end)
             {
