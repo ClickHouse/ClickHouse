@@ -95,9 +95,9 @@ Controls if the user can change settings related to the different feature tiers.
 
 This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `BETA` features.
 
-:::note
+<Note>
 A value of `0` means that all settings can be changed.
-:::
+</Note>
 
 ## allow_impersonate_user {#allow_impersonate_user} 
 
@@ -277,11 +277,11 @@ Sets a ratio between the number of threads and the number of background merges a
 
 For example, if the ratio equals to 2 and [`background_pool_size`](/reference/settings/server-settings/settings#background_pool_size) is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority.
 
-:::note
+<Note>
 You can only increase this ratio at runtime. To lower it you have to restart the server.
 
 As with the [`background_pool_size`](/reference/settings/server-settings/settings#background_pool_size) setting [`background_merges_mutations_concurrency_ratio`](/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) could be applied from the `default` profile for backward compatibility.
-:::
+</Note>
 
 ## background_merges_mutations_scheduling_policy {#background_merges_mutations_scheduling_policy} 
 
@@ -309,16 +309,16 @@ Possible values:
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />
 Sets the number of threads performing background merges and mutations for tables with MergeTree engines.
 
-:::note
+<Note>
 - This setting could also be applied at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start.
 - You can only increase the number of threads at runtime.
 - To lower the number of threads you have to restart the server.
 - By adjusting this setting, you manage CPU and disk load.
-:::
+</Note>
 
-:::danger
+<Danger>
 Smaller pool size utilizes less CPU and disk resources, but background processes advance slower which might eventually impact query performance.
-:::
+</Danger>
 
 Before changing it, please also take a look at related MergeTree settings, such as:
 - [`number_of_free_entries_in_pool_to_lower_max_size_of_merge`](/reference/settings/merge-tree-settings#number_of_free_entries_in_pool_to_lower_max_size_of_merge).
@@ -450,9 +450,9 @@ This setting is configured by default as:
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 The maximum number of jobs that can be scheduled on the Backups IO Thread pool. It is recommended to keep this queue unlimited due to the current S3 backup logic.
 
-:::note
+<Note>
 A value of `0` (default) means unlimited.
-:::
+</Note>
 
 ## bcrypt_workfactor {#bcrypt_workfactor} 
 
@@ -602,9 +602,9 @@ Possible values:
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries. This is not a hard limit. In case if the limit is reached the query will still get at least one thread to run. Query can upscale to desired number of threads during execution if more threads become available.
 
-:::note
+<Note>
 A value of `0` (default) means unlimited.
-:::
+</Note>
 
 ## concurrent_threads_soft_limit_ratio_to_cores {#concurrent_threads_soft_limit_ratio_to_cores} 
 
@@ -771,9 +771,9 @@ The default for this setting is `480` (8 minutes).
 Parameter of a task that cleans up garbage from `store/` directory.
 Sets scheduling period of the task.
 
-:::note
+<Note>
 A value of `0` means "never". The default value corresponds to 1 day.
-:::
+</Note>
 
 ## database_catalog_unused_dir_hide_timeout_sec {#database_catalog_unused_dir_hide_timeout_sec} 
 
@@ -784,9 +784,9 @@ If some subdirectory is not used by clickhouse-server and this directory was not
 removing all access rights. It also works for directories that clickhouse-server does not
 expect to see inside `store/`.
 
-:::note
+<Note>
 A value of `0` means "immediately".
-:::
+</Note>
 
 ## database_catalog_unused_dir_rm_timeout_sec {#database_catalog_unused_dir_rm_timeout_sec} 
 
@@ -799,9 +799,9 @@ and this directory was not modified for last
 It also works for directories that clickhouse-server does not
 expect to see inside `store/`.
 
-:::note
+<Note>
 A value of `0` means "never". The default value corresponds to 30 days.
-:::
+</Note>
 
 ## database_replicated_allow_detach_permanently {#database_replicated_allow_detach_permanently} 
 
@@ -912,10 +912,10 @@ Lazy loading of dictionaries.
 - If `true`, then each dictionary is loaded on the first use. If the loading is failed, the function that was using the dictionary throws an exception.
 - If `false`, then the server loads all dictionaries at startup.
 
-:::note
+<Note>
 The server will wait at startup until all the dictionaries finish their loading before receiving any connections
 (exception: if [`wait_dictionaries_load_at_startup`](/reference/settings/server-settings/settings#wait_dictionaries_load_at_startup) is set to `false`).
-:::
+</Note>
 
 **Example**
 
@@ -1293,9 +1293,9 @@ This setting specifies the cache path.
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 The maximum number of jobs that can be scheduled on thread pool for parsing input.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 ## format_schema_path {#format_schema_path} 
 
@@ -1595,9 +1595,9 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 If true, ClickHouse doesn't write defaults for empty SQL security statement in `CREATE VIEW` queries.
 
-:::note
+<Note>
 This setting is only necessary for the migration period and will become obsolete in 24.4
-:::
+</Note>
 
 ## include_from {#include_from} 
 
@@ -1625,12 +1625,12 @@ For more information, see the section [Configuration files](/concepts/features/c
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 Maximum size of cache for index marks.
 
-:::note
+<Note>
 
 A value of `0` means disabled.
 
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 
 ## index_mark_cache_size_ratio {#index_mark_cache_size_ratio} 
 
@@ -1645,11 +1645,11 @@ This setting can be modified at runtime and will take effect immediately.
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 Maximum size of cache for uncompressed blocks of `MergeTree` indices.
 
-:::note
+<Note>
 A value of `0` means disabled.
 
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 
 ## index_uncompressed_cache_size_ratio {#index_uncompressed_cache_size_ratio} 
 
@@ -1794,9 +1794,9 @@ Default:
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 The maximum number of jobs that can be scheduled on the IO Thread pool.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 ## jemalloc_collect_global_profile_samples_in_trace_log {#jemalloc_collect_global_profile_samples_in_trace_log} 
 
@@ -2282,9 +2282,9 @@ For more information, see the section [Creating replicated tables](/reference/en
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 Maximum size of cache for marks (index of [`MergeTree`](/reference/engines/table-engines/mergetree-family/index) family of tables).
 
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 
 ## mark_cache_size_ratio {#mark_cache_size_ratio} 
 
@@ -2301,9 +2301,9 @@ The maximum number of authentication methods a user can be created with or alter
 Changing this setting does not affect existing users. Create/alter authentication-related queries will fail if they exceed the limit specified in this setting.
 Non authentication create/alter queries will succeed.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 ## max_backup_bandwidth_for_server {#max_backup_bandwidth_for_server} 
 
@@ -2322,21 +2322,21 @@ A value of `0` means unlimited.
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />
 The maximum number of threads to use for building vector indexes.
 
-:::note
+<Note>
 A value of `0` means all cores.
-:::
+</Note>
 
 ## max_concurrent_insert_queries {#max_concurrent_insert_queries} 
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 Limit on total number of concurrent insert queries.
 
-:::note
+<Note>
 
 A value of `0` (default) means unlimited.
 
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
+</Note>
 
 ## max_concurrent_queries {#max_concurrent_queries} 
 
@@ -2348,24 +2348,24 @@ See also:
 - [`max_concurrent_select_queries`](/reference/settings/server-settings/settings#max_concurrent_select_queries)
 - [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
-:::note
+<Note>
 
 A value of `0` (default) means unlimited.
 
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
+</Note>
 
 ## max_concurrent_select_queries {#max_concurrent_select_queries} 
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 Limit on total number of concurrently select queries.
 
-:::note
+<Note>
 
 A value of `0` (default) means unlimited.
 
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
+</Note>
 
 ## max_connections {#max_connections} 
 
@@ -2401,9 +2401,9 @@ Only counts tables for database engines:
 - Replicated
 - Lazy
 
-:::note
+<Note>
 A value of `0` means no limitation.
-:::
+</Note>
 
 **Example**
 ```xml
@@ -2485,27 +2485,27 @@ Maximal number of requests through a single keep-alive connection until it will 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 The maximum speed of local reads in bytes per second.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 ## max_local_write_bandwidth_for_server {#max_local_write_bandwidth_for_server} 
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 The maximum speed of local writes in bytes per seconds.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 ## max_materialized_views_count_for_table {#max_materialized_views_count_for_table} 
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 A limit on the number of materialized views attached to a table.
 
-:::note
+<Note>
 Only directly dependent views are considered here, and the creation of one view on top of another view is not considered.
-:::
+</Note>
 
 ## max_merges_bandwidth_for_server {#max_merges_bandwidth_for_server} 
 
@@ -2520,9 +2520,9 @@ Only directly dependent views are considered here, and the creation of one view 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 If number of named collections is greater than this value, server will throw an exception.
 
-:::note
+<Note>
 A value of `0` means no limitation.
-:::
+</Note>
 
 **Example**
 ```xml
@@ -2545,9 +2545,9 @@ If the number of named collections exceeds the specified value, clickhouse serve
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 The maximum number of open files.
 
-:::note
+<Note>
 We recommend using this option in macOS since the getrlimit() function returns an incorrect value.
-:::
+</Note>
 
 ## max_os_cpu_wait_time_ratio_to_drop_connection {#max_os_cpu_wait_time_ratio_to_drop_connection} 
 
@@ -2578,11 +2578,11 @@ Restriction on dropping partitions.
 If the size of a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can't drop a partition using a [DROP PARTITION](/reference/statements/alter/partition#drop-partitionpart) query.
 This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
-:::note
+<Note>
 The value `0` means that you can drop partitions without any restrictions.
 
 This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](/reference/settings/session-settings#max_table_size_to_drop)
-:::
+</Note>
 
 **Example**
 
@@ -2636,18 +2636,18 @@ ClickHouse uses threads from the prefixes deserialization Thread pool for parall
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 The maximum speed of data exchange over the network in bytes per second for read.
 
-:::note
+<Note>
 A value of `0` (default) means unlimited.
-:::
+</Note>
 
 ## max_remote_write_network_bandwidth_for_server {#max_remote_write_network_bandwidth_for_server} 
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 The maximum speed of data exchange over the network in bytes per second for write.
 
-:::note
+<Note>
 A value of `0` (default) means unlimited.
-:::
+</Note>
 
 ## max_replicated_fetches_network_bandwidth_for_server {#max_replicated_fetches_network_bandwidth_for_server} 
 
@@ -2668,9 +2668,9 @@ Only counts tables for database engines:
 - Replicated
 - Lazy
 
-:::note
+<Note>
 A value of `0` means no limitation.
-:::
+</Note>
 
 **Example**
 ```xml
@@ -2682,9 +2682,9 @@ A value of `0` means no limitation.
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 The maximum amount of memory the server is allowed to use, expressed in bytes.
 
-:::note
+<Note>
 The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage_to_ram_ratio`.
-:::
+</Note>
 
 As a special case, a value of `0` (default) means the server may consume all available memory (excluding further restrictions imposed by `max_server_memory_usage_to_ram_ratio`).
 
@@ -2705,9 +2705,9 @@ This ratio is applied in two ways:
 
 Setting the ratio to `0` disables both the startup cap and the runtime adjustment. The runtime adjustment is also a no-op on non-Linux systems and in `clickhouse-keeper`, which does not expose this setting. To keep the static startup/reload cap but disable the runtime adjustment (the behavior of previous versions), set `memory_worker_dynamic_hard_limit` to `0`.
 
-:::note
+<Note>
 The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage`.
-:::
+</Note>
 
 ## max_session_timeout {#max_session_timeout} 
 
@@ -2744,9 +2744,9 @@ Only counts tables for database engines:
 - Replicated
 - Lazy
 
-:::note
+<Note>
 A value of `0` means no limitation.
-:::
+</Note>
 
 **Example**
 ```xml
@@ -2771,11 +2771,11 @@ Restriction on deleting tables.
 
 If the size of a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a [`DROP`](/reference/statements/drop) query or [`TRUNCATE`](/reference/statements/truncate) query.
 
-:::note
+<Note>
 A value of `0` means that you can delete all tables without any restrictions.
 
 This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
-:::
+</Note>
 
 **Example**
 
@@ -2789,9 +2789,9 @@ This setting does not require a restart of the ClickHouse server to apply. Anoth
 The maximum amount of storage that could be used for external aggregation, joins or sorting.
 Queries that exceed this limit will fail with an exception.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 See also:
 - [`max_temporary_data_on_disk_size_for_user`](/reference/settings/session-settings#max_temporary_data_on_disk_size_for_user)
@@ -2834,9 +2834,9 @@ Only counts tables for database engines:
 - Replicated
 - Lazy
 
-:::note
+<Note>
 A value of `0` means no limitation.
-:::
+</Note>
 
 **Example**
 ```xml
@@ -2860,7 +2860,7 @@ If the number of attached views exceeds the specified value, clickhouse server w
 Limit on total number of concurrently waiting queries.
 Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](/reference/settings/server-settings/settings#async_load_databases).
 
-:::note
+<Note>
 Waiting queries are not counted when limits controlled by the following settings are checked:
 
 - [`max_concurrent_queries`](/reference/settings/server-settings/settings#max_concurrent_queries)
@@ -2870,14 +2870,14 @@ Waiting queries are not counted when limits controlled by the following settings
 - [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
 This correction is done to avoid hitting these limits just after server startup.
-:::
+</Note>
 
-:::note
+<Note>
 
 A value of `0` (default) means unlimited.
 
 This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
-:::
+</Note>
 
 ## max_zookeeper_pooled_connections {#max_zookeeper_pooled_connections} 
 
@@ -2972,9 +2972,9 @@ Used to regulate how resources are utilized and shared between merges and other 
 Sets the limit on how much RAM is allowed to use for performing merge and mutation operations.
 If ClickHouse reaches the limit set, it won't schedule any new background merge or mutation operations but will continue to execute already scheduled tasks.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 **Example**
 
@@ -3053,9 +3053,9 @@ See [Controlling behavior on server CPU overload](/concepts/features/configurati
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 Perform `<mlockall>` after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load.
 
-:::note
+<Note>
 Enabling this option is recommended but will lead to increased startup time for up to a few seconds. Keep in mind that this setting would not work without "CAP_IPC_LOCK" capability.
-:::
+</Note>
 
 **Example**
 
@@ -3077,11 +3077,11 @@ The amount of data in mapped files can be monitored in the following system tabl
 - `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells` in [`system.metrics`](/reference/system-tables/metrics), [`system.metric_log`](/reference/system-tables/metric_log)
 - `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses` in [`system.events`](/reference/system-tables/events), [`system.processes`](/reference/system-tables/processes), [`system.query_log`](/reference/system-tables/query_log), [`system.query_thread_log`](/reference/system-tables/query_thread_log), [`system.query_views_log`](/reference/system-tables/query_views_log)
 
-:::note
+<Note>
 The amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
 
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 
 ## mutation_workload {#mutation_workload} 
 
@@ -3526,9 +3526,9 @@ Threads for cleanup of shared merge tree parts killer threads. Only available in
 <SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/" changeable_without_restart="No" />
 The path to the directory containing data.
 
-:::note
+<Note>
 The trailing slash is mandatory.
-:::
+</Note>
 
 **Example**
 
@@ -3548,9 +3548,9 @@ Maximum size in bytes of the cache of preprocessed polygons used by the function
 Entries above the limit are evicted in least recently used order.
 Setting it to `0` disables the cache: all cached polygons are evicted, and every subsequent query preprocesses its constant polygon anew.
 The cache can also be cleared manually, without changing this limit, with the [`SYSTEM DROP POINT IN POLYGON CACHE`](/reference/statements/system#drop-point-in-polygon-cache) query.
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 
 ## postgresql_port {#postgresql_port} 
 
@@ -3584,9 +3584,9 @@ Port for communicating with clients over PostgreSQL protocol.
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 The maximum number of jobs that can be scheduled on the prefixes deserialization Thread pool.
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 ## prepare_system_log_tables_on_startup {#prepare_system_log_tables_on_startup} 
 
@@ -3878,9 +3878,9 @@ The following settings are available:
 
 <SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="Yes" />
 Maximum size of the query condition cache.
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 
 ## query_condition_cache_size_ratio {#query_condition_cache_size_ratio} 
 
@@ -4034,9 +4034,9 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
 Setting to reallocate memory for machine code ("text") using huge pages.
 
-:::note
+<Note>
 This feature is highly experimental.
-:::
+</Note>
 
 **Example**
 
@@ -4375,18 +4375,18 @@ By default, for backward compatibility creating table with a specific table engi
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 Sets the number of threads performing asynchronous load jobs in background pool. The background pool is used for loading tables asynchronously after server start in case there are no queries waiting for the table. It could be beneficial to keep low number of threads in background pool if there are a lot of tables. It will reserve CPU resources for concurrent query execution.
 
-:::note
+<Note>
 A value of `0` means all available CPUs will be used.
-:::
+</Note>
 
 ## tables_loader_foreground_pool_size {#tables_loader_foreground_pool_size} 
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
 
-:::note
+<Note>
 A value of `0` means all available CPUs will be used.
-:::
+</Note>
 
 ## tcp_close_connection_after_queries_num {#tcp_close_connection_after_queries_num} 
 
@@ -4432,9 +4432,9 @@ With this option, temporary data will be stored in the cache for the particular 
 In this section, you should specify the disk name with the type `cache`.
 In that case, the cache and temporary data will share the same space, and the disk cache can be evicted to create temporary data.
 
-:::note
+<Note>
 Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
-:::
+</Note>
 
 **Example**
 
@@ -4484,9 +4484,9 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Size of cache for text index headers. Zero means disabled.
 
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 
 ## text_index_header_cache_size_ratio {#text_index_header_cache_size_ratio} 
 
@@ -4504,9 +4504,9 @@ This setting can be modified at runtime and will take effect immediately.
 
 <SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="Yes" />Size of cache for text index posting lists. Zero means disabled.
 
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 
 ## text_index_postings_cache_size_ratio {#text_index_postings_cache_size_ratio} 
 
@@ -4524,9 +4524,9 @@ This setting can be modified at runtime and will take effect immediately.
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Size of cache for text index tokens. Zero means disabled.
 
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 
 ## text_index_tokens_cache_size_ratio {#text_index_tokens_cache_size_ratio} 
 
@@ -4568,9 +4568,9 @@ Additionally:
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />
 The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [`max_thread_pool_size`](/reference/settings/server-settings/settings#max_thread_pool_size).
 
-:::note
+<Note>
 A value of `0` means unlimited.
-:::
+</Note>
 
 **Example**
 
@@ -4642,10 +4642,10 @@ The time zone is necessary for conversions between String and DateTime formats w
 <SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/tmp/" changeable_without_restart="No" />
 Path on the local filesystem to store temporary data for processing large queries.
 
-:::note
+<Note>
 - Only one option can be used to configure temporary data storage: tmp_path, tmp_policy, temporary_data_in_cache.
 - The trailing slash is mandatory.
-:::
+</Note>
 
 **Example**
 
@@ -4657,20 +4657,20 @@ Path on the local filesystem to store temporary data for processing large querie
 
 Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
 
-:::note
+<Note>
 Recommendations for using object storage as `tmp_policy`:
 - Use separate `bucket:path` on each server
 - Use `metadata_type=plain`
 - You may also want to set TTL for this bucket
-:::
+</Note>
 
-:::note
+<Note>
 - Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
 - `move_factor`, `keep_free_space_bytes`,`max_data_part_size_bytes` and are ignored.
 - Policy should have exactly *one volume*
 
 For more information see the [MergeTree Table Engine](/reference/engines/table-engines/mergetree-family/mergetree) documentation.
-:::
+</Note>
 
 **Example**
 
@@ -4792,11 +4792,11 @@ There is one shared cache for the server. Memory is allocated on demand. The cac
 
 The uncompressed cache is advantageous for very short queries in individual cases.
 
-:::note
+<Note>
 A value of `0` means disabled.
 
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 
 ## uncompressed_cache_size_ratio {#uncompressed_cache_size_ratio} 
 
@@ -5047,9 +5047,9 @@ By default, it is `false`:
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />Size of cache for vector similarity indexes. Zero means disabled.
 
-:::note
+<Note>
 This setting can be modified at runtime and will take effect immediately.
-:::
+</Note>
 
 ## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio} 
 
