@@ -1,10 +1,7 @@
 {
-  "item": "Support center",
-  "icon": "/images/icons/icon-support-center.svg",
   "groups": [
     {
       "group": "Knowledgebase",
-      "root": "resources/support-center/home",
       "pages": [
         {
           "group": "Performance & optimization",
@@ -27,8 +24,10 @@
           "pages": [
             "resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes",
             "resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes",
+            "resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
             "resources/support-center/knowledge-base/cloud-services/change-billing-email",
             "resources/support-center/knowledge-base/cloud-services/clickhouse-cloud-api-usage",
+            "resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
             "resources/support-center/knowledge-base/cloud-services/custom-dns-alias-for-instance",
             "resources/support-center/knowledge-base/cloud-services/execute-system-queries-in-cloud",
             "resources/support-center/knowledge-base/cloud-services/how-to-check-my-clickhouse-cloud-sevice-state",
@@ -84,7 +83,6 @@
         },
         {
           "group": "Troubleshooting & errors",
-          "root": "resources/support-center/troubleshooting/index",
           "pages": [
             "resources/support-center/troubleshooting/troubleshooting",
             "resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
@@ -94,7 +92,8 @@
             "resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
             "resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos",
             "resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part"
-          ]
+          ],
+          "root": "resources/support-center/troubleshooting/index"
         },
         {
           "group": "Tables & schema",
@@ -179,11 +178,9 @@
         },
         {
           "group": "General & FAQs",
-          "root": "resources/support-center/knowledge-base/general-faqs/faq-index",
           "pages": [
             {
               "group": "General",
-              "root": "resources/support-center/knowledge-base/general-faqs/index",
               "pages": [
                 "resources/support-center/knowledge-base/general-faqs/columnar-database",
                 "resources/support-center/knowledge-base/general-faqs/concurrency",
@@ -201,37 +198,39 @@
                 "resources/support-center/knowledge-base/general-faqs/updates",
                 "resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
                 "resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper"
-              ]
+              ],
+              "root": "resources/support-center/knowledge-base/general-faqs/index"
             },
             {
               "group": "Use cases",
-              "root": "resources/support-center/knowledge-base/general-faqs/use-cases-index",
               "pages": [
                 "resources/support-center/knowledge-base/general-faqs/key-value",
                 "resources/support-center/knowledge-base/general-faqs/time-series",
                 "resources/support-center/knowledge-base/general-faqs/use-clickhouse-for-log-analytics",
                 "resources/support-center/knowledge-base/general-faqs/vector-search"
-              ]
+              ],
+              "root": "resources/support-center/knowledge-base/general-faqs/use-cases-index"
             },
             {
               "group": "Integration",
-              "root": "resources/support-center/knowledge-base/integrations/index",
               "pages": [
                 "resources/support-center/knowledge-base/data-import-export/json-import",
                 "resources/support-center/knowledge-base/integrations/oracle-odbc"
-              ]
+              ],
+              "root": "resources/support-center/knowledge-base/integrations/index"
             },
             {
               "group": "Operations",
-              "root": "resources/support-center/knowledge-base/general-faqs/operations-index",
               "pages": [
                 "resources/support-center/knowledge-base/tables-schema/delete-old-data",
                 "resources/support-center/knowledge-base/cloud-services/multi-region-replication",
                 "resources/support-center/knowledge-base/setup-installation/production",
                 "resources/support-center/knowledge-base/general-faqs/separate-storage"
-              ]
+              ],
+              "root": "resources/support-center/knowledge-base/general-faqs/operations-index"
             }
-          ]
+          ],
+          "root": "resources/support-center/knowledge-base/general-faqs/faq-index"
         },
         {
           "group": "Tips & tricks",
@@ -245,7 +244,10 @@
             "resources/support-center/tips-and-tricks/too-many-parts"
           ]
         }
-      ]
+      ],
+      "root": "resources/support-center/home"
     }
-  ]
+  ],
+  "icon": "/images/icons/icon-support-center.svg",
+  "item": "Support center"
 }

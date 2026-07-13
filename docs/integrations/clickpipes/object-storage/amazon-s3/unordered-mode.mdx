@@ -21,10 +21,15 @@ In this mode, the S3 ClickPipe does an initial load of **all files** in the sele
 Various types of failures can occur when ingesting data, which can result in partial inserts or duplicate data. Object Storage ClickPipes are resilient to insert failures and provide exactly-once semantics using temporary staging tables. Data is first inserted into a staging table; if something goes wrong, the staging table is truncated and the insert is retried from a clean state. Only once an insert completes successfully are the partitions moved to the target table.
 
 <Steps>
-<Step>
-## Create an Amazon SQS queue {#create-sqs-queue}
+<Step title="Create an Amazon SQS queue" id="create-sqs-queue">
 
 **1.** In the AWS Console, navigate to **Simple Queue Service > Create queue**. Use the defaults to create a new standard queue.
+
+<Warning>
+**One queue per ClickPipe**
+
+Each ClickPipe needs its own dedicated SQS queue. SQS delivers each message to only one consumer: if two or more ClickPipes (or any other application) consume the same queue, each event is received by only one of them, and files are silently skipped by the pipes that never receive the event. This applies even if the ClickPipes use different path patterns — a pipe that receives an event for a non-matching file discards it, and no other pipe will ever see it. To ingest from the same bucket with multiple ClickPipes, create one queue per ClickPipe and use EventBridge rules to route events to each queue.
+</Warning>
 
 <Tip>
 We strongly recommend configuring a **Dead-Letter-Queue (DLQ)** for the SQS queue, so it's easier to debug and retry failed messages. If a DLQ is configured, failed messages will be reenqueued and reprocessed up to the number of times configured in the DLQ `maxReceiveCount` parameter.
@@ -119,7 +124,7 @@ Optionally, add an `object.key` condition to the pattern to filter by prefix or 
 }
 ```
 
-**b.** In the S3 bucket properties, enable **Event notifications** for `ObjectCreated` events and set the destination to the SQS queue. Optionally, specify a prefix or suffix to filter which objects trigger notifications — if you do, make sure it matches the path set for the ClickPipe.
+**b.** In the S3 bucket properties, enable **Event notifications**, select **All object create events** (`s3:ObjectCreated:*`) as the event type, and set the destination to the SQS queue. Do not select individual event types instead: uploads can emit different `ObjectCreated` events depending on how they are performed (for example, multipart uploads emit `CompleteMultipartUpload` rather than `Put`), and files whose event type is not selected will never be delivered to the queue. Optionally, specify a prefix or suffix to filter which objects trigger notifications — if you do, make sure it matches the path set for the ClickPipe.
 
 <Note>
 S3 doesn't allow multiple overlapping notification rules for the same event types on the same bucket. If you already have a notification rule for `ObjectCreated` events on this bucket, use the EventBridge approach instead.
@@ -128,8 +133,7 @@ S3 doesn't allow multiple overlapping notification rules for the same event type
 </Tab>
 </Tabs>
 </Step>
-<Step>
-## Configure an IAM role {#configure-iam-role}
+<Step title="Configure an IAM role" id="configure-iam-role">
 
 **1.** In the ClickHouse Cloud console, navigate to **Settings > Network security information** and copy the **IAM role ARN** for your service.
 
@@ -190,12 +194,11 @@ S3 doesn't allow multiple overlapping notification rules for the same event type
 }
 ```
 </Step>
-<Step>
-## Create a ClickPipe with unordered mode {#create-clickpipe}
+<Step title="Create a ClickPipe with unordered mode" id="create-clickpipe">
 
 **1.** In the ClickHouse Cloud console, navigate to **Data Sources > Create ClickPipe** and select **Amazon S3**. Enter the details to connect to your S3 bucket. Under **Authentication method**, choose **IAM role** and provide the ARN of the role you created in the previous step.
 
-**2.** Under **Incoming data**, toggle on **Continuous ingestion**. Select **Any order** as the ingestion mode and provide the **SQS queue URL** for the queue connected to your bucket.
+**2.** Under **Incoming data**, toggle on **Continuous ingestion**. Select **Any order** as the ingestion mode and provide the **SQS queue URL** for the queue connected to your bucket. The queue must be used exclusively by this ClickPipe — see [Create an Amazon SQS queue](#create-sqs-queue).
 
 **3.** Under **Parse information**, define a **Sorting key** for the target table. Make any necessary adjustments to the mapped schema, then configure a role for the ClickPipes database user.
 
