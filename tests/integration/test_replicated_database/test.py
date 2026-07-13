@@ -1397,6 +1397,34 @@ def test_replicated_table_structure_alter(started_cluster):
         "ALTER TABLE table_structure.rmt COMMENT COLUMN v 'version'", settings=settings
     )
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
+
+    # Deterministically delete the ALTER_METADATA entries from the table's replication
+    # /log so the detached replica cannot replay them on recovery. This mimics the flaky
+    # window where the replication-log GC had already trimmed those entries while the
+    # replica was detached. Without this, the entries usually survive in /log and
+    # pullLogsToQueue replays them normally, so the recovered replica converges even
+    # without the fix and the bug does not reproduce (the recovery resync path is never
+    # exercised). Doing the deletion here makes the regression deterministic rather than
+    # relying on cleanup-thread timing. competing_node (which SYNCed the pre-ALTER rmt and
+    # then detached) is the only replica that must replay these entries; dummy_node
+    # detached before rmt was created, so on ATTACH it recreates rmt fresh from the current
+    # /metadata and is unaffected by this deletion.
+    rmt_zk_path = main_node.query(
+        "SELECT zookeeper_path FROM system.replicas "
+        "WHERE database='table_structure' AND table='rmt'"
+    ).strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    try:
+        for log_znode in zk.get_children(f"{rmt_zk_path}/log"):
+            data, _ = zk.get(f"{rmt_zk_path}/log/{log_znode}")
+            # ALTER_METADATA log entries serialize an "alter\n" token (see
+            # ReplicatedMergeTreeLogEntryData::writeText); other entry types do not.
+            if b"\nalter\n" in data:
+                zk.delete(f"{rmt_zk_path}/log/{log_znode}")
+    finally:
+        zk.stop()
+        zk.close()
+
     competing_node.exec_in_container(
         [
             "/usr/bin/clickhouse",
