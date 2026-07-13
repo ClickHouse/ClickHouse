@@ -43,9 +43,11 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsUInt64 s3_max_single_part_upload_size;
+    extern const SettingsUInt64 s3_min_upload_part_size;
     extern const SettingsUInt64 s3_max_upload_part_size;
     extern const SettingsUInt64 s3_max_inflight_parts_for_one_file;
     extern const SettingsUInt64 azure_max_single_part_upload_size;
+    extern const SettingsUInt64 azure_min_upload_part_size;
     extern const SettingsUInt64 azure_max_upload_part_size;
     extern const SettingsUInt64 azure_max_inflight_parts_for_one_file;
 }
@@ -106,17 +108,35 @@ size_t countColumnStreams(const NamesAndTypesList & columns)
     return streams;
 }
 
+/// Number of on-disk column data files (.bin) a wide part physically stores: one per non-ephemeral
+/// substream. This is the ground truth for the stream count of an old part that predates
+/// columns_substreams.txt and, unlike the default serialization, it accounts for the dynamic substreams
+/// of JSON / Dynamic columns (which are written as separate files on disk but cannot be enumerated from
+/// the default serialization).
+size_t countWidePartDataFiles(const IMergeTreeDataPart & part)
+{
+    size_t data_files = 0;
+    for (const auto & [file_name, _] : part.checksums.files)
+        if (file_name.ends_with(IMergeTreeDataPart::DATA_FILE_EXTENSION))
+            ++data_files;
+    return data_files;
+}
+
 /// Number of on-disk column streams that a wide part actually reads/writes through. Prefer the exact
 /// per-column substream layout recorded in columns_substreams.txt - the reliable source of truth for
 /// types with a dynamic structure such as JSON and Dynamic, whose real substreams cannot be recovered
 /// from the default serialization (this is exactly why MergeTreeDataPartWide::doCheckConsistency trusts
-/// columns_substreams.txt over enumerateStreams). Fall back to the default serializations only for old
-/// parts written before that file existed.
+/// columns_substreams.txt over enumerateStreams). For an old wide part written before that file existed,
+/// count the actual .bin files on disk, which is exact for dynamic columns too; only fall back to the
+/// default serialization when neither source is available.
 size_t countPartStreams(const IMergeTreeDataPart & part)
 {
     const auto & columns_substreams = part.getColumnsSubstreams();
     if (!columns_substreams.empty())
         return columns_substreams.getTotalSubstreams();
+    if (part.getType() == MergeTreeDataPartType::Wide)
+        if (const size_t data_files = countWidePartDataFiles(part); data_files != 0)
+            return data_files;
     return countColumnStreams(part.getColumns());
 }
 
@@ -132,6 +152,13 @@ size_t countPartStreams(const IMergeTreeDataPart & part)
 /// collapse some dynamic substreams via max_dynamic_paths / max_dynamic_types - which is the safe direction
 /// for a reservation. For simple column types the union equals the default serialization count, so this only
 /// ever raises the estimate for semi-structured columns.
+///
+/// The per-column union can still miss dynamic substreams that live only in an old source part without
+/// columns_substreams.txt (there the default serialization collapses JSON / Dynamic to a single stream).
+/// Guard against that by flooring the result at the widest source part's actual stream count: the merged
+/// part is never narrower than any single source part, and countPartStreams reads an old wide part's real
+/// stream count from its on-disk .bin files. For simple columns and modern parts this floor equals the
+/// union count, so it never raises the estimate above what the union already accounts for.
 size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeTreeDataPartsVector & source_parts)
 {
     size_t streams = 0;
@@ -151,7 +178,12 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
 
         streams += recorded ? union_substreams.size() : countColumnStreams({column});
     }
-    return streams;
+
+    size_t max_source_streams = 0;
+    for (const auto & part : source_parts)
+        max_source_streams = std::max(max_source_streams, countPartStreams(*part));
+
+    return std::max(streams, max_source_streams);
 }
 
 }
@@ -179,26 +211,30 @@ UInt64 estimateNeededMemoryForMerge(
 
     /// Per-stream write buffer size on object storage (S3 / Azure). A stream's upload buffers follow the
     /// multipart buffer allocation policy (see BufferAllocationPolicy / WriteBufferFromS3 /
-    /// WriteBufferFromAzureBlobStorage): the first buffer is *_max_single_part_upload_size, later buffers
-    /// grow up to *_max_upload_part_size, and up to *_max_inflight_parts_for_one_file of them can be held in
-    /// memory at once while their uploads are in flight. Take that worst-case per-stream ceiling from the
-    /// effective settings over both back ends (a given disk is only one of them, so the max is a safe upper
-    /// bound), so a deployment that raises the multipart sizes cannot allocate more per stream than is
-    /// reserved here - pinning this to *_max_single_part_upload_size alone would underestimate it. This is
-    /// only a ceiling: the output side is separately capped by the merge's data volume below, because an
-    /// upload buffer never holds more than the data written into it.
+    /// WriteBufferFromAzureBlobStorage): the first buffer is max(*_max_single_part_upload_size,
+    /// *_min_upload_part_size) (ExpBufferAllocationPolicy::first_size), later buffers grow up to
+    /// *_max_upload_part_size, and up to *_max_inflight_parts_for_one_file of them can be held in memory at
+    /// once while their uploads are in flight. Take that worst-case per-stream ceiling from the effective
+    /// settings over both back ends (a given disk is only one of them, so the max is a safe upper bound), so
+    /// a deployment that raises the multipart sizes cannot allocate more per stream than is reserved here -
+    /// pinning the first buffer to *_max_single_part_upload_size alone would underestimate it when
+    /// *_min_upload_part_size is the larger of the two. This is only a ceiling: the output side is separately
+    /// capped by the merge's data volume below, because an upload buffer never holds more than the data
+    /// written into it.
     const auto & query_settings = context->getSettingsRef();
-    auto remote_stream_ceiling = [](UInt64 max_single, UInt64 max_upload, UInt64 max_inflight) -> UInt64
+    auto remote_stream_ceiling = [](UInt64 max_single, UInt64 min_upload, UInt64 max_upload, UInt64 max_inflight) -> UInt64
     {
-        return max_single + max_inflight * max_upload;
+        return std::max(max_single, min_upload) + max_inflight * max_upload;
     };
     const UInt64 remote_write_buffer_size = std::max(
         remote_stream_ceiling(
             std::max<UInt64>(S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, query_settings[Setting::s3_max_single_part_upload_size]),
+            query_settings[Setting::s3_min_upload_part_size],
             query_settings[Setting::s3_max_upload_part_size],
             query_settings[Setting::s3_max_inflight_parts_for_one_file]),
         remote_stream_ceiling(
             std::max<UInt64>(S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, query_settings[Setting::azure_max_single_part_upload_size]),
+            query_settings[Setting::azure_min_upload_part_size],
             query_settings[Setting::azure_max_upload_part_size],
             query_settings[Setting::azure_max_inflight_parts_for_one_file]));
 
