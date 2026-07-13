@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <Storages/MergeTree/PatchParts/applyPatches.h>
+#include <Storages/MergeTree/PatchParts/applyPatchesLegacy.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
@@ -54,7 +54,7 @@ TEST(ApplyPatches, TypeMismatchCastsPatch)
     Block versions_block;
 
     /// ---------- apply ----------
-    applyPatchesToBlock(result_block, versions_block, patches, /*source_data_version=*/ 1);
+    applyPatchesIndices(result_block, versions_block, patches, getUpdatedHeader(patches), /*source_data_version=*/ 1);
 
     /// ---------- verify ----------
     /// The patch has UInt64 type while the result has String type.
@@ -101,7 +101,7 @@ TEST(ApplyPatches, SameTypeAppliesPatch)
     PatchesIndices patches{std::move(patch)};
     Block versions_block;
 
-    applyPatchesToBlock(result_block, versions_block, patches, /*source_data_version=*/ 1);
+    applyPatchesIndices(result_block, versions_block, patches, getUpdatedHeader(patches), /*source_data_version=*/ 1);
 
     const auto & col = result_block.getByName("value").column;
     ASSERT_EQ(col->size(), 3u);
@@ -164,7 +164,7 @@ TEST(ApplyPatches, MixedTypeSourcesCastsAll)
     PatchesIndices patches{std::move(patch1), std::move(patch2)};
     Block versions_block;
 
-    applyPatchesToBlock(result_block, versions_block, patches, /*source_data_version=*/ 1);
+    applyPatchesIndices(result_block, versions_block, patches, getUpdatedHeader(patches), /*source_data_version=*/ 1);
 
     const auto & col = result_block.getByName("value").column;
     ASSERT_EQ(col->size(), 4u);

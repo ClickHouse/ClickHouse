@@ -67,15 +67,6 @@ struct PatchMergeOnKeyReadResult : public PatchReadResult
     bool empty() const override { return block.rows() == 0; }
 };
 
-/// Updates rows in result_block from patch_block at specified indices.
-/// The set of updated columns is derived from the patch blocks (all non-system columns).
-/// versions_block is a shared block with current versions of rows for each updated column.
-void applyPatchesToBlock(
-    Block & result_block,
-    Block & versions_block,
-    const PatchesIndices & patches,
-    UInt64 source_data_version);
-
 /// A read result of a patch part with the set of result-block columns updated from it.
 struct PatchReadResultToApply
 {
