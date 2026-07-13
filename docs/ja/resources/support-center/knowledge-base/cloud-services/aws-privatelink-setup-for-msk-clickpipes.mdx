@@ -1,0 +1,72 @@
+---
+title: ClickPipes 向けに MSK を公開する AWS PrivateLink の設定
+description: MSK マルチ VPC 接続を使用して、プライベート MSK を ClickPipes に公開するための設定手順。
+date: 2025-4-15
+tags: ['セキュリティと認証', 'Cloud 管理']
+keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
+---
+
+{frontMatter.description}
+
+{/* 省略 */}
+
+<div id="overview">
+  ## 概要
+</div>
+
+このガイドでは、[ClickPipes リバース プライベート エンドポイント](/ja/integrations/clickpipes/aws-privatelink#msk-multi-vpc)で使用する **MSK マルチ VPC** の設定を始める方法を説明します。
+
+<div id="requirements">
+  ## 要件
+</div>
+
+MSK クラスターの VPC は、ClickPipes のいずれかのリージョンに配置されている必要があります。サポート対象リージョンの一覧については、[ClickPipes リージョン](/ja/integrations/clickpipes/aws-privatelink#aws-privatelink-regions)を参照してください。
+
+<div id="enabling-multi-vpc-connectivity">
+  ## MSK マルチ VPC 接続を有効にする
+</div>
+
+1. MSK クラスターに移動します。
+   * Amazon MSK コンソールの左側のナビゲーションペインで「Clusters」を選択します。
+   * MSK マルチ VPC 接続を設定する対象の MSK クラスターを選択します。
+2. MSK マルチ VPC 接続を有効にします
+   * **Connectivity** タブで、**Multi-VPC connectivity** セクションを見つけます。
+   * **Edit** をクリックします。
+   * **Turn-on MSK multi-VPC connectivity** オプションを有効にします。
+   * 画面の指示に従います
+3. ClickPipes アカウントのプリンシパルをクラスターのポリシーに追加します
+   * **Configuration** タブに移動します。
+   * **Cluster policy** セクションで **Edit** をクリックします。
+   * **IAM policy** に `arn:aws:iam::072088201116:root` を含めます。例:
+     ```json
+     {
+         "Version": "2012-10-17",
+         "Statement": [
+             {
+                 "Effect": "Allow",
+                 "Principal": {
+                     "AWS": [
+                         "arn:aws:iam::072088201116:root"
+                     ]
+                 },
+                 "Action": [
+                     "kafka:CreateVpcConnection",
+                     "kafka:GetBootstrapBrokers",
+                     "kafka:DescribeCluster",
+                     "kafka:DescribeClusterV2"
+                 ]
+             }
+         ]
+     }
+     ```
+
+<Tip>
+  クラスター IAM ポリシーにより、ClickPipes からお使いの MSK クラスターへの接続を開始できるようになります。
+  MSK クラスターに IAM 認証を設定する場合は、[IAM authentication documentation](/ja/integrations/clickpipes/kafka/best-practices#iam)を参照してください。
+</Tip>
+
+<div id="creating-reverse-private-endpoint">
+  ## リバースプライベートエンドポイントの作成
+</div>
+
+リバースプライベートエンドポイントの作成については、[ClickPipes ドキュメント](/ja/integrations/clickpipes/aws-privatelink#creating-clickpipe) の手順に従ってください。

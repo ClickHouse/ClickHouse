@@ -1,0 +1,78 @@
+---
+description: 'ClickHouse を使用して、Apache Iceberg、Delta Lake、Apache Hudi、Apache Paimon などのオープンテーブルフォーマット内のデータをクエリし、クエリを高速化して分析できます。'
+slug: /use-cases/data-lake
+title: 'データレイク'
+keywords: ['データレイク', 'レイクハウス', 'iceberg', 'delta lake', 'hudi', 'paimon', 'glue', 'unity', 'rest', 'OneLake', 'BigLake']
+doc_type: 'landing-page'
+---
+
+ClickHouse は、[Apache Iceberg](/ja/reference/engines/table-engines/integrations/iceberg)、[Delta Lake](/ja/reference/engines/table-engines/integrations/deltalake)、[Apache Hudi](/ja/reference/engines/table-engines/integrations/hudi)、[Apache Paimon](/ja/reference/functions/table-functions/paimon) などのオープンテーブルフォーマットと連携できます。これにより、ユーザーはオブジェクトストレージ上にこれらのフォーマットで保存されているデータを ClickHouse に接続し、ClickHouse の分析性能を既存のデータレイクのインフラストラクチャと組み合わせることができます。
+
+<div id="why-clickhouse-uses-lake-formats">
+  ## ClickHouseでオープンテーブルフォーマットを使う理由
+</div>
+
+<div id="querying-data-in-place">
+  ### 既存データをそのままクエリする
+</div>
+
+ClickHouse は、データを複製することなく、オブジェクトストレージ内のオープンテーブルフォーマットを直接クエリできます。Iceberg、Delta Lake、Hudi、Paimon を標準採用している組織なら、ClickHouse から既存のテーブルを参照するよう設定するだけで、ClickHouse の SQL方言、分析関数、高効率なネイティブの Parquet リーダーをすぐに活用できます。同時に、[clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) や [chDB](/ja/products/chdb/index) のようなツールを使えば、リモートストレージ上の 70 を超えるファイルフォーマットに対して探索的なアドホック分析を行うことができ、インフラストラクチャの準備なしにデータレイク内のデータセットを対話的に調査できます。
+
+これは、[テーブル関数とテーブルエンジン](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly) を使った直接読み取り、または [データカタログへの接続](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) のいずれかで実現できます。
+
+<div id="real-time-with-clickhouse">
+  ### ClickHouse によるリアルタイム分析ワークロード
+</div>
+
+高い並行性と低レイテンシの応答が求められるワークロードでは、オープンテーブルフォーマットから ClickHouse の [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンにデータをロードできます。これにより、データレイクに由来するデータの上にリアルタイム分析レイヤーを構築でき、MergeTree の列指向ストレージと索引機能を活かして、ダッシュボード、運用レポート、その他のレイテンシに敏感なワークロードをサポートできます。
+
+[MergeTree による分析の高速化](/ja/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) のスタートガイドを参照してください。
+
+<div id="capabilities">
+  ## ケーパビリティ
+</div>
+
+<div id="read-data-directly">
+  ### データを直接読み取る
+</div>
+
+ClickHouse は、オブジェクトストレージ上のオープンテーブルフォーマットを直接読み取るための[テーブル関数](/ja/reference/functions/table-functions/index)と[エンジン](/ja/reference/engines/table-engines/integrations/index)を提供しています。[`iceberg()`](/ja/reference/functions/table-functions/iceberg)、[`deltaLake()`](/ja/reference/functions/table-functions/deltalake)、[`hudi()`](/ja/reference/functions/table-functions/hudi)、[`paimon()`](/ja/reference/functions/table-functions/paimon) などの関数を使うと、事前設定なしで、SQL ステートメント内からオープンテーブルフォーマットのテーブルをクエリできます。これらの関数には、S3、Azure Blob Storage、GCS など、一般的なオブジェクトストレージの多くに対応したバージョンがあります。また、これらの関数に対応するテーブルエンジンも用意されており、基盤となるオープンテーブルフォーマットのオブジェクトストレージを参照するテーブルを ClickHouse 内に作成できるため、より手軽にクエリできます。
+
+[直接クエリする](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly)方法や、[データカタログに接続する](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)方法については、Getting Started ガイドを参照してください。
+
+<div id="expose-catalogs-as-databases">
+  ### カタログをデータベースとして公開する
+</div>
+
+[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンを使用すると、ユーザーは ClickHouse を外部カタログに接続し、そのカタログをデータベースとして公開できます。カタログに登録されたテーブルは ClickHouse 内のテーブルとして表示されるため、ClickHouse SQL の構文や分析関数をそのまま透過的に利用できます。つまり、ユーザーはカタログで管理されているテーブルを、ネイティブな ClickHouse テーブルであるかのようにクエリ、結合、集計でき、ClickHouse のクエリ最適化、並列実行、読み取り性能の恩恵を受けられます。
+
+サポートされるカタログは次のとおりです:
+
+| カタログ                     | ガイド                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| AWS Glue                 | [Glue カタログ ガイド](/ja/guides/use-cases/data-warehousing/glue-catalog)             |
+| BigLake Metastore        | [BigLake Metastore ガイド](/ja/guides/use-cases/data-warehousing/biglake-catalog)  |
+| Databricks Unity Catalog | [Unity Catalog ガイド](/ja/guides/use-cases/data-warehousing/unity-catalog)        |
+| Iceberg REST Catalog     | [REST Catalog ガイド](/ja/guides/use-cases/data-warehousing/rest-catalog)          |
+| Lakekeeper               | [Lakekeeper カタログ ガイド](/ja/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| Project Nessie           | [Nessie Catalog ガイド](/ja/guides/use-cases/data-warehousing/nessie-catalog)      |
+| Microsoft OneLake        | [OneLake Catalog ガイド](/ja/guides/use-cases/data-warehousing/onelake-catalog)    |
+
+[カタログへの接続](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)については、Getting Started ガイドを参照してください。
+
+<div id="write-back-to-lakehouse-formats">
+  ### オープンテーブルフォーマットへの書き戻し
+</div>
+
+ClickHouse はオープンテーブルフォーマットへのデータの書き戻しをサポートしており、これは次のようなシナリオで役立ちます。
+
+* **リアルタイムから長期ストレージへ** - データがリアルタイム分析レイヤーとして ClickHouse を通過し、ユーザーが結果を Iceberg やその他のフォーマットにオフロードして、耐久性が高くコスト効率に優れた長期ストレージに保存する必要がある場合。
+* **Reverse ETL** - ユーザーが materialized view やスケジュールクエリを使って ClickHouse 内で変換を実行し、その結果をオープンテーブルフォーマットに永続化して、データエコシステム内の他のツールで利用できるようにしたい場合。
+
+[データレイクへの書き込み](/ja/guides/use-cases/data-warehousing/getting-started/writing-data)については、getting started guide を参照してください。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+試してみる準備はできましたか？[Getting Started ガイド](/ja/guides/use-cases/data-warehousing/getting-started/overview)では、オープンテーブルフォーマットに直接クエリし、カタログに接続し、高速分析のためにデータを MergeTree に読み込み、結果を書き戻すまでを、エンドツーエンドの単一ワークフローに沿って説明しています。

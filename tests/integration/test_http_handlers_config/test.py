@@ -194,12 +194,22 @@ def test_predefined_query_handler():
         assert cluster.instance.query("SELECT * FROM test_table") == "100\tTEST\n"
         cluster.instance.query("DROP TABLE test_table")
 
-        res4 = cluster.instance.http_request(
+        cluster.instance.http_request(
             "test_predefined_handler_get?max_threads=1&param_setting_name=max_threads",
             method="GET",
             headers={"XXX": "xxx"},
         )
         assert b"max_threads\t1\n" == res1.content
+
+        # A query parameter used as a setting value inside the SETTINGS clause must be
+        # discovered by analyzeReceiveQueryParams so that the handler accepts param_threads
+        # and substitutes it into the setting.
+        res_settings = cluster.instance.http_request(
+            "test_predefined_handler_settings_param?param_threads=5",
+            method="GET",
+        )
+        assert res_settings.status_code == 200
+        assert b"5\n" == res_settings.content
 
         assert (
             cluster.instance.http_request("test_predefined_handler_auth_with_password")
@@ -221,6 +231,39 @@ def test_predefined_query_handler():
             .decode()
             == "without_password"
         )
+
+
+def test_predefined_handler_absent_header():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "predefined_handler_absent_header",
+            "test_predefined_handler_absent_header",
+        )
+    ) as cluster:
+
+        def get(headers):
+            return cluster.instance.http_request(
+                "test_predefined_handler_absent_header", method="GET", headers=headers
+            )
+
+        # The header regex (?P<value_from_header>.*) matches any value, including the empty string, so
+        # the rule matches even when header XXX is absent. The captured value is passed to the query as
+        # the parameter value_from_header. A missing header must be treated as an empty string instead
+        # of raising an exception after the rule has already matched.
+        response = get({"XXX": "hello"})
+        assert response.status_code == 200, response.content
+        assert response.content == b"hello\n"
+
+        # Header absent: the rule still matches and the captured parameter is empty.
+        response = get({})
+        assert response.status_code == 200, response.content
+        assert response.content == b"\n"
+
+        # Header present but empty: same as absent.
+        response = get({"XXX": ""})
+        assert response.status_code == 200, response.content
+        assert response.content == b"\n"
 
 
 def test_fixed_static_handler():
@@ -674,7 +717,7 @@ def test_headers_in_response():
         # Handle predefined_query_handler separately because we need to pass headers there
         response_predefined = cluster.instance.http_request(
             "query_param_with_url", method="GET", headers={"PARAMS_XXX": "test_param"})
-        assert response_predefined.headers["X-My-Answer"] == f"Iam predefined"
+        assert response_predefined.headers["X-My-Answer"] == "Iam predefined"
         assert response_predefined.headers["X-My-Common-Header"] == "Common header present"
 
 

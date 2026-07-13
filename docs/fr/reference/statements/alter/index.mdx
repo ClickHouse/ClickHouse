@@ -1,0 +1,85 @@
+---
+description: 'Documentation d’ALTER'
+sidebarTitle: 'ALTER'
+slug: /sql-reference/statements/alter/
+title: 'ALTER'
+doc_type: 'reference'
+---
+
+La plupart des requêtes `ALTER TABLE` modifient les paramètres ou les données d’une table :
+
+| Modifier                                                             |
+| -------------------------------------------------------------------- |
+| [COLUMN](/fr/reference/statements/alter/column)                         |
+| [PARTITION](/fr/reference/statements/alter/partition)                   |
+| [DELETE](/fr/reference/statements/alter/delete)                         |
+| [UPDATE](/fr/reference/statements/alter/update)                         |
+| [ORDER BY](/fr/reference/statements/alter/order-by)                     |
+| [INDEX](/fr/reference/statements/alter/skipping-index)                  |
+| [CONSTRAINT](/fr/reference/statements/alter/constraint)                 |
+| [TTL](/fr/reference/statements/alter/ttl)                               |
+| [STATISTICS](/fr/reference/statements/alter/statistics)                 |
+| [APPLY DELETED MASK](/fr/reference/statements/alter/apply-deleted-mask) |
+| [APPLY PATCHES](/fr/reference/statements/alter/apply-patches)           |
+
+<Note>
+  La plupart des requêtes `ALTER TABLE` ne sont prises en charge que pour les tables [*MergeTree](/fr/reference/engines/table-engines/mergetree-family/index), [Merge](/fr/reference/engines/table-engines/special/merge) et [Distributed](/fr/reference/engines/table-engines/special/distributed).
+</Note>
+
+Ces instructions `ALTER` s’appliquent aux vues :
+
+| Statement                                                        | Description                                                                       |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY QUERY](/fr/reference/statements/alter/view) | Modifie la structure d’une [vue matérialisée](/fr/reference/statements/create/view). |
+
+Ces instructions `ALTER` modifient les entités liées au contrôle d’accès basé sur les rôles :
+
+| Statement                                                        |
+| ---------------------------------------------------------------- |
+| [USER](/fr/reference/statements/alter/user)                         |
+| [ROLE](/fr/reference/statements/alter/role)                         |
+| [QUOTA](/fr/reference/statements/alter/quota)                       |
+| [ROW POLICY](/fr/reference/statements/alter/row-policy)             |
+| [SETTINGS PROFILE](/fr/reference/statements/alter/settings-profile) |
+
+| Statement                                                              | Description                                                                                             |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/fr/reference/statements/alter/comment)  | Ajoute, modifie ou supprime les commentaires de la table, qu’un commentaire ait déjà été défini ou non. |
+| [ALTER NAMED COLLECTION](/fr/reference/statements/alter/named-collection) | Modifie les [collections nommées](/fr/concepts/features/configuration/server-config/named-collections).    |
+
+<div id="mutations">
+  ## Mutations
+</div>
+
+Les requêtes `ALTER` destinées à modifier les données des tables sont mises en œuvre au moyen d’un mécanisme appelé « mutations », notamment [ALTER TABLE ... DELETE](/fr/reference/statements/alter/delete) et [ALTER TABLE ... UPDATE](/fr/reference/statements/alter/update). Il s’agit de processus asynchrones en arrière-plan, similaires aux fusions dans les tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/index), qui produisent de nouvelles versions « mutées » des parts.
+
+Pour les tables `*MergeTree`, les mutations s’exécutent en **réécrivant des data parts entières**.
+Il n’y a pas d’atomicité — les parts sont remplacées par leurs versions mutées dès qu’elles sont prêtes, et une requête `SELECT` dont l’exécution a commencé pendant une mutation verra à la fois des données provenant de parts déjà mutées et de parts qui ne l’ont pas encore été.
+
+Les mutations sont totalement ordonnées selon leur ordre de création et sont appliquées à chaque part dans cet ordre. Les mutations sont également partiellement ordonnées par rapport aux requêtes `INSERT INTO` : les données insérées dans la table avant la soumission de la mutation seront mutées, et celles insérées après ne le seront pas. Notez que les mutations ne bloquent en aucune façon les insertions.
+
+Une requête de mutation renvoie immédiatement après l’ajout de l’entrée de mutation (dans le cas des tables répliquées, dans ZooKeeper ; pour les tables non répliquées, dans le système de fichiers). La mutation elle-même s’exécute de manière asynchrone en utilisant les paramètres du profil système. Pour suivre la progression des mutations, vous pouvez utiliser la table [`system.mutations`](/fr/reference/system-tables/mutations). Une mutation soumise avec succès continuera à s’exécuter même si les serveurs ClickHouse sont redémarrés. Il n’existe aucun moyen de revenir sur une mutation une fois qu’elle a été soumise, mais si elle est bloquée pour une raison quelconque, elle peut être annulée avec la requête [`KILL MUTATION`](/fr/reference/statements/kill#kill-mutation).
+
+Les entrées des mutations terminées ne sont pas supprimées immédiatement (le nombre d’entrées conservées est déterminé par le paramètre du moteur de stockage `finished_mutations_to_keep`). Les entrées de mutation plus anciennes sont supprimées.
+
+<div id="synchronicity-of-alter-queries">
+  ## Exécution synchrone des requêtes ALTER
+</div>
+
+Pour les tables non répliquées, toutes les requêtes `ALTER` sont exécutées de manière synchrone. Pour les tables répliquées, la requête se contente d&#39;ajouter dans `ZooKeeper` les instructions correspondant aux actions appropriées, et ces actions sont ensuite exécutées dès que possible. Toutefois, la requête peut attendre que ces actions soient terminées sur toutes les répliques.
+
+Pour les requêtes `ALTER` qui créent des mutations (par ex. : `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`, entre autres), le caractère synchrone est défini par le paramètre [mutations&#95;sync](/fr/reference/settings/session-settings#mutations_sync).
+
+Pour les autres requêtes `ALTER` qui modifient uniquement les métadonnées, vous pouvez utiliser le paramètre [alter&#95;sync](/fr/reference/settings/session-settings#alter_sync) pour définir l&#39;attente.
+
+Vous pouvez spécifier, avec le paramètre [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/fr/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout), combien de temps (en secondes) attendre que les répliques inactives exécutent toutes les requêtes `ALTER`.
+
+<Note>
+  Pour toutes les requêtes `ALTER`, si `alter_sync = 2` et que certaines répliques restent inactives au-delà de la durée spécifiée par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée.
+</Note>
+
+<div id="related-content">
+  ## Articles connexes
+</div>
+
+* Blog : [Gestion des mises à jour et des suppressions dans ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

@@ -1,8 +1,12 @@
 name	String
-type	Enum8(\'Function\' = 1, \'Aggregate Function\' = 2, \'Table Function\' = 3, \'Table Engine\' = 4, \'Database Engine\' = 5, \'Data Type\' = 6, \'Dictionary Layout\' = 7, \'Dictionary Source\' = 8, \'Aggregate Function Combinator\' = 9, \'Data Skipping Index\' = 10, \'Disk Type\' = 11, \'Setting\' = 12, \'MergeTree Setting\' = 13, \'Server Setting\' = 14, \'Format\' = 15)
+type	Enum8(\'Function\' = 1, \'Aggregate Function\' = 2, \'Table Function\' = 3, \'Table Engine\' = 4, \'Database Engine\' = 5, \'Data Type\' = 6, \'Dictionary Layout\' = 7, \'Dictionary Source\' = 8, \'Aggregate Function Combinator\' = 9, \'Data Skipping Index\' = 10, \'Disk Type\' = 11, \'Setting\' = 12, \'MergeTree Setting\' = 13, \'Server Setting\' = 14, \'Format\' = 15, \'Compression Codec\' = 16, \'Profile Event\' = 17, \'Current Metric\' = 18, \'Asynchronous Metric\' = 19, \'System Table\' = 20)
 description	String
+source	String
 Aggregate Function
 Aggregate Function Combinator
+Asynchronous Metric
+Compression Codec
+Current Metric
 Data Skipping Index
 Data Type
 Database Engine
@@ -12,8 +16,10 @@ Disk Type
 Format
 Function
 MergeTree Setting
+Profile Event
 Server Setting
 Setting
+System Table
 Table Engine
 Table Function
 Aggregate Function	count

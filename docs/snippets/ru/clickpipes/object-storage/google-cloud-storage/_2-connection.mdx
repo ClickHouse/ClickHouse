@@ -1,0 +1,13 @@
+---
+title: 2 Подключение
+---
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/cp_step2.webp" alt="Заполните сведения о подключении" size="lg" border />
+
+* **Путь к файлу GCS**: GCS ClickPipe использует [XML API](https://docs.cloud.google.com/storage/docs/interoperability) Cloud Storage для обеспечения совместимости и требует использования конечной точки `storage.googleapis.com`:
+
+  ```bash
+  https://storage.googleapis.com/bucket-name/key-name
+  ```
+
+  Вы можете использовать подстановочные шаблоны POSIX, чтобы указывать несколько файлов или префиксов. Поддерживаемые шаблоны описаны в [справочной документации](/ru/integrations/clickpipes/object-storage/google-cloud-storage/overview#file-pattern-matching).

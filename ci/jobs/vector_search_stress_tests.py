@@ -14,7 +14,7 @@ import numpy as np
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.praktika.info import Info
 from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from ci.praktika.utils import Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
@@ -291,10 +291,13 @@ class RunTest:
             if configured_select_list is not None:
                 select_list = configured_select_list
 
-            source = f"s3('{url}')"
+            # Public clickhouse-datasets bucket: read with NOSIGN so the query
+            # does not fall back to server-managed credentials (rejected in user
+            # queries by default). NOSIGN is the 2nd positional s3() argument.
+            source = f"s3('{url}', NOSIGN)"
             source_format = self._dataset.get(SOURCE_FORMAT)
             if source_format is not None:
-                source = f"s3('{url}', '{source_format}'"
+                source = f"s3('{url}', NOSIGN, '{source_format}'"
                 source_structure = self._dataset.get(SOURCE_STRUCTURE)
                 if source_structure is not None:
                     source = source + f", '{source_structure}'"
@@ -655,10 +658,10 @@ class RunTest:
             try:
                 ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {warmup_query_source} ) AS distance LIMIT {self._k}"
                 result = chclient.query(ann_search_query)
-                logger(f"Vector indexes have loaded!")
+                logger("Vector indexes have loaded!")
                 break
-            except Exception as e:
-                logger(f"Waiting for indexes to load...")
+            except Exception:
+                logger("Waiting for indexes to load...")
                 time.sleep(30)
 
         for truth_record in self._truth_set:
@@ -788,7 +791,7 @@ def run_single_test(test_name, dataset, test_params):
         # Run concurrency test on the current truth set
         if test_runner._test_params[CONCURRENCY_TEST]:
             test_runner.concurrency_test()
-    except Exception as e:
+    except Exception:
         print(traceback.format_exc(), file=sys.stdout)
         result = False
     finally:
@@ -805,14 +808,14 @@ def install_and_start_clickhouse():
     res = True
     results = []
     ch = ClickHouseProc()
-    info = Info()
+    Info()
 
     if Utils.is_arm():
         latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
     elif Utils.is_amd():
         latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
     else:
-        assert False, f"Unknown processor architecture"
+        assert False, "Unknown processor architecture"
 
     if True:
         step_name = "Download ClickHouse"

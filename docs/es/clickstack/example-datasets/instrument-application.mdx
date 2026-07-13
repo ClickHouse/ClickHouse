@@ -1,0 +1,32 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/instrument-app
+title: 'Instrumentar una aplicación con Managed ClickStack'
+sidebarTitle: 'Demo de HackerNews Analyzer'
+description: 'Guía para instrumentar una aplicación Node.js con OpenTelemetry y enviar logs, métricas y trazas a Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'instrumentación', 'opentelemetry', 'managed clickstack', 'observabilidad']
+---
+
+import InstrumentApplication from '/snippets/es/clickstack/_instrument_application.mdx';
+
+Esta guía muestra cómo instrumentar una aplicación sencilla de Node.js con OpenTelemetry y enviar sus logs, métricas y trazas a [Managed ClickStack](/es/clickstack/getting-started/managed). El backend se instrumenta sin necesidad de hacer cambios en el código fuente de la aplicación.
+
+[HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) es una pequeña aplicación de Node.js que consulta el conjunto de datos de HackerNews alojado en la instancia de demo pública de ClickHouse. Cada gráfico, tabla y cuadro de búsqueda está respaldado por una consulta real de ClickHouse, por lo que cada interacción genera una traza cuyo span principal es la llamada HTTPS del backend a ClickHouse.
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Un OTel collector disponible y accesible, que ingiera datos en su servicio de Managed ClickStack. Necesita su endpoint de OTLP y un token de ingestión.
+* Node 18+ y npm.
+
+<InstrumentApplication />
+
+<div id="learn-more">
+  ## Más información
+</div>
+
+* [Session Replay](/es/clickstack/features/session-replay): descripción general de la funcionalidad, opciones de SDK y controles de privacidad.
+* [Session Replay Demo](/es/clickstack/example-datasets/session-replay): una demo autónoma con una instancia local de ClickStack.
+* [Primeros pasos con ClickStack](/es/clickstack/getting-started/index): despliegue de ClickStack e ingesta de tus primeros datos.
+* [Todos los conjuntos de datos de ejemplo](/es/clickstack/example-datasets/index): otros conjuntos de datos de ejemplo y guías.

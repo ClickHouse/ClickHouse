@@ -16,17 +16,22 @@
 #include <dlfcn.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <csignal>
+#include <limits>
 
+#include <base/sleep.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
+#include <Common/UDFProcessRegistry.h>
 #include <Common/PipeFDs.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Common/waitForPid.h>
+#include <Common/Stopwatch.h>
 
 
 namespace
@@ -58,6 +63,7 @@ namespace ErrorCodes
     extern const int CANNOT_WAITPID;
     extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
     extern const int CANNOT_CREATE_CHILD_PROCESS;
+    extern const int BAD_ARGUMENTS;
 }
 
 ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
@@ -74,6 +80,23 @@ LoggerPtr ShellCommand::getLogger()
     return ::getLogger("ShellCommand");
 }
 
+UInt64 ShellCommand::remainingTerminationTimeoutMs()
+{
+    const UInt64 now_ns = clock_gettime_ns();
+
+    /// Arm the shared deadline once, on the first waiter (cleanup, or the destructor when
+    /// cleanup never ran). Every later waiter subtracts the time already spent so both the
+    /// cleanup poll and the destructor wait draw from one `command_termination_timeout`.
+    if (termination_deadline_ns == 0)
+        termination_deadline_ns
+            = now_ns + config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds * 1000000000ULL;
+
+    if (now_ns >= termination_deadline_ns)
+        return 0;
+
+    return (termination_deadline_ns - now_ns) / 1000000ULL;
+}
+
 ShellCommand::~ShellCommand()
 {
     if (do_not_terminate)
@@ -84,7 +107,12 @@ ShellCommand::~ShellCommand()
 
     if (config.terminate_in_destructor_strategy.terminate_in_destructor)
     {
-        size_t try_wait_timeout = config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds;
+        /// Draw from the shared deadline: the cleanup-side wait may have already spent
+        /// most of `command_termination_timeout`, so this wait gets only what remains and
+        /// the configured grace period is honored once, not doubled. `waitForPid` is
+        /// second-granular, so round the remainder up to keep at least one poll when any
+        /// budget is left.
+        size_t try_wait_timeout = (remainingTerminationTimeoutMs() + 999) / 1000;
         bool process_terminated_normally = tryWaitProcessWithTimeout(try_wait_timeout);
 
         if (process_terminated_normally)
@@ -125,7 +153,12 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     for (auto & [_, fd] : read_fds)
         fd.close();
 
-    return waitForPid(pid, timeout_in_seconds);
+    bool process_terminated_normally = waitForPid(pid, timeout_in_seconds);
+
+    if (process_terminated_normally && config.register_in_udf_process_registry)
+        UDFProcessRegistry::instance().removeIfGenerationMatches(pid, udf_registry_generation);
+
+    return process_terminated_normally;
 }
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
@@ -180,6 +213,32 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
     for (size_t i = 0; i < config.write_fds.size(); ++i)
         write_pipe_fds.emplace_back(std::make_unique<PipeFDs>());
+
+    if (config.pipe_capacity)
+    {
+        if (config.pipe_capacity > static_cast<size_t>(std::numeric_limits<int>::max()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Pipe capacity {} exceeds maximum supported value {}",
+                config.pipe_capacity,
+                std::numeric_limits<int>::max());
+
+        int pipe_capacity = static_cast<int>(config.pipe_capacity);
+
+        pipe_stdin.tryIncreaseSize(pipe_capacity);
+
+        if (!config.pipe_stdin_only)
+        {
+            pipe_stdout.tryIncreaseSize(pipe_capacity);
+            pipe_stderr.tryIncreaseSize(pipe_capacity);
+        }
+
+        for (const auto & fds : read_pipe_fds)
+            fds->tryIncreaseSize(pipe_capacity);
+
+        for (const auto & fds : write_pipe_fds)
+            fds->tryIncreaseSize(pipe_capacity);
+    }
 
     pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 
@@ -243,6 +302,9 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         pipe_stdout.fds_rw[0],
         pipe_stderr.fds_rw[0],
         config));
+
+    if (config.register_in_udf_process_registry)
+        res->udf_registry_generation = UDFProcessRegistry::instance().add(pid);
 
     for (size_t i = 0; i < config.read_fds.size(); ++i)
     {
@@ -350,6 +412,8 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
             /// moment the child is reaped — before any operation that can throw — so the
             /// destructor never waits on or signals an unrelated process.
             wait_called = true;
+            if (config.register_in_udf_process_registry)
+                UDFProcessRegistry::instance().removeIfGenerationMatches(pid, udf_registry_generation);
             if (config.collect_resource_usage)
             {
                 child_user_time_us = static_cast<UInt64>(local_rusage.ru_utime.tv_sec) * 1000000ULL
@@ -439,9 +503,29 @@ bool ShellCommand::waitIfProccesTerminated()
 }
 
 
-bool ShellCommand::tryReapWithoutStatusCheck()
+bool ShellCommand::tryWaitWithoutStatusCheck()
 {
-    return tryWaitImpl(/*blocking=*/false, /*check_exit_status=*/false).is_process_terminated;
+    /// A child that closed stdout but has only just called `_exit` is not yet a
+    /// zombie, so a single `wait4(WNOHANG)` can miss it and lose its `rusage`. Poll
+    /// until the shared termination deadline (`remainingTerminationTimeoutMs`), collecting the
+    /// child's usage here via `wait4` instead of leaving it to the destructor's
+    /// `waitForPid`, which collects none. The deadline is shared with the destructor,
+    /// so a child that lingers past it is not double-charged: the destructor's own wait
+    /// gets only the time remaining. A configured timeout of 0 means a single
+    /// non-blocking attempt, so this never stalls a query beyond the configuration.
+    static constexpr UInt64 poll_step_ms = 5;
+
+    while (true)
+    {
+        if (tryWaitImpl(/*blocking=*/false, /*check_exit_status=*/false).is_process_terminated)
+            return true;
+
+        const UInt64 remaining_ms = remainingTerminationTimeoutMs();
+        if (remaining_ms == 0)
+            return false;
+
+        sleepForMilliseconds(std::min(poll_step_ms, remaining_ms));
+    }
 }
 
 

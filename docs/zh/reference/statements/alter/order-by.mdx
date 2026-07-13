@@ -1,0 +1,19 @@
+---
+description: '关于修改键表达式的文档'
+sidebarTitle: 'ORDER BY'
+slug: /sql-reference/statements/alter/order-by
+title: '修改键表达式'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
+```
+
+该命令会将表的[排序键](/zh/reference/engines/table-engines/mergetree-family/mergetree)更改为 `new_expression` (一个表达式或表达式元组) 。主键保持不变。
+
+该命令比较轻量，因为它只会更改元数据。为了保持数据分区片段中的行按照排序键表达式排序这一特性，你不能向排序键中添加包含现有列的表达式 (只能添加在同一 `ALTER` 查询中通过 `ADD COLUMN` 命令新增的列，且该列没有默认值) 。
+
+<Note>
+  它仅适用于 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族中的表 (包括[复制表](/zh/reference/engines/table-engines/mergetree-family/replication)) 。
+</Note>

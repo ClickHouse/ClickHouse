@@ -397,3 +397,11 @@ SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_lc_str.orc', 'O
 SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04064_lc_str.orc', 'ORC', 'c0 LowCardinality(Nullable(String))') SETTINGS input_format_orc_use_fast_decoder = 0;
 
 DROP TABLE test_nullable_tuple_lc_string;
+
+-- LowCardinality(Nullable(String)) hint WITH physical nulls: Arrow nulls must be preserved, not turned into empty strings
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_lcn.arrow', 'Arrow') SELECT arrayJoin(['x', NULL]::Array(Nullable(String))) AS x;
+SELECT x, isNull(x) FROM file(currentDatabase() || '_04064_lcn.arrow', 'Arrow', 'x LowCardinality(Nullable(String))') ORDER BY x;
+
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04064_lcn.orc', 'ORC') SELECT arrayJoin(['x', NULL]::Array(Nullable(String))) AS x;
+SELECT x, isNull(x) FROM file(currentDatabase() || '_04064_lcn.orc', 'ORC', 'x LowCardinality(Nullable(String))') ORDER BY x;
+SELECT x, isNull(x) FROM file(currentDatabase() || '_04064_lcn.orc', 'ORC', 'x LowCardinality(Nullable(String))') ORDER BY x SETTINGS input_format_orc_use_fast_decoder = 0;

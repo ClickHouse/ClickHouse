@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 drop table if exists local_table;
 drop table if exists distributed_table;
 drop table if exists distributed_table2;

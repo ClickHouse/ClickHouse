@@ -1,0 +1,57 @@
+---
+description: 'Documentación de CHECK GRANT'
+sidebarTitle: 'CHECK GRANT'
+slug: /sql-reference/statements/check-grant
+title: 'Sentencia CHECK GRANT'
+doc_type: 'reference'
+---
+
+La consulta `CHECK GRANT` se utiliza para comprobar si al usuario o rol actual se le ha concedido un privilegio específico.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+La sintaxis básica de la consulta es la siguiente:
+
+```sql
+CHECK GRANT privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*}
+```
+
+* `privilege` — Tipo de privilegio.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Si al usuario se le había concedido previamente el privilegio, la respuesta `check_grant` será `1`. De lo contrario, la respuesta `check_grant` será `0`.
+
+Si `table_1.col1` existe y al usuario actual se le ha concedido el privilegio `SELECT`/`SELECT(con)` o un rol (con ese privilegio), la respuesta será `1`.
+
+```sql
+CHECK GRANT SELECT(col1) ON table_1;
+```
+
+```text
+┌─result─┐
+│      1 │
+└────────┘
+```
+
+Si `table_2.col2` no existe, o al usuario actual no se le ha concedido el privilegio `SELECT`/`SELECT(con)` o un rol (con ese privilegio), la respuesta es `0`.
+
+```sql
+CHECK GRANT SELECT(col2) ON table_2;
+```
+
+```text
+┌─result─┐
+│      0 │
+└────────┘
+```
+
+<div id="wildcard">
+  ## Comodín
+</div>
+
+Al especificar privilegios, puede usar un asterisco (`*`) en lugar del nombre de una tabla o una base de datos. Consulte [PRIVILEGIOS CON COMODINES](/es/reference/statements/grant#wildcard-grants) para conocer las reglas de uso de los comodines.

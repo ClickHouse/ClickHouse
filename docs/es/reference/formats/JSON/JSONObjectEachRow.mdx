@@ -1,0 +1,257 @@
+---
+alias: []
+description: 'Documentación del formato JSONObjectEachRow'
+input_format: true
+keywords: ['JSONObjectEachRow']
+output_format: true
+slug: /interfaces/formats/JSONObjectEachRow
+title: 'JSONObjectEachRow'
+doc_type: 'reference'
+---
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✔       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+En este formato, todos los datos se representan como un único objeto JSON, y cada fila se representa como un campo independiente de ese objeto, de forma similar al formato [`JSONEachRow`](/es/reference/formats/JSON/JSONEachRow).
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+<div id="basic-example">
+  ### Ejemplo básico
+</div>
+
+Dado el siguiente JSON:
+
+```json
+{
+  "row_1": {"num": 42, "str": "hello", "arr":  [0,1]},
+  "row_2": {"num": 43, "str": "hello", "arr":  [0,1,2]},
+  "row_3": {"num": 44, "str": "hello", "arr":  [0,1,2,3]}
+}
+```
+
+Para usar el nombre de un objeto como valor de una columna, puede utilizar la SETTING especial [`format_json_object_each_row_column_for_object_name`](/es/reference/settings/formats#format_json_object_each_row_column_for_object_name).
+El valor de esta SETTING se establece en el nombre de una columna, que se utiliza como clave JSON para una fila en el objeto resultante.
+
+<div id="output">
+  #### Resultado
+</div>
+
+Supongamos que tenemos la tabla `test` con dos columnas:
+
+```text
+┌─object_name─┬─number─┐
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ third_obj   │      3 │
+└─────────────┴────────┘
+```
+
+Mostremos la salida en el formato `JSONObjectEachRow` y usemos la SETTING `format_json_object_each_row_column_for_object_name`:
+
+```sql title="Query"
+SELECT * FROM test SETTINGS format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```json title="Response"
+{
+    "first_obj": {"number": 1},
+    "second_obj": {"number": 2},
+    "third_obj": {"number": 3}
+}
+```
+
+<div id="input">
+  #### Entrada
+</div>
+
+Supongamos que hemos guardado la salida del ejemplo anterior en un archivo llamado `data.json`:
+
+```sql title="Query"
+SELECT * FROM file('data.json', JSONObjectEachRow, 'object_name String, number UInt64') SETTINGS format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```response title="Response"
+┌─object_name─┬─number─┐
+│ first_obj   │      1 │
+│ second_obj  │      2 │
+│ third_obj   │      3 │
+└─────────────┴────────┘
+```
+
+También funciona para la inferencia de esquema:
+
+```sql title="Query"
+DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_row_column_for_object_name='object_name'
+```
+
+```response title="Response"
+┌─name────────┬─type────────────┐
+│ object_name │ String          │
+│ number      │ Nullable(Int64) │
+└─────────────┴─────────────────┘
+```
+
+<div id="json-inserting-data">
+  ### Insertar datos
+</div>
+
+```sql title="Query"
+INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
+```
+
+ClickHouse permite:
+
+* Cualquier orden de los pares clave-valor dentro del objeto.
+* Omitir algunos valores.
+
+ClickHouse ignora los espacios entre los elementos y las comas después de los objetos. Puede pasar todos los objetos en una sola línea. No es necesario separarlos con saltos de línea.
+
+<div id="omitted-values-processing">
+  #### Procesamiento de los valores omitidos
+</div>
+
+ClickHouse sustituye los valores omitidos por los valores predeterminados de los [tipos de datos](/es/reference/data-types/index) correspondientes.
+
+Si se especifica `DEFAULT expr`, ClickHouse aplica reglas de sustitución diferentes según la SETTING [input&#95;format&#95;defaults&#95;for&#95;omitted&#95;fields](/es/reference/settings/formats#input_format_defaults_for_omitted_fields).
+
+Considere la siguiente tabla:
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS example_table
+(
+    x UInt32,
+    a DEFAULT x * 2
+) ENGINE = Memory;
+```
+
+* Si `input_format_defaults_for_omitted_fields = 0`, el valor predeterminado de `x` y `a` es `0` (el valor predeterminado del tipo de dato `UInt32`).
+* Si `input_format_defaults_for_omitted_fields = 1`, el valor predeterminado de `x` es `0`, pero el valor predeterminado de `a` es `x * 2`.
+
+<Note>
+  Al insertar datos con `input_format_defaults_for_omitted_fields = 1`, ClickHouse consume más recursos de cómputo que con la inserción usando `input_format_defaults_for_omitted_fields = 0`.
+</Note>
+
+<div id="json-selecting-data">
+  ### Selección de datos
+</div>
+
+Considere la tabla `UserActivity` como ejemplo:
+
+```response
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+La consulta `SELECT * FROM UserActivity FORMAT JSONEachRow` devuelve:
+
+```response
+{"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
+{"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
+```
+
+A diferencia del formato [JSON](/es/reference/formats/JSON/JSON), no se sustituyen las secuencias UTF-8 no válidas. Los valores se escapan del mismo modo que en `JSON`.
+
+<Info>
+  En las cadenas se puede generar cualquier secuencia de bytes. Utilice el formato [`JSONEachRow`](/es/reference/formats/JSON/JSONEachRow) si está seguro de que los datos de la tabla pueden representarse como JSON sin perder información.
+</Info>
+
+<div id="jsoneachrow-nested">
+  ### Uso de estructuras anidadas
+</div>
+
+Si tiene una tabla con columnas del tipo de dato [`Nested`](/es/reference/data-types/nested-data-structures/index), puede insertar datos JSON con la misma estructura. Habilite esta función con la SETTING [input&#95;format&#95;import&#95;nested&#95;json](/es/reference/settings/formats#input_format_import_nested_json).
+
+Por ejemplo, considere la siguiente tabla:
+
+```sql title="Query"
+CREATE TABLE json_each_row_nested (n Nested (s String, i Int32) ) ENGINE = Memory
+```
+
+Como puede ver en la descripción del tipo de dato `Nested`, ClickHouse trata cada componente de la estructura anidada como una columna independiente (`n.s` y `n.i` para nuestra tabla). Puede insertar datos de la siguiente manera:
+
+```sql title="Query"
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n.s": ["abc", "def"], "n.i": [1, 23]}
+```
+
+Para insertar datos como un objeto JSON jerárquico, establezca [`input_format_import_nested_json=1`](/es/reference/settings/formats#input_format_import_nested_json).
+
+```json
+{
+    "n": {
+        "s": ["abc", "def"],
+        "i": [1, 23]
+    }
+}
+```
+
+Sin esta SETTING, ClickHouse genera una excepción.
+
+```sql title="Query"
+SELECT name, value FROM system.settings WHERE name = 'input_format_import_nested_json'
+```
+
+```response title="Response"
+┌─name────────────────────────────┬─value─┐
+│ input_format_import_nested_json │ 0     │
+└─────────────────────────────────┴───────┘
+```
+
+```sql title="Query"
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+```
+
+```response title="Response"
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: n: (at row 1)
+```
+
+```sql title="Query"
+SET input_format_import_nested_json=1
+INSERT INTO json_each_row_nested FORMAT JSONEachRow {"n": {"s": ["abc", "def"], "i": [1, 23]}}
+SELECT * FROM json_each_row_nested
+```
+
+```response title="Response"
+┌─n.s───────────┬─n.i────┐
+│ ['abc','def'] │ [1,23] │
+└───────────────┴────────┘
+```
+
+<div id="format-settings">
+  ## Configuración de formato
+</div>
+
+| Ajuste                                                                                                                                                         | Descripción                                                                                                                                                                                    | Valor predeterminado | Notas                                                                                                                                                                                        |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`input_format_import_nested_json`](/es/reference/settings/formats#input_format_import_nested_json)                                                               | asigna datos JSON anidados a tablas anidadas (funciona con el formato JSONEachRow).                                                                                                            | `false`              |                                                                                                                                                                                              |
+| [`input_format_json_read_bools_as_numbers`](/es/reference/settings/formats#input_format_json_read_bools_as_numbers)                                               | permite analizar valores booleanos como números en los formatos de entrada JSON.                                                                                                               | `true`               |                                                                                                                                                                                              |
+| [`input_format_json_read_bools_as_strings`](/es/reference/settings/formats#input_format_json_read_bools_as_strings)                                               | permitir interpretar valores booleanos como cadenas en formatos de entrada JSON.                                                                                                               | `true`               |                                                                                                                                                                                              |
+| [`input_format_json_read_numbers_as_strings`](/es/reference/settings/formats#input_format_json_read_numbers_as_strings)                                           | permitir interpretar números como cadenas en formatos de entrada JSON.                                                                                                                         | `true`               |                                                                                                                                                                                              |
+| [`input_format_json_read_arrays_as_strings`](/es/reference/settings/formats#input_format_json_read_arrays_as_strings)                                             | permitir interpretar arrays JSON como cadenas en formatos de entrada JSON.                                                                                                                     | `true`               |                                                                                                                                                                                              |
+| [`input_format_json_read_objects_as_strings`](/es/reference/settings/formats#input_format_json_read_objects_as_strings)                                           | permitir interpretar objetos JSON como cadenas en formatos de entrada JSON.                                                                                                                    | `true`               |                                                                                                                                                                                              |
+| [`input_format_json_named_tuples_as_objects`](/es/reference/settings/formats#input_format_json_named_tuples_as_objects)                                           | analizar las columnas de tuplas con nombre como objetos JSON.                                                                                                                                  | `true`               |                                                                                                                                                                                              |
+| [`input_format_json_try_infer_numbers_from_strings`](/es/reference/settings/formats#input_format_json_try_infer_numbers_from_strings)                             | intentar inferir números a partir de campos de texto durante la inferencia de esquemas.                                                                                                        | `false`              |                                                                                                                                                                                              |
+| [`input_format_json_try_infer_named_tuples_from_objects`](/es/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects)                   | intentar inferir tuplas con nombre a partir de objetos JSON durante la inferencia de esquemas.                                                                                                 | `true`               |                                                                                                                                                                                              |
+| [`input_format_json_infer_incomplete_types_as_strings`](/es/reference/settings/formats#input_format_json_infer_incomplete_types_as_strings)                       | usar el tipo String para las claves que contengan solo valores NULL u objetos/arreglos vacíos durante la inferencia de esquemas en formatos de entrada JSON.                                   | `true`               |                                                                                                                                                                                              |
+| [`input_format_json_defaults_for_missing_elements_in_named_tuple`](/es/reference/settings/formats#input_format_json_defaults_for_missing_elements_in_named_tuple) | insertar valores predeterminados para los elementos faltantes en un objeto JSON al analizar una tuple con nombre.                                                                              | `true`               |                                                                                                                                                                                              |
+| [`input_format_json_ignore_unknown_keys_in_named_tuple`](/es/reference/settings/formats#input_format_json_ignore_unknown_keys_in_named_tuple)                     | ignorar las claves desconocidas en un objeto JSON para las tuples con nombre.                                                                                                                  | `false`              |                                                                                                                                                                                              |
+| [`input_format_json_compact_allow_variable_number_of_columns`](/es/reference/settings/formats#input_format_json_compact_allow_variable_number_of_columns)         | permite un número variable de columnas en el formato JSONCompact/JSONCompactEachRow, ignora las columnas adicionales y usa valores predeterminados para las columnas ausentes.                 | `false`              |                                                                                                                                                                                              |
+| [`input_format_json_throw_on_bad_escape_sequence`](/es/reference/settings/formats#input_format_json_throw_on_bad_escape_sequence)                                 | lanza una excepción si la cadena JSON contiene una secuencia de escape no válida. Si se desactiva, las secuencias de escape no válidas permanecerán tal cual en los datos.                     | `true`               |                                                                                                                                                                                              |
+| [`input_format_json_empty_as_default`](/es/reference/settings/formats#input_format_json_empty_as_default)                                                         | trata los campos vacíos de la entrada JSON como valores predeterminados.                                                                                                                       | `false`.             | Para las expresiones predeterminadas complejas, también debe habilitarse [`input_format_defaults_for_omitted_fields`](/es/reference/settings/formats#input_format_defaults_for_omitted_fields). |
+| [`output_format_json_quote_64bit_integers`](/es/reference/settings/formats#output_format_json_quote_64bit_integers)                                               | controla si los enteros de 64 bits se escriben entre comillas en el formato de salida JSON.                                                                                                    | `true`               |                                                                                                                                                                                              |
+| [`output_format_json_quote_64bit_floats`](/es/reference/settings/formats#output_format_json_quote_64bit_floats)                                                   | controla si los números de coma flotante de 64 bits se escriben entre comillas en el formato de salida JSON.                                                                                   | `false`              |                                                                                                                                                                                              |
+| [`output_format_json_quote_denormals`](/es/reference/settings/formats#output_format_json_quote_denormals)                                                         | habilita la salida de &#39;+nan&#39;, &#39;-nan&#39;, &#39;+inf&#39; y &#39;-inf&#39; en el formato de salida JSON.                                                                            | `false`              |                                                                                                                                                                                              |
+| [`output_format_json_quote_decimals`](/es/reference/settings/formats#output_format_json_quote_decimals)                                                           | controla si los decimales se encierran entre comillas en el formato de salida JSON.                                                                                                            | `false`              |                                                                                                                                                                                              |
+| [`output_format_json_escape_forward_slashes`](/es/reference/settings/formats#output_format_json_escape_forward_slashes)                                           | controla el escape de barras diagonales en las salidas de String del formato de salida JSON.                                                                                                   | `true`               |                                                                                                                                                                                              |
+| [`output_format_json_named_tuples_as_objects`](/es/reference/settings/formats#output_format_json_named_tuples_as_objects)                                         | serializa las columnas de named tuple como objetos JSON.                                                                                                                                       | `true`               |                                                                                                                                                                                              |
+| [`output_format_json_array_of_rows`](/es/reference/settings/formats#output_format_json_array_of_rows)                                                             | genera un array JSON con todas las filas en formato JSONEachRow(Compact).                                                                                                                      | `false`              |                                                                                                                                                                                              |
+| [`output_format_json_validate_utf8`](/es/reference/settings/formats#output_format_json_validate_utf8)                                                             | habilita la validación de secuencias UTF-8 en los formatos de salida JSON (ten en cuenta que no afecta a los formatos JSON/JSONCompact/JSONColumnsWithMetadata, ya que siempre validan UTF-8). | `false`              |                                                                                                                                                                                              |
