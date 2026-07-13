@@ -1707,8 +1707,16 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             const bool output_on_remote_disk = std::any_of(
                 future_part->parts.begin(), future_part->parts.end(),
                 [](const auto & part) { return part->isStoredOnRemoteDisk(); });
+
+            /// Estimate the reservation against the same context the merge will actually run under: a copy of
+            /// the background context with the merge query settings applied (MergePlainMergeTreeTask builds the
+            /// same before executing). A non-default background_profile can raise the read/upload buffer sizes
+            /// above the storage/global settings, and the reservation must reflect what the merge will use.
+            auto merge_context = Context::createCopy(getContext()->getBackgroundContext());
+            merge_context->makeQueryContextForMerge(*getSettings());
+
             const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
-                *future_part, metadata_snapshot, getContext(), *getSettings(), output_on_remote_disk);
+                *future_part, metadata_snapshot, merge_context, *getSettings(), output_on_remote_disk);
 
             std::optional<MergeMemoryReservation> memory_reservation;
             if (user_initiated)
@@ -1751,7 +1759,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             {
                 memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
                     CompactionStatistics::estimateNeededMemoryForMerge(
-                        *future_part, metadata_snapshot, getContext(), *getSettings(), actual_output_on_remote_disk)));
+                        *future_part, metadata_snapshot, merge_context, *getSettings(), actual_output_on_remote_disk)));
             }
 
             tagger->memory_reservation = std::move(*memory_reservation);

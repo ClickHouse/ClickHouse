@@ -341,22 +341,26 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
+    /// Build the merge context up front - a copy of the background context with the merge query settings
+    /// applied - so the reservation below is estimated against the exact read/upload buffer sizes the merge
+    /// will actually run with. A non-default background_profile can raise max_read_buffer_size_* or the
+    /// object-storage multipart sizes above the storage/global settings, and the reservation must reflect it.
+    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
+    task_context->makeQueryContextForMerge(*storage.getSettings());
+    task_context->setCurrentQueryId(getQueryId());
+
     /// Reserve memory for the merge's input/output IO buffers up front (see MergeMemoryReservation).
     /// This replica is already committed to running this merge locally, so reserve unconditionally;
     /// the reservation still throttles selection of further merges via canEnqueueBackgroundTask.
     memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
         CompactionStatistics::estimateNeededMemoryForMerge(
-            *future_merged_part, metadata_snapshot, storage.getContext(), *storage_settings_ptr, reserved_space->getDisk()->isRemote())));
+            *future_merged_part, metadata_snapshot, task_context, *storage_settings_ptr, reserved_space->getDisk()->isRemote())));
 
     /// Account TTL merge
     if (isTTLMergeType(future_merged_part->merge_type))
         storage.getContext()->getMergeList().bookMergeWithTTL();
 
     auto table_id = storage.getStorageID();
-
-    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
-    task_context->makeQueryContextForMerge(*storage.getSettings());
-    task_context->setCurrentQueryId(getQueryId());
 
     /// Add merge to list
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
