@@ -252,7 +252,10 @@ as `readonly_user`. A client that passes a user name explicitly is not affected.
 
 The tag is looked up from the endpoint's module towards the referenced (`impl`)
 modules, and the value closest to the endpoint wins. It applies to the `tcp`, `http`,
-`mysql`, `postgres` and `prometheus` protocol handlers. It cannot be used with the
+`mysql` and `postgres` protocol handlers, and to the `prometheus` handlers that
+authenticate requests (`remote_write`, `remote_read`, `query` and `api_v1`); the
+metrics exposition endpoints (including Keeper metrics-only endpoints) are served
+without authentication and ignore the setting. It cannot be used with the
 `interserver` protocol: interserver connections are authenticated by the cluster
 secret and the initial user and never use the default session user.
 
