@@ -1193,6 +1193,22 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 projection_columns.emplace_back(column.name, column.type);
             }
 
+            /// A table function whose storage exposes no ordinary columns (for example `cluster()` /
+            /// `remote()` against a parameterized view, whose metadata carries no stored columns) would
+            /// otherwise be rewritten into a subquery with an empty projection. `buildQueryToReadColumnsFromTableExpression`
+            /// - the helper the `TableNode` right-hand side goes through - appends a single constant `1`
+            /// column in that case to preserve the row count, so mirror it here. This keeps the rewritten
+            /// subquery well-formed (a single-column set the executor can build) and, crucially, makes the
+            /// analysis-time IN column-count check below see exactly the one-column shape the executor will,
+            /// so `(1, 1) IN table_function(...)` is rejected with `NUMBER_OF_COLUMNS_DOESNT_MATCH` instead
+            /// of diverging into `FunctionIn`'s empty-set fast path.
+            if (column_nodes_to_select->getNodes().empty())
+            {
+                auto constant_data_type = std::make_shared<DataTypeUInt64>();
+                column_nodes_to_select->getNodes().emplace_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+                projection_columns.emplace_back("1", std::move(constant_data_type));
+            }
+
             auto in_second_argument_query_node = std::make_shared<QueryNode>(Context::createCopy(scope.context));
             in_second_argument_query_node->setIsSubquery(true);
             in_second_argument_query_node->getProjectionNode() = std::move(column_nodes_to_select);

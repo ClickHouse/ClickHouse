@@ -133,4 +133,16 @@ DROP VIEW IF EXISTS v_in_param;
 CREATE VIEW v_in_param AS SELECT number AS n FROM numbers(10) WHERE number = {pn:UInt64};
 SELECT (1, 1) IN v_in_param; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 SELECT (1, 1, 1) IN v_in_param; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+
+-- The same zero-column shape reached through a table function goes through the analyzer's
+-- `TableFunctionNode` right-hand-side rewrite, which now injects the same single constant column that
+-- `buildQueryToReadColumnsFromTableExpression` appends when the storage exposes no ordinary columns, so
+-- analysis and execution validate the same arity. Note that a table function cannot appear directly as
+-- an IN right-hand side in the analyzer: it is parsed as an ordinary (scalar) function, so it is
+-- rejected as `UNKNOWN_FUNCTION` before the rewrite, and a parameterized view reached through
+-- `cluster()` / `remote()` is turned into a plain table node earlier in analysis (so it flows through
+-- the `TableNode` branch validated above). These assertions pin that boundary. Regression for the
+-- zero-column table-function RHS gap flagged in PR #97540.
+SELECT (1, 1) IN cluster('test_shard_localhost', currentDatabase(), 'v_in_param'); -- { serverError UNKNOWN_FUNCTION }
+SELECT (1, 1) IN remote('127.0.0.1', currentDatabase(), 'v_in_param'); -- { serverError UNKNOWN_FUNCTION }
 DROP VIEW v_in_param;
