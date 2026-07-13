@@ -159,7 +159,10 @@ CREATE TABLE tab_disj
     INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha, preprocessor = replaceAll(s, ' ', '')),
     INDEX idx_n n TYPE minmax
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+-- auto_statistics_types = '': randomized materialize_statistics_on_insert would build a minmax
+-- statistic on n that prunes n = 999 before the skip-index QCC path runs, so no entry is written
+-- and the reuse hit below never happens. The skip index must be the only exclusion here.
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, auto_statistics_types = '';
 INSERT INTO tab_disj VALUES ('zzz', 1), ('a b', 2);
 
 -- Populate under the disjunction-enabled profile.
@@ -203,7 +206,10 @@ CREATE TABLE tab_namecol
     INDEX ix_a n TYPE minmax GRANULARITY 1,
     INDEX ix_b n TYPE minmax GRANULARITY 1
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+-- auto_statistics_types = '': randomized materialize_statistics_on_insert would build a minmax
+-- statistic on n that prunes n = 999 before the skip-index QCC path runs, so no entry is written
+-- and the reuse hit below never happens. The skip index must be the only exclusion here.
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1, auto_statistics_types = '';
 INSERT INTO tab_namecol VALUES (2), (5);
 
 -- Populate running ix_a (ix_b ignored): n = 999 matches nothing, ix_a drops both granules (sound).
