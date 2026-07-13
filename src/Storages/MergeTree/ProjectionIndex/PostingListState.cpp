@@ -66,18 +66,45 @@ void AggregateFunctionPostingList::add(AggregateDataPtr, const IColumn **, size_
 void AggregateFunctionPostingList::serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t>) const
 {
     const auto & posting_list_data = data(place);
-    chassert(posting_list_data.isStream());
-    const auto & stream = posting_list_data.stream;
 
-    writeVarUInt(stream.doc_count, buf);
-    writeVarUInt(stream.first_doc_id, buf);
-    writeVarUInt(stream.first_doc_freq, buf);
-
-    if (stream.doc_count > 0)
+    /// This method is reached through `ColumnAggregateFunction::serializedSizeEstimate`, which sums
+    /// the serialized size of every state to correct the adaptive-granularity byte estimate of the
+    /// projection index part. The authoritative on-disk posting-list encoding is produced by
+    /// `SerializationPostingList` into separate streams (`.large_posting`/`.pidx`/`.pos`), not here,
+    /// so this only needs to yield a representative size. During the projection part write the states
+    /// are `Writer`s; during vertical merge they are `Stream`s (`deserialize` always produces a
+    /// `Stream`). A `Writer` state is never fed back to `deserialize` (real writes go through
+    /// `SerializationPostingList`, merge reads produce `Stream`s), so a faithful round-trip is only
+    /// required for the `Stream` form.
+    if (posting_list_data.isStream())
     {
-        PODArray<UInt32> doc_ids(stream.doc_count);
-        stream.collect(doc_ids.data());
-        buf.write(reinterpret_cast<const char *>(doc_ids.data()), stream.doc_count * sizeof(UInt32));
+        const auto & stream = posting_list_data.stream;
+
+        writeVarUInt(stream.doc_count, buf);
+        writeVarUInt(stream.first_doc_id, buf);
+        writeVarUInt(stream.first_doc_freq, buf);
+
+        if (stream.doc_count > 0)
+        {
+            PODArray<UInt32> doc_ids(stream.doc_count);
+            stream.collect(doc_ids.data());
+            buf.write(reinterpret_cast<const char *>(doc_ids.data()), stream.doc_count * sizeof(UInt32));
+        }
+    }
+    else
+    {
+        const auto & writer = posting_list_data.writer;
+
+        writeVarUInt(writer.doc_count, buf);
+        writeVarUInt(writer.first_doc_id, buf);
+        writeVarUInt(writer.first_doc_freq, buf);
+
+        /// The `Writer`'s doc ids are TurboPFor-encoded across its chunk chain and are not cheaply
+        /// decodable here. Approximate the payload size by the encoded byte length of those chunks —
+        /// this is the same order of magnitude as the compressed on-disk posting size, which is the
+        /// quantity the granularity estimate cares about.
+        for (const PostingListChunk * chunk = writer.blocks_head; chunk != nullptr; chunk = chunk->next)
+            buf.write(reinterpret_cast<const char *>(chunk->data()), chunk->len);
     }
 }
 
