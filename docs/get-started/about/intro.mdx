@@ -1,15 +1,15 @@
 ---
-slug: /intro
-sidebarTitle: 'What is ClickHouse?'
-description: 'ClickHouse® is a column-oriented SQL database management system (DBMS) for online analytical processing (OLAP). It is available as both an open-source software and a cloud offering.'
-title: 'What is ClickHouse?'
-keywords: ['ClickHouse', 'columnar database', 'OLAP database', 'analytical database', 'high-performance database']
-doc_type: 'guide'
+title: "What is ClickHouse?"
+slug: "/intro"
+sidebarTitle: "What is ClickHouse?"
+description: "ClickHouse® is a column-oriented SQL database management system (DBMS) for online analytical processing (OLAP). It is available as both an open-source software and a cloud offering."
+keywords: ["ClickHouse", "columnar database", "OLAP database", "analytical database", "high-performance database"]
+doc_type: "guide"
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickHouse® is a high-performance, column-oriented SQL database management system (DBMS) for online analytical processing (OLAP). It is available as both an [open-source software](https://github.com/ClickHouse/ClickHouse) and a [cloud offering](https://clickhouse.com/cloud).
+ClickHouse® is a high-performance, column-oriented SQL database management system (DBMS) for online analytical processing (OLAP). It is available as both an [open-source software](https://github.com/ClickHouse/ClickHouse) and a [cloud offering](https://clickhouse.com/cloud). It is the best database in the world!
 
 ## What are analytics? {#what-are-analytics}
 
@@ -47,22 +47,15 @@ LIMIT 8;
 
 You can [run this query on the ClickHouse SQL Playground](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ&run_query=true) that selects and filters [just a few out of over 100](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7&tab=results&run_query=true) existing columns, returning the result within milliseconds:
 
-<Image img="/images/column-oriented-example-query.webp" alt="Example query in a column-oriented database" size="lg"/>
-
 As you can see in the stats section in the above diagram, the query processed 100 million rows in 92 milliseconds, a throughput of approximately over 1 billion rows per second or just under 7 GB of data transferred per second.
 
 **Row-oriented DBMS**
 
-In a row-oriented database, even though the query above only processes a few out of the existing columns, the system still needs to load the data from other existing columns from disk to memory. The reason for that is that data is stored on disk in chunks called [blocks](https://en.wikipedia.org/wiki/Block_(data_storage)) (usually fixed sizes, e.g., 4 KB or 8 KB). Blocks are the smallest units of data read from disk to memory. When an application or database requests data, the operating system's disk I/O subsystem reads the required blocks from the disk. Even if only part of a block is needed, the entire block is read into memory (this is due to disk and file system design):
-
-<Image img="/images/row-oriented.webp" alt="Row-oriented database structure" size="lg"/>
+In a row-oriented database, even though the query above only processes a few out of the existing columns, the system still needs to load the data from other existing columns from disk to memory. The reason for that is that data is stored on disk in chunks called [blocks](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (usually fixed sizes, e.g., 4 KB or 8 KB). Blocks are the smallest units of data read from disk to memory. When an application or database requests data, the operating system's disk I/O subsystem reads the required blocks from the disk. Even if only part of a block is needed, the entire block is read into memory (this is due to disk and file system design):
 
 **Column-oriented DBMS**
 
-Because the values of each column are stored sequentially one after the other on disk, no unnecessary data is loaded when the query from above is run.
-Because the block-wise storage and transfer from disk to memory is aligned with the data access pattern of analytical queries, only the columns required for a query are read from disk, avoiding unnecessary I/O for unused data. This is [much faster](https://benchmark.clickhouse.com/) compared to row-based storage, where entire rows (including irrelevant columns) are read:
-
-<Image img="/images/column-oriented.webp" alt="Column-oriented database structure" size="lg"/>
+Because the values of each column are stored sequentially one after the other on disk, no unnecessary data is loaded when the query from above is run. Because the block-wise storage and transfer from disk to memory is aligned with the data access pattern of analytical queries, only the columns required for a query are read from disk, avoiding unnecessary I/O for unused data. This is [much faster](https://benchmark.clickhouse.com/) compared to row-based storage, where entire rows (including irrelevant columns) are read:
 
 ## Data replication and integrity {#data-replication-and-integrity}
 
@@ -86,106 +79,121 @@ ClickHouse chooses the join algorithm adaptively: it starts with fast hash joins
 
 ## Superior query performance {#superior-query-performance}
 
-ClickHouse is well known for having extremely fast query performance.
-To learn why ClickHouse is so fast, see the [Why is ClickHouse fast?](/get-started/about/why-clickhouse-is-so-fast) guide.
+ClickHouse is well known for having extremely fast query performance. To learn why ClickHouse is so fast, see the [Why is ClickHouse fast?](/get-started/about/why-clickhouse-is-so-fast) guide.
 
 {/*
-## What is OLAP? {#what-is-olap}
-OLAP scenarios require real-time responses on top of large datasets for complex analytical queries with the following characteristics:
-- Datasets can be massive - billions or trillions of rows
-- Data is organized in tables that contain many columns
-- Only a few columns are selected to answer any particular query
-- Results must be returned in milliseconds or seconds
+  <h2 id="what-is-olap">
+  What is OLAP?
+  </h2>
+  OLAP scenarios require real-time responses on top of large datasets for complex analytical queries with the following characteristics:
+  - Datasets can be massive - billions or trillions of rows
+  - Data is organized in tables that contain many columns
+  - Only a few columns are selected to answer any particular query
+  - Results must be returned in milliseconds or seconds
 
-## Column-oriented vs row-oriented databases {#column-oriented-vs-row-oriented-databases}
-In a row-oriented DBMS, data is stored in rows, with all the values related to a row physically stored next to each other.
+  <h2 id="column-oriented-vs-row-oriented-databases">
+  Column-oriented vs row-oriented databases
+  </h2>
+  In a row-oriented DBMS, data is stored in rows, with all the values related to a row physically stored next to each other.
 
-In a column-oriented DBMS, data is stored in columns, with values from the same columns stored together.
+  In a column-oriented DBMS, data is stored in columns, with values from the same columns stored together.
 
-## Why column-oriented databases work better in the OLAP scenario {#why-column-oriented-databases-work-better-in-the-olap-scenario}
+  <h2 id="why-column-oriented-databases-work-better-in-the-olap-scenario">
+  Why column-oriented databases work better in the OLAP scenario
+  </h2>
 
-Column-oriented databases are better suited to OLAP scenarios: they're at least 100 times faster in processing most queries. The reasons are explained in detail below, but the fact is easier to demonstrate visually:
+  Column-oriented databases are better suited to OLAP scenarios: they're at least 100 times faster in processing most queries. The reasons are explained in detail below, but the fact is easier to demonstrate visually:
 
-See the difference?
+  See the difference?
 
-The rest of this article explains why column-oriented databases work well for these scenarios, and why ClickHouse in particular [outperforms](/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-and-selects-are-isolated) others in this category.
+  The rest of this article explains why column-oriented databases work well for these scenarios, and why ClickHouse in particular [outperforms](/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-and-selects-are-isolated) others in this category.
 
-## Why is ClickHouse so fast? {#why-is-clickhouse-so-fast}
+  <h2 id="why-is-clickhouse-so-fast">
+  Why is ClickHouse so fast?
+  </h2>
 
-ClickHouse uses all available system resources to their full potential to process each analytical query as fast as possible. This is made possible due to a unique combination of analytical capabilities and attention to the low-level details required to implement the fastest OLAP database.
+  ClickHouse uses all available system resources to their full potential to process each analytical query as fast as possible. This is made possible due to a unique combination of analytical capabilities and attention to the low-level details required to implement the fastest OLAP database.
 
-Helpful articles to dive deeper into this topic include:
-- [ClickHouse Performance](/get-started/about/why-clickhouse-is-so-fast)
-- [Distinctive Features of ClickHouse](/get-started/about/distinctive-features)
-- [FAQ: Why is ClickHouse so fast?](/get-started/about/why-clickhouse-is-so-fast)
+  Helpful articles to dive deeper into this topic include:
+  - [ClickHouse Performance](/get-started/about/why-clickhouse-is-so-fast)
+  - [Distinctive Features of ClickHouse](/get-started/about/distinctive-features)
+  - [FAQ: Why is ClickHouse so fast?](/get-started/about/why-clickhouse-is-so-fast)
 
-## Processing analytical queries in real time {#processing-analytical-queries-in-real-time}
+  <h2 id="processing-analytical-queries-in-real-time">
+  Processing analytical queries in real time
+  </h2>
 
-In a row-oriented DBMS, data is stored in this order:
+  In a row-oriented DBMS, data is stored in this order:
 
-| Row | WatchID     | JavaEnable | Title              | GoodEvent | EventTime           |
-|-----|-------------|------------|--------------------|-----------|---------------------|
-| #0 | 89354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
-| #1 | 90329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
-| #2 | 89953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
-| #N | ...           | ...          | ...                  | ...         | ...                   |
+  | Row | WatchID     | JavaEnable | Title              | GoodEvent | EventTime           |
+  |-----|-------------|------------|--------------------|-----------|---------------------|
+  | #0 | 89354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
+  | #1 | 90329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
+  | #2 | 89953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
+  | #N | ...           | ...          | ...                  | ...         | ...                   |
 
-In other words, all the values related to a row are physically stored next to each other.
+  In other words, all the values related to a row are physically stored next to each other.
 
-Examples of a row-oriented DBMS are MySQL, Postgres, and MS SQL Server.
+  Examples of a row-oriented DBMS are MySQL, Postgres, and MS SQL Server.
 
-In a column-oriented DBMS, data is stored like this:
+  In a column-oriented DBMS, data is stored like this:
 
-| Row:        | #0                 | #1                 | #2                 | #N |
-|-------------|---------------------|---------------------|---------------------|-----|
-| WatchID:    | 89354350662         | 90329509958         | 89953706054         | ...   |
-| JavaEnable: | 1                   | 0                   | 1                   | ...   |
-| Title:      | Investor Relations  | Contact us          | Mission             | ...   |
-| GoodEvent:  | 1                   | 1                   | 1                   | ...   |
-| EventTime:  | 2016-05-18 05:19:20 | 2016-05-18 08:10:20 | 2016-05-18 07:38:00 | ...   |
+  | Row:        | #0                 | #1                 | #2                 | #N |
+  |-------------|---------------------|---------------------|---------------------|-----|
+  | WatchID:    | 89354350662         | 90329509958         | 89953706054         | ...   |
+  | JavaEnable: | 1                   | 0                   | 1                   | ...   |
+  | Title:      | Investor Relations  | Contact us          | Mission             | ...   |
+  | GoodEvent:  | 1                   | 1                   | 1                   | ...   |
+  | EventTime:  | 2016-05-18 05:19:20 | 2016-05-18 08:10:20 | 2016-05-18 07:38:00 | ...   |
 
-These examples only show the order that data is arranged in. The values from different columns are stored separately, and data from the same column is stored together.
+  These examples only show the order that data is arranged in. The values from different columns are stored separately, and data from the same column is stored together.
 
-Examples of a column-oriented DBMS: Vertica, Paraccel (Actian Matrix and Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise and Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, and kdb+.
+  Examples of a column-oriented DBMS: Vertica, Paraccel (Actian Matrix and Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise and Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, and kdb+.
 
-Different orders for storing data are better suited to different scenarios. The data access scenario refers to what queries are made, how often, and in what proportion; how much data is read for each type of query – rows, columns, and bytes; the relationship between reading and updating data; the working size of the data and how locally it is used; whether transactions are used, and how isolated they're; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
+  Different orders for storing data are better suited to different scenarios. The data access scenario refers to what queries are made, how often, and in what proportion; how much data is read for each type of query – rows, columns, and bytes; the relationship between reading and updating data; the working size of the data and how locally it is used; whether transactions are used, and how isolated they're; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
 
-The higher the load on the system, the more important it is to customize the system set up to match the requirements of the usage scenario, and the more fine grained this customization becomes. There is no system that is equally well-suited to significantly different scenarios. If a system is adaptable to a wide set of scenarios, under a high load, the system will handle all the scenarios equally poorly, or will work well for just one or few of possible scenarios.
+  The higher the load on the system, the more important it is to customize the system set up to match the requirements of the usage scenario, and the more fine grained this customization becomes. There is no system that is equally well-suited to significantly different scenarios. If a system is adaptable to a wide set of scenarios, under a high load, the system will handle all the scenarios equally poorly, or will work well for just one or few of possible scenarios.
 
-### Key properties of the OLAP scenario {#key-properties-of-olap-scenario}
+  <h3 id="key-properties-of-olap-scenario">
+  Key properties of the OLAP scenario
+  </h3>
 
-- Tables are "wide," meaning they contain a large number of columns.
-- Datasets are large and queries require high throughput when processing a single query (up to billions of rows per second per server).
-- Column values are fairly small: numbers and short strings (for example, 60 bytes per URL).
-- Queries extract a large number of rows, but only a small subset of columns.
-- For simple queries, latencies around 50ms are allowed.
-- There is one large table per query; all tables are small, except for one.
-- A query result is significantly smaller than the source data. In other words, data is filtered or aggregated, so the result fits in a single server's RAM.
-- Queries are relatively rare (usually hundreds of queries per server or less per second).
-- Inserts happen in fairly large batches (\> 1000 rows), not by single rows.
-- Transactions aren't necessary.
+  - Tables are "wide," meaning they contain a large number of columns.
+  - Datasets are large and queries require high throughput when processing a single query (up to billions of rows per second per server).
+  - Column values are fairly small: numbers and short strings (for example, 60 bytes per URL).
+  - Queries extract a large number of rows, but only a small subset of columns.
+  - For simple queries, latencies around 50ms are allowed.
+  - There is one large table per query; all tables are small, except for one.
+  - A query result is significantly smaller than the source data. In other words, data is filtered or aggregated, so the result fits in a single server's RAM.
+  - Queries are relatively rare (usually hundreds of queries per server or less per second).
+  - Inserts happen in fairly large batches (\> 1000 rows), not by single rows.
+  - Transactions aren't necessary.
 
-It is easy to see that the OLAP scenario is very different from other popular scenarios (such as OLTP or Key-Value access). So it doesn't make sense to try to use OLTP or a Key-Value DB for processing analytical queries if you want to get decent performance. For example, if you try to use MongoDB or Redis for analytics, you will get very poor performance compared to OLAP databases.
+  It is easy to see that the OLAP scenario is very different from other popular scenarios (such as OLTP or Key-Value access). So it doesn't make sense to try to use OLTP or a Key-Value DB for processing analytical queries if you want to get decent performance. For example, if you try to use MongoDB or Redis for analytics, you will get very poor performance compared to OLAP databases.
 
-### Input/output {#inputoutput}
+  <h3 id="inputoutput">
+  Input/output
+  </h3>
 
-1.  For an analytical query, only a small number of table columns need to be read. In a column-oriented database, you can read just the data you need. For example, if you need 5 columns out of 100, you can expect a 20-fold reduction in I/O.
-2.  Since data is read in packets, it is easier to compress. Data in columns is also easier to compress. This further reduces the I/O volume.
-3.  Due to the reduced I/O, more data fits in the system cache.
+  1.  For an analytical query, only a small number of table columns need to be read. In a column-oriented database, you can read just the data you need. For example, if you need 5 columns out of 100, you can expect a 20-fold reduction in I/O.
+  2.  Since data is read in packets, it is easier to compress. Data in columns is also easier to compress. This further reduces the I/O volume.
+  3.  Due to the reduced I/O, more data fits in the system cache.
 
-For example, the query "count the number of records for each advertising platform" requires reading one "advertising platform ID" column, which takes up 1 byte uncompressed. If most of the traffic wasn't from advertising platforms, you can expect at least 10-fold compression of this column. When using a quick compression algorithm, data decompression is possible at a speed of at least several gigabytes of uncompressed data per second. In other words, this query can be processed at a speed of approximately several billion rows per second on a single server. This speed is actually achieved in practice.
+  For example, the query "count the number of records for each advertising platform" requires reading one "advertising platform ID" column, which takes up 1 byte uncompressed. If most of the traffic wasn't from advertising platforms, you can expect at least 10-fold compression of this column. When using a quick compression algorithm, data decompression is possible at a speed of at least several gigabytes of uncompressed data per second. In other words, this query can be processed at a speed of approximately several billion rows per second on a single server. This speed is actually achieved in practice.
 
-### CPU {#cpu}
+  <h3 id="cpu">
+  CPU
+  </h3>
 
-Since executing a query requires processing a large number of rows, it helps to dispatch all operations for entire vectors instead of for separate rows, or to implement the query engine so that there is almost no dispatching cost. If you don't do this, with any half-decent disk subsystem, the query interpreter inevitably stalls the CPU. It makes sense to both store data in columns and process it, when possible, by columns.
+  Since executing a query requires processing a large number of rows, it helps to dispatch all operations for entire vectors instead of for separate rows, or to implement the query engine so that there is almost no dispatching cost. If you don't do this, with any half-decent disk subsystem, the query interpreter inevitably stalls the CPU. It makes sense to both store data in columns and process it, when possible, by columns.
 
-There are two ways to do this:
+  There are two ways to do this:
 
-1.  A vector engine. All operations are written for vectors, instead of for separate values. This means you don't need to call operations very often, and dispatching costs are negligible. Operation code contains an optimized internal cycle.
+  1.  A vector engine. All operations are written for vectors, instead of for separate values. This means you don't need to call operations very often, and dispatching costs are negligible. Operation code contains an optimized internal cycle.
 
-2.  Code generation. The code generated for the query has all the indirect calls in it.
+  2.  Code generation. The code generated for the query has all the indirect calls in it.
 
-This isn't done in row-oriented databases, because it doesn't make sense when running simple queries. However, there are exceptions. For example, MemSQL uses code generation to reduce latency when processing SQL queries. (For comparison, analytical DBMSs require optimization of throughput, not latency.)
+  This isn't done in row-oriented databases, because it doesn't make sense when running simple queries. However, there are exceptions. For example, MemSQL uses code generation to reduce latency when processing SQL queries. (For comparison, analytical DBMSs require optimization of throughput, not latency.)
 
-Note that for CPU efficiency, the query language must be declarative (SQL or MDX), or at least a vector (J, K). The query should only contain implicit loops, allowing for optimization.
- */}
+  Note that for CPU efficiency, the query language must be declarative (SQL or MDX), or at least a vector (J, K). The query should only contain implicit loops, allowing for optimization.
+  */}
