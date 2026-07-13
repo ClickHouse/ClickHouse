@@ -87,6 +87,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
     extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
+    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
@@ -749,6 +750,7 @@ getColumnsForNewDataPart(
     {
         static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
+        (*source_part->storage.getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         serialization_infos.getSettings().version,
         serialization_infos.getSettings().string_serialization_version,
         serialization_infos.getSettings().nullable_serialization_version,
@@ -759,6 +761,7 @@ getColumnsForNewDataPart(
     {
         static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
+        (*source_part->storage.getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
         (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
         (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
