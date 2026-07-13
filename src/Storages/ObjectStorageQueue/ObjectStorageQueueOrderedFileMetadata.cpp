@@ -617,16 +617,31 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
         /// Capture the lock node's `czxid` for the commit-time ownership check (see `lock_czxid`).
         /// `-1` (e.g. if we cannot read it) just disables the check, falling back to prior behaviour.
         int64_t lock_czxid = -1;
+        bool ownership_lost = false;
         zk_retry.resetFailures();
         zk_retry.retryLoop([&]
         {
             Coordination::Stat stat;
+            std::string data;
             auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_);
-            if (zk_client->exists(bucket_lock_path, &stat))
+            /// Read back the lock node and verify it still holds our `processor_info`.
+            /// We just created it, so with a sane TTL it cannot have been cleaned up yet;
+            /// losing it (or finding another owner's data) here indicates a bug.
+            if (zk_client->tryGet(bucket_lock_path, data, &stat) && data == processor_info)
+            {
                 lock_czxid = stat.czxid;
+                ownership_lost = false;
+            }
             else
-                chassert(false); /// We just created the lock node, so it must exist.
+                ownership_lost = true;
         });
+
+        if (ownership_lost)
+        {
+            chassert(false);
+            LOG_WARNING(log_, "Lost bucket {} ownership right after acquiring it", bucket);
+            return nullptr;
+        }
 
         return std::make_shared<BucketHolder>(
             bucket,
