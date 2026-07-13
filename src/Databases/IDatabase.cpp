@@ -27,7 +27,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TABLE;
+    extern const int NOT_IMPLEMENTED;
 
+}
+
+FoldedNameIndex::ResolutionResult IDatabase::resolveTableName(const IdentifierPart & name, ContextPtr) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Database engine {} does not support `standard` table name matching. "
+        "Double-quote the table name {} to match it exactly",
+        getEngineName(), backQuoteIfNeed(name.spelling));
 }
 
 StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const

@@ -284,6 +284,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
             table_data_path_saved = it->second;
         chassert(!table_data_path_saved.empty());
         db.tables.erase(table_name_);
+        db.table_name_index.remove(table_name_);
         db.table_name_to_path.erase(table_name_);
         /// This path bypasses detachTableUnlocked, so clear stale async-load names
         /// here too, otherwise getAllTableNames keeps suggesting the old name (#91777).
@@ -296,6 +297,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     auto attach = [](DatabaseAtomic & db, const String & table_name_, const String & table_data_path_, const StoragePtr & table_) TSA_REQUIRES(db.mutex)
     {
         db.tables.emplace(table_name_, table_);
+        db.table_name_index.add(table_name_);
         if (table_data_path_.empty())
             return;
         db.table_name_to_path.emplace(table_name_, table_data_path_);

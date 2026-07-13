@@ -77,6 +77,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int TABLE_UUID_MISMATCH;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DATABASE_ALREADY_EXISTS;
@@ -96,6 +97,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
+    extern const SettingsNameMatchMode database_and_table_name_matching;
 }
 
 namespace MergeTreeSetting
@@ -396,17 +398,70 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 }
 
 
+StorageID DatabaseCatalog::resolveStorageIDNames(StorageID table_id, ContextPtr context_) const
+{
+    if (!context_ || table_id.hasUUID() || !table_id.hasDatabase())
+        return table_id;
+    if (context_->getSettingsRef()[Setting::database_and_table_name_matching] != NameMatchMode::Standard)
+        return table_id;
+    if (table_id.database_name == TEMPORARY_DATABASE)
+        return table_id;
+
+    DatabasePtr database;
+    {
+        std::lock_guard lock{databases_mutex};
+        auto db_resolution = database_name_index.resolve({table_id.database_name, table_id.database_name_quote}, NameMatchMode::Standard);
+            if (db_resolution.outcome == FoldedNameIndex::Outcome::Ambiguous)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Database name {} is ambiguous: it matches databases {}. Double-quote the name to select one exactly",
+                backQuoteIfNeed(table_id.database_name), fmt::join(db_resolution.candidates, ", "));
+        if (db_resolution.outcome == FoldedNameIndex::Outcome::Matched)
+        {
+            table_id.database_name = db_resolution.canonical;
+            if (auto it = databases.find(db_resolution.canonical); it != databases.end())
+                database = it->second;
+        }
+    }
+
+    IdentifierPart table_part{table_id.table_name, table_id.table_name_quote};
+    if (database && table_part.isCaseFoldable())
+    {
+        auto table_resolution = database->resolveTableName(table_part, context_);
+        if (table_resolution.outcome == FoldedNameIndex::Outcome::Ambiguous)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Table name {} in database {} is ambiguous: it matches tables {}. Double-quote the name to select one exactly",
+                backQuoteIfNeed(table_id.table_name), backQuoteIfNeed(table_id.database_name), fmt::join(table_resolution.candidates, ", "));
+        if (table_resolution.outcome == FoldedNameIndex::Outcome::Matched)
+            table_id.table_name = table_resolution.canonical;
+    }
+
+    return table_id;
+}
+
 DatabaseAndTable DatabaseCatalog::getTableImpl(
-    const StorageID & table_id,
+    const StorageID & table_id_,
     ContextPtr context_,
     std::optional<Exception> * exception) const
 {
     checkStackSize();
 
-    if (!table_id)
+    if (!table_id_)
     {
         if (exception)
             exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot find table: StorageID is empty"));
+        return {};
+    }
+
+    StorageID table_id = table_id_;
+    try
+    {
+        table_id = resolveStorageIDNames(table_id_, context_);
+    }
+    catch (Exception & e)
+    {
+        if (!exception)
+            throw;
+        exception->emplace(e);
         return {};
     }
 
@@ -661,6 +716,9 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     std::lock_guard lock{databases_mutex};
     assertDatabaseDoesntExistUnlocked(database_name);
     databases.emplace(database_name, database);
+    /// INFORMATION_SCHEMA is the uppercase alias of the same logical schema; pin it so folded
+    /// lookups deterministically resolve to `information_schema` instead of reporting ambiguity.
+    database_name_index.add(database_name, /*pinned=*/ database_name == "INFORMATION_SCHEMA");
     if (!database->isDatalakeCatalog())
         databases_without_datalake_catalogs.emplace(database_name, database);
     if (!database->isRemoteDatabase())
@@ -691,6 +749,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             if (db_uuid != UUIDHelpers::Nil)
                 removeUUIDMapping(db_uuid);
             databases.erase(database_name);
+            database_name_index.remove(database_name);
         }
         if (auto it = databases_without_datalake_catalogs.find(database_name); it != databases_without_datalake_catalogs.end())
             databases_without_datalake_catalogs.erase(it);
@@ -776,6 +835,7 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     auto db = it->second;
     databases.erase(it);
     databases.emplace(new_name, db);
+    database_name_index.rename(old_name, new_name, /*new_pinned=*/ new_name == "INFORMATION_SCHEMA");
 
     auto datalake_it = databases_without_datalake_catalogs.find(old_name);
     if (datalake_it != databases_without_datalake_catalogs.end())
@@ -1232,9 +1292,11 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
     }
 #endif
     std::optional<Exception> exc;
+    /// The storage cache is keyed by qualified name, so the key must be the canonical spelling.
+    auto resolved_id = resolveStorageIDNames(table_id, local_context);
     auto table = local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }).second :
-        getTableImpl(table_id, local_context, &exc).second;
+        local_context->getQueryContext()->getOrCacheStorage(resolved_id, [&](){ return getTableImpl(resolved_id, local_context, &exc); }).second :
+        getTableImpl(resolved_id, local_context, &exc).second;
     if (!table)
         throw Exception(*exc);
     return table;
@@ -1242,9 +1304,18 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
 {
+    StorageID resolved_id = table_id;
+    try
+    {
+        resolved_id = resolveStorageIDNames(table_id, local_context);
+    }
+    catch (const Exception &)
+    {
+        return nullptr;
+    }
     return local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }).second :
-        getTableImpl(table_id, local_context, nullptr).second;
+        local_context->getQueryContext()->getOrCacheStorage(resolved_id, [&](){ return getTableImpl(resolved_id, local_context, nullptr); }).second :
+        getTableImpl(resolved_id, local_context, nullptr).second;
 }
 
 DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const

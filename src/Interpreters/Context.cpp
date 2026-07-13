@@ -7697,6 +7697,9 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     }
     if (exc)
         throw Exception(*exc);
+    /// Canonicalize the spellings before the existence check and UUID stamping, so everything
+    /// downstream (access checks, caches, logs) sees the canonical object names.
+    resolved = DatabaseCatalog::instance().resolveStorageIDNames(std::move(resolved), shared_from_this());
     if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
         resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
     return resolved;
@@ -7712,6 +7715,8 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
         SharedLockGuard lock(mutex);
         resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
     }
+    if (resolved)
+        resolved = DatabaseCatalog::instance().resolveStorageIDNames(std::move(resolved), shared_from_this());
     if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
         auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);

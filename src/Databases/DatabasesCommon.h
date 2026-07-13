@@ -63,12 +63,18 @@ public:
 
 protected:
     Tables tables TSA_GUARDED_BY(mutex);
+    FoldedNameIndex table_name_index TSA_GUARDED_BY(mutex);
     SnapshotDetachedTables snapshot_detached_tables TSA_GUARDED_BY(mutex);
     LoggerPtr log;
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context);
 
     void attachTableUnlocked(const String & table_name, const StoragePtr & table) TSA_REQUIRES(mutex);
+
+public:
+    FoldedNameIndex::ResolutionResult resolveTableName(const IdentifierPart & name, ContextPtr context) const override;
+
+protected:
     virtual StoragePtr detachTableUnlocked(const String & table_name) TSA_REQUIRES(mutex);
     StoragePtr getTableUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
     StoragePtr tryGetTableNoWait(const String & table_name) const;

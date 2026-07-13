@@ -501,6 +501,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
             .is_permanently = false});
 
     tables.erase(it);
+    table_name_index.remove(table_name);
     table_storage->is_detached = true;
 
     if (!table_storage->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
@@ -518,6 +519,12 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     }
 
     return table_storage;
+}
+
+FoldedNameIndex::ResolutionResult DatabaseWithOwnTablesBase::resolveTableName(const IdentifierPart & name, ContextPtr) const
+{
+    std::lock_guard lock(mutex);
+    return table_name_index.resolve(name, NameMatchMode::Standard);
 }
 
 void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
@@ -539,7 +546,15 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
     }
 
-    if (!tables.emplace(table_name, table).second)
+    if (tables.emplace(table_name, table).second)
+    {
+        /// Predefined schemas expose uppercase alias views (`TABLES` next to `tables`); pin them
+        /// so folded lookups deterministically resolve to the lowercase canonical view.
+        const bool pinned = DatabaseCatalog::isPredefinedDatabase(database_name)
+            && table_name != foldIdentifierCaseASCII(table_name);
+        table_name_index.add(table_name, pinned);
+    }
+    else
     {
         if (table_id.hasUUID())
             DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);

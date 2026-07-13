@@ -1,6 +1,7 @@
 #pragma once
 #include <base/types.h>
 #include <Core/UUID.h>
+#include <Core/IdentifierName.h>
 #include <Parsers/IAST_fwd.h>
 #include <Core/QualifiedTableName.h>
 
@@ -28,6 +29,11 @@ struct StorageID
     String database_name;
     String table_name;
     UUID uuid = UUIDHelpers::Nil;
+
+    /// How the parts were written in the query. Consulted only when
+    /// database_and_table_name_matching = 'standard'; not part of the identity.
+    IdentifierPartQuote database_name_quote = IdentifierPartQuote::Unquoted;
+    IdentifierPartQuote table_name_quote = IdentifierPartQuote::Unquoted;
 
     StorageID(const String & database, const String & table, UUID uuid_ = UUIDHelpers::Nil)
         : database_name(database), table_name(table), uuid(uuid_)
