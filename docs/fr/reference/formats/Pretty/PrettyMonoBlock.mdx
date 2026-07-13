@@ -1,0 +1,33 @@
+---
+alias: []
+description: 'Documentation sur le format PrettyMonoBlock'
+input_format: false
+keywords: ['PrettyMonoBlock']
+output_format: true
+slug: /interfaces/formats/PrettyMonoBlock
+title: 'PrettyMonoBlock'
+doc_type: 'référence'
+---
+
+import PrettyFormatSettings from '/snippets/fr/common-pretty-format-settings.mdx';
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✗      | ✔      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+Se distingue du format [`Pretty`](/fr/reference/formats/Pretty/Pretty) par le fait que jusqu’à `10,000` lignes sont mises en mémoire tampon,
+puis affichées sous la forme d’une seule table, et non par [blocs](/fr/resources/develop-contribute/introduction/architecture#block).
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>
+
+<PrettyFormatSettings />

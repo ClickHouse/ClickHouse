@@ -205,6 +205,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeLimitForAggregationInOrder(QueryPlan::Node & root);
 void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void pushLimitByIntoSort(QueryPlan::Node & node);
 void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
@@ -219,6 +220,11 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
 std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
+
+/// Stamp every AggregatingStep in the plan with a hash-table preallocation cache key derived from
+/// the query plan (the node's bottom-up hash from calculateHashTableCacheKeys), instead of from the
+/// AST. Mirrors how join steps get their keys. No-op unless collect_hash_table_stats_during_aggregation.
+void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
 /// Populates two maps in lock-step:
 ///   raw_hashes[N]  = bottom-up hash of the sub-plan rooted at N, independent of N's parent.

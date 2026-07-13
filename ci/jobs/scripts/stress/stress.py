@@ -134,7 +134,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         options.append("--no-random-merge-tree-settings")
 
     # allow constraint
-    client_options.append(f"enable_analyzer=1")
+    client_options.append("enable_analyzer=1")
 
     if i > 0:
         options.append("--order=random")
@@ -242,6 +242,12 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     client_options.append(
         f"query_plan_optimize_join_order_algorithm={random.choice(join_order_algorithm_combinations)}"
     )
+
+    # Pin max_parser_backtracks on the client command line. Its pre-24.3 default is 0, so the
+    # randomized compatibility='NN.N' above reverts it to 0 in the client, which then sends 0 to
+    # the server and trips the <min>1</min> limit-recursion constraint on every query. A
+    # command-line value survives applyCompatibilitySetting, unlike a users.d profile value.
+    client_options.append("max_parser_backtracks=1000000")
 
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
@@ -625,7 +631,7 @@ def main():
         query_killer = RandomQueryKiller(interval=3.0)
 
     try:
-        func_pipes = run_func_test(
+        run_func_test(
             args.test_cmd,
             args.output_folder,
             args.num_parallel,

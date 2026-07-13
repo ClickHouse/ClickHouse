@@ -5,6 +5,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
@@ -300,6 +301,11 @@ struct IMergeTreeIndex
     virtual bool isVectorSimilarityIndex() const { return false; }
     virtual bool isTextIndex() const { return false; }
 
+    /// An inert index holds no on-disk data and cannot be (re)computed. It exists only so old
+    /// tables that still reference a removed index type stay attachable. Merge and mutation must
+    /// never schedule it for recalculation, otherwise those operations get wedged.
+    virtual bool isInert() const { return false; }
+
     Names getColumnsRequiredForIndexCalc() const;
 
     StorageMetadataPtr metadata_snapshot;
@@ -312,10 +318,12 @@ using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
 struct MergeTreeIndexWithCondition
 {
     MergeTreeIndexPtr index;
-    MergeTreeIndexConditionPtr condition;
+    ConditionTemplate<MergeTreeIndexConditionPtr>::Ptr condition_template;
 
-    MergeTreeIndexWithCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
-        : index(std::move(index_)), condition(std::move(condition_))
+    MergeTreeIndexWithCondition(
+        MergeTreeIndexPtr index_,
+        ConditionTemplate<MergeTreeIndexConditionPtr>::Ptr condition_template_)
+        : index(std::move(index_)), condition_template(std::move(condition_template_))
     {
     }
 
