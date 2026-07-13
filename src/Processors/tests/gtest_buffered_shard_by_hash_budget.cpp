@@ -3,6 +3,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <Columns/ColumnLowCardinality.h>
@@ -52,6 +53,15 @@ ColumnPtr makeDistinctKeyColumn(size_t num_rows)
     return column;
 }
 
+/// A plain UInt64 value column with distinct entries (no shared buffers), used as a shuffle payload.
+ColumnPtr makeUInt64ValueColumn(size_t num_rows)
+{
+    auto column = ColumnUInt64::create();
+    for (size_t i = 0; i < num_rows; ++i)
+        column->insertValue(i * 2654435761ULL);
+    return column;
+}
+
 /// Feed one input block (keyed by `key_columns`) to a `BufferedShardByHashTransform` with an unbounded
 /// budget, drive a single pull-and-split cycle, and return the shared buffered-bytes counter with the
 /// block's shard chunks still resident (parked in the output ports, none pulled downstream). This is the
@@ -93,6 +103,51 @@ Int64 bufferedBytesAfterSplit(const SharedHeader & header, Columns columns, size
     }
 
     return counter->load();
+}
+
+/// Drive one pull-and-split cycle, read the shared counter while the shard chunks are still parked in the
+/// output ports (pushed but not yet pulled downstream), then pull every parked chunk and drive one more
+/// prepare() so the transform reclaims them. Returns {bytes while parked, bytes after they were consumed}.
+std::pair<Int64, Int64> portResidentThenConsumedBytes(
+    const SharedHeader & header, Columns columns, size_t num_shards, const ColumnNumbers & key_columns)
+{
+    const size_t num_rows = columns.at(0)->size();
+    auto counter = std::make_shared<std::atomic<Int64>>(0);
+
+    BufferedShardByHashTransform transform(
+        header, num_shards, key_columns, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), counter);
+
+    OutputPort source_output(header);
+    connect(source_output, transform.getInputs().front());
+
+    std::vector<std::unique_ptr<InputPort>> sinks;
+    for (auto & output : transform.getOutputs())
+    {
+        auto sink = std::make_unique<InputPort>(header);
+        connect(output, *sink);
+        sinks.push_back(std::move(sink));
+    }
+
+    source_output.push(Chunk(std::move(columns), num_rows));
+    for (auto & sink : sinks)
+        sink->setNeeded();
+
+    for (int step = 0; step < 8; ++step)
+    {
+        if (transform.prepare() != IProcessor::Status::Ready)
+            break;
+        transform.work();
+    }
+    const Int64 while_parked = counter->load();
+
+    /// The downstream merge pulls every chunk out of the ports; the next prepare() must reclaim their charges.
+    for (auto & sink : sinks)
+        if (sink->hasData())
+            sink->pull();
+    transform.prepare();
+    const Int64 after_consumed = counter->load();
+
+    return {while_parked, after_consumed};
 }
 
 }
@@ -177,4 +232,33 @@ TEST(BufferedShardByHashTransform, WrappedLowCardinalityDictionaryChargedOncePer
 
     EXPECT_GE(buffered, dict_bytes);
     EXPECT_LT(buffered, 2 * dict_bytes);
+}
+
+/// A chunk pushed to an output port stays resident in the port state (still consuming memory) until the
+/// downstream merge pulls it, so its budget charge must be held until then. Releasing it the moment the chunk
+/// leaves the scatter's internal queue (when it is pushed to the port) let a scatter park a full block in each
+/// of its ports while the shared counter read far less than the memory held, defeating the budget. This drives
+/// a block into the ports and checks the charge is held while parked, then released once the downstream pulls.
+TEST(BufferedShardByHashTransform, PortResidentChunksChargedUntilConsumed)
+{
+    const size_t num_rows = 4000;
+    const size_t num_shards = 8;
+
+    ColumnPtr key = makeDistinctKeyColumn(num_rows);
+    ColumnPtr value = makeUInt64ValueColumn(num_rows);
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "v"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    Columns columns{key, value};
+    const auto [while_parked, after_consumed]
+        = portResidentThenConsumedBytes(header, std::move(columns), num_shards, ColumnNumbers{0});
+
+    /// Held while the chunks sit in the ports (releasing on dequeue would leave the counter at ~0)...
+    EXPECT_GT(while_parked, 0);
+    /// ...and fully released once the downstream pulls them out of the ports (no leftover charge).
+    EXPECT_EQ(after_consumed, 0);
 }
