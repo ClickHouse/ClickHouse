@@ -244,7 +244,7 @@ workflow = Workflow.Config(
     },
     runs_on_label_prefix="pr-",
     ai_orchestrator=Workflow.OrchestratorAI.Config(
-        enabled=True,
+        enabled=False,
         provider="bedrock",
         model="global.anthropic.claude-sonnet-5",
     ),

@@ -1,7 +1,7 @@
 import json
 import os
 import traceback
-import urllib
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 
@@ -191,7 +191,7 @@ class Info:
             assert branch
             ref_param = f"REF={branch}"
         path = Settings.S3_REPORT_BUCKET
-        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
+        for bucket, endpoint in (Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}).items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
@@ -211,7 +211,7 @@ class Info:
             assert branch
             ref_param = f"REF={branch}"
         path = Settings.S3_REPORT_BUCKET
-        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
+        for bucket, endpoint in (Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}).items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
@@ -231,20 +231,6 @@ class Info:
         except Exception as e:
             print(f"ERROR: Exception, while reading workflow input [{e}]")
         return None
-
-    @staticmethod
-    def set_workflow_inputs(inputs: dict) -> None:
-        """Persist workflow_dispatch inputs for jobs to read via
-        `get_workflow_input_value`.
-
-        Mirrors the heredoc the YAML generator emits in CI; used by the
-        praktika `--workflow-input` CLI flag for local job runs.
-        """
-        from .settings import _Settings
-
-        os.makedirs(_Settings.TEMP_DIR, exist_ok=True)
-        with open(_Settings.WORKFLOW_INPUTS_FILE, "w", encoding="utf8") as f:
-            json.dump(inputs, f)
 
     def set_pr_labels(self, labels, reset=False):
         self.env.set_pr_labels(labels, reset=reset)

@@ -53,7 +53,7 @@ class Cache:
         )
         assert (
             Settings.CACHE_S3_PATH
-        ), "Setting CACHE_S3_PATH must be defined with enabled CI Cache"
+        ), f"Setting CACHE_S3_PATH must be defined with enabled CI Cache"
         record_path = f"{Settings.CACHE_S3_PATH}/v{Settings.CACHE_VERSION}/{Utils.normalize_string(job_name)}/{job_digest}/{type_}"
         record_file = Path(Settings.TEMP_DIR) / type_
         record.dump(record_file)
@@ -69,7 +69,7 @@ class Cache:
         type_ = Cache.CacheRecord.Type.SUCCESS
         assert (
             Settings.CACHE_S3_PATH
-        ), "Setting CACHE_S3_PATH must be defined with enabled CI Cache"
+        ), f"Setting CACHE_S3_PATH must be defined with enabled CI Cache"
         record_path = f"{Settings.CACHE_S3_PATH}/v{Settings.CACHE_VERSION}/{Utils.normalize_string(job_name)}/{job_digest}/{type_}"
         record_file_local_dir = (
             f"{Settings.CACHE_LOCAL_PATH}/{Utils.normalize_string(job_name)}/"
@@ -103,9 +103,6 @@ if __name__ == "__main__":
                 runs_on=["some"],
                 command="python -m unittest ./ci/tests/example_1/test_example_produce_artifact.py",
                 provides=["greet"],
-                job_requirements=Job.Requirements(
-                    python_requirements_txt="./ci/requirements.txt"
-                ),
                 digest_config=Job.CacheDigestConfig(
                     # example: use glob to include files
                     include_paths=["./ci/tests/example_1/test_example_consume*.py"],
@@ -116,9 +113,6 @@ if __name__ == "__main__":
                 runs_on=["some"],
                 command="python -m unittest ./ci/tests/example_1/test_example_consume_artifact.py",
                 requires=["greet"],
-                job_requirements=Job.Requirements(
-                    python_requirements_txt="./ci/requirements.txt"
-                ),
                 digest_config=Job.CacheDigestConfig(
                     # example: use dir to include files recursively
                     include_paths=["./ci/tests/example_1"],

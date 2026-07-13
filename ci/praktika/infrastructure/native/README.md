@@ -181,6 +181,93 @@ workflow = Workflow.Config(
 )
 ```
 
+### CI DB Cluster
+
+Single-node OSS ClickHouse with embedded Keeper, deployed on EC2 inside the
+praktika VPC and reachable from runners on `tcp/8123` (HTTP) and `tcp/9000`
+(native protocol). Backs the [`CIDB`](../../cidb.py) consumer that records
+check/test results.
+
+#### Component layout
+
+[cidb_cluster.py](cidb_cluster.py) wires together:
+
+- An `EC2Instance` per replica (only `size=1` supported today; `size>1`
+  raises `NotImplementedError`).
+- An `IAMRole` + `IAMInstanceProfile` granting `ssm:GetParameter` on the
+  admin password secret plus the standard SSM/CloudWatch managed policies.
+- A `SecretParameter` (`praktika-cidb-admin-password`) auto-generated on
+  first deploy and read by the bootstrap script.
+- A separate gp3 EBS data volume (default 100 GB) with
+  `DeleteOnTermination=False` so accidental termination leaves the data
+  volume orphaned rather than wiped.
+
+`CIDBCluster.deploy()` adds self-referencing ingress on `tcp/8123` and
+`tcp/9000` to the VPC security group so anything in the same SG (runners,
+orchestrator) can reach ClickHouse without further configuration.
+
+#### Bootstrap
+
+[user_data_cidb.sh](user_data_cidb.sh) installs `clickhouse-server` from the
+official RPM repo, mounts the first unformatted EBS volume at
+`/var/lib/clickhouse`, drops a `keeper.xml` (single-node Raft quorum,
+embedded), and writes `users.d/praktika.xml` with two users:
+
+- `runner` — `<no_password/>`, restricted by `<networks>` to the VPC CIDR.
+  Used by `cidb.py` from runners.
+- `admin` — password from SSM, restricted by `<networks>` to the VPC CIDR.
+  Intended for human/Tailscale access bridged into the VPC.
+- The default user is locked down to `127.0.0.1`/`::1` only.
+
+[cidb_schema.sql](cidb_schema.sql) is gzip+base64-inlined into the user_data
+script and reapplied on every boot by a `cidb-bootstrap.service` oneshot
+unit, so schema additions ship by re-deploying the launch template (or
+running `systemctl restart cidb-bootstrap` manually).
+
+#### Setup
+
+```python
+from praktika.infrastructure import Components
+from praktika.infrastructure.cloud import CloudInfrastructure
+
+CLOUD = CloudInfrastructure.Config(
+    name="cloud_ci_infra",
+    cidb_cluster=Components.CIDBCluster(
+        vpc_name="praktika-ci",
+        instance_type="t4g.large",
+        size=1,
+        vpc_cidr="10.0.0.0/16",
+    ),
+    # ... other components
+)
+```
+
+```bash
+praktika infrastructure --deploy
+```
+
+Wire runner settings to a single SSM parameter holding a JSON connection
+blob (see [`cidb.py`](../../cidb.py) and [`runner.py`](../../runner.py)):
+
+```python
+SECRET_CI_DB_CONNECTION = "praktika-cidb-connection"
+CI_DB_DB_NAME = "default"
+CI_DB_TABLE_NAME = "checks"
+```
+
+`CIDBCluster.deploy()` writes this parameter automatically:
+
+```json
+{"url": "http://<live-private-ip>:8123", "user": null, "password": null}
+```
+
+`null` (or empty/missing) for `user`/`password` means the client sends
+**no auth header** — runners are authorized by the server-side
+`<no_password/>` user gated on the VPC CIDR. For human/admin access from
+within the VPC, write a separate JSON blob with `"user": "admin"` and the
+password from the auto-generated `praktika-cidb-admin-password` SSM
+parameter.
+
 ## Planned Native Components
 
 Future native components under consideration:
@@ -191,3 +278,4 @@ Future native components under consideration:
   - HTML reports and logs
   - Runner AMI/container images
 - **IAM Roles & Policies**: Common permission sets for CI/CD workflows
+- **CI DB Cluster (multi-node)**: extend `CIDBCluster` to `size>1` with a Raft Keeper quorum across replicas and `<remote_servers>` config for sharded inserts.

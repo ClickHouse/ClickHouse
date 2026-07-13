@@ -1,3 +1,4 @@
+from ._utils import aws_client
 import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
@@ -68,10 +69,8 @@ class DedicatedHost:
                     f"Either availability_zones must be set or all_availability_zones=True for DedicatedHost '{self.name}'"
                 )
 
-            import boto3
-
             region = self._resolved_region()
-            ec2 = boto3.client("ec2", region_name=region)
+            ec2 = aws_client("ec2", region, self.name)
             resp = ec2.describe_availability_zones(
                 Filters=[{"Name": "region-name", "Values": [region]}]
             )
@@ -108,9 +107,7 @@ class DedicatedHost:
             return filters
 
         def fetch(self):
-            import boto3
-
-            ec2 = boto3.client("ec2", region_name=self._resolved_region())
+            ec2 = aws_client("ec2", self._resolved_region(), self.name)
 
             # self._ensure_host_resource_group()
 
@@ -145,8 +142,6 @@ class DedicatedHost:
             return self
 
         def _ensure_host_resource_group(self):
-            import boto3
-
             group_name = self.host_resource_group_name or self.name
             self.host_resource_group_name = group_name
 
@@ -168,7 +163,7 @@ class DedicatedHost:
                 "Query": json.dumps(query_obj),
             }
 
-            rg = boto3.client("resource-groups", region_name=self._resolved_region())
+            rg = aws_client("resource-groups", self._resolved_region(), self.name)
 
             exists = False
             try:
@@ -206,8 +201,6 @@ class DedicatedHost:
             return self
 
         def deploy(self):
-            import boto3
-
             if not self.instance_type:
                 raise ValueError(
                     f"instance_type must be set for DedicatedHost '{self.name}' (e.g. mac2-m2.metal)"
@@ -227,7 +220,7 @@ class DedicatedHost:
                     f"placed on these dedicated hosts. Currently set to: '{self.auto_placement}'"
                 )
 
-            ec2 = boto3.client("ec2", region_name=self._resolved_region())
+            ec2 = aws_client("ec2", self._resolved_region(), self.name)
 
             azs = self._resolved_availability_zones()
 
@@ -370,11 +363,9 @@ class DedicatedHost:
             Args:
                 force: Not used for DedicatedHost (kept for API consistency with EC2Instance).
             """
-            import boto3
-
             _ = force  # Unused, kept for API consistency
 
-            ec2 = boto3.client("ec2", region_name=self._resolved_region())
+            ec2 = aws_client("ec2", self._resolved_region(), self.name)
 
             # Fetch existing hosts
             self.fetch()

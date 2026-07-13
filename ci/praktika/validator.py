@@ -1,4 +1,5 @@
 import glob
+import re
 import sys
 from itertools import chain
 from pathlib import Path
@@ -11,6 +12,98 @@ from .settings import GHRunners, Settings
 
 
 class Validator:
+    @classmethod
+    def _s3_bucket_name(cls, value: str) -> str:
+        return str(value or "").removeprefix("s3://").split("/", maxsplit=1)[0]
+
+    @classmethod
+    def validate_infrastructure_deploy(cls, cloud):
+        print("---Start validating Infrastructure and settings---")
+
+        # Intra-slug separator is "_" (matches CloudInfrastructure._project_prefix).
+        # Names are normalized the same way, so the prefix boundary is "_" too.
+        project_prefix = re.sub(
+            r"_{2,}",
+            "_",
+            re.sub(r"[^a-z0-9]+", "_", (cloud.name or "").lower()),
+        ).strip("_")
+        for group, names in getattr(cloud, "_pre_namespace_names", {}).items():
+            for name in names:
+                normalized = re.sub(
+                    r"_{2,}",
+                    "_",
+                    re.sub(r"[^a-z0-9]+", "_", str(name).lstrip("/").lower()),
+                ).strip("_")
+                cls.evaluate_check_simple(
+                    not project_prefix
+                    or (
+                        normalized != project_prefix
+                        and not normalized.startswith(f"{project_prefix}_")
+                    ),
+                    f"Infrastructure {group} item name [{name}] already includes "
+                    f"project prefix [{project_prefix}]. Use project-local names; "
+                    "CloudInfrastructure.Config adds the project prefix automatically.",
+                )
+
+        storage_names = {storage.name for storage in getattr(cloud, "storages", [])}
+
+        def _check_setting_bucket(setting_name: str, setting_value: str):
+            bucket = cls._s3_bucket_name(setting_value)
+            if not bucket:
+                return ""
+            cls.evaluate_check_simple(
+                not storage_names or bucket in storage_names,
+                f"Setting {setting_name} bucket [{bucket}] must match one of "
+                f"infrastructure Storage names [{', '.join(sorted(storage_names))}]",
+            )
+            return bucket
+
+        referenced_buckets = {
+            bucket
+            for bucket in (
+                _check_setting_bucket("S3_ARTIFACT_BUCKET", Settings.S3_ARTIFACT_BUCKET),
+                _check_setting_bucket("S3_REPORT_BUCKET", Settings.S3_REPORT_BUCKET),
+                _check_setting_bucket("CACHE_S3_PATH", Settings.CACHE_S3_PATH),
+            )
+            if bucket
+        }
+
+        for report_page in getattr(cloud, "report_pages", []) or []:
+            bucket = cls._s3_bucket_name(
+                getattr(report_page, "bucket_name", "") or Settings.S3_REPORT_BUCKET
+            )
+            if not bucket:
+                continue
+            referenced_buckets.add(bucket)
+            cls.evaluate_check_simple(
+                not storage_names or bucket in storage_names,
+                f"ReportPage bucket [{bucket}] must match one of infrastructure "
+                f"Storage names [{', '.join(sorted(storage_names))}]",
+            )
+
+        endpoint_map = Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}
+        for bucket in sorted(referenced_buckets):
+            cls.evaluate_check_simple(
+                bucket in endpoint_map,
+                f"S3_BUCKET_TO_HTTP_ENDPOINT must include bucket [{bucket}] used by "
+                "infrastructure/settings S3 configuration",
+            )
+
+        image_builders = getattr(cloud, "image_builders", []) or []
+        if Settings.PRAKTIKA_BASE_VENV and image_builders:
+            venv_names = {
+                venv.name
+                for builder in image_builders
+                for venv in getattr(builder, "prebuilt_venvs", []) or []
+                if getattr(venv, "name", "")
+            }
+            expected = Settings.PRAKTIKA_BASE_VENV
+            cls.evaluate_check_simple(
+                expected in venv_names,
+                f"Setting PRAKTIKA_BASE_VENV [{expected}] must match one of "
+                f"ImageBuilder prebuilt venv names [{', '.join(sorted(venv_names))}]",
+            )
+
     @classmethod
     def validate(cls):
         print("---Start validating Pipeline and settings---")
@@ -31,34 +124,71 @@ class Validator:
                     f"Setting ENABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
 
-        if Settings.USE_CUSTOM_GH_AUTH and not Settings.GH_AUTH_LAMBDA_NAME:
+        if Settings.USE_CUSTOM_GH_AUTH:
             cls.evaluate_check_simple(
-                Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY and Settings.SECRET_GH_APP_INSTALLATION_ID,
-                "Setting SECRET_GH_APP_ID, SECRET_GH_APP_PEM_KEY and SECRET_GH_APP_INSTALLATION_ID must be provided with USE_CUSTOM_GH_AUTH == True",
+                bool(Settings.SECRET_GH_APP or Settings.GH_AUTH_LAMBDA_NAME),
+                "Setting SECRET_GH_APP or GH_AUTH_LAMBDA_NAME must be provided with USE_CUSTOM_GH_AUTH == True",
             )
 
-        workflows = _get_workflows(_for_validation_check=True)
+        # NOTE: disabled — this is deploy-time validation (infra project-name
+        # uniqueness) and requires ./ci/infrastructure/projects.py to exist.
+        # Pipeline/settings validation also runs on runners, whose checkout may
+        # not ship the infra config, so it wrongly failed with "Infrastructure
+        # config file does not exist". Re-enable behind a deploy-only guard.
+        # if Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH:
+        #     projects = _get_infra_projects()
+        #     normalized = {}
+        #     for project in projects:
+        #         normalized_name = re.sub(
+        #             r"_{2,}",
+        #             "_",
+        #             re.sub(r"[^a-z0-9]+", "_", project.name.lower()),
+        #         ).strip("_")
+        #         cls.evaluate_check_simple(
+        #             normalized_name,
+        #             f"Infrastructure project name [{project.name}] must normalize to a non-empty AWS-safe prefix",
+        #         )
+        #         cls.evaluate_check_simple(
+        #             normalized_name not in normalized,
+        #             f"Infrastructure project names [{normalized.get(normalized_name)}] and [{project.name}] normalize to the same prefix [{normalized_name}]",
+        #         )
+        #         normalized[normalized_name] = project.name
+
+        _VALID_ENGINES = (Workflow.Engine.PRAKTIKA, Workflow.Engine.GH_ACTIONS)
+        files = []
+        workflows = _get_workflows(_for_validation_check=True, _file_names_out=files)
+        from collections import Counter
+        file_counts = Counter(files)
+        for file, count in file_counts.items():
+            cls.evaluate_check_simple(
+                count == 1,
+                f"Workflow file [{file}] must define exactly one workflow in WORKFLOWS (found {count})",
+            )
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
-            if Settings.USE_CUSTOM_GH_AUTH and not Settings.GH_AUTH_LAMBDA_NAME and workflow.enable_report:
-                secret = workflow.get_secret(Settings.SECRET_GH_APP_ID)
-                cls.evaluate_check(
-                    bool(secret),
-                    f"Secret [{Settings.SECRET_GH_APP_ID}] must be configured for workflow",
-                    workflow.name,
-                )
-                secret = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY)
-                cls.evaluate_check(
-                    bool(secret),
-                    f"Secret [{Settings.SECRET_GH_APP_PEM_KEY}] must be configured for workflow",
-                    workflow.name,
-                )
-                secret = workflow.get_secret(Settings.SECRET_GH_APP_INSTALLATION_ID)
-                cls.evaluate_check(
-                    bool(secret),
-                    f"Secret [{Settings.SECRET_GH_APP_INSTALLATION_ID}] must be configured for workflow",
-                    workflow.name,
-                )
+            cls.evaluate_check(
+                workflow.engine in _VALID_ENGINES,
+                f"Invalid engine [{workflow.engine}], must be one of {_VALID_ENGINES}",
+                workflow.name,
+            )
+            # NOTE: disabled — like job.enable_commit_status, the workflow-level
+            # enable_commit_status_on_failure is harmless on the Praktika engine
+            # (the Checks API is used regardless), so don't fail validation when
+            # a workflow carries the flag.
+            # if workflow.engine == Workflow.Engine.PRAKTIKA:
+            #     cls.evaluate_check(
+            #         not workflow.enable_commit_status_on_failure,
+            #         ".enable_commit_status_on_failure is redundant for Praktika engine workflows: the GitHub Checks API is used and always publishes workflow/job check status",
+            #         workflow.name,
+            #     )
+            if Settings.USE_CUSTOM_GH_AUTH and workflow.enable_report:
+                if not Settings.GH_AUTH_LAMBDA_NAME:
+                    secret = workflow.get_secret(Settings.SECRET_GH_APP)
+                    cls.evaluate_check(
+                        bool(secret),
+                        f"Secret [{Settings.SECRET_GH_APP}] must be configured for workflow",
+                        workflow.name,
+                    )
 
             for job in workflow.jobs:
                 cls.evaluate_check(
@@ -73,6 +203,29 @@ class Validator:
                     f"Invalid Job.Config.runs_on [{job.runs_on}] for [{job.name}]",
                     workflow.name,
                 )
+                if workflow.engine != Workflow.Engine.GH_ACTIONS:
+                    # "self-hosted" is a GitHub-Actions runner-group label with
+                    # no meaning to the praktika engine (which routes by the
+                    # pool/size label); ignore it when counting.
+                    effective_runs_on = [
+                        label for label in (job.runs_on or []) if label != "self-hosted"
+                    ]
+                    cls.evaluate_check(
+                        len(effective_runs_on) == 1,
+                        f"Non-GHActions workflow jobs must have exactly one runs_on "
+                        f"label (excluding 'self-hosted'), got [{job.runs_on}] for [{job.name}]",
+                        workflow.name,
+                    )
+                # NOTE: disabled — `enable_commit_status` is harmless on the
+                # Praktika engine (it just uses the Checks API regardless), so
+                # don't fail validation when a job carries the flag.
+                # if workflow.engine == Workflow.Engine.PRAKTIKA:
+                #     cls.evaluate_check(
+                #         not job.enable_commit_status,
+                #         ".enable_commit_status is redundant for Praktika engine workflows: the GitHub Checks API is used and always publishes workflow/job check status",
+                #         workflow.name,
+                #         job.name,
+                #     )
                 cls.evaluate_check(
                     "PARAMETER" not in job.command,
                     f"Job parametrization config issue: job name [{job.name}], job command: [{job.command}]",
@@ -81,7 +234,6 @@ class Validator:
 
             cls.validate_file_paths_in_run_command(workflow)
             cls.validate_file_paths_in_digest_configs(workflow)
-            cls.validate_requirements_txt_files(workflow)
             cls.validate_dockers(workflow)
             cls.validate_job_names(workflow)
 
@@ -143,8 +295,8 @@ class Validator:
                     )
                     if artifact.is_s3_artifact():
                         assert (
-                            Settings.S3_ARTIFACT_PATH
-                        ), "Provide S3_ARTIFACT_PATH setting in any .py file in ./ci/settings/* to be able to use s3 for artifacts"
+                            Settings.S3_ARTIFACT_BUCKET
+                        ), "Provide S3_ARTIFACT_BUCKET setting in any .py file in ./ci/settings/* to be able to use s3 for artifacts"
 
             for job in workflow.jobs:
                 if job.requires and workflow.artifacts:
@@ -174,26 +326,26 @@ class Validator:
                         and Settings.DOCKER_BUILD_AMD_RUNS_ON
                         and Settings.DOCKER_BUILD_ARM_RUNS_ON
                         != Settings.DOCKER_BUILD_AMD_RUNS_ON,
-                        "Settings: DOCKER_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON, DOCKER_BUILD_AMD_RUNS_ON must be provided and be different CPU architecture machines",
+                        f"Settings: DOCKER_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON, DOCKER_BUILD_AMD_RUNS_ON must be provided and be different CPU architecture machines",
                     )
                 else:
                     cls.evaluate_check(
                         Settings.DOCKER_MERGE_RUNS_ON,
-                        "DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
+                        f"DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
                         workflow_name=workflow.name,
                     )
 
             if workflow.set_latest_for_docker_merged_manifest:
                 cls.evaluate_check(
                     workflow.enable_dockers_manifest_merge,
-                    ".set_latest_for_docker_merged_manifest workflow setting is applicable with .enable_dockers_manifest_merge=True",
+                    f".set_latest_for_docker_merged_manifest workflow setting is applicable with .enable_dockers_manifest_merge=True",
                     workflow_name=workflow.name,
                 )
 
             if workflow.enable_open_issues_check:
                 cls.evaluate_check(
                     workflow.enable_report,
-                    ".enable_open_issues_check workflow setting is applicable with .enable_report=True",
+                    f".enable_open_issues_check workflow setting is applicable with .enable_report=True",
                     workflow_name=workflow.name,
                 )
 
@@ -216,20 +368,24 @@ class Validator:
                     ), f"All artifacts must be of S3 type if enable_cache|enable_html=True, artifact [{artifact.name}], type [{artifact.type}], workflow [{workflow.name}]"
 
             if workflow.dockers and not workflow.disable_dockers_build:
-                assert (
-                    Settings.DOCKERHUB_USERNAME
-                ), f"Settings.DOCKERHUB_USERNAME must be provided if workflow has dockers, workflow [{workflow.name}]"
-                assert (
-                    Settings.DOCKERHUB_SECRET
-                ), f"Settings.DOCKERHUB_SECRET must be provided if workflow has dockers, workflow [{workflow.name}]"
-                assert workflow.get_secret(
-                    Settings.DOCKERHUB_SECRET
-                ), f"Secret [{Settings.DOCKERHUB_SECRET}] must have configuration in workflow.secrets, workflow [{workflow.name}]"
+                assert Settings.SECRET_DOCKER_REGISTRY, (
+                    f"Settings.SECRET_DOCKER_REGISTRY must be set when the workflow "
+                    f"manages docker images (.dockers is set and "
+                    f".disable_dockers_build is False): praktika logs in to the "
+                    f"registry to build/push them. Point it at a secret whose value "
+                    f'is {{"username": ..., "password": ...}}. Workflow [{workflow.name}]'
+                )
+                assert workflow.get_secret(Settings.SECRET_DOCKER_REGISTRY), (
+                    f"Docker registry secret [{Settings.SECRET_DOCKER_REGISTRY}] "
+                    f"(Settings.SECRET_DOCKER_REGISTRY) is not registered in the "
+                    f"workflow's secrets. Add it to the project SECRETS so the "
+                    f"workflow can resolve it. Workflow [{workflow.name}]"
+                )
 
             if workflow.enable_open_issues_check:
                 cls.evaluate_check(
                     workflow.enable_merge_ready_status,
-                    ".enable_open_issues_check workflow setting is applicable with .enable_merge_ready_status=True",
+                    f".enable_open_issues_check workflow setting is applicable with .enable_merge_ready_status=True",
                     workflow_name=workflow.name,
                 )
 
@@ -245,18 +401,8 @@ class Validator:
 
             if workflow.enable_cidb:
                 cls.evaluate_check(
-                    Settings.SECRET_CI_DB_URL,
-                    "Settings.SECRET_CI_DB_URL must be provided if workflow.enable_cidb=True",
-                    workflow,
-                )
-                cls.evaluate_check(
-                    Settings.SECRET_CI_DB_USER,
-                    "Settings.SECRET_CI_DB_USER must be provided if workflow.enable_cidb=True",
-                    workflow,
-                )
-                cls.evaluate_check(
-                    Settings.SECRET_CI_DB_PASSWORD,
-                    "Settings.SECRET_CI_DB_PASSWORD must be provided if workflow.enable_cidb=True",
+                    Settings.SECRET_CI_DB_CONNECTION,
+                    "Settings.SECRET_CI_DB_CONNECTION must be provided if workflow.enable_cidb=True",
                     workflow,
                 )
                 cls.evaluate_check(
@@ -318,27 +464,6 @@ class Validator:
                     ), f"Invalid file path [{include_path}] in job [{job.name}] digest_config, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
 
     @classmethod
-    def validate_requirements_txt_files(cls, workflow: Workflow.Config) -> None:
-        for job in workflow.jobs:
-            if job.job_requirements:
-                if job.job_requirements.python_requirements_txt:
-                    path = Path(job.job_requirements.python_requirements_txt)
-                    message = f"File with py requirement [{path}] does not exist"
-                    if job.name in (
-                        Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
-                        Settings.CI_CONFIG_JOB_NAME,
-                        Settings.FINISH_WORKFLOW_JOB_NAME,
-                    ):
-                        message += '\n  If all requirements already installed on your runners - add setting INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS""'
-                        message += "\n  If requirements needs to be installed - add requirements file (Settings.INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS):"
-                        message += "\n      echo jwt==1.3.1 > ./ci/requirements.txt"
-                        message += (
-                            "\n      echo requests==2.32.4 >> ./ci/requirements.txt"
-                        )
-                        message += "\n      echo https://clickhouse-builds.s3.amazonaws.com/packages/praktika-0.1-py3-none-any.whl >> ./ci/requirements.txt"
-                    cls.evaluate_check(path.is_file(), message, job.name, workflow.name)
-
-    @classmethod
     def validate_dockers(cls, workflow: Workflow.Config):
         names = []
         for docker in workflow.dockers:
@@ -390,7 +515,7 @@ class Validator:
         if check_ok:
             return
         else:
-            print("ERROR: Validation failed:")
+            print(f"ERROR: Validation failed:")
             for message in messages:
                 print(" ||  " + message)
-            raise
+            sys.exit(1)

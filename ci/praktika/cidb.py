@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import json
+import os
 import time
 import urllib
 from typing import List, Optional
@@ -75,12 +76,37 @@ class CIDB:
             # Transparently convert Result.Status values to legacy CIDB strings
             self.check_status = CIDB.convert_status(self.check_status)
 
-    def __init__(self, url, user, passwd):
+    def __init__(self, url, user=None, passwd=None):
+        # Falsy user/passwd (None, empty string, JSON null) means "send no
+        # auth header" — used when the runner-facing CH user is configured
+        # with <no_password/> + a network ACL on the server side.
         self.url = url
-        self.auth = {
-            "X-ClickHouse-User": user,
-            "X-ClickHouse-Key": passwd,
-        }
+        self.auth = {}
+        if user:
+            self.auth["X-ClickHouse-User"] = user
+        if passwd:
+            self.auth["X-ClickHouse-Key"] = passwd
+
+    @classmethod
+    def from_connection_secret(cls, connection_str: str) -> "CIDB":
+        """Build a CIDB from a JSON connection blob in SSM Parameter Store.
+
+        The blob must have a ``url`` field and may have ``user``/``password``
+        fields. Null/empty/missing user or password mean "send no auth" so
+        the runner side stays creds-free when the server enforces auth via
+        network ACLs (`<no_password/>` user scoped to the VPC CIDR).
+
+        Example::
+
+            {"url": "http://10.0.42.144:8123", "user": null, "password": null}
+            {"url": "http://...", "user": "admin", "password": "..."}
+        """
+        data = json.loads(connection_str)
+        return cls(
+            url=data["url"],
+            user=data.get("user"),
+            passwd=data.get("password"),
+        )
 
     def get_link_to_test_case_statistics(
         self,
@@ -403,7 +429,7 @@ ORDER BY day DESC
         # Create a session object
         params = {
             "database": Settings.CI_DB_DB_NAME,
-            "query": "SELECT 1",
+            "query": f"SELECT 1",
         }
         error = ""
         for retry in range(2):

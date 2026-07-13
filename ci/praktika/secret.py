@@ -3,8 +3,6 @@ import json
 import os
 from typing import List, Union
 
-from .utils import Shell
-
 
 class Secret:
 
@@ -49,58 +47,66 @@ class Secret:
                 assert False, f"Not supported secret type, secret [{self}]"
 
         def get_aws_ssm_parameter(self):
-            region = ""
-            if self.region:
-                region = f" --region {self.region}"
-            res = Shell.get_output(
-                f"aws ssm get-parameter --name {self.name} --with-decryption --output text --query Parameter.Value {region}",
-                strict=True,
+            import boto3
+
+            client = boto3.client(
+                "ssm",
+                region_name=self.region or None,
             )
-            return res
+            res = client.get_parameter(
+                Name=self.name,
+                WithDecryption=True,
+            )
+            value = res.get("Parameter", {}).get("Value", "")
+            if not value:
+                raise RuntimeError(f"Empty value for parameter [{self.name}]")
+            return value
 
         def get_aws_ssm_parameters(self):
             """
             Request multiple parameters at once to avoid rate limiting
             """
-            region = ""
-            if self.region:
-                region = f" --region {self.region}"
+            import boto3
+
             assert isinstance(self.name, list)
-            res = Shell.get_output(
-                f"aws ssm get-parameters --names {' '.join(self.name)} --with-decryption --output text --query 'Parameters[*].[Name,Value]' {region}",
-                strict=True,
+            client = boto3.client(
+                "ssm",
+                region_name=self.region or None,
             )
-            name_value_pairs = res.split("\n")
-            names = [n.split("\t")[0].strip() for n in name_value_pairs]
-            values = [n.split("\t")[1].strip() for n in name_value_pairs]
+            res = client.get_parameters(
+                Names=self.name,
+                WithDecryption=True,
+            )
+            name_to_value = {
+                parameter.get("Name", ""): parameter.get("Value", "")
+                for parameter in res.get("Parameters", [])
+            }
 
             for n in self.name:
-                if n not in names:
+                if n not in name_to_value:
                     raise RuntimeError(f"Failed to get value for parameter [{n}]")
+                if not name_to_value[n]:
+                    raise RuntimeError(f"Empty value for parameter [{n}]")
 
-            # Sort to match requested order and validate values:
-            name_value_pairs = list(zip(names, values))
-            name_value_pairs.sort(key=lambda x: self.name.index(x[0]))
-
-            for name, value in name_value_pairs:
-                if not value:
-                    raise RuntimeError(f"Empty value for parameter [{name}]")
-
-            values = [pair[1] for pair in name_value_pairs]
-            return values
+            return [name_to_value[name] for name in self.name]
 
         def get_aws_ssm_secret(self):
+            import boto3
+
             name, secret_key_name = self.name, ""
             if "." in self.name:
                 name, secret_key_name = self.name.split(".", 1)
-            region = ""
-            if self.region:
-                region = f" --region {self.region}"
-            cmd = f"aws secretsmanager get-secret-value --secret-id  {name} --query SecretString --output text {region}"
+            client = boto3.client(
+                "secretsmanager",
+                region_name=self.region or None,
+            )
+            res = client.get_secret_value(SecretId=name)
+            secret_string = res.get("SecretString", "")
+            if not secret_string:
+                raise RuntimeError(f"Empty value for secret [{name}]")
             if secret_key_name:
-                cmd += f" | jq -r '.[\"{secret_key_name}\"]'"
-            res = Shell.get_output(cmd, verbose=True, strict=True)
-            return res
+                return json.loads(secret_string)[secret_key_name]
+            return secret_string
 
         def get_aws_ssm_secrets_batched(self):
             """
@@ -109,9 +115,9 @@ class Secret:
             are resolved from a single get_secret_value response parsed in Python,
             which correctly handles multi-line values such as PEM keys.
             """
-            assert isinstance(self.name, list)
+            import boto3
 
-            region = f" --region {self.region}" if self.region else ""
+            assert isinstance(self.name, list)
 
             # Parse each name into (root, key); key is None when there is no dot
             parsed = [(n.split(".", 1) if "." in n else (n, None)) for n in self.name]
@@ -122,15 +128,25 @@ class Secret:
                 root_to_indices.setdefault(root, []).append(i)
 
             results = [None] * len(self.name)
+            client = boto3.client(
+                "secretsmanager",
+                region_name=self.region or None,
+            )
 
             for root, indices in root_to_indices.items():
-                cmd = f"aws secretsmanager get-secret-value --secret-id {root} --query SecretString --output text{region}"
-                secret_string = Shell.get_output(cmd, verbose=True, strict=True)
+                res = client.get_secret_value(SecretId=root)
+                secret_string = res.get("SecretString", "")
+                if not secret_string:
+                    raise RuntimeError(f"Empty value for secret [{root}]")
                 keys = [parsed[idx][1] for idx in indices]
                 # Only parse JSON when at least one entry requests a specific key;
                 # keyless requests return the raw secret string to stay compatible
                 # with non-JSON secrets.
-                secret_data = json.loads(secret_string) if any(k is not None for k in keys) else None
+                secret_data = (
+                    json.loads(secret_string)
+                    if any(k is not None for k in keys)
+                    else None
+                )
                 for idx, key in zip(indices, keys):
                     results[idx] = secret_data[key] if key is not None else secret_string
 
@@ -139,8 +155,9 @@ class Secret:
         def get_gh_secret(self):
             res = os.getenv(f"{self.name}")
             if not res:
-                print(f"ERROR: Failed to get secret [{self.name}]")
-                raise RuntimeError()
+                raise RuntimeError(
+                    f"Failed to get GH_SECRET [{self.name}]: env var is unset or empty"
+                )
             return res
 
         def join_with(self, other):
