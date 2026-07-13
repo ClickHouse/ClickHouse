@@ -1852,20 +1852,30 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             txn = tryGetTransactionForMutation(mutations_begin_it->second, log.load());
             if (!txn)
             {
+                /// The transaction that started this mutation is no longer running.
+                /// The mutation entry's `csn` field is only an in-memory cache; it is
+                /// filled in by `setMutationCSN` on commit and by `loadMutations` on
+                /// startup. The authoritative source of whether the transaction committed
+                /// is the transaction log, so consult it if the cached value is still
+                /// unknown (the same check that `loadMutations` and `clearOldMutations` do).
+                /// Without this, a mutation whose transaction has committed but whose cached
+                /// CSN was not updated would raise a spurious `LOGICAL_ERROR` and, in
+                /// particular, could abort the server via a background job after a restart.
+                /// See https://github.com/ClickHouse/ClickHouse/issues/83252
                 CSN mutation_csn = mutations_begin_it->second.csn;
-                if (mutation_csn == Tx::RolledBackCSN)
-                {
-                    /// Transaction was rolled back, mutation should be removed soon, skip it for now
-                    LOG_DEBUG(log, "Mutation {} was started by transaction {} that was rolled back, skipping part {}",
-                              mutations_begin_it->second.file_name, first_mutation_tid, part->name);
-                    continue;
-                }
                 if (mutation_csn == Tx::UnknownCSN)
+                    mutation_csn = TransactionLog::getCSN(first_mutation_tid);
+
+                if (mutation_csn == Tx::UnknownCSN || mutation_csn == Tx::RolledBackCSN)
                 {
-                    /// Transaction is not running but hasn't committed yet - this shouldn't happen
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find transaction {} that has started mutation {} "
-                                    "that is going to be applied to part {}, and mutation CSN is still unknown",
-                                    first_mutation_tid, mutations_begin_it->second.file_name, part->name);
+                    /// The transaction was rolled back or is otherwise not committed. Its
+                    /// mutation must not be applied (it will be removed by `killMutation`
+                    /// on rollback); skip the part for now instead of applying a mutation
+                    /// from a transaction that did not commit.
+                    LOG_DEBUG(log, "Mutation {} was started by transaction {} that is not committed (CSN {}), skipping part {}",
+                              mutations_begin_it->second.file_name, first_mutation_tid, mutation_csn, part->name);
+                    current_parts_postpone_reasons[part->name] = PostponeReasons::TRANSACTION_NOT_COMMITTED;
+                    continue;
                 }
                 /// Transaction has committed, mutation can proceed without the transaction pointer
                 /// (txn is already null, which is fine for MergeMutateSelectedEntry)

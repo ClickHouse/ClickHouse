@@ -747,3 +747,76 @@ def test_removal_csn_concurrent_rollback_stress(start_cluster):
         )
 
     node.query("DROP TABLE IF EXISTS mt_race_stress SYNC")
+
+
+def test_mutation_after_restart_does_not_abort(start_cluster):
+    """
+    Regression test for https://github.com/ClickHouse/ClickHouse/issues/83252
+
+    A background mutation-selecting job (StorageMergeTree::selectPartsToMutate)
+    could raise a LOGICAL_ERROR "Cannot find transaction ... that has started
+    mutation ... that is going to be applied to part ..." and abort the server
+    when it encountered a transactional mutation whose transaction was no longer
+    running.  This is especially reachable after a restart, when no transactions
+    are running at all, so every still-present transactional mutation is processed
+    with a null transaction pointer.
+
+    selectPartsToMutate now consults the transaction log (the authoritative CSN
+    source, the same check that loadMutations and clearOldMutations use) instead of
+    relying only on the in-memory CSN cache, and skips a mutation whose transaction
+    is not committed instead of aborting.
+
+    The issue was originally hit with implicit_transaction=1, so we use it here:
+    each ALTER ... UPDATE runs inside an implicit transaction that commits when the
+    statement finishes.  After committing several such mutations we restart and make
+    sure the server comes back up cleanly with consistent data and no failed or
+    stuck mutations.
+    """
+    node.query("DROP TABLE IF EXISTS mt_txn_restart SYNC")
+    node.query(
+        "CREATE TABLE mt_txn_restart (key UInt64, value UInt64)"
+        " ENGINE=MergeTree ORDER BY key"
+        " SETTINGS old_parts_lifetime=3600, min_bytes_for_wide_part=0"
+    )
+
+    # Several parts so mutations have something to do and outdated source parts
+    # are kept around (old_parts_lifetime is large) across the restart.
+    for i in range(10):
+        node.query(f"INSERT INTO mt_txn_restart SELECT number, {i} FROM numbers(1000)")
+
+    # Run mutations inside implicit transactions (as in the original report).
+    # Committing each one assigns the mutation's CSN; afterwards the background
+    # mutation job may still process the mutation with the transaction gone.
+    for _ in range(10):
+        node.query(
+            "ALTER TABLE mt_txn_restart UPDATE value = value + 1 WHERE 1",
+            settings={"implicit_transaction": 1},
+        )
+
+    # After the restart there are no running transactions, so every transactional
+    # mutation still present is looked up with tryGetTransactionForMutation == null.
+    node.restart_clickhouse()
+
+    # The server must be healthy: the crash manifested as a failed startup / abort.
+    assert node.query("SELECT count() FROM mt_txn_restart").strip() == "10000"
+
+    # All mutations must have completed without failing and without getting stuck.
+    failed = node.query(
+        "SELECT count() FROM system.mutations"
+        " WHERE database=currentDatabase() AND table='mt_txn_restart'"
+        "   AND latest_fail_reason != ''"
+    ).strip()
+    assert failed == "0", f"Found failed mutations after restart: {failed}"
+
+    pending = node.query(
+        "SELECT count() FROM system.mutations"
+        " WHERE database=currentDatabase() AND table='mt_txn_restart' AND is_done = 0"
+    ).strip()
+    assert pending == "0", f"Found pending mutations after restart: {pending}"
+
+    # Every row was inserted with value=i (i in 0..9, 1000 rows each) and then
+    # incremented by 10 mutations, so the total is fixed: 1000*(0+..+9) + 10*10000.
+    total = node.query("SELECT sum(value) FROM mt_txn_restart").strip()
+    assert total == str(1000 * 45 + 10 * 10000), f"Unexpected sum after mutations: {total}"
+
+    node.query("DROP TABLE IF EXISTS mt_txn_restart SYNC")

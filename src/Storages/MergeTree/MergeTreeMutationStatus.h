@@ -20,6 +20,7 @@ namespace PostponeReasons
     inline constexpr auto EXCEED_MAX_PART_SIZE = "Exceed max source part size";
     inline constexpr auto HIT_MUTATION_BACKOFF = "Hit mutation backoff policy";
     inline constexpr auto VERSION_NOT_VISIBLE = "Not visible by transaction version";
+    inline constexpr auto TRANSACTION_NOT_COMMITTED = "Transaction that started the mutation is not committed";
 
     /// Special key in parts_postpone_reasons map indicating the reason applies to all parts
     inline constexpr auto ALL_PARTS_KEY = "all_parts";
