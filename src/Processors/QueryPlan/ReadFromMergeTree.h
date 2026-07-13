@@ -344,6 +344,7 @@ public:
     /// Disables per-part PrefetchingConcat that would collapse streams into one.
     void setPreferMultipleStreams() { prefer_multiple_streams = true; }
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
