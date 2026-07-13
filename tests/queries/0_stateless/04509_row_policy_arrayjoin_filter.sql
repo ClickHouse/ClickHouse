@@ -1,10 +1,17 @@
--- A row policy filter is applied as a per-row predicate at the storage read stage. `arrayJoin`
--- changes the number of rows, which used to abort with 'column->size() == num_rows' (a logical
--- error). It must be rejected instead: when the policy is created, when it is altered, and when
--- it is applied.
+-- Tags: no-parallel
+-- Reason: creates a global SQL UDF (user-defined functions are not scoped to a database), which
+-- would collide with concurrent runs.
+
+-- A row policy filter is applied as a per-row predicate at the storage read stage. arrayJoin (and
+-- its case-insensitive alias unnest, including when hidden behind a SQL UDF wrapper) change the
+-- number of rows, which used to abort with the logical error 'column->size() == num_rows'. Such
+-- policies must be rejected: when created, when altered, and when applied.
 
 DROP ROW POLICY IF EXISTS policy_with_array_join ON row_policy_table;
+DROP ROW POLICY IF EXISTS policy_with_unnest ON row_policy_table;
+DROP ROW POLICY IF EXISTS policy_with_udf ON row_policy_table;
 DROP ROW POLICY IF EXISTS valid_policy ON row_policy_table;
+DROP FUNCTION IF EXISTS row_policy_arrayjoin_udf;
 DROP TABLE IF EXISTS row_policy_table;
 
 CREATE TABLE row_policy_table (id UInt32, value UInt32) ENGINE = MergeTree ORDER BY id;
@@ -12,6 +19,15 @@ INSERT INTO row_policy_table VALUES (1, 10), (2, 20);
 
 -- Creating a policy whose filter contains arrayJoin is rejected.
 CREATE ROW POLICY policy_with_array_join ON row_policy_table FOR SELECT USING arrayJoin([1, 2]) OR (value = 0) TO ALL; -- { serverError ILLEGAL_PREWHERE }
+
+-- unnest is the case-insensitive alias of arrayJoin and is rejected identically.
+CREATE ROW POLICY policy_with_unnest ON row_policy_table FOR SELECT USING unnest([1, 2]) OR (value = 0) TO ALL; -- { serverError ILLEGAL_PREWHERE }
+CREATE ROW POLICY policy_with_unnest ON row_policy_table FOR SELECT USING UNNEST([1, 2]) OR (value = 0) TO ALL; -- { serverError ILLEGAL_PREWHERE }
+
+-- A SQL UDF that expands to arrayJoin is inlined at read time, so a policy using it is rejected too.
+CREATE FUNCTION row_policy_arrayjoin_udf AS (x) -> (unnest([1, 2]) OR x = 0);
+CREATE ROW POLICY policy_with_udf ON row_policy_table FOR SELECT USING row_policy_arrayjoin_udf(value) TO ALL; -- { serverError ILLEGAL_PREWHERE }
+DROP FUNCTION row_policy_arrayjoin_udf;
 
 -- Altering a valid policy to introduce arrayJoin is rejected too; the original filter is kept.
 CREATE ROW POLICY valid_policy ON row_policy_table FOR SELECT USING value > 0 TO ALL;
