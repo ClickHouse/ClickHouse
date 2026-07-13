@@ -1616,12 +1616,20 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         {
             LOG_WARNING(
                 storage.log,
-                "Cannot parse default codec for part {} from file {}, content '{}'. Default compression codec will be deduced "
-                "automatically, from data on disk",
+                "Cannot parse default codec for part {} from file {}, content '{}'. Default compression codec will be recovered "
+                "from data on disk.",
                 name,
                 path,
                 codec_line);
-            default_codec = detectDefaultCompressionCodec(CompressionCodecFactory::instance().getDefaultCodec());
+            /// The codec file is present but malformed, so its recorded default cannot be parsed. When
+            /// no column proves the codec either, recover it from `checksums.txt` - exactly as the
+            /// missing-file branch below - rather than falling back to the current global default: the
+            /// part was written by a version that writes the codec file, so its `checksums.txt` frame
+            /// still reflects the write-time built-in default and yields the right codec family, whereas
+            /// the current global default can be a different family and would wrongly downgrade the
+            /// projection codec inheritance in `MergeTask` / `MutateTask`.
+            default_codec = detectDefaultCompressionCodec(detectDefaultCompressionCodecFromChecksums());
+            return;
         }
 
         try
@@ -1632,8 +1640,11 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         }
         catch (const DB::Exception & ex)
         {
-            LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}', error '{}'. Default compression codec will be deduced automatically, from data on disk.", name, path, codec_line, ex.what());
-            default_codec = detectDefaultCompressionCodec(CompressionCodecFactory::instance().getDefaultCodec());
+            LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}', error '{}'. Default compression codec will be recovered from data on disk.", name, path, codec_line, ex.what());
+            /// Same best-effort recovery as the malformed-content branch above and the missing-file
+            /// branch below: prefer the write-time codec family from `checksums.txt` over the current
+            /// global default so a corrupted codec file cannot downgrade projection inheritance.
+            default_codec = detectDefaultCompressionCodec(detectDefaultCompressionCodecFromChecksums());
         }
     }
     else
@@ -1641,16 +1652,18 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         /// The `default_compression_codec.txt` file is missing. When no column proves the codec
         /// (every column has an explicit `CODEC`), the part's own default codec is not recorded
         /// anywhere on disk, so estimate it from `checksums.txt` instead of blindly using the current
-        /// global default - see `detectDefaultCompressionCodecForMissingCodecFile` for exactly what
+        /// global default - see `detectDefaultCompressionCodecFromChecksums` for exactly what
         /// this recovers and its limits. This is a best-effort value used only for
         /// `system.parts.default_compression_codec` and the projection codec inheritance in
         /// `MergeTask` / `MutateTask`; it never touches already-written column data.
-        default_codec = detectDefaultCompressionCodec(detectDefaultCompressionCodecForMissingCodecFile());
+        default_codec = detectDefaultCompressionCodec(detectDefaultCompressionCodecFromChecksums());
     }
 }
 
-CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodecForMissingCodecFile() const
+CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodecFromChecksums() const
 {
+    /// Called when the part's `default_compression_codec.txt` is unusable (missing or malformed) and
+    /// no column proves the codec, so the recorded default is not available anywhere else on disk.
     /// `checksums.txt` is written by `MergeTreeDataPartChecksums::write`. Its modern format
     /// (version >= 4) compresses the body with `CompressionCodecFactory::getDefaultCodec()` - the
     /// built-in default effective when the part was written, NOT `new_part->default_codec` - so the

@@ -501,3 +501,62 @@ def test_default_codec_recovered_from_checksums_when_codec_file_missing(start_cl
     )
 
     node4.query("DROP TABLE no_codec_file SYNC")
+
+
+def test_default_codec_recovered_from_checksums_when_codec_file_malformed(start_cluster):
+    # A `default_compression_codec.txt` file can be present but unparseable (corrupted or truncated,
+    # for example after an interrupted detach/copy/restore). Just like the missing-file case above,
+    # when every column has an explicit CODEC no column proves the default codec, so
+    # `IMergeTreeDataPart::loadDefaultCompressionCodec` must recover it from `checksums.txt` rather
+    # than fall back to the current global default (`getDefaultCodec()`, which is a fixed `ZSTD(3)`):
+    # the write-time codec family from the checksums frame is authoritative, while the current global
+    # default can be a different family and would wrongly propagate through the projection codec
+    # inheritance in `MergeTask` / `MutateTask`.
+    #
+    # The part is written and merged under the new `ZSTD(3)` default, so its `checksums.txt` is a ZSTD
+    # frame. After we truncate the codec file to an empty (unparseable) file, the recovered default
+    # must be the frame's `ZSTD(1)` (the frame does not store the level) - not the `ZSTD(3)` that the
+    # raw global-default fallback would have produced.
+    node4.query(
+        """
+    CREATE TABLE malformed_codec_file (
+        key UInt64 CODEC(ZSTD(1)),
+        data String CODEC(ZSTD(1))
+    )
+    ENGINE MergeTree ORDER BY tuple()
+    """
+    )
+
+    node4.query("INSERT INTO malformed_codec_file VALUES (1, 'Hello world')")
+    node4.query("INSERT INTO malformed_codec_file VALUES (2, 'Goodbye world')")
+    node4.query("OPTIMIZE TABLE malformed_codec_file FINAL")
+
+    part_name = node4.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='malformed_codec_file' AND active"
+    ).strip()
+
+    node4.query(f"ALTER TABLE malformed_codec_file DETACH PART '{part_name}'")
+
+    data_path = node4.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='malformed_codec_file'"
+    ).strip()
+    # Truncate the codec file to empty (an unparseable "CODEC" line) without a shell.
+    node4.exec_in_container(
+        ["cp", "/dev/null", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+    )
+
+    node4.query(f"ALTER TABLE malformed_codec_file ATTACH PART '{part_name}'")
+
+    assert node4.query("SELECT COUNT() FROM malformed_codec_file") == "2\n"
+
+    # Recovered from the ZSTD-compressed `checksums.txt`; must not fall back to the raw `ZSTD(3)`
+    # global default (nor be downgraded to `LZ4`).
+    assert (
+        node4.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='malformed_codec_file' AND active"
+        ).strip()
+        == "ZSTD(1)"
+    )
+
+    node4.query("DROP TABLE malformed_codec_file SYNC")
