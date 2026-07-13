@@ -7,6 +7,7 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
+#include <Analyzer/TableExpressionModifiers.h>
 #include <Analyzer/inlineMaterializedCTEIfNeeded.h>
 #include <Interpreters/MaterializedCTE.h>
 #include <Analyzer/InterpolateNode.h>
@@ -1234,6 +1235,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         auto & alias_identifier_node = alias_node->as<IdentifierNode &>();
         auto identifier = alias_identifier_node.getIdentifier();
         IdentifierLookup alias_identifier_lookup{identifier, identifier_lookup.lookup_context};
+        alias_identifier_lookup.table_expression_modifiers = identifier_lookup.table_expression_modifiers;
         if (alias_node->hasOriginalAST())
             alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
         auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
@@ -4204,13 +4206,23 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 }
                 else if (auto * resolved_identifier_table_node = resolved_identifier->as<TableNode>())
                 {
-                    if (table_expression_modifiers.has_value())
-                        resolved_identifier_table_node->setTableExpressionModifiers(*table_expression_modifiers);
+                    if (table_expression_modifiers.has_value() && resolved_identifier_table_node->getTableExpressionModifiers() != table_expression_modifiers)
+                    {
+                        resolved_identifier_table_node->setTableExpressionModifiers(table_expression_modifiers.value());
+                        resolved_identifier_table_node->updateStorage(resolved_identifier_table_node->getStorage(), scope.context);
+                    }
                 }
                 else if (auto * resolved_identifier_table_function_node = resolved_identifier->as<TableFunctionNode>())
                 {
-                    if (table_expression_modifiers.has_value())
-                        resolved_identifier_table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
+                    if (table_expression_modifiers.has_value() && resolved_identifier_table_function_node->getTableExpressionModifiers() != table_expression_modifiers)
+                    {
+                        resolved_identifier_table_function_node->setTableExpressionModifiers(table_expression_modifiers.value());
+                        resolved_identifier_table_function_node->resolve(
+                            resolved_identifier_table_function_node->getTableFunction(),
+                            resolved_identifier_table_function_node->getStorage(),
+                            scope.context,
+                            resolved_identifier_table_function_node->getUnresolvedArgumentIndexes());
+                    }
                 }
                 else
                 {

@@ -133,6 +133,12 @@ public:
         return table_expression_modifiers;
     }
 
+    /// Set table expression modifiers
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
+    {
+        table_expression_modifiers = std::move(table_expression_modifiers_value);
+    }
+
     /// Get settings changes passed to table function
     const SettingsChanges & getSettingsChanges() const
     {
@@ -143,12 +149,6 @@ public:
     void setSettingsChanges(SettingsChanges settings_changes_)
     {
         settings_changes = std::move(settings_changes_);
-    }
-
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
     }
 
     QueryTreeNodeType getNodeType() const override
