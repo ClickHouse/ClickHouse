@@ -207,6 +207,15 @@ SELECT 'returning failure rolls back explicit transaction';
 TRUNCATE TABLE t_insert_returning_tx;
 BEGIN TRANSACTION;
 INSERT INTO t_insert_returning_tx
+RETURNING (SELECT no_such_col FROM t_insert_returning_tx)
+VALUES (10), (11), (12); -- { serverError UNKNOWN_IDENTIFIER }
+ROLLBACK;
+SELECT count() FROM t_insert_returning_tx;
+
+SELECT 'returning failure rolls back explicit transaction (insert-select path)';
+TRUNCATE TABLE t_insert_returning_tx;
+BEGIN TRANSACTION;
+INSERT INTO t_insert_returning_tx
 SELECT number + 10 FROM numbers(3)
 RETURNING (SELECT no_such_col FROM t_insert_returning_tx); -- { serverError UNKNOWN_IDENTIFIER }
 ROLLBACK;

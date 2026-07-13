@@ -60,3 +60,5 @@ returning failure rolls back implicit transaction
 0
 returning failure rolls back explicit transaction
 0
+returning failure rolls back explicit transaction (insert-select path)
+0
