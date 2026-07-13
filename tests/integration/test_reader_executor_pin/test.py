@@ -12,10 +12,12 @@ read-ahead machine's window ends strictly inside a partially filled cache
 segment, which requires (a) prefetch machines to run at all - the executor
 suppresses them under high memory pressure, which is why this scenario lives in
 an integration test on a dedicated node rather than a stateless test on a shared
-pressured server - and (b) geometry where the window end lands mid-segment:
-5 MiB segments (config) against the 16 MiB fill-ahead horizon, inside a 32 MiB
-plan window (query setting) so the job does not end at the plan boundary, with
-one reader (`max_threads=1`) holding one big task extent.
+pressured server - and (b) geometry where a fetch cut lands mid-segment:
+5 MiB segments (config) against the 16 MiB fill-ahead horizon and the 32 MiB
+plan window (query setting) - neither a multiple of the segment size, so the
+lead cut and the plan-boundary job end both land inside a segment - with one
+reader (`max_threads=1`) holding one big task extent and a file long enough
+that the lead outlives the segment-ceiled fetch allowance (see the INSERT).
 """
 
 import threading
@@ -64,10 +66,14 @@ def test_pin_survives_cache_drop(started_cluster):
         SETTINGS storage_policy = 's3_cache', min_bytes_for_wide_part = 0
         """
     )
-    # Incompressible column data, ~30 MiB on disk: several 5 MiB cache segments,
-    # larger than one 16 MiB fill-ahead lead so the horizon binds mid-file.
+    # Incompressible column data, ~72 MiB on disk: several 5 MiB cache segments.
+    # The fetch allowance (consumed reach, ceiled to whole segments) trails at
+    # ~2x the consumed bytes, so the 16 MiB lead only becomes the binding cut -
+    # the one cut that can end a fetch mid-segment, which the pin needs - once
+    # ~16 MiB are consumed. The file must run well past that crossover; ~30 MiB
+    # was enough only while the reach formula over-weighted history.
     node.query(
-        "INSERT INTO t_re_pin SELECT number, randomPrintableASCII(100) FROM numbers(300000)"
+        "INSERT INTO t_re_pin SELECT number, randomPrintableASCII(100) FROM numbers(750000)"
     )
     expected = node.query(SCAN)
 
