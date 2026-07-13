@@ -64,3 +64,8 @@ ACCESS_DENIED
 -- An ambiguous credential with disjoint grants is denied everything (empty intersection is deny-all, not no limit)
 ACCESS_DENIED
 ACCESS_DENIED
+-- An ambiguous credential where one matching method has already expired is rejected (earliest VALID UNTIL wins)
+AUTHENTICATION_FAILED
+1
+-- An expired token method expires the shared credential instead of widening it to the unrestricted method
+AUTHENTICATION_FAILED

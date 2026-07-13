@@ -631,13 +631,17 @@ std::optional<AuthResult> IAccessStorage::authenticate(
     return authenticateImpl(credentials, address, external_authenticators, client_info, throw_if_user_not_exists, allow_no_password, allow_plaintext_password);
 }
 
+/// `check_valid_until = false` answers "does this credential match this method?" without the expiry gate.
+/// The fail-close ambiguity scan below needs that: an already-expired matching method must still shorten
+/// the combined `VALID UNTIL` of the session instead of silently disappearing from the combination.
 Authentication::CredentialsCheckResult areCredentialsValid(
     const std::string & user_name,
     const AuthenticationData & authentication_method,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
-    SettingsChanges & settings);
+    SettingsChanges & settings,
+    bool check_valid_until = true);
 
 /// A `NO_PASSWORD` or `PLAINTEXT_PASSWORD` method is ignored entirely when the corresponding server setting disables it
 /// (`allow_no_password` / `allow_plaintext_password`). Both the primary authentication loop and the fail-close ambiguity
@@ -701,7 +705,10 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 /// stores two `sha256_password` methods with different random salts). If a broader or earlier method could
                 /// shadow a later token-style method, a limited credential would silently regain the full rights (or lifetime)
                 /// of the other method. To prevent that, the session is limited to the intersection of the `GRANTS` of all
-                /// matching methods and expires at the earliest of their `VALID UNTIL`.
+                /// matching methods and expires at the earliest of their `VALID UNTIL`. The scan matches credentials
+                /// while ignoring expiry: an already-expired method that accepts the credential must still shorten the
+                /// combined `VALID UNTIL` (rejecting the login below), otherwise the expiry of a token method would
+                /// silently hand the shared credential the rights and lifetime of the broader method.
                 ///
                 /// Methods that neither restrict the grants nor set an expiry cannot narrow anything and are skipped without
                 /// an extra credential check. Methods verified against an external system (`LDAP`/`KERBEROS`/`HTTP`/`JWT`) are
@@ -734,7 +741,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                         continue;
 
                     SettingsChanges discarded_settings;
-                    if (areCredentialsValid(user->getName(), other_method, credentials, external_authenticators, client_info, discarded_settings)
+                    if (areCredentialsValid(user->getName(), other_method, credentials, external_authenticators, client_info, discarded_settings, /* check_valid_until = */ false)
                         != Authentication::CredentialsCheckResult::Success)
                         continue;
 
@@ -750,6 +757,15 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
 
                     if (other_valid_until != 0 && (combined_valid_until == 0 || other_valid_until < combined_valid_until))
                         combined_valid_until = other_valid_until;
+                }
+
+                /// The earliest `VALID UNTIL` among the matching methods wins even when it has already passed:
+                /// the shared credential is expired as a whole, exactly as if the single matched method had expired.
+                if (combined_valid_until != 0)
+                {
+                    const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                    if (now > combined_valid_until)
+                        throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
                 }
 
                 if (another_method_restricts_grants)
@@ -790,7 +806,8 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
-    SettingsChanges & settings)
+    SettingsChanges & settings,
+    bool check_valid_until)
 {
     if (!credentials.isReady())
         return Authentication::CredentialsCheckResult::Fail;
@@ -798,13 +815,16 @@ Authentication::CredentialsCheckResult areCredentialsValid(
     if (credentials.getUserName() != user_name)
         return Authentication::CredentialsCheckResult::Fail;
 
-    auto valid_until = authentication_method.getValidUntil();
-    if (valid_until)
+    if (check_valid_until)
     {
-        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        auto valid_until = authentication_method.getValidUntil();
+        if (valid_until)
+        {
+            const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
-        if (now > valid_until)
-            return Authentication::CredentialsCheckResult::Fail;
+            if (now > valid_until)
+                return Authentication::CredentialsCheckResult::Fail;
+        }
     }
 
     return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, client_info, settings);

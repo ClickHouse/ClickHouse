@@ -14,6 +14,8 @@ user4="u4_04512_${CLICKHOUSE_DATABASE}"
 user5="u5_04512_${CLICKHOUSE_DATABASE}"
 user6="u6_04512_${CLICKHOUSE_DATABASE}"
 user7="u7_04512_${CLICKHOUSE_DATABASE}"
+user8="u8_04512_${CLICKHOUSE_DATABASE}"
+user9="u9_04512_${CLICKHOUSE_DATABASE}"
 role="r_04512_${CLICKHOUSE_DATABASE}"
 role2="r2_04512_${CLICKHOUSE_DATABASE}"
 
@@ -34,11 +36,11 @@ function login_expect_error()
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP USER IF EXISTS ${user6}" -q "DROP USER IF EXISTS ${user7}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
+    ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP USER IF EXISTS ${user6}" -q "DROP USER IF EXISTS ${user7}" -q "DROP USER IF EXISTS ${user8}" -q "DROP USER IF EXISTS ${user9}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
 }
 trap cleanup EXIT
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP USER IF EXISTS ${user6}" -q "DROP USER IF EXISTS ${user7}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${user}" -q "DROP USER IF EXISTS ${user2}" -q "DROP USER IF EXISTS ${user3}" -q "DROP USER IF EXISTS ${user4}" -q "DROP USER IF EXISTS ${user5}" -q "DROP USER IF EXISTS ${user6}" -q "DROP USER IF EXISTS ${user7}" -q "DROP USER IF EXISTS ${user8}" -q "DROP USER IF EXISTS ${user9}" -q "DROP ROLE IF EXISTS ${role}" -q "DROP ROLE IF EXISTS ${role2}" -q "DROP ROLE IF EXISTS ${role2}_x"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t1 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "CREATE TABLE t2 (x UInt64) ENGINE = MergeTree ORDER BY x" -q "INSERT INTO t1 VALUES (1)" -q "INSERT INTO t2 VALUES (2)"
 
 # The second authentication method is a 'token': it limits the access rights to a subset of the grants.
@@ -200,3 +202,20 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${user7} IDENTIFIED WITH sha256_password BY
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user7}" -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t2 TO ${user7}"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user7}&password=shared7" -d "SELECT x FROM t1" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user7}&password=shared7" -d "SELECT x FROM t2" 2>&1 | grep -m1 -o "ACCESS_DENIED" | head -n 1
+
+# The earliest VALID UNTIL among the methods matching a credential wins even when it has already passed. An expired
+# matching method must not silently disappear from the fail-close combination (which would hand the shared credential
+# the lifetime of the later method); the credential is expired as a whole, exactly as a single expired method would be.
+echo "-- An ambiguous credential where one matching method has already expired is rejected (earliest VALID UNTIL wins)"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user8} IDENTIFIED WITH sha256_password BY 'shared8' VALID UNTIL '2000-01-01', sha256_password BY 'shared8' VALID UNTIL '2099-01-01', sha256_password BY 'other8' VALID UNTIL '2099-01-01'"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user8}"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user8}&password=shared8" -d "SELECT x FROM t1" 2>&1 | grep -m1 -o "AUTHENTICATION_FAILED" | head -n 1
+# A different credential of the same user matches neither of the ambiguous methods, so it is unaffected.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user8}&password=other8" -d "SELECT x FROM t1"
+
+# The same fail-close rule protects the GRANTS limit: when a token method expires, a login with the shared credential
+# must be rejected rather than served by the unrestricted method with the full user rights.
+echo "-- An expired token method expires the shared credential instead of widening it to the unrestricted method"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${user9} IDENTIFIED WITH sha256_password BY 'shared9' VALID UNTIL '2000-01-01' GRANTS (SELECT ON t1), sha256_password BY 'shared9'"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t1 TO ${user9}"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user9}&password=shared9" -d "SELECT x FROM t1" 2>&1 | grep -m1 -o "AUTHENTICATION_FAILED" | head -n 1

@@ -226,6 +226,8 @@ Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported 
 
 The clause is supported only for authentication methods whose credentials are verified locally by the server. For methods verified against an external system (`ldap`, `kerberos`, `http`, `jwt`) the clause is rejected: when several authentication methods accept the same credential, the limit is enforced by re-checking the credential against the other methods, and an extra probe of an external system is unsafe, so another method accepting the same credential could bypass the limit.
 
+When the same effective credential is accepted by more than one authentication method, the login is limited fail-close by all of them: the session gets the intersection of the `GRANTS` of all matching methods and expires at the earliest of their `VALID UNTIL`. The earliest `VALID UNTIL` wins even when it has already passed — the login is rejected, exactly as if the single matched method had expired, so the expiry of a token never silently hands the shared credential the rights or lifetime of a broader method.
+
 ## GRANTEES Clause {#grantees-clause}
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#granting-privilege-syntax). Options of the `GRANTEES` clause:
