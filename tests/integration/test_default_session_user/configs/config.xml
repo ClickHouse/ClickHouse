@@ -1,6 +1,24 @@
 <clickhouse>
     <default_session_user>global_default_user</default_session_user>
 
+    <!-- Serve keeper-style prometheus metrics; the composable `prometheus` endpoints
+         below go through the `KeeperPrometheusHandler-factory` because of this. -->
+    <prometheus>
+        <keeper_metrics_only>true</keeper_metrics_only>
+    </prometheus>
+
+    <!-- A custom `http_handlers` section that exposes the web terminal via a `rule`.
+         A composable HTTP endpoint that references it must still honor the endpoint's
+         own `default_session_user`. -->
+    <http_handlers_custom_webterminal>
+        <rule>
+            <url>/webterminal</url>
+            <handler>
+                <type>webterminal</type>
+            </handler>
+        </rule>
+    </http_handlers_custom_webterminal>
+
     <session_log>
         <database>system</database>
         <table>session_log</table>
@@ -49,6 +67,14 @@
             <default_session_user>proto_webterminal_user</default_session_user>
             <description>http protocol whose web terminal uses its own default session user</description>
         </http_webterminal>
+        <http_custom_webterminal>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8128</port>
+            <default_session_user>proto_custom_webterminal_user</default_session_user>
+            <handlers>http_handlers_custom_webterminal</handlers>
+            <description>http protocol serving the web terminal via a custom handlers section</description>
+        </http_custom_webterminal>
         <http_reload_effective>
             <type>http</type>
             <host>0.0.0.0</host>
@@ -83,5 +109,19 @@
             <default_session_user>proto_pg_user</default_session_user>
             <description>postgres protocol with its own default session user</description>
         </postgres_defuser>
+        <prometheus_defuser>
+            <type>prometheus</type>
+            <host>0.0.0.0</host>
+            <port>9108</port>
+            <default_session_user>proto_prometheus_user</default_session_user>
+            <description>keeper-metrics-only prometheus protocol with its own default session user</description>
+        </prometheus_defuser>
+        <prometheus_no_anonymous>
+            <type>prometheus</type>
+            <host>0.0.0.0</host>
+            <port>9109</port>
+            <default_session_user></default_session_user>
+            <description>keeper-metrics-only prometheus protocol that rejects anonymous scrapes</description>
+        </prometheus_no_anonymous>
     </protocols>
 </clickhouse>

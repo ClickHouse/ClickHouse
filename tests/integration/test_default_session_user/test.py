@@ -4,6 +4,7 @@ import secrets
 import socket
 import struct
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -321,6 +322,49 @@ def test_webterminal_default_session_user():
     )
     assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
     assert_login_success("explicit_user", "HTTP")
+
+
+def test_custom_webterminal_rule_default_session_user():
+    # The web terminal can also be exposed through a custom `http_handlers` section
+    # (a `rule` with `handler.type = webterminal`). Such a composable HTTP endpoint
+    # must still honor the endpoint's own `default_session_user` override, not the
+    # global setting. An auth message without a "user" field must therefore log in
+    # as the endpoint user.
+    opcode = webterminal_auth_opcode(
+        8128, json.dumps({"type": "auth", "password": ""})
+    )
+    assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
+    assert_login_success("proto_custom_webterminal_user", "HTTP")
+
+    # An explicitly specified user is not affected by the default session user.
+    opcode = webterminal_auth_opcode(
+        8128, json.dumps({"type": "auth", "user": "explicit_user", "password": ""})
+    )
+    assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
+    assert_login_success("explicit_user", "HTTP")
+
+
+def scrape_prometheus_status(port):
+    """GET /metrics on a prometheus listener and return the HTTP status code."""
+    url = f"http://{node1.ip_address}:{port}/metrics"
+    try:
+        response = urllib.request.urlopen(url, timeout=10)
+        return response.getcode()
+    except urllib.error.HTTPError as e:
+        return e.code
+
+
+def test_prometheus_keeper_metrics_default_session_user():
+    # A composable `type = prometheus` listener served through the keeper-metrics-only
+    # factory (`prometheus_keeper_metrics_only`) exposes only the `Metrics` protocol,
+    # which is served without authentication (`MetricsImpl` does not create a session,
+    # unlike the write/read/query protocols). The `default_session_user` override is
+    # threaded into `createKeeperPrometheusHandlerFactory` for consistency with the
+    # regular prometheus factory, but it has no effect on metrics exposition: a scrape
+    # succeeds anonymously regardless of the endpoint's `default_session_user`, and an
+    # empty override does not turn metrics scraping into an authenticated endpoint.
+    assert scrape_prometheus_status(9108) == 200
+    assert scrape_prometheus_status(9109) == 200
 
 
 def test_config_reload_default_session_user():

@@ -64,6 +64,22 @@
             <profile>default</profile>
             <quota>default</quota>
         </proto_webterminal_user>
+        <proto_custom_webterminal_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </proto_custom_webterminal_user>
+        <proto_prometheus_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </proto_prometheus_user>
         <reload_effective_before>
             <password></password>
             <networks>
