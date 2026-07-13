@@ -1,3 +1,4 @@
+import concurrent.futures
 import pytest
 import uuid
 import threading
@@ -43,11 +44,21 @@ def run_kill_query_failpoint_test(query, fault_name, query_id=None):
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    node1.query(f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+    try:
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        wait_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([wait_future], timeout=60)
+        if not done:
+            pool.shutdown(wait=False, cancel_futures=True)
+            assert False, f"Failpoint {fault_name} not triggered within 60 s"
+        pool.shutdown(wait=False)
 
-    node1.http_query(f"KILL QUERY WHERE query_id='{query_id}'")
-
-    node1.query(f"SYSTEM DISABLE FAILPOINT {fault_name}")
+        node1.http_query(f"KILL QUERY WHERE query_id='{query_id}'")
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {fault_name}")
 
     query_thread.join()
     if thread_error[0] is not None:
