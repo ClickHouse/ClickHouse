@@ -175,7 +175,7 @@ df['result'] = df.apply(complex_function, axis=1)
 
 Even in scenarios where DataStore is "slower", performance is typically **on par with pandas** - the difference is negligible for practical use. DataStore's advantages in complex operations far outweigh these edge cases.
 
-For fine-grained control over execution, see [Execution Engine Configuration](/products/chdb/configuration/execution-engine).
+For fine-grained control over execution, see [Execution Engine Configuration](/chdb/configuration/execution-engine).
 </Info>
 
 ---
@@ -224,7 +224,7 @@ result = (ds
 
 **Expected improvement**: Up to 2-8x faster for filter+groupby workloads, reduced memory usage for large Parquet files.
 
-See [Performance Mode](/products/chdb/configuration/performance-mode) for full details.
+See [Performance Mode](/chdb/configuration/performance-mode) for full details.
 
 ### 2. Use Parquet Instead of CSV {#use-parquet}
 
@@ -391,5 +391,5 @@ print(f"Approach 2: {time2:.0f}ms")
 <Tip>
 For automatic optimal engine selection, use `config.set_execution_engine('auto')` (default).
 For maximum throughput on aggregation workloads, use `config.use_performance_mode()`.
-See [Execution Engine](/products/chdb/configuration/execution-engine) and [Performance Mode](/products/chdb/configuration/performance-mode) for details.
+See [Execution Engine](/chdb/configuration/execution-engine) and [Performance Mode](/chdb/configuration/performance-mode) for details.
 </Tip>
