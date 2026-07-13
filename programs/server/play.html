@@ -5155,9 +5155,17 @@ function makeEventStreamHandler(targetResultEl, options = {})
         else if (name === 'profile_events')
         {
             if (!options.resourceMeter) return;
+            /// `EventStream` serializes each `profile_events` packet as a single JSON array of event
+            /// objects in one `data:` field, so flatten the parsed batch into individual events for
+            /// `feedProfileEvents` (a bare object is tolerated too, for older one-per-line servers).
             const events = [];
             for (const line of dataLines)
-                if (line) events.push(JSON.parse(line));
+            {
+                if (!line) continue;
+                const batch = JSON.parse(line);
+                if (Array.isArray(batch)) events.push(...batch);
+                else events.push(batch);
+            }
             if (events.length) options.resourceMeter(events);
         }
         else if (name === 'exception')
@@ -5330,7 +5338,10 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         /// support framing. Retry once without framing so the query still runs - without the streamed
         /// logs and metrics. (When framing is applied, even an exception comes back as an event
         /// stream, so a non-event-stream error unambiguously means framing was not applied.)
-        if (use_framing && !response.ok && !content_type.startsWith('text/event-stream')) {
+        /// Only read-only queries are retried: framing is not created for a non-pulling pipeline
+        /// (`INSERT`, DDL), so such a statement may already have run on the server before returning a
+        /// plain-HTTP error, and blindly resubmitting the whole request could duplicate its effect.
+        if (use_framing && !response.ok && !content_type.startsWith('text/event-stream') && queryIsReadOnly(query)) {
             use_framing = false;
             response = await fetch(url, fetch_options);
             content_type = response.headers.get('Content-Type') ?? '';
@@ -7386,6 +7397,40 @@ async function getQueryUnderCursor() {
 const PARALLELIZABLE_KEYWORDS = new Set([
     'SELECT', 'SHOW', 'DESCRIBE', 'DESC', 'EXISTS', 'EXPLAIN', 'WITH'
 ]);
+
+/// Whether a query is read-only and therefore safe to re-run. Used to gate the no-framing retry: a
+/// side-effecting statement (`INSERT`, DDL) may already have run on the server before returning a
+/// plain-HTTP error, so resubmitting it could duplicate its effect. Recognizes the same read-only
+/// query kinds treated as parallelizable, after skipping leading whitespace, comments and brackets.
+function queryIsReadOnly(query)
+{
+    let s = query;
+    for (;;)
+    {
+        const t = s.replace(/^\s+/, '');
+        if (t.startsWith('--'))
+        {
+            const nl = t.indexOf('\n');
+            s = nl < 0 ? '' : t.slice(nl + 1);
+        }
+        else if (t.startsWith('/*'))
+        {
+            const end = t.indexOf('*/');
+            s = end < 0 ? '' : t.slice(end + 2);
+        }
+        else if (t.startsWith('('))
+        {
+            s = t.slice(1);
+        }
+        else
+        {
+            s = t;
+            break;
+        }
+    }
+    const keyword = s.split(/[\s(;]/)[0].toUpperCase();
+    return PARALLELIZABLE_KEYWORDS.has(keyword);
+}
 
 /// Split the textarea content into individual queries using the lexer.
 /// Returns an array of { query, is_select } objects.
