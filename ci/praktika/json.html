@@ -512,10 +512,10 @@
         const status_ = status.toLowerCase();
 
         const isFailure =
-            (status_.includes('fail') || status_.includes('error') || status_.includes('dropped') || status_ === 'xpass')
+            (status_.includes('fail') || status_.includes('error') || status_.includes('dropped') || status_ === 'xpass' || status_ === 'slower')
             && status_ !== 'xfail';
         const isWarning =
-            status_.includes('pending') || status_.includes('running');
+            status_.includes('pending') || status_.includes('running') || status_ === 'unstable';
 
         if (filter === 'failures') {
             return isFailure;
@@ -663,14 +663,21 @@
         const statusLower = (status || '').toLowerCase();
         if (statusLower.includes('error')) return 0;
         if (statusLower.includes('fail') && statusLower !== 'xfail') return 1;
-        if (statusLower === 'xpass') return 2;
-        if (statusLower.includes('running')) return 3;
-        if (statusLower.includes('dropped')) return 4;
-        if (statusLower.includes('pending')) return 5;
-        if (statusLower === 'ok' || statusLower.includes('success')) return 6;
-        if (statusLower === 'xfail') return 7;
-        if (statusLower.includes('skipped')) return 8;
-        return 9;
+        // Perf-comparison per-query statuses (compare.sh emits slower/unstable/success).
+        if (statusLower === 'slower') return 1;
+        if (statusLower === 'unstable') return 2;
+        // Keep UNKNOWN right under the errors/failures: these are tests whose real
+        // result was lost (e.g. demoted when the run aborted), so they are the rows
+        // worth looking at first, not buried below all the OK rows.
+        if (statusLower.includes('unknown')) return 2;
+        if (statusLower === 'xpass') return 3;
+        if (statusLower.includes('running')) return 4;
+        if (statusLower.includes('dropped')) return 5;
+        if (statusLower.includes('pending')) return 6;
+        if (statusLower === 'ok' || statusLower.includes('success')) return 7;
+        if (statusLower === 'xfail') return 8;
+        if (statusLower.includes('skipped')) return 9;
+        return 10;
     }
 
     function formatTimestamp(timestamp, showDate = true) {
@@ -691,16 +698,20 @@
     }
 
     function formatDuration(durationInSeconds, detailed = false) {
-        // Check if the duration is empty, null, or not a number
-        if (!durationInSeconds || isNaN(durationInSeconds)) {
+        // Treat null/undefined/non-numeric as "unknown"; a literal 0 is a
+        // real measurement and flows through the precision ladder below
+        // (otherwise sub-millisecond perf-comparison rows showed up as the
+        // misleading placeholder "00s").
+        if (durationInSeconds === null || durationInSeconds === undefined) {
+            return '00s';
+        }
+        const duration = parseFloat(durationInSeconds);
+        if (isNaN(duration)) {
             return '00s';
         }
 
-        // Ensure duration is a floating-point number
-        const duration = parseFloat(durationInSeconds);
-
-        if (detailed) {
-            // Format in the detailed format with hours, minutes, and seconds
+        if (detailed && duration >= 1) {
+            // H/M/S format for job-level totals (e.g. "1h 23m 45s").
             const hours = Math.floor(duration / 3600);
             const minutes = Math.floor((duration % 3600) / 60);
             const seconds = Math.floor(duration % 60);
@@ -710,20 +721,31 @@
             const formattedSeconds = `${String(seconds).padStart(2, '0')}s`;
 
             return `${formattedHours}${formattedMinutes}${formattedSeconds}`.trim();
-        } else {
-            if (duration < 1) {
-                // Sub-second durations: show milliseconds
-                return `${Math.floor(duration * 1000)}ms`;
-            }
-            // Format in the default format with seconds and milliseconds
-            const seconds = Math.floor(duration);
-            const milliseconds = Math.floor((duration % 1) * 1000);
-
-            const formattedSeconds = String(seconds);
-            const formattedMilliseconds = String(milliseconds).padStart(2, 0).slice(-2);
-
-            return `${formattedSeconds}.${formattedMilliseconds}`;
         }
+
+        // Sub-second precision ladder: drop to a smaller unit when the
+        // next-coarser one would round to zero. Covers true zero too.
+        if (duration < 0.00001) {
+            // < 0.01ms — integer nanoseconds.
+            return `${Math.round(duration * 1e9)}ns`;
+        }
+        if (duration < 0.001) {
+            // < 1ms but >= 0.01ms — two decimals in ms.
+            return `${(duration * 1000).toFixed(2)}ms`;
+        }
+        if (duration < 1) {
+            // Sub-second: integer milliseconds.
+            return `${Math.floor(duration * 1000)}ms`;
+        }
+
+        // >= 1s and not detailed: seconds with two-digit milliseconds.
+        const seconds = Math.floor(duration);
+        const milliseconds = Math.floor((duration % 1) * 1000);
+
+        const formattedSeconds = String(seconds);
+        const formattedMilliseconds = String(milliseconds).padStart(2, 0).slice(-2);
+
+        return `${formattedSeconds}.${formattedMilliseconds}`;
     }
 
     // Function to determine status class based on value

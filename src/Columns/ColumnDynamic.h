@@ -5,7 +5,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
-#include <Common/WeakHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
@@ -198,9 +197,12 @@ public:
     /// variant vs the shared variant).
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override
+    /// Weak hash of the raw variant storage. Like `updateHashWithValueRange`, this is NOT guaranteed
+    /// to be equal for logically equal values stored with different variant layouts (typed variant
+    /// vs the shared variant); the in-memory scatter consumers only need fast per-query partitioning.
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
     {
-        return variant_column_ptr->getWeakHash32();
+        variant_column_ptr->computeHashInto(row_begin, row_end, hash_out, initial);
     }
 
     void updateHashFast(SipHash & hash) const override
@@ -330,12 +332,6 @@ public:
 
     void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
 
-    /// Dynamic columns manage their own variant_info type metadata.
-    /// The default convertToFullIfNeeded recurses into subcolumns and strips LowCardinality
-    /// from variant columns, but cannot update variant_info, creating column/type mismatches.
-    /// Override to skip recursion — Dynamic is a self-contained typed container.
-    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
-
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);
@@ -385,7 +381,9 @@ public:
 
     /// Apply null map to a nested Variant column.
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
-    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
+    /// When `offset` is given, `null_map` covers the suffix `[offset, size())`: the affected range must end
+    /// at the last row. Otherwise `null_map` must cover the whole column.
+    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset = 0);
 
     const VariantInfo & getVariantInfo() const { return variant_info; }
 

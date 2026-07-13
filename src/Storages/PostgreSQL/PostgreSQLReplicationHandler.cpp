@@ -11,6 +11,10 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
@@ -44,6 +48,7 @@ namespace MaterializedPostgreSQLSetting
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_tables_list_with_schema;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
+    extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
 }
 
 namespace Setting
@@ -97,6 +102,13 @@ namespace
 
     String getPublicationName(const String & postgres_database, const String & postgres_table)
     {
+        /// The publication name preserves the case of the database/table name. It is created via
+        /// `CREATE PUBLICATION "<name>"` (case-preserving) and looked up by exact `pubname` match,
+        /// so it must not be folded to lower case here — otherwise two tables whose names differ
+        /// only by case would collide on a single publication. The consumer takes care to quote the
+        /// name when it hands it to the `pgoutput` plugin via the `publication_names` option (which
+        /// PostgreSQL parses with `SplitIdentifierString`, folding unquoted identifiers to lower
+        /// case), so both sides agree even for names with upper-case letters.
         return fmt::format(
             "{}_ch_publication",
             postgres_table.empty() ? postgres_database : fmt::format("{}_{}", postgres_database, postgres_table));
@@ -171,6 +183,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , tables_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list])
     , schema_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list])
     , schema_as_a_part_of_table_name(!schema_list.empty() || replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema])
+    , use_extended_date_and_time_types(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types])
     , user_managed_slot(!replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
     , user_provided_snapshot(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_snapshot])
     , replication_slot(getReplicationSlotName(postgres_database_, postgres_table_, clickhouse_uuid_, replication_settings))
@@ -505,7 +518,8 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    StorageInMemoryMetadata storage_metadata = *nested_storage->getInMemoryMetadataPtr(insert_context, false);
+    auto nested_metadata = nested_storage->getInMemoryMetadataPtr(insert_context, false);
+    const StorageInMemoryMetadata & storage_metadata = *nested_metadata;
     auto sample_block = std::make_shared<const Block>(storage_metadata.getSampleBlockNonMaterialized());
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
@@ -631,6 +645,15 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             }
             tables_list = buf.str();
             tables_list.resize(tables_list.size() - 1);
+        }
+        else if (!is_materialized_postgresql_database)
+        {
+            /// Single `MaterializedPostgreSQL` storage: `tables_list` is the raw remote table name
+            /// (see the `StorageMaterializedPostgreSQL` constructor) and is never passed through the
+            /// quoting pass that `fetchRequiredTables` applies for the database engine. Quote it here,
+            /// otherwise `CREATE PUBLICATION ... FOR TABLE ONLY <name>` folds an upper-case table name
+            /// to lower case and fails with `relation "..." does not exist`.
+            tables_list = doubleQuoteWithSchema(tables_list);
         }
 
         if (tables_list.empty())
@@ -1058,6 +1081,37 @@ std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::
 }
 
 
+namespace
+{
+    /// Replace Date32 with Date and DateTime64 with DateTime (recursing into Nullable and Array),
+    /// used when `materialized_postgresql_use_extended_date_and_time_types` is disabled.
+    DataTypePtr narrowDateAndTimeType(const DataTypePtr & type)
+    {
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+            return std::make_shared<DataTypeNullable>(narrowDateAndTimeType(nullable->getNestedType()));
+        if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+            return std::make_shared<DataTypeArray>(narrowDateAndTimeType(array->getNestedType()));
+
+        WhichDataType which(type);
+        if (which.isDate32())
+            return std::make_shared<DataTypeDate>();
+        if (which.isDateTime64())
+            return std::make_shared<DataTypeDateTime>();
+        return type;
+    }
+
+    void narrowDateAndTimeTypes(const PostgreSQLTableStructure::ColumnsInfoPtr & columns_info)
+    {
+        if (!columns_info)
+            return;
+
+        NamesAndTypesList narrowed;
+        for (const auto & name_and_type : columns_info->columns)
+            narrowed.emplace_back(name_and_type.name, narrowDateAndTimeType(name_and_type.type));
+        columns_info->columns = std::move(narrowed);
+    }
+}
+
 template<typename T>
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
         T & tx, const std::string & table_name) const
@@ -1065,6 +1119,15 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     PostgreSQLTableStructure structure;
     auto [schema, table] = getSchemaAndTableName(table_name);
     structure = fetchPostgreSQLTableStructure(tx, table, schema, true, true, true, getTableAllowedColumns(table_name));
+
+    /// PostgreSQL `date`/`timestamp` are mapped to `Date32`/`DateTime64` by default to cover their
+    /// wider value range. The setting allows falling back to the narrower `Date`/`DateTime` types.
+    if (!use_extended_date_and_time_types)
+    {
+        narrowDateAndTimeTypes(structure.physical_columns);
+        narrowDateAndTimeTypes(structure.primary_key_columns);
+        narrowDateAndTimeTypes(structure.replica_identity_columns);
+    }
 
     return std::make_unique<PostgreSQLTableStructure>(std::move(structure));
 }

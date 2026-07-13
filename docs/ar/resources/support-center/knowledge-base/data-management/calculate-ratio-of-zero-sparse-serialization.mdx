@@ -1,0 +1,69 @@
+---
+title: كيفية حساب نسبة القيم الفارغة/الصفرية في كل عمود في جدول
+description: تعرّف على كيفية حساب نسبة القيم الفارغة أو الصفرية في كل عمود من جدول ClickHouse لتحسين التسلسل في الأعمدة المتناثرة.
+date: 2023-05-18
+tags: ['الأداء والتحسينات']
+keywords: ['نسبة القيم الفارغة/الصفرية', 'حساب']
+---
+
+<div id="how-to-calculate-the-ratio-of-emptyzero-values-in-every-column-in-a-table">
+  ## كيفية حساب نسبة القيم الفارغة/الصفرية في كل عمود في جدول
+</div>
+
+إذا كان العمود متناثرًا (فارغًا أو يحتوي في معظمه على أصفار)، يمكن لـ ClickHouse ترميزه بتنسيق متناثر وتحسين العمليات الحسابية تلقائيًا، إذ لا تتطلب البيانات فك الضغط الكامل أثناء الاستعلامات. في الواقع، إذا كنت تعرف مدى تَناثُر العمود، فيمكنك تحديد نسبته باستخدام [إعداد `ratio_of_defaults_for_sparse_serialization`](/ar/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization) لتحسين التسلسل.
+
+قد يستغرق هذا الاستعلام المفيد بعض الوقت، لكنه يحلل كل صف في جدولك ويحدد نسبة القيم التي تكون صفرًا (أو القيمة الافتراضية) في كل عمود في الجدول المحدد:
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM table_name
+FORMAT Vertical
+```
+
+على سبيل المثال، نفّذنا الاستعلام أعلاه على جدول [مجموعة بيانات المستشعرات البيئية](/ar/get-started/sample-datasets/environmental-sensors) المسمّى `sensors`، والذي يضم أكثر من 20 مليار صف و19 عمودًا:
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM sensors
+FORMAT Vertical
+```
+
+إليك الإجابة:
+
+```response
+
+Row 1:
+──────
+round(avg(equals(sensor_id, defaultValueOfArgumentType(sensor_id))), 3):                 0
+round(avg(equals(sensor_type, defaultValueOfArgumentType(sensor_type))), 3):             0.159
+round(avg(equals(location, defaultValueOfArgumentType(location))), 3):                   0
+round(avg(equals(lat, defaultValueOfArgumentType(lat))), 3):                             0.001
+round(avg(equals(lon, defaultValueOfArgumentType(lon))), 3):                             0.001
+round(avg(equals(timestamp, defaultValueOfArgumentType(timestamp))), 3):                 0
+round(avg(equals(P1, defaultValueOfArgumentType(P1))), 3):                               0.474
+round(avg(equals(P2, defaultValueOfArgumentType(P2))), 3):                               0.475
+round(avg(equals(P0, defaultValueOfArgumentType(P0))), 3):                               0.995
+round(avg(equals(durP1, defaultValueOfArgumentType(durP1))), 3):                         0.999
+round(avg(equals(ratioP1, defaultValueOfArgumentType(ratioP1))), 3):                     0.999
+round(avg(equals(durP2, defaultValueOfArgumentType(durP2))), 3):                         1
+round(avg(equals(ratioP2, defaultValueOfArgumentType(ratioP2))), 3):                     1
+round(avg(equals(pressure, defaultValueOfArgumentType(pressure))), 3):                   0.83
+round(avg(equals(altitude, defaultValueOfArgumentType(altitude))), 3):                   1
+round(avg(equals(pressure_sealevel, defaultValueOfArgumentType(pressure_sealevel))), 3): 1
+round(avg(equals(temperature, defaultValueOfArgumentType(temperature))), 3):             0.532
+round(avg(equals(humidity, defaultValueOfArgumentType(humidity))), 3):                   0.544
+
+1 row in set. Elapsed: 992.041 sec. Processed 20.69 billion rows, 1.39 TB (20.86 million rows/s., 1.40 GB/s.)
+```
+
+من النتائج أعلاه:
+
+* أعمدة `sensor_id` ليست متناثرة على الإطلاق. بل إن كل صف يحتوي على قيمة غير صفرية
+* يكون `sensor_type` متناثرًا فقط بنحو 15.9% من الحالات
+* العمود `P0` متناثر جدًا: 99.9% من القيم فيه تساوي صفرًا
+* العمود `pressure` متناثر إلى حد كبير بنسبة 83%
+* والعمود `temperature` تحتوي 53.2% من قيمه على قيم مفقودة أو صفرية
+
+كما قلنا، فهذا استعلام مفيد لحساب مدى تناثر أعمدتك في جدول ClickHouse!

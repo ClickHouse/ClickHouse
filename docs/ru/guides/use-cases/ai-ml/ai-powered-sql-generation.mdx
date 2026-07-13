@@ -1,0 +1,202 @@
+---
+slug: /use-cases/AI/ai-powered-sql-generation
+sidebarTitle: 'Генерация SQL с помощью ИИ'
+title: 'Генерация SQL с помощью ИИ'
+description: 'В этом руководстве объясняется, как использовать ИИ для генерации SQL-запросов в ClickHouse Client или clickhouse-local.'
+keywords: ['AI', 'SQL generation']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Начиная с ClickHouse 25.7, в [ClickHouse Client](/ru/concepts/features/interfaces/cli) и [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local) доступна [функциональность на базе ИИ](/ru/concepts/features/interfaces/cli#ai-sql-generation), которая преобразует описания на естественном языке в SQL-запросы. Эта возможность позволяет описывать требования к данным обычным текстом, после чего система преобразует их в соответствующие SQL-операторы.
+
+Эта возможность особенно полезна, если вы не знакомы со сложным синтаксисом SQL или вам нужно быстро создавать запросы для исследовательского анализа данных. Функция работает со стандартными таблицами ClickHouse и поддерживает распространённые шаблоны запросов, включая фильтрацию, агрегацию и JOIN.
+
+Для этого используются следующие встроенные инструменты/функции:
+
+* `list_databases` - Вывести список всех доступных баз данных в экземпляре ClickHouse
+* `list_tables_in_database` - Вывести список всех таблиц в указанной базе данных
+* `get_schema_for_table` - Получить оператор `CREATE TABLE` (схему) для указанной таблицы
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+Нужно добавить ключ Anthropic или OpenAI в виде переменной окружения:
+
+```bash
+export ANTHROPIC_API_KEY=your_api_key
+export OPENAI_API_KEY=your_api_key
+```
+
+Либо вы можете [указать файл конфигурации](/ru/concepts/features/interfaces/cli#ai-sql-generation-configuration).
+
+<div id="connecting-to-the-clickhouse-sql-playground">
+  ## Подключение к Песочнице ClickHouse
+</div>
+
+Мы рассмотрим эту возможность в [Песочнице ClickHouse](https://sql.clickhouse.com/).
+
+Подключиться к Песочнице ClickHouse можно с помощью следующей команды:
+
+```bash
+clickhouse client -mn \
+--host sql-clickhouse.clickhouse.com \
+--secure \
+--user demo --password ''
+```
+
+<Note>
+  Предполагается, что ClickHouse у вас уже установлен; если нет, обратитесь к [руководству по установке](/ru/get-started/setup/install)
+</Note>
+
+<div id="asking-clickhouse-questions-in-natural-language">
+  ## Как задавать вопросы ClickHouse на естественном языке
+</div>
+
+Теперь пора начать задавать вопросы!
+
+Возможность преобразования текста в SQL — это, по сути, инструмент для разовой генерации запросов. Поскольку он не сохраняет историю диалога, добавляйте в вопрос как можно больше полезного контекста. Указывайте, в частности:
+
+Периоды времени или диапазоны дат
+Какой анализ вам нужен (средние значения, итоги, ранжирование и т. д.)
+Любые критерии фильтрации
+
+<div id="finding-expensive-housing-markets">
+  ### Поиск дорогих рынков жилья
+</div>
+
+Давайте начнём с вопроса о ценах на жильё. В Песочнице ClickHouse есть набор данных о ценах на жильё в Великобритании, который ИИ найдёт автоматически:
+
+```sql
+?? Can you tell me the most expensive place to buy a house in 2021?;
+```
+
+Как только мы нажмём Enter, мы увидим, как ИИ рассуждает, пытаясь ответить на наш вопрос.
+
+```text
+• Запуск генерации SQL с помощью ИИ с обнаружением схемы...
+─────────────────────────────────────────────────
+🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QpQd35ZD8HM9QSYFZuQ8Wh
+🔧 Calling: list_databases [toolu_01...]
+🧠 thinking✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🔧 Calling: list_databases [toolu_01...]
+✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_016DxK8SMVKGrUPfFwi43AzE
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+🧠 thinking.✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_015giF12wm619beNGC5aTrmw
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+🧠 thinking..✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01HxT1HKbaTT3165Wx5bDtY9
+─────────────────────────────────────────────────
+• ✨ SQL-запрос успешно сгенерирован!
+:) SELECT     town,     district,     county,     round(avg(price), 2) as avg_price,     count() as total_sales FROM uk.uk_price_paid WHERE date >= '2021-01-01' AND date <= '2021-12-31' GROUP BY     town,     district,     county HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10
+```
+
+ИИ выполняет следующие шаги:
+
+1. Обнаружение схемы — исследует доступные базы данных и таблицы
+2. Анализ таблиц — изучает структуру релевантных таблиц
+3. Генерация запроса — создает SQL на основе вашего вопроса и обнаруженной схемы
+
+Мы видим, что таблица `uk_price_paid` действительно была найдена и для нас был сгенерирован запрос, который можно выполнить.
+Если выполнить этот запрос, мы увидим следующий вывод:
+
+```text
+┌─town───────────┬─district───────────────┬─county──────────┬──avg_price─┬─total_sales─┐
+│ ILKLEY         │ HARROGATE              │ NORTH YORKSHIRE │    4310200 │          10 │
+│ LONDON         │ CITY OF LONDON         │ GREATER LONDON  │ 4008117.32 │         311 │
+│ LONDON         │ CITY OF WESTMINSTER    │ GREATER LONDON  │ 2847409.81 │        3984 │
+│ LONDON         │ KENSINGTON AND CHELSEA │ GREATER LONDON  │  2331433.1 │        2594 │
+│ EAST MOLESEY   │ RICHMOND UPON THAMES   │ GREATER LONDON  │ 2244845.83 │          12 │
+│ LEATHERHEAD    │ ELMBRIDGE              │ SURREY          │ 2051836.42 │         102 │
+│ VIRGINIA WATER │ RUNNYMEDE              │ SURREY          │ 1914137.53 │         169 │
+│ REIGATE        │ MOLE VALLEY            │ SURREY          │ 1715780.89 │          18 │
+│ BROADWAY       │ TEWKESBURY             │ GLOUCESTERSHIRE │ 1633421.05 │          19 │
+│ OXFORD         │ SOUTH OXFORDSHIRE      │ OXFORDSHIRE     │ 1628319.07 │         405 │
+└────────────────┴────────────────────────┴─────────────────┴────────────┴─────────────┘
+```
+
+Если мы хотим задать уточняющие вопросы, нам нужно каждый раз формулировать вопрос заново.
+
+<div id="finding-expensive-properties-in-greater-london">
+  ### Поиск дорогой недвижимости в Большом Лондоне
+</div>
+
+Поскольку эта возможность не сохраняет историю диалога, каждый запрос должен быть самодостаточным. Задавая уточняющие вопросы, нужно приводить полный контекст, а не ссылаться на предыдущие запросы.
+Например, просмотрев предыдущие результаты, мы можем захотеть сосредоточиться именно на объектах недвижимости в Большом Лондоне. Вместо вопроса &quot;А как насчёт Большого Лондона?&quot; нужно включить полный контекст:
+
+```sql
+?? Can you tell me the most expensive place to buy a house in Greater London across the years?;
+```
+
+Обратите внимание, что ИИ проходит тот же процесс поиска, хотя только что проанализировал эти данные:
+
+```text
+• Запуск генерации SQL с помощью ИИ с обнаружением схемы...
+─────────────────────────────────────────────────
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_012m4ayaSHTYtX98gxrDy1rz
+🔧 Calling: list_databases [toolu_01...]
+✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🔧 Calling: list_databases [toolu_01...]
+🧠 thinking.✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01KU4SZRrJckutXUzfJ4NQtA
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+🧠 thinking..✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01X9CnxoBpbD2xj2UzuRy2is
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+🧠 thinking.✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QTMypS1XuhjgVpDir7N9wD
+─────────────────────────────────────────────────
+• ✨ SQL-запрос успешно сгенерирован!
+:) SELECT     district,     toYear(date) AS year,     round(avg(price), 2) AS avg_price,     count() AS total_sales FROM uk.uk_price_paid WHERE county = 'GREATER LONDON' GROUP BY district, year HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10;
+```
+
+Это формирует более точный запрос, который отбирает данные именно по Большому Лондону и разбивает результаты по годам.
+Результат выполнения запроса показан ниже:
+
+```text
+┌─district────────────┬─year─┬───avg_price─┬─total_sales─┐
+│ CITY OF LONDON      │ 2019 │ 14504772.73 │         299 │
+│ CITY OF LONDON      │ 2017 │  6351366.11 │         367 │
+│ CITY OF LONDON      │ 2016 │  5596348.25 │         243 │
+│ CITY OF LONDON      │ 2023 │  5576333.72 │         252 │
+│ CITY OF LONDON      │ 2018 │  4905094.54 │         523 │
+│ CITY OF LONDON      │ 2021 │  4008117.32 │         311 │
+│ CITY OF LONDON      │ 2025 │  3954212.39 │          56 │
+│ CITY OF LONDON      │ 2014 │  3914057.39 │         416 │
+│ CITY OF LONDON      │ 2022 │  3700867.19 │         290 │
+│ CITY OF WESTMINSTER │ 2018 │  3562457.76 │        3346 │
+└─────────────────────┴──────┴─────────────┴─────────────┘
+```
+
+Сити Лондона неизменно оказывается самым дорогим районом! Вы заметите, что ИИ составил вполне корректный запрос, хотя результаты отсортированы по средней цене, а не по хронологии. Для годового анализа можно уточнить вопрос и явно попросить показать &quot;самый дорогой район в каждом году&quot;, чтобы результаты группировались иначе.

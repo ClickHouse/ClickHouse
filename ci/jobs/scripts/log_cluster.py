@@ -45,7 +45,7 @@ class LogCluster:
             "X-ClickHouse-Key": passwd,
         }
         params = {
-            "query": f"SELECT 1",
+            "query": "SELECT 1",
         }
         try:
             response = requests.post(
@@ -78,6 +78,14 @@ class LogCluster:
             "query": query,
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
+            # Override the per-user memory limit from the cluster's default
+            # profile, which otherwise aborts large INSERTs with
+            # "User memory limit exceeded" via the OvercommitTracker.
+            "max_memory_usage_for_user": 0,
+            # Parse the input on a single thread: parallel parsing buffers many
+            # chunks at once, and that peak is what crosses the shared cluster's
+            # per-user memory limit when all Build variants upload at once.
+            "input_format_parallel_parsing": 0,
         }
         if db_name:
             params["database"] = db_name
@@ -105,7 +113,7 @@ class LogCluster:
                 else:
                     break
             except Exception:
-                print(f"WARNING: LogCluster query failed with exception")
+                print("WARNING: LogCluster query failed with exception")
                 traceback.print_exc()
         if response is not None:
             print(

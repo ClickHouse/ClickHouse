@@ -14,7 +14,6 @@ set(DBMS_FUNCTIONS
     FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)
     if.cpp # createInternalFunctionIfOverloadResolver (Used by MultiIfToIfPass.cpp)
     multiIf.cpp # createInternalMultiIfOverloadResolver (Used by IfChainToMultiIfPass.cpp)
-    multiMatchAny.cpp # createInternalMultiMatchAnyOverloadResolver (Used by ConvertOrLikeChainPass.cpp)
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
@@ -53,6 +52,7 @@ set(DBMS_FUNCTIONS
     FunctionTopKFilter.cpp # createInternalFunctionTopKFilterResolver used from optimizeTopK.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
     generateSnowflakeID.cpp
+    FunctionGenerateRandomStructure.cpp # FunctionGenerateRandomStructure::generateRandomDataType (Used by StorageGenerateRandom.cpp)
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
@@ -134,6 +134,10 @@ if (TARGET ch_contrib::h3)
     list (APPEND PRIVATE_LIBS ch_contrib::h3)
 endif()
 
+if (TARGET ch_contrib::wagyu)
+    list (APPEND PRIVATE_LIBS ch_contrib::wagyu)
+endif()
+
 if (TARGET ch_contrib::vectorscan)
     list (APPEND PRIVATE_LIBS ch_contrib::vectorscan)
 endif()
@@ -162,9 +166,6 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_url>)
 
 add_subdirectory(array)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_array>)
-
-add_subdirectory(Kusto)
-list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_kusto>)
 
 add_subdirectory(TimeSeries)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_time_series>)

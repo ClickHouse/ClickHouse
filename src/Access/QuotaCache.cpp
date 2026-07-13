@@ -4,6 +4,10 @@
 #include <Access/QuotaUsage.h>
 #include <Access/AccessControl.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -11,6 +15,12 @@
 #include <boost/range/algorithm/stable_sort.hpp>
 #include <boost/smart_ptr/make_shared.hpp>
 
+
+namespace ProfileEvents
+{
+    extern const Event QuotaCacheRecalculations;
+    extern const Event QuotaCacheRecalculationMicroseconds;
+}
 
 namespace DB
 {
@@ -279,29 +289,38 @@ void QuotaCache::ensureAllQuotasRead()
     /// `mutex` is already locked.
     if (all_quotas_read)
         return;
-    all_quotas_read = true;
 
     subscription = access_control.subscribeForChanges<Quota>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
+        [this](const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            if (entity)
-                quotaAddedOrChanged(id, typeid_cast<QuotaPtr>(entity));
-            else
-                quotaRemoved(id);
+            std::lock_guard lock{mutex};
+            for (const auto & change : changes)
+            {
+                if (change.entity)
+                    quotaAddedOrChanged(change.id, typeid_cast<QuotaPtr>(change.entity));
+                else
+                    quotaRemoved(change.id);
+            }
+            chooseQuotaToConsumeIfNeeded();
         });
 
+    /// Start clean: a previous attempt may have thrown mid-scan.
+    all_quotas.clear();
     for (const UUID & quota_id : access_control.findAll<Quota>())
     {
         auto quota = access_control.tryRead<Quota>(quota_id);
         if (quota)
             all_quotas.emplace(quota_id, QuotaInfo(quota, quota_id));
     }
+
+    /// Set only after the subscription and the initial read succeed.
+    all_quotas_read = true;
 }
 
 
 void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_quotas.find(quota_id);
     if (it == all_quotas.end())
     {
@@ -315,15 +334,26 @@ void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_pt
 
     auto & info = it->second;
     info.setQuota(new_quota, quota_id);
-    chooseQuotaToConsume();
+    need_choose_quota = true;
 }
 
 
 void QuotaCache::quotaRemoved(const UUID & quota_id)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     all_quotas.erase(quota_id);
+    need_choose_quota = true;
+}
+
+
+void QuotaCache::chooseQuotaToConsumeIfNeeded()
+{
+    /// `mutex` is already locked.
+    if (!need_choose_quota)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
     chooseQuotaToConsume();
+    need_choose_quota = false;
 }
 
 
@@ -331,6 +361,8 @@ void QuotaCache::chooseQuotaToConsume()
 {
     /// `mutex` is already locked.
 
+    ProfileEvents::increment(ProfileEvents::QuotaCacheRecalculations);
+    Stopwatch watch;
     for (auto i = enabled_quotas.begin(), e = enabled_quotas.end(); i != e;)
     {
         auto elem = i->second.lock();
@@ -342,62 +374,55 @@ void QuotaCache::chooseQuotaToConsume()
             ++i;
         }
     }
+
+    const auto elapsed_ms = watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::QuotaCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
+    /// O(enabled sets * quotas), under `mutex` that the ContextAccess build path also takes.
+    if (elapsed_ms >= 1000)
+        LOG_DEBUG(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
+    else
+        LOG_TRACE(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
 }
 
 void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_client_key_empty)
 {
     /// `mutex` is already locked.
-    boost::shared_ptr<const Intervals> intervals;
+
+    /// A user/context may be governed by several quotas at once. Collect every quota whose
+    /// `APPLY TO` matches; all of them are enforced together by `EnabledQuota`.
+    auto new_quotas = boost::make_shared<Quotas>();
     for (auto & info : all_quotas | boost::adaptors::map_values)
     {
-        if (info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
-        {
-            String key = info.calculateKey(enabled, throw_if_client_key_empty);
-            intervals = info.getOrBuildIntervals(key);
+        if (!info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
+            continue;
 
-            /// For NORMALIZED_QUERY_HASH keyed quotas, set up a resolver callback
-            /// so that EnabledQuota can lazily resolve intervals per query hash.
-            /// Both interval_resolver and resolved_intervals_cache are protected
-            /// by resolved_intervals_mutex to avoid data races with concurrent readers.
+        String key = info.calculateKey(enabled, throw_if_client_key_empty);
+        auto single = std::make_unique<SingleQuota>();
+        single->intervals = info.getOrBuildIntervals(key);
+
+        /// For NORMALIZED_QUERY_HASH keyed quotas, set up a resolver callback
+        /// so that EnabledQuota can lazily resolve intervals per query hash.
+        if (info.quota->key_type == QuotaKeyType::NORMALIZED_QUERY_HASH)
+        {
+            UUID found_quota_id = info.quota_id;
+            single->interval_resolver = [this, found_quota_id](const String & hash_key) -> boost::shared_ptr<const Intervals>
             {
-                std::lock_guard resolved_lock(enabled.resolved_intervals_mutex);
-                if (info.quota->key_type == QuotaKeyType::NORMALIZED_QUERY_HASH)
-                {
-                    UUID found_quota_id = info.quota_id;
-                    enabled.interval_resolver = [this, found_quota_id](const String & hash_key) -> boost::shared_ptr<const Intervals>
-                    {
-                        std::lock_guard lock(mutex);
-                        auto it = all_quotas.find(found_quota_id);
-                        if (it == all_quotas.end())
-                            return nullptr;
-                        return it->second.getOrBuildIntervals(hash_key);
-                    };
-                }
-                else
-                {
-                    enabled.interval_resolver = nullptr;
-                }
-                enabled.resolved_intervals_cache.clear();
-            }
-
-            break;
+                std::lock_guard lock(mutex);
+                auto it = all_quotas.find(found_quota_id);
+                if (it == all_quotas.end())
+                    return nullptr;
+                return it->second.getOrBuildIntervals(hash_key);
+            };
         }
+
+        new_quotas->push_back(std::move(single));
     }
 
-    if (!intervals)
-    {
-        enabled.empty = true;
-        enabled.intervals = boost::make_shared<Intervals>(); /// No quota == no limits.
-        {
-            std::lock_guard resolved_lock(enabled.resolved_intervals_mutex);
-            enabled.interval_resolver = nullptr;
-        }
-    }
-    else
-    {
-        enabled.intervals.store(intervals);
-        enabled.empty = false;
-    }
+    /// Publish the new set: store `quotas` (always non-null, possibly empty) before updating the
+    /// `empty` flag, so a concurrent reader never observes `empty == false` with a stale set.
+    bool is_empty = new_quotas->empty();
+    enabled.quotas.store(new_quotas);
+    enabled.empty = is_empty;
 }
 
 

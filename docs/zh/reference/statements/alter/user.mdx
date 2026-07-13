@@ -1,0 +1,119 @@
+---
+description: 'USER 参考文档'
+sidebarTitle: 'USER'
+slug: /sql-reference/statements/alter/user
+title: 'ALTER USER'
+doc_type: 'reference'
+---
+
+更改 ClickHouse 用户账户。
+
+语法：
+
+```sql
+ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]] 
+    [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime]
+    [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
+    [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [DROP ALL PROFILES]
+    [DROP ALL SETTINGS]
+    [DROP SETTINGS variable [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
+```
+
+要使用 `ALTER USER`，您必须具有 [ALTER USER](/zh/reference/statements/grant#access-management) 权限。
+
+<div id="grantees-clause">
+  ## GRANTEES 子句
+</div>
+
+指定哪些用户或角色可以从该用户处接收[权限](/zh/reference/statements/grant#privileges)，前提是该用户也已通过 [GRANT OPTION](/zh/reference/statements/grant#granting-privilege-syntax) 获得所有必需的访问权限。`GRANTEES` 子句的选项包括：
+
+* `user` — 指定该用户可以向其授予权限的用户。
+* `role` — 指定该用户可以向其授予权限的角色。
+* `ANY` — 该用户可以向任何人授予权限。这是默认设置。
+* `NONE` — 该用户不能向任何人授予权限。
+
+你可以使用 `EXCEPT` 表达式排除任意用户或角色。例如，`ALTER USER user1 GRANTEES ANY EXCEPT user2`。这表示，如果 `user1` 拥有一些通过 `GRANT OPTION` 授予的权限，它就能够将这些权限授予除 `user2` 之外的任何人。
+
+<div id="examples">
+  ## 示例
+</div>
+
+将已分配的角色设置为默认角色：
+
+```sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+如果此前未向用户分配任何角色，ClickHouse 会抛出异常。
+
+将所有已分配的角色设为默认角色：
+
+```sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+如果今后为用户分配了某个角色，它会自动成为默认角色。
+
+将除 `role1` 和 `role2` 之外的所有已分配角色都设为默认角色：
+
+```sql
+ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+允许 `john` 账户对应的用户将其权限授予 `jack` 账户对应的用户：
+
+```sql
+ALTER USER john GRANTEES jack;
+```
+
+在保留用户现有身份验证方法的同时，新增身份验证方法：
+
+```sql
+ALTER USER user1 ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+```
+
+注意：
+
+1. 较旧版本的 ClickHouse 可能不支持多种身份验证方法的语法。因此，如果 ClickHouse 服务器中存在此类用户，并且被降级到不支持该语法的版本，这些用户将无法再使用，某些与用户相关的操作也会失效。为了平稳降级，必须在降级前将所有用户都设置为只包含一种身份验证方法。或者，如果服务器未按正确流程完成降级，则应删除这些有问题的用户。
+2. 出于安全原因，`no_password` 不能与其他身份验证方法共存。
+   因此，无法 `ADD` 一个 `no_password` 身份验证方法。下面的查询将报错：
+
+```sql
+ALTER USER user1 ADD IDENTIFIED WITH no_password
+```
+
+如果你想移除某个用户现有的身份验证方法并改用 `no_password`，则必须使用下面的替换形式进行指定。
+
+重置身份验证方法，并添加查询中指定的方法 (即使用前导 `IDENTIFIED` 且不带 `ADD` 关键字时的效果) ：
+
+```sql
+ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+```
+
+重置身份验证方法，并保留最近添加的一种：
+
+```sql
+ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
+```
+
+<div id="valid-until-clause">
+  ## VALID UNTIL 子句
+</div>
+
+允许为身份验证方法指定过期日期，也可选择指定具体时间。它接受字符串参数。建议日期时间使用 `YYYY-MM-DD [hh:mm:ss] [timezone]` 格式。默认情况下，该参数等于 `'infinity'`。
+`VALID UNTIL` 子句只能与身份验证方法一同指定，查询中未指定任何身份验证方法的情况除外。在这种情况下，`VALID UNTIL` 子句将应用于所有现有的身份验证方法。
+
+示例：
+
+* `ALTER USER name1 VALID UNTIL '2025-01-01'`
+* `ALTER USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
+* `ALTER USER name1 VALID UNTIL 'infinity'`
+* `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL'2025-01-01''`

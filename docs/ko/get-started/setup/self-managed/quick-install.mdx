@@ -1,0 +1,100 @@
+---
+description: 'curl 설치 스크립트를 사용해 ClickHouse를 빠르게 설치합니다'
+keywords: ['ClickHouse', '설치', '빠른', 'curl']
+sidebarTitle: '빠른 설치'
+slug: /install/quick-install
+title: '빠른 설치'
+hide_title: true
+doc_type: 'guide'
+---
+
+프로덕션 환경용으로 ClickHouse를 설치할 필요가 없다면, curl을 사용해 설치 스크립트를 실행할 수 있습니다. 이 스크립트는 운영 체제에 맞는 바이너리를 자동으로 선택합니다.
+
+<Steps>
+  <Step>
+    ## curl을 사용하여 ClickHouse 설치
+
+    다음 명령을 실행하여 운영 체제용 단일 바이너리를 다운로드하십시오.
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    Linux 및 macOS에서는 [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)도
+    `~/.local/bin`에 설치되며 (`chctl` 심볼릭 링크 포함), 이를 통해 로컬 ClickHouse
+    버전과 서버를 관리할 수 있습니다.
+
+    `clickhousectl` 없이 `clickhouse` 바이너리만 설치하려면
+    `CLICKHOUSE_ONLY=1`을 설정하십시오:
+
+    ```bash
+    curl https://clickhouse.com/ | CLICKHOUSE_ONLY=1 sh
+    ```
+
+    <Note>
+      Mac 사용자: 바이너리 개발자를 확인할 수 없다는 오류가 발생하면 [여기](/ko/resources/support-center/knowledge-base/troubleshooting/fix-developer-verification-error-in-macos)를 참조하십시오.
+    </Note>
+  </Step>
+
+  <Step>
+    ## clickhouse-local 시작
+
+    `clickhouse-local`을 사용하면 별도 구성 없이 ClickHouse의 강력한 SQL 구문으로
+    로컬 및 원격 파일을 처리할 수 있습니다. 테이블 데이터는 임시 위치에 저장되므로
+    `clickhouse-local`을 다시 시작하면
+    이전에 생성한 테이블은 더 이상 사용할 수 없습니다.
+
+    다음 명령을 실행하여 [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local)을 시작하십시오:
+
+    ```bash
+    ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## clickhouse-server 시작
+
+    데이터를 영구적으로 저장하려면 `clickhouse-server`를 실행해야 합니다. 다음 명령으로
+    ClickHouse 서버를 시작할 수 있습니다:
+
+    ```bash
+    ./clickhouse server
+    ```
+  </Step>
+
+  <Step>
+    ## clickhouse-client 시작
+
+    서버가 실행 중이면 새 터미널 창을 열고 다음 명령을 실행하여
+    `clickhouse-client`를 시작하십시오:
+
+    ```bash
+    ./clickhouse client
+    ```
+
+    다음과 비슷한 출력이 표시됩니다:
+
+    ```response
+    ./clickhouse client
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    테이블 데이터는 현재 디렉터리에 저장되며 ClickHouse 서버를 다시 시작한 후에도
+    계속 사용할 수 있습니다. 필요한 경우
+    `./clickhouse server`에 추가 명령줄 인수로 `-C config.xml`을 전달하고
+    설정 파일에서 추가 구성을
+    제공할 수 있습니다. 사용 가능한 모든 구성 설정은 [여기](/ko/reference/settings/server-settings/settings)와
+    [예시 설정 파일
+    template](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)에 문서화되어 있습니다.
+
+    이제 ClickHouse에 SQL 명령을 보낼 준비가 되었습니다!
+
+    <Tip>
+      [빠른 시작](/ko/get-started/setup/install)에서는 테이블을 생성하고 데이터를 삽입하는 단계를 안내합니다.
+    </Tip>
+  </Step>
+</Steps>

@@ -162,6 +162,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
         const auto & [key, value] = *value_override;
         collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
+        collection_copy->markQueryOverridden(key);
     }
 
     if (dependent_table_id)
