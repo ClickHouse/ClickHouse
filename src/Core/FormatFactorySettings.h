@@ -756,9 +756,11 @@ See also:
 Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
 corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
     DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
-Read an unquoted number for a `DateTime`/`DateTime64` column in the `JSON` and `Values`/`Quoted` input paths
+Read a bare unquoted integer for a `DateTime`/`DateTime64` column in the `JSON` and `Values`/`Quoted` input paths
 (as well as in `JSONExtract` and typed `JSON`) as the raw underlying value — seconds for `DateTime`,
-ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
+ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds. This affects only bare
+integers: a number with a fractional or exponent part is always a Unix timestamp in seconds, regardless of this
+setting.
 
 Disabled by default: in these paths an unquoted number is a Unix timestamp in seconds (with optional sub-second
 precision), consistent with the `Values` format, `CAST` and `toDateTime64`. Enable it (or use `SET compatibility = '26.6'`)
