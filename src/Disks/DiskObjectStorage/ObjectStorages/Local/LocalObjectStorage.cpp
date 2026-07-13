@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <fcntl.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -38,7 +39,11 @@ namespace ErrorCodes
     extern const int CANNOT_RMDIR;
     extern const int READONLY;
     extern const int FAULT_INJECTED;
+<<<<<<< HEAD
     extern const int PATH_ACCESS_DENIED;
+=======
+    extern const int FILE_ALREADY_EXISTS;
+>>>>>>> b1449ad1752 (start)
 }
 
 LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
@@ -219,9 +224,10 @@ public:
     WriteBufferFromFileWithLogging(
         const String & file_path_,
         size_t buf_size,
+        int flags,
         const String & bucket_,
         BlobStorageLogWriterPtr blob_log_)
-        : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_path_, buf_size))
+        : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_path_, buf_size, flags))
         , file_path(file_path_)
         , bucket(bucket_)
         , blob_log(std::move(blob_log_))
@@ -286,7 +292,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     WriteMode mode,
     std::optional<ObjectAttributes> /* attributes */,
     size_t buf_size,
-    const WriteSettings & /* write_settings */)
+    const WriteSettings & write_settings)
 {
     throwIfReadonly();
 
@@ -300,15 +306,32 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     /// So let's create it.
     fs::create_directories(fs::path(resolved_path).parent_path());
 
+    int flags = -1;
+    if (!write_settings.object_storage_write_if_none_match.empty())
+        flags = O_WRONLY | O_CREAT | O_EXCL;
+
     auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
     if (blob_storage_log)
         blob_storage_log->local_path = object.local_path;
 
-    return std::make_unique<WriteBufferFromFileWithLogging>(
-        resolved_path,
-        buf_size,
-        settings.key_prefix,
-        std::move(blob_storage_log));
+    try
+    {
+        return std::make_unique<WriteBufferFromFileWithLogging>(
+            object.remote_path,
+            buf_size,
+            flags,
+            settings.key_prefix,
+            std::move(blob_storage_log));
+    }
+    catch (const ErrnoException & e)
+    {
+        if (flags != -1 && e.getErrno() == EEXIST)
+            throw Exception(
+                ErrorCodes::FILE_ALREADY_EXISTS,
+                "Object {} already exists, PreconditionFailed for If-None-Match",
+                object.remote_path);
+        throw;
+    }
 }
 
 void LocalObjectStorage::removeObject(const StoredObject & object) const
