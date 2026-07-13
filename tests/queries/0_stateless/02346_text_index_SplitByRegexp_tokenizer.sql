@@ -13,11 +13,11 @@ CREATE TABLE tab_regex_simple
 (
     id UInt64,
     doc String,
-    INDEX idx doc TYPE text(tokenizer = splitByRegexp(',')) GRANULARITY 1
+    INDEX idx doc TYPE text(tokenizer = splitByRegexp(','))
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
+SETTINGS index_granularity = 2;
 
 INSERT INTO tab_regex_simple VALUES (1, 'apple,banana,cherry'), (2, 'banana,date'), (3, 'cherry,elderberry'), (4, 'fig,grape');
 
@@ -43,11 +43,11 @@ CREATE TABLE tab_regex_class
 (
     id UInt64,
     doc String,
-    INDEX idx doc TYPE text(tokenizer = splitByRegexp('[ ,;]')) GRANULARITY 1
+    INDEX idx doc TYPE text(tokenizer = splitByRegexp('[ ,;]'))
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
+SETTINGS index_granularity = 2;
 
 INSERT INTO tab_regex_class VALUES (1, 'red green;blue'), (2, 'green,yellow orange'), (3, 'blue;purple,pink');
 
@@ -75,11 +75,11 @@ CREATE TABLE tab_regex_negation
 (
     id UInt64,
     doc String,
-    INDEX idx doc TYPE text(tokenizer = splitByRegexp('[^a-z]+')) GRANULARITY 1
+    INDEX idx doc TYPE text(tokenizer = splitByRegexp('[^a-z]+'))
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
+SETTINGS index_granularity = 2;
 
 INSERT INTO tab_regex_negation VALUES (1, 'foo123bar456baz'), (2, 'hello WORLD test'), (3, 'qux-quux_corge');
 
@@ -110,11 +110,11 @@ CREATE TABLE tab_special_tokens
 (
     id UInt64,
     description String,
-    INDEX idx description TYPE text(tokenizer = splitByRegexp('[^\\p{L}\\p{N}#+]+')) GRANULARITY 1
+    INDEX idx description TYPE text(tokenizer = splitByRegexp('[^\\p{L}\\p{N}#+]+'))
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
+SETTINGS index_granularity = 2;
 
 INSERT INTO tab_special_tokens VALUES
     (1, 'We use C++ for our backend systems'),
@@ -144,11 +144,11 @@ CREATE TABLE tab_phrase
 (
     id UInt64,
     description String,
-    INDEX idx description TYPE text(tokenizer = splitByRegexp('[^\\p{L}\\p{N}#+]+'), positions = 1) GRANULARITY 1
+    INDEX idx description TYPE text(tokenizer = splitByRegexp('[^\\p{L}\\p{N}#+]+'), support_phrase_search = 1)
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 2, min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1, allow_experimental_text_index_positions = 1;
+SETTINGS index_granularity = 2, allow_experimental_text_index_phrase_search = 1;
 
 INSERT INTO tab_phrase VALUES
     (1, 'we use C++ and go'),

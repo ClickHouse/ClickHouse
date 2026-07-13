@@ -30,10 +30,10 @@ public:
         SplitByNonAlpha,
         Ngrams,
         SplitByString,
+        SplitByRegexp,
         Array,
         SparseGrams,
         AsciiCJK,
-        SplitByRegexp,
     };
 
     ITokenizer() = delete;
