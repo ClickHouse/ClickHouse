@@ -185,6 +185,7 @@ void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -254,6 +255,14 @@ void optimizeTreeSecondPass(
         });
     }
 
+    /// Compute aggregation hash-table preallocation keys here, BEFORE join runtime filters are added
+    /// in the traversal below. A join runtime filter injects a per-execution-random constant into the
+    /// probe-side Filter (see `joinRuntimeFilter.cpp`); hashing a plan that contains it would make an
+    /// aggregation's key differ across executions of the same query and defeat the size-stats cache.
+    /// Join steps avoid this for exactly the same reason by computing their key before the filter is
+    /// added. The plan here is already deterministic (post first pass and subplan materialization).
+    setAggregationHashTableCacheKeys(optimization_settings, root);
+
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -290,6 +299,16 @@ void optimizeTreeSecondPass(
             });
     }
 
+    /// Run after runtime filter push-down so that chains of joins are detected correctly.
+    if (optimization_settings.min_columns_for_join_lazy_indexing > 0)
+    {
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
+            {
+                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
+            });
+    }
+
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
     {
@@ -309,6 +328,10 @@ void optimizeTreeSecondPass(
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
     if (optimization_settings.make_distributed_plan)
         checkDistributedReadSupported(root);
+    /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
+    /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
+    if (optimization_settings.make_distributed_plan)
+        validateDistributedPlanBucketCounts(optimization_settings);
     const bool make_distributed_plan = optimization_settings.make_distributed_plan;
 
     traverseQueryPlan(stack, root,
@@ -569,6 +592,11 @@ void optimizeTreeSecondPass(
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
+
+    /// Push LIMIT into aggregation-in-order when ORDER BY matches GROUP BY.
+    /// Must run after applyOrder, which converts SortingStep to FinishSorting.
+    if (optimization_settings.optimize_aggregation_in_order_limit)
+        optimizeLimitForAggregationInOrder(root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);

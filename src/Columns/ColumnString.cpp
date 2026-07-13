@@ -1,6 +1,7 @@
 #include <Columns/ColumnString.h>
 
 #include <Columns/Collator.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsNumber.h>
@@ -799,6 +800,22 @@ int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
         reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]), rhs.sizeAt(m));
 }
 
+size_t ColumnString::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int /*nan_direction_hint*/) const
+{
+    if (begin >= end)
+        return begin;
+
+    /// Compare length first then bytes if needed.
+    const size_t ref_size = sizeAt(begin);
+    const UInt8 * ref_data = chars.data() + offsetAt(begin);
+    auto equals = [&](size_t i)
+    { return sizeAt(i) == ref_size && 0 == memcmpSmallAllowOverflow15(chars.data() + offsetAt(i), ref_data, ref_size); };
+
+    /// A string comparison reads offsets and bytes, which is relatively expensive, so keep the linear probe short.
+    static constexpr size_t linear_probe = 8;
+    return findEqualRangeEndAssumeSorted(begin, end, linear_probe, equals);
+}
+
 void ColumnString::protect()
 {
     getChars().protect();
@@ -832,7 +849,12 @@ void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     size_t chars_begin = offsetAt(begin);
     size_t chars_end = offsetAt(end);
     hash.update(reinterpret_cast<const char *>(&chars[chars_begin]), chars_end - chars_begin);
-    hash.update(reinterpret_cast<const char *>(&offsets[begin]), (end - begin) * sizeof(offsets[0]));
+    /// Relative offsets so equal data hashes equally regardless of position (insert deduplication).
+    for (size_t i = begin; i < end; ++i)
+    {
+        UInt64 relative_offset = offsets[i] - chars_begin;
+        hash.update(relative_offset);
+    }
 }
 
 void ColumnString::updateHashFast(SipHash & hash) const

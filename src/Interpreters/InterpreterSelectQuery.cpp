@@ -135,7 +135,6 @@ namespace Setting
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
-    extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool compile_sort_description;
@@ -646,7 +645,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
-            metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        {
+            const auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
+            metadata_snapshot = in_memory_metadata;
+        }
 
         if (options.only_analyze)
             storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
@@ -782,6 +784,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             {
                 LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
 
+                auto custom_key_metadata = storage->getInMemoryMetadataPtr(context, false);
                 parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
                     settings[Setting::parallel_replicas_count],
                     settings[Setting::parallel_replica_offset],
@@ -789,7 +792,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     {settings[Setting::parallel_replicas_mode],
                      settings[Setting::parallel_replicas_custom_key_range_lower],
                      settings[Setting::parallel_replicas_custom_key_range_upper]},
-                    storage->getInMemoryMetadataPtr(context, false)->columns,
+                    custom_key_metadata->columns,
                     context);
             }
             else if (settings[Setting::parallel_replica_offset] > 0)
@@ -1897,10 +1900,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
                 if (query.limitLength() && !query.limitBy() && !query.limit_with_ties)
                 {
-                    /// Preliminary Limits mustn't be added if there is a fractional limit/offset
-                    /// because in order to correctly calculate the number of rows to be produced
-                    /// based on the given fraction the final limit/offset processor must count the entire dataset.
-                    /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
                     LimitInfo lim_info = getLimitLengthAndOffset(query, context);
                     if (lim_info.fractional_offset == 0 && lim_info.fractional_limit == 0)
                         executePreLimit(query_plan, true);
@@ -2624,7 +2623,6 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
         && (allow_experimental_parallel_reading_from_replicas == 0)
-        && !settings[Setting::allow_experimental_query_deduplication]
         && !empty_result_for_aggregation_by_empty_set
         && storage
         && storage->supportsTrivialCountOptimization(storage_snapshot, getContext())
@@ -3565,8 +3563,6 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "LIMIT WITH TIES without ORDER BY");
             order_descr = getSortDescription(query, context);
 
-            if (lim_info.is_limit_length_negative || lim_info.is_limit_offset_negative)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
 
         if (lim_info.is_limit_length_negative && lim_info.fractional_offset > 0)
@@ -3607,7 +3603,11 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         }
         else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
-            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+            auto limit = std::make_unique<NegativeLimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, query.limit_with_ties, order_descr);
+
+            if (query.limit_with_ties)
+                limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
 
             query_plan.addStep(std::move(limit));
         }
@@ -3616,7 +3616,12 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), lim_info.limit_offset);
             query_plan.addStep(std::move(offsets_step));
 
-            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
+            auto limit = std::make_unique<NegativeLimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, 0, query.limit_with_ties, order_descr);
+
+            if (query.limit_with_ties)
+                limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
+
             query_plan.addStep(std::move(limit));
         }
         else if (!lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)

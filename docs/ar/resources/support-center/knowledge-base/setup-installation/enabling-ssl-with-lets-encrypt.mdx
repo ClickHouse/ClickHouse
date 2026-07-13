@@ -1,0 +1,180 @@
+---
+title: كيفية تفعيل SSL على خادم ClickHouse واحد باستخدام Let's Encrypt
+description: تعرّف على كيفية إعداد SSL لخادم ClickHouse واحد باستخدام Let's Encrypt، بما في ذلك إصدار الشهادات، والتهيئة، والتحقق.
+date: 2024-12-11
+tags: ['الأمان والمصادقة']
+keywords: ['SSL', 'Let/`s Encrypt']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* اختصار */}
+
+<div id="steps-to-follow">
+  ## الخطوات التي يجب اتباعها
+</div>
+
+يمكن استخدام الخطوات التالية لتمكين SSL لخادم ClickHouse واحد باستخدام [Let&#39;s Encrypt](https://letsencrypt.org/)، وهي جهة إصدار شهادات (CA) مجانية وآلية ومفتوحة، صُممت لتسهيل تأمين مواقع الويب باستخدام HTTPS على الجميع. ومن خلال أتمتة عملية إصدار الشهادات وتجديدها، تضمن Let&#39;s Encrypt بقاء مواقع الويب آمنة من دون الحاجة إلى تدخل يدوي.
+
+<Note>
+  نفترض أن ClickHouse قد جرى تثبيته في مواقع الحزم القياسية في الدليل التالي. نستخدم النطاق `product-test-server.clickhouse-dev.com` في جميع الأمثلة. استبدل ذلك بنطاقك حسب الاقتضاء.
+</Note>
+
+1. تحقّق من وجود سجل DNS من النوع `A` أو `AAAA` يشير إلى خادمك. ويمكنك إجراء ذلك باستخدام أداة Linux ‏`dig.` على سبيل المثال، يكون الرد الخاص بـ `product-test-server.clickhouse-dev.com` عند استخدام خادم DNS الخاص بـ Cloudflare ‏`1.1.1.1`:
+
+<br />
+
+```bash
+dig @1.1.1.1 product-test-server.clickhouse-dev.com
+
+; <<>> DiG 9.18.28-0ubuntu0.22.04.1-Ubuntu <<>> @1.1.1.1 product-test-server.clickhouse-dev.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 22315
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+;; QUESTION SECTION:
+;product-test-server.clickhouse-dev.com.    IN A
+
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+
+;; Query time: 52 msec
+;; SERVER: 1.1.1.1#53(1.1.1.1) (UDP)
+;; WHEN: Thu Dec 12 09:37:33 UTC 2024
+;; MSG SIZE  rcvd: 83
+```
+
+لاحظ القسم أدناه الذي يؤكد وجود سجل من النوع A.
+
+```bash
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+```
+
+2. افتح المنفذ 80 على خادمك. سيُستخدم هذا المنفذ للتجديد التلقائي للشهادة باستخدام بروتوكول ACME مع certbot. في AWS، يمكن تنفيذ ذلك من خلال [تعديل مجموعة الأمان المرتبطة بالمثيل](https://repost.aws/knowledge-center/connect-http-https-ec2).
+
+<br />
+
+<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="إعداد مجموعة الأمان في AWS يوضح أن المنفذ 80 مفتوح" border />
+
+3. ثبّت [`certbot`](https://certbot.eff.org/instructions)، على سبيل المثال باستخدام `apt`
+
+<br />
+
+```bash
+sudo apt install certbot
+```
+
+4. احصل على شهادة SSL
+
+<br />
+
+```bash
+sudo certbot certonly
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+
+How would you like to authenticate with the ACME CA?
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+1: Spin up a temporary webserver (standalone)
+2: Place files in webroot directory (webroot)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel): 1
+Please enter the domain name(s) you would like on your certificate (comma and/or
+space separated) (Enter 'c' to cancel): product-test-server.clickhouse-dev.com
+Requesting a certificate for product-test-server.clickhouse-dev.com
+
+Successfully received certificate.
+Certificate is saved at: /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/fullchain.pem
+Key is saved at:         /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/privkey.pem
+This certificate expires on 2025-03-12.
+These files will be updated when the certificate renews.
+Certbot has set up a scheduled task to automatically renew this certificate in the background.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+If you like Certbot, please consider supporting our work by:
+ * Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+ * Donating to EFF:                    https://eff.org/donate-le
+```
+
+<Note>
+  لا يوجد لدينا خادم ويب قيد التشغيل على خادمنا، لذا استخدم الخيار (1) للسماح لـ Certbot باستخدام خادم ويب مؤقت مستقل.
+</Note>
+
+أدخل اسم النطاق الكامل لخادمك، مثل `product-test-server.clickhouse-dev.com`، عندما يُطلب منك ذلك.
+
+<Note>
+  لدى Let&#39;s Encrypt سياسة بعدم إصدار شهادات لأنواع معيّنة من النطاقات، مثل النطاقات التي ينشئها موفرو السحابة العامة (على سبيل المثال، نطاقات AWS &#42;.compute.amazonaws.com). وتُعد هذه النطاقات بنية تحتية مشتركة، لذلك تُحظر لأسباب تتعلق بالأمان ومنع إساءة الاستخدام.
+</Note>
+
+5. انسخ الشهادات إلى دليل ClickHouse.
+
+<br />
+
+```bash
+echo '* * * * * root cp -u /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/*.pem /etc/clickhouse-server/ && chown clickhouse:clickhouse /etc/clickhouse-server/*.pem && chmod 400 /etc/clickhouse-server/*.pem' | sudo tee /etc/cron.d/copy-certificates
+```
+
+يُنشئ هذا الأمر مهمة cron لأتمتة إدارة شهادات SSL من Let&#39;s Encrypt لخادم ClickHouse. وتعمل كل دقيقة بصلاحيات المستخدم root، إذ تنسخ ملفات ‎.pem من دليل Let&#39;s Encrypt إلى دليل تهيئة خادم ClickHouse، ولكن فقط إذا كانت هذه الملفات قد حُدِّثت. وبعد النسخ، يضبط البرنامج النصي ملكية الملفات لتكون للمستخدم والمجموعة clickhouse، بما يضمن امتلاك الخادم صلاحية الوصول المطلوبة. كما يضبط أذونات قراءة فقط آمنة (`chmod 400`) على الملفات المنسوخة للحفاظ على مستوى صارم من أمان الملفات. ويضمن ذلك أن خادم ClickHouse يتمكن دائمًا من الوصول إلى أحدث شهادات SSL دون الحاجة إلى تدخل يدوي، مع الحفاظ على الأمان وتقليل العبء التشغيلي.
+
+6. اضبط استخدام هذه الشهادات في clickhouse-server.
+
+<br />
+
+```bash
+echo "https_port: 8443
+tcp_port_secure: 9440
+openSSL:
+ server:
+ certificateFile: '/etc/clickhouse-server/fullchain.pem'
+ privateKeyFile: '/etc/clickhouse-server/privkey.pem'
+ disableProtocols: 'sslv2,sslv3,tlsv1,tlsv1_1'" | sudo tee /etc/clickhouse-server/config.d/ssl.yaml
+```
+
+7. أعد تشغيل خادم ClickHouse
+
+<br />
+
+```bash
+sudo clickhouse restart
+```
+
+8. تحقّق من أن ClickHouse يمكنه الاتصال عبر SSL
+
+<br />
+
+```bash
+curl https://product-test-server.clickhouse-dev.com:8443/
+
+Ok.
+```
+
+لكي تنجح هذه الخطوة الأخيرة، قد تحتاج إلى التأكد من أن المنفذ 8443 متاح للوصول، مثلًا بإضافته إلى مجموعة الأمان الخاصة بك في AWS. أو، إذا كنت تريد الوصول إلى ClickHouse من الخادم فقط، فعدّل ملف hosts، أي:
+
+```bash
+echo "127.0.0.1 product-test-server.clickhouse-dev.com" | sudo tee -a /etc/hosts
+```
+
+<Warning>
+  إذا فتحت اتصالات من عناوين wildcard، فتأكد من تطبيق واحد على الأقل من الإجراءات التالية:
+
+  * أن يكون الخادم محميًا بجدار حماية وغير متاح من الشبكات غير الموثوقة؛
+  * أن يكون جميع المستخدمين مقيّدين بمجموعة فرعية من عناوين الشبكة (راجع users.xml)؛
+  * أن تكون لدى جميع المستخدمين كلمات مرور قوية، وألا تكون متاحة إلا الواجهات الآمنة (TLS)، أو ألا تُجرى الاتصالات إلا عبر واجهات TLS.
+  * أن يكون لدى المستخدمين الذين لا يملكون كلمات مرور وصول للقراءة فقط.
+
+  انظر أيضًا: https://www.shodan.io/search?query=clickhouse
+
+  يمكن استخدام المدوّنة [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http) كدليل لتأمين المثيلات العامة.
+</Warning>
+
+يجب أن يعمل ما يلي أيضًا عند الاتصال من الجهاز المحلي الذي يعمل عليه ClickHouse. للاتصال عبر `product-test-server.clickhouse-dev.com`، افتح المنفذ 9440 في:
+
+```bash
+clickhouse client --secure --user default --password <password>
+```

@@ -8,6 +8,7 @@ namespace DB
 
 static constexpr auto DBMS_DEFAULT_PORT = 9000;
 static constexpr auto DBMS_DEFAULT_SECURE_PORT = 9440;
+static constexpr auto DBMS_DEFAULT_HTTP_PORT = 8123;
 
 static constexpr auto DBMS_DEFAULT_CONNECT_TIMEOUT_SEC = 10;
 static constexpr auto DBMS_DEFAULT_SEND_TIMEOUT_SEC = 300;
@@ -115,6 +116,7 @@ static constexpr auto DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES = 1'000'000;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;
+static constexpr auto DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE = 256_MiB;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO = 0.5;
@@ -126,6 +128,9 @@ static constexpr auto DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES = 5000;
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE = 100_MiB;
 static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO = 0.5l;
+static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY = "SLRU";
+static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE = 50_MiB;
+static constexpr auto DEFAULT_ENCRYPTION_HEADER_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE = 1_GiB;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES = 1024uz;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES = 1_MiB;

@@ -273,21 +273,45 @@ namespace
                 if (ssl_certificate_credentials->getSSLCertificateSubjects().at(type).contains(subject))
                     return true;
 
-                // Wildcard support (1 only)
+                // Wildcard support (single '*' only): a '*' must match exactly one component.
+                // Certificate SAN subjects are stored with a type prefix ("DNS:" or "URI:"), so a
+                // wildcard SAN pattern must carry one of those prefixes to align with a candidate.
+                // An unprefixed SAN wildcard (e.g. a bare "*" or "*.corp.example.com") would let '*'
+                // absorb the candidate's type prefix and span DNS labels, so it matches nothing.
+                // A DNS label (a CN or a "DNS:" SAN) is one non-empty label with no '.' and no '/'.
+                // A "URI:" SAN keeps the original rule: only '/' is forbidden in the matched span,
+                // identical to the original slash-count guard, so "URI:" matching is never widened.
                 if (subject.contains('*'))
                 {
-                    auto prefix = std::string_view(subject).substr(0, subject.find('*'));
-                    auto suffix = std::string_view(subject).substr(subject.find('*') + 1);
-                    auto slashes = std::count(subject.begin(), subject.end(), '/');
+                    if (type == X509Certificate::Subjects::Type::SAN
+                        && !subject.starts_with("DNS:") && !subject.starts_with("URI:"))
+                        continue;
+
+                    const auto star = subject.find('*');
+                    const auto prefix = std::string_view(subject).substr(0, star);
+                    const auto suffix = std::string_view(subject).substr(star + 1);
+                    const bool is_dns_label = (type == X509Certificate::Subjects::Type::CN)
+                        || (type == X509Certificate::Subjects::Type::SAN && subject.starts_with("DNS:"));
 
                     for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
                     {
-                        bool matches_wildcard = certificate_subject.starts_with(prefix) && certificate_subject.ends_with(suffix);
+                        // Checked before the substr below so its length cannot underflow when prefix and suffix overlap.
+                        if (certificate_subject.size() < prefix.size() + suffix.size())
+                            continue;
+                        if (!certificate_subject.starts_with(prefix) || !certificate_subject.ends_with(suffix))
+                            continue;
 
-                        // '*' must not represent a '/' in URI, so check if the number of '/' are equal
-                        bool matches_slashes = slashes == count(certificate_subject.begin(), certificate_subject.end(), '/');
-
-                        if (matches_wildcard && matches_slashes)
+                        const auto matched = std::string_view(certificate_subject).substr(
+                            prefix.size(), certificate_subject.size() - prefix.size() - suffix.size());
+                        // A single '*' matches exactly one component. A DNS label (a CN or "DNS:" SAN) is one
+                        // non-empty label: the span must be non-empty and contain no '.' and no '/' (a '/' is
+                        // not part of a hostname and the original slash-count guard forbade it). A "URI:" SAN
+                        // keeps the original rule: only '/' is forbidden, so empty path segments stay allowed
+                        // and "URI:" matching is not widened.
+                        const bool span_is_single_component = is_dns_label
+                            ? (!matched.empty() && !matched.contains('.') && !matched.contains('/'))
+                            : !matched.contains('/');
+                        if (span_is_single_component)
                             return true;
                     }
                 }

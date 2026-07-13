@@ -154,10 +154,14 @@ public:
         return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
 
+    [[nodiscard]] Int64 compareTrackAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const final;
+
 #if USE_EMBEDDED_COMPILER
     bool isComparatorCompilable() const override;
     llvm::Value * compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const override;
 #endif
+
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, Permutation & res) const override;

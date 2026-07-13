@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
@@ -18,6 +20,8 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 /**
@@ -27,7 +31,12 @@ class FunctionArrayFold final : public IFunction
 {
 public:
     static constexpr auto name = "arrayFold";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayFold>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayFold>(context); }
+
+    explicit FunctionArrayFold(ContextPtr context)
+        : process_list_element(context ? context->getProcessListElement() : nullptr)
+    {
+    }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -141,7 +150,9 @@ public:
                 first_array_col_concrete = array_col_concrete;
             }
 
-            ColumnWithTypeAndName data_type_name(array_col_concrete->getDataPtr(), recursiveRemoveLowCardinality(array_type_concrete->getNestedType()), array_with_type_and_name.name);
+            /// Unwrap LowCardinality from the column in lockstep with the type (below); a
+            /// LowCardinality column carrying a non-LowCardinality type mismatches in the lambda.
+            ColumnWithTypeAndName data_type_name(recursiveRemoveLowCardinality(array_col_concrete->getDataPtr()), recursiveRemoveLowCardinality(array_type_concrete->getNestedType()), array_with_type_and_name.name);
             arrays_data_with_type_and_name.push_back(data_type_name);
         }
 
@@ -153,6 +164,13 @@ public:
             return arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
 
         const auto & offsets = first_array_col_concrete->getOffsets(); /// the internal offsets column of the first array argument (other array arguments have the same offsets)
+
+        /// A malformed array whose data column size disagrees with its offsets would desync the
+        /// selector loop below and blow up max_array_size (observed as a multi-GB ~uncancellable hang).
+        if (offsets[num_rows - 1] != static_cast<ColumnArray::Offset>(num_elements_in_array_col))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Malformed array argument of function {}: nested data column has {} elements but offsets describe {}",
+                getName(), num_elements_in_array_col, offsets[num_rows - 1]);
 
         /// Find the first row which contains a non-empty array
         ssize_t first_row_with_non_empty_array = 0;
@@ -172,6 +190,10 @@ public:
         size_t cur_element_in_cur_array = 0;
         for (ssize_t i = 0; i < num_elements_in_array_col; ++i)
         {
+            /// This loop is O(total array elements) and also runs uninterruptibly inside executeImpl().
+            if ((i & 0xFFFFF) == 0)
+                checkQueryTimeLimit();
+
             selector[i] = cur_element_in_cur_array;
             ++cur_element_in_cur_array;
             max_array_size = std::max(cur_element_in_cur_array, max_array_size);
@@ -181,6 +203,13 @@ public:
                 cur_element_in_cur_array = 0;
             }
         }
+
+        /// max_array_size cannot exceed the total number of array elements; if it does, the selector
+        /// computation above is corrupt - bail out before scatter() allocates that many slices.
+        if (max_array_size > static_cast<size_t>(num_elements_in_array_col))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Function {}: computed max_array_size {} exceeds total array elements {}",
+                getName(), max_array_size, num_elements_in_array_col);
 
         /// Based on the selector, scatter elements of the arrays on all rows into vertical slices
         /// Example:
@@ -210,6 +239,13 @@ public:
         size_t unfinished_rows = num_rows; /// number of rows to consider in the current iteration
         for (size_t slice = 0; slice < max_array_size; ++slice)
         {
+            /// The whole fold over a chunk runs inside this single executeImpl() call, so the pipeline-level
+            /// time/cancellation check between chunks cannot interrupt it. Without an in-loop check a fold over
+            /// a very long array (e.g. range(number) with a result-growing lambda) ignores KILL QUERY and
+            /// max_execution_time and keeps running. Each iteration performs a full lambda->reduce(), so the
+            /// per-iteration check is negligible.
+            checkQueryTimeLimit();
+
             IColumn::Selector prev_selector(unfinished_rows); /// 1 for rows which have slice_i-many elements, otherwise 0
             size_t prev_index = 0;
             for (ssize_t row = 0; row < num_rows; ++row)
@@ -283,6 +319,19 @@ public:
     }
 
 private:
+    QueryStatusPtr process_list_element;
+
+    /// checkTimeLimit() throws for KILL QUERY and the 'throw' overflow mode; for the 'break' overflow
+    /// mode it returns false instead. A fold has no meaningful partial result (a half-folded accumulator
+    /// is a wrong value, not a smaller one), so we throw on the false (break) return to stop the runaway
+    /// fold. In 'break' mode the pipeline absorbs this timeout into a clean cancellation, so the query
+    /// ends without a client-visible error and yields no rows for the cancelled fold.
+    void checkQueryTimeLimit() const
+    {
+        if (process_list_element && !process_list_element->checkTimeLimit())
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
+    }
+
     String getName() const override
     {
         return name;
