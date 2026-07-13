@@ -142,8 +142,9 @@ DataTypePtr computeClickHouseType(const BigQueryField & field)
         /// `{"v": null}`. Use a Nullable element type so such values are preserved losslessly
         /// instead of being coerced to a default. A RECORD element cannot be made Nullable
         /// (Nullable(Tuple) is gated behind the `enable_nullable_tuple_type` setting which is
-        /// off by default), so repeated RECORD fields keep a plain Tuple element.
-        if (base->canBeInsideNullable())
+        /// off by default, and `DataTypeTuple::canBeInsideNullable` reports true regardless),
+        /// so repeated RECORD fields keep a plain Tuple element.
+        if (field.type != BigQueryField::Type::Record && base->canBeInsideNullable())
             base = std::make_shared<DataTypeNullable>(base);
         return std::make_shared<DataTypeArray>(base);
     }
