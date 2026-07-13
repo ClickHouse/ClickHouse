@@ -44,6 +44,11 @@ SELECT count() FROM eval('SELECT 1 AS n UNION SELECT 1 AS n'); -- { serverError 
 SET union_default_mode = 'DISTINCT';
 SELECT count() FROM eval('SELECT 1 AS n UNION SELECT 1 AS n');
 SET union_default_mode = DEFAULT;
+-- The set operation modes are resolved from the generated query's own SETTINGS, so an inner
+-- `union_default_mode = 'DISTINCT'` normalizes an ambiguous UNION the same way it would when the
+-- query is executed directly, even though the outer default would reject it.
+SELECT count() FROM eval('SELECT 1 AS n UNION SELECT 1 AS n SETTINGS union_default_mode = ''DISTINCT''');
+SELECT count() FROM eval('SELECT 1 AS n UNION SELECT 1 AS n'); -- { serverError EXPECTED_ALL_OR_DISTINCT }
 
 -- SETTINGS of the generated query are scoped to the generated query.
 SELECT count() FROM eval('SELECT number FROM numbers(3) SETTINGS limit = 1');

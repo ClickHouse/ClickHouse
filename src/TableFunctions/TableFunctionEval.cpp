@@ -158,17 +158,20 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
     /// controls its own limits the same way it would when the query is executed directly.
     auto limits_context = Context::createCopy(context);
     InterpreterSetQuery::applySettingsFromQuery(query, limits_context);
+    const auto & inner_settings = limits_context->getSettingsRef();
 
     /// The generated query does not go through `executeQuery`, so resolve the INTERSECT/EXCEPT
     /// operator precedence and the implicit UNION mode here, same as `executeQueryImpl` does
-    /// for a usual query.
+    /// for a usual query. These modes are read from the inner query's own context, so that an
+    /// inner `... SETTINGS union_default_mode = 'DISTINCT'` normalizes the same way it would when
+    /// the query is executed directly, instead of being resolved against the outer defaults.
     {
         SelectIntersectExceptQueryVisitor::Data data{
-            settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
+            inner_settings[Setting::intersect_default_mode], inner_settings[Setting::except_default_mode]};
         SelectIntersectExceptQueryVisitor{data}.visit(query);
     }
     {
-        NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
+        NormalizeSelectWithUnionQueryVisitor::Data data{inner_settings[Setting::union_default_mode]};
         NormalizeSelectWithUnionQueryVisitor{data}.visit(query);
     }
 
@@ -177,11 +180,10 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
     /// a tiny outer `SELECT * FROM eval('...')` could smuggle a huge or very deep AST into the analyzer,
     /// even though executing the same inner query directly would be rejected.
     {
-        const auto & limits_settings = limits_context->getSettingsRef();
-        if (limits_settings[Setting::max_ast_depth])
-            query->checkDepth(limits_settings[Setting::max_ast_depth]);
-        if (limits_settings[Setting::max_ast_elements])
-            query->checkSize(limits_settings[Setting::max_ast_elements]);
+        if (inner_settings[Setting::max_ast_depth])
+            query->checkDepth(inner_settings[Setting::max_ast_depth]);
+        if (inner_settings[Setting::max_ast_elements])
+            query->checkSize(inner_settings[Setting::max_ast_elements]);
     }
 
     create.set(create.select, query);
