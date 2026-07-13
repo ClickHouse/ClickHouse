@@ -355,9 +355,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// It is incorrect for in order aggregation.
         params.stats_collecting_params.disable();
 
-        /// In-order aggregation aggregates small sub-ranges of each block via executeOnBlockSmall.
-        /// Avoid the "prealloc serialized" method there: its whole-block key precomputation would be
-        /// redone per sub-range, making blocks with many distinct sorting-key prefixes quadratic.
+        /// Aggregation in order rebuilds the aggregation-method state for every run of equal
+        /// order-key values, so the whole-block `prealloc_serialized` method would make it
+        /// quadratic. Fall back to the plain `serialized` method (see `Params::aggregation_in_order`).
         params.aggregation_in_order = true;
     }
 
