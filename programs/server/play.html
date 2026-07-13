@@ -1697,8 +1697,12 @@ class QueryProgressElement extends HTMLElement
     }
 
     /// The query was cancelled (Stop): stop the spinner without showing the success check mark.
+    /// Only act when the spinner is actually running: if the query was cancelled before it
+    /// started rendering (e.g. during the async lexer load, while the toolbar already shows
+    /// "Stop"), the widget still holds the previous result's check mark - leave it untouched.
     stop()
     {
+        if (this._hourglass.style.display !== 'inline-block') { return; }
         this._hourglass.style.display = 'none';
         this._checkMark.style.display = 'none';
     }
