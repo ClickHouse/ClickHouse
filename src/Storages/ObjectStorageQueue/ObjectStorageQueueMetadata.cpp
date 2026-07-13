@@ -336,24 +336,8 @@ std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing()
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
 ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket)
 {
-    /// Register the lock path before creating it in Keeper (fencing against the
-    /// TTL cleanup, see ObjectStorageQueueLocalActiveNodes); on failure to acquire,
-    /// the registration is dropped. The holder unregisters on release.
-    const auto bucket_lock_path = (zookeeper_path / "buckets" / toString(bucket) / "lock").string();
-    if (!local_active_nodes->tryAdd(bucket_lock_path))
-    {
-        LOG_TEST(log, "Bucket lock path {} is being inspected by the cleanup, will retry later", bucket_lock_path);
-        return nullptr;
-    }
-
-    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr holder;
-    SCOPE_EXIT({
-        if (!holder)
-            local_active_nodes->remove(bucket_lock_path);
-    });
-    holder = ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
+    return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
         zookeeper_path, bucket, use_persistent_processing_nodes, zookeeper_name, log, local_active_nodes);
-    return holder;
 }
 
 void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)
@@ -1611,19 +1595,9 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     {
         FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_cleanup_pause_before_removal);
 
-        /// Take the removal lock: it fails while a live local execution owns the
-        /// path, and local creators back off while it is held, so no local create
-        /// can land inside the revalidate+remove window below.
-        if (!local_active_nodes->tryLockForRemoval(node))
-        {
-            LOG_TRACE(log, "Node {} is owned by a live local execution, skipping", node);
-            continue;
-        }
-        SCOPE_EXIT({ local_active_nodes->unlockRemoval(node); });
-
-        /// Re-validate right before removal: the node may have been recreated
-        /// since collection (fresh mtime), and recreation resets the Keeper
-        /// version, so the collected state cannot guard the removal.
+        /// Re-validate right before removal: the node may have been recreated or
+        /// acquired by a local execution since collection, and recreation resets
+        /// the Keeper version, so the collected state cannot guard the removal.
         Coordination::Stat stat;
         std::string data;
         bool exists = false;
@@ -1637,6 +1611,11 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
         if (stat.mtime / 1000 + persistent_processing_node_ttl_seconds >= getCurrentTime())
         {
             LOG_TRACE(log, "Node {} was recreated since collection, skipping", node);
+            continue;
+        }
+        if (local_active_nodes->contains(node))
+        {
+            LOG_TRACE(log, "Node {} is owned by a live local execution, skipping", node);
             continue;
         }
 

@@ -217,6 +217,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     , local_active_nodes(std::move(local_active_nodes_))
     , log(log_)
 {
+    if (local_active_nodes)
+        local_active_nodes->add(bucket_info->bucket_lock_path);
 #ifdef DEBUG_OR_SANITIZER_BUILD
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
