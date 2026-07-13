@@ -597,6 +597,16 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     }
 }
 
+double ObjectStorageQueueSource::FileIterator::getOldestBucketLockAgeSeconds()
+{
+    std::lock_guard lock(mutex);
+    double max_age = 0;
+    for (const auto & [processor, holders] : bucket_holders)
+        for (const auto & holder : *holders)
+            max_age = std::max(max_age, holder->getAgeSeconds());
+    return max_age;
+}
+
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets(bool force_release_unfinished)
 {
     std::lock_guard lock(mutex);

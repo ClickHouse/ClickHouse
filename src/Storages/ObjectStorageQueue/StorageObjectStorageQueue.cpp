@@ -923,30 +923,53 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     while (!shutdown_called && !file_iterator->isFinished())
     {
         /// Bucket locks are cleaned up as abandoned once `persistent_processing_node_ttl_seconds`
-        /// passes since acquisition. They are held by the file iterator, which is shared
-        /// between streaming tasks and outlives a single execution, so once the iterator age
-        /// reaches half of the TTL, all tasks stop using it and the next execution
-        /// starts with a fresh iterator, re-acquiring bucket locks.
+        /// passes since acquisition, so hold them no longer than half of the TTL
+        /// (the other half is a margin for the current iteration to finish).
         const size_t ttl_seconds = files_metadata->getPersistentProcessingNodeTTLSeconds();
-        if (ttl_seconds && file_iterator->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 2)
+        const double oldest_lock_age_sec = file_iterator->getOldestBucketLockAgeSeconds();
+        if (ttl_seconds && oldest_lock_age_sec >= static_cast<double>(ttl_seconds) / 2)
         {
-            LOG_TRACE(
-                log,
-                "Stopping streaming to views: file iterator age ({} sec) reached half of "
-                "persistent processing node TTL ({} sec), execution elapsed: {} sec",
-                file_iterator->getAgeSeconds(), ttl_seconds, watch.elapsedSeconds());
-
+            bool released = false;
             {
                 std::lock_guard streaming_lock(streaming_mutex);
-                if (streaming_file_iterator == file_iterator)
+                /// While `streaming_mutex` is held, no other streaming task can adopt
+                /// the shared iterator, so use_count == 2 (the member + our local copy)
+                /// means we are its only user: release all held buckets, including
+                /// a non-finished one, and continue streaming - the buckets are
+                /// re-acquired (with fresh lock nodes) when needed.
+                if (streaming_file_iterator == file_iterator && file_iterator.use_count() == 2)
+                {
+                    file_iterator->releaseFinishedBuckets(/*force_release_unfinished=*/true);
+                    released = true;
+                }
+                else if (streaming_file_iterator == file_iterator)
+                {
+                    /// Other streaming tasks can have in-flight files from a non-finished
+                    /// bucket, so just drop the shared iterator: each task stops the same way,
+                    /// and the last one releases the buckets.
                     streaming_file_iterator.reset();
+                }
             }
 
+            if (released)
+            {
+                LOG_TRACE(
+                    log,
+                    "Released bucket locks: oldest lock age ({} sec) reached half of "
+                    "persistent processing node TTL ({} sec)",
+                    oldest_lock_age_sec, ttl_seconds);
+                continue;
+            }
+
+            LOG_TRACE(
+                log,
+                "Stopping streaming to views: oldest bucket lock age ({} sec) reached half of "
+                "persistent processing node TTL ({} sec), execution elapsed: {} sec",
+                oldest_lock_age_sec, ttl_seconds, watch.elapsedSeconds());
+
             /// After the shared iterator is dropped, no new user can appear,
-            /// so use_count == 1 means we are its last user: release all held buckets,
-            /// including a non-finished one (unsafe earlier, because other tasks
-            /// can have in-flight files from it). If the last two users race,
-            /// buckets are released in BucketHolder destructors.
+            /// so use_count == 1 means we are its last user and can release the buckets.
+            /// If the last two users race, buckets are released in BucketHolder destructors.
             if (file_iterator.use_count() == 1)
                 file_iterator->releaseFinishedBuckets(/*force_release_unfinished=*/true);
 

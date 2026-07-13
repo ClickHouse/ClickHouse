@@ -8,7 +8,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <base/defines.h>
-#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -79,10 +78,10 @@ public:
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
 
-        /// Time since the iterator creation.
-        /// Bucket locks are acquired and held by the iterator,
-        /// so no lock is held longer than the iterator age.
-        double getAgeSeconds() const { return age_watch.elapsedSeconds(); }
+        /// Age of the oldest currently held bucket lock (0 if none is held).
+        /// Used to bound the lock hold time, so that a lock still in use
+        /// is not cleaned up as abandoned.
+        double getOldestBucketLockAgeSeconds();
 
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
@@ -100,7 +99,6 @@ public:
         const bool use_buckets_for_processing;
         const size_t buckets_num = 0;
 
-        const Stopwatch age_watch;
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
         ExpressionActionsPtr filter_expr;

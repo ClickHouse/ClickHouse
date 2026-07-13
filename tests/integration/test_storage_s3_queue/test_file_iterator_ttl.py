@@ -37,7 +37,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_stop_streaming_on_file_iterator_ttl(started_cluster):
+def test_release_bucket_locks_on_ttl(started_cluster):
     node = started_cluster.instances["instance"]
 
     table_name = f"test_file_iterator_ttl_{uuid.uuid4().hex[:8]}"
@@ -47,11 +47,11 @@ def test_stop_streaming_on_file_iterator_ttl(started_cluster):
     files_path = f"{table_name}_data"
     files_to_generate = 300
 
-    # With TTL = 2 sec streaming must stop once the file iterator is 1 sec old.
-    # Commit after every file makes processing slow enough for one
-    # streamToViews execution to certainly last longer than that,
-    # so streaming must stop and continue with a fresh iterator
-    # (and re-acquired bucket locks) several times before all files are done.
+    # With TTL = 2 sec bucket locks must be released once the oldest of them
+    # is held for 1 sec. Commit after every file makes processing slow enough
+    # for one streamToViews execution to certainly last longer than that,
+    # so the locks must be released and re-acquired several times
+    # before all files are done.
     create_table(
         started_cluster,
         node,
@@ -83,10 +83,10 @@ def test_stop_streaming_on_file_iterator_ttl(started_cluster):
         time.sleep(1)
     assert get_count() == files_to_generate
 
-    # Streaming must have been stopped by the iterator TTL at least once.
-    assert node.contains_in_log("Stopping streaming to views: file iterator age")
+    # Bucket locks must have been released by the TTL check at least once.
+    assert node.contains_in_log("reached half of persistent processing node TTL")
 
-    # Every file must be processed exactly once regardless of the stops.
+    # Every file must be processed exactly once regardless of the lock releases.
     assert files_to_generate == int(
         node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}")
     )

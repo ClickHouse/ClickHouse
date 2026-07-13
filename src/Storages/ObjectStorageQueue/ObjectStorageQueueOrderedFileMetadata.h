@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Core/SettingsEnums.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <filesystem>
@@ -178,6 +179,9 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     void setFinished() { finished = true; }
     bool isFinished() const { return finished; }
 
+    /// How long the bucket lock is held (it is acquired in the constructor).
+    double getAgeSeconds() const { return age_watch.elapsedSeconds(); }
+
     bool checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
     std::optional<std::string> getProcessorInfo(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
 
@@ -185,6 +189,7 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 
 private:
     BucketInfoPtr bucket_info;
+    const Stopwatch age_watch;
     bool released = false;
     bool finished = false;
     LoggerPtr log;
