@@ -53,13 +53,19 @@ SELECT '-- index analysis: year(<date>) still prunes granules like toYear(<date>
 DROP TABLE IF EXISTS 03481_idx;
 CREATE TABLE 03481_idx (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 8192;
 INSERT INTO 03481_idx SELECT toDate('2000-01-01') + number FROM numbers(20000);
-SELECT '-- both toYear(d) and year(d) prune to the same 1/2 granule count';
+SELECT '-- year(d) prunes to the same granule fraction as toYear(d), and prunes at all';
 -- Pin enable_parallel_replicas = 0 so the EXPLAIN reflects local granule pruning (parallel-replica
--- routing is orthogonal to index analysis and would add distributed plan steps). Match the exact
--- pruning fraction 'Granules: 1/2' (not a bare 'Granules:'), so the read-summary line some
--- randomized settings add ('Parts: 1 | Granules: 1', no slash) does not leak into the output.
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM 03481_idx WHERE toYear(d) = 2005 SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Granules: 1/2%';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM 03481_idx WHERE year(d) = 2005 SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Granules: 1/2%';
+-- routing is orthogonal to index analysis and would add distributed plan steps). Do NOT match a
+-- literal fraction: randomized MergeTree settings (e.g. index_granularity_bytes) change the total
+-- granule count, so 'Granules: 1/2' becomes '2/39' etc. Match only the 'Granules: N/M' plan line
+-- (the read-summary line 'Parts: 1 | Granules: 1' has no slash and is excluded), assert the year(d)
+-- fraction equals the toYear(d) fraction, and assert year(d) actually prunes (selected < total).
+-- Both hold for any granularity.
+SELECT
+    (SELECT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM 03481_idx WHERE toYear(d) = 2005 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Granules: %/%')
+  = (SELECT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT count() FROM 03481_idx WHERE year(d) = 2005 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Granules: %/%');
+SELECT toUInt32(extract(explain, 'Granules: (\\d+)/')) < toUInt32(extract(explain, 'Granules: \\d+/(\\d+)'))
+FROM (EXPLAIN indexes = 1 SELECT count() FROM 03481_idx WHERE year(d) = 2005 SETTINGS enable_parallel_replicas = 0) WHERE explain LIKE '%Granules: %/%';
 DROP TABLE 03481_idx;
 
 SELECT '-- projections: year(<date>) filters/keys still select projections like toYear(<date>)';

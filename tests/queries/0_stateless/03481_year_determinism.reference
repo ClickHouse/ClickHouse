@@ -10,7 +10,7 @@
 (DELETE WHERE toYear(ts) = 2024)	1
 -- year(<date>) mutation is rejected as non-deterministic
 -- index analysis: year(<date>) still prunes granules like toYear(<date>) (post-build analysis is unaffected by determinism)
--- both toYear(d) and year(d) prune to the same 1/2 granule count
+-- year(d) prunes to the same granule fraction as toYear(d), and prunes at all
 1
 1
 -- projections: year(<date>) filters/keys still select projections like toYear(<date>)
