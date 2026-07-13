@@ -6,27 +6,3 @@
 2
 2
 2
--- has() with empty needle (index vs no index)
-0
-0
--- has() with present/absent needle (index)
-1
-0
--- mapContainsKey/Value with empty needle (index vs no index)
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
--- mapContainsKey/Value with present/absent needle (index)
-1
-0
-1
-0
-1
-0

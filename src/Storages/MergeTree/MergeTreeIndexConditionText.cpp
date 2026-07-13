@@ -854,9 +854,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         auto make_map_function = [&](VectorWithMemoryTracking<String> tokens)
         {
-            /// A needle that produces no tokens (e.g. an empty needle) cannot be served by the index:
-            /// empty values are never indexed, and an All-mode search over zero tokens matches everything.
-            /// Bail out so the original predicate is evaluated by a full scan, mirroring the equals guard.
+            /// Empty needles produce no tokens that can be searched for --> fall back to brute force scan.
+            /// See function "equals" for a longer explanation.
             if (tokens.empty())
                 return false;
 
@@ -1297,9 +1296,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         auto tokens = stringToTokens(value_field);
 
-        /// A needle that produces no tokens (e.g. an empty needle) cannot be served by the index:
-        /// empty values are never indexed, and an All-mode search over zero tokens matches everything.
-        /// Bail out so the original predicate is evaluated by a full scan, mirroring the equals guard.
+        /// Empty needles produce no tokens that can be searched for, fall back to brute force scan.
+        /// See function "equals" for a longer explanation.
         if (tokens.empty())
             return false;
 
