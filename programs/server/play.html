@@ -5837,12 +5837,26 @@ window.onpopstate = function(event) {
             document.title, restamped_url.href);
     }
     activeTabId = tab.id;
-    tab.query = event.state.query;
+    /// Prefer a newer unrun in-memory draft over this entry's older query. After removing the
+    /// per-keystroke history refresh, a tab's browser-history entry no longer tracks edits made
+    /// after its last run / structural change; `captureActiveTab` above kept the live draft in
+    /// `tab.query`. Blindly restoring `event.state.query` here would clobber that draft on an
+    /// ordinary same-session Back/Forward round-trip: run `SELECT 1`, type `SELECT 2`, press Back
+    /// to an older entry, then Forward — the forward entry still carries `SELECT 1`. Keep the draft
+    /// when it diverges from the entry AND does not merely reflect the entry's own produced result
+    /// (`tabReflectsRun` false); the entry's result snapshot is still rendered below, reproducing
+    /// the pre-navigation edited-but-unrun state. A freshly recreated tab (closed then revisited)
+    /// has `tab.query === event.state.query`, and normal Back/Forward between two runs of the same
+    /// tab reports `tabReflectsRun` true, so both keep restoring the entry's query exactly as before.
+    const preserve_draft = tab.query !== event.state.query && !tabReflectsRun(tab);
+    if (!preserve_draft) tab.query = event.state.query;
     /// This history entry is now the tab's URL-synced query, so it is also the query the saved
     /// tab is "in sync" with: keep `lastSavedQuery` aligned with it. Otherwise a later edit and
     /// reload (while the URL still holds this entry) would be misread by startup reconciliation
     /// as a fresh external URL and overwrite the edit (`lastSavedQuery` would still point at the
-    /// newer entry that `writeHistoryEntry` last recorded, not at this one).
+    /// newer entry that `writeHistoryEntry` last recorded, not at this one). `lastSavedQuery`
+    /// tracks the URL, not the editor, so it stays aligned with the entry even when a draft is
+    /// preserved above (a subsequent reload still restores the entry's query, per the contract).
     tab.lastSavedQuery = event.state.query;
     if (event.state.params) tab.params = event.state.params;
     /// Adopt the entry's result snapshot (its own producing query/params), or clear it. This
@@ -5870,7 +5884,10 @@ window.onpopstate = function(event) {
     } else {
         tab.result = null;
     }
-    restoreFromHistory(event.state, token).then(() => {
+    /// When preserving an unrun draft, restore it as the editor text while still rendering the
+    /// entry's (already-normalized) result snapshot in `tab.result`; otherwise restore verbatim.
+    const restore_state = preserve_draft ? { ...event.state, query: tab.query, result: tab.result } : event.state;
+    restoreFromHistory(restore_state, token).then(() => {
         if (token !== request_num) return; /// a newer navigation/run superseded this one
         /// Mirror `activateTab`: always recolor the page (and thus the active-tab slab) to this
         /// tab's query. `restoreFromHistory` only recolors on its full-result path, so a
