@@ -82,25 +82,17 @@ public:
     /// Caller needs to be careful:
     ///  * supportsReadAt() must be checked (called and return true) before calling readBigAt().
     ///    Otherwise readBigAt() may crash.
-    ///  * Thread safety: multiple readBigAt() calls may be performed in parallel.
-    ///    But readBigAt() may not be called in parallel with any other methods
-    ///    (e.g. next() or supportsReadAt()).
+    ///  * Thread safety: readBigAt() must be safe to run in parallel with other readBigAt() calls
+    ///    and with a sequential read (next()/seek()) on the same object: it must use only
+    ///    request-local state, including any lazily-initialized members. (AsynchronousBoundedReadBuffer
+    ///    relies on this: an out-of-prefetch readBigAt() runs while a prefetch's next() is in flight.)
+    ///    It may not be called in parallel with supportsReadAt().
     ///  * Performance: there's no buffering. Each readBigAt() call typically translates into actual
     ///    IO operation (e.g. HTTP request). Don't use it for small adjacent reads.
     virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/) const;
 
     /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
     virtual bool supportsReadAt() { return false; }
-
-    /// Whether readBigAt() is safe to run concurrently with a sequential read (next()/seek()) on the
-    /// same object, i.e. it uses only request-local state and touches none of the members the
-    /// sequential path mutates (including lazily-initialized ones). The general readBigAt() contract
-    /// above forbids that overlap, so this defaults to false; a backend opts in only when its
-    /// readBigAt() is genuinely independent of the sequential state (e.g. ReadBufferFromS3 issues an
-    /// independent GetObject with request-local state). Backends that initialize lazily on the
-    /// sequential path (e.g. ReadBufferFromAzureBlobStorage creates blob_client inside initialize()
-    /// from nextImpl()) must NOT opt in.
-    virtual bool readBigAtIsSafeWithConcurrentSequentialRead() const { return false; }
 
     /// A contiguous region of cached data that the caller can reference directly (zero-copy).
     /// The `handle` keeps the underlying cache cell alive; the data is valid as long as the handle

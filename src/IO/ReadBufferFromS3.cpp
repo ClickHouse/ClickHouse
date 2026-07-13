@@ -368,7 +368,7 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
             if (new_client)
             {
                 /// A concurrent readBigAt()/nextImpl() may be copying client_ptr in sendRequest();
-                /// serialize the reassignment against those reads (see readBigAtIsSafeWithConcurrentSequentialRead()).
+                /// serialize the reassignment against those reads.
                 std::lock_guard lock(client_ptr_mutex);
                 client_ptr = std::move(new_client);
                 return true;

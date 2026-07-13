@@ -362,6 +362,11 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromAzureMicroseconds);
 
+    /// Use a request-local blob client (blob_container_client is immutable) rather than the shared
+    /// lazily-initialized blob_client member: readBigAt() must be safe against a concurrent sequential
+    /// read (which initializes that member from nextImpl()). See SeekableReadBuffer::readBigAt contract.
+    auto request_blob_client = blob_container_client->GetBlobClient(path);
+
     for (size_t i = 0; i < max_single_download_retries && n > 0; ++i)
     {
         size_t bytes_copied = 0;
@@ -377,7 +382,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             download_options.Range = {static_cast<int64_t>(range_begin), n};
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
-            auto download_response = blob_client->Download(download_options, azure_context);
+            auto download_response = request_blob_client.Download(download_options, azure_context);
             if (blob_storage_log)
             {
                 blob_storage_log->addEvent(

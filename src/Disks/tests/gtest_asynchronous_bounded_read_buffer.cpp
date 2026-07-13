@@ -153,12 +153,9 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentReadBigAtWithPrefetch)
     }
 }
 
-/// Races several out-of-prefetch positioned reads against an in-flight prefetch (prefetch covers
-/// only [0, 4096), readers start well past that). While the prefetch is in flight these reads still
-/// serialize on prefetch_mutex, because the prefetch's background impl->next() runs against impl and
-/// readBigAt() may not run in parallel with next() (SeekableReadBuffer contract; lazy backends such as
-/// Azure would otherwise null-deref). This checks every reader observes the correct data regardless of
-/// which side of the prefetch range it targets.
+/// Races several out-of-prefetch positioned reads against an in-flight prefetch (prefetch covers only
+/// [0, 4096), readers start well past that). Such reads skip prefetch_mutex and read directly from impl
+/// while the prefetch is in flight. Checks every reader observes the correct data.
 TEST_F(AsynchronousBoundedReadBufferTest, concurrentOutOfPrefetchReadBigAt)
 {
     String contents;
@@ -176,8 +173,8 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentOutOfPrefetchReadBigAt)
 
         ASSERT_TRUE(read_buffer.supportsReadAt());
 
-        /// Prefetch covers only [0, 4096); the readers below all start well past that, so they must
-        /// skip the mutex and read directly from impl while the prefetch is still in flight.
+        /// Prefetch covers only [0, 4096); the readers below all start well past that, so they skip
+        /// the mutex and read directly from impl while the prefetch is still in flight.
         read_buffer.prefetch(Priority{0});
 
         constexpr size_t num_threads = 8;
@@ -277,27 +274,18 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentReadBigAtNoPrefetchInFlight)
     }
 }
 
-/// A backend that models the lazily initialized remote readers (e.g. ReadBufferFromAzureBlobStorage
-/// creates its blob_client inside initialize() from nextImpl(); readBigAt() dereferences it). The
-/// reader is created uninitialized; initialization happens inside the FIRST nextImpl(), which blocks
-/// on a latch to keep the prefetch "in flight" while a racing out-of-prefetch readBigAt() runs.
-///
-/// `concurrency_safe` controls readBigAtIsSafeWithConcurrentSequentialRead():
-///  - false: models Azure. readBigAt() before init records a violation instead of null-dereferencing;
-///    AsynchronousBoundedReadBuffer must keep such reads under prefetch_mutex until the prefetch drains.
-///  - true: models S3, whose readBigAt() uses request-local state and is safe against a concurrent
-///    next(); AsynchronousBoundedReadBuffer may skip prefetch_mutex for an out-of-prefetch read.
-/// The local pread backend used by the other tests can never surface the unsafe overlap because both
-/// its paths are positional (and it does not opt into the safe flag, so it stays under the mutex).
+/// Models a lazily initialized remote reader (like ReadBufferFromAzureBlobStorage, whose backend client
+/// is created inside initialize() from nextImpl()). Its nextImpl() parks on a latch so a prefetch can be
+/// held in flight while a racing out-of-prefetch readBigAt() runs. readBigAt() is self-contained (uses
+/// only request-local state and the immutable contents), as the SeekableReadBuffer contract requires, so
+/// it is correct even while next() runs concurrently.
 class LazyInitFakeReadBuffer : public DB::ReadBufferFromFileBase
 {
 public:
-    LazyInitFakeReadBuffer(String contents_, std::atomic<bool> & violation_, std::atomic<bool> & release_next_, bool concurrency_safe_)
+    LazyInitFakeReadBuffer(String contents_, std::atomic<bool> & release_next_)
         : ReadBufferFromFileBase(0, nullptr, 0, contents_.size())
         , contents(std::move(contents_))
-        , violation(violation_)
         , release_next(release_next_)
-        , concurrency_safe(concurrency_safe_)
     {
     }
 
@@ -307,7 +295,6 @@ public:
 
     off_t seek(off_t offset, int) override
     {
-        /// Called from submit()/execute() before the read; must not touch the lazy backend.
         file_offset_of_buffer_end = offset;
         resetWorkingBuffer();
         return offset;
@@ -315,16 +302,9 @@ public:
 
     bool supportsReadAt() override { return true; }
 
-    bool readBigAtIsSafeWithConcurrentSequentialRead() const override { return concurrency_safe; }
-
-    /// Positional read. When not concurrency-safe and the backend was not initialized yet (init happens
-    /// inside nextImpl()), record a violation, mirroring an Azure blob_client null-deref. The data copy
-    /// itself is request-local and always correct, so a concurrency-safe backend never violates.
+    /// Self-contained positional read: request-local, touches no member the sequential path mutates.
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> &) const override
     {
-        if (!concurrency_safe && !initialized.load(std::memory_order_acquire))
-            violation.store(true);
-
         const size_t available_bytes = range_begin < contents.size() ? contents.size() - range_begin : 0;
         const size_t to_copy = std::min(n, available_bytes);
         memcpy(to, contents.data() + range_begin, to_copy);
@@ -334,13 +314,12 @@ public:
 private:
     bool nextImpl() override
     {
-        /// The background prefetch read. Block on the latch to keep the prefetch in flight while the
-        /// racing readBigAt() runs, then "initialize" the backend (the moment Azure creates blob_client).
+        /// Background prefetch read. Park on the latch to hold the prefetch in flight while the racing
+        /// readBigAt() runs.
         {
             std::unique_lock lock(mutex);
             cv.wait(lock, [&] { return release_next.load(); });
         }
-        initialized.store(true, std::memory_order_release);
 
         if (file_offset_of_buffer_end >= contents.size())
             return false;
@@ -355,16 +334,12 @@ private:
 
     const String contents;
     size_t file_offset_of_buffer_end = 0;
-    std::atomic<bool> & violation;
     std::atomic<bool> & release_next;
-    const bool concurrency_safe;
-    std::atomic<bool> initialized{false};
     std::mutex mutex;
     std::condition_variable cv;
 
 public:
-    /// Let the blocked background next() proceed. Sets the predicate under the same mutex used by
-    /// wait() to avoid a lost wakeup.
+    /// Release the parked background next(). Sets the predicate under the wait() mutex to avoid a lost wakeup.
     void wakeNext()
     {
         {
@@ -375,23 +350,12 @@ public:
     }
 };
 
-/// Directly targets the SeekableReadBuffer contract the prefetch_estimated_end guard enforces: an
-/// out-of-prefetch readBigAt() must NOT run in parallel with the in-flight prefetch's background
-/// next() on the same impl. Uses a backend whose readBigAt() is unsafe before the (lazy) init done
-/// inside next() -- the pre-fix range-based skip would let the out-of-prefetch read hit the fast path
-/// and observe the uninitialized backend (violation=true); the fixed no-prefetch-in-flight-only skip
-/// keeps it under prefetch_mutex until the prefetch drains, so it never overlaps next().
-///
-/// The overlap is forced by a deterministic rendezvous, not a sleep: the prefetch's background next()
-/// parks on a latch and is released only by whichever path the reader takes, so ordering does not
-/// depend on scheduling.
-///   - Buggy (range-based) fast path: the reader reaches impl->readBigAt() while next() is still parked
-///     -> the fake records violation=true, THEN releases next(). The violation is recorded before the
-///     release, so it is observed on every run regardless of runner contention.
-///   - Fixed (no-prefetch-in-flight) path: the reader blocks on prefetch_mutex and drains the future;
-///     the before_prefetch_drain_for_test hook fires at the drain point and releases next(), so next()
-///     completes (initializing the backend) before the reader's positioned read on impl -> no violation.
-TEST_F(AsynchronousBoundedReadBufferTest, outOfPrefetchReadBigAtDoesNotRaceInFlightNext)
+/// An out-of-prefetch readBigAt() must take the lock-free range-skip path and NOT drain the prefetch.
+/// Proven deterministically: the prefetch's next() is parked on a latch released only AFTER readBigAt()
+/// returns, so if readBigAt() had instead taken prefetch_mutex to drain the future it would block on the
+/// parked next(); the before_prefetch_drain_for_test hook (fired at the drain point) records that and
+/// releases next() to avoid a hang. Its returning without the hook firing proves it skipped the mutex.
+TEST_F(AsynchronousBoundedReadBufferTest, outOfPrefetchReadBigAtSkipsMutex)
 {
     String contents;
     for (size_t i = 0; i < 100000; ++i)
@@ -401,10 +365,9 @@ TEST_F(AsynchronousBoundedReadBufferTest, outOfPrefetchReadBigAtDoesNotRaceInFli
 
     for (int iteration = 0; iteration < 200; ++iteration)
     {
-        std::atomic<bool> violation{false};
         std::atomic<bool> release_next{false};
 
-        auto impl = std::make_unique<LazyInitFakeReadBuffer>(contents, violation, release_next, /* concurrency_safe */ false);
+        auto impl = std::make_unique<LazyInitFakeReadBuffer>(contents, release_next);
         auto * impl_raw = impl.get();
 
         AsynchronousBoundedReadBuffer read_buffer(
@@ -412,89 +375,23 @@ TEST_F(AsynchronousBoundedReadBufferTest, outOfPrefetchReadBigAtDoesNotRaceInFli
             /* buffer_size */ 4096, /* min_bytes_for_seek */ 0,
             Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
 
-        /// Fixed-path trigger: when the reader reaches the drain point inside readBigAt() (under
-        /// prefetch_mutex, before waiting on the future), release the parked next() so it finishes and
-        /// initializes the backend before the reader's positioned read runs. The buggy fast path never
-        /// reaches this point, so this hook is not what releases next() there.
-        read_buffer.before_prefetch_drain_for_test = [&] { impl_raw->wakeNext(); };
-
-        ASSERT_TRUE(read_buffer.supportsReadAt());
-
-        /// Start a prefetch covering [0, 4096). Its background next() blocks in the latch, so the
-        /// prefetch stays in flight (and the backend uninitialized) until a path-specific trigger fires.
-        read_buffer.prefetch(Priority{0});
-
-        /// Read well past the prefetch range: the pre-fix range-based skip would take the lock-free
-        /// fast path here and call impl->readBigAt() while next() is still parked -> violation.
-        std::atomic<bool> reader_done{false};
-        std::thread reader([&]
-        {
-            String out;
-            out.resize(4096);
-            read_buffer.readBigAt(out.data(), out.size(), 8192, nullptr);
-            /// Buggy-path trigger: release the still-parked next() so the iteration can finish. In the
-            /// fixed path the hook already released it and this is an idempotent no-op.
-            impl_raw->wakeNext();
-            reader_done.store(true);
-        });
-
-        reader.join();
-
-        EXPECT_TRUE(reader_done.load()) << "reader thread did not complete (iteration " << iteration << ")";
-        EXPECT_FALSE(violation.load())
-            << "out-of-prefetch readBigAt ran while the in-flight prefetch's next() had not initialized "
-               "the backend (iteration " << iteration << ")";
-    }
-}
-
-/// The counterpart of the previous test for a backend that DOES advertise readBigAt as safe against a
-/// concurrent sequential read (readBigAtIsSafeWithConcurrentSequentialRead() == true, modelling S3).
-/// While a prefetch is in flight and parked in next(), an out-of-prefetch readBigAt() must take the
-/// lock-free range-skip fast path and complete WITHOUT draining the prefetch. This is proven
-/// deterministically: the prefetch's next() is parked on a latch that is released only AFTER the
-/// readBigAt() returns, so if readBigAt() had instead serialized on prefetch_mutex and tried to drain
-/// the future it would block forever on the parked next() and the test would hang/time out. It
-/// returning is the observable proof it skipped the mutex.
-TEST_F(AsynchronousBoundedReadBufferTest, outOfPrefetchReadBigAtSkipsMutexWhenBackendIsConcurrencySafe)
-{
-    String contents;
-    for (size_t i = 0; i < 100000; ++i)
-        contents += static_cast<char>('a' + (i % 26));
-
-    ThreadPoolRemoteFSReader remote_fs_reader(8, 0);
-
-    for (int iteration = 0; iteration < 200; ++iteration)
-    {
-        std::atomic<bool> violation{false};
-        std::atomic<bool> release_next{false};
-
-        auto impl = std::make_unique<LazyInitFakeReadBuffer>(contents, violation, release_next, /* concurrency_safe */ true);
-        auto * impl_raw = impl.get();
-
-        AsynchronousBoundedReadBuffer read_buffer(
-            std::move(impl), remote_fs_reader,
-            /* buffer_size */ 4096, /* min_bytes_for_seek */ 0,
-            Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
-
-        /// If readBigAt() reached the drain point (i.e. it took prefetch_mutex), fail: a concurrency-safe
-        /// backend past the prefetch must skip the mutex entirely.
+        /// If readBigAt() reaches the drain point it took prefetch_mutex (which it must not for an
+        /// out-of-prefetch read). Record it and release next() so the drain does not hang the test.
         std::atomic<bool> drained_under_mutex{false};
-        read_buffer.before_prefetch_drain_for_test = [&] { drained_under_mutex.store(true); };
+        read_buffer.before_prefetch_drain_for_test = [&] { drained_under_mutex.store(true); impl_raw->wakeNext(); };
 
         ASSERT_TRUE(read_buffer.supportsReadAt());
 
-        /// Prefetch covers [0, 4096); its background next() blocks on the latch, keeping it in flight.
+        /// Prefetch covers [0, 4096); its background next() parks on the latch, keeping it in flight.
         read_buffer.prefetch(Priority{0});
 
-        /// Out-of-prefetch read (range 8192). It must complete via the lock-free fast path while next()
-        /// is still parked; only after it returns do we release next().
+        /// Out-of-prefetch read (range 8192): must complete via the lock-free path while next() is parked.
         String out;
         out.resize(4096);
         size_t read = read_buffer.readBigAt(out.data(), out.size(), 8192, nullptr);
 
         EXPECT_FALSE(drained_under_mutex.load())
-            << "out-of-prefetch readBigAt took prefetch_mutex for a concurrency-safe backend (iteration "
-            << iteration << ")";
+            << "out-of-prefetch readBigAt took prefetch_mutex (iteration " << iteration << ")";
         EXPECT_EQ(read, 4096u);
         EXPECT_EQ(out, contents.substr(8192, 4096)) << "iteration " << iteration;
 

@@ -28,11 +28,9 @@ using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
 class ReadBufferFromS3 : public ReadBufferFromFileBase
 {
 private:
-    /// Guards client_ptr against concurrent read (sendRequest) vs credential-refresh reassignment
-    /// (processException on ExpiredToken). Needed because readBigAt() and nextImpl() can run
-    /// concurrently on the same buffer (see readBigAtIsSafeWithConcurrentSequentialRead()), and
-    /// both paths touch client_ptr. Always copy the shared_ptr under this lock, then do the network
-    /// call on the local copy; never hold the lock across the request.
+    /// readBigAt() and nextImpl() can run concurrently on the same buffer, and both read client_ptr
+    /// while the credential-refresh path (processException on ExpiredToken) may reassign it. Copy the
+    /// shared_ptr under this lock, then do the network call on the local copy; never hold across it.
     mutable std::mutex client_ptr_mutex;
     mutable std::shared_ptr<const S3::Client> client_ptr;
     String bucket;
@@ -97,12 +95,6 @@ public:
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     bool supportsReadAt() override { return true; }
-
-    /// readBigAt() issues an independent GetObject with request-local state. The only member it
-    /// shares with nextImpl()/seek()/initialize() is client_ptr, which the credential-refresh path
-    /// (processException) may reassign; that access is serialized by client_ptr_mutex. So readBigAt()
-    /// is safe to run concurrently with a sequential read on the same object.
-    bool readBigAtIsSafeWithConcurrentSequentialRead() const override { return true; }
 
     /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
     bool supportsExternalBufferMode() const override { return use_external_buffer; }

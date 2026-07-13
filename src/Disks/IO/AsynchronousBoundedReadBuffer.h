@@ -58,10 +58,8 @@ public:
     /// Used only for unit test.
     const ImplPtr & getImpl() { return impl; }
 
-    /// Test-only hook, invoked inside readBigAt() under prefetch_mutex right before it waits on an
-    /// in-flight prefetch's future. Lets a regression test build a deterministic rendezvous: the fixed
-    /// (drain-under-mutex) path reaches this point, while the buggy (range-skip) fast path never does.
-    /// Not for production use.
+    /// Test-only hook: invoked inside readBigAt() under prefetch_mutex, right before waiting on an
+    /// in-flight prefetch's future, so a test can build a deterministic rendezvous. Not for production.
     std::function<void()> before_prefetch_drain_for_test;
 
     /// NOTE: readBigAt() does not use the async logic of AsynchronousBoundedReadBuffer; it calls impl's
@@ -97,21 +95,12 @@ private:
     Memory<> prefetch_buffer;
     /// mutable: a pending prefetch may be consumed from the const readBigAt().
     mutable std::future<IAsynchronousReader::Result> prefetch_future;
-    /// Serializes consuming `prefetch_future` from readBigAt(), which is safe for concurrent use and
-    /// is called from several threads at once on the Parquet RandomRead path. Without it, racing
-    /// threads deref a moved-from future's null shared state (SIGSEGV), and the in-flight prefetch
-    /// read against `impl` could run concurrently with a positioned read on `impl`.
+    /// Serializes consuming `prefetch_future` from readBigAt() (called concurrently on the Parquet
+    /// RandomRead path); without it racing threads deref a moved-from future's null shared state (SIGSEGV).
     mutable std::mutex prefetch_mutex;
-    /// Nonzero exactly while a prefetch is in flight; holds an upper bound on the end offset of that
-    /// prefetch ([file_offset_of_buffer_end, prefetch_estimated_end)). Published (release) at prefetch()
-    /// and reset to 0 (release) only after the prefetch future has been consumed, i.e. after the
-    /// background impl->next() has finished. readBigAt() reads it (acquire) to take a lock-free fast
-    /// path in two cases: (a) it is 0, so no prefetch is in flight; (b) it is nonzero but the requested
-    /// range starts at or past it AND impl advertises readBigAtIsSafeWithConcurrentSequentialRead(),
-    /// so the out-of-prefetch positioned read cannot race the prefetch's background next() unsafely.
-    /// Otherwise readBigAt() serializes on prefetch_mutex, because the prefetch's background next() runs
-    /// against impl and the SeekableReadBuffer contract forbids a positioned read in parallel with next()
-    /// (which would null-deref lazily-initialized backends such as ReadBufferFromAzureBlobStorage).
+    /// 0 when no prefetch is in flight, else an upper bound on the prefetch's end offset. Stored (release)
+    /// at prefetch(), reset to 0 (release) after the future is consumed (background next() done); readBigAt()
+    /// loads it (acquire) and only takes prefetch_mutex when the range overlaps [.., prefetch_estimated_end).
     /// mutable: reset from the const readBigAt() when it consumes the prefetch.
     mutable std::atomic<size_t> prefetch_estimated_end{0};
 
