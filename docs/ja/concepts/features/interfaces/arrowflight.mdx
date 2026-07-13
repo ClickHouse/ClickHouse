@@ -1,0 +1,486 @@
+---
+description: 'Flight SQL クライアントを ClickHouse に接続できるようにする、ClickHouse の Apache Arrow Flight インターフェイスに関するドキュメント'
+sidebarTitle: 'Arrow Flight インターフェイス'
+slug: /interfaces/arrowflight
+title: 'Arrow Flight インターフェイス'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概要
+</div>
+
+ClickHouse は [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) プロトコルをサポートしています。これは、[gRPC](https://grpc.io/) 上で [Arrow IPC](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc) フォーマットを使用し、効率的な列指向データ転送を実現する高性能な RPC フレームワークです。
+
+この実装には [Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html) のサポートも含まれており、Flight SQL プロトコルに対応した BI ツールやアプリケーションから ClickHouse に直接クエリできます。
+
+主な機能:
+
+* SQL クエリを実行し、結果を Apache Arrow フォーマットで取得できます。
+* Arrow フォーマットを使用してテーブルにデータを挿入できます。
+* Flight SQL コマンドを使ってメタデータ (カタログ、スキーマ、テーブル、主キー) をクエリできます。
+* Flight SQL を介してサーバー側のプリペアドステートメントを作成、バインド、実行、クローズできます。
+* Flight SQL アクションを介してセッションと設定を管理できます。
+* TLS 暗号化とユーザー名/パスワード認証。
+* `PollFlightInfo` による段階的な結果取得。
+* `CancelFlightInfo` によるクエリのキャンセル。
+
+<div id="enabling-server">
+  ## Arrow Flight Server を有効にする
+</div>
+
+Arrow Flight Server を有効にするには、ClickHouse サーバー設定に `arrowflight_port` 設定を追加します。
+
+```xml
+<clickhouse>
+    <arrowflight_port>9090</arrowflight_port>
+</clickhouse>
+```
+
+起動時に、インターフェイスが有効になっていることを示すログメッセージが表示されます。
+
+```text
+{} <Information> Application: Arrow Flight compatibility protocol: 0.0.0.0:9090
+```
+
+<div id="tls-configuration">
+  ## TLS 設定
+</div>
+
+Arrow Flight インターフェイスで TLS を有効にするには、以下の設定を行います。
+
+```xml
+<clickhouse>
+    <arrowflight_port>9090</arrowflight_port>
+    <arrowflight>
+        <enable_ssl>true</enable_ssl>
+        <ssl_cert_file>/path/to/server-cert.pem</ssl_cert_file>
+        <ssl_key_file>/path/to/server-key.pem</ssl_key_file>
+    </arrowflight>
+</clickhouse>
+```
+
+TLS が有効な場合、クライアントは `grpc://` ではなく `grpc+tls://` 認証スキームを使用して接続する必要があります。
+
+<div id="authentication">
+  ## 認証
+</div>
+
+Arrow Flight インターフェイスでは、2 つの認証方法がサポートされています。
+
+<div id="basic-auth">
+  ### 基本認証
+</div>
+
+クライアントは、標準の HTTP `Authorization: Basic` ヘッダーを介して、ユーザー名とパスワードで認証します。認証に成功すると、サーバーはレスポンスヘッダーで Bearer トークンを返します。
+
+<div id="bearer-auth">
+  ### ベアラートークン認証
+</div>
+
+後続のリクエストでは、基本認証で返されたベアラートークンを `Authorization: Bearer <token>` ヘッダーで使用できます。トークンは使用するたびに自動的に更新され、有効期限は `default_session_timeout` サーバー設定 (既定値: 60 秒) に従います。
+
+<div id="auth-python-example">
+  ### Python の例
+</div>
+
+```python
+import pyarrow.flight as flight
+
+client = flight.FlightClient("grpc://localhost:9090")
+
+# 基本認証は後続の呼び出しに使用するベアラートークンを返す
+token_pair = client.authenticate_basic_token("default", "")
+options = flight.FlightCallOptions(headers=[token_pair])
+```
+
+TLS の場合:
+
+```python
+import pyarrow.flight as flight
+
+with open("ca-cert.pem", "rb") as f:
+    tls_root_certs = f.read()
+
+client = flight.FlightClient(
+    "grpc+tls://localhost:9090",
+    tls_root_certs=tls_root_certs,
+)
+
+token_pair = client.authenticate_basic_token("default", "password")
+options = flight.FlightCallOptions(headers=[token_pair])
+```
+
+<div id="session-management">
+  ## セッション管理
+</div>
+
+Arrow Flight インターフェイスは、カスタム gRPC メタデータヘッダーを介して ClickHouse のセッションをサポートします。
+
+| ヘッダー                           | 説明                                                                                                    |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `x-clickhouse-session-id`      | セッション識別子。指定すると、複数のリクエストで同じセッション状態 (一時テーブル、設定) が共有されます。                                                |
+| `x-clickhouse-session-timeout` | 秒単位のセッションタイムアウトです。`max_session_timeout` を超えてはなりません。                                                   |
+| `x-clickhouse-session-check`   | セッションを作成せずに存在を確認するには、`1` に設定します。                                                                      |
+| `x-clickhouse-session-close`   | リクエスト完了後にセッションを閉じるには、`1` に設定します。server config で `enable_arrow_close_session` を `true` に設定しておく必要があります。 |
+
+<Note>
+  Arrow Flight は HTTP/2 上で gRPC を使用するため、メタデータヘッダー名では大文字と小文字が区別され、ここに示すとおり、正確に小文字で指定する必要があります (例: `x-clickhouse-session-id`。`X-ClickHouse-Session-Id` ではありません) 。これは、HTTP/2 のフィールド名には小文字のみを含めることを義務付ける [RFC 9113, Section 8.2](https://www.rfc-editor.org/rfc/rfc9113#section-8.2) で規定されています。これは、ヘッダー名で大文字と小文字が区別されない HTTP/1.1 とは異なります。
+</Note>
+
+セッションを使用すると、`SetSessionOptions` アクションで永続的な ClickHouse 設定を指定できます ([DoAction](#doaction) を参照) 。
+
+<div id="configuration-reference">
+  ## サーバー設定リファレンス
+</div>
+
+| 設定                                                            | デフォルト   | 説明                                                                                                                                                                                                                     |
+| ------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `arrowflight_port`                                            | —       | Arrow Flight サーバー用のポートです。この設定が指定されている場合にのみサーバーが起動します。                                                                                                                                                                  |
+| `arrowflight.enable_ssl`                                      | `false` | TLS 暗号化を有効にします。                                                                                                                                                                                                        |
+| `arrowflight.ssl_cert_file`                                   | —       | TLS 証明書ファイルへのパスです。TLS を有効にする場合は必須です。                                                                                                                                                                                   |
+| `arrowflight.ssl_key_file`                                    | —       | TLS 秘密鍵ファイルへのパスです。TLS を有効にする場合は必須です。                                                                                                                                                                                   |
+| `arrowflight.tickets_lifetime_seconds`                        | `600`   | Flight ticket の有効期限が切れてクリーンアップされるまでの時間 (秒) です。ticket の自動期限切れを無効にするには `0` に設定します。                                                                                                                                       |
+| `arrowflight.cancel_ticket_after_do_get`                      | `false` | `true` の場合、ticket は `DoGet` で消費された直後にキャンセルされ、メモリが解放されます。                                                                                                                                                               |
+| `arrowflight.poll_descriptors_lifetime_seconds`               | `600`   | poll ディスクリプタの有効期限が切れるまでの時間 (秒) です。自動期限切れを無効にするには `0` に設定します。                                                                                                                                                           |
+| `arrowflight.cancel_flight_descriptor_after_poll_flight_info` | `false` | `true` の場合、poll ディスクリプタは `PollFlightInfo` で消費された後にキャンセルされます。                                                                                                                                                           |
+| `arrowflight.max_prepared_statements_per_user`                | `100`   | ユーザーごとに開いておけるプリペアドステートメントの最大数です。制限を無効にするには `0` に設定します。                                                                                                                                                                 |
+| `arrowflight.prepared_statements_lifetime_seconds`            | `-1`    | プリペアドステートメントの有効期間モードです。`> 0`: この値を有効期間として使用し、セッションに紐づくステートメントとセッションレスのステートメントの両方で、リクエストごとに有効期限を更新します。`0`: 自動期限切れを無効にします。`-1`: セッションに紐づくステートメントでは、セッションタイムアウトを有効期間として使用し、リクエストごとに更新します。セッションレスのステートメントは自動的には期限切れになりません。 |
+| `enable_arrow_close_session`                                  | `true`  | クライアントが `x-clickhouse-session-close` header を介してセッションを閉じられるようにします。                                                                                                                                                     |
+| `default_session_timeout`                                     | `60`    | デフォルトのセッションタイムアウト (秒) です。Bearer トークンの有効期限も制御します。                                                                                                                                                                       |
+| `max_session_timeout`                                         | `3600`  | 許可されるセッションタイムアウトの最大値 (秒) です。                                                                                                                                                                                           |
+
+<div id="rpc-methods">
+  ## サポート対象のRPCメソッド
+</div>
+
+<div id="getflightinfo">
+  ### GetFlightInfo
+</div>
+
+クエリを実行し、結果のスキーマ、データ取得用チケット付きのエンドポイント、行数、バイト数を含む `FlightInfo` を返します。
+
+受け取る `FlightDescriptor` には、次のいずれかを指定できます。
+
+* **PATH descriptor**: テーブル名として解釈される単一要素の path です。`SELECT * FROM <table>` を生成します。
+* **CMD descriptor**: 生の SQL クエリ文字列、またはシリアライズされた Flight SQL protobuf コマンドです ([Flight SQL Commands](#flight-sql-commands) を参照) 。
+
+クエリは最後まで実行され、結果はサーバー側のチケットに保存されます。データの各 block ごとに個別のエンドポイント/チケットが生成されるため、クライアントはデータを並列に取得できます。
+
+```python
+# テーブル名でクエリ
+descriptor = flight.FlightDescriptor.for_path("my_table")
+info = client.get_flight_info(descriptor, options)
+
+# SQLでクエリ
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT * FROM my_table WHERE id > 100"
+)
+info = client.get_flight_info(descriptor, options)
+
+# 結果を取得
+for endpoint in info.endpoints:
+    reader = client.do_get(endpoint.ticket, options)
+    table = reader.read_all()
+    print(table.to_pandas())
+```
+
+<div id="pollflightinfo">
+  ### PollFlightInfo
+</div>
+
+長時間実行されるクエリの結果を、段階的に取得できるようにします。`GetFlightInfo` のようにクエリ全体の完了を待つのではなく、`PollFlightInfo` は結果をブロック単位で返します。
+
+最初の呼び出しでクエリの実行が開始され、レスポンスには次の内容が含まれます。
+
+* その時点で利用可能なデータブロックに対応するエンドポイントを含む `FlightInfo`
+* 次回のポーリングに使用する `FlightDescriptor` (さらに結果が返される見込みがある場合)
+
+返されたディスクリプタを使った後続の呼び出しでは、追加のブロックを取得できます。これ以上利用可能なデータがない場合、レスポンスには次のディスクリプタは含まれません。
+
+<Note>
+  現在の実装では、データブロックが利用可能になるまで待機し、データがない場合に即座に返すことはありません。
+</Note>
+
+<div id="getschema">
+  ### GetSchema
+</div>
+
+クエリ全体を実行せずに、クエリ結果の Arrow スキーマを返します。`GetFlightInfo` と同じ種類のディスクリプタを受け付けます。
+
+```python
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT 1 AS x, 'hello' AS y"
+)
+schema_result = client.get_schema(descriptor, options)
+schema = schema_result.schema
+print(schema)  # x: int32, y: string
+```
+
+<div id="doget">
+  ### DoGet
+</div>
+
+指定された ticket に対応するデータを取得します。次のいずれかを受け付けます。
+
+* `GetFlightInfo` または `PollFlightInfo` が返す ticket。
+* ticket の値として指定する、生の SQL query 文字列。
+
+```python
+# GetFlightInfoから取得したticketを使用する場合
+reader = client.do_get(endpoint.ticket, options)
+table = reader.read_all()
+
+# ticketとして生のSQLクエリを使用する場合
+ticket = flight.Ticket("SELECT number FROM system.numbers LIMIT 10")
+reader = client.do_get(ticket, options)
+table = reader.read_all()
+```
+
+<div id="doput">
+  ### DoPut
+</div>
+
+ClickHouse にデータを送信します。`FlightDescriptor` と Arrow レコードバッチのストリームを受け取ります。
+
+**テーブル名による insert** (PATH ディスクリプタ) :
+
+```python
+schema = pa.schema([("id", pa.int64()), ("name", pa.string())])
+batch = pa.record_batch(
+    [pa.array([1, 2, 3]), pa.array(["Alice", "Bob", "Charlie"])],
+    schema=schema,
+)
+
+descriptor = flight.FlightDescriptor.for_path("my_table")
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+```
+
+**SQLによる挿入** (CMDディスクリプタ) :
+
+```python
+descriptor = flight.FlightDescriptor.for_command(
+    "INSERT INTO my_table FORMAT Arrow"
+)
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+```
+
+**Flight SQL `CommandStatementUpdate` による DDL/DML の実行:**
+
+Flight SQL クライアントは、DDL/DML ステートメント (CREATE、INSERT、ALTER など) の実行に `CommandStatementUpdate` を使用します。レスポンスには、影響を受けた行数が含まれます。
+
+**Flight SQL `CommandStatementIngest` による一括取り込み:**
+
+サポートされているのは、既存のテーブルへの追記のみです (`TABLE_NOT_EXIST_OPTION_FAIL` + `TABLE_EXISTS_OPTION_APPEND`) 。このコマンドでは、カタログと一時テーブルはサポートされていません。
+
+`transaction_id` は `CommandStatementUpdate` と `CommandStatementIngest` ではサポートされていません。指定した場合、ClickHouse は `NotImplemented` エラーを返します。
+
+<Note>
+  データ転送に使用できるのは `Arrow` フォーマットのみです。SQL で他のフォーマット (例: `FORMAT JSON`) を指定すると、エラーになります。
+</Note>
+
+<div id="doaction">
+  ### DoAction
+</div>
+
+名前付きアクションを実行します。サポートされているアクションは次のとおりです。
+
+<div id="cancelflightinfo">
+  #### CancelFlightInfo
+</div>
+
+`FlightInfo` に関連付けられた実行中のクエリをキャンセルします。クエリ ID は `FlightInfo` の `app_metadata` フィールドから抽出されます。また、そのクエリに関連付けられたすべての poll ディスクリプタもキャンセルします。
+
+```python
+# PollFlightInfo経由で長時間実行クエリを開始し、キャンセルする
+cancel_request = flight.CancelFlightInfoRequest(info)
+result = client.cancel_flight_info(cancel_request, options)
+# 成功した場合、result.status は CancelStatus.CANCELLED になる
+```
+
+<div id="setsessionoptions">
+  #### SetSessionOptions
+</div>
+
+現在のセッションに対する ClickHouse のサーバー設定を行います。`x-clickhouse-session-id` ヘッダーでセッション ID が設定されている必要があります。
+
+サポートされる値の型: string、boolean、integer、double、および string list。
+
+設定名が不明な場合は、error `INVALID_NAME` が返されます。値をパースできない場合は、error `INVALID_VALUE` が返されます。
+
+<div id="getsessionoptions">
+  #### GetSessionOptions
+</div>
+
+現在のセッションの ClickHouse 設定とその値をすべて返します。設定名から文字列値へのマップを返します (内部的には `system.settings` にクエリします) 。
+
+<div id="createpreparedstatement">
+  #### CreatePreparedStatement
+</div>
+
+サーバー側のプリペアドステートメントを作成し、ステートメントハンドルを返します。リクエストには、`?` プレースホルダーを含む SQL クエリテキストが含まれます。
+
+このアクションでは `transaction_id` はサポートされていません。指定した場合、ClickHouse は `NotImplemented` エラーを返します。
+
+クエリステートメントの場合、レスポンスには次が含まれることがあります。
+
+* `dataset_schema`: 結果セットのスキーマ。
+* `parameter_schema`: ステートメントパラメータのスキーマ。
+
+有効なクエリでスキーマ推論に失敗した場合でも (たとえば、そのクエリではプレースホルダーを `NULL` に置き換えることが有効でない場合) 、ClickHouse はプリペアドステートメントを作成し、`dataset_schema` を含めずにハンドルを返します。
+
+プリペアドステートメントは、単一のセッションではなく、認証されたユーザーに属します。同じユーザーとして複数のセッションを開いている場合、それらのどのセッションからでも同じステートメントハンドルを実行、再バインド、クローズできます。
+
+他のユーザーは、自分で作成していないステートメントハンドルを実行、バインド、またはクローズできません。
+
+`arrowflight.prepared_statements_lifetime_seconds` は有効期限の動作を制御します。
+
+* `> 0`: 設定された値をステートメントの有効期間として使用します。セッションに紐づくステートメントとセッションに紐づかないステートメントの両方で、リクエストのたびに有効期限が更新されます。
+* `0`: プリペアドステートメントは自動的に期限切れになりません。
+* `-1` (デフォルト): ステートメントがセッション内で作成された場合、その有効期間はそのセッションのタイムアウトに従い、そのセッション内のリクエストごとに更新されます。セッションなしでステートメントが作成された場合、自動的に期限切れにはなりません。
+
+期限切れになったステートメントは削除され、`arrowflight.max_prepared_statements_per_user` のカウント対象にも含まれなくなります。
+
+<div id="closepreparedstatement">
+  #### ClosePreparedStatement
+</div>
+
+リクエストに空でないステートメントハンドルが含まれている場合、プリペアドステートメントを閉じ、関連するサーバー側リソースを解放します。
+
+ClickHouse は、ハンドルが空の場合、`ClosePreparedStatement` による一括クローズもサポートしています。
+
+* `x-clickhouse-session-id` が存在する場合、そのセッション内で認証済みユーザーのすべてのプリペアドステートメントを閉じます。
+* セッション ID が存在しない場合、認証済みユーザーのセッションに属さないプリペアドステートメントのみを閉じます。
+
+プリペアドステートメントがセッション内で (`x-clickhouse-session-id` を介して) 作成された場合、そのセッションが閉じられると、そのステートメントも自動的に閉じられます。
+
+<div id="flight-sql-commands">
+  ## Flight SQL コマンド
+</div>
+
+`CMD` ディスクリプタにシリアライズされた [Flight SQL protobuf](https://arrow.apache.org/docs/format/FlightSql.html) メッセージが含まれている場合、ClickHouse は以下のコマンドを処理します。
+
+<div id="flightsql-getflightinfo">
+  ### GetFlightInfo / GetSchema でサポート
+</div>
+
+| Command                         | Description                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------ |
+| `CommandStatementQuery`         | 任意の SQL クエリを実行します。`transaction_id` には対応していません。                                 |
+| `CommandGetSqlInfo`             | サーバーのメタデータ (名前、バージョン、Arrow のバージョン、機能) を取得します。                                  |
+| `CommandGetCatalogs`            | カタログを一覧表示します。空の結果を返します (ClickHouse はカタログを使用しません) 。                             |
+| `CommandGetDbSchemas`           | データベースを一覧表示します。オプションの `db_schema_filter_pattern` (SQL の `LIKE` パターン) に対応しています。 |
+| `CommandGetTables`              | テーブルを一覧表示します。スキーマ、テーブル名、テーブルタイプによるフィルターと、オプションでのスキーマの含有に対応しています。               |
+| `CommandGetTableTypes`          | テーブルエンジンのタイプ (`system.table_engines` から) を一覧表示します。                             |
+| `CommandGetPrimaryKeys`         | 指定したテーブルの主キーを構成するキーカラムを取得します。                                                  |
+| `CommandPreparedStatementQuery` | ハンドルで指定した、プリペアドステートメントの `SELECT` 形式のステートメントを実行します。                                     |
+
+<div id="flightsql-doput">
+  ### DoPut 経由でサポートされるもの
+</div>
+
+| Command                          | Description                                                                                                                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CommandStatementUpdate`         | DDL/DML ステートメント (CREATE、INSERT、ALTER など) を実行します。影響を受けた行数を返します。`transaction_id` はサポートされていません。                                                                                  |
+| `CommandStatementIngest`         | Arrow データを既存のテーブルに一括で取り込みます。サポートされるのは追加モードのみです。`transaction_id` はサポートされていません。                                                                                                 |
+| `CommandPreparedStatementQuery`  | `DoPut` 経由で送信する際にプリペアドステートメントのパラメータ値をバインドし、その後、ステートメントハンドルを含む `DoPutPreparedStatementResult` を返します。受け付けられるパラメータセットは 1 つ (1 行) のみで、バインドする値の数は `?` プレースホルダーの数と完全に一致している必要があります。 |
+| `CommandPreparedStatementUpdate` | ハンドルを使用してプリペアド DDL/DML ステートメントを実行し、影響を受けた行数を返します。                                                                                                                             |
+
+<div id="flightsql-not-implemented">
+  ### ClickHouse でサポートされていないもの
+</div>
+
+これらのコマンドは ClickHouse が提供していない機能に対応しているため、Arrow Flight SQL インターフェイスではサポートされていません。
+
+| コマンド                            | 理由                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| `CommandGetCrossReference`      | ClickHouse はリレーショナルデータベースではなく、外部キー制約を実装していないため、クロスリファレンスのメタデータは利用できません。   |
+| `CommandGetExportedKeys`        | ClickHouse はリレーショナルデータベースではなく、外部キー制約を実装していないため、エクスポートされたキーのメタデータは利用できません。 |
+| `CommandGetImportedKeys`        | ClickHouse はリレーショナルデータベースではなく、外部キー制約を実装していないため、インポートされたキーのメタデータは利用できません。  |
+| `CommandStatementSubstraitPlan` | ClickHouse は Substrait プランをサポートしていません。                                    |
+
+<div id="complete-example">
+  ## 完全な使用例
+</div>
+
+```python title="Query"
+import pyarrow as pa
+import pyarrow.flight as flight
+
+# 接続と認証
+client = flight.FlightClient("grpc://localhost:9090")
+token = client.authenticate_basic_token("default", "")
+options = flight.FlightCallOptions(headers=[token])
+
+# PATH ディスクリプタを使用した DoPut によるデータ挿入
+schema = pa.schema([("id", pa.uint32()), ("value", pa.string())])
+batch = pa.record_batch(
+    [pa.array([1, 2, 3], type=pa.uint32()), pa.array(["a", "b", "c"])],
+    schema=schema,
+)
+descriptor = flight.FlightDescriptor.for_path("test")
+writer, _ = client.do_put(descriptor, schema, options)
+writer.write_batch(batch)
+writer.close()
+
+# GetFlightInfo + DoGet を使用したデータのクエリ
+descriptor = flight.FlightDescriptor.for_command(
+    "SELECT * FROM test ORDER BY id"
+)
+info = client.get_flight_info(descriptor, options)
+for endpoint in info.endpoints:
+    reader = client.do_get(endpoint.ticket, options)
+    table = reader.read_all()
+    print(table.to_pandas())
+```
+
+```text title="Response"
+   id value
+0   1     a
+1   2     b
+2   3     c
+```
+
+<div id="data-format">
+  ## データフォーマット
+</div>
+
+すべてのデータは Apache Arrow IPC フォーマットで転送されます。サポートされるのは `Arrow` フォーマットのみで、ほかの ClickHouse フォーマット (例: `FORMAT JSON`、`FORMAT CSV`) を指定するとエラーになります。
+
+ClickHouse のデータ型は、シリアライゼーション時に Arrow 型にマッピングされます。設定 `output_format_arrow_unsupported_types_as_binary` は、未サポートの ClickHouse データ型をバイナリブロブとしてシリアライズするかどうかを制御します。
+
+<div id="compatibility">
+  ## 互換性
+</div>
+
+Arrow Flight インターフェイスは、Arrow Flight または Arrow Flight SQL プロトコルをサポートするあらゆるクライアントやツールと互換性があります。具体的には、次のようなものが含まれます。
+
+* Python (`pyarrow`)
+* Java (`org.apache.arrow.flight`)
+* C++ (`arrow::flight`)
+* Go (`apache/arrow/go`)
+* ADBC (Arrow Database Connectivity) ドライバー
+* DBeaver など、Flight SQL をサポートするその他のツール
+
+お使いのツール向けにネイティブの ClickHouse コネクタ (例: JDBC、ODBC、ネイティブプロトコル) が利用できる場合は、パフォーマンス上の理由やフォーマット互換性のために Arrow Flight が特に必要でない限り、そちらを優先して使用してください。
+
+<div id="client-side">
+  ## クライアント側のArrowFlight機能
+</div>
+
+ClickHouseは、外部のArrow Flightサーバーからデータを読み取るFlightクライアントとしても動作します。詳しくは、以下を参照してください。
+
+* [ArrowFlightテーブルエンジン](/ja/reference/engines/table-engines/integrations/arrowflight)
+* [arrowFlightテーブル関数](/ja/reference/functions/table-functions/arrowflight)
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [Apache Arrow Flight 仕様](https://arrow.apache.org/docs/format/Flight.html)
+* [Apache Arrow Flight SQL 仕様](https://arrow.apache.org/docs/format/FlightSql.html)
+* [ClickHouse の Arrow フォーマット](/ja/reference/formats/Arrow/Arrow)

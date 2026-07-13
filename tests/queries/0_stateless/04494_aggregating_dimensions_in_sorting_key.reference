@@ -1,0 +1,9 @@
+agg_ok created
+agg_allowed created
+agg_simple created
+agg_partition created
+agg_materialized created
+agg_no_measure created
+agg_tuple created
+sum_explicit created
+sum_auto created

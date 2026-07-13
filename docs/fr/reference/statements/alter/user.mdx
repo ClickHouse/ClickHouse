@@ -1,0 +1,119 @@
+---
+description: 'Documentation de USER'
+sidebarTitle: 'USER'
+slug: /sql-reference/statements/alter/user
+title: 'ALTER USER'
+doc_type: 'reference'
+---
+
+Modifie les comptes d’utilisateur ClickHouse.
+
+Syntaxe :
+
+```sql
+ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]] 
+    [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime]
+    [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
+    [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [DROP ALL PROFILES]
+    [DROP ALL SETTINGS]
+    [DROP SETTINGS variable [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
+```
+
+Pour utiliser `ALTER USER`, vous devez disposer du privilège [ALTER USER](/fr/reference/statements/grant#access-management).
+
+<div id="grantees-clause">
+  ## Clause GRANTEES
+</div>
+
+Spécifie les utilisateurs ou les rôles autorisés à recevoir des [privilèges](/fr/reference/statements/grant#privileges) de cet utilisateur, à condition que celui-ci dispose également de tous les droits d’accès requis accordés avec [GRANT OPTION](/fr/reference/statements/grant#granting-privilege-syntax). Options de la clause `GRANTEES` :
+
+* `user` — Spécifie un utilisateur auquel cet utilisateur peut accorder des privilèges.
+* `role` — Spécifie un rôle auquel cet utilisateur peut accorder des privilèges.
+* `ANY` — Cet utilisateur peut accorder des privilèges à n’importe qui. Il s’agit du paramètre par défaut.
+* `NONE` — Cet utilisateur ne peut accorder de privilèges à personne.
+
+Vous pouvez exclure n’importe quel utilisateur ou rôle à l’aide de l’expression `EXCEPT`. Par exemple, `ALTER USER user1 GRANTEES ANY EXCEPT user2`. Cela signifie que si `user1` dispose de privilèges accordés avec `GRANT OPTION`, il pourra les accorder à n’importe qui, sauf à `user2`.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Définissez les rôles attribués comme rôles par défaut :
+
+```sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+Si aucun rôle n’a été attribué au préalable à un utilisateur, ClickHouse lève une exception.
+
+Définissez tous les rôles attribués comme rôles par défaut :
+
+```sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+Si un rôle est attribué à un utilisateur ultérieurement, il deviendra automatiquement le rôle par défaut.
+
+Définissez tous les rôles attribués par défaut, à l’exception de `role1` et `role2` :
+
+```sql
+ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+Permet à l’utilisateur du compte `john` d’accorder ses privilèges à l’utilisateur du compte `jack` :
+
+```sql
+ALTER USER john GRANTEES jack;
+```
+
+Ajoute de nouvelles méthodes d’authentification à l’utilisateur tout en conservant celles existantes :
+
+```sql
+ALTER USER user1 ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+```
+
+Remarques :
+
+1. Les anciennes versions de ClickHouse peuvent ne pas prendre en charge la syntaxe associée à plusieurs méthodes d’authentification. Par conséquent, si le serveur ClickHouse contient de tels utilisateurs et qu’il est rétrogradé vers une version qui ne prend pas cette syntaxe en charge, ces utilisateurs deviendront inutilisables et certaines opérations liées aux utilisateurs ne fonctionneront plus. Pour effectuer la rétrogradation correctement, il faut configurer tous les utilisateurs de sorte qu’ils n’aient qu’une seule méthode d’authentification avant la rétrogradation. Sinon, si le serveur a été rétrogradé sans suivre la procédure appropriée, les utilisateurs défectueux doivent être supprimés.
+2. `no_password` ne peut pas coexister avec d’autres méthodes d’authentification pour des raisons de sécurité.
+   Pour cette raison, il n’est pas possible d’`ADD` une méthode d’authentification `no_password`. La requête ci-dessous générera une erreur :
+
+```sql
+ALTER USER user1 ADD IDENTIFIED WITH no_password
+```
+
+Si vous souhaitez supprimer les méthodes d’authentification d’un utilisateur et utiliser `no_password`, vous devez le préciser dans le formulaire de remplacement ci-dessous.
+
+Réinitialise les méthodes d’authentification et ajoute celles spécifiées dans la requête (effet de IDENTIFIED en tête sans le mot-clé ADD) :
+
+```sql
+ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+```
+
+Réinitialisez les méthodes d’authentification et ne conservez que la dernière ajoutée :
+
+```sql
+ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
+```
+
+<div id="valid-until-clause">
+  ## Clause VALID UNTIL
+</div>
+
+Permet de spécifier la date d&#39;expiration et, éventuellement, l&#39;heure d&#39;une méthode d&#39;authentification. Elle accepte une chaîne comme paramètre. Il est recommandé d&#39;utiliser le format `YYYY-MM-DD [hh:mm:ss] [timezone]` pour les valeurs de date et d&#39;heure. Par défaut, ce paramètre vaut `'infinity'`.
+La clause `VALID UNTIL` ne peut être spécifiée qu&#39;avec une méthode d&#39;authentification, sauf lorsqu&#39;aucune méthode d&#39;authentification n&#39;a été spécifiée dans la requête. Dans ce cas, la clause `VALID UNTIL` sera appliquée à toutes les méthodes d&#39;authentification existantes.
+
+Exemples :
+
+* `ALTER USER name1 VALID UNTIL '2025-01-01'`
+* `ALTER USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
+* `ALTER USER name1 VALID UNTIL 'infinity'`
+* `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL'2025-01-01''`

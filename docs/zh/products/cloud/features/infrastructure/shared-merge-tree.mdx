@@ -1,0 +1,123 @@
+---
+slug: /cloud/reference/shared-merge-tree
+sidebarTitle: 'SharedMergeTree'
+title: 'SharedMergeTree 表引擎'
+keywords: ['SharedMergeTree']
+description: '介绍 SharedMergeTree 表引擎'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+SharedMergeTree 表引擎家族是 ReplicatedMergeTree 引擎的云原生替代方案，经过专门优化，可运行在共享存储之上 (例如 Amazon S3、Google Cloud Storage、MinIO、Azure Blob 存储) 。每一种具体的 MergeTree 引擎类型都对应一个 SharedMergeTree 版本，例如，SharedReplacingMergeTree 对应替代 ReplicatedReplacingMergeTree。
+
+SharedMergeTree 表引擎家族为 ClickHouse Cloud 提供底层支持。对于最终用户而言，要从基于 ReplicatedMergeTree 的引擎切换到 SharedMergeTree 引擎家族，无需做任何更改。它还具备以下额外优势：
+
+* 更高的 insert 吞吐量
+* 更高的后台合并吞吐量
+* 更高的变更吞吐量
+* 更快的扩容和缩容操作
+* 以更轻量的方式为 select 查询提供强一致性
+
+SharedMergeTree 带来的一项重大改进是，相比 ReplicatedMergeTree，它实现了更彻底的计算与存储分离。下图展示了 ReplicatedMergeTree 如何分离计算与存储：
+
+<Image img="/images/cloud/reference/shared-merge-tree-1.png" alt="ReplicatedMergeTree 示意图" size="md" />
+
+如下图所示，尽管 ReplicatedMergeTree 中的数据存储在对象存储中，但元数据仍然保存在每个 clickhouse-server 上。这意味着，每次执行复制操作时，元数据也需要在所有副本上进行复制。
+
+<Image img="/images/cloud/reference/shared-merge-tree-2.png" alt="带元数据的 ReplicatedMergeTree 示意图" size="md" />
+
+与 ReplicatedMergeTree 不同，SharedMergeTree 不要求各副本之间彼此通信。相反，所有通信都通过共享存储和 clickhouse-keeper 完成。SharedMergeTree 实现了异步、无 leader 的复制，并使用 clickhouse-keeper 进行协调和元数据存储。这意味着，随着 service 扩容或缩容，元数据无需一并复制。因此，复制、变更、合并 和扩容操作都能更快完成。SharedMergeTree 允许每张表拥有数百个副本，从而可以在不使用 shards 的情况下实现动态扩展。ClickHouse Cloud 采用分布式查询执行方式，以便为单个查询利用更多计算资源。
+
+<div id="introspection">
+  ## 内部信息
+</div>
+
+用于查看 ReplicatedMergeTree 内部信息的大多数系统表，在 SharedMergeTree 中也同样存在；不过由于这里不会发生数据和元数据复制，`system.replication_queue` 和 `system.replicated_fetches` 这两个表除外。SharedMergeTree 为这两个表提供了相应的替代表。
+
+**system.virtual&#95;parts**
+
+该表是 SharedMergeTree 中 `system.replication_queue` 的替代表。它存储当前最新一组 parts 的信息，以及正在进行中的未来 parts (例如合并、变更和已删除分区) 的信息。
+
+**system.shared&#95;merge&#95;tree&#95;fetches**
+
+该表是 SharedMergeTree 中 `system.replicated_fetches` 的替代表。它包含当前正在进行的、将主键和校验和拉取到内存中的操作信息。
+
+<div id="enabling-sharedmergetree">
+  ## 启用 SharedMergeTree
+</div>
+
+`SharedMergeTree` 默认处于启用状态。
+
+对于支持 SharedMergeTree 表引擎的服务，无需手动启用任何功能。你可以像以前一样创建表，系统会根据你在 CREATE TABLE 查询中指定的引擎，自动使用对应的 SharedMergeTree 表引擎。
+
+```sql
+CREATE TABLE my_table(
+ key UInt64,
+ value String
+)
+ENGINE = MergeTree
+ORDER BY key
+```
+
+这会使用 SharedMergeTree 表引擎创建表 `my_table`。
+
+在 ClickHouse Cloud 中，`default_table_engine=MergeTree`，因此无需指定 `ENGINE=MergeTree`。以下查询与上述查询完全相同。
+
+```sql
+CREATE TABLE my_table(
+ key UInt64,
+ value String
+)
+ORDER BY key
+```
+
+如果您使用 Replacing、Collapsing、Aggregating、Summing、VersionedCollapsing 或 Graphite MergeTree 表引擎，它会自动转换为对应的基于 SharedMergeTree 的表引擎。
+
+```sql
+CREATE TABLE myFirstReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+```
+
+对于某个给定的表，你可以使用 `SHOW CREATE TABLE` 查看其 `CREATE TABLE` 语句中使用的是哪种表引擎：
+
+```sql
+SHOW CREATE TABLE myFirstReplacingMT;
+```
+
+```sql
+CREATE TABLE default.myFirstReplacingMT
+( `key` Int64, `someCol` String, `eventTime` DateTime )
+ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+ORDER BY key
+```
+
+<div id="settings">
+  ## 设置
+</div>
+
+某些设置项的行为已发生显著变化：
+
+* `insert_quorum` -- 所有写入 SharedMergeTree 的 insert 都是 quorum 插入 (写入共享存储) ，因此使用 SharedMergeTree 表引擎时不需要此设置。
+* `insert_quorum_parallel` -- 所有写入 SharedMergeTree 的 insert 都是 quorum 插入 (写入共享存储) ，因此使用 SharedMergeTree 表引擎时不需要此设置。
+* `select_sequential_consistency` -- 不要求 quorum 插入，但会在执行 `SELECT` 查询时给 clickhouse-keeper 带来额外负载
+
+<div id="consistency">
+  ## 一致性
+</div>
+
+与 ReplicatedMergeTree 相比，SharedMergeTree 提供了更好的轻量级一致性。向 SharedMergeTree 插入数据时，无需提供 `insert_quorum` 或 `insert_quorum_parallel` 之类的设置。插入操作默认为 quorum 插入，这意味着元数据会存储在 ClickHouse-Keeper 中，并复制到至少达到 quorum 的 ClickHouse Keeper 节点。集群中的每个副本都会异步从 ClickHouse-Keeper 拉取新信息。
+
+大多数情况下，你不应该使用 `select_sequential_consistency` 或 `SYSTEM SYNC REPLICA LIGHTWEIGHT`。异步复制已经足以覆盖大多数场景，而且延迟很低。只有在极少数你确实必须避免读取到过时数据的情况下，才建议按以下优先顺序处理：
+
+1. 如果你的读写查询是在同一会话中执行，或者都落在同一个节点上，则不需要使用 `select_sequential_consistency`，因为该副本已经拥有最新的元数据。
+
+2. 如果你写入一个副本、却从另一个副本读取，可以使用 `SYSTEM SYNC REPLICA LIGHTWEIGHT` 强制该副本从 ClickHouse-Keeper 拉取元数据。
+
+3. 将 `select_sequential_consistency` 作为查询设置的一部分使用。

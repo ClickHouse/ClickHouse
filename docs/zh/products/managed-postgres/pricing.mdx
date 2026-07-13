@@ -1,0 +1,152 @@
+---
+slug: /cloud/managed-postgres/pricing
+sidebarTitle: '定价'
+title: '定价'
+description: '由 ClickHouse 托管的 Postgres 的定价模式、层级、实例类型及 Beta 定价详情'
+keywords: ['Postgres 价格', 'Managed Postgres 价格', 'Postgres Beta 定价', 'Postgres 定价计算器', 'NVMe 定价', 'Postgres 层级定价']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pricing-beta" />
+
+由 ClickHouse 托管的 Postgres 基于本地 NVMe 存储构建，因此无需承担传统网络附加存储架构带来的额外成本，即可提供生产级性能和原生 ClickHouse 集成。本页介绍该服务的定价模式、可用的实例类型，以及各层级之间的对比。
+
+由 ClickHouse 托管的 Postgres 现已进入 Beta。在 2026 年 6 月 15 日开始计量之前，该服务仍可免费使用，让团队能够在开始计费前为实例选择合适的规格。
+
+在 Beta 期间，所有方案均可享受 50% 折扣，这体现了我们对早期客户的承诺。起售价约为 **30 美元/月**，配置为 1 vCPU、8 GB RAM 和 59 GB NVMe 存储。
+
+<Tip>
+  **定价计算器**
+
+  如需获取准确价格，请使用[定价计算器](https://clickhouse.com/pricing?service=postgres#pricing-calculator)，为你的工作负载找到最合适的配置和价格。
+</Tip>
+
+<div id="price-performance">
+  ## 性价比
+</div>
+
+由于该服务运行在本地 NVMe 存储上，相较于传统的网络附加存储架构，许多工作负载都能实现显著更高的性价比。有关在类似硬件配置下与其他 Postgres 提供商进行基准测试对比的信息，请参阅 [PostgresBench](https://postgresbench.clickhouse.com/)。
+
+对于相当的工作负载，客户所需的计算资源最多可降至原来的 1/2 到 1/4。在比较不同提供商的定价时，应将这些潜在的效率提升考虑在内；不过，实际提升会因工作负载而异，仍需结合您的具体应用进行验证。
+
+<div id="pricing-model">
+  ## 定价模式
+</div>
+
+该服务运行在本地 NVMe 存储上，因此定价依据完整的 VM 配置——CPU、内存和存储——而不是将 compute 和 disk 分开计费。
+
+提供 50 多种配置，范围从 1 vCPU / 8 GB RAM / 59 GB NVMe 到 96 vCPU / 768 GB RAM / 60 TB NVMe 存储，可灵活满足计算密集型和存储密集型的 Postgres 工作负载需求。
+
+<div id="tier-based-pricing">
+  ### 按层级定价
+</div>
+
+定价、功能和资源限制因组织层级而异——[基础版、Scale 或 Enterprise](/zh/products/cloud/features/cloud-tiers)。不过，每个层级都包含该服务的核心能力，包括采用本地 NVMe 存储的生产级 Postgres、原生 CDC 到 ClickHouse，以及 `pg_clickhouse` 扩展。
+
+下表汇总了各层级包含的功能、能力和限制。要比较不同层级的定价，请参阅[定价计算器](https://clickhouse.com/pricing?service=postgres#pricing-calculator)。
+
+<div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0'}}>
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>基础版</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>非常适合测试新想法或入门项目。存储和内存有限。</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li><a href="/zh/products/managed-postgres/scaling">计算资源最高可达 8 GB RAM</a></li>
+      <li><a href="/zh/products/managed-postgres/scaling">最高可达 118 GB 本地 NVMe 存储</a></li>
+      <li><a href="/zh/products/managed-postgres/backup-and-restore">备份保留期为 1 天</a></li>
+      <li><a href="/zh/products/managed-postgres/backup-and-restore">PITR 和分支</a></li>
+      <li>包含 <a href="/zh/products/managed-postgres/high-availability">高可用性</a></li>
+      <li><a href="/zh/products/managed-postgres/monitoring/query-insights">Query Insights</a>，保留期为 1 天</li>
+      <li><a href="/zh/products/managed-postgres/extensions">90+ 个 Postgres 扩展</a></li>
+      <li><a href="/zh/products/managed-postgres/clickhouse-integration">原生 CDC (变更数据捕获) 至 ClickHouse</a></li>
+      <li><a href="/zh/products/managed-postgres/extensions"><code>pg&#95;clickhouse</code> 扩展</a></li>
+      <li><a href="/zh/products/managed-postgres/migrations/clickhouse-cloud">全托管数据迁移</a></li>
+      <li>专家支持，1 个工作日内响应</li>
+      <li><a href="/zh/products/cloud/guides/security/cloud-access-management/manage-my-account">使用 Google 或 Microsoft 社交登录的单点登录 (SSO) </a></li>
+      <li><a href="/zh/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa">多因素身份验证</a></li>
+    </ul>
+  </div>
+
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>扩展版</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>适用于生产环境、大规模数据处理或专业级使用场景。</p>
+    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>包含基础版的全部功能，另外还包括</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li><a href="/zh/products/managed-postgres/scaling">最多 60 TB 存储空间</a></li>
+      <li><a href="/zh/products/managed-postgres/scaling">最多 96 个 vCPU 和 768 GB RAM</a></li>
+      <li><a href="/zh/products/managed-postgres/scaling">存储自动扩缩容</a></li>
+      <li><a href="/zh/products/managed-postgres/read-replicas">只读副本</a></li>
+      <li><a href="/zh/products/managed-postgres/security">私有网络</a></li>
+      <li><a href="/zh/products/managed-postgres/backup-and-restore">备份保留 7 天</a></li>
+      <li><a href="/zh/products/managed-postgres/monitoring/query-insights">Query Insights</a> 保留 7 天</li>
+      <li>针对严重性 1 级问题提供专家支持，24x7 1 小时响应</li>
+    </ul>
+  </div>
+
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Enterprise</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>适用于生产环境、超大规模数据场景或企业级用例。</p>
+    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>包含 Scale 的全部内容，另外还提供</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li>Enterprise 支持：严重级别 1 问题 30 分钟响应</li>
+      <li>私有区域</li>
+      <li>指定首席支持工程师</li>
+      <li><a href="/zh/products/managed-postgres/extensions">自定义扩展</a> (*待批准)</li>
+      <li><a href="/zh/products/managed-postgres/migrations/clickhouse-cloud">迁移咨询指南</a></li>
+      <li><a href="/zh/products/managed-postgres/upgrades">计划内升级</a></li>
+    </ul>
+  </div>
+</div>
+
+<div id="instance-types">
+  ### 实例类型
+</div>
+
+实例配置分为三类，便于根据工作负载特征简化基础设施选型。
+
+* **内存优化型：**专为内存密集型工作负载设计，具有更高的内存与 CPU 配比 (如 1:8 或 1:4) 。支持基于 AWS Graviton 的 `r8gd`、`r6gd`、`m6gd` 和 `m8gd` 系列。最适合大型工作集、高缓存命中率以及内存受限的数据库工作负载。
+* **存储优化型：**专为需要大量本地 NVMe 存储、但无需按比例扩展计算资源的工作负载设计。支持基于 AWS Graviton 的 `i8g`、`i8ge`、`i7i` 和 `i7ie` 系列，相关配置最多可提供 60 TB 的本地 NVMe 存储。最适合大型数据集、时间序列工作负载、日志与事件存储，以及存储密集型 OLTP 工作负载。
+* **CPU 优化型：**专为计算密集型工作负载设计，具有较低的内存与 CPU 配比 (通常约为 1:2) 。支持 `c6gd` 系列，最适合高并发事务型工作负载和 CPU 受限的查询。
+
+<div id="pricing-calculator">
+  ## 定价计算器
+</div>
+
+使用[定价计算器](https://clickhouse.com/pricing?service=postgres#pricing-calculator)估算不同工作负载特征和配置下的部署成本。你可以自定义：
+
+* 组织层级 (基础版、Scale、Enterprise)
+* 区域
+* 配置类型 (内存、存储或 CPU 优化)
+* CPU 架构 (ARM 或 x86)
+* vCPU、内存和存储规格
+* 备用实例 / 高可用 (HA) 配置
+
+这样，你就可以比较 50 多种受支持配置组合的价格，并找到最适合自身工作负载的方案。
+
+<div id="beta-pricing-highlights">
+  ## Beta 价格要点
+</div>
+
+在 Beta 期间：
+
+* 在 **2026 年 6 月 15 日** 开始按用量计费之前，该服务免费
+* 通过 **ClickPipes** 提供的原生 CDC 无需额外付费
+* 目前 **网络出站流量** 和 **备份** 均不收费
+* 目前所有套餐均享受 **Beta 期间 5 折价格**
+
+<div id="disclaimers">
+  ## 免责声明
+</div>
+
+随着产品在 Beta 期间持续演进，在正式进入 General Availability (GA) 前，定价和套餐方案可能还会进一步调整。请注意以下事项：
+
+* 网络出站流量定价将在 GA 后引入。与数据库共置部署的应用预计只会产生极低的出站流量成本。
+* 对于超过某一上限 (该上限仍在制定中) 的保留期限，GA 时可能会收取额外的备份费用。
+* 我们预计，通过 ClickPipes 提供的原生 CDC 在 GA 时仍将保持免费或仅收取极低费用，前提是 Postgres 与 ClickHouse 部署在同一区域，这也符合统一 OLTP + OLAP 平台的愿景。
+* 扩缩容和维护操作会在短时间内让新实例与旧实例并行运行，以保持数据库在线——在切换完成前，您可能会看到新旧两个实例的费用同时计费。这一时间窗口的长短会因实例类型和存储容量而异。
+* 如果所选实例类型在部分可用区中的容量暂时受限，服务可能会回退到较旧代次中的相近实例类型，以维持所选的高可用性配置。您将按目标实例类型的费率计费。
+* 随着我们在 Beta 期间进一步了解真实客户的使用模式、workload 特征和基础设施需求，现有定价可能会继续演变，并可能在接近 GA 时调整。

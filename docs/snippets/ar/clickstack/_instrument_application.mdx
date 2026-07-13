@@ -1,0 +1,133 @@
+---
+title: إضافة الرصد إلى التطبيق
+---
+
+<Steps>
+  <Step>
+    ## استنساخ التطبيق وتشغيله
+
+    استنسخ المستودع، وثبّت التبعيات، وأنشئ ملف `.env`:
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    يتصل مصدر بيانات ClickHouse افتراضيًا بالعُنقود التجريبي العام المخصّص للقراءة فقط، لذا يعمل التطبيق دون أي إعداد إضافي. ابدأه:
+
+    ```bash
+    ./run.sh
+    ```
+
+    افتح [http://localhost:5001](http://localhost:5001). سترى محدِّد السنة، وإحصاءات موجزة، ومخططًا للنشاط، وجدولي أهم المستخدمين والنطاقات، ومربع بحث. جرّب التنقّل: بدّل بين السنوات، وتعمّق في القصص.
+
+    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="تطبيق HackerNews Analyzer قيد التشغيل محليًا" />
+
+    في هذه المرحلة، يكون التطبيق قيد التشغيل لكنه غير مُهيّأ لجمع بيانات الرصد. لا يعرض ClickStack أي بيانات، إذ إنه ينتظر بيانات القياس عن بُعد. هذه هي حالة &quot;قبل&quot;.
+  </Step>
+
+  <Step>
+    ## احصل على تفاصيل الاتصال
+
+    يحتاج التطبيق إلى قيمتين للوصول إلى المجمّع:
+
+    * `OTEL_EXPORTER_OTLP_ENDPOINT`: نقطة نهاية OTLP التي يتيحها المجمّع لديك (وغالبًا ما تكون على المنفذ `4318` لـ OTLP عبر HTTP).
+    * `OTEL_EXPORTER_OTLP_HEADERS`: ترويسة التفويض التي تتضمن رمز الاستيعاب الخاص بك، بالصيغة `authorization=<token>`.
+
+    افتح `.env` واضبطهما:
+
+    ```bash
+    OTEL_SERVICE_NAME=hn-analyzer-api
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-collector-endpoint>:4318
+    OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-ingestion-token>
+    ```
+
+    تستخدم حزمة SDK المتغير `OTEL_EXPORTER_OTLP_HEADERS` لضبط ترويسة التفويض لجميع الإشارات الثلاث: التتبعات والمقاييس والسجلات. إذا كان المُجمِّع يعمل محليًا ولا يفرض المصادقة، فيمكنك ترك القيمة فارغة (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`)، لكن يجب أن يكون المتغير موجودًا؛ إذ تتجاوز حزمة SDK التهيئة بالكامل إذا لم يكن مضبوطًا أو كان فارغًا تمامًا.
+  </Step>
+
+  <Step>
+    ## أضِف أدوات القياس عن بُعد إلى التطبيق
+
+    تتضمن عملية إضافة القياس عن بُعد ثلاثة أجزاء: تثبيت SDKs، وتبديل أمر التشغيل، وتمكين Browser SDK. ولا يغيّر أيٌّ من ذلك منطق العمل في التطبيق.
+
+    ### تثبيت SDKs
+
+    ثبّت OpenTelemetry SDKs لكلٍ من الواجهة الخلفية والمتصفح:
+
+    ```bash
+    npm install @hyperdx/node-opentelemetry @hyperdx/browser
+    ```
+
+    ### استخدم CLI الخاص بـ opentelemetry-instrument
+
+    يُشغَّل التطبيق بواسطة `run.sh`، والذي يحتوي في أسفله على سطرَي `exec`: أحدهما نشط والآخر مُعلَّق. بدّل السطر النشط بحيث يتم تشغيل Node عبر `opentelemetry-instrument`:
+
+    ```diff
+     # BEFORE: plain node, no instrumentation, collector stays silent:
+    -exec node scripts/entrypoint.js
+    +# exec node scripts/entrypoint.js
+
+     # AFTER: same source, wrapped by opentelemetry-instrument CLI.
+    -# exec npx opentelemetry-instrument scripts/entrypoint.js
+    +exec npx opentelemetry-instrument scripts/entrypoint.js
+    ```
+
+    هذا هو التغيير الكامل في الـbackend. يتم تحميل `auto-instrumentation` بواسطة `opentelemetry-instrument` عند بدء العملية.
+
+    ### فعِّل Browser SDK
+
+    لالتقاط التتبعات الموزعة (من المتصفح إلى الـbackend) وميزة إعادة تشغيل الجلسات، فعِّل Browser SDK في `src/web/telemetry.ts`. أزل التعليق عن سطر الاستيراد وكتلة `HyperDX.init({...})`:
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    export function initTelemetry(): void {
+      HyperDX.init({
+        url: __OTLP_ENDPOINT__,
+        apiKey: __OTLP_AUTH_TOKEN__,
+        service: 'hn-analyzer-web',
+        tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        consoleCapture: true,
+        advancedNetworkCapture: true,
+      });
+    }
+    ```
+
+    لا حاجة إلى أي تعديلات إضافية على `.env`. يمثّل `__OTLP_ENDPOINT__` و`__OTLP_AUTH_TOKEN__` ثابتين لوقت الترجمة يُدرجهما `vite.config.ts`: نقطة النهاية هي `OTEL_EXPORTER_OTLP_ENDPOINT`، ويُستخرج الرمز المميّز من `OTEL_EXPORTER_OTLP_HEADERS`، وهما القيمتان نفسيهما اللتان تستخدمهما الواجهة الخلفية.
+
+    <Warning>
+      يكون رمز الإدخال مضمّنًا في حزمة المتصفح العامة، ويمكن لأي شخص قراءته عند فحص تبويب `Network`.
+    </Warning>
+  </Step>
+
+  <Step>
+    ## أنشئ حركة مرور واعرض بيانات القياس عن بُعد
+
+    أعِد تشغيل التطبيق حتى يدخل أمر التشغيل الجديد وحزمة المتصفح المنشأة حديثًا حيّز التنفيذ:
+
+    ```bash
+    # Ctrl-C the previous run, then:
+    ./run.sh
+    ```
+
+    أعِد تحميل علامة تبويب المتصفح لكي يقدّم Vite الحزمة المحدَّثة، ثم حدِّث التطبيق بضع مرات، وبدّل بين السنوات، وانقر للدخول إلى المشاركات لتوليد بعض الزيارات.
+
+    افتح واجهة ClickStack:
+
+    1. انتقل إلى **Search** وصفِّ النتائج لآخر 5 دقائق. ستبدأ سجلات `hn-analyzer-api` بالظهور تباعًا.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="سجلات ClickStack" />
+
+    2. انقر على أحد الطلبات ثم تنقّل صعودًا عبر التتبّع. سترى مقطع التتبّع (span) الخاص بمعالج Express، ومقطع HTTP فرعيًا يشير إلى عنقود ClickHouse مع مدة الشبكة الفعلية، وسجلات `console.log` مرتبطة على التتبّع نفسه.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="تتبعات ClickStack" />
+
+    3. افتح **Session Replay** لتشغيل فيديو يمكنك التنقّل خلاله لجلسة في المتصفح، متزامنًا مع المخطط الزمني للتتبّع.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="جلسات ClickStack" />
+
+    تظهر السجلات والمقاييس والتتبعات وإعادات تشغيل الجلسات كلها في الواجهة نفسها، وتستخدم لغة الاستعلام نفسها، وترتبط تلقائيًا ببعضها بعضًا.
+  </Step>
+</Steps>
