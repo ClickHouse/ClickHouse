@@ -864,6 +864,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
 
+    Stopwatch watch;
+
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
@@ -920,6 +922,21 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
+        /// Processing nodes and the bucket lock in keeper are considered abandoned
+        /// and cleaned up once `persistent_processing_node_ttl_seconds` passes.
+        /// Stop starting new iterations early enough for the whole execution to finish
+        /// before the TTL is reached, otherwise nodes still in use could be removed.
+        const size_t ttl_seconds = files_metadata->getPersistentProcessingNodeTTLSeconds();
+        if (ttl_seconds && watch.elapsedSeconds() >= static_cast<double>(ttl_seconds) / 2)
+        {
+            LOG_TRACE(
+                log,
+                "Stopping streaming to views: elapsed time ({} sec) reached half of "
+                "persistent processing node TTL ({} sec)",
+                watch.elapsedSeconds(), ttl_seconds);
+            break;
+        }
+
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
         auto effective_max_files = max_files_override.load();
@@ -1040,7 +1057,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         total_rows += rows;
     }
 
-    LOG_TEST(log, "Processed rows: {}", total_rows);
+    LOG_TEST(log, "Processed rows: {}, elapsed: {} ms", total_rows, watch.elapsedMilliseconds());
     return total_rows > 0;
 }
 
