@@ -553,11 +553,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (const auto is_case_insensitive_scenario = is_has_token_case_insensitive && lowercase_key_index;
         function_name.starts_with("hasToken") && ((!is_has_token_case_insensitive && key_index) || is_case_insensitive_scenario))
     {
-        /// A scalar-string function cannot consume an array constant (e.g. `arr = ['x']`);
-        /// treat it as UNKNOWN (scan all granules) instead of throwing BAD_GET on safeGet<String>().
-        if (!value_data_type.isStringOrFixedString())
-            return false;
-
         out.key_column = is_case_insensitive_scenario ? *lowercase_key_index : *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -648,10 +643,6 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
-    /// The scalar-string functions below call safeGet<String>() on the whole constant. A whole-array
-    /// comparison (e.g. `arr = ['x']`) supplies an array constant, which those functions cannot turn
-    /// into a token atom, so treat it as UNKNOWN (scan all granules) instead of throwing BAD_GET.
-    /// (The array-consuming functions above -- has(array)/hasAny/hasAll/multiSearchAny -- are exempt.)
     if (function_name == "notEquals")
     {
         if (!value_data_type.isStringOrFixedString())
