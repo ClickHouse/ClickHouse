@@ -39,6 +39,12 @@ DROP TABLE dist_over_tf;
 -- Too many arguments for the table-function form.
 CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, numbers(10), number, 'default', 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- The `policy_name` parameter of the classic form is not accepted for the table-function form: the policy
+-- only stores temporary files for background sends of `INSERT`s, which this read-only form rejects, and the
+-- policy is resolved at `CREATE` / `ATTACH` / server startup, so accepting it would make a read-only table
+-- fail to load on any node where the (unused) policy is absent.
+CREATE TABLE dist_over_tf ENGINE = Distributed(test_shard_localhost, numbers(10), rand(), 'default'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
 -- A `*Cluster` table function cannot back a table (`ITableFunctionCluster::canBeUsedToCreateTable` is false),
 -- so it is rejected at create time, exactly as `CREATE TABLE ... AS urlCluster(...)` is - even when the
 -- columns are given explicitly (otherwise the unsupported combination would only surface later at read time).

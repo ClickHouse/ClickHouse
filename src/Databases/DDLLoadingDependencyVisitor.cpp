@@ -150,7 +150,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
         /// The sharding key is the 4th argument in the classic form
         /// Distributed(logs, default, hits[, sharding_key[, policy_name]]).
         ///
-        /// In the table-function form Distributed(logs, table_function()[, sharding_key[, policy_name]]) the
+        /// In the table-function form Distributed(logs, table_function()[, sharding_key]) the
         /// sharding key is ignored by the engine (see `has_sharding_key` in `StorageDistributed`), so it must
         /// not create loading dependencies: a `dictGet` / `joinGet` inside the ignored key would otherwise
         /// block DROP / RENAME of objects the engine never uses, contradicting the documented read-only

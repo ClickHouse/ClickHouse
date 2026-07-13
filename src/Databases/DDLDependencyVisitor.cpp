@@ -290,7 +290,7 @@ namespace
         }
 
         /// Distributed(cluster_name, database_name, table_name, ...)
-        /// or the table-function form Distributed(cluster_name, table_function()[, sharding_key[, policy_name]]).
+        /// or the table-function form Distributed(cluster_name, table_function()[, sharding_key]).
         void visitDistributedTableEngine(const ASTFunction & table_engine)
         {
             /// We consider only dependencies on local tables: this node depends on an object of the cluster only

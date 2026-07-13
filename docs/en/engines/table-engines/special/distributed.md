@@ -32,7 +32,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 -- Or, a table function can be used as the remote target instead of a database and a table
 -- (the columns can be omitted in that case; see "From a table function" below):
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-ENGINE = Distributed(cluster, table_function()[, sharding_key[, policy_name]])
+ENGINE = Distributed(cluster, table_function()[, sharding_key])
 [SETTINGS name=value, ...]
 ```
 
@@ -49,7 +49,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 Instead of a database and a table name, a table function can be used as the remote target, in the same way as the [`cluster`](/sql-reference/table-functions/cluster) table function accepts `cluster('cluster_name', table_function())`. The table function is executed on every shard of the cluster:
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] ENGINE = Distributed(cluster, table_function()[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] ENGINE = Distributed(cluster, table_function()[, sharding_key]) [SETTINGS name=value, ...]
 ```
 
 The columns can be omitted; in that case the structure is inferred from the table function. For example:
@@ -61,7 +61,7 @@ CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
 The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
 
 :::note Read-only
-A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key`, `policy_name`, and the `INSERT`-related settings and behaviour described below therefore do not apply to it.
+A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key` and the `INSERT`-related settings and behaviour described below therefore do not apply to it, and the `policy_name` parameter is not accepted for this form (it would only be used to store temporary files for background `INSERT`s).
 :::
 
 ### Distributed parameters {#distributed-parameters}

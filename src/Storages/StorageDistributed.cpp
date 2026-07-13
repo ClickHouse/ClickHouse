@@ -2282,17 +2282,27 @@ void registerStorageDistributed(StorageFactory & factory)
         String storage_policy = "default";
 
         /// A function node whose name is a registered table function is treated as a table function
-        /// (Distributed(cluster, table_function()[, sharding_key[, policy_name]])). Any other expression
+        /// (Distributed(cluster, table_function()[, sharding_key])). Any other expression
         /// is a database name, so it is evaluated as a constant string (e.g. an identifier or `currentDatabase()`).
         /// This mirrors how `TableFunctionRemote` disambiguates its second argument.
         const auto * table_function_ast = engine_args.size() >= 2 ? engine_args[1]->as<ASTFunction>() : nullptr;
         if (table_function_ast && TableFunctionFactory::instance().isTableFunctionName(table_function_ast->name))
         {
-            if (engine_args.size() > 4)
+            /// The `policy_name` parameter of the classic form is not accepted here. It only affects the
+            /// `INSERT` path (the storage policy stores temporary files for background send), and this form
+            /// rejects every `INSERT` with `NOT_IMPLEMENTED`, so the policy could never be used. Accepting
+            /// it would not even be harmless: the policy is resolved whenever the table has a data path -
+            /// at `CREATE`, at `ATTACH`, and on server startup - so a read-only table would fail to load on
+            /// any node where that unused policy is absent. Loading from previously-validated metadata must
+            /// not fail on an argument that is ignored anyway, so only a fresh user-supplied query is
+            /// rejected; on a metadata load any extra argument is ignored and the policy stays "default".
+            if (engine_args.size() > 3 && !isLoadingFromExistingMetadata(args.mode))
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Storage Distributed over a table function requires from 2 to 4 parameters - "
+                                "Storage Distributed over a table function requires from 2 to 3 parameters - "
                                 "name of configuration section with list of remote servers, table function, "
-                                "sharding key expression (optional), policy to store data in (optional).");
+                                "sharding key expression (optional). The 'policy_name' parameter does not apply "
+                                "to this form: it only affects INSERTs, and a Distributed table over a table "
+                                "function cannot be inserted into.");
 
             /// Not every table function can back a table. The `*Cluster` table functions (`urlCluster`,
             /// `s3Cluster`, `fileCluster`, ...) are meant to be called directly and cannot be used to create
@@ -2317,11 +2327,6 @@ void registerStorageDistributed(StorageFactory & factory)
 
             if (engine_args.size() >= 3)
                 sharding_key_ast = engine_args[2];
-            if (engine_args.size() >= 4)
-            {
-                engine_args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[3], local_context);
-                storage_policy = checkAndGetLiteralArgument<String>(engine_args[3], "storage_policy");
-            }
         }
         else
         {
@@ -2436,7 +2441,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 Instead of a database and a table name, a table function can be used as the remote target, in the same way as the [`cluster`](/sql-reference/table-functions/cluster) table function accepts `cluster('cluster_name', table_function())`. The table function is executed on every shard of the cluster:
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] ENGINE = Distributed(cluster, table_function()[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] ENGINE = Distributed(cluster, table_function()[, sharding_key]) [SETTINGS name=value, ...]
 ```
 
 The columns can be omitted; in that case the structure is inferred from the table function. For example:
@@ -2448,7 +2453,7 @@ CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
 The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
 
 :::note Read-only
-A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key`, `policy_name`, and the `INSERT`-related settings and behaviour described below therefore do not apply to it.
+A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key` and the `INSERT`-related settings and behaviour described below therefore do not apply to it, and the `policy_name` parameter is not accepted for this form (it would only be used to store temporary files for background `INSERT`s).
 :::
 
 ### Distributed parameters {#distributed-parameters}
@@ -2650,7 +2655,7 @@ Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster
 - [`shardNum()`](../../../sql-reference/functions/other-functions.md#shardNum) and [`shardCount()`](../../../sql-reference/functions/other-functions.md#shardCount) functions
 )DOCS_MD",
         .syntax = "ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]])\n"
-                  "ENGINE = Distributed(cluster, table_function()[, sharding_key[, policy_name]])",
+                  "ENGINE = Distributed(cluster, table_function()[, sharding_key])",
         .related = {"Merge"}});
 }
 
