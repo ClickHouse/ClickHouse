@@ -1343,7 +1343,7 @@ private:
                   ->convertToFullColumnIfConst();
         };
 
-        // With lexicographic check we can support all the operations below
+        /// With lexicographic check we can support all the operations below
         constexpr bool is_equals = IsOperation<Op>::equals;
         constexpr bool is_not_equals = IsOperation<Op>::not_equals;
         constexpr bool is_less = IsSameOperation<Op, LessOp>::value;
@@ -1351,17 +1351,21 @@ private:
         constexpr bool is_greater = IsSameOperation<Op, GreaterOp>::value;
         constexpr bool is_greater_or_equals = IsOperation<Op>::greater_or_equals;
 
+        /// run(FunctionComparison<EqualsOp>) and fetch the positions with matches
         ColumnPtr equals_col = run(std::make_shared<FunctionComparison<EqualsOp, NameEquals>>(params));
         const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
 
+        /// handle run(FunctionComparison<LessOp>) or run(FunctionComparison<GreaterOp>) if apply  
         ColumnPtr order_col;
         if constexpr (is_less || is_less_or_equals)
             order_col = run(std::make_shared<FunctionComparison<LessOp, NameLess>>(params));
         else if constexpr (is_greater || is_greater_or_equals)
             order_col = run(std::make_shared<FunctionComparison<GreaterOp, NameGreater>>(params));
+
         const ColumnUInt8::Container * element_order
             = order_col ? &assert_cast<const ColumnUInt8 &>(*order_col).getData() : nullptr;
 
+        /// Now, lets build the output result
         auto result = ColumnUInt8::create(input_rows_count);
         auto & res = result->getData(); 
 
@@ -1402,7 +1406,7 @@ private:
                 }
                 res[row] = value;
             }
-            pos += common_length;
+            pos += common_length; // advance to the next subarray
         }
 
         return result;
