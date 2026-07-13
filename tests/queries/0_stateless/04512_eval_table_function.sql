@@ -106,6 +106,10 @@ SELECT count() FROM eval('SELECT (((((1)))))') SETTINGS max_ast_depth = 3; -- { 
 -- controls its own AST size limits, both to tighten and to relax them.
 SELECT count() FROM eval('SELECT 1 + 2 + 3 + 4 + 5 SETTINGS max_ast_elements = 5'); -- { serverError TOO_BIG_AST }
 SELECT * FROM eval('SELECT 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 AS big SETTINGS max_ast_elements = 100000') SETTINGS max_ast_elements = 30;
+-- The size limits are checked after the global `WITH` aliases are expanded (as in a direct query), so a
+-- global CTE that stays small before expansion but grows past `max_ast_elements` once it is inlined into
+-- every UNION branch is rejected, instead of slipping through the pre-expansion check.
+SELECT count() FROM eval('WITH 1+2+3+4+5+6+7+8+9+10+11+12+13+14+15 AS big SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big UNION ALL SELECT big SETTINGS max_ast_elements = 100'); -- { serverError TOO_BIG_AST }
 
 -- The old analyzer is not supported.
 SET enable_analyzer = 0;

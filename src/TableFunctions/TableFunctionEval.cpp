@@ -1,6 +1,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -25,6 +26,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_eval_table_function;
+    extern const SettingsBool enable_global_with_statement;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_ast_depth;
@@ -159,6 +161,13 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
     auto limits_context = Context::createCopy(context);
     InterpreterSetQuery::applySettingsFromQuery(query, limits_context);
     const auto & inner_settings = limits_context->getSettingsRef();
+
+    /// Expand global `WITH` aliases before the size limits below, same as `executeQueryImpl` does
+    /// (and gated by the inner query's own `enable_global_with_statement`). Otherwise the size limits
+    /// would run on the pre-expansion AST, so a generated query whose global CTE expands past
+    /// `max_ast_elements` / `max_ast_depth` would pass in `eval` while executing it directly is rejected.
+    if (inner_settings[Setting::enable_global_with_statement])
+        ApplyWithGlobalVisitor::visit(query);
 
     /// The generated query does not go through `executeQuery`, so resolve the INTERSECT/EXCEPT
     /// operator precedence and the implicit UNION mode here, same as `executeQueryImpl` does
