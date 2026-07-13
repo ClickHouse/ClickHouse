@@ -261,4 +261,36 @@ void TextIndexPositionCodec::decode(ReadBuffer & in, PositionList & pl, Encoding
         decodeRawSoA(in, pl, position_cardinality, payload_scratch);
 }
 
+std::vector<RoaringishEntry> TextIndexPositionCodec::narrowTo16(std::span<const RoaringishEntry> entries32)
+{
+    std::vector<RoaringishEntry> out;
+    out.reserve(entries32.size());
+    for (const auto & e : entries32)
+    {
+        const UInt32 lo = e.bitmap & 0xFFFFu;
+        const UInt32 hi = e.bitmap >> 16;
+        if (lo)
+            out.push_back(RoaringishEntry{e.doc_id, e.group * 2, lo});
+        if (hi)
+            out.push_back(RoaringishEntry{e.doc_id, e.group * 2 + 1, hi});
+    }
+    return out; // sorted: (doc, 2g) precedes (doc, 2g+1), and g was sorted
+}
+
+std::vector<RoaringishEntry> TextIndexPositionCodec::widenTo32(std::span<const RoaringishEntry> entries16)
+{
+    std::vector<RoaringishEntry> out;
+    out.reserve(entries16.size());
+    for (const auto & e : entries16)
+    {
+        const UInt32 g32 = e.group >> 1;
+        const UInt32 bm32 = (e.group & 1u) ? (e.bitmap << 16) : (e.bitmap & 0xFFFFu);
+        if (!out.empty() && out.back().doc_id == e.doc_id && out.back().group == g32)
+            out.back().bitmap |= bm32;
+        else
+            out.push_back(RoaringishEntry{e.doc_id, g32, bm32});
+    }
+    return out;
+}
+
 }

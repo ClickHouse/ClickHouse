@@ -62,6 +62,19 @@ public:
     /// `payload_scratch`, reused across calls). For Raw it de-interleaves the stored
     /// entries into the three arrays. See the other overload for `position_cardinality`.
     static void decode(ReadBuffer & in, PositionList & pl, Encoding encoding, UInt64 position_cardinality, PaddedPODArray<char> & payload_scratch);
+
+    /// Bucket widths (positions per group). 32 is the canonical build/merge form (96-bit entry);
+    /// 16 (64-bit entry) is used on disk for parts whose positions all fit under ~1M, halving the
+    /// bitmap lane. Entries convert losslessly between widths (a bitmap split/merge).
+    static constexpr UInt32 WIDTH_32 = 32;
+    static constexpr UInt32 WIDTH_16 = 16;
+    /// Largest group32 for which every position still fits a W=16 entry (group16 <= 65535).
+    static constexpr UInt32 MAX_GROUP32_FOR_WIDTH_16 = 32767;
+
+    /// W=32 -> W=16: split each 32-bit bitmap into the low/high 16-bit halves (groups 2g, 2g+1).
+    static std::vector<RoaringishEntry> narrowTo16(std::span<const RoaringishEntry> entries32);
+    /// W=16 -> W=32: merge groups (2k, 2k+1) back into group k with a 32-bit bitmap.
+    static std::vector<RoaringishEntry> widenTo32(std::span<const RoaringishEntry> entries16);
 };
 
 }

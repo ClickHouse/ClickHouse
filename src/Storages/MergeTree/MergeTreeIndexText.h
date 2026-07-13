@@ -300,6 +300,9 @@ struct TextIndexHeader
     bool has_positions = false;
     /// Positions on-disk codec (TextIndexPositionCodec::Encoding as UInt8); persisted for version >= WithPositionsCodec, else defaults to Raw.
     UInt8 positions_codec = 0;
+    /// Roaringish storage bucket width for this part's positions (32 = 96-bit, 16 = 64-bit);
+    /// persisted for version >= WithPositionsCodec, else defaults to 32.
+    UInt8 positions_width = 32;
     DictionarySparseIndex sparse_index;
 };
 
@@ -319,7 +322,7 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, UInt8 positions_codec, WriteBuffer & ostr);
+    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, UInt8 positions_codec, UInt8 positions_width, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the
@@ -380,6 +383,9 @@ public:
     MergeTreeIndexVersion getSerializationVersion() const { return serialization_version; }
     /// Positions on-disk codec persisted in the header (TextIndexPositionCodec::Encoding as UInt8).
     UInt8 getPositionsCodec() const { return positions_codec; }
+    /// Roaringish storage width (32 or 16) persisted in the header; the phrase reader tags decoded
+    /// PositionLists with it so the matcher intersects at the width the part was written with.
+    UInt8 getPositionsWidth() const { return positions_width; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -419,6 +425,8 @@ private:
     MergeTreeIndexVersion serialization_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial);
     /// Positions on-disk codec persisted in the header (TextIndexPositionCodec::Encoding as UInt8).
     UInt8 positions_codec = 0;
+    /// Roaringish storage width persisted in the header (32 or 16).
+    UInt8 positions_width = 32;
 };
 
 /// Text index granule created on writing of the index.

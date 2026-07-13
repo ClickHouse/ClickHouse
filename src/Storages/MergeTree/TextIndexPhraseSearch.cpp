@@ -13,10 +13,14 @@ namespace DB
 PositionList TextIndexPhraseSearch::intersect(const PositionList & lhs, const PositionList & rhs, UInt32 shift)
 {
     PositionList result;
+    result.bitmap_bits = lhs.bitmap_bits;
     if (lhs.empty() || rhs.empty() || shift == 0)
         return result;
 
-    chassert(shift < RoaringishEntry::BITMAP_BITS);
+    /// Both lists come from the same part, so they share the storage width (positions per group).
+    chassert(lhs.bitmap_bits == rhs.bitmap_bits);
+    const UInt32 bitmap_bits = lhs.bitmap_bits;
+    chassert(shift < bitmap_bits);
 
     /// Collect matches as (key, bitmap); the intersection is small relative to the inputs.
     /// key = (doc_id << 32) | group, computed inline from the SoA lanes.
@@ -43,7 +47,7 @@ PositionList TextIndexPhraseSearch::intersect(const PositionList & lhs, const Po
 
             /// Phase 2: boundary crossing. High bits of LHS bitmap overflow into group+1.
             /// Skip when group is at max to avoid crossing into a different document.
-            UInt32 overflow_positions_bitmap = lhs.bitmap[lhs_idx] >> (RoaringishEntry::BITMAP_BITS - shift);
+            UInt32 overflow_positions_bitmap = lhs.bitmap[lhs_idx] >> (bitmap_bits - shift);
             if (overflow_positions_bitmap && lhs.group[lhs_idx] < std::numeric_limits<UInt32>::max())
             {
                 UInt64 boundary_key = lhs_key + 1; /// Same doc_id, group+1.
@@ -66,7 +70,7 @@ PositionList TextIndexPhraseSearch::intersect(const PositionList & lhs, const Po
         else if (lhs_key < rhs_key)
         {
             /// Phase 2 for non-matching LHS: check if LHS overflows into RHS's group.
-            UInt32 overflow_positions_bitmap = lhs.bitmap[lhs_idx] >> (RoaringishEntry::BITMAP_BITS - shift);
+            UInt32 overflow_positions_bitmap = lhs.bitmap[lhs_idx] >> (bitmap_bits - shift);
             if (overflow_positions_bitmap && lhs.group[lhs_idx] < std::numeric_limits<UInt32>::max())
             {
                 UInt64 boundary_key = lhs_key + 1;

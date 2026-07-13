@@ -898,8 +898,9 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
                 std::vector<PositionList> position_lists;
                 position_lists.reserve(position_offsets.size());
 
-                /// Decode with the codec persisted in this part's header, not current metadata.
+                /// Decode with the codec + width persisted in this part's header, not current metadata.
                 auto positions_codec = static_cast<TextIndexPositionCodec::Encoding>(granule->getPositionsCodec());
+                const UInt32 positions_width = granule->getPositionsWidth();
 
                 auto * data_buffer = positions_stream->getDataBuffer();
                 {
@@ -909,6 +910,7 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
                         positions_stream->seekToMark({position_offsets[i], 0});
                         auto & positions = position_lists.emplace_back();
                         TextIndexPositionCodec::decode(*data_buffer, positions, positions_codec, position_cardinalities[i], position_payload_scratch);
+                        positions.bitmap_bits = positions_width; /// intersect at the width the part was stored with
                     }
                 }
 

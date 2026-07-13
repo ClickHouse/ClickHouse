@@ -273,6 +273,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     /// Resolve each source part's codecs (postings + positions) from its own header.
     source_postings_serializations.reserve(segments.size());
     source_positions_codecs.reserve(segments.size());
+    source_positions_widths.reserve(segments.size());
 
     for (size_t i = 0; i < segments.size(); ++i)
     {
@@ -283,7 +284,16 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         source_postings_serializations.emplace_back(
             PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
         source_positions_codecs.emplace_back(static_cast<TextIndexPositionCodec::Encoding>(header.positions_codec));
+        source_positions_widths.emplace_back(header.positions_width);
     }
+
+    /// The merged part stores at W=16 only if it is pfor (only WithPositionsCodec parts persist the
+    /// width byte) and every source did (positions carry over unchanged); otherwise W=32.
+    if (TextIndexPositionCodec::parseEncoding(params.positions_codec) == TextIndexPositionCodec::Encoding::Pfor
+        && !source_positions_widths.empty()
+        && std::all_of(source_positions_widths.begin(), source_positions_widths.end(),
+                       [](UInt8 w) { return w == TextIndexPositionCodec::WIDTH_16; }))
+        output_positions_width = TextIndexPositionCodec::WIDTH_16;
 }
 
 MergeTextIndexesTask::~MergeTextIndexesTask() noexcept
@@ -392,12 +402,21 @@ void MergeTextIndexesTask::flushPostingList()
         }
         output_positions.resize(out + 1);
 
+        /// Narrow to the merged part's storage width (W=16 when all sources were W=16).
+        std::vector<RoaringishEntry> narrowed;
+        std::span<const RoaringishEntry> to_encode{output_positions.data(), output_positions.size()};
+        if (output_positions_width == TextIndexPositionCodec::WIDTH_16)
+        {
+            narrowed = TextIndexPositionCodec::narrowTo16(to_encode);
+            to_encode = narrowed;
+        }
+
         token_info.header |= PostingsSerialization::Flags::HasPositions;
         token_info.position_offset = positions_stream->plain_hashing.count();
-        token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
+        token_info.position_cardinality = static_cast<UInt32>(to_encode.size());
 
         TextIndexPositionCodec::encode(
-            output_positions, positions_stream->plain_hashing,
+            to_encode, positions_stream->plain_hashing,
             TextIndexPositionCodec::parseEncoding(params.positions_codec));
     }
 
@@ -526,6 +545,14 @@ bool MergeTextIndexesTask::executeStep()
                     token_info.position_cardinality,
                     position_decode_scratch);
 
+                /// A source stored at W=16 must be widened to the canonical W=32 before merging.
+                if (source_positions_widths[current->order] == TextIndexPositionCodec::WIDTH_16)
+                {
+                    auto widened = TextIndexPositionCodec::widenTo32({position_entries.data(), position_entries.size()});
+                    position_entries.resize(widened.size());
+                    std::copy(widened.begin(), widened.end(), position_entries.begin());
+                }
+
                 /// Adjust doc_ids if merging parts with offset remapping.
                 if (merged_part_offsets)
                 {
@@ -578,7 +605,7 @@ void MergeTextIndexesTask::finalize()
                                                                        : TextIndexHeader::Version::WithPositions);
     TextIndexSerialization::serializeHeader(
         sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions,
-        static_cast<UInt8>(positions_encoding), index_stream->compressed_hashing);
+        static_cast<UInt8>(positions_encoding), output_positions_width, index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();

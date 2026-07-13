@@ -497,6 +497,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
     serialization_version = text_index_header->version;
     positions_codec = text_index_header->positions_codec;
+    positions_width = text_index_header->positions_width;
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
@@ -1177,7 +1178,7 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, UInt8 positions_codec, WriteBuffer & ostr)
+void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, UInt8 positions_codec, UInt8 positions_width, WriteBuffer & ostr)
 {
     UInt64 codec_type = static_cast<UInt64>(posting_list_codec_type);
 
@@ -1188,7 +1189,10 @@ void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & spars
         writeVarUInt(static_cast<UInt64>(has_positions), ostr);
 
     if (version >= static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithPositionsCodec))
+    {
         writeVarUInt(static_cast<UInt64>(positions_codec), ostr);
+        writeVarUInt(static_cast<UInt64>(positions_width), ostr);
+    }
 
     /// Sparse indexes are created with raw columns and bit-packed only by optimize.
     /// The write path never calls optimize, so expect the raw columns here.
@@ -1241,6 +1245,12 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         if (positions_codec > static_cast<UInt64>(TextIndexPositionCodec::Encoding::Pfor))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown positions codec in text index header: {}", positions_codec);
         header.positions_codec = static_cast<UInt8>(positions_codec);
+
+        UInt64 positions_width = 0;
+        readVarUInt(positions_width, istr);
+        if (positions_width != TextIndexPositionCodec::WIDTH_32 && positions_width != TextIndexPositionCodec::WIDTH_16)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown positions width in text index header: {}", positions_width);
+        header.positions_width = static_cast<UInt8>(positions_width);
     }
 
     return header;
@@ -1446,10 +1456,32 @@ DictionarySparseIndex serializeTokensAndPostings(
     Stream & postings_stream,
     const MergeTreeIndexTextParams & params,
     PostingsSerialization & postings_serialization,
+    UInt8 & out_positions_width,
     MergeTreeIndexWriterStream * positions_stream = nullptr)
 {
     size_t num_tokens = sorted_tokens.size();
     size_t num_blocks = (num_tokens + params.dictionary_block_size - 1) / params.dictionary_block_size;
+
+    /// Pick this part's positions width once, from the largest group across all tokens: if every
+    /// position fits a 64-bit (W=16) entry, store at W=16 (~24% smaller); otherwise W=32. Only pfor
+    /// parts persist the width byte (WithPositionsCodec header), so raw parts stay W=32 -- a reader
+    /// defaults raw positions to W=32, and narrowing without recording the width would corrupt them.
+    out_positions_width = TextIndexPositionCodec::WIDTH_32;
+    const bool width_persisted = TextIndexPositionCodec::parseEncoding(params.positions_codec) == TextIndexPositionCodec::Encoding::Pfor;
+    if (positions_stream && width_persisted)
+    {
+        UInt32 max_group = 0;
+        for (const auto & entry : sorted_tokens)
+        {
+            if (!entry.positions)
+                continue;
+            entry.positions->finalizeOrdering();
+            for (const auto & e : entry.positions->getEntries())
+                max_group = std::max(max_group, e.group);
+        }
+        if (max_group <= TextIndexPositionCodec::MAX_GROUP32_FOR_WIDTH_16)
+            out_positions_width = TextIndexPositionCodec::WIDTH_16;
+    }
 
     auto sparse_index_tokens = ColumnString::create();
     auto & sparse_index_str = assert_cast<ColumnString &>(*sparse_index_tokens);
@@ -1499,12 +1531,21 @@ DictionarySparseIndex serializeTokensAndPostings(
                 entry.positions->finalizeOrdering();
                 const auto & position_entries = entry.positions->getEntries();
 
+                /// Narrow the W=32 build entries to the part's storage width when it's W=16.
+                std::vector<RoaringishEntry> narrowed;
+                std::span<const RoaringishEntry> to_encode{position_entries};
+                if (out_positions_width == TextIndexPositionCodec::WIDTH_16)
+                {
+                    narrowed = TextIndexPositionCodec::narrowTo16(position_entries);
+                    to_encode = narrowed;
+                }
+
                 token_info.header |= PostingsSerialization::Flags::HasPositions;
                 token_info.position_offset = positions_stream->plain_hashing.count();
-                token_info.position_cardinality = static_cast<UInt32>(position_entries.size());
+                token_info.position_cardinality = static_cast<UInt32>(to_encode.size());
 
                 TextIndexPositionCodec::encode(
-                    position_entries, positions_stream->plain_hashing,
+                    to_encode, positions_stream->plain_hashing,
                     TextIndexPositionCodec::parseEncoding(params.positions_codec));
             }
 
@@ -1552,17 +1593,19 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_type);
     PostingsSerialization postings_serialization(std::move(postings_codec), serialization_version);
 
+    UInt8 positions_width = TextIndexPositionCodec::WIDTH_32;
     auto sparse_index_block = serializeTokensAndPostings(
         sorted_tokens,
         *dictionary_stream,
         *postings_stream,
         params,
         postings_serialization,
+        positions_width,
         positions_stream);
 
     TextIndexSerialization::serializeHeader(
         sparse_index_block, posting_list_codec_type, serialization_version, params.positions,
-        static_cast<UInt8>(positions_encoding), index_stream->compressed_hashing);
+        static_cast<UInt8>(positions_encoding), positions_width, index_stream->compressed_hashing);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)

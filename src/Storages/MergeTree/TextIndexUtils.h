@@ -149,6 +149,12 @@ private:
     std::vector<PostingsSerialization> source_postings_serializations;
     /// Per-source positions codec, read from that source part's own header (decode with the format actually written).
     std::vector<TextIndexPositionCodec::Encoding> source_positions_codecs;
+    /// Per-source roaringish storage width (32 or 16), read from that source part's header; decoded
+    /// entries are widened to the canonical W=32 before merging.
+    std::vector<UInt8> source_positions_widths;
+    /// Storage width for the merged part: W=16 iff every source was W=16 (positions are preserved
+    /// across a merge, so their max position — hence the width — carries over), else W=32.
+    UInt8 output_positions_width = 32;
 
     bool is_initialized = false;
 };

@@ -135,6 +135,10 @@ struct PositionList
     PaddedPODArray<UInt32> doc;
     PaddedPODArray<UInt32> group;
     PaddedPODArray<UInt32> bitmap;
+    /// Bucket width (positions per group) the lanes are encoded at: 32 (96-bit entry) or 16 (64-bit
+    /// entry). group = pos / bitmap_bits, and bitmap holds bitmap_bits valid bits. The phrase matcher
+    /// uses this instead of a hardcoded 32 so a part stored at W=16 intersects correctly.
+    UInt32 bitmap_bits = RoaringishEntry::BITMAP_BITS;
 
     size_t size() const { return doc.size(); }
     bool empty() const { return doc.empty(); }
