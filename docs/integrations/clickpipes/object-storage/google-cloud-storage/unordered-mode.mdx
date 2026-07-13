@@ -23,6 +23,12 @@ Various types of failures can occur when ingesting data, which can result in par
 
 **1.** In the Google Cloud Console, navigate to **Pub/Sub > Topics > Create topic**. Create a new topic with a default subscription and note the **Topic Name**.
 
+<Warning>
+**One subscription per ClickPipe**
+
+Each ClickPipe needs its own dedicated Pub/Sub subscription. Within a single subscription, Pub/Sub delivers each message to only one subscriber: if two or more ClickPipes (or any other application) consume the same subscription, each notification is received by only one of them, and files are silently skipped by the pipes that never receive it. This applies even if the ClickPipes use different path patterns — a pipe that receives a notification for a non-matching file discards it, and no other pipe will ever see it. To ingest from the same bucket with multiple ClickPipes, create a separate subscription on the topic for each ClickPipe.
+</Warning>
+
 **2.** Configure a GCS bucket notification that publishes [`OBJECT_FINALIZE` events](https://docs.cloud.google.com/storage/docs/pubsub-notifications) to the Pub/Sub topic created above.
 
 **2.1.** This step cannot be performed in the Google Cloud Console, so you must use the `gcloud` client or your preferred programmatic interface for Google Cloud. For example, using `gcloud`:
@@ -65,7 +71,7 @@ Various types of failures can occur when ingesting data, which can result in par
 
 **1.** In the ClickHouse Cloud console, navigate to **Data Sources > Create ClickPipe** and select **Google Cloud Storage**. Enter the details to connect to your GCS bucket. Under **Authentication method**, choose **Service Account** and provide the `.json` service account key.
 
-**2.** Toggle on **Continuous ingestion**, then select **Any order** as the ingestion mode and provide the **Pub/Sub subscription** name for the subscription connected to your bucket. The subscription name must follow the following format:
+**2.** Toggle on **Continuous ingestion**, then select **Any order** as the ingestion mode and provide the **Pub/Sub subscription** name for the subscription connected to your bucket. The subscription must be used exclusively by this ClickPipe — see [Create a Google Cloud Pub/Sub topic](#create-pubsub-topic). The subscription name must follow the following format:
 
 ```text
 projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}
