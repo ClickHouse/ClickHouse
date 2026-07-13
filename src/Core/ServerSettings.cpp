@@ -7,6 +7,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
+#include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/SharedThreadPools.h>
@@ -48,6 +49,7 @@ extern const Metric BackgroundSchedulePoolSize;
 extern const Metric BackgroundBufferFlushSchedulePoolSize;
 extern const Metric BackgroundDistributedSchedulePoolSize;
 extern const Metric BackgroundMessageBrokerSchedulePoolSize;
+extern const Metric BackgroundStreamingSchedulePoolSize;
 extern const Metric PointInPolygonCacheSizeLimit;
 }
 
@@ -670,6 +672,14 @@ This setting can be modified at runtime and will take effect immediately.
 :::
 )", 0) \
     DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.", 0) \
+    DECLARE(String, encryption_header_cache_policy, DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, "Encryption header cache policy name.", 0) \
+    DECLARE(UInt64, encryption_header_cache_size, DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE, R"(
+Maximum size of the cache of encryption headers read from encrypted files. Used only by the experimental ReaderExecutor read path.
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+)", 0) \
+    DECLARE(Double, encryption_header_cache_size_ratio, DEFAULT_ENCRYPTION_HEADER_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the encryption header cache relative to the cache's total size.", 0) \
     \
     DECLARE(Bool, disable_internal_dns_cache, false, "Disables the internal DNS cache. Recommended for operating ClickHouse in systems with frequently changing infrastructure such as Kubernetes.", 0) \
     DECLARE(UInt64, dns_cache_max_entries, 10000, R"(Internal DNS cache max entries.)", 0) \
@@ -971,6 +981,7 @@ Possible values:
     DECLARE(Float, background_schedule_pool_max_parallel_tasks_per_type_ratio, 0.8f, R"(The maximum ratio of threads in the pool that can execute tasks of the same type simultaneously.)", 0) \
     DECLARE(UInt64, background_message_broker_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing background operations for message streaming.)", 0) \
     DECLARE(UInt64, background_distributed_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing distributed sends.)", 0) \
+    DECLARE(UInt64, background_streaming_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing streaming background operations.)", 0) \
     DECLARE(UInt64, tables_loader_foreground_pool_size, 0, R"(
 Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
 
@@ -1983,6 +1994,8 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
                 {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
             {"background_distributed_schedule_pool_size",
                 {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundDistributedSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
+            {"background_streaming_schedule_pool_size",
+                {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundStreamingSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
 
             {"mark_cache_size", {std::to_string(context->getMarkCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"uncompressed_cache_size", {std::to_string(context->getUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
@@ -1990,6 +2003,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"index_uncompressed_cache_size", {std::to_string(context->getIndexUncompressedCache(/*only_if_enabled=*/ false)->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"encryption_header_cache_size", {std::to_string(context->getEncryptionHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"primary_index_cache_size", {std::to_string(context->getPrimaryIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},

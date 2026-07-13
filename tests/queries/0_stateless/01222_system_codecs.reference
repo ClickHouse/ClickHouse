@@ -11,7 +11,7 @@ LZ4HC	130	1	1	0	0	0	LZ4 High Compression algorithm with configurable level; slow
 Multiple	145	0	0	0	0	0	Apply multiple codecs consecutively defined by user.
 NONE	2	0	0	0	0	0	No compression. Can be used on columns that can not be compressed anyway.
 T64	147	1	0	0	0	0	Preprocessor. Crops unused high bits; puts them into a 64x64 bit matrix; optimized for 64-bit data types.
-ZSTD	144	1	1	0	0	0	Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 3.
+ZSTD	144	1	1	0	0	0	Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 6.
 14
 name
 method_byte
