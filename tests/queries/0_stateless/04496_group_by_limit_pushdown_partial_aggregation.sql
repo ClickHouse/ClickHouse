@@ -12,6 +12,10 @@ SET query_plan_max_limit_for_top_k_optimization = 1000;
 -- with serialized plans the initiator's plan is shipped instead and top-K is
 -- (deliberately) not serialized.  Pin the text path, which is what this test covers.
 SET serialize_query_plan = 0;
+-- The partial pushdown is derived in the analyzer's Planner
+-- (`applyTopKPushdownToPartialAggregation`); the old analyzer plans through a
+-- different path that does not implement it, so pin the analyzer.
+SET enable_analyzer = 1;
 
 -- Correctness: identical results with the optimization on and off.  Two
 -- "shards" read the same data, so every count doubles.
