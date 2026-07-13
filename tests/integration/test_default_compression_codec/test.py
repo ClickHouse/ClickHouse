@@ -484,11 +484,7 @@ def test_default_codec_recovered_from_checksums_when_codec_file_missing(start_cl
         "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='no_codec_file'"
     ).strip()
     node4.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"rm {data_path}detached/{part_name}/default_compression_codec.txt",
-        ]
+        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
     )
 
     node4.query(f"ALTER TABLE no_codec_file ATTACH PART '{part_name}'")
