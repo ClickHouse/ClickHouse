@@ -66,7 +66,6 @@ namespace Setting
 
     extern const SettingsUInt64 default_max_bytes_in_join;
 
-    extern const SettingsBool allow_experimental_ie_join;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool enable_lazy_columns_replication;
@@ -120,7 +119,6 @@ namespace QueryPlanSerializationSetting
 
     extern const QueryPlanSerializationSettingsUInt64 default_max_bytes_in_join;
 
-    extern const QueryPlanSerializationSettingsBool allow_experimental_ie_join;
     extern const QueryPlanSerializationSettingsBool allow_dynamic_type_in_join_keys;
     extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
     extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
@@ -177,7 +175,6 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     join_to_sort_maximum_table_rows = query_settings[Setting::join_to_sort_maximum_table_rows];
     allow_experimental_join_right_table_sorting = query_settings[Setting::allow_experimental_join_right_table_sorting];
 
-    allow_experimental_ie_join = query_settings[Setting::allow_experimental_ie_join];
     allow_dynamic_type_in_join_keys = query_settings[Setting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = query_settings[Setting::enable_lazy_columns_replication];
@@ -236,7 +233,6 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 
     default_max_bytes_in_join = settings[QueryPlanSerializationSetting::default_max_bytes_in_join];
 
-    allow_experimental_ie_join = settings[QueryPlanSerializationSetting::allow_experimental_ie_join];
     allow_dynamic_type_in_join_keys = settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = settings[QueryPlanSerializationSetting::enable_lazy_columns_replication];
@@ -292,7 +288,6 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 
     settings[QueryPlanSerializationSetting::default_max_bytes_in_join] = default_max_bytes_in_join;
 
-    settings[QueryPlanSerializationSetting::allow_experimental_ie_join] = allow_experimental_ie_join;
     settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys] = allow_dynamic_type_in_join_keys;
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;

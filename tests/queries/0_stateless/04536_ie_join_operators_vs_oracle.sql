@@ -3,7 +3,7 @@
 -- with the conditions in WHERE, which is executed as a cross join with a filter
 -- (`cross_to_inner_join_rewrite` is disabled so that they cannot be routed through IEJoin).
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET cross_to_inner_join_rewrite = 0;
 
 DROP TABLE IF EXISTS t1;

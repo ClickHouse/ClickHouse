@@ -3,7 +3,7 @@
 -- `join_use_nulls = 1` is required: `count(flag_desc)`/`count(ts)` count non-NULL values, so
 -- unmatched rows must be padded with NULLs, not defaults.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET join_use_nulls = 1;
 
 DROP TABLE IF EXISTS ota;

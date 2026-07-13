@@ -1,6 +1,6 @@
 <test>
     <settings>
-        <allow_experimental_ie_join>1</allow_experimental_ie_join>
+        <join_algorithm>direct,parallel_hash,hash,ie_join</join_algorithm>
     </settings>
 
     <create_query>CREATE TABLE ie_events (id UInt64, start UInt64, end UInt64, val_hi UInt64) ENGINE = MergeTree ORDER BY id</create_query>

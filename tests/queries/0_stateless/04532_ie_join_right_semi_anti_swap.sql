@@ -5,7 +5,7 @@
 -- The band condition is crafted to have the same match set as the equality `swl.k + 10 = swr.k`,
 -- so every result is cross-checked against a hash join of the same kind.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 -- The join order optimizer may flip RIGHT to LEFT with swapped children on its own when
 -- statistics suggest it; disable it so that the kind reaches the IEJoin planner code as RIGHT
 -- and the checks below pin the IEJoin-level normalization.

@@ -3,7 +3,7 @@
 -- `join_use_nulls` is enabled so that unmatched rows are padded with NULLs; the rows with
 -- NULL keys (ids 4 and 5) never match but are emitted as unmatched, not dropped.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET join_use_nulls = 1;
 
 DROP TABLE IF EXISTS left_small;

@@ -1,0 +1,51 @@
+-- The position of `ie_join` in the `join_algorithm` list sets its priority over the
+-- equality-based algorithms. Listed last, it takes only joins that hash cannot execute
+-- (no equality conditions in the ON section). Listed first, it takes any INNER join with
+-- two inequality conditions: the remaining conditions (including equalities) are applied
+-- as a filter over the join result, so both routes must produce the same result.
+
+DROP TABLE IF EXISTS prio_l;
+DROP TABLE IF EXISTS prio_r;
+
+CREATE TABLE prio_l (k Int32, x Int32, y Int32) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE prio_r (k Int32, x Int32, y Int32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO prio_l SELECT number % 5, number, 100 - number FROM numbers(50);
+INSERT INTO prio_r SELECT number % 5, number + 3, 90 - number FROM numbers(50);
+
+-- A join with only inequality conditions goes to IEJoin from any position in the list
+SET join_algorithm = 'hash,ie_join';
+SELECT 'inequalities, ie_join last', count() > 0 FROM (EXPLAIN SELECT count() FROM prio_l l JOIN prio_r r ON l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
+SELECT count(), sum(cityHash64(l.k, l.x, l.y, r.k, r.x, r.y)) FROM prio_l l JOIN prio_r r ON l.x < r.x AND l.y > r.y;
+
+SET join_algorithm = 'ie_join,hash';
+SELECT 'inequalities, ie_join first', count() > 0 FROM (EXPLAIN SELECT count() FROM prio_l l JOIN prio_r r ON l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
+SELECT count(), sum(cityHash64(l.k, l.x, l.y, r.k, r.x, r.y)) FROM prio_l l JOIN prio_r r ON l.x < r.x AND l.y > r.y;
+
+-- With an equality condition the algorithm listed first takes the join
+SET join_algorithm = 'hash,ie_join';
+SELECT 'equality, hash first', count() FROM (EXPLAIN SELECT count() FROM prio_l l JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
+SELECT count(), sum(cityHash64(l.k, l.x, l.y, r.k, r.x, r.y)) FROM prio_l l JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y;
+
+SET join_algorithm = 'ie_join,hash';
+SELECT 'equality, ie_join first', count() > 0 FROM (EXPLAIN SELECT count() FROM prio_l l JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
+SELECT count(), sum(cityHash64(l.k, l.x, l.y, r.k, r.x, r.y)) FROM prio_l l JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y;
+
+-- One-sided and constant conditions are also applied as a filter when IEJoin is forced
+SELECT 'one-sided, ie_join first', count() > 0 FROM (EXPLAIN SELECT count() FROM prio_l l JOIN prio_r r ON l.x < r.x AND l.y > r.y AND l.k > 1 AND r.k < 4) WHERE explain LIKE '%IEJoin%';
+SELECT count(), sum(cityHash64(l.k, l.x, l.y, r.k, r.x, r.y)) FROM prio_l l JOIN prio_r r ON l.x < r.x AND l.y > r.y AND l.k > 1 AND r.k < 4;
+SELECT count(), sum(cityHash64(l.k, l.x, l.y, r.k, r.x, r.y)) FROM prio_l l JOIN prio_r r ON l.x < r.x AND l.y > r.y AND l.k > 1 AND r.k < 4 SETTINGS join_algorithm = 'hash';
+
+-- A single inequality is not enough for IEJoin even when it is listed first
+SELECT 'single inequality', count() FROM (EXPLAIN SELECT count() FROM prio_l l JOIN prio_r r ON l.k = r.k AND l.x < r.x) WHERE explain LIKE '%IEJoin%';
+
+-- For non-INNER kinds the ON conditions affect matching and cannot be applied as a filter
+-- over the result, so extra conditions keep the join on the hash path
+SELECT 'left outer with equality', count() FROM (EXPLAIN SELECT count() FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
+SELECT count() FROM prio_l l LEFT JOIN prio_r r ON l.k = r.k AND l.x < r.x AND l.y > r.y;
+
+-- IEJoin alone cannot execute a join without inequality conditions
+SET join_algorithm = 'ie_join';
+SELECT count() FROM prio_l l JOIN prio_r r ON l.k = r.k; -- { serverError NOT_IMPLEMENTED }
+
+DROP TABLE prio_l;
+DROP TABLE prio_r;

@@ -1,6 +1,6 @@
 -- Empty and all-NULL inputs with `a.x BETWEEN b.x AND b.x` must not read out of bounds.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS test6861;
 DROP TABLE IF EXISTS all_null;

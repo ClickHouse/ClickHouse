@@ -4,7 +4,7 @@
 -- (comma join with the conditions in WHERE; `cross_to_inner_join_rewrite = 0` keeps it out of
 -- IEJoin).
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET cross_to_inner_join_rewrite = 0;
 -- Equal-key runs of 400 rows cross the 128-row blocks of the plan-level sort output.
 SET max_block_size = 128;

@@ -3,7 +3,7 @@
 -- the rows before the narrow window plus the NULL-keyed rows. Shapes with a third (tail)
 -- predicate stay unsupported (see 04522).
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS wide_ranges;
 DROP TABLE IF EXISTS narrow_ranges;

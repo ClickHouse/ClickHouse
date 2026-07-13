@@ -3,7 +3,7 @@
 -- `join_use_nulls = 1` so `count(ts)` counts only matched rows in would-be-empty buckets
 -- (all buckets are non-empty here, so the result equals the INNER one).
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET join_use_nulls = 1;
 
 SELECT count() > 0 FROM (

@@ -1,7 +1,7 @@
 -- Two adjacent ranges of unit intervals (200k rows per side) with exactly one matching
 -- pair at the boundary.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1

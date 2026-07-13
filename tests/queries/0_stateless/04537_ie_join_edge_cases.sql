@@ -1,7 +1,7 @@
 -- IEJoin edge cases: empty, single-row and NULL-key inputs, boundary row positions,
 -- block-size-aligned output, and shapes that must fall back to other join algorithms.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
@@ -56,7 +56,8 @@ DROP TABLE tn2;
 -- Anti-correlated conditions: empty result
 SELECT count() FROM (SELECT number AS x, number AS y FROM numbers(100)) a JOIN (SELECT number AS x, number AS y FROM numbers(100)) b ON a.x < b.x AND a.y > b.y;
 
--- More than two inequality conditions: not routed through IEJoin, still gives correct results
+-- More than two inequality conditions: for INNER the first two become the IEJoin conditions
+-- and the rest a filter over the join result
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT count()

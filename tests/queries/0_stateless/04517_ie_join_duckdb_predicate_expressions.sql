@@ -1,8 +1,8 @@
 -- Join conditions that are expressions (`ifNull` over a nullable range end), an SCD2-style
 -- range aggregation, and both orders of the two range conditions.
--- Each result is compared with the cross join with a filter (`allow_experimental_ie_join = 0`).
+-- Each result is compared with the cross join with a filter (`join_algorithm` without `ie_join`).
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS calendar_scd2;
 DROP TABLE IF EXISTS scd2;
@@ -32,7 +32,7 @@ SELECT (
     SELECT groupArray((dt, cnt)) FROM (SELECT dt, count() AS cnt FROM scd2_non_null JOIN calendar_scd2 ON dt BETWEEN range_start AND ifNull(range_end, toDate('2099-01-01')) GROUP BY dt ORDER BY dt)
 ) = (
     SELECT groupArray((dt, cnt)) FROM (SELECT dt, count() AS cnt FROM scd2_non_null JOIN calendar_scd2 ON dt BETWEEN range_start AND ifNull(range_end, toDate('2099-01-01')) GROUP BY dt ORDER BY dt)
-    SETTINGS allow_experimental_ie_join = 0
+    SETTINGS join_algorithm = 'direct,parallel_hash,hash'
 );
 
 -- First key an expression over a nullable column
@@ -40,7 +40,7 @@ SELECT (
     SELECT groupArray((dt, cnt)) FROM (SELECT dt, count() AS cnt FROM scd2 JOIN calendar_scd2 ON dt <= ifNull(range_end, toDate('2099-01-01')) AND range_start <= dt GROUP BY dt ORDER BY dt)
 ) = (
     SELECT groupArray((dt, cnt)) FROM (SELECT dt, count() AS cnt FROM scd2 JOIN calendar_scd2 ON dt <= ifNull(range_end, toDate('2099-01-01')) AND range_start <= dt GROUP BY dt ORDER BY dt)
-    SETTINGS allow_experimental_ie_join = 0
+    SETTINGS join_algorithm = 'direct,parallel_hash,hash'
 );
 
 -- Second key an expression over a nullable column
@@ -48,7 +48,7 @@ SELECT (
     SELECT groupArray((dt, cnt)) FROM (SELECT dt, count() AS cnt FROM scd2 JOIN calendar_scd2 ON dt BETWEEN range_start AND ifNull(range_end, toDate('2099-01-01')) GROUP BY dt ORDER BY dt)
 ) = (
     SELECT groupArray((dt, cnt)) FROM (SELECT dt, count() AS cnt FROM scd2 JOIN calendar_scd2 ON dt BETWEEN range_start AND ifNull(range_end, toDate('2099-01-01')) GROUP BY dt ORDER BY dt)
-    SETTINGS allow_experimental_ie_join = 0
+    SETTINGS join_algorithm = 'direct,parallel_hash,hash'
 );
 
 -- Aggregate sanity check of the joined result

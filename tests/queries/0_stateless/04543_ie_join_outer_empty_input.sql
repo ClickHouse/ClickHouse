@@ -1,7 +1,7 @@
 -- OUTER/SEMI/ANTI kinds with an empty side: the unmatched post-phase must emit every row of
 -- the other side padded with defaults (NULLs with `join_use_nulls`), and nothing otherwise.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS full_side;
 DROP TABLE IF EXISTS empty_side;

@@ -1,6 +1,6 @@
 -- The East/West example queries from the IEJoin paper (Khayyat et al., PVLDB 8(13)).
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS east;
 DROP TABLE IF EXISTS west;

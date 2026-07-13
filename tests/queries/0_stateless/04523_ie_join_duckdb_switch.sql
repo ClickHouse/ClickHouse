@@ -1,7 +1,8 @@
 -- Switching between join algorithms: there are no size thresholds for IEJoin yet, so the
--- switch is controlled by the setting; a null-safe equality keeps the join on the hash path.
+-- switch is controlled by the `join_algorithm` list; with `ie_join` listed last, a null-safe
+-- equality keeps the join on the hash path.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS bigtbl;
 DROP TABLE IF EXISTS smalltbl;
@@ -12,11 +13,11 @@ CREATE TABLE smalltbl ENGINE = MergeTree ORDER BY tuple() AS SELECT toInt64(numb
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM bigtbl JOIN smalltbl ON bigtbl.i BETWEEN low AND high) WHERE explain LIKE '%IEJoin%';
 SELECT count() FROM bigtbl JOIN smalltbl ON bigtbl.i BETWEEN low AND high;
 
--- With the setting disabled the same query runs as a cross join with a filter
-SELECT count() FROM (EXPLAIN actions = 1 SELECT count() FROM bigtbl JOIN smalltbl ON bigtbl.i BETWEEN low AND high SETTINGS allow_experimental_ie_join = 0) WHERE explain LIKE '%IEJoin%';
-SELECT count() FROM bigtbl JOIN smalltbl ON bigtbl.i BETWEEN low AND high SETTINGS allow_experimental_ie_join = 0;
+-- Without `ie_join` in the list the same query runs as a cross join with a filter
+SELECT count() FROM (EXPLAIN actions = 1 SELECT count() FROM bigtbl JOIN smalltbl ON bigtbl.i BETWEEN low AND high SETTINGS join_algorithm = 'direct,parallel_hash,hash') WHERE explain LIKE '%IEJoin%';
+SELECT count() FROM bigtbl JOIN smalltbl ON bigtbl.i BETWEEN low AND high SETTINGS join_algorithm = 'direct,parallel_hash,hash';
 
--- A null-safe equality condition makes it a hash join even with the setting enabled
+-- A null-safe equality condition makes it a hash join because `ie_join` is listed last
 SELECT count() FROM (EXPLAIN actions = 1 SELECT count() FROM bigtbl JOIN smalltbl ON (bigtbl.i BETWEEN low AND high) AND (bigtbl.i IS NOT DISTINCT FROM high - low)) WHERE explain LIKE '%IEJoin%';
 SELECT count() FROM bigtbl JOIN smalltbl ON (bigtbl.i BETWEEN low AND high) AND (bigtbl.i IS NOT DISTINCT FROM high - low);
 

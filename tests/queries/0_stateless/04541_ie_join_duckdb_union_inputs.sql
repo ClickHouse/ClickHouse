@@ -1,6 +1,6 @@
 -- IEJoin over inputs assembled with UNION ALL (multiple upstream streams).
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS calendar7278;
 DROP TABLE IF EXISTS snapshot_data;

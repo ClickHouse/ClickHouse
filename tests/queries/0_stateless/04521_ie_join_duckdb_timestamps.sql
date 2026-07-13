@@ -1,7 +1,7 @@
 -- INNER count of a large timestamp `BETWEEN` band join (167137 x 158 rows, `DateTime64(6)`
 -- keys) at full size. The LEFT/RIGHT/FULL variants are checked in 04527.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS ota;
 DROP TABLE IF EXISTS flags;
@@ -178,7 +178,7 @@ SELECT (
     SELECT count() FROM ota JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop
 ) = (
     SELECT count() FROM ota JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop
-    SETTINGS allow_experimental_ie_join = 0
+    SETTINGS join_algorithm = 'direct,parallel_hash,hash'
 );
 
 DROP TABLE ota;

@@ -2,7 +2,7 @@
 -- over deterministically derived events; results are verified against the same query with
 -- IEJoin disabled.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS events;
 
@@ -20,7 +20,7 @@ SELECT (
     SELECT (count(), sum(cityHash64(r.id, s2.id))) FROM events r JOIN events s2 ON r.s <= s2.e AND r.e >= s2.s
 ) = (
     SELECT (count(), sum(cityHash64(r.id, s2.id))) FROM events r JOIN events s2 ON r.s <= s2.e AND r.e >= s2.s
-    SETTINGS allow_experimental_ie_join = 0
+    SETTINGS join_algorithm = 'direct,parallel_hash,hash'
 );
 
 -- With an additional `<>` condition (three conditions fall back, the result must stay correct)
@@ -28,7 +28,7 @@ SELECT (
     SELECT (count(), sum(cityHash64(r.id, s2.id))) FROM events r JOIN events s2 ON r.s <= s2.e AND r.e >= s2.s AND r.id <> s2.id
 ) = (
     SELECT (count(), sum(cityHash64(r.id, s2.id))) FROM events r JOIN events s2 ON r.s <= s2.e AND r.e >= s2.s AND r.id <> s2.id
-    SETTINGS allow_experimental_ie_join = 0
+    SETTINGS join_algorithm = 'direct,parallel_hash,hash'
 );
 
 -- Every event overlaps at least itself

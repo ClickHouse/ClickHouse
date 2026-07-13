@@ -224,12 +224,14 @@ key4    f    2    3    4            0    0    \N
 
 ## JOIN with only inequality conditions {#join-with-only-inequality-conditions}
 
-A `JOIN` whose `ON` section consists of exactly two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables, with no equality condition, can be executed with the sort-based IEJoin algorithm when the experimental setting [`allow_experimental_ie_join`](/operations/settings/settings#allow_experimental_ie_join) is enabled. Supported kinds are `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`; the join appears as an `IEJoin` step in `EXPLAIN`. Without the setting, an `INNER JOIN` of this shape is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
+A `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables can be executed with the sort-based IEJoin algorithm when `ie_join` is added to the [`join_algorithm`](/operations/settings/settings#join_algorithm) setting. Supported kinds are `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`; the join appears as an `IEJoin` step in `EXPLAIN`.
+
+The position of `ie_join` in the list sets its priority. Listed after other algorithms, IEJoin is used only when they do not apply, that is, when the `ON` section has no equality conditions. Listed first, it takes any join with two inequality conditions; for `ALL INNER JOIN` the remaining conditions of the `ON` section (including equalities) are then applied as a filter over the join result, while for the other kinds the `ON` section must consist of exactly the two inequality conditions. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
 
 **Example**
 
 ```sql
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SELECT t1.*, t2.* FROM t1 JOIN t2 ON t1.a < t2.a AND t1.b > t2.b;
 ```
 

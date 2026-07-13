@@ -5,7 +5,7 @@
 -- (lo = mid - 1, hi = mid + 1, and all keys are multiples of 10), so every result is
 -- cross-checked against a hash join of the same kind.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET join_use_nulls = 0;
 
 DROP TABLE IF EXISTS lpad;

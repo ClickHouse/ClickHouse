@@ -2,7 +2,7 @@
 -- wide types served by the generic comparator (Int128, UInt128, Decimal128, UUID, FixedString),
 -- all verified against the cross-join oracle.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET cross_to_inner_join_rewrite = 0;
 
 DROP TABLE IF EXISTS ext_l;

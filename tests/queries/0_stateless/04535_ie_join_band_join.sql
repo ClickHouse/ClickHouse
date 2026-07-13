@@ -1,7 +1,7 @@
 -- Band join `a.t >= b.t_lo AND a.t <= b.t_hi` with `a.t = 0..N-1` and `b = [k, k+5]`
 -- for `k = 0..N-1` must produce exactly `6 * N - 15` pairs.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1

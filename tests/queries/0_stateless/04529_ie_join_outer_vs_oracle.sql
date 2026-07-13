@@ -4,7 +4,7 @@
 -- Multisets are compared with the arraySort(groupArray(...)) idiom; NULLs are mapped to
 -- sentinels (-1 for keys, 0 for ids: real ids start at 1) so that tuple comparison is exact.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET cross_to_inner_join_rewrite = 0;
 
 DROP TABLE IF EXISTS tlo;
@@ -30,7 +30,7 @@ CREATE TABLE inner_oracle ENGINE = Memory AS
 SELECT l.id AS lid, ifNull(l.x, -1) AS lx, ifNull(l.y, -1) AS ly,
        r.id AS rid, ifNull(r.x, -1) AS rx, ifNull(r.y, -1) AS ry
 FROM tlo l, tro r WHERE l.x < r.x AND l.y > r.y
-SETTINGS allow_experimental_ie_join = 0;
+SETTINGS join_algorithm = 'direct,parallel_hash,hash';
 
 SELECT 'inner pairs', count() FROM inner_oracle;
 SELECT 'matched left rows', count() FROM tlo WHERE id IN (SELECT lid FROM inner_oracle);

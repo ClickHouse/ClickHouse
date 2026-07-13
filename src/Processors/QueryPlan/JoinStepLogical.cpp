@@ -824,11 +824,15 @@ struct IEJoinPlanDescription
     std::array<JoinConditionOperator, 2> operators = {};
 };
 
-/// Try to interpret the JOIN ON expression as exactly two inequality conditions between the two tables
+/// Try to interpret the JOIN ON expression as two inequality conditions between the two tables
 /// to execute the join with the IEJoin algorithm. Returns std::nullopt when the join has a different shape,
 /// so that the caller falls back to the generic handling (a CROSS join with a filter).
 /// On success the conditions are consumed from `join_expression`: key expressions are casted
 /// to common types and registered in `used_expressions`.
+/// When ON conditions of the join are equivalent to a filter over its result (ALL INNER),
+/// extra conjuncts (including equalities) are left in `join_expression` to be applied as such
+/// a filter. For the other kinds the ON conditions affect matching (unmatched rows are emitted
+/// padded, not dropped), so the expression must consist of exactly the two conditions.
 static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     std::vector<JoinActionRef> & join_expression,
     const JoinOperator & join_operator,
@@ -844,17 +848,14 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     if (planning_context.is_storage_join)
         return {};
 
-    /// FIXME:
-    /// For non-INNER kinds the ON conditions affect matching (unmatched rows are emitted padded,
-    /// not dropped), so requiring exactly two conjuncts is semantic: an extra conjunct cannot be
-    /// split off into a filter over the join result, that is only equivalent for INNER.
-    if (join_expression.size() != 2)
+    bool allow_residual_conditions = canPushDownFromOn(join_operator);
+    if (!allow_residual_conditions && join_expression.size() != 2)
         return {};
 
-    std::vector<std::pair<JoinActionRef, JoinActionRef>> keys;
-    for (size_t i = 0; i < 2; ++i)
+    auto try_get_inequality_condition = [&](const JoinActionRef & condition)
+        -> std::optional<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>>
     {
-        auto [predicate_op, lhs, rhs] = join_expression[i].asBinaryPredicate();
+        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Less && predicate_op != JoinConditionOperator::LessOrEquals
             && predicate_op != JoinConditionOperator::Greater && predicate_op != JoinConditionOperator::GreaterOrEquals)
             return {};
@@ -878,9 +879,33 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
         if (!lhs_type->equals(*rhs_type) && !tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}))
             return {};
 
-        description.operators[i] = predicate_op;
+        return {{predicate_op, std::move(lhs), std::move(rhs)}};
+    };
+
+    /// Which two of the eligible conditions become the IEJoin conditions is a planner degree
+    /// of freedom; fixed to the first two for now.
+    std::vector<std::pair<JoinActionRef, JoinActionRef>> keys;
+    std::vector<JoinActionRef> residual_conditions;
+    for (const auto & condition : join_expression)
+    {
+        auto inequality = keys.size() < 2
+            ? try_get_inequality_condition(condition)
+            : std::optional<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>>{};
+        if (!inequality)
+        {
+            if (!allow_residual_conditions)
+                return {};
+            residual_conditions.push_back(condition);
+            continue;
+        }
+
+        auto [predicate_op, lhs, rhs] = std::move(*inequality);
+        description.operators[keys.size()] = predicate_op;
         keys.emplace_back(std::move(lhs), std::move(rhs));
     }
+
+    if (keys.size() != 2)
+        return {};
 
     /// Both conditions are validated, commit: mutate the DAG.
     for (auto & [lhs, rhs] : keys)
@@ -894,8 +919,33 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
         used_expressions.push_back(rhs);
     }
 
-    join_expression.clear();
+    join_expression = std::move(residual_conditions);
     return description;
+}
+
+bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings)
+{
+    const auto & join_algorithms = join_settings.join_algorithms;
+    if (join_algorithms.empty() || join_algorithms.front() != JoinAlgorithm::IE_JOIN)
+        return false;
+
+    if (!IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
+        return false;
+
+    if (!canPushDownFromOn(join_operator) && join_operator.expression.size() != 2)
+        return false;
+
+    size_t inequality_conditions = 0;
+    for (const auto & condition : join_operator.expression)
+    {
+        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Less && predicate_op != JoinConditionOperator::LessOrEquals
+            && predicate_op != JoinConditionOperator::Greater && predicate_op != JoinConditionOperator::GreaterOrEquals)
+            continue;
+        if ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()))
+            ++inequality_conditions;
+    }
+    return inequality_conditions >= 2;
 }
 
 
@@ -1313,11 +1363,22 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto & table_join_clauses = table_join->getClauses();
     if (!is_join_without_expression)
     {
-        bool has_keys = addJoinPredicatesToTableJoin(join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context);
+        bool ie_join_enabled = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN);
 
-        if (!has_keys && join_operator.strictness != JoinStrictness::Asof)
+        /// The position of `ie_join` in the `join_algorithm` list sets its priority: listed first,
+        /// it claims the join before the equality conditions are claimed as hash join keys
+        /// (they are applied as a filter over the join result instead); listed after other
+        /// algorithms, it is used only when no equality conditions are found.
+        if (isIEJoinPreferred(join_operator, join_settings))
+            ie_join_description = tryExtractIEJoinDescription(
+                join_expression, join_operator, used_expressions, join_settings, planning_context);
+
+        bool has_keys = !ie_join_description
+            && addJoinPredicatesToTableJoin(join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context);
+
+        if (!ie_join_description && !has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
-            if (join_settings.allow_experimental_ie_join)
+            if (ie_join_enabled)
                 ie_join_description = tryExtractIEJoinDescription(
                     join_expression, join_operator, used_expressions, join_settings, planning_context);
 
@@ -1392,16 +1453,21 @@ static QueryPlanNode buildPhysicalJoinImpl(
         join_expression.erase(found_asof_predicate_it);
     }
 
-    if (auto left_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Left))
+    /// For IEJoin there is no join clause to attach single-side conditions to; conditions
+    /// remaining in `join_expression` are applied as a filter over the join result below.
+    if (!ie_join_description)
     {
-        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
-        used_expressions.push_back(left_pre_filter_condition);
-    }
+        if (auto left_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Left))
+        {
+            table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
+            used_expressions.push_back(left_pre_filter_condition);
+        }
 
-    if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
-    {
-        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
-        used_expressions.push_back(right_pre_filter_condition);
+        if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
+        {
+            table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
+            used_expressions.push_back(right_pre_filter_condition);
+        }
     }
 
     /// Conditions left in `join_expression` belong to the JOIN ON clause, while

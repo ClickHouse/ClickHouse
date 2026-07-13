@@ -4,7 +4,7 @@
 -- so a NaN-keyed row can never match anything and must come back only as an unmatched row of
 -- an outer kind. The operator excludes NaN keys from the sorted union exactly like NULL keys.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET cross_to_inner_join_rewrite = 0;
 SET max_block_size = 16;
 

@@ -1,7 +1,7 @@
 -- The `west` self-join from the IEJoin paper
 -- (Khayyat et al., "Lightning Fast and Space Efficient Inequality Joins", PVLDB 8(13), 2015, Fig. 2).
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS west;
 CREATE TABLE west (t_id Int32, time Int32, cost Int32) ENGINE = MergeTree ORDER BY t_id;

@@ -1,9 +1,10 @@
--- Two-conjunct ON shapes that must NOT be routed through IEJoin, and the behavior of the
--- eligible shape when the setting is off. For INNER the rejected shapes fall back to a cross
--- join with a filter (no `IEJoin` in the plan, same result); for outer kinds the fallback path
--- cannot determine join keys and the query fails, exactly as with the setting disabled.
+-- ON shapes with fewer than two usable inequality conditions that must NOT be routed through
+-- IEJoin, and the behavior of the eligible shape without `ie_join` in `join_algorithm`. For
+-- INNER the rejected shapes fall back to a cross join with a filter (no `IEJoin` in the plan,
+-- same result); for outer kinds the fallback path cannot determine join keys and the query
+-- fails, exactly as without `ie_join` in the list.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET cross_to_inner_join_rewrite = 0;
 
 DROP TABLE IF EXISTS neg_l;
@@ -40,9 +41,9 @@ SELECT count()
 FROM (SELECT x, max(y) AS c FROM neg_l GROUP BY x WITH TOTALS) l
 JOIN neg_r r ON l.x < r.x AND l.c > r.y; -- { serverError NOT_IMPLEMENTED }
 
--- With the setting off the eligible shape keeps the pre-IEJoin behavior: a cross join with
--- a filter for INNER, an error for outer kinds.
-SET allow_experimental_ie_join = 0;
+-- Without `ie_join` in the list the eligible shape keeps the pre-IEJoin behavior: a cross join
+-- with a filter for INNER, an error for outer kinds.
+SET join_algorithm = 'direct,parallel_hash,hash';
 SELECT 'setting off', count() FROM (EXPLAIN SELECT count() FROM neg_l l JOIN neg_r r ON l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
 SELECT count() FROM neg_l l LEFT JOIN neg_r r ON l.x < r.x AND l.y > r.y; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT count() FROM neg_l l LEFT ANTI JOIN neg_r r ON l.x < r.x AND l.y > r.y; -- { serverError INVALID_JOIN_ON_EXPRESSION }

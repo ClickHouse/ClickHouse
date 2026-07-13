@@ -3,7 +3,7 @@
 -- table is ordered by that key, the sort turns into a streaming FinishSorting (or is elided)
 -- over an in-order read. Results must not depend on `optimize_read_in_order`.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS rio_l;
 DROP TABLE IF EXISTS rio_r;
@@ -44,7 +44,7 @@ SELECT (
 SELECT (
     SELECT (count(), sum(cityHash64(l.x, l.y, r.x, r.y))) FROM rio_l l JOIN rio_r r ON l.x < r.x AND l.y > r.y
 ) = (
-    SELECT (count(), sum(cityHash64(l.x, l.y, r.x, r.y))) FROM rio_l l JOIN rio_r r ON l.x < r.x AND l.y > r.y SETTINGS allow_experimental_ie_join = 0
+    SELECT (count(), sum(cityHash64(l.x, l.y, r.x, r.y))) FROM rio_l l JOIN rio_r r ON l.x < r.x AND l.y > r.y SETTINGS join_algorithm = 'direct,parallel_hash,hash'
 );
 
 SELECT count() FROM rio_l l JOIN rio_r r ON l.x < r.x AND l.y > r.y;
@@ -68,7 +68,7 @@ SELECT (
 SELECT (
     SELECT (count(), sum(cityHash64(a.x, a.y, b.lo, b.hi))) FROM rio_l a JOIN rio_bands b ON a.x BETWEEN b.lo AND b.hi
 ) = (
-    SELECT (count(), sum(cityHash64(a.x, a.y, b.lo, b.hi))) FROM rio_l a JOIN rio_bands b ON a.x BETWEEN b.lo AND b.hi SETTINGS allow_experimental_ie_join = 0
+    SELECT (count(), sum(cityHash64(a.x, a.y, b.lo, b.hi))) FROM rio_l a JOIN rio_bands b ON a.x BETWEEN b.lo AND b.hi SETTINGS join_algorithm = 'direct,parallel_hash,hash'
 );
 
 SELECT count() FROM rio_l a JOIN rio_bands b ON a.x BETWEEN b.lo AND b.hi;

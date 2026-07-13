@@ -2,7 +2,7 @@
 -- The matching part is checked with INNER joins; LEFT joins are checked with
 -- `join_use_nulls = 1` (rows with NULL keys are unmatched, not dropped).
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS tt;
 DROP TABLE IF EXISTS tt2;

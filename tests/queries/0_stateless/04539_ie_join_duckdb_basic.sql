@@ -1,10 +1,10 @@
 -- Basic IEJoin scenarios: range conditions with extra inequalities, joins inside CTEs,
 -- range bucketing, and an IEJoin at the end of a chain of joins.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
--- Two range conditions with two additional `<>` conditions: more than two conditions
--- do not use IEJoin yet, the fallback must produce the same result
+-- Two range conditions with two additional `<>` conditions: for INNER the range conditions
+-- become the IEJoin conditions and the `<>` conditions a filter over the join result
 WITH test AS (SELECT number AS id, toInt64(number) AS b, toInt64(number + 10) AS e, number % 2 AS p1, number % 3 AS p2 FROM numbers(10))
 SELECT lhs.id, rhs.id
 FROM test lhs JOIN test rhs ON lhs.b < rhs.e AND rhs.b < lhs.e AND lhs.p1 <> rhs.p1 AND lhs.p2 <> rhs.p2

@@ -108,9 +108,6 @@ struct JoinSettings
     UInt64 join_to_sort_maximum_table_rows;
     bool allow_dynamic_type_in_join_keys;
 
-    /* IEJoin settings */
-    bool allow_experimental_ie_join = false;
-
     bool use_join_disjunctions_push_down;
     bool enable_lazy_columns_replication;
     bool enable_software_prefetch_in_join;

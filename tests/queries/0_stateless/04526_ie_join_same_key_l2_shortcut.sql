@@ -5,7 +5,7 @@
 -- cross-join oracle; the same-family and mixed-type variants must take the general L2 path
 -- and stay correct.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET cross_to_inner_join_rewrite = 0;
 SET max_block_size = 128;
 

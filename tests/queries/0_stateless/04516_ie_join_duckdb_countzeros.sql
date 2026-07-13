@@ -3,7 +3,7 @@
 -- With an additional equality on `k` the join has a hash key and is not executed
 -- by IEJoin, so both variants are checked.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS states;
 

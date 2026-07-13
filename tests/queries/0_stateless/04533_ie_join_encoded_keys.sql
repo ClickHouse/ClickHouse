@@ -7,7 +7,7 @@
 -- encoded condition in one query and on their own. The operator pairs vary across the types so
 -- all four L1/L2 direction combinations are sampled.
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET cross_to_inner_join_rewrite = 0;
 -- Several sort-output chunks per input, so the merge that builds L1 crosses chunk boundaries.
 SET max_block_size = 128;

@@ -1,7 +1,7 @@
 -- Non-overlapping ranges must produce an empty result with both orders of the conditions
 -- (the second order exercises the short circuit on the second condition).
 
-SET allow_experimental_ie_join = 1;
+SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 
 DROP TABLE IF EXISTS overlap_left;
 DROP TABLE IF EXISTS overlap_right;
