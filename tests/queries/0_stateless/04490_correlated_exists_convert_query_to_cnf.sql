@@ -39,6 +39,8 @@ DROP TABLE m_04490;
 -- The dedup keys on the subquery body, not just the action node name, so two DIFFERENT
 -- correlated exists() subqueries in one filter must stay distinct (each decorrelates into its
 -- own join) and must not be merged. Each is combined with an AND-chain so CNF clones it.
+-- The non-subquery OR branch is false for every row here, so the exists() results alone decide
+-- the output: merging two distinct bodies into one would change the row set (see per-query notes).
 DROP TABLE IF EXISTS d_04490;
 DROP TABLE IF EXISTS ds_04490;
 CREATE TABLE d_04490 (a Int32, b Int32) ENGINE = Memory;
@@ -46,14 +48,18 @@ INSERT INTO d_04490 VALUES (1, 10), (2, 20), (3, 30);
 CREATE TABLE ds_04490 (x Int32) ENGINE = Memory;
 INSERT INTO ds_04490 VALUES (2), (3);
 
+-- existsA (x=a) is true for a in {2,3}; existsB (x=a+1) for a in {1,2}. The OR branch is false for all
+-- rows, so this is existsA AND existsB = {2}. A wrong same-name merge (reusing one body for both) would
+-- give existsA AND existsA = {2,3} or existsB AND existsB = {1,2}; either differs from {2}.
 SELECT a FROM d_04490
-WHERE (exists((SELECT 1 FROM ds_04490 WHERE x = a)) OR (b > 5 AND b < 100))
-  AND (exists((SELECT 1 FROM ds_04490 WHERE x = b / 10)) OR (a > 0 AND a < 100))
+WHERE (exists((SELECT 1 FROM ds_04490 WHERE x = a)) OR (b > 1000 AND b < 2000))
+  AND (exists((SELECT 1 FROM ds_04490 WHERE x = a + 1)) OR (b > 1000 AND b < 2000))
 ORDER BY a;
 
--- Two distinct correlated exists() over the same table with different predicates, plus an AND-chain branch.
+-- Same two distinct bodies OR'd together, plus a false-for-all AND-chain branch: existsA OR existsB =
+-- {1,2,3}. A wrong merge (both bodies -> existsA) would give existsA OR existsA = {2,3}, dropping row 1.
 SELECT a FROM d_04490
-WHERE exists((SELECT 1 FROM ds_04490 WHERE x = a)) OR exists((SELECT 1 FROM ds_04490 WHERE x = a + 1)) OR (b > 0 AND b < 1000)
+WHERE exists((SELECT 1 FROM ds_04490 WHERE x = a)) OR exists((SELECT 1 FROM ds_04490 WHERE x = a + 1)) OR (b > 1000 AND b < 2000)
 ORDER BY a;
 
 DROP TABLE d_04490;
