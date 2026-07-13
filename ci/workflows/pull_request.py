@@ -243,6 +243,11 @@ workflow = Workflow.Config(
         "build": "Build (amd_binary)",
     },
     runs_on_label_prefix="pr-",
+    ai_orchestrator=Workflow.OrchestratorAI.Config(
+        enabled=True,
+        provider="bedrock",
+        model="global.anthropic.claude-sonnet-5",
+    ),
 )
 
 WORKFLOWS = [
