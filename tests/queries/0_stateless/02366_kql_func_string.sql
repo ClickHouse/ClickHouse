@@ -21,10 +21,17 @@ INSERT INTO Customers VALUES ('Theodore','Diaz','Skilled Manual','Bachelors',28)
 
 DROP TABLE IF EXISTS Versions;
 CREATE TABLE Versions
-(    
+(
     Version String
 ) ENGINE = Memory;
 INSERT INTO Versions VALUES ('1.2.3.4'),('1.2'),('1.2.3'),('1');
+
+DROP TABLE IF EXISTS Guids;
+CREATE TABLE Guids
+(
+    g UUID2
+) ENGINE = Memory;
+INSERT INTO Guids VALUES ('ae3133f2-6e22-49ae-b06a-16e6a9b212eb');
 
 
 set allow_experimental_kusto_dialect=1;
@@ -227,6 +234,8 @@ print '-- base64_encode_fromguid()';
 print base64_encode_fromguid(guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb'));
 print base64_encode_fromguid(dynamic(null)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 print base64_encode_fromguid("abcd1231"); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+print '-- base64_encode_fromguid() over a UUID2 column (a bare UUID materializes to UUID2 under uuid_type_version=2)';
+Guids | project base64_encode_fromguid(g);
 print '-- base64_decode_toarray()';
 print base64_decode_toarray('');
 print base64_decode_toarray('S3VzdG8=');

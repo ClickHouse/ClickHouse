@@ -32,8 +32,11 @@ bool Base64EncodeFromGuid::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto argument = getArgument(function_name, pos);
+    /// `UUID2` is the correctly-sorting variant of `UUID` (a bare `UUID` materializes to `UUID2` under
+    /// `uuid_type_version = 2`), so accept it as the same logical guid type. `toString` produces the canonical
+    /// UUID string for both, so the encoding below stays identical.
     out = fmt::format(
-        "if(toTypeName({0}) not in ['UUID', 'Nullable(UUID)'], toString(throwIf(true, 'Expected guid as argument')), "
+        "if(toTypeName({0}) not in ['UUID', 'Nullable(UUID)', 'UUID2', 'Nullable(UUID2)'], toString(throwIf(true, 'Expected guid as argument')), "
         "base64Encode(UUIDStringToNum(toString({0}), 2)))",
         argument,
         generateUniqueIdentifier());
