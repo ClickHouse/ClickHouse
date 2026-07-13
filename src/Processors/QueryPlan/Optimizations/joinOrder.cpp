@@ -766,6 +766,13 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
     return applicable;
 }
 
+/// Checks if predicate has sources from both left and right sets
+static bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet & right)
+{
+    const auto & participating = predicate->getSourceRelations();
+    return areIntersecting(participating, left) && areIntersecting(participating, right);
+}
+
 /// True if an equi-join predicate (plain or null-safe equals) connects the two relation sets.
 /// Non-equi predicates (ranges, OR, ...) are filters over a cross product, not a join key, so they
 /// must not count as a connection - otherwise the optimizer may pick a cartesian product as the
@@ -1025,7 +1032,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     while (components.size() > 1)
     {
         std::shared_ptr<DPJoinEntry> best_plan = nullptr;
-        bool best_plan_connected = false;
+        bool best_plan_equi_connected = false;
         size_t best_i = 0;
         size_t best_j = 0;
 
@@ -1043,18 +1050,20 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 
                 auto edges = getApplicableExpressions(left->relations, right->relations);
                 bool transitively_connected = query_graph.areTransitivelyConnected(left->relations, right->relations);
-                bool connected = hasEquiConnection(edges, left->relations, right->relations) || transitively_connected;
+                bool equi_connected = hasEquiConnection(edges, left->relations, right->relations) || transitively_connected;
+                bool connected = equi_connected
+                    || std::ranges::any_of(edges, [&](const auto * e) { return connects(e, left->relations, right->relations); });
                 if (!connected && best_plan)
                     continue;
 
                 auto selectivity = computeSelectivity(edges, left->relations, right->relations);
                 auto current_cost = computeJoinCost(left, right, selectivity);
-                /// A connected pair always supersedes an unconnected (cross product) one, regardless
-                /// of cost: cost estimates of cross products are unreliable (a relation without a row
-                /// estimate makes the product look arbitrarily small), so an unconnected pair that
-                /// happened to be evaluated first must not shadow valid connected plans.
-                if (!best_plan || (connected && !best_plan_connected)
-                    || (connected == best_plan_connected && current_cost < best_plan->cost))
+                /// An equi-connected pair always supersedes one without an equi key, regardless of
+                /// cost: without an equi predicate the cost estimate is essentially a cross product
+                /// (a relation without a row estimate makes it look arbitrarily small), so such a
+                /// pair that happened to be evaluated first must not shadow valid equi-joined plans.
+                if (!best_plan || (equi_connected && !best_plan_equi_connected)
+                    || (equi_connected == best_plan_equi_connected && current_cost < best_plan->cost))
                 {
                     if (join_kind == JoinKind::Inner && edges.empty() && !transitively_connected)
                         join_kind = JoinKind::Cross;
@@ -1074,7 +1083,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     }
                     applied_edges = std::move(edges);
                     best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
-                    best_plan_connected = connected;
+                    best_plan_equi_connected = equi_connected;
                     best_i = i;
                     best_j = j;
                 }
@@ -1118,13 +1127,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     return components.at(0);
 }
 
-
-/// Checks if predicate has sources from both left and right sets
-static bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet & right)
-{
-    const auto & participating = predicate->getSourceRelations();
-    return areIntersecting(participating, left) && areIntersecting(participating, right);
-}
 
 template <typename DPTable, std::unsigned_integral TUInt>
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const TUInt & S) const
