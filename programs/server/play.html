@@ -5584,6 +5584,16 @@ async function loadFromDb() {
 }
 
 let save_timer = null;
+/// Debounce a workspace save. Multiple structural changes (add/close/rename/switch) within the
+/// 400 ms window coalesce into a single `persist`: the first arms the timer, the rest are no-ops
+/// (`save_timer` already set), and `persist` reads the CURRENT tab set / active tab when it fires.
+/// This coalescing is why the save is not frozen to an arm-time snapshot: a snapshot taken when the
+/// timer was armed would omit any structural change made later in the same window (a genuine loss
+/// of persisted tabs). The intended trade-off is that if the user also types an unrun draft within
+/// that window, `persist` snapshots it too (via `captureActiveTab`), so that draft is restored as
+/// editor text on a plain reload. That is harmless: the workspace store carries no `run` flag, so a
+/// restored draft is only shown, never auto-executed (auto-run comes solely from a URL `run=1`,
+/// which the editor-only writers never set for an unrun edit — see `buildHistoryParams`).
 function scheduleSave() {
     if (save_timer) return;
     save_timer = setTimeout(() => { save_timer = null; persist(); }, 400);
@@ -7790,7 +7800,15 @@ async function updateQueryParams()
             markBootstrapDirty(e);   /// user edited a parameter before reconciliation
             /// Parameters are tab-owned: persist edited values into the active tab, and keep
             /// the URL/history entry in sync (replaceState, since the query is unchanged) so a
-            /// reload's URL params are never stale relative to the saved tab.
+            /// reload's URL params are never stale relative to the saved tab. `syncHistory` writes
+            /// the tab's CURRENT query alongside the params by design: the params being edited
+            /// belong to whatever query the editor currently holds, so query and params are stamped
+            /// together as one coherent entry. If an unrun draft is in the editor, this records that
+            /// draft — intentionally, and harmlessly: `syncHistory` derives `run=1` from
+            /// `tabReflectsRun`, which is false once the editor diverges from the last result, so a
+            /// restored draft is only shown, never auto-executed. Writing the params onto a stale
+            /// query, or skipping the sync, would either produce an incoherent param/query entry or
+            /// leave the URL params out of sync with the tab — both worse than restoring the draft.
             const tab = getActiveTab();
             if (tab) { tab.params = getParamValues(); syncHistory(); }
         });
@@ -7829,8 +7847,12 @@ query_area.addEventListener('input', (e) =>
     /// character (costly for a long query) and is unnecessary for an unrun draft. Both are
     /// recorded only when a query is successfully run (`saveHistory`) or on a structural tab
     /// change — switch/add/close/rename — which capture the editor and call `syncHistory` /
-    /// `scheduleSave` themselves. A consequence is that an unrun edit is not restored across a
-    /// reload if no run or tab change happened after it.
+    /// `scheduleSave` themselves. A consequence is that an unrun edit is generally not restored
+    /// across a reload if no run or tab change happened after it. Two narrow paths may still fold a
+    /// later draft into a save/URL entry — a debounced `persist` firing after fresh typing (see
+    /// `scheduleSave`) and a parameter edit calling `syncHistory` (see the `param-` input handler);
+    /// both are intentional and harmless, restoring the draft only as editor text, never as an
+    /// auto-run (an unrun edit never carries `run=1`).
     const tab = getActiveTab();
     if (tab) {
         tab.query = query_area.value;
