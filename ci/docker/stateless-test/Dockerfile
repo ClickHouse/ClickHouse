@@ -66,6 +66,12 @@ RUN curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PR
     && unzip protoc-${PROTOC_VERSION}-linux-x86_64.zip -d /usr/local \
     && rm protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
+# node is used by tests exercising the browser-side JavaScript of the Web UI (play.html)
+ARG NODE_VERSION=22.17.0
+RUN case $(uname -m) in x86_64) node_arch=x64 ;; aarch64) node_arch=arm64 ;; esac \
+    && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.xz" | tar -xJ -C /opt \
+    && ln -s "/opt/node-v${NODE_VERSION}-linux-${node_arch}/bin/node" /usr/local/bin/node
+
 COPY requirements.txt /
 RUN python3.13 -m pip install --no-cache-dir -r /requirements.txt
 

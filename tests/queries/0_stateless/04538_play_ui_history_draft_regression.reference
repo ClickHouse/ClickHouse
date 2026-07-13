@@ -1,0 +1,12 @@
+close: the closed tab entry carries the latest draft
+close: the draft entry does not carry run=1
+close+back: the recreated tab restores the draft
+close+back: the run result snapshot is kept
+back: a newer unrun draft is preserved
+back: the editor shows the draft
+back: the entry result snapshot is adopted
+forward: the draft survives the round-trip
+forward: the entry result snapshot is adopted
+back with a clean editor: the entry query is restored
+forward with a clean editor: the entry query is restored
+OK
