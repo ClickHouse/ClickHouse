@@ -13,6 +13,7 @@
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowOutputFormat.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <base/find_symbols.h>
 #include <Common/assert_cast.h>
@@ -21,6 +22,12 @@ namespace DB::ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int INCORRECT_DATA;
+}
+
+namespace ProfileEvents
+{
+    extern const Event IcebergAvroFileParsing;
+    extern const Event IcebergAvroFileParsingMicroseconds;
 }
 
 namespace DB::Iceberg
@@ -36,6 +43,9 @@ try
     : buffer(std::move(buffer_))
     , manifest_file_path(manifest_file_path_)
 {
+    ProfileEvents::increment(ProfileEvents::IcebergAvroFileParsing);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergAvroFileParsingMicroseconds);
+
     auto manifest_file_reader
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 

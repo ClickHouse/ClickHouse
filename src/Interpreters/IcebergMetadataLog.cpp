@@ -84,7 +84,7 @@ void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
 
 void insertRowToLogTable(
     const ContextPtr & local_context,
-    String row,
+    std::function<String()> get_row,
     IcebergMetadataLogLevel row_log_level,
     const String & table_path,
     const Iceberg::IcebergPathFromMetadata & file_path,
@@ -112,7 +112,7 @@ void insertRowToLogTable(
             .content_type = row_log_level,
             .table_path = table_path,
             .file_path = file_path.serialize(),
-            .metadata_content = row,
+            .metadata_content = get_row(),
             .row_in_file = row_in_file,
             .pruning_status = pruning_status});
 }
