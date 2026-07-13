@@ -1,0 +1,19 @@
+--- sensitive default: exact works, folded fails
+7
+UNKNOWN_DATABASE
+--- standard: folded database and table resolve
+7
+--- standard: double-quoted parts stay exact
+7
+UNKNOWN_DATABASE
+--- standard: sibling databases are ambiguous even for the exact spelling
+AMBIGUOUS_IDENTIFIER
+7
+--- standard: sibling tables are ambiguous even for the exact spelling
+AMBIGUOUS_IDENTIFIER
+0
+--- standard: rename keeps the folded index consistent
+0
+0
+--- standard: information_schema aliases are not ambiguous
+1
