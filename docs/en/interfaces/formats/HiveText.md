@@ -137,7 +137,11 @@ Hive text representation are not supported for output and raise a
 `Variant`, `LowCardinality` and `Object`, as well as the numeric-backed types
 `Enum`, `Time`, `Time64` and `Interval` — Hive has no matching type for the
 latter, so they are rejected rather than written as their raw underlying
-numbers.
+numbers. Likewise, `Map` keys must be of a primitive type: Hive declares maps
+as `MAP<primitive_type, data_type>`, so a `Map` whose key type is an `Array`,
+`Map` or `Tuple` (which ClickHouse permits) is rejected with a
+`NOT_IMPLEMENTED` exception, because no Hive schema could read such values
+back.
 
 `Date`, `Date32`, `DateTime` and `DateTime64` are always written in the plain
 Hive date and timestamp text (`yyyy-MM-dd` and `yyyy-MM-dd HH:mm:ss[.fffffffff]`),

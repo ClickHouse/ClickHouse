@@ -1,16 +1,56 @@
 #include <Processors/Formats/Impl/HiveTextRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+/// Hive declares maps as MAP<primitive_type, data_type>: a map key cannot be a nested
+/// (ARRAY/MAP/STRUCT) type, so no Hive schema could read such values back. ClickHouse allows
+/// composite Map keys whose elements would serialize fine on their own, so reject them upfront.
+void assertMapKeysArePrimitive(const DataTypePtr & type)
+{
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        assertMapKeysArePrimitive(type_array->getNestedType());
+    }
+    else if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        WhichDataType key_type(type_map->getKeyType());
+        if (key_type.isArray() || key_type.isMap() || key_type.isTuple())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Type {} is not supported by the HiveText output format: Hive supports only primitive types as Map keys",
+                type_map->getName());
+        assertMapKeysArePrimitive(type_map->getValueType());
+    }
+    else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & element : type_tuple->getElements())
+            assertMapKeysArePrimitive(element);
+    }
+}
+
+}
+
 
 HiveTextRowOutputFormat::HiveTextRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_), format_settings(format_settings_)
 {
+    for (const auto & column : *header_)
+        assertMapKeysArePrimitive(column.type);
 }
 
 void HiveTextRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
