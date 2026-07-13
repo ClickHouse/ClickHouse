@@ -446,6 +446,9 @@ String DatabaseCatalog::resolveDatabaseNameSpelling(const String & database_name
 {
     if (!context_ || database_name.empty() || database_name == TEMPORARY_DATABASE)
         return database_name;
+    /// Internal references are canonical already, same as in resolveStorageIDNames.
+    if (context_->isInternalQuery())
+        return database_name;
     if (context_->getSettingsRef()[Setting::database_and_table_name_matching] != NameMatchMode::Standard)
         return database_name;
 

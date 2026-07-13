@@ -15,6 +15,21 @@ namespace DB
 {
 
 
+namespace
+{
+
+/// Canonical target of the query, so the rewritten filters match the object the user named.
+StorageID resolveShownTable(const ASTShowIndexesQuery & query, ContextPtr context)
+{
+    StorageID table_id{context->resolveDatabase(query.database), query.table};
+    table_id.database_name_quote = query.database_quote;
+    table_id.table_name_quote = query.table_quote;
+    return DatabaseCatalog::instance().resolveStorageIDNames(std::move(table_id), context);
+}
+
+}
+
+
 InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_)
     , query_ptr(query_ptr_)
@@ -25,9 +40,9 @@ InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_pt
 String InterpreterShowIndexesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String table = escapeString(query.table);
-    String resolved_database = getContext()->resolveDatabase(query.database);
-    String database = escapeString(resolved_database);
+    const StorageID table_id = resolveShownTable(query, getContext());
+    String table = escapeString(table_id.table_name);
+    String database = escapeString(table_id.database_name);
     String where_expression = query.where_expression ? fmt::format("WHERE ({})", query.where_expression->formatWithSecretsOneLine()) : "";
 
     String rewritten_query = fmt::format(R"(
@@ -124,7 +139,7 @@ ORDER BY index_type, expression, seq_in_index;)", database, table, where_express
 BlockIO InterpreterShowIndexesQuery::execute()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String database = getContext()->resolveDatabase(query.database);
+    String database = resolveShownTable(query, getContext()).database_name;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");

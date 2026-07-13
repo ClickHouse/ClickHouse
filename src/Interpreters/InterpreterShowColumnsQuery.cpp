@@ -22,6 +22,21 @@ namespace Setting
 }
 
 
+namespace
+{
+
+/// Canonical target of the query, so the rewritten filters match the object the user named.
+StorageID resolveShownTable(const ASTShowColumnsQuery & query, ContextPtr context)
+{
+    StorageID table_id{context->resolveDatabase(query.database), query.table};
+    table_id.database_name_quote = query.database_quote;
+    table_id.table_name_quote = query.table_quote;
+    return DatabaseCatalog::instance().resolveStorageIDNames(std::move(table_id), context);
+}
+
+}
+
+
 InterpreterShowColumnsQuery::InterpreterShowColumnsQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_)
     , query_ptr(query_ptr_)
@@ -41,9 +56,9 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     const bool remap_fixed_string_as_text = settings[Setting::mysql_map_fixed_string_to_text_in_show_columns];
 
     WriteBufferFromOwnString buf_database;
-    String resolved_database = getContext()->resolveDatabase(query.database);
-    String database = escapeString(resolved_database);
-    String table = escapeString(query.table);
+    const StorageID table_id = resolveShownTable(query, getContext());
+    String database = escapeString(table_id.database_name);
+    String table = escapeString(table_id.table_name);
 
     String rewritten_query;
     if (use_mysql_types)
@@ -173,7 +188,7 @@ WHERE
 BlockIO InterpreterShowColumnsQuery::execute()
 {
     const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
-    String database = getContext()->resolveDatabase(query.database);
+    String database = resolveShownTable(query, getContext()).database_name;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");

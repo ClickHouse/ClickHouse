@@ -2701,6 +2701,14 @@ BlockIO InterpreterCreateQuery::execute()
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     bool is_create_database = create.database && !create.table;
+
+    /// The database component of CREATE TABLE/VIEW/... refers to an existing database: canonicalize
+    /// its spelling once, so DDL guards, access checks and replication all act on the same object.
+    /// CREATE DATABASE defines a new database and keeps the name as written.
+    if (!is_create_database && create.database)
+        create.setDatabase(DatabaseCatalog::instance().resolveDatabaseNameSpelling(
+            create.getDatabase(), identifierPartQuoteFromAST(create.database), getContext()));
+
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())

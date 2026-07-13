@@ -33,3 +33,18 @@ UNKNOWN_TABLE
 1
 --- standard: folded DROP TABLE drops the exact-cased table
 0
+--- standard: CREATE TABLE folds the database component, table name stays as written
+0
+UNKNOWN_DATABASE
+UNKNOWN_DATABASE
+--- standard: EXISTS TABLE folds, double-quoted stays exact
+1
+0
+0
+--- standard: SHOW COLUMNS and SHOW INDEXES fold, double-quoted database matches nothing
+x	Int32	NO	PRI SOR	\N	
+NewTable	1	PRIMARY	1	x	A	0	\N	\N	\N	PRIMARY			YES	
+--- standard: sibling databases make CREATE TABLE, EXISTS and SHOW COLUMNS ambiguous
+AMBIGUOUS_IDENTIFIER
+AMBIGUOUS_IDENTIFIER
+AMBIGUOUS_IDENTIFIER

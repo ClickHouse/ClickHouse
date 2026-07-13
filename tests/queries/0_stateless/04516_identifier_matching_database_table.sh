@@ -74,3 +74,25 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${DB_ONE}.MyTable"
 echo '--- standard: folded DROP TABLE drops the exact-cased table'
 ${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "DROP TABLE ${DB_ONE_FOLDED}.mytable"
 ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${DB_ONE}.MyTable"
+
+echo '--- standard: CREATE TABLE folds the database component, table name stays as written'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE_FOLDED}.NewTable (x Int32) ENGINE = MergeTree ORDER BY x"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${DB_ONE}.NewTable"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_ONE_FOLDED}.Other (x Int32) ENGINE = Memory" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE \"${DB_ONE_FOLDED}\".Other (x Int32) ENGINE = Memory" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
+
+echo '--- standard: EXISTS TABLE folds, double-quoted stays exact'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "EXISTS TABLE ${DB_ONE_FOLDED}.newtable"
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${DB_ONE_FOLDED}.newtable"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "EXISTS TABLE \"${DB_ONE_FOLDED}\".newtable"
+
+echo '--- standard: SHOW COLUMNS and SHOW INDEXES fold, double-quoted database matches nothing'
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SHOW COLUMNS FROM ${DB_ONE_FOLDED}.newtable"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SHOW COLUMNS FROM \"${DB_ONE_FOLDED}\".newtable"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SHOW INDEXES FROM ${DB_ONE_FOLDED}.newtable"
+
+echo '--- standard: sibling databases make CREATE TABLE, EXISTS and SHOW COLUMNS ambiguous'
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_TWO}"
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "CREATE TABLE ${DB_ONE_FOLDED}.T2 (x Int32) ENGINE = Memory" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "EXISTS TABLE ${DB_ONE_FOLDED}.newtable" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
+${CLICKHOUSE_CLIENT} --database_and_table_name_matching=standard --query "SHOW COLUMNS FROM ${DB_ONE_FOLDED}.newtable" 2>&1 | grep -oF "AMBIGUOUS_IDENTIFIER" | uniq
