@@ -76,6 +76,10 @@ public:
 private:
     void fillPerThreadInfo(size_t threads, size_t sum_marks);
 
+    /// Cuts the next portion of marks to read from the per-thread queues (possibly stealing from
+    /// another thread's queue when the own one is exhausted). Returns false if there is no more work.
+    bool cutRangesToRead(size_t task_idx, size_t & part_idx, MarkRanges & ranges_to_get_from_part);
+
     mutable std::mutex mutex;
 
     /// State to track numbers of slow reads.

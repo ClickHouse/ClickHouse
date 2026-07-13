@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
+#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -9,6 +10,12 @@
 #include <Access/ContextAccess.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+
+namespace ProfileEvents
+{
+    extern const Event ReadPoolRangeRefinerDroppedMarks;
+    extern const Event ReadPoolRangeRefinerDroppedCuts;
+}
 
 namespace DB
 {
@@ -440,6 +447,29 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
         .storage_snapshot = storage_snapshot,
         .profile_callback = profile_callback,
     };
+}
+
+MarkRanges MergeTreeReadPoolBase::refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const
+{
+    if (!ranges_refiner || ranges.empty())
+        return ranges;
+
+    size_t marks_before = ranges.getNumberOfMarks();
+    auto refined = ranges_refiner->refine(info, std::move(ranges));
+    size_t marks_after = refined.getNumberOfMarks();
+
+    if (marks_after > marks_before)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Ranges refiner returned {} marks for a cut of {} marks of part {}, refinement may only drop marks",
+            marks_after, marks_before, info.data_part->name);
+
+    if (marks_after < marks_before)
+        ProfileEvents::increment(ProfileEvents::ReadPoolRangeRefinerDroppedMarks, marks_before - marks_after);
+
+    if (marks_after == 0)
+        ProfileEvents::increment(ProfileEvents::ReadPoolRangeRefinerDroppedCuts);
+
+    return refined;
 }
 
 }
