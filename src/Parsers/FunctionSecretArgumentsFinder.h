@@ -901,6 +901,14 @@ protected:
             findS3ExplicitUrlSecretNamedArguments(0);
             maskS3ExtraCredentials();
             markSecretArgument(2);
+
+            /// The S3 database engine accepts no positional argument beyond secret_access_key. Any further
+            /// positional literal is invalid but still formatted and logged, so fail closed and hide it.
+            /// Trailing named overrides (e.g. `use_environment_credentials = 1`) are excluded from `count`
+            /// and stay visible.
+            size_t count = excludeS3OrURLNestedMaps();
+            for (size_t i = 3; i < count; ++i)
+                markSecretArgument(i);
         }
     }
 

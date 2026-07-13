@@ -81,6 +81,17 @@ CREATE DATABASE db_04510_hdr ENGINE = Backup('', S3('url_dbhdr', 'ak', 'SEKRIT_S
 CREATE DATABASE db_04510_expr ENGINE = Backup('', S3('url_dbexpr', 'ak', 'SEKRIT_SAK',
                  extra_credentials(concat('extern', 'al_id') = 'SEKRIT_EXPR'))); -- { serverError BAD_ARGUMENTS }
 
+-- The S3 database engine accepts no positional beyond secret_access_key; an extra positional must
+-- be masked in the logged query text.
+CREATE DATABASE db_04510_s3pos ENGINE = S3('url_dbs3pos', 'ak', 'SEKRIT_SAK',
+                 'SEKRIT_S3DBTOK'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- A valid non-secret named override (use_environment_credentials) must stay visible while
+-- secret_access_key is hidden. This CREATE succeeds (the S3 database is lazy), so drop it after.
+DROP DATABASE IF EXISTS db_04510_env;
+CREATE DATABASE db_04510_env ENGINE = S3('url_dbenv', 'ak', 'SEKRIT_SAK', use_environment_credentials = 1);
+DROP DATABASE db_04510_env;
+
 SYSTEM FLUSH LOGS query_log;
 -- Assert every form was logged and masked, and that no form leaks any secret (SEKRIT marker).
 SELECT
@@ -94,6 +105,8 @@ SELECT
     countIf(query LIKE '%db_04510_postok%'  AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_positional_masked,
     countIf(query LIKE '%db_04510_hdr%'     AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_headers_masked,
     countIf(query LIKE '%db_04510_expr%'    AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_expr_key_masked,
+    countIf(query LIKE '%db_04510_s3pos%'   AND query LIKE '%[HIDDEN]%') > 0 AS s3_db_positional_masked,
+    countIf(query LIKE '%db_04510_env%'     AND query LIKE '%use_environment_credentials = 1%') > 0 AS s3_db_env_override_visible,
     countIf(query LIKE '%SEKRIT%') AS leaked
 FROM system.query_log
 WHERE current_database = currentDatabase()
