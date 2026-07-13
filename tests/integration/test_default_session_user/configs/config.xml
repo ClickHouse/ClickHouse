@@ -1,6 +1,9 @@
 <clickhouse>
     <default_session_user>global_default_user</default_session_user>
 
+    <!-- gRPC is not a composable protocol, so only the global setting applies to it. -->
+    <grpc_port>9100</grpc_port>
+
     <!-- Serve keeper-style prometheus metrics; the composable `prometheus` endpoints
          below go through the `KeeperPrometheusHandler-factory` because of this. -->
     <prometheus>

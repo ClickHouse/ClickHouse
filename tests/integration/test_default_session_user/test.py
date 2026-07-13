@@ -1,17 +1,27 @@
 import base64
 import json
+import os
 import secrets
 import socket
 import struct
+import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
+import grpc
 import pymysql
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
+if grpc_protocol_pb2_dir not in sys.path:
+    sys.path.append(grpc_protocol_pb2_dir)
+import clickhouse_grpc_pb2  # Execute pb2/generate.py from test_grpc_protocol to regenerate these modules.
+import clickhouse_grpc_pb2_grpc
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -169,6 +179,35 @@ def test_fixed_user_handler_with_anonymous_logins_disabled():
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         execute_query_http(8129, "SELECT currentUser()")
     assert exc_info.value.code == 403
+
+
+def grpc_query(query, user_name=None):
+    channel = grpc.insecure_channel(f"{node1.ip_address}:9100")
+    try:
+        grpc.channel_ready_future(channel).result(timeout=10)
+        stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
+        query_info = clickhouse_grpc_pb2.QueryInfo(query=query)
+        if user_name is not None:
+            query_info.user_name = user_name
+        result = stub.ExecuteQuery(query_info)
+        assert not result.HasField("exception"), result.exception.display_text
+        return result.output.decode("utf-8")
+    finally:
+        channel.close()
+
+
+def test_grpc_default_session_user():
+    # gRPC is not a composable protocol, so only the global setting applies to it:
+    # a query without a user name runs as the global default session user.
+    assert grpc_query("SELECT currentUser()") == "global_default_user\n"
+    assert_login_success("global_default_user", "gRPC")
+
+    # An explicitly specified user is not affected.
+    assert (
+        grpc_query("SELECT currentUser()", user_name="explicit_user")
+        == "explicit_user\n"
+    )
+    assert_login_success("explicit_user", "gRPC")
 
 
 def test_native_default_session_user():
