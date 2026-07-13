@@ -29,7 +29,7 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all 'arr
 
 ## -Map {#-map}
 
-The -Map suffix can be appended to any aggregate function. This will create an aggregate function which gets Map type or extra argument - a key of map as an argument, and aggregates values of each key of the map separately using the specified aggregate function. The result is also of a Map type.
+The -Map suffix can be appended to any aggregate function. It creates an aggregate function that accepts either a `Map(K, V)` argument, or regular aggregate arguments plus an additional key argument, and then aggregates values per key using the nested aggregate function. The result is a `Map(K, R)`.
 
 **Example**
 
