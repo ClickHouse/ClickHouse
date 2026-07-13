@@ -53,11 +53,13 @@ SELECT '-- index analysis: year(<date>) still prunes granules like toYear(<date>
 DROP TABLE IF EXISTS 03481_idx;
 CREATE TABLE 03481_idx (d Date) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 8192;
 INSERT INTO 03481_idx SELECT toDate('2000-01-01') + number FROM numbers(20000);
-SELECT '-- both toYear(d) and year(d) prune to the same granule count';
+SELECT '-- both toYear(d) and year(d) prune to the same 1/2 granule count';
 -- Pin enable_parallel_replicas = 0 so the EXPLAIN reflects local granule pruning (parallel-replica
--- routing is orthogonal to index analysis and would add distributed plan steps).
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM 03481_idx WHERE toYear(d) = 2005 SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Granules:%';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM 03481_idx WHERE year(d) = 2005 SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Granules:%';
+-- routing is orthogonal to index analysis and would add distributed plan steps). Match the exact
+-- pruning fraction 'Granules: 1/2' (not a bare 'Granules:'), so the read-summary line some
+-- randomized settings add ('Parts: 1 | Granules: 1', no slash) does not leak into the output.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM 03481_idx WHERE toYear(d) = 2005 SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM 03481_idx WHERE year(d) = 2005 SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Granules: 1/2%';
 DROP TABLE 03481_idx;
 
 SELECT '-- projections: year(<date>) filters/keys still select projections like toYear(<date>)';
