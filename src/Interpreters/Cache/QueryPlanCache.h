@@ -160,6 +160,14 @@ public:
     /// `query_plan_cache_size_in_bytes_quota` setting; 0 means no quota.
     void set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entry, size_t max_size_in_bytes_for_user = 0);
 
+    /// Removes the entry stored under `key`, but only while it is still `entry`. Called for an
+    /// entry that failed validation or materialization: such an entry must be evicted rather than
+    /// merely skipped, because when the query became permanently uncacheable (e.g. a view switched
+    /// away from `INVOKER` security) nothing ever replaces it, and a dead plan would stay resident
+    /// forever, pinning cache size and per-user quota. A fresh plan stored concurrently under the
+    /// same key is left untouched.
+    void remove(const QueryPlanCacheKey & key, const MappedPtr & entry);
+
     void clear();
 
     size_t sizeInBytes() const;

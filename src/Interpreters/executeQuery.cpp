@@ -1217,6 +1217,14 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
             ProfileEvents::increment(ProfileEvents::QueryPlanCacheStaleMisses);
             tryLogCurrentException("QueryPlanCache", "Stale or corrupt cached plan, falling back to normal planning");
         }
+
+        /// Reached only when the entry failed validation or materialized stale/corrupt (a
+        /// successful hit returns above, non-stale exceptions propagate). Evict the known-dead
+        /// entry: re-planning below stores a fresh one when the query is still cacheable, but when
+        /// it became uncacheable (e.g. a view switched away from `INVOKER` security) nothing would
+        /// ever replace it, and it would stay resident forever - consuming cache size and per-user
+        /// quota and re-paying validation on every execution.
+        query_plan_cache->remove(*key, cached_entry);
     }
 
     /// Miss: build the logical plan (leaf reads are `ReadFromTable` placeholders).

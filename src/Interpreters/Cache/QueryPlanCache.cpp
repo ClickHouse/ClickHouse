@@ -127,10 +127,11 @@ QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
     auto result = Base::get(key);
     if (result)
     {
-        /// Reject entries with incompatible format version.
+        /// Reject entries with incompatible format version. Removed through `remove` (not
+        /// `Base::remove`) so that the per-user charge and the weight record are released too.
         if (result->format_version != QUERY_PLAN_CACHE_FORMAT_VERSION)
         {
-            Base::remove(key);
+            remove(key, result);
             ProfileEvents::increment(ProfileEvents::QueryPlanCacheMisses);
             return nullptr;
         }
@@ -211,6 +212,25 @@ void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
             entry_weights.erase(it);
         }
         throw;
+    }
+}
+
+void QueryPlanCache::remove(const QueryPlanCacheKey & key, const MappedPtr & entry)
+{
+    /// Remove only while the resident under `key` is still the exact entry the caller looked up:
+    /// a concurrent execution may have already replaced it with a fresh plan, which must survive.
+    if (!Base::removeIfMatches(key, [&](const MappedPtr & resident) { return resident == entry; }))
+        return;
+
+    /// `LRUCachePolicy::remove` / `SLRUCachePolicy::remove` bypass `onEntryRemoval` (only LRU/SLRU
+    /// eviction runs it), so release the per-user charge and the weight record here, mirroring the
+    /// same-key replacement bookkeeping in `set`. Like the admission check, this accounting is
+    /// best-effort under a concurrent `set` of the same key.
+    std::lock_guard lock(per_user_mutex);
+    if (auto it = entry_weights.find(key); it != entry_weights.end())
+    {
+        decrementUserBytes(it->second.first, it->second.second);
+        entry_weights.erase(it);
     }
 }
 
