@@ -119,7 +119,7 @@ void DistinctTransform::checkBloomFilterWorthiness()
     for (auto word : raw_filter_words)
         set_bits += std::popcount(word);
     /// If too many bits are set then it is likely that the filter will not filter out much
-    if (set_bits > max_ratio_of_set_bits_in_bloom_filter * total_bits)
+    if (static_cast<Float64>(set_bits) > max_ratio_of_set_bits_in_bloom_filter * static_cast<Float64>(total_bits))
         use_bf = false;
     bf_worthless_last_set_bits = set_bits;
     bf_worthless_last_bf_pass = total_passed_bf;
@@ -149,7 +149,7 @@ void DistinctTransform::buildCombinedFilter(
 
         if (has_element)
         {
-            bool inserted;
+            bool inserted = false;
             method.data.emplace(key_holder, it, inserted, hash);
             /// Emit the record if there is no such key in the current set yet.
             /// Skip it otherwise.
@@ -407,7 +407,7 @@ void DistinctTransform::buildSetParallelFilter(
                 for (size_t j = begin; j < end; ++j)
                 {
                     size_t i = all_indices[j];
-                    bool inserted;
+                    bool inserted = false;
                     method.data.emplace(keys[i], it, inserted, hashes[i]);
                     filter[i] = inserted;
                 }
@@ -475,7 +475,7 @@ void DistinctTransform::transform(Chunk & chunk)
     if (try_init_bf && old_set_size > set_limit_for_enabling_bloom_filter)
     {
         bloom_filter = std::make_unique<BloomFilter>(BloomFilterParameters(bloom_filter_bytes, 1, 0));
-        bf_worthless_total_set_bits = static_cast<UInt64>((bloom_filter_bytes * 8) * max_ratio_of_set_bits_in_bloom_filter);
+        bf_worthless_total_set_bits = static_cast<UInt64>(static_cast<Float64>(bloom_filter_bytes * 8) * max_ratio_of_set_bits_in_bloom_filter);
         try_init_bf = false;
         use_bf = true;
     }
@@ -563,7 +563,7 @@ void DistinctTransform::transform(Chunk & chunk)
         for (auto & column : columns)
             column = column->filter(filter, rows_passed);
 
-    use_bf = use_bf && (rows_passed > (pass_ratio_threshold_for_disabling_bloom_filter * num_rows)) ? true: false;
+    use_bf = use_bf && (static_cast<Float64>(rows_passed) > (pass_ratio_threshold_for_disabling_bloom_filter * static_cast<Float64>(num_rows)));
 
     chunk.setColumns(std::move(columns), rows_passed);
 
