@@ -1390,7 +1390,7 @@ private:
                 for (size_t k = 0; k < common_length; ++k)
                 {
                     if (!element_equals[pos + k])
-                    {
+                    {   /// handles (=) and (!=)
                         value = (*element_order)[pos + k];
                         decided = true;
                         break;
@@ -1398,6 +1398,7 @@ private:
                 }
                 if (!decided)
                 {
+                    /// handles (<), (<=), (>), (>=)
                     Int8 lc = length_cmp[row];
                     if constexpr (is_less)                   value = lc < 0;
                     else if constexpr (is_less_or_equals)    value = lc <= 0;
@@ -1478,7 +1479,7 @@ public:
                     ColumnsWithTypeAndName element_args{
                         {nullptr, left_array->getNestedType(), ""},
                         {nullptr, right_array->getNestedType(), ""}};
-                    /// Throws ILLEGAL_TYPE_OF_ARGUMENT if the element types are not comparable.
+                    /// Throws NO_COMMON_TYPE if the element types are not comparable.
                     DataTypePtr element_result_type = element_comparison->build(element_args)->getResultType();
 
                     /// Supported only when the element comparison produces a non-Nullable result
@@ -1735,8 +1736,6 @@ public:
         }
 
         /// Arrays whose element types have no common supertype are compared element-wise;
-        /// the generic path below would otherwise fail inside getLeastSupertype. When a
-        /// common supertype does exist.
         if (which_left.isArray() && which_right.isArray()
             && !tryGetLeastSupertype(DataTypes{left_type, right_type}))
         {
