@@ -824,6 +824,10 @@
     "destination": "/products/cloud/features/sql-console-features/hyperdx"
   },
   {
+    "source": "/cloud/manage/clickstack",
+    "destination": "/products/cloud/features/sql-console-features/hyperdx"
+  },
+  {
     "source": "/cloud/manage/jan-2025-faq",
     "destination": "/products/cloud/features/cloud-tiers"
   },
