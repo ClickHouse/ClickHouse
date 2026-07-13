@@ -1696,6 +1696,13 @@ class QueryProgressElement extends HTMLElement
         this._checkMark.style.display = 'inline-block';
     }
 
+    /// The query was cancelled (Stop): stop the spinner without showing the success check mark.
+    stop()
+    {
+        this._hourglass.style.display = 'none';
+        this._checkMark.style.display = 'none';
+    }
+
     updateProgress(progress)
     {
         const rows = +progress.read_rows;
@@ -6042,6 +6049,9 @@ async function cancel()
         ac.abort();
     }
     multiQueryControllers = [];
+    /// Stop the progress spinner - the awaiting post* paths bail out on the bumped request_num
+    /// without touching it, so it would otherwise keep spinning after the query was stopped.
+    progressEl.stop();
     endFlight();
 }
 
