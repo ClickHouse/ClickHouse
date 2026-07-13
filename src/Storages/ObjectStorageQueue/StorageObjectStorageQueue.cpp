@@ -934,6 +934,15 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                 "Stopping streaming to views: elapsed time ({} sec) reached half of "
                 "persistent processing node TTL ({} sec)",
                 watch.elapsedSeconds(), ttl_seconds);
+
+            /// Drop the shared iterator, so that all buckets it still holds
+            /// (releaseFinishedBuckets keeps a non-finished one) are released
+            /// as soon as the last streaming task stops using it,
+            /// and the next execution starts with a fresh iterator,
+            /// re-acquiring bucket locks.
+            std::lock_guard streaming_lock(streaming_mutex);
+            if (streaming_file_iterator == file_iterator)
+                streaming_file_iterator.reset();
             break;
         }
 
