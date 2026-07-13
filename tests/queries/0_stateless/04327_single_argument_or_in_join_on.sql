@@ -19,4 +19,12 @@ SELECT t1.c0 FROM t1 AS tx LEFT ARRAY JOIN [] AS a0 LEFT JOIN t1 ON or(and(a0 = 
 -- A single-argument `or` outside JOIN ON must still be rejected with a clean error.
 SELECT t1.c0 FROM t1 AS tx LEFT ARRAY JOIN [] AS a0 WHERE or(a0 = t1.c0); -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
 
+-- convert_query_to_cnf=1 routes WHERE/PREWHERE/HAVING through ConvertLogicalExpressionToCNFPass
+-- (whose CNF builder assumes binary `or`). A single-argument `or` never reaches it: it is always
+-- Nothing-typed (the Nothing short-circuit is the only way arity validation is skipped), so the
+-- filter is rejected as a non-boolean type during query analysis, before the CNF pass runs.
+SELECT t1.c0 FROM t1 AS tx LEFT ARRAY JOIN [] AS a0 WHERE or(a0 = t1.c0) SETTINGS convert_query_to_cnf = 1; -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
+SELECT t1.c0 FROM t1 AS tx LEFT ARRAY JOIN [] AS a0 PREWHERE or(a0 = t1.c0) SETTINGS convert_query_to_cnf = 1; -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
+SELECT t1.c0 FROM t1 AS tx LEFT ARRAY JOIN [] AS a0 GROUP BY t1.c0 HAVING or(a0 = t1.c0) SETTINGS convert_query_to_cnf = 1; -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
+
 DROP TABLE t1;
