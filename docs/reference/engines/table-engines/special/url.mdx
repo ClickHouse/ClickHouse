@@ -48,6 +48,11 @@ Only the S3 schemes that the S3 URI mapper resolves to a concrete endpoint witho
 
 The [url_base](/reference/settings/session-settings#url_base) setting is applied before scheme dispatch, so a relative reference is first resolved against the base and then routed to the matching engine.
 
+```sql
+CREATE TABLE file_via_url (a UInt32, b String) ENGINE = URL('file://data.csv', CSV);
+CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv', CSV);
+```
+
 ## Usage {#using-the-engine-in-the-clickhouse-server}
 
 `INSERT` and `SELECT` queries are transformed to `POST` and `GET` requests,
