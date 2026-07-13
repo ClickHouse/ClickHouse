@@ -2766,7 +2766,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     else
     {
         if (!table_has_unique_key) /// consult/skip side of the query-condition cache; disabled for UK reads (see above).
-            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, context_, log);
+            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, *indexes, context_, log);
 
         auto get_indexes_size = [&]() -> size_t
         {
@@ -2993,6 +2993,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
             const auto * output = query_info_.filter_actions_dag->getOutputs().front();
+            /// These exclusions come from skip-index (and primary-key) analysis, which can diverge
+            /// from the row-level predicate (e.g. a text index with a preprocessor). Store them
+            /// under a key salted with the effective skip-index profile so that only a query that
+            /// ran the same set of indexes consults them; a query that disabled skip indexes (or
+            /// ignored an index) reads its own profile's key and is not poisoned. See issue #108519.
+            const UInt64 profiled_condition_hash = MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(*condition_hash, *indexes);
             for (const auto & remaining_ranges : remaining)
             {
                 const auto & data_part = remaining_ranges.data_part;
@@ -3001,7 +3007,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 query_condition_cache->write(
                     data_part->storage.getStorageID().uuid,
                     part_name,
-                    *condition_hash,
+                    profiled_condition_hash,
                     output->result_name,
                     remaining_ranges.ranges,
                     data_part->index_granularity->getMarksCount(),
@@ -4264,6 +4270,9 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
     std::string_view read_type_label = format_settings.pretty ? "Read type: " : "ReadType: ";
     format_settings.out << prefix << read_type_label << readTypeToString(result.read_type) << '\n';
 
+    if (isQueryWithFinal())
+        format_settings.out << prefix << "FINAL: 1\n";
+
     if (!result.index_stats.empty())
     {
         std::string_view delimiter = format_settings.pretty ? " | " : "\n";
@@ -4386,6 +4395,8 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 {
     const auto & result = getAnalysisResult();
     map.add("Read Type", readTypeToString(result.read_type));
+    if (isQueryWithFinal())
+        map.add("FINAL", true);
     if (!result.index_stats.empty())
     {
         map.add("Parts", result.index_stats.back().num_parts_after);
