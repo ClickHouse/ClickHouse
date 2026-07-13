@@ -59,11 +59,17 @@ void CascadesOptimizer::optimize()
 
     OptimizationEnvironment environment;
 
-    /// Parameter takes priority (for testing or to limit parallelism).
-    /// Otherwise use the actual cluster size from config.
+    /// Parameter takes priority (for testing or to limit parallelism); otherwise use the same worker
+    /// source as the distributed executor.
     environment.cluster_node_count = getCascadesClusterNodeCountParam(query_context);
     if (environment.cluster_node_count == 0)
-        environment.cluster_node_count = std::max<size_t>(1, getDistributedWorkerCount(query_context));
+        environment.cluster_node_count = getCascadesPlanningNodeCount(query_context);
+    /// Reject rather than silently plan for one node, which would skip every distributed alternative.
+    if (environment.cluster_node_count == 0)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan with enable_cascades_optimizer cannot determine how many nodes will "
+            "run the query. Configure a stateless worker cluster, or set `distributed_plan_workers_num` "
+            "(also required for `distributed_plan_execute_locally` without a configured cluster).");
 
     /// If the cost-config override is set but invalid, let the error propagate instead of silently
     /// using the defaults, so a query that set it does not get a different cost model than it asked for.

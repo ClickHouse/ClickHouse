@@ -21,9 +21,10 @@
 namespace DB
 {
 
-/// Returns the number of worker hosts available for distributed plan execution.
-/// Reads from `stateless_worker_client.cluster` config.
-size_t getDistributedWorkerCount(ContextPtr context);
+/// Node count Cascades should plan for, matching the executor's worker source:
+/// `distributed_plan_workers_num` for local/Cloud-discovery execution, else the static worker
+/// cluster size. Returns 0 when no source is available, so the caller can reject distributed planning.
+size_t getCascadesPlanningNodeCount(ContextPtr context);
 
 /// Returns the value of `_internal_cascades_cluster_node_count` query parameter,
 /// or 0 if not set. Used by the optimizer to determine cluster size and by the

@@ -84,9 +84,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
-#if CLICKHOUSE_CLOUD
     extern const SettingsUInt64 distributed_plan_workers_num;
-#endif
 }
 
 namespace ErrorCodes
@@ -1065,8 +1063,22 @@ size_t getCascadesTaskLimitParam(ContextPtr context, size_t default_limit)
     return default_limit;
 }
 
-size_t getDistributedWorkerCount(ContextPtr context)
+size_t getCascadesPlanningNodeCount(ContextPtr context)
 {
+    const auto & settings = context->getSettingsRef();
+    const size_t requested_workers = settings[Setting::distributed_plan_workers_num];
+
+    /// Local execution runs in-process, not bound to a cluster; use the requested count when set.
+    if (settings[Setting::distributed_plan_execute_locally] && requested_workers > 0)
+        return requested_workers;
+
+#if CLICKHOUSE_CLOUD
+    /// Cloud discovery leases `distributed_plan_workers_num` workers instead of a static cluster.
+    if (context->getConfigRef().has("stateless_worker_client.discovery_service"))
+        return requested_workers;
+#endif
+
+    /// Otherwise use the statically configured worker cluster's size.
     return getDistributedWorkerHostnames(context).size();
 }
 

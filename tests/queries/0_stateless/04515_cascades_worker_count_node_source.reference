@@ -1,0 +1,12 @@
+-- one worker: local plan, no exchange
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromMergeTree (default.t_worker_count)
+-- four workers: distributed plan with a gather exchange
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (ParallelRead default.t_worker_count)
