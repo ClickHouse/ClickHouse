@@ -97,7 +97,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
 
 static std::exception_ptr runStep(std::function<void()> step, ThreadGroupPtr & thread_group)
 {
-    ThreadGroupSwitcher switcher(thread_group, ThreadName::RUNTIME_DATA, /*allow_existing_group*/ true);
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::UNKNOWN, /*allow_existing_group*/ true);
 
     std::exception_ptr res;
 

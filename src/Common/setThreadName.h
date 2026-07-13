@@ -142,7 +142,6 @@ namespace DB
     M(RESTORE_MAKE_TABLE, "Restore_MakeTbl") \
     M(RESTORE_TABLE_DATA, "Restore_TblData") \
     M(RESTORE_TABLE_TASK, "Restore_TblTask") \
-    M(RUNTIME_DATA, "RuntimeData") \
     M(S3_BACKUP_READER, "BackupReaderS3") \
     M(S3_BACKUP_WRITER, "BackupWriterS3") \
     M(S3_COPY_POOL, "S3ObjStor_copy") \
