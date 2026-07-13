@@ -2483,7 +2483,7 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context, select_query_info);
+            addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context);
         }
 
         /** If we have aggregation, we can't execute any later-stage
