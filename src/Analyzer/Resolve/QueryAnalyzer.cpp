@@ -5227,8 +5227,13 @@ static bool getColumnsFromTableExpression(
                 const auto * table_function_node = table_expression->as<TableFunctionNode>();
                 chassert(table_function_node);
 
+                /// Use the same column set as `initializeTableExpressionData` (`GetColumnsOptions::All`, i.e. also
+                /// `ALIAS` / `EPHEMERAL` columns), not just physical ones, so the collision check sees every name a
+                /// bare identifier can bind to. Table functions such as `merge` forward the `ALIAS` columns of their
+                /// source tables, so `SELECT z FROM merge(...), (SELECT 1 AS z) AS rhs` where `z` is such an alias is
+                /// a genuine ambiguity that must still require an alias.
                 collect_storage_columns(
-                    table_function_node->getStorageSnapshot(), GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns());
+                    table_function_node->getStorageSnapshot(), GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
 
                 break;
             }

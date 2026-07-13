@@ -66,7 +66,24 @@ SELECT _part FROM merge(currentDatabase(), '^mt$'), (SELECT '' AS _part) AS rhs;
 -- collide with `item`'s identically-named virtuals). Nothing else collides, so the query is allowed.
 SELECT count() FROM merge(currentDatabase(), '^mt$'), item;
 
+-- A table function such as `merge` forwards the ALIAS columns of its source tables, and a bare identifier
+-- can bind to them, so an unaliased subquery whose output collides with such a forwarded ALIAS column is
+-- ambiguous and requires an alias. The collision check therefore uses the full bindable column set (as the
+-- binder does), not just physical columns; previously the forwarded ALIAS column was ignored and this
+-- slipped through.
+CREATE TABLE mt_alias (id UInt8, z UInt8 ALIAS id + 1) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mt_alias (id) VALUES (1), (2);
+
+SELECT z FROM merge(currentDatabase(), '^mt_alias$'), (SELECT 1 AS z) AS rhs; -- { serverError ALIAS_REQUIRED }
+
+-- An aliased sibling makes the reference qualifiable again, so the query is accepted.
+SELECT m.z FROM merge(currentDatabase(), '^mt_alias$') AS m, (SELECT 1 AS z) AS rhs ORDER BY m.z;
+
+-- No collision with the forwarded ALIAS column: still allowed without an alias.
+SELECT z FROM merge(currentDatabase(), '^mt_alias$'), (SELECT 1 AS not_z) AS rhs ORDER BY z;
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;
 DROP TABLE mt;
+DROP TABLE mt_alias;
