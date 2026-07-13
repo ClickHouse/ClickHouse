@@ -10,14 +10,15 @@
 #include <Processors/Chunk.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
-#include <Common/assert_cast.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/assert_cast.h>
 
 #include <benchmark/benchmark.h>
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -107,12 +108,9 @@ UInt64 probeKey(size_t row, size_t key_count, HitRatio hit_ratio, ValuePattern p
 {
     switch (hit_ratio)
     {
-        case HitRatio::Zero:
-            return absentKey(row, key_count, pattern);
-        case HitRatio::Half:
-            return row % 2 == 0 ? presentKey(row, key_count, pattern) : absentKey(row, key_count, pattern);
-        case HitRatio::All:
-            return presentKey(row, key_count, pattern);
+        case HitRatio::Zero: return absentKey(row, key_count, pattern);
+        case HitRatio::Half: return row % 2 == 0 ? presentKey(row, key_count, pattern) : absentKey(row, key_count, pattern);
+        case HitRatio::All: return presentKey(row, key_count, pattern);
     }
     return absentKey(row, key_count, pattern);
 }
@@ -128,15 +126,6 @@ ColumnPtr makeUInt64Column(size_t rows, size_t key_count, HitRatio hit_ratio, Va
     auto & data = column->getData();
     for (size_t row = 0; row < rows; ++row)
         data[row] = probeKey(row, key_count, hit_ratio, pattern);
-    return std::move(column);
-}
-
-ColumnPtr makeUInt32Column(size_t rows, size_t key_count, HitRatio hit_ratio, ValuePattern pattern)
-{
-    auto column = ColumnUInt32::create(rows);
-    auto & data = column->getData();
-    for (size_t row = 0; row < rows; ++row)
-        data[row] = static_cast<UInt32>(probeKey(row, key_count, hit_ratio, pattern));
     return std::move(column);
 }
 
@@ -297,7 +286,8 @@ void recordRows(benchmark::State & state, size_t rows)
     state.SetItemsProcessed(static_cast<int64_t>(state.iterations()) * static_cast<int64_t>(rows));
 }
 
-void benchmarkFind(benchmark::State & state, RuntimeFilterKind kind, const DataTypePtr & type, ColumnPtr build_column, ColumnPtr probe_column)
+void benchmarkFind(
+    benchmark::State & state, RuntimeFilterKind kind, const DataTypePtr & type, ColumnPtr build_column, ColumnPtr probe_column)
 {
     ensureFunctionsRegistered();
 
@@ -554,7 +544,7 @@ static void BM_RuntimeFilterBuildTransformUInt64(benchmark::State & state)
             Chunk chunk({column_chunk}, column_chunk->size());
             transform.transform(chunk);
         }
-        benchmark::DoNotOptimize(transform);
+        benchmark::DoNotOptimize(&transform);
     }
 
     recordRows(state, rows);
@@ -595,7 +585,7 @@ static void BM_RuntimeFilterBuildTransformCastUInt32ToUInt64(benchmark::State & 
             Chunk chunk({column_chunk}, column_chunk->size());
             transform.transform(chunk);
         }
-        benchmark::DoNotOptimize(transform);
+        benchmark::DoNotOptimize(&transform);
     }
 
     recordRows(state, rows);
@@ -622,10 +612,9 @@ BENCHMARK(BM_RuntimeFilterApproximateFindUInt64)
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/100})
     ->Args({/*key_count=*/100000, /*rows=*/65536, /*hit_ratio=*/50});
 
-BENCHMARK(BM_RuntimeFilterApproximateFindNullableUInt64)
-    ->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/0})
-    ->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/1})
-    ->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/50});
+/// ApproximateRuntimeFilter does not support hashing actual NULL values in ColumnNullable.
+/// Benchmark only the non-null ColumnNullable overhead here; NULL-heavy cases are covered by the exact filter benchmark above.
+BENCHMARK(BM_RuntimeFilterApproximateFindNullableUInt64)->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/0});
 
 BENCHMARK(BM_RuntimeFilterApproximateFindString)
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/0})
@@ -635,13 +624,9 @@ BENCHMARK(BM_RuntimeFilterApproximateFindLowCardinalityString)
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/0})
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/50});
 
-BENCHMARK(BM_RuntimeFilterApproximateBuildUInt64)
-    ->Arg(/*rows=*/10000)
-    ->Arg(/*rows=*/100000);
+BENCHMARK(BM_RuntimeFilterApproximateBuildUInt64)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
 
-BENCHMARK(BM_RuntimeFilterApproximateBuildString)
-    ->Arg(/*rows=*/10000)
-    ->Arg(/*rows=*/100000);
+BENCHMARK(BM_RuntimeFilterApproximateBuildString)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
 
 BENCHMARK(BM_RuntimeFilterApproximateMergeUInt64)
     ->Args({/*filters_to_merge=*/2, /*keys_per_filter=*/10000})
@@ -653,12 +638,9 @@ BENCHMARK(BM_RuntimeFilterExactMergeUInt64)
     ->Args({/*filters_to_merge=*/8, /*keys_per_filter=*/1000})
     ->Args({/*filters_to_merge=*/32, /*keys_per_filter=*/1000});
 
-BENCHMARK(BM_RuntimeFilterAdaptiveSkipApproximateUInt64)
-    ->Args({/*key_count=*/10000, /*rows=*/65536});
+BENCHMARK(BM_RuntimeFilterAdaptiveSkipApproximateUInt64)->Args({/*key_count=*/10000, /*rows=*/65536});
 
-BENCHMARK(BM_RuntimeFilterBuildTransformUInt64)
-    ->Args({/*rows=*/10000, /*chunk_rows=*/8192})
-    ->Args({/*rows=*/100000, /*chunk_rows=*/8192});
+BENCHMARK(BM_RuntimeFilterBuildTransformUInt64)->Args({/*rows=*/10000, /*chunk_rows=*/8192})->Args({/*rows=*/100000, /*chunk_rows=*/8192});
 
 BENCHMARK(BM_RuntimeFilterBuildTransformCastUInt32ToUInt64)
     ->Args({/*rows=*/10000, /*chunk_rows=*/8192})
