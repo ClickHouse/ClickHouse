@@ -56,7 +56,7 @@ SELECT 'With merge replicated partition only';
 
 CREATE TABLE test_replicated (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02676_partition_only', 'node')  ORDER BY i
 PARTITION BY i
-SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true;
+SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, max_merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true, number_of_free_entries_in_pool_to_execute_optimize_entire_partition=1;
 INSERT INTO test_replicated SELECT 1;
 INSERT INTO test_replicated SELECT 2;
 SELECT sleep(3) FORMAT Null; -- Sleep so the first partition is older
@@ -76,7 +76,7 @@ SELECT 'With merge replicated partition only and disable limit';
 
 CREATE TABLE test_replicated_limit (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02676_partition_only_limit', 'node')  ORDER BY i
 PARTITION BY i
-SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true, enable_max_bytes_limit_for_min_age_to_force_merge=false, max_bytes_to_merge_at_max_space_in_pool=1;
+SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, max_merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true, number_of_free_entries_in_pool_to_execute_optimize_entire_partition=1, enable_max_bytes_limit_for_min_age_to_force_merge=false, max_bytes_to_merge_at_max_space_in_pool=1;
 INSERT INTO test_replicated_limit SELECT 1;
 INSERT INTO test_replicated_limit SELECT 2;
 SELECT sleep(3) FORMAT Null; -- Sleep so the first partition is older
@@ -92,7 +92,7 @@ SELECT 'With merge replicated partition only and enable limit';
 
 CREATE TABLE test_replicated_limit (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02676_partition_only_limit', 'node')  ORDER BY i
 PARTITION BY i
-SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true, enable_max_bytes_limit_for_min_age_to_force_merge=true, max_bytes_to_merge_at_max_space_in_pool=1;
+SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, max_merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true, number_of_free_entries_in_pool_to_execute_optimize_entire_partition=1, enable_max_bytes_limit_for_min_age_to_force_merge=true, max_bytes_to_merge_at_max_space_in_pool=1;
 INSERT INTO test_replicated_limit SELECT 1;
 INSERT INTO test_replicated_limit SELECT 2;
 SELECT sleep(3) FORMAT Null; -- Sleep so the first partition is older
