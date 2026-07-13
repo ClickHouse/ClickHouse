@@ -27,8 +27,7 @@ In this quickstart you'll use `clickhouse-local` to load real OTel trace data fr
 
 <Steps titleSize="h3">
 
-    <Step>
-        ### Download the sample data
+    <Step title="Download the sample data" id="download-the-sample-data">
 
         The dataset contains 6,120 OTel trace spans exported from a demo microservices application. Each row includes a `ResourceAttributes` and `SpanAttributes` column containing dynamic key-value pairs as JSON maps.
         Save the file to a directory you can easily reference, for example `~/data/data-otel-traces.csv`.
@@ -58,8 +57,7 @@ In this quickstart you'll use `clickhouse-local` to load real OTel trace data fr
 
     </Step>
 
-    <Step>
-        ### Create the table and load the data
+    <Step title="Create the table and load the data" id="create-the-table-and-load-the-data">
 
         Launch `clickhouse-local` and create the following table with a schema matching the CSV.
         The key column is `ResourceAttributes Map(LowCardinality(String), String)` - using `LowCardinality` on the key type because OTel attribute keys are drawn from a relatively small, repeating set.
@@ -99,8 +97,7 @@ In this quickstart you'll use `clickhouse-local` to load real OTel trace data fr
         You should see 6,120 rows.
     </Step>
 
-    <Step>
-        ### Query the data
+    <Step title="Query the data" id="query-the-data">
 
         **Access a specific key** â use bracket syntax to pull a value out of the map. If the key doesn't exist on a given row, you get the default for the value type (empty string for `String`):
 
@@ -189,8 +186,7 @@ In this quickstart you'll use `clickhouse-local` to load real OTel trace data fr
         ```
     </Step>
 
-    <Step>
-        ### Aggregate across maps with the -Map combinator
+    <Step title="Aggregate across maps with the -Map combinator" id="aggregate-across-maps-with-the--map-combinator">
 
         ClickHouse's `-Map` aggregate combinator lets you apply any aggregate function to a `Map` column and have it operate on each key independently. The result is itself a `Map` â one entry per key, with the aggregated value. This is especially powerful for OTel metrics, where counters or gauges are stored as map values.
 
@@ -249,8 +245,7 @@ In this quickstart you'll use `clickhouse-local` to load real OTel trace data fr
         **Why this matters for OTel:** When your OTel Collector writes per-minute status code breakdowns into ClickHouse, `sumMap` lets you roll them up to hourly or daily totals in a single query â no `ARRAY JOIN`, no unpivoting, no knowing the full set of keys in advance. Any key that appears in any row is automatically included in the result.
     </Step>
 
-    <Step>
-        ### Optimise for frequently queried keys
+    <Step title="Optimise for frequently queried keys" id="optimise-for-frequently-queried-keys">
 
         If you find yourself constantly filtering on the same map key â `host.name` is a common one â you can extract it into a materialized column. This avoids the linear scan through the map on every query:
 

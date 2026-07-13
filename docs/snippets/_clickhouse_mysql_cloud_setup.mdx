@@ -2,14 +2,12 @@
 
 
 <Steps>
-<Step>
-#### Select `Connect your app` {#select-connect-your-app}
+<Step title={<>Select <code>Connect your app</code></>} id="select-connect-your-app">
 After creating your ClickHouse Cloud Service, on the `Connect your app` screen, select MySQL from the drop down.
 
 <Image size="lg" img="/images/_snippets/mysql1.webp" alt="ClickHouse Cloud credentials screen showing MySQL interface selection dropdown" border />
 </Step>
-<Step>
-#### Enable the MySQL interface {#enable-mysql-interface}
+<Step title="Enable the MySQL interface" id="enable-mysql-interface">
 Toggle the switch to enable the MySQL interface for this specific service.
 This will expose port `3306` for this service and prompt you with a MySQL connection screen that includes your unique MySQL username.
 
@@ -17,21 +15,18 @@ This will expose port `3306` for this service and prompt you with a MySQL connec
 
 Alternatively, in order to enable the MySQL interface for an existing service:
 </Step>
-<Step>
-#### Select `Connect` {#select-connect}
+<Step title={<>Select <code>Connect</code></>} id="select-connect">
 Ensure your service is in `Running` state then click on the service you want to enable the MySQL interface for.
 Select "Connect" from the left menu:
 
 <Image size="lg" img="/images/_snippets/mysql3.webp" alt="ClickHouse Cloud service connection screen with Connect option highlighted" border />
 </Step>
-<Step>
-#### Choose `MySQL` {#choose-mysql}
+<Step title={<>Choose <code>MySQL</code></>} id="choose-mysql">
 Select `MySQL` from the `Connect With` drop down.
 
 <Image size="md" img="/images/_snippets/mysql4.webp" alt="ClickHouse Cloud connection screen showing MySQL option selection" border />
 </Step>
-<Step>
-#### Enable the MySQL interface {#enable-mysql-interface}
+<Step title="Enable the MySQL interface" id="enable-mysql-interface-existing-service">
 Toggle the switch to enable the MySQL interface for this specific service.
 This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username.
 </Step>
@@ -56,8 +51,7 @@ For a ClickHouse Cloud hostname like `foobar.us-east1.aws.clickhouse.cloud`, the
 </Note>
 
 <Steps>
-<Step>
-#### Create a readonly settings profile {#create-a-custom-settings-user}
+<Step title="Create a readonly settings profile" id="create-a-custom-settings-user">
 Create a [settings profile](/reference/statements/create/settings-profile) to apply to your readonly user,
 setting the `readonly` setting to `1`:
 
@@ -65,8 +59,7 @@ setting the `readonly` setting to `1`:
 CREATE SETTINGS PROFILE readonly_profile SETTINGS readonly = 1
 ```
 </Step>
-<Step>
-#### Create a new readonly MySQL user {#create-a-readonly-mysql-user}
+<Step title="Create a new readonly MySQL user" id="create-a-readonly-mysql-user">
 [Create a user](/reference/statements/create/user) with a name following this format:
 
 ```sql
@@ -81,8 +74,7 @@ IDENTIFIED WITH double_sha1_password BY 'YourPassword42$'
 SETTINGS PROFILE 'readonly_profile';
 ```
 </Step>
-<Step>
-#### Grant the new user permissions to access the desired tables {#grant-the-new-user-the-necessary-permissions}
+<Step title="Grant the new user permissions to access the desired tables" id="grant-the-new-user-the-necessary-permissions">
 [Grant](/reference/statements/grant) the new user the necessary permissions to interact with the desired tables or databases.
 For example, if you want to grant access to `system.query_log` only:
 
