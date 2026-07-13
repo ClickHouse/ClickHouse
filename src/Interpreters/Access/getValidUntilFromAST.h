@@ -16,10 +16,11 @@ namespace DB
     time_t getCurrentTime();
 
     /// Formats a resolved `valid_until` deadline as a date-time string with an explicit `UTC` suffix,
-    /// e.g. `2026-08-12 15:00:00 UTC`. Use it whenever the deadline is serialized to be parsed back by
-    /// another server (`ON CLUSTER` distribution, replicated or disk access storage): the parser honours
-    /// the explicit time zone, so every server obtains the same instant, whereas a bare local-time string
-    /// would be reinterpreted in each server's own default time zone.
+    /// e.g. `2026-08-12 15:00:00 UTC`. It is used when the deadline is embedded into a query distributed
+    /// with `ON CLUSTER`: best-effort parsing honours the explicit time zone, so every replica obtains
+    /// the same instant, whereas a bare local-time string would be reinterpreted in each replica's own
+    /// default time zone. (Stored access entities serialize the deadline as a Unix timestamp string
+    /// instead, which is also understood by older servers - see `AuthenticationData::toAST`.)
     String formatValidUntilInUTC(time_t valid_until);
 
     /// Computes the absolute deadline (as a `time_t`) for a `VALID UNTIL`/`VALID FOR` clause.

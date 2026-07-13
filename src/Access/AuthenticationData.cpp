@@ -472,10 +472,12 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attac
         if (attach_mode)
         {
             /// The serialized entity is parsed back by another server (replicated access storage) or
-            /// after a restart (disk access storage), possibly under a different default time zone.
-            /// The explicit `UTC` suffix makes the deadline denote the same instant everywhere, whereas
-            /// a bare local-time string would be reinterpreted in each server's own time zone.
-            node->valid_until = make_intrusive<ASTLiteral>(formatValidUntilInUTC(valid_until));
+            /// after a restart (disk access storage), possibly under a different default time zone and
+            /// possibly by an older server version. A Unix timestamp string denotes the same instant
+            /// regardless of the time zone, and older versions parse it the same way (their datetime
+            /// reader treats an all-digit string as a Unix timestamp), whereas a datetime string would
+            /// be reinterpreted in each server's own time zone.
+            node->valid_until = make_intrusive<ASTLiteral>(toString(static_cast<Int64>(valid_until)));
         }
         else
         {

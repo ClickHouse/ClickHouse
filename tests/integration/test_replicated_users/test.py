@@ -217,7 +217,7 @@ def test_valid_for_replicated_mixed_timezone(started_cluster):
     # `node3` runs in a different time zone than `node1`/`node2`. A deadline coming from
     # `VALID FOR <interval>` (or `VALID UNTIL`) must denote the same instant on every replica:
     # the entity is replicated through ZooKeeper as an `ATTACH USER ... VALID UNTIL '...'` string,
-    # which is serialized with an explicit `UTC` suffix, so a replica in another time zone parses
+    # which serializes the deadline as a Unix timestamp, so a replica in another time zone parses
     # it back to the same epoch instead of reinterpreting a bare local-time string in its own zone.
     assert node3.query("SELECT timezone()") != node1.query("SELECT timezone()")
 

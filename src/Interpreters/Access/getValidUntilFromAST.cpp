@@ -104,16 +104,29 @@ namespace DB
         time_t time = 0;
         ReadBufferFromString in(valid_until_str);
 
-        /// Best-effort parsing honours an explicit time zone in the string. That matters in particular
-        /// when there is no query context, i.e. when deserializing stored access entities (`ATTACH USER`
-        /// coming from replicated or disk access storage): deadlines are serialized with an explicit
-        /// `UTC` suffix (see `formatValidUntilInUTC`), so every server maps them to the same instant.
-        /// Entities written by older versions store a bare local-time string, which is resolved in the
-        /// server time zone, as before.
-        const auto & time_zone = DateLUT::instance("");
-        const auto & utc_time_zone = DateLUT::instance("UTC");
+        if (context)
+        {
+            /// Best-effort parsing honours an explicit time zone in the string, e.g. the `UTC` suffix
+            /// produced by the `ON CLUSTER` rewrite (see `formatValidUntilInUTC`).
+            const auto & time_zone = DateLUT::instance("");
+            const auto & utc_time_zone = DateLUT::instance("UTC");
 
-        parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+            parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
+        }
+        else
+        {
+            /// No query context means we are deserializing a stored access entity (`ATTACH USER` coming
+            /// from replicated or disk access storage). Deadlines are serialized as Unix timestamp
+            /// strings (see `AuthenticationData::toAST`), which denote the same instant regardless of
+            /// the server time zone. Entities written by older versions store a bare local-time string
+            /// instead, which is resolved in the server time zone, as before. `readDateTimeText` handles
+            /// the non-negative timestamps and the datetime form, but not pre-1970 (negative) timestamps,
+            /// which are read explicitly here.
+            if (valid_until_str.starts_with('-'))
+                readIntText(time, in);
+            else
+                readDateTimeText(time, in);
+        }
 
         return time;
     }
