@@ -85,7 +85,7 @@ BlockPtr SortedRun::getBlockCoveringPath(NodePath path, BlockCache * block_cache
 }
 
 void SortedRun::listChildrenNames(
-    NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const
+    NodePath range_start, NodePath range_end, UInt128 parent_path_hash, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const
 {
     /// Tighten the (exclusive) lower bound by the run's cutoff: nodes <= cutoff were merged away.
     if (min_path_cutoff && min_path_cutoff->compare(range_start) > 0)
@@ -103,7 +103,7 @@ void SortedRun::listChildrenNames(
         const SortedFile & file = **file_it;
         if (file.blocks.front().min_path.compare(range_end) >= 0)
             break;
-        file.listChildrenNames(range_start, range_end, out, arena, block_cache);
+        file.listChildrenNames(range_start, range_end, parent_path_hash, out, arena, block_cache);
     }
 }
 
@@ -161,6 +161,19 @@ void SortedRunWriter::appendNode(FullNode & node)
     }
 
     file->node_count_delta += nodeCountDelta(node.action);
+
+    if (node.action != NodeAction::Update && node.path.depth != 0)
+    {
+        NodePath parent_path = node.path.parentPath();
+        chassert(parent_path.len != 0);
+        chassert(parent_path.str() == node.path.str().substr(0, parent_path.len));
+        std::string_view prev_parent_path = block_max_path.str().substr(0, last_added_parent_path_len);
+        if (parent_path.str() != prev_parent_path)
+        {
+            parent_paths.push_back(parent_path.calculateHash());
+            last_added_parent_path_len = parent_path.len;
+        }
+    }
 
     BlockPtr new_block;
     NodeRef ref;
@@ -271,6 +284,10 @@ void SortedRunWriter::finishFile()
     finishBlock();
     finishGroup();
 
+    buildParentPathsFilter();
+    parent_paths.clear();
+    last_added_parent_path_len = 0;
+
     if (!storage->memory_only)
     {
         /// TODO: Write file footer, if we want files to be usable after restart.
@@ -287,6 +304,17 @@ void SortedRunWriter::finishFile()
     sorted_run->total_block_size += file->total_block_size;
     sorted_run->total_file_size += file->file_size;
     sorted_run->files.push_back(std::move(file));
+}
+
+void SortedRunWriter::buildParentPathsFilter()
+{
+    /// Hardcoded parameters for now: 8 probes, fill factor 1/2, for a false positive rate ~0.057%.
+    /// (If we were to improve this, we'd start with replacing `DB::BloomFilter` with a split-block
+    ///  bloom filter with 64-byte blocks to speed up lookup from 8 cache misses to 1.)
+    file->parent_paths_filter.emplace(
+        /*size_=*/ std::max(parent_paths.size() * 2, size_t(1)), /*hashes_=*/ 8, /*seed_=*/ 0);
+    for (UInt128 h : parent_paths)
+        file->parent_paths_filter->addHashPair(DB::BloomFilterHashPair {h.items[0], h.items[1]});
 }
 
 SortedRunPtr SortedRunWriter::finish()

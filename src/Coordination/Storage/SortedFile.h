@@ -4,6 +4,7 @@
 #include <Coordination/KeeperCommon.h>
 #include <Common/Arena.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/BloomFilter.h>
 
 #include <deque>
 #include <mutex>
@@ -78,7 +79,10 @@ struct SortedFile
     /// and are instead owned by this array to always stay in memory.
     std::vector<BlockPtr> pinned_blocks;
 
-    /// TODO: Bloom filter of nodes with at least one child.
+    /// Nodes that have children added or removed in this file.
+    /// Used for early-out in `listChildrenNames` calls.
+    std::optional<DB::BloomFilter> parent_paths_filter;
+
     /// TODO: Consider storing children index.
 
     /// If delete_when_destroyed, enqueues the file to file_deleter.
@@ -89,7 +93,7 @@ struct SortedFile
 
     /// See SortedRun for explanation of these methods.
     BlockPtr getBlockCoveringPath(NodePath path, BlockCache * block_cache) const;
-    void listChildrenNames(NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const;
+    void listChildrenNames(NodePath range_start, NodePath range_end, UInt128 parent_path_hash, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const;
 
     /// Assigns `read_buffer`. Must be called before first call to any of the read methods above.
     void prepareReadBuffer(StorageState * storage);

@@ -56,7 +56,7 @@ struct SortedRun
     /// Scan the nodes with range_start < path < range_end (both bounds exclusive) and report the
     /// last component of each path. The caller passes the range that selects exactly the direct
     /// children of some node.
-    void listChildrenNames(NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const;
+    void listChildrenNames(NodePath range_start, NodePath range_end, UInt128 parent_path_hash, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const;
 
     /// === Writing and merging ===
 
@@ -125,12 +125,17 @@ private:
 
     /// Current file, not added to sorted_run yet.
     SortedFilePtr file;
+    /// Paths that have children added or removed in current `file`. For `parent_paths_filter`.
+    std::vector<UInt128> parent_paths;
 
     /// Current block, not added to `file` yet.
     BlockPtr block;
     NodePath block_min_path;
     NodePath block_max_path;
     std::string block_max_path_buf;
+
+    /// If nonzero, `block_max_path.str()[0:last_added_parent_path_len]` was added to `parent_paths`.
+    size_t last_added_parent_path_len = 0;
 
     /// Current group of blocks. New `compressed_writer` is created for each group.
     /// Its blocks were added to `file` and were written to `compressed_writer`, but
@@ -145,6 +150,8 @@ private:
     void finishBlock();
     void finishGroup();
     void finishFile();
+
+    void buildParentPathsFilter();
 };
 
 }
