@@ -145,7 +145,7 @@ This is fine to do with variables defined in your program, but don't do it with 
 ## Configuring the output format {#configuring-the-output-format}
 
 The default output format is `CSV`, but we can change that via the `output_format` parameter. 
-chDB supports the ClickHouse data formats, as well as [some of its own](/products/chdb/reference/data-formats), including `DataFrame`, which returns a Pandas DataFrame:
+chDB supports the ClickHouse data formats, as well as [some of its own](/chdb/reference/data-formats), including `DataFrame`, which returns a Pandas DataFrame:
 
 ```python
 result = chdb.query(
@@ -366,14 +366,14 @@ chdb.query(
 9                    RC Cars OFF Road          2.051021
 ```
 
-You can also read more about querying Pandas DataFrames in the [Querying Pandas developer guide](/products/chdb/guides/querying-pandas).
+You can also read more about querying Pandas DataFrames in the [Querying Pandas developer guide](/chdb/guides/querying-pandas).
 
 ## Next steps {#next-steps}
 
 Hopefully, this guide has given you a good overview of chDB. 
 To learn more about how to use it, see the following developer guides:
 
-* [Querying Pandas DataFrames](/products/chdb/guides/querying-pandas)
-* [Querying Apache Arrow](/products/chdb/guides/querying-apache-arrow)
-* [Using chDB in JupySQL](/products/chdb/guides/jupysql)
-* [Using chDB with an existing clickhouse-local database](/products/chdb/guides/clickhouse-local)
+* [Querying Pandas DataFrames](/chdb/guides/querying-pandas)
+* [Querying Apache Arrow](/chdb/guides/querying-apache-arrow)
+* [Using chDB in JupySQL](/chdb/guides/jupysql)
+* [Using chDB with an existing clickhouse-local database](/chdb/guides/clickhouse-local)

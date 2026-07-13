@@ -198,7 +198,7 @@ function_config.use_chdb('length', 'substring')
 function_config.use_pandas('upper', 'lower')
 ```
 
-See [Function Config](/products/chdb/configuration/function-config) for details.
+See [Function Config](/chdb/configuration/function-config) for details.
 
 ---
 
@@ -304,5 +304,5 @@ config.use_performance_mode()
 <Tip>
 **Performance Mode**
 
-If you are running heavy aggregation workloads and don't need exact pandas output compatibility (row order, MultiIndex, dtype corrections), consider using [Performance Mode](/products/chdb/configuration/performance-mode). It automatically sets the engine to `chdb` and removes all pandas compatibility overhead.
+If you are running heavy aggregation workloads and don't need exact pandas output compatibility (row order, MultiIndex, dtype corrections), consider using [Performance Mode](/chdb/configuration/performance-mode). It automatically sets the engine to `chdb` and removes all pandas compatibility overhead.
 </Tip>
