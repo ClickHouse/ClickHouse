@@ -1,6 +1,23 @@
+-- empty needle, index + direct read forced, ORed with a never-matching predicate: all 0
 0
 0
 0
 0
 0
+0
+-- empty needle, no index (full scan reference): all 0
+0
+0
+0
+0
+0
+0
+-- present/absent needle, index + direct read forced: index still works
+1
+0
+1
+0
+1
+0
+1
 0
