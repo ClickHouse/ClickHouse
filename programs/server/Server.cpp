@@ -106,7 +106,6 @@
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
-#include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/Config/ConfigReloader.h>
@@ -225,6 +224,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
     extern const ServerSettingsUInt64 backups_io_thread_pool_queue_size;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
@@ -1415,7 +1415,6 @@ try
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
-    registerSchedulerNodes();
 
     QueryPlanStepRegistry::registerPlanSteps();
 
@@ -2712,6 +2711,7 @@ try
             global_context->getSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
             global_context->getDistributedSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
+            global_context->getStreamingSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_streaming_schedule_pool_size]);
 
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, new_server_settings[ServerSetting::tables_loader_foreground_pool_size]);
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, new_server_settings[ServerSetting::tables_loader_background_pool_size]);
@@ -2770,9 +2770,12 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            if (config().has("resources"))
+            if (config().has("resources") || config().has("workload_classifiers"))
             {
-                global_context->getResourceManager()->updateConfiguration(config());
+                LOG_WARNING(
+                    &logger(),
+                    "Config-based resource scheduling ('resources' and 'workload_classifiers' configuration sections) "
+                    "has been removed and is ignored. Use 'CREATE RESOURCE' and 'CREATE WORKLOAD' queries instead.");
             }
 
             /// Load WORKLOADs and RESOURCEs.

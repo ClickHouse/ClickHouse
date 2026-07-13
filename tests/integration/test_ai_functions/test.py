@@ -284,6 +284,76 @@ def test_generate_with_api_key_sends_auth_header(started_cluster):
     assert last_request()["headers"].get("authorization") == "Bearer test-key"
 
 
+def test_generate_model_override_with_default_credentials(started_cluster):
+    """`map('model', ...)` overrides the collection's model on the actual request, even when the
+    collection itself is selected via `ai_function_text_default_credentials` rather than the map."""
+    instance.query(
+        "SELECT aiGenerate('hi', map('model', 'override-model'))",
+        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_mock"},
+    )
+    assert json.loads(last_request()["body"])["model"] == "override-model"
+
+
+def test_embed_model_override_with_default_credentials(started_cluster):
+    """Same for aiEmbed: `map('model', ...)` overrides the embedding model on the request, with the
+    collection selected via `ai_function_embedding_default_credentials`."""
+    instance.query(
+        "SELECT aiEmbed('hi', map('model', 'override-embed-model'))",
+        settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
+    )
+    assert json.loads(last_request()["body"])["model"] == "override-embed-model"
+
+
+def test_generate_empty_model_override_with_default_credentials(started_cluster):
+    """An explicitly empty `model` in the params map overrides the collection's model: the resolver
+    honors presence, not content, so `map('model', '')` sends an empty model (letting an endpoint
+    pick one), even though the collection selected via the default setting defines `test-model`."""
+    instance.query(
+        "SELECT aiGenerate('hi', map('model', ''))",
+        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_mock"},
+    )
+    assert json.loads(last_request()["body"])["model"] == ""
+
+
+# Setting every credential/config key in the params map at once. `ai_mock` carries an api_key,
+# `ai_no_key` does not, so the auth header proves which collection was actually contacted.
+_ALL_PARAMS_QUERY = (
+    "SELECT aiGenerate('hi', map("
+    "'credentials', 'ai_mock', 'model', 'map-model', 'max_tokens', '7', "
+    "'temperature', '0.9', 'system_prompt', 'be terse'))"
+)
+
+
+def _assert_all_params_applied():
+    req = last_request()
+    body = json.loads(req["body"])
+    # `credentials` picked `ai_mock` (keyed) — proves the map won over any default setting.
+    assert req["headers"].get("authorization") == "Bearer test-key"
+    assert body["model"] == "map-model"
+    assert body["max_tokens"] == 7
+    assert abs(body["temperature"] - 0.9) < 1e-4
+    assert body["messages"][0]["role"] == "system"
+    assert body["messages"][0]["content"] == "be terse"
+
+
+def test_generate_all_map_params_override_setting(started_cluster):
+    """Every param passed in the map overrides a default-credentials setting that points at a
+    different collection: `credentials` (proven via the auth header) plus `model` / `max_tokens` /
+    `temperature` / `system_prompt` all take effect."""
+    instance.query(
+        _ALL_PARAMS_QUERY,
+        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_no_key"},
+    )
+    _assert_all_params_applied()
+
+
+def test_generate_all_map_params_without_setting(started_cluster):
+    """The same map, with no default-credentials setting at all: the map supplies everything,
+    including `credentials`, and all keys take effect."""
+    instance.query(_ALL_PARAMS_QUERY, settings=AI_SETTINGS)
+    _assert_all_params_applied()
+
+
 # ---------------------------------------------------------------------------
 # aiClassify
 # ---------------------------------------------------------------------------
