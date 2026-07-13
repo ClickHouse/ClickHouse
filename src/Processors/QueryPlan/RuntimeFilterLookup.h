@@ -5,8 +5,6 @@
 #include <Interpreters/Set.h>
 #include <Common/MutexProtected.h>
 
-#include <base/types.h>
-#include <boost/noncopyable.hpp>
 #include <atomic>
 #include <cstddef>
 #include <functional>
@@ -14,6 +12,8 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <base/types.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -93,11 +93,7 @@ class ExactSetRuntimeFilter
 public:
     static constexpr bool is_prebuilt = false;
 
-    ExactSetRuntimeFilter(
-        const DataTypePtr & filter_column_target_type_,
-        UInt64 bytes_limit_,
-        UInt64 exact_values_limit_
-    );
+    ExactSetRuntimeFilter(const DataTypePtr & filter_column_target_type_, UInt64 bytes_limit_, UInt64 exact_values_limit_);
 
     UInt64 getBytesLimit() const noexcept { return bytes_limit; }
 
@@ -153,9 +149,7 @@ public:
 
     static bool isDataTypeSupported(const DataTypePtr & data_type);
 
-    ApproximateSetRuntimeFilter(
-        UInt64 bytes_limit_,
-        UInt64 bloom_filter_hash_functions_);
+    ApproximateSetRuntimeFilter(UInt64 bytes_limit_, UInt64 bloom_filter_hash_functions_);
 
     void insert(ColumnPtr values);
     ColumnPtr find(const ColumnWithTypeAndName & values) const;
@@ -197,7 +191,8 @@ private:
     ApproximateSetRuntimeFilter & switchToApproximateFilter(Filter & filter);
 
     /// Disables approximate filter if it is likely to have bad selectivity.
-    void checkApproximateFilterWorthiness(RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter);
+    void checkApproximateFilterWorthiness(
+        RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter);
 
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
@@ -212,19 +207,19 @@ private:
 /// as a runtime filter without copying the data. The `probe_fn` closure is expected
 /// to hold a `shared_ptr` to the underlying structure, so the data stays alive as
 /// long as this filter is alive.
-class SharedFixedHashTableRuntimeFilterImpl
+class SharedFixedHashTableRuntimeFilter
 {
 public:
     static constexpr bool is_prebuilt = true;
 
     using ProbeFn = std::function<ColumnPtr(const ColumnWithTypeAndName &)>;
 
-    explicit SharedFixedHashTableRuntimeFilterImpl(ProbeFn probe_fn_);
+    explicit SharedFixedHashTableRuntimeFilter(ProbeFn probe_fn_);
 
     /// All build entry points are no-ops: the data was built inside `HashJoin` already.
-    void insert(ColumnPtr) {}
-    void finishInsert(RuntimeFilterEvaluationState &) {}
-    void mergeFrom(const SharedFixedHashTableRuntimeFilterImpl &) {}
+    void insert(ColumnPtr) { }
+    void finishInsert(RuntimeFilterEvaluationState &) { }
+    void mergeFrom(const SharedFixedHashTableRuntimeFilter &) { }
     ColumnPtr find(const ColumnWithTypeAndName & values) const;
 
 private:
@@ -237,7 +232,7 @@ public:
     using ExactContains = ExactSetRuntimeFilter<false>;
     using ExactNotContains = ExactSetRuntimeFilter<true>;
     using Adaptive = AdaptiveSetRuntimeFilter;
-    using SharedFixedHashTable = SharedFixedHashTableRuntimeFilterImpl;
+    using SharedFixedHashTable = SharedFixedHashTableRuntimeFilter;
 
 private:
     using Filter = std::variant<ExactContains, ExactNotContains, Adaptive, SharedFixedHashTable>;
@@ -256,17 +251,13 @@ private:
 
 public:
     template <typename FilterImpl>
-    RuntimeFilter(
-        size_t filters_to_merge_,
-        RuntimeFilterConfig config_,
-        FilterImpl && filter_)
+    RuntimeFilter(size_t filters_to_merge_, RuntimeFilterConfig config_, FilterImpl && filter_)
         : RuntimeFilter(
-            std::move(config_),
-            Data{
-                detail::RuntimeFilterBuildState(
-                    std::decay_t<FilterImpl>::is_prebuilt ? 0 : filters_to_merge_,
-                    std::decay_t<FilterImpl>::is_prebuilt),
-                Filter(std::forward<FilterImpl>(filter_))})
+              std::move(config_),
+              Data{
+                  detail::RuntimeFilterBuildState(
+                      std::decay_t<FilterImpl>::is_prebuilt ? 0 : filters_to_merge_, std::decay_t<FilterImpl>::is_prebuilt),
+                  Filter(std::forward<FilterImpl>(filter_))})
     {
     }
 
@@ -302,7 +293,7 @@ struct IRuntimeFilterLookup : boost::noncopyable
 
     /// Replace the runtime filter with the specified name (if it exists, it is overwritten).
     /// Used by `HashJoin` to install a runtime filter backed by
-    /// `SharedFixedHashTableRuntimeFilterImpl` that supersedes the `Set`/`BloomFilter`
+    /// `SharedFixedHashTableRuntimeFilter` that supersedes the `Set`/`BloomFilter`
     /// built by `BuildRuntimeFilterStep`.
     virtual void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 
@@ -310,7 +301,7 @@ struct IRuntimeFilterLookup : boost::noncopyable
     virtual RuntimeFilterConstPtr find(const String & name) const = 0;
 
     /// Log various RuntimeFilter usage statistics such as number of filtered rows
-    virtual void logStats() const {}
+    virtual void logStats() const { }
 };
 
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
