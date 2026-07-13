@@ -1,0 +1,58 @@
+---
+description: 'Расширение табличной функции paimon, которое позволяет параллельно обрабатывать файлы
+  из Apache Paimon на множестве узлов указанного кластера.'
+sidebarTitle: 'paimonCluster'
+slug: /sql-reference/table-functions/paimonCluster
+title: 'paimonCluster'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="paimoncluster-table-function">
+  # Табличная функция paimonCluster
+</div>
+
+<ExperimentalBadge />
+
+Это расширение для табличной функции [paimon](/ru/reference/functions/table-functions/paimon).
+
+Позволяет параллельно обрабатывать файлы из Apache [Paimon](https://paimon.apache.org/) на множестве узлов указанного кластера. На инициаторе создаётся соединение со всеми узлами кластера, после чего файлы динамически распределяются между ними. На узле-воркере у инициатора запрашивается следующая задача на обработку, и она выполняется. Это повторяется, пока не будут завершены все задачи.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+paimonS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+* `cluster_name` — имя кластера, которое используется для построения набора адресов и параметров подключения к удалённым и локальным серверам.
+* Описание всех остальных аргументов совпадает с описанием аргументов в эквивалентной табличной функции [paimon](/ru/reference/functions/table-functions/paimon).
+* Необязательный параметр `extra_credentials` можно использовать для передачи `role_arn` для role-based access в ClickHouse Cloud. Шаги по настройке см. в разделе [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).
+
+**Возвращаемое значение**
+
+Таблица с указанной структурой для чтения данных из кластера в указанной таблице Paimon.
+
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
+
+* `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
+* `_file` — Имя файла. Тип: `LowCardinality(String)`.
+* `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер файла неизвестен, значение равно `NULL`.
+* `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение равно `NULL`.
+* `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение равно `NULL`.
+
+**См. также**
+
+* [Табличная функция Paimon](/ru/reference/functions/table-functions/paimon)

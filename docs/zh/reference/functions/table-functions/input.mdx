@@ -1,0 +1,45 @@
+---
+description: '一种表函数，可高效地将以给定结构发送到服务器的数据转换并插入到具有另一种结构的表中。'
+sidebarTitle: 'input'
+slug: /sql-reference/table-functions/input
+title: 'input'
+doc_type: 'reference'
+---
+
+`input(structure)` - 一种表函数，可高效地将以给定结构发送到
+服务器的数据转换并插入到具有另一种结构的表中。
+
+`structure` - 发送到服务器的数据的结构，格式如下：`'column1_name column1_type, column2_name column2_type, ...'`。
+例如：`'id UInt32, name String'`。
+
+此函数只能在 `INSERT SELECT` 查询中使用，且只能使用一次，但除此之外，其行为与普通表函数相同
+(例如，可用于子查询等) 。
+
+数据可以像普通 `INSERT` 查询一样以任意方式发送，并以任何可用的[格式](/zh/reference/formats/index)传递，
+该格式必须在查询末尾指定 (这与普通 `INSERT SELECT` 不同) 。
+
+此函数的主要特性是，当服务器从客户端接收数据时，会同时根据 `SELECT` 子句中的表达式列表对其进行转换，
+并插入到目标表中。不会创建包含所有已传输数据的临时表。
+
+<div id="examples">
+  ## 示例
+</div>
+
+* 假设 `test` 表的结构如下：`(a String, b String)`
+  而 `data.csv` 中的数据结构不同，为 `(col1 String, col2 Date, col3 Int32)`。将 `data.csv` 中的数据插入 `test` 表并同时进行转换的查询
+  如下所示：
+
+{/* */}
+
+```bash
+$ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
+```
+
+* 如果 `data.csv` 中的数据具有与表 `test` 的 `test_structure` 相同的结构，那么这两个查询是等价的：
+
+{/* */}
+
+```bash
+$ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
+$ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
+```

@@ -1,0 +1,183 @@
+---
+slug: /troubleshooting
+sidebarTitle: 'Solución de problemas'
+doc_type: 'guide'
+keywords: [
+  'solución de problemas de ClickHouse',
+  'errores de ClickHouse',
+  'solución de problemas de bases de datos',
+  'problemas de conexión de ClickHouse',
+  'límite de memoria superado',
+  'problemas de rendimiento de ClickHouse',
+  'mensajes de error de la base de datos',
+  'problemas de configuración de ClickHouse',
+  'error de conexión rechazada',
+  'depuración de ClickHouse',
+  'problemas de conexión a la base de datos',
+  'guía de solución de problemas'
+]
+title: 'Solución de problemas comunes'
+description: 'Encuentre soluciones para los problemas más comunes de ClickHouse, incluidas las consultas lentas, los errores de memoria, los problemas de conexión y de configuración.'
+---
+
+¿Tiene problemas con ClickHouse? Aquí encontrará soluciones a los problemas más comunes.
+
+<div id="performance-and-errors">
+  ## Rendimiento y errores
+</div>
+
+Consultas lentas, timeouts o mensajes de error específicos como &quot;Memory limit exceeded&quot; o &quot;Connection refused.&quot;
+
+<Accordion title="Mostrar soluciones para rendimiento y errores">
+  ### Rendimiento de las consultas
+
+  * [Identifica qué consultas usan más recursos](/es/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
+  * [Guía completa de optimización de consultas](/es/guides/clickhouse/performance-and-monitoring/query-optimization)
+  * [Optimiza las operaciones JOIN](/es/concepts/best-practices/minimize-optimize-joins)
+  * [Ejecuta consultas de diagnóstico para encontrar cuellos de botella](/es/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+
+  <br />
+
+  ### Rendimiento de la inserción de datos
+
+  * [Acelera la inserción de datos](/es/concepts/features/operations/insert/bulkinserts)
+  * [Configura inserciones asíncronas](/es/concepts/features/operations/insert/asyncinserts)
+
+  <br />
+
+  ### Herramientas avanzadas de análisis
+
+  {/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
+
+  * [Comprueba qué procesos se están ejecutando](/es/resources/support-center/knowledge-base/monitoring-debugging/which-processes-are-currently-running)
+  * [Supervisa el rendimiento del sistema](/es/reference/system-tables/processes)
+
+  <br />
+
+  ### Mensajes de error
+
+  * **&quot;Memory limit exceeded&quot;** → [Depura errores por límite de memoria](/es/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * **&quot;Connection refused&quot;** → [Soluciona problemas de conexión](#connections-and-authentication)
+  * **&quot;Login failures&quot;** → [Configura usuarios, roles y permisos](/es/concepts/features/security/access-rights)
+  * **&quot;SSL certificate errors&quot;** → [Soluciona problemas con los certificados](/es/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * **&quot;Table/database errors&quot;** → [Guía de creación de bases de datos](/es/reference/statements/create/database) | [Problemas de UUID de tablas](/es/reference/engines/database-engines/atomic)
+  * **&quot;Network timeouts&quot;** → [Solución de problemas de red](/es/concepts/features/interfaces/http)
+  * **&quot;Other issues&quot;** → [Rastrea errores en todo tu clúster](/es/reference/system-tables/errors)
+</Accordion>
+
+<div id="memory-and-resources">
+  ## Memoria y recursos
+</div>
+
+Si tienes un uso elevado de memoria, errores por falta de memoria o necesitas ayuda para dimensionar tu implementación de ClickHouse.
+
+<Accordion title="Mostrar soluciones para memoria">
+  ### Depuración y supervisión de memoria:
+
+  * [Identifica qué está usando memoria](/es/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * [Comprueba el uso actual de memoria](/es/reference/system-tables/processes)
+  * [Perfilado de la asignación de memoria](/es/concepts/features/performance/allocation-profiling)
+  * [Analiza los patrones de uso de memoria](/es/reference/system-tables/query_log)
+
+  <br />
+
+  ### Configuración de memoria:
+
+  * [Configura los límites de memoria](/es/concepts/features/configuration/settings/memory-overcommit)
+  * [Ajustes de memoria del servidor](/es/reference/settings/server-settings/settings)
+  * [Ajustes de memoria de la sesión](/es/reference/settings/session-settings)
+
+  <br />
+
+  ### Escalado y dimensionamiento:
+
+  * [Dimensiona correctamente tu servicio](/es/guides/oss/best-practices/tips)
+  * [Configura el escalado automático](/es/products/cloud/features/autoscaling/overview)
+</Accordion>
+
+<div id="connections-and-authentication">
+  ## Conexiones y autenticación
+</div>
+
+No se puede conectar a ClickHouse, hay errores de autenticación, errores de certificado SSL o problemas de configuración del cliente.
+
+<Accordion title="Mostrar soluciones de conexión">
+  ### Problemas básicos de conexión
+
+  * [Solucionar problemas de la interfaz HTTP](/es/concepts/features/interfaces/http)
+  * [Resolver problemas de certificados SSL](/es/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * [Configuración de la autenticación de usuarios](/es/concepts/features/security/access-rights)
+
+  <br />
+
+  ### Interfaces de cliente
+
+  * [Clientes nativos de ClickHouse](/es/concepts/features/interfaces/native-clients-interfaces-index)
+  * [Problemas de la interfaz MySQL](/es/concepts/features/interfaces/mysql)
+  * [Problemas de la interfaz PostgreSQL](/es/concepts/features/interfaces/postgresql)
+  * [Configuración de la interfaz gRPC](/es/concepts/features/interfaces/grpc)
+  * [Configuración de la interfaz SSH](/es/concepts/features/interfaces/ssh)
+
+  <br />
+
+  ### Red y datos
+
+  * [Configuración de seguridad de red](/es/reference/settings/server-settings/settings)
+  * [Problemas al analizar formatos de datos](/es/reference/formats/index)
+</Accordion>
+
+<div id="setup-and-configuration">
+  ## Instalación y configuración
+</div>
+
+Instalación inicial, configuración del servidor, creación de bases de datos, problemas de ingestión de datos o configuración de la replicación.
+
+<Accordion title="Mostrar soluciones de instalación y configuración">
+  ### Configuración inicial
+
+  * [Configurar los ajustes del servidor](/es/reference/settings/server-settings/settings)
+  * [Configurar la seguridad y el control de acceso](/es/concepts/features/security/access-rights)
+  * [Configurar correctamente el hardware](/es/guides/oss/best-practices/tips)
+
+  <br />
+
+  ### Gestión de bases de datos
+
+  * [Crear y gestionar bases de datos](/es/reference/statements/create/database)
+  * [Elegir el motor de tabla adecuado](/es/reference/engines/table-engines/index)
+
+  {/* - [Modificar los esquemas de forma segura](/reference/statements/alter/index) */}
+
+  <br />
+
+  ### Operaciones de datos
+
+  * [Optimizar la inserción masiva de datos](/es/concepts/features/operations/insert/bulkinserts)
+  * [Resolver problemas de formato de datos](/es/reference/formats/index)
+  * [Configurar pipelines de datos en streaming](/es/concepts/features/operations/insert/asyncinserts)
+  * [Mejorar el rendimiento de la integración con S3](/es/integrations/connectors/data-ingestion/AWS/performance)
+
+  <br />
+
+  ### Configuración avanzada
+
+  * [Configurar la replicación de datos](/es/reference/engines/table-engines/mergetree-family/replication)
+  * [Configurar tablas distribuidas](/es/reference/engines/table-engines/special/distributed)
+
+  {/* - [Configuración de ClickHouse Keeper](/guides/oss/deployment-and-scaling/keeper/index) */}
+
+  * [Configurar copias de seguridad y recuperación](/es/concepts/features/backup-restore/overview)
+  * [Configurar la supervisión](/es/reference/system-tables/overview)
+</Accordion>
+
+<div id="still-need-help">
+  ## ¿Aún necesitas ayuda?
+</div>
+
+Si no encuentras una solución:
+
+1. **Pregúntale a la IA** - <button type="button" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Pregúntale a la IA</button> para obtener respuestas al instante.
+2. **Consulta las tablas del sistema** - [Descripción general](/es/reference/system-tables/overview)
+3. **Revisa los registros del servidor** - Busca mensajes de error en los logs de ClickHouse
+4. **Pregunta a la comunidad** - [Únete a nuestro Slack de la comunidad](https://clickhouse.com/slack), [Debates de GitHub](https://github.com/ClickHouse/ClickHouse/discussions)
+5. **Obtén soporte profesional** - [soporte de ClickHouse Cloud](https://clickhouse.com/support)

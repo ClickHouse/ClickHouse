@@ -1,0 +1,581 @@
+---
+description: '条件函数相关文档'
+sidebarTitle: '条件'
+slug: /sql-reference/functions/conditional-functions
+title: '条件函数'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概览
+</div>
+
+<div id="using-conditional-results-directly">
+  ### 直接使用条件结果
+</div>
+
+条件表达式的结果始终是 `0`、`1` 或 `NULL`。因此，你可以像下面这样直接使用条件结果：
+
+```sql
+SELECT left < right AS is_small
+FROM LEFT_RIGHT
+
+┌─is_small─┐
+│     ᴺᵁᴸᴸ │
+│        1 │
+│        0 │
+│        0 │
+│     ᴺᵁᴸᴸ │
+└──────────┘
+```
+
+<div id="null-values-in-conditionals">
+  ### 条件表达式中的 NULL 值
+</div>
+
+当条件表达式中包含 `NULL` 值时，结果也会是 `NULL`。
+
+```sql
+SELECT
+    NULL < 1,
+    2 < NULL,
+    NULL < NULL,
+    NULL = NULL
+
+┌─less(NULL, 1)─┬─less(2, NULL)─┬─less(NULL, NULL)─┬─equals(NULL, NULL)─┐
+│ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ             │ ᴺᵁᴸᴸ               │
+└───────────────┴───────────────┴──────────────────┴────────────────────┘
+```
+
+因此，如果类型为 `Nullable`，你应该谨慎构造查询。
+
+下面的示例说明了这一点：由于没有给 `multiIf` 添加相等条件，因此会失败。
+
+```sql
+SELECT
+    left,
+    right,
+    multiIf(left < right, 'left is smaller', left > right, 'right is smaller', 'Both equal') AS faulty_result
+FROM LEFT_RIGHT
+
+┌─left─┬─right─┬─faulty_result────┐
+│ ᴺᵁᴸᴸ │     4 │ Both equal       │
+│    1 │     3 │ left is smaller  │
+│    2 │     2 │ Both equal       │
+│    3 │     1 │ right is smaller │
+│    4 │  ᴺᵁᴸᴸ │ Both equal       │
+└──────┴───────┴──────────────────┘
+```
+
+<div id="case-statement">
+  ### CASE 语句
+</div>
+
+ClickHouse 中的 CASE 表达式提供了类似 SQL CASE 运算符的条件逻辑。它会对条件进行求值，并根据第一个匹配的条件返回相应的值。
+
+ClickHouse 支持两种 CASE 形式：
+
+1. `CASE WHEN ... THEN ... ELSE ... END`
+   <br />
+   这种形式具有完全的灵活性，内部通过 [multiIf](/zh/reference/functions/regular-functions/conditional-functions#multiIf) 函数实现。每个条件都会独立求值，表达式中也可以包含非常量值。
+
+```sql
+SELECT
+    number,
+    CASE
+        WHEN number % 2 = 0 THEN number + 1
+        WHEN number % 2 = 1 THEN number * 10
+        ELSE number
+    END AS result
+FROM system.numbers
+WHERE number < 5;
+
+-- 转换为
+SELECT
+    number,
+    multiIf((number % 2) = 0, number + 1, (number % 2) = 1, number * 10, number) AS result
+FROM system.numbers
+WHERE number < 5
+
+┌─number─┬─result─┐
+│      0 │      1 │
+│      1 │     10 │
+│      2 │      3 │
+│      3 │     30 │
+│      4 │      5 │
+└────────┴────────┘
+
+5 rows in set. Elapsed: 0.002 sec.
+```
+
+2. `CASE <expr> WHEN <val1> THEN ... WHEN <val2> THEN ... ELSE ... END`
+   <br />
+   这种更紧凑的形式针对常量值匹配做了优化，内部使用 `caseWithExpression()`。
+
+例如，下面的写法是有效的：
+
+```sql
+SELECT
+    number,
+    CASE number
+        WHEN 0 THEN 100
+        WHEN 1 THEN 200
+        ELSE 0
+    END AS result
+FROM system.numbers
+WHERE number < 3;
+
+-- 转换为
+
+SELECT
+    number,
+    caseWithExpression(number, 0, 100, 1, 200, 0) AS result
+FROM system.numbers
+WHERE number < 3
+
+┌─number─┬─result─┐
+│      0 │    100 │
+│      1 │    200 │
+│      2 │      0 │
+└────────┴────────┘
+
+3 rows in set. Elapsed: 0.002 sec.
+```
+
+这种形式也不要求返回表达式一定是常量。
+
+```sql
+SELECT
+    number,
+    CASE number
+        WHEN 0 THEN number + 1
+        WHEN 1 THEN number * 10
+        ELSE number
+    END
+FROM system.numbers
+WHERE number < 3;
+
+-- 转换为
+
+SELECT
+    number,
+    caseWithExpression(number, 0, number + 1, 1, number * 10, number)
+FROM system.numbers
+WHERE number < 3
+
+┌─number─┬─caseWithExpr⋯0), number)─┐
+│      0 │                        1 │
+│      1 │                       10 │
+│      2 │                        2 │
+└────────┴──────────────────────────┘
+
+3 rows in set. Elapsed: 0.001 sec.
+```
+
+<div id="caveats">
+  #### 注意事项
+</div>
+
+ClickHouse 会在评估任何条件之前，先确定 CASE 表达式 (或其内部等价形式，例如 `multiIf`) 的结果类型。当返回表达式的类型不一致时，例如使用了不同的时区或数值类型，这一点尤为重要。
+
+* 结果类型会根据所有分支中最大的兼容类型来确定。
+* 一旦确定了该类型，所有其他分支都会被隐式转换为该类型——即使这些分支的逻辑在运行时根本不会执行。
+* 对于 DateTime64 这类类型，由于时区是类型签名的一部分，这可能导致一些出乎意料的行为：首次遇到的时区可能会被用于所有分支，即使其他分支指定了不同的时区。
+
+例如，下面所有行都会返回第一个匹配分支所在时区的时间戳，即 `Asia/Kolkata`
+
+```sql
+SELECT
+    number,
+    CASE
+        WHEN number = 0 THEN fromUnixTimestamp64Milli(0, 'Asia/Kolkata')
+        WHEN number = 1 THEN fromUnixTimestamp64Milli(0, 'America/Los_Angeles')
+        ELSE fromUnixTimestamp64Milli(0, 'UTC')
+    END AS tz
+FROM system.numbers
+WHERE number < 3;
+
+-- 转换为
+
+SELECT
+    number,
+    multiIf(number = 0, fromUnixTimestamp64Milli(0, 'Asia/Kolkata'), number = 1, fromUnixTimestamp64Milli(0, 'America/Los_Angeles'), fromUnixTimestamp64Milli(0, 'UTC')) AS tz
+FROM system.numbers
+WHERE number < 3
+
+┌─number─┬──────────────────────tz─┐
+│      0 │ 1970-01-01 05:30:00.000 │
+│      1 │ 1970-01-01 05:30:00.000 │
+│      2 │ 1970-01-01 05:30:00.000 │
+└────────┴─────────────────────────┘
+
+3 rows in set. Elapsed: 0.011 sec.
+```
+
+这里，ClickHouse 会看到多个 `DateTime64(3, <timezone>)` 返回类型。它会将首先遇到的类型推断为通用类型，即 `DateTime64(3, 'Asia/Kolkata'`，并将其他分支隐式转换为该类型。
+
+这可以通过转换为字符串来解决，以保留预期的时区格式：
+
+```sql
+SELECT
+    number,
+    multiIf(
+        number = 0, formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'Asia/Kolkata'),
+        number = 1, formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'America/Los_Angeles'),
+        formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'UTC')
+    ) AS tz
+FROM system.numbers
+WHERE number < 3;
+
+-- 转换为
+
+SELECT
+    number,
+    multiIf(number = 0, formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'Asia/Kolkata'), number = 1, formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'America/Los_Angeles'), formatDateTime(fromUnixTimestamp64Milli(0), '%F %T', 'UTC')) AS tz
+FROM system.numbers
+WHERE number < 3
+
+┌─number─┬─tz──────────────────┐
+│      0 │ 1970-01-01 05:30:00 │
+│      1 │ 1969-12-31 16:00:00 │
+│      2 │ 1970-01-01 00:00:00 │
+└────────┴─────────────────────┘
+
+3 rows in set. Elapsed: 0.002 sec.
+```
+
+{/* 
+  下方标签内的内容会在文档框架构建阶段被替换为
+  根据 system.functions 生成的文档。请勿修改或移除这些标签。
+  参见：https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="clamp">
+  ## clamp
+</div>
+
+引入版本：v24.5.0
+
+将值限制在指定的最小值和最大值边界内。
+
+如果该值小于最小值，则返回最小值；如果该值大于最大值，则返回最大值；否则，返回该值本身。
+
+所有参数都必须是可比较的类型。结果类型为所有参数中最大的兼容类型。
+
+**语法**
+
+```sql
+clamp(value, min, max)
+```
+
+**参数**
+
+* `value` — 待限制的值。 - `min` — 最小边界。 - `max` — 最大边界。
+
+**返回值**
+
+返回限制在 [min, max] 范围内的值。
+
+**示例**
+
+**基本用法**
+
+```sql title=Query
+SELECT clamp(5, 1, 10) AS result;
+```
+
+```response title=Response
+┌─result─┐
+│      5 │
+└────────┘
+```
+
+**值小于最小值**
+
+```sql title=Query
+SELECT clamp(-3, 0, 7) AS result;
+```
+
+```response title=Response
+┌─result─┐
+│      0 │
+└────────┘
+```
+
+**值超过最大值**
+
+```sql title=Query
+SELECT clamp(15, 0, 7) AS result;
+```
+
+```response title=Response
+┌─result─┐
+│      7 │
+└────────┘
+```
+
+<div id="greatest">
+  ## greatest
+</div>
+
+引入版本：v1.1.0
+
+返回参数中的最大值。
+`NULL` 参数会被忽略。
+
+* 对于数组，返回按字典序排序后最大的数组。
+* 对于 `DateTime` 类型，结果类型会提升为最大的类型 (例如，与 `DateTime32` 混用时，结果为 `DateTime64`) 。
+
+<Info>
+  **使用 setting `least_greatest_legacy_null_behavior` 更改 `NULL` 的行为**
+
+  版本 [24.12](/zh/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) 引入了一项向后不兼容的变更：`NULL` 值会被忽略；而在此前，只要参数中有一个是 `NULL`，就会返回 `NULL`。
+  如需保留之前的行为，请将 setting `least_greatest_legacy_null_behavior` (默认值：`false`) 设置为 `true`。
+</Info>
+
+**语法**
+
+```sql
+greatest(x1[, x2, ...])
+```
+
+**参数**
+
+* `x1[, x2, ...]` — 一个或多个待比较的值。所有参数都必须是可比较的类型。[`Any`](/zh/reference/data-types/index)
+
+**返回值**
+
+返回参数中的最大值，结果会提升为最大的兼容类型。[`Any`](/zh/reference/data-types/index)
+
+**示例**
+
+**数值类型**
+
+```sql title=Query
+SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
+-- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+```
+
+```response title=Response
+┌─result─┬─type────┐
+│      3 │ Float64 │
+└────────┴─────────┘
+```
+
+**数组**
+
+```sql title=Query
+SELECT greatest(['hello'], ['there'], ['world']);
+```
+
+```response title=Response
+┌─greatest(['hello'], ['there'], ['world'])─┐
+│ ['world']                                 │
+└───────────────────────────────────────────┘
+```
+
+**DateTime 类型**
+
+```sql title=Query
+SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
+-- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+```
+
+```response title=Response
+┌─greatest(toD⋯(now(), 3))─┐
+│  2025-05-28 15:50:53.000 │
+└──────────────────────────┘
+```
+
+<div id="if">
+  ## if
+</div>
+
+Introduced in: v1.1.0
+
+执行条件分支。
+
+* 如果条件 `cond` 的求值结果为非零值，则函数返回表达式 `then` 的结果。
+* 如果 `cond` 的求值结果为零或 NULL，则返回 `else` 表达式的结果。
+
+设置 [`short_circuit_function_evaluation`](/zh/reference/settings/session-settings#short_circuit_function_evaluation) 用于控制是否启用短路求值。
+
+启用后，仅在 `cond` 为 true 的行上计算 `then` 表达式，而仅在 `cond` 为 false 的行上计算 `else` 表达式。
+
+例如，启用短路求值后，执行以下查询时不会因除以零而抛出异常：
+
+```sql
+SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)
+```
+
+`then` 和 `else` 必须为相近类型。
+
+**语法**
+
+```sql
+if(cond, then, else)
+```
+
+**参数**
+
+* `cond` — 要计算的条件。[`UInt8`](/zh/reference/data-types/int-uint) 或 [`Nullable(UInt8)`](/zh/reference/data-types/nullable) 或 [`NULL`](/zh/reference/syntax#null)
+* `then` — 如果 `cond` 为 `true`，则返回该表达式。- `else` — 如果 `cond` 为 `false` 或 `NULL`，则返回该表达式。
+
+**返回值**
+
+根据条件 `cond`，返回 `then` 或 `else` 表达式的结果。
+
+**示例**
+
+**用法示例**
+
+```sql title=Query
+SELECT if(1, 2 + 2, 2 + 6) AS res;
+```
+
+```response title=Response
+┌─res─┐
+│   4 │
+└─────┘
+```
+
+<div id="least">
+  ## least
+</div>
+
+引入版本：v1.1.0
+
+返回参数中的最小值。
+`NULL` 参数会被忽略。
+
+* 对于数组，返回按字典序最小的数组。
+* 对于 DateTime 类型，结果类型会提升为最大的类型 (例如，与 DateTime32 混用时结果为 DateTime64) 。
+
+<Info>
+  **使用设置 `least_greatest_legacy_null_behavior` 更改 `NULL` 行为**
+
+  版本 [24.12](/zh/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) 引入了一项向后不兼容的更改：现在会忽略 `NULL` 值；而此前只要有一个参数为 `NULL`，就会返回 `NULL`。
+  若要保留之前的行为，请将设置 `least_greatest_legacy_null_behavior` (默认值：`false`) 设为 `true`。
+</Info>
+
+**语法**
+
+```sql
+least(x1[, x2, ...])
+```
+
+**参数**
+
+* `x1[, x2, ...]` — 要比较的单个值或多个值。所有参数都必须属于可比较的类型。[`Any`](/zh/reference/data-types/index)
+
+**返回值**
+
+返回参数中的最小值，结果类型提升为最大的兼容类型。[`Any`](/zh/reference/data-types/index)
+
+**示例**
+
+**数值类型**
+
+```sql title=Query
+SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
+-- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+```
+
+```response title=Response
+┌─result─┬─type────┐
+│      1 │ Float64 │
+└────────┴─────────┘
+```
+
+**数组**
+
+```sql title=Query
+SELECT least(['hello'], ['there'], ['world']);
+```
+
+```response title=Response
+┌─least(['hell⋯ ['world'])─┐
+│ ['hello']                │
+└──────────────────────────┘
+```
+
+**DateTime 类型**
+
+```sql title=Query
+SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
+-- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+```
+
+```response title=Response
+┌─least(toDate⋯(now(), 3))─┐
+│  2025-05-27 15:55:20.000 │
+└──────────────────────────┘
+```
+
+<div id="multiIf">
+  ## multiIf
+</div>
+
+引入版本：v1.1.0
+
+允许在查询中以更紧凑的方式编写 [`CASE`](/zh/reference/operators/index#conditional-expression) 运算符。
+按顺序计算各个条件。对于第一个为 true (非零且不为 `NULL`) 的条件，返回对应的分支值。
+如果没有任何条件为 true，则返回 `else` 值。
+
+设置 [`short_circuit_function_evaluation`](/zh/reference/settings/session-settings#short_circuit_function_evaluation) 用于控制
+是否使用短路求值。如果启用，`then_i` 表达式仅会在
+`((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` 为 true 的行上计算。
+
+例如，使用短路求值时，执行以下查询不会抛出除以零异常：
+
+```sql
+SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)
+```
+
+所有分支表达式和 else 表达式都必须具有共同超类型。`NULL` 条件会被视为 false。
+
+**语法**
+
+```sql
+multiIf(cond_1, then_1, cond_2, then_2, ..., else)
+```
+
+**别名**: `caseWithoutExpression`, `caseWithoutExpr`
+
+**参数**
+
+* `cond_N` — 第 N 个求值条件，用于控制是否返回 `then_N`。[`UInt8`](/zh/reference/data-types/int-uint) 或 [`Nullable(UInt8)`](/zh/reference/data-types/nullable) 或 [`NULL`](/zh/reference/syntax#null)
+* `then_N` — 当 `cond_N` 为 true 时，函数返回的结果。 - `else` — 如果所有条件都不为 true，函数返回的结果。
+
+**返回值**
+
+返回与匹配的 `cond_N` 对应的 `then_N` 结果；否则返回 `else` 的结果。
+
+**示例**
+
+**使用示例**
+
+```sql title=Query
+CREATE TABLE LEFT_RIGHT (left Nullable(UInt8), right Nullable(UInt8)) ENGINE = Memory;
+INSERT INTO LEFT_RIGHT VALUES (NULL, 4), (1, 3), (2, 2), (3, 1), (4, NULL);
+
+SELECT
+    left,
+    right,
+    multiIf(left < right, 'left is smaller', left > right, 'left is greater', left = right, 'Both equal', 'Null value') AS result
+FROM LEFT_RIGHT;
+```
+
+```response title=Response
+┌─left─┬─right─┬─result──────────┐
+│ ᴺᵁᴸᴸ │     4 │ Null value      │
+│    1 │     3 │ left is smaller │
+│    2 │     2 │ Both equal      │
+│    3 │     1 │ left is greater │
+│    4 │  ᴺᵁᴸᴸ │ Null value      │
+└──────┴───────┴─────────────────┘
+```
+
+{/*AUTOGENERATED_END*/}
