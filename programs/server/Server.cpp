@@ -3648,6 +3648,37 @@ catch (...)
     return static_cast<UInt8>(code) ? code : -1;
 }
 
+namespace
+{
+
+/// Walk a composable protocol's `impl` chain and return the effective `default_session_user`:
+/// the value closest to the endpoint wins, mirroring the lookup in `buildProtocolStackFromConfig`.
+/// Returns an empty optional if no module in the chain sets it (the handlers then fall back to the
+/// `default_session_user` server setting).
+std::optional<String> getEffectiveDefaultSessionUser(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
+{
+    std::string conf_name = protocol;
+    std::string prefix = protocol + ".";
+    std::unordered_set<std::string> pset {conf_name};
+    while (true)
+    {
+        if (config.has(prefix + "default_session_user"))
+            return config.getString(prefix + "default_session_user");
+
+        if (!config.has(prefix + "impl"))
+            return {};
+
+        conf_name = "protocols." + config.getString(prefix + "impl");
+        prefix = conf_name + ".";
+
+        /// A malformed loop is rejected when the stack is built; here we just stop to avoid spinning.
+        if (!pset.insert(conf_name).second)
+            return {};
+    }
+}
+
+}
+
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const ServerSettings & server_settings,
@@ -4252,16 +4283,20 @@ void Server::updateServers(
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
                 has_host = config.has(protocol + ".host");
 
+                /// The per-endpoint default session user is fixed in the protocol handler factory,
+                /// so the endpoint must be restarted when its effective value changes. Compare the
+                /// effective value (the one closest to the endpoint wins, as in
+                /// `buildProtocolStackFromConfig`) rather than every node in the `impl` chain, so
+                /// that editing a shadowed base module does not force a needless restart.
+                default_session_user_changed =
+                    getEffectiveDefaultSessionUser(previous_config, protocol)
+                    != getEffectiveDefaultSessionUser(config, protocol);
+
                 std::string conf_name = protocol;
                 std::string prefix = protocol + ".";
                 std::unordered_set<std::string> pset {conf_name};
                 while (true)
                 {
-                    /// The per-endpoint default session user is fixed in the protocol handler
-                    /// factory, so the endpoint must be restarted when it changes.
-                    if (!isSameConfiguration(previous_config, config, prefix + "default_session_user"))
-                        default_session_user_changed = true;
-
                     if (config.has(prefix + "type"))
                     {
                         std::string type = config.getString(prefix + "type");
