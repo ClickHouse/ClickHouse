@@ -1,6 +1,7 @@
 #include <Storages/PostgreSQL/MaterializedPostgreSQLConsumer.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/quoteString.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
@@ -29,7 +30,7 @@ namespace ErrorCodes
 
 namespace
 {
-    using ArrayInfo = std::unordered_map<size_t, PostgreSQLArrayInfo>;
+    using ArrayInfo = UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo>;
 
     ArrayInfo createArrayInfos(const NamesAndTypesList & columns, const ExternalResultDescription & columns_description)
     {
@@ -71,7 +72,31 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     }
 
     for (const auto & [table_name, storage_info] : storages_info_)
-        storages.emplace(table_name, StorageData(storage_info, log));
+    {
+        try
+        {
+            storages.emplace(table_name, StorageData(storage_info, log));
+        }
+        catch (const Exception & e)
+        {
+            /// The structure of the PostgreSQL table might no longer match the structure of
+            /// the nested ClickHouse table (for example, a column was added or dropped in
+            /// PostgreSQL while the server was down). Do not fail the whole consumer because
+            /// of a single out-of-sync table: skip it (the user can bring it back with
+            /// DETACH/ATTACH) and keep replicating the rest of the tables. Only the expected
+            /// structure-mismatch error is handled this way; any other error is a real problem
+            /// and must propagate.
+            if (e.code() != ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
+                throw;
+
+            tryLogCurrentException(
+                log,
+                fmt::format("Table {} is skipped from replication because its structure does not match "
+                            "the structure of the nested ClickHouse table. "
+                            "Please perform manual DETACH and ATTACH of the table to bring it back",
+                            table_name));
+        }
+    }
 
     LOG_TRACE(log, "Starting replication. LSN: {} (last: {}), storages: {}",
               getLSNValue(current_lsn), getLSNValue(final_lsn), storages.size());
@@ -80,17 +105,24 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
 
 MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & storage_info, LoggerPtr log_)
     : storage(storage_info.storage)
-    , table_description(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getSampleBlock())
+    , metadata_snapshot(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false))
+    , table_description(metadata_snapshot->getSampleBlock())
     , columns_attributes(storage_info.attributes)
-    , column_names(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumns().getNamesOfPhysical())
-    , array_info(createArrayInfos(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumns().getAllPhysical(), table_description))
+    , column_names(metadata_snapshot->getColumns().getNamesOfPhysical())
+    , array_info(createArrayInfos(metadata_snapshot->getColumns().getAllPhysical(), table_description))
 {
     auto columns_num = table_description.sample_block.columns();
-    /// +2 because of _sign and _version columns
+    /// +2 because of _sign and _version columns.
+    /// This is an expected condition (the PostgreSQL table structure no longer matches the
+    /// nested ClickHouse table, e.g. a column was added/dropped in PostgreSQL while the server
+    /// was down), not an internal logic error, so it must not be a LOGICAL_ERROR (which aborts
+    /// the server in debug/sanitizer builds). It is caught when constructing the consumer and
+    /// the affected table is skipped from replication.
     if (columns_attributes.size() + 2 != columns_num)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Columns number mismatch. Attributes: {}, buffer: {}",
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                        "Columns number mismatch for table {}. Attributes: {}, buffer: {}",
+                        storage_info.storage->getStorageID().getNameForLogs(),
                         columns_attributes.size(), columns_num);
     }
 
@@ -236,7 +268,7 @@ void MaterializedPostgreSQLConsumer::insertDefaultValue(StorageData & storage_da
 
 void MaterializedPostgreSQLConsumer::readString(const char * message, size_t & pos, size_t size, String & result)
 {
-    assert(size > pos + 2);
+    chassert(size > pos + 2);
     char current = unhex2(message + pos);
     pos += 2;
     while (pos < size && current != '\0')
@@ -261,7 +293,7 @@ T MaterializedPostgreSQLConsumer::unhexN(const char * message, size_t pos, size_
 
 Int64 MaterializedPostgreSQLConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    assert(size >= pos + 16);
+    chassert(size >= pos + 16);
     Int64 result = unhexN<Int64>(message, pos, 8);
     pos += 16;
     return result;
@@ -269,7 +301,7 @@ Int64 MaterializedPostgreSQLConsumer::readInt64(const char * message, size_t & p
 
 Int32 MaterializedPostgreSQLConsumer::readInt32(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    assert(size >= pos + 8);
+    chassert(size >= pos + 8);
     Int32 result = unhexN<Int32>(message, pos, 4);
     pos += 8;
     return result;
@@ -277,7 +309,7 @@ Int32 MaterializedPostgreSQLConsumer::readInt32(const char * message, size_t & p
 
 Int16 MaterializedPostgreSQLConsumer::readInt16(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    assert(size >= pos + 4);
+    chassert(size >= pos + 4);
     Int16 result = unhexN<Int16>(message, pos, 2);
     pos += 4;
     return result;
@@ -285,7 +317,7 @@ Int16 MaterializedPostgreSQLConsumer::readInt16(const char * message, size_t & p
 
 Int8 MaterializedPostgreSQLConsumer::readInt8(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    assert(size >= pos + 2);
+    chassert(size >= pos + 2);
     Int8 result = unhex2(message + pos);
     pos += 2;
     return result;
@@ -594,8 +626,8 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 return;
             }
 
-            Int32 data_type_id;
-            Int32 type_modifier; /// For example, n in varchar(n)
+            Int32 data_type_id = 0;
+            Int32 type_modifier = 0; /// For example, n in varchar(n)
 
             std::set<std::string> all_columns(storage_data.column_names.begin(), storage_data.column_names.end());
             std::set<std::string> received_columns;
@@ -779,7 +811,7 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
     if (new_table_with_lsn != waiting_list.end())
     {
         auto table_start_lsn = new_table_with_lsn->second;
-        assert(!table_start_lsn.empty());
+        chassert(!table_start_lsn.empty());
 
         if (getLSNValue(current_lsn) >= getLSNValue(table_start_lsn))
         {
@@ -833,12 +865,27 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
 void MaterializedPostgreSQLConsumer::addNested(
     const String & postgres_table_name, StorageInfo nested_storage_info, const String & table_start_lsn)
 {
-    assert(!storages.contains(postgres_table_name));
+    chassert(!storages.contains(postgres_table_name));
     storages.emplace(postgres_table_name, StorageData(nested_storage_info, log));
 
     auto it = deleted_tables.find(postgres_table_name);
     if (it != deleted_tables.end())
         deleted_tables.erase(it);
+
+    /// The table might already be in the skip list - for example, it was skipped at startup because
+    /// its structure did not match the nested table and then received WAL (the `Relation` message
+    /// stored an empty `skip_list` entry for it), or its structure changed in the replication stream.
+    /// Now that the table is brought back (DETACH/ATTACH reloads its structure), drop the stale
+    /// skip-list entry. Otherwise `isSyncAllowed` would keep skipping the table indefinitely once the
+    /// `waiting_list` entry set below is consumed, so the promised DETACH/ATTACH recovery would not work.
+    for (auto skip_it = skip_list.begin(); skip_it != skip_list.end();)
+    {
+        const auto name_it = relation_id_to_name.find(skip_it->first);
+        if (name_it != relation_id_to_name.end() && name_it->second == postgres_table_name)
+            skip_it = skip_list.erase(skip_it);
+        else
+            ++skip_it;
+    }
 
     /// Replication consumer will read wall and check for currently processed table whether it is allowed to start applying
     /// changes to this table.
@@ -847,7 +894,7 @@ void MaterializedPostgreSQLConsumer::addNested(
 
 void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StorageInfo nested_storage_info, Int32 table_id, const String & table_start_lsn)
 {
-    assert(!storages.contains(table_name));
+    chassert(!storages.contains(table_name));
     storages.emplace(table_name, StorageData(nested_storage_info, log));
 
     /// Set start position to valid lsn. Before it was an empty string. Further read for table allowed, if it has a valid lsn.
@@ -887,10 +934,15 @@ bool MaterializedPostgreSQLConsumer::consume()
         /// is checked only after each transaction block.
         /// Returns less than max_block_changes, if reached end of wal. Sync to table in this case.
 
+        /// The publication name is passed to the `pgoutput` plugin as the value of the
+        /// `publication_names` option, which PostgreSQL parses with `SplitIdentifierString`. That
+        /// folds unquoted identifiers to lower case, so a publication created with `CREATE PUBLICATION
+        /// "<name>"` (case-preserving) for a database/table with upper-case letters would not be found
+        /// (`publication "..." does not exist`). Quote the name so its case is preserved on this side too.
         std::string query_str = fmt::format(
                 "select lsn, data FROM pg_logical_slot_peek_binary_changes("
                 "'{}', NULL, {}, 'publication_names', '{}', 'proto_version', '1')",
-                replication_slot_name, max_block_size, publication_name);
+                replication_slot_name, max_block_size, doubleQuoteString(publication_name));
 
         auto stream{pqxx::stream_from::query(*tx, query_str)};
 

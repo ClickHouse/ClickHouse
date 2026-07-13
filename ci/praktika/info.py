@@ -232,6 +232,20 @@ class Info:
             print(f"ERROR: Exception, while reading workflow input [{e}]")
         return None
 
+    @staticmethod
+    def set_workflow_inputs(inputs: dict) -> None:
+        """Persist workflow_dispatch inputs for jobs to read via
+        `get_workflow_input_value`.
+
+        Mirrors the heredoc the YAML generator emits in CI; used by the
+        praktika `--workflow-input` CLI flag for local job runs.
+        """
+        from .settings import _Settings
+
+        os.makedirs(_Settings.TEMP_DIR, exist_ok=True)
+        with open(_Settings.WORKFLOW_INPUTS_FILE, "w", encoding="utf8") as f:
+            json.dump(inputs, f)
+
     def set_pr_labels(self, labels, reset=False):
         self.env.set_pr_labels(labels, reset=reset)
 

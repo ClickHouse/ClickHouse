@@ -1,0 +1,3330 @@
+---
+title: 'Настройки форматов'
+sidebarTitle: 'Настройки форматов'
+slug: /operations/settings/formats
+toc_max_heading_level: 2
+description: 'Настройки, управляющие форматами ввода и вывода.'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import VersionHistory from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
+
+{/* Автоматически сгенерировано */}
+
+Эти настройки автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
+
+<div id="allow_special_bool_values_inside_variant">
+  ## allow_special_bool_values_inside_variant
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Позволяет разбирать значения типа Bool внутри типа Variant из специальных строковых представлений булевых значений, таких как &quot;on&quot;, &quot;off&quot;, &quot;enable&quot;, &quot;disable&quot; и т. д.
+
+<div id="bool_false_representation">
+  ## bool_false_representation
+</div>
+
+<SettingsInfoBlock type="String" default_value="false" />
+
+Текстовое представление значения false для типа bool в форматах TSV/CSV/Vertical/Pretty.
+
+<div id="bool_true_representation">
+  ## bool_true_representation
+</div>
+
+<SettingsInfoBlock type="String" default_value="true" />
+
+Текстовое представление логического значения true в форматах TSV/CSV/Vertical/Pretty.
+
+<div id="check_conversion_from_numbers_to_enum">
+  ## check_conversion_from_numbers_to_enum
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Сгенерировать исключение при преобразовании Numbers в Enum, если такого значения нет в Enum.
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+**Пример**
+
+```text
+CREATE TABLE tab (
+  val Enum('first' = 1, 'second' = 2, 'third' = 3)
+) ENGINE = Memory;
+
+INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -- возвращает ошибку
+```
+
+<div id="column_names_for_schema_inference">
+  ## column_names_for_schema_inference
+</div>
+
+Список имён столбцов, используемых при определении схемы для форматов без имён столбцов. Формат: &#39;column1,column2,column3,...&#39;
+
+<div id="date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands">
+  ## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Динамически удаляет конечные нули у значений datetime64, чтобы масштаб вывода принимал значения [0, 3, 6],
+что соответствует &#39;секундам&#39;, &#39;миллисекундам&#39; и &#39;микросекундам&#39;
+
+<div id="date_time_input_format">
+  ## date_time_input_format
+</div>
+
+<SettingsInfoBlock type="DateTimeInputFormat" default_value="best_effort" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "best_effort"},{"label": "Улучшенное удобство использования"}]}]} />
+
+Позволяет выбрать парсер для текстового представления даты и времени.
+
+Эта настройка не применяется к [функциям даты и времени](/ru/reference/functions/regular-functions/date-time-functions).
+
+Возможные значения:
+
+* `'best_effort'` — Включает расширенный разбор.
+
+  ClickHouse может разбирать базовый формат `YYYY-MM-DD HH:MM:SS` и все форматы даты и времени [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601). Например, `'2018-06-08T01:02:03.000Z'`.
+
+* `'best_effort_us'` — Аналогично `best_effort` (см. различия в [parseDateTimeBestEffortUS](/ru/reference/functions/regular-functions/type-conversion-functions#parseDateTimeBestEffortUS)
+
+* `'basic'` — Использует базовый парсер.
+
+  ClickHouse может разбирать только базовые форматы `YYYY-MM-DD HH:MM:SS` или `YYYY-MM-DD`. Например, `2019-08-20 10:18:56` или `2019-08-20`.
+
+См. также:
+
+* [Тип данных DateTime.](/ru/reference/data-types/datetime)
+* [Функции для работы с датами и временем.](/ru/reference/functions/regular-functions/date-time-functions)
+
+<div id="date_time_output_format">
+  ## date_time_output_format
+</div>
+
+<SettingsInfoBlock type="DateTimeOutputFormat" default_value="simple" />
+
+Позволяет выбирать различные форматы вывода текстового представления даты и времени.
+
+Возможные значения:
+
+* `simple` - Простой формат вывода.
+
+  ClickHouse выводит дату и время в формате `YYYY-MM-DD hh:mm:ss`. Например, `2019-08-20 10:18:56`. Вычисление выполняется в соответствии с часовым поясом типа данных (если он задан) или часовым поясом сервера.
+
+* `iso` - Формат вывода ISO.
+
+  ClickHouse выводит дату и время в формате [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ`. Например, `2019-08-20T10:18:56Z`. Обратите внимание, что вывод выполняется в UTC (`Z` означает UTC).
+
+* `unix_timestamp` - Формат вывода Unix-временной метки.
+
+  ClickHouse выводит дату и время в формате [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time). Например, `1566285536`.
+
+См. также:
+
+* [Тип данных DateTime.](/ru/reference/data-types/datetime)
+* [Функции для работы с датами и временем.](/ru/reference/functions/regular-functions/date-time-functions)
+
+<div id="date_time_overflow_behavior">
+  ## date_time_overflow_behavior
+</div>
+
+<SettingsInfoBlock type="DateTimeOverflowBehavior" default_value="ignore" />
+
+Определяет поведение при преобразовании [Date](/ru/reference/data-types/date), [Date32](/ru/reference/data-types/date32), [DateTime](/ru/reference/data-types/datetime), [DateTime64](/ru/reference/data-types/datetime64) или целых чисел в Date, Date32, DateTime или DateTime64, если значение не может быть представлено в результирующем типе.
+
+Возможные значения:
+
+* `ignore` — Молча игнорировать переполнение. Результат не определён.
+* `throw` — Сгенерировать исключение в случае переполнения.
+* `saturate` — Ограничить результат предельными значениями. Если значение меньше минимального значения, которое может быть представлено целевым типом, в качестве результата выбирается минимальное представимое значение. Если значение больше максимального значения, которое может быть представлено целевым типом, в качестве результата выбирается максимальное представимое значение.
+
+Значение по умолчанию: `ignore`.
+
+<div id="errors_output_format">
+  ## errors_output_format
+</div>
+
+<SettingsInfoBlock type="String" default_value="CSV" />
+
+Метод записи ошибок в текстовый вывод.
+
+<div id="format_avro_schema_registry_connection_timeout">
+  ## format_avro_schema_registry_connection_timeout
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Новая настройка для управления тайм-аутом подключения (в секундах) для HTTP-клиента Confluent Schema Registry, используемого форматом AvroConfluent."}]}]} />
+
+Для формата AvroConfluent: тайм-аут подключения в секундах для HTTP-клиента Confluent Schema Registry. Используется как при получении схемы, так и при её регистрации. Должен быть больше 0 и меньше 600 (10 минут).
+
+<div id="format_avro_schema_registry_max_retries">
+  ## format_avro_schema_registry_max_retries
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "Новая настройка, задающая максимальное количество повторных попыток при временных сбоях (транспортные тайм-ауты, отказ в подключении, ошибки DNS, HTTP 5xx/408/429) при взаимодействии с Confluent Schema Registry. Установите 0, чтобы отключить повторные попытки. Предыдущее поведение (без повторных попыток) сохраняется при `compatibility = '26.5'`."}]}]} />
+
+Для формата AvroConfluent: максимальное количество повторных попыток при временных сбоях при взаимодействии с Confluent Schema Registry (транспортные тайм-ауты, отказ в подключении, ошибки DNS, HTTP 5xx/408/429). Установите 0, чтобы отключить повторные попытки. Максимально допустимое значение — 20. Для ошибок проверки схемы (HTTP 409, некорректный Avro JSON) повторные попытки не выполняются.
+
+<div id="format_avro_schema_registry_receive_timeout">
+  ## format_avro_schema_registry_receive_timeout
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Новая настройка для управления тайм-аутом получения ответа (в секундах) для HTTP-клиента Confluent Schema Registry, используемого форматом AvroConfluent."}]}]} />
+
+Для формата AvroConfluent: тайм-аут получения ответа в секундах для HTTP-клиента Confluent Schema Registry. Используется как при получении схемы, так и при её регистрации. Должен быть больше 0 и меньше 600 (10 минут).
+
+<div id="format_avro_schema_registry_retry_initial_backoff_ms">
+  ## format_avro_schema_registry_retry_initial_backoff_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "100"},{"label": "Новая настройка, задающая начальную задержку (в миллисекундах) перед повторной попыткой после неудачного запроса к Confluent Schema Registry. При каждой следующей повторной попытке задержка удваивается, но не превышает 10 секунд. Не влияет, если `format_avro_schema_registry_max_retries = 0` (поведение до 26.6, восстановленное с помощью `compatibility = '26.5'`)."}]}]} />
+
+Для формата AvroConfluent: начальная задержка в миллисекундах перед повторной попыткой после неудачного запроса к Confluent Schema Registry. При каждой следующей повторной попытке задержка удваивается, но не превышает 10 секунд. Значение должно быть больше 0 и меньше либо равно 60000.
+
+<div id="format_avro_schema_registry_send_timeout">
+  ## format_avro_schema_registry_send_timeout
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Новая настройка для управления тайм-аутом отправки (в секундах) HTTP-клиента Confluent Schema Registry, который использует формат AvroConfluent."}]}]} />
+
+Для формата AvroConfluent: тайм-аут отправки в секундах для HTTP-клиента Confluent Schema Registry. Используется как для получения схемы, так и для её регистрации. Должен быть больше 0 и меньше 600 (10 минут).
+
+<div id="format_avro_schema_registry_url">
+  ## format_avro_schema_registry_url
+</div>
+
+Для формата AvroConfluent: URL-адрес Confluent Schema Registry.
+
+<div id="format_binary_max_array_size">
+  ## format_binary_max_array_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+Максимально допустимый размер Array в формате RowBinary. Предотвращает выделение большого объёма памяти в случае повреждения данных. 0 означает, что ограничение отсутствует
+
+<div id="format_binary_max_object_size">
+  ## format_binary_max_object_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "100000"},{"label": "Новая настройка, ограничивающая максимальный размер объекта при бинарной десериализации типа JSON"}]}]} />
+
+Максимально допустимое количество путей в одном объекте для формата RowBinary типа JSON. Это предотвращает выделение большого объема памяти в случае поврежденных данных. 0 означает, что ограничения нет
+
+<div id="format_binary_max_string_size">
+  ## format_binary_max_string_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.12"},{"label": "1073741824"},{"label": "Предотвращает выделение большого объема памяти"}]}]} />
+
+Максимально допустимый размер значения типа String в формате RowBinary. Предотвращает выделение большого объема памяти в случае повреждения данных. 0 означает, что ограничения нет
+
+<div id="format_capn_proto_enum_comparising_mode">
+  ## format_capn_proto_enum_comparising_mode
+</div>
+
+<SettingsInfoBlock type="CapnProtoEnumComparingMode" default_value="by_values" />
+
+Как сопоставляются Enum в ClickHouse и CapnProto
+
+<div id="format_capn_proto_max_message_size">
+  ## format_capn_proto_max_message_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1073741824"},{"label": "Предотвращает выделение слишком большого объёма памяти"}]}]} />
+
+Максимальный размер одного сообщения CapnProto в байтах. Защищает от чрезмерного выделения памяти из-за некорректных или повреждённых данных. Значение по умолчанию — 1 GiB.
+
+<div id="format_capn_proto_use_autogenerated_schema">
+  ## format_capn_proto_use_autogenerated_schema
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Использовать автоматически сгенерированную схему CapnProto, если параметр format&#95;schema не задан
+
+<div id="format_csv_allow_double_quotes">
+  ## format_csv_allow_double_quotes
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Если установлено значение true, разрешает строки в двойных кавычках.
+
+<div id="format_csv_allow_single_quotes">
+  ## format_csv_allow_single_quotes
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.7"},{"label": "0"},{"label": "Большинство инструментов не обрабатывают одинарные кавычки в CSV особым образом, поэтому по умолчанию это также отключено"}]}]} />
+
+Если установлено значение true, разрешает строки в одинарных кавычках.
+
+<div id="format_csv_delimiter">
+  ## format_csv_delimiter
+</div>
+
+<SettingsInfoBlock type="Char" default_value="," />
+
+Символ, используемый в качестве разделителя в данных CSV. Если параметр задаётся строкой, её длина должна быть равна 1.
+
+<div id="format_csv_null_representation">
+  ## format_csv_null_representation
+</div>
+
+<SettingsInfoBlock type="String" default_value="\N" />
+
+Настраиваемое представление значения NULL в формате CSV
+
+<div id="format_custom_escaping_rule">
+  ## format_custom_escaping_rule
+</div>
+
+<SettingsInfoBlock type="EscapingRule" default_value="Escaped" />
+
+Правило экранирования поля (для формата CustomSeparated)
+
+<div id="format_custom_field_delimiter">
+  ## format_custom_field_delimiter
+</div>
+
+<SettingsInfoBlock type="String" default_value="	" />
+
+Разделитель полей (для формата CustomSeparated)
+
+<div id="format_custom_result_after_delimiter">
+  ## format_custom_result_after_delimiter
+</div>
+
+Суффикс после результирующего набора (для формата CustomSeparated)
+
+<div id="format_custom_result_before_delimiter">
+  ## format_custom_result_before_delimiter
+</div>
+
+Префикс перед результирующим набором (для формата CustomSeparated)
+
+<div id="format_custom_row_after_delimiter">
+  ## format_custom_row_after_delimiter
+</div>
+
+<SettingsInfoBlock
+  type="String"
+  default_value="
+"
+/>
+
+Разделитель после поля последнего столбца (для формата CustomSeparated)
+
+<div id="format_custom_row_before_delimiter">
+  ## format_custom_row_before_delimiter
+</div>
+
+Разделитель перед полем первого столбца (для формата CustomSeparated)
+
+<div id="format_custom_row_between_delimiter">
+  ## format_custom_row_between_delimiter
+</div>
+
+Разделитель между строками (для формата CustomSeparated)
+
+<div id="format_display_secrets_in_show_and_select">
+  ## format_display_secrets_in_show_and_select
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Включает или отключает отображение secrets в запросах `SHOW` и `SELECT` для таблиц, баз данных,
+table functions и словарей.
+
+Пользователь, который хочет видеть secrets, также должен иметь
+включенную
+[`настройку сервера display_secrets_in_show_and_select`](/ru/reference/settings/server-settings/settings#display_secrets_in_show_and_select)
+и
+привилегию [`displaySecretsInShowAndSelect`](/ru/reference/statements/grant#displaysecretsinshowandselect).
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+<div id="format_json_object_each_row_column_for_object_name">
+  ## format_json_object_each_row_column_for_object_name
+</div>
+
+Имя столбца, которое будет использоваться для хранения/записи имён объектов в формате [JSONObjectEachRow](/ru/reference/formats/JSON/JSONObjectEachRow).
+Тип столбца должен быть String. Если значение пустое, в качестве имён объектов будут использоваться имена по умолчанию `row_{i}`.
+
+<div id="format_protobuf_use_autogenerated_schema">
+  ## format_protobuf_use_autogenerated_schema
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Использовать автоматически сгенерированную схему Protobuf, если format&#95;schema не задан
+
+<div id="format_regexp">
+  ## format_regexp
+</div>
+
+Регулярное выражение (для формата Regexp)
+
+<div id="format_regexp_escaping_rule">
+  ## format_regexp_escaping_rule
+</div>
+
+<SettingsInfoBlock type="EscapingRule" default_value="Raw" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "20.10"},{"label": "Raw"},{"label": "Использовать Raw в качестве правила экранирования по умолчанию для формата Regexp, чтобы поведение больше соответствовало ожиданиям пользователей"}]}]} />
+
+Правило экранирования поля (для формата Regexp)
+
+<div id="format_regexp_skip_unmatched">
+  ## format_regexp_skip_unmatched
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Пропускать строки, не соответствующие регулярному выражению (для формата Regexp)
+
+<div id="format_schema">
+  ## format_schema
+</div>
+
+Этот параметр полезен при использовании форматов, для которых требуется описание схемы, например [Cap&#39;n Proto](https://capnproto.org/) или [Protobuf](https://developers.google.com/protocol-buffers/). Его значение зависит от формата.
+
+<div id="format_schema_message_name">
+  ## format_schema_message_name
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": ""},{"label": "новая настройка"}]}]} />
+
+Задаёт имя требуемого сообщения в схеме, определённой в `format_schema`.
+Чтобы сохранить совместимость с устаревшим форматом `format_schema` (`file_name:message_name`):
+
+* Если `format_schema_message_name` не указан, имя сообщения определяется по части `message_name` в устаревшем значении `format_schema`.
+* Если `format_schema_message_name` указан при использовании устаревшего формата, будет сгенерирована ошибка.
+
+<div id="format_schema_source">
+  ## format_schema_source
+</div>
+
+<SettingsInfoBlock type="String" default_value="file" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "file"},{"label": "новая настройка"}]}]} />
+
+Определяет источник `format_schema`.
+Возможные значения:
+
+* &#39;file&#39; (по умолчанию): `format_schema` — это имя файла схемы, расположенного в каталоге `format_schemas`.
+* &#39;string&#39;: `format_schema` — это буквальное содержимое схемы.
+* &#39;query&#39;: `format_schema` — это запрос для получения схемы.
+  Если `format_schema_source` установлено в значение &#39;query&#39;, действуют следующие условия:
+* Запрос должен возвращать ровно одно значение: одну строку с одним строковым столбцом.
+* Результат запроса считается содержимым схемы.
+* Этот результат кэшируется локально в каталоге `format_schemas`.
+* Локальный кэш можно очистить с помощью команды: `SYSTEM DROP FORMAT SCHEMA CACHE FOR Files`.
+* После кэширования одинаковые запросы больше не выполняются для повторного получения схемы, пока кэш не будет явно очищен.
+* Помимо файлов локального кэша, сообщения Protobuf также кэшируются в памяти. Даже после очистки файлов локального кэша кэш в памяти необходимо очистить с помощью `SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]`, чтобы полностью обновить схему.
+* Выполните запрос `SYSTEM DROP FORMAT SCHEMA CACHE`, чтобы сразу очистить кэш и для файлов кэша, и для схем сообщений Protobuf.
+
+<div id="format_template_resultset">
+  ## format_template_resultset
+</div>
+
+Путь к файлу, содержащему строку формата для результирующего набора (для формата Template)
+
+<div id="format_template_resultset_format">
+  ## format_template_resultset_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": ""},{"label": "Строку формата результирующего набора для формата Template можно задать в запросе"}]}]} />
+
+Строка формата результирующего набора (для формата Template)
+
+<div id="format_template_row">
+  ## format_template_row
+</div>
+
+Путь к файлу, содержащему строку формата для строк (для формата Template)
+
+<div id="format_template_row_format">
+  ## format_template_row_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": ""},{"label": "Строку формата строк можно задать прямо в запросе"}]}]} />
+
+Строка формата строк (для формата Template)
+
+<div id="format_template_rows_between_delimiter">
+  ## format_template_rows_between_delimiter
+</div>
+
+<SettingsInfoBlock
+  type="String"
+  default_value="
+"
+/>
+
+Разделитель строк (для формата Template)
+
+<div id="format_tsv_null_representation">
+  ## format_tsv_null_representation
+</div>
+
+<SettingsInfoBlock type="String" default_value="\N" />
+
+Настраиваемое представление значения NULL для формата TSV
+
+<div id="input_format_allow_errors_num">
+  ## input_format_allow_errors_num
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+Задаёт максимально допустимое число ошибок при чтении из текстовых форматов (CSV, TSV и т. д.).
+
+Значение по умолчанию — 0.
+
+Всегда используйте его вместе с `input_format_allow_errors_ratio`.
+
+Если при чтении строк произошла ошибка, но счётчик ошибок всё ещё меньше `input_format_allow_errors_num`, ClickHouse игнорирует строку и переходит к следующей.
+
+Если превышены и `input_format_allow_errors_num`, и `input_format_allow_errors_ratio`, ClickHouse генерирует исключение.
+
+<div id="input_format_allow_errors_ratio">
+  ## input_format_allow_errors_ratio
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0" />
+
+Задаёт максимально допустимую долю ошибок при чтении данных в текстовых форматах (CSV, TSV и т. д.).
+Доля ошибок задаётся числом с плавающей точкой в диапазоне от 0 до 1.
+
+Значение по умолчанию — 0.
+
+Всегда используйте его вместе с `input_format_allow_errors_num`.
+
+Если при чтении строк произошла ошибка, но счётчик ошибок всё ещё меньше `input_format_allow_errors_ratio`, ClickHouse игнорирует строку и переходит к следующей.
+
+Если превышены и `input_format_allow_errors_num`, и `input_format_allow_errors_ratio`, ClickHouse генерирует исключение.
+
+<div id="input_format_allow_seeks">
+  ## input_format_allow_seeks
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Разрешает операции `seek` (или чтение диапазонов) при чтении входных форматов ORC, Parquet и Arrow.
+Если параметр включен и источник это поддерживает (например, локальный файл, S3, HTTP с поддержкой диапазонов и известным размером),
+ClickHouse может читать только нужные диапазоны байтов и использовать меньше памяти.
+Если параметр отключен или источник не поддерживает `seek` (например, размер файла неизвестен или поток не поддерживает `seek`),
+некоторые средства чтения могут переключиться на загрузку всего файла в память.
+Включено по умолчанию.
+
+<div id="input_format_arrow_allow_missing_columns">
+  ## input_format_arrow_allow_missing_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.12"},{"label": "1"},{"label": "По умолчанию разрешает отсутствие столбцов в файлах Arrow"}]}]} />
+
+Разрешает отсутствие столбцов при чтении входных форматов Arrow
+
+<div id="input_format_arrow_case_insensitive_column_matching">
+  ## input_format_arrow_case_insensitive_column_matching
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Игнорирует регистр при сопоставлении столбцов Arrow со столбцами ClickHouse.
+
+<div id="input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference">
+  ## input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Пропускать столбцы с неподдерживаемыми типами при определении схемы для формата Arrow
+
+<div id="input_format_avro_allow_missing_fields">
+  ## input_format_avro_allow_missing_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Для формата Avro/AvroConfluent: если поле не найдено в схеме, использовать значение по умолчанию вместо выдачи ошибки
+
+<div id="input_format_avro_null_as_default">
+  ## input_format_avro_null_as_default
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Для формата Avro/AvroConfluent: использовать значение по умолчанию, если передан null, а столбец не имеет типа Nullable
+
+<div id="input_format_binary_decode_types_in_binary_format">
+  ## input_format_binary_decode_types_in_binary_format
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Добавлена новая настройка, позволяющая читать названия типов в бинарном формате во входном формате RowBinaryWithNamesAndTypes"}]}]} />
+
+Читать типы данных в бинарном формате вместо названий типов во входном формате RowBinaryWithNamesAndTypes
+
+<div id="input_format_binary_max_type_complexity">
+  ## input_format_binary_max_type_complexity
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1000"},{"label": "Добавлена новая настройка, управляющая максимальным количеством узлов типа при декодировании бинарных типов. Защищает от вредоносного ввода."}]}]} />
+
+Максимальное количество узлов типа при декодировании бинарных типов (не глубина, а общее число). `Map(String, UInt32)` = 3 узла. Защищает от вредоносного ввода. 0 = без ограничений.
+
+<div id="input_format_binary_read_json_as_string">
+  ## input_format_binary_read_json_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "Добавлена новая настройка для чтения значений типа JSON как строк JSON во входном формате RowBinary"}]}]} />
+
+Считывать значения типа данных [JSON](/ru/reference/data-types/newjson) как значения [String](/ru/reference/data-types/string), содержащие JSON, во входном формате RowBinary.
+
+<div id="input_format_bson_skip_fields_with_unsupported_types_in_schema_inference">
+  ## input_format_bson_skip_fields_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Пропускать поля с неподдерживаемыми типами при определении схемы для формата BSON.
+
+<div id="input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference">
+  ## input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Пропускать столбцы с неподдерживаемыми типами при определении схемы для формата CapnProto
+
+<div id="input_format_column_name_matching_mode">
+  ## input_format_column_name_matching_mode
+</div>
+
+<SettingsInfoBlock type="InputFormatColumnMatchingCaseSensitivity" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "auto"},{"label": "Сначала сопоставляет имена входных столбцов с учётом регистра, а если это не удаётся, использует регистронезависимое сопоставление вместо того, чтобы требовать точного совпадения регистра."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "match_case"},{"label": "Новая настройка."}]}]} />
+
+Определяет режим сопоставления имён столбцов при ингестии данных в различных форматах (включая, помимо прочего, JSONEachRow, CSVWithNames, JSONColumns, BSONEachRow, RowBinaryWithNames).
+Поддерживаемые режимы:
+
+* match&#95;case: сопоставление с учётом регистра
+  * ignore&#95;case: регистронезависимое сопоставление
+  * auto: сначала пытается сопоставить с учётом регистра, а если это не удаётся — регистронезависимо.
+
+<div id="input_format_connection_handling">
+  ## input_format_connection_handling
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Новая настройка, позволяющая разбирать и обрабатывать оставшиеся в буфере данные, если соединение неожиданно закрывается"}]}]} />
+
+Если эта опция включена и соединение неожиданно закрывается, все оставшиеся в буфере данные будут разобраны и обработаны, а не считаться ошибкой
+
+<Note>
+  Включение этой опции отключает параллельный разбор и делает дедупликацию невозможной
+</Note>
+
+<div id="input_format_csv_allow_cr_end_of_line">
+  ## input_format_csv_allow_cr_end_of_line
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Если задано значение true, \r допускается в конце строки, если за ним не следует
+
+<div id="input_format_csv_allow_variable_number_of_columns">
+  ## input_format_csv_allow_variable_number_of_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Игнорировать лишние столбцы во входных CSV-данных (если в файле столбцов больше, чем ожидается) и считать отсутствующие поля во входных CSV-данных значениями по умолчанию
+
+<div id="input_format_csv_allow_whitespace_or_tab_as_delimiter">
+  ## input_format_csv_allow_whitespace_or_tab_as_delimiter
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Разрешает использовать пробелы и символы табуляции(\t) в качестве разделителей полей в строках CSV
+
+<div id="input_format_csv_arrays_as_nested_csv">
+  ## input_format_csv_arrays_as_nested_csv
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+При чтении Array из CSV предполагается, что его элементы были сериализованы во вложенном CSV, а затем помещены в строку. Example: &quot;[&quot;&quot;Hello&quot;&quot;, &quot;&quot;world&quot;&quot;, &quot;&quot;42&quot;&quot;&quot;&quot; TV&quot;&quot;]&quot;. Скобки вокруг массива можно не указывать.
+
+<div id="input_format_csv_deserialize_separate_columns_into_tuple">
+  ## input_format_csv_deserialize_separate_columns_into_tuple
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Добавлен новый способ интерпретации Tuple в формате CSV."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "Добавлен новый способ интерпретации Tuple в формате CSV."}]}]} />
+
+Если задано значение true, отдельные столбцы, записанные в формате CSV, могут быть десериализованы в столбец Tuple.
+
+<div id="input_format_csv_detect_header">
+  ## input_format_csv_detect_header
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.1"},{"label": "1"},{"label": "По умолчанию автоматически определять заголовок с именами и типами в формате CSV"}]}]} />
+
+Автоматически определяет заголовок с именами и типами в формате CSV
+
+<div id="input_format_csv_empty_as_default">
+  ## input_format_csv_empty_as_default
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Считать пустые поля во входных CSV-данных значениями по умолчанию.
+
+<div id="input_format_csv_enum_as_number">
+  ## input_format_csv_enum_as_number
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Рассматривать вставляемые значения enum в форматах CSV как индексы enum
+
+<div id="input_format_csv_skip_first_lines">
+  ## input_format_csv_skip_first_lines
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+Пропускать указанное число строк в начале данных в формате CSV
+
+<div id="input_format_csv_skip_trailing_empty_lines">
+  ## input_format_csv_skip_trailing_empty_lines
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Пропускать пустые строки в конце в формате CSV
+
+<div id="input_format_csv_trim_whitespaces">
+  ## input_format_csv_trim_whitespaces
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Удаляет пробелы и символы табуляции (\t) в начале и в конце CSV-строк
+
+<div id="input_format_csv_try_infer_numbers_from_strings">
+  ## input_format_csv_try_infer_numbers_from_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Если включено, при определении схемы ClickHouse будет пытаться определять числа в строковых полях.
+Это может быть полезно, если данные CSV содержат числа UInt64 в кавычках.
+
+По умолчанию отключено.
+
+<div id="input_format_csv_try_infer_strings_from_quoted_tuples">
+  ## input_format_csv_try_infer_strings_from_quoted_tuples
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Добавлен новый способ интерпретации кортежей в формате CSV."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "Добавлен новый способ интерпретации кортежей в формате CSV."}]}]} />
+
+Интерпретирует кортежи во входных данных, заключённые в кавычки, как значение типа String.
+
+<div id="input_format_csv_use_best_effort_in_schema_inference">
+  ## input_format_csv_use_best_effort_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Использовать дополнительные настройки и эвристики для определения схемы в формате CSV
+
+<div id="input_format_csv_use_default_on_bad_values">
+  ## input_format_csv_use_default_on_bad_values
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Разрешает использовать значение по умолчанию для столбца, если десериализация поля CSV завершилась ошибкой из-за некорректного значения
+
+<div id="input_format_custom_allow_variable_number_of_columns">
+  ## input_format_custom_allow_variable_number_of_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Игнорирует лишние столбцы во входных данных CustomSeparated (если файл содержит больше столбцов, чем ожидается) и обрабатывает отсутствующие поля во входных данных CustomSeparated как значения по умолчанию
+
+<div id="input_format_custom_detect_header">
+  ## input_format_custom_detect_header
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.1"},{"label": "1"},{"label": "По умолчанию определять заголовок в формате CustomSeparated"}]}]} />
+
+Автоматически определять заголовок с именами и типами в формате CustomSeparated
+
+<div id="input_format_custom_skip_trailing_empty_lines">
+  ## input_format_custom_skip_trailing_empty_lines
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Пропускать пустые строки в конце в формате CustomSeparated
+
+<div id="input_format_defaults_for_omitted_fields">
+  ## input_format_defaults_for_omitted_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "19.12"},{"label": "1"},{"label": "Включить вычисление сложных выражений по умолчанию для пропущенных полей в некоторых форматах ввода, поскольку это соответствует ожидаемому поведению"}]}]} />
+
+При выполнении запросов `INSERT` пропущенные значения входных столбцов заменяются значениями по умолчанию соответствующих столбцов. Этот параметр применяется к форматам [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow) (и другим JSON-форматам), [CSV](/ru/reference/formats/CSV/CSV), [TabSeparated](/ru/reference/formats/TabSeparated/TabSeparated), [TSKV](/ru/reference/formats/TabSeparated/TSKV), [Parquet](/ru/reference/formats/Parquet/Parquet), [Arrow](/ru/reference/formats/Arrow/Arrow), [Avro](/ru/reference/formats/Avro/Avro), [ORC](/ru/reference/formats/ORC), [Native](/ru/reference/formats/Native), а также к форматам с суффиксами `WithNames`/`WithNamesAndTypes`.
+
+<Note>
+  Когда этот параметр включен, с сервера клиенту отправляются расширенные метаданные таблицы. Это требует дополнительных вычислительных ресурсов на сервере и может снизить производительность.
+</Note>
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+<div id="input_format_force_null_for_omitted_fields">
+  ## input_format_force_null_for_omitted_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "Отключает значения по умолчанию для типа у пропущенных полей, когда это необходимо"}]}]} />
+
+Принудительно инициализирует пропущенные поля значениями NULL
+
+<div id="input_format_geojson_unsupported_geometry_handling">
+  ## input_format_geojson_unsupported_geometry_handling
+</div>
+
+<SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "Новая настройка, управляющая обработкой геометрических типов GeoJSON, которые не могут быть представлены типом Geometry (GeometryCollection, MultiPoint)"}]}]} />
+
+Определяет, что происходит, если при чтении входных данных `GeoJSON` нужно сохранить в столбце `geometry` корректный геометрический тип `GeoJSON`, который не может быть представлен типом `Geometry` в ClickHouse (например, `GeometryCollection` или `MultiPoint`).
+
+Возможные значения:
+
+* `'throw'` (по умолчанию) — сгенерировать исключение.
+* `'null'` — вставить значение `NULL` в столбец `geometry` и продолжить разбор.
+
+Это применяется только в том случае, если столбец `geometry` материализован. Если этот столбец не запрашивается в выходных данных, такая геометрия проверяется на корректность, но эту обработку не запускает.
+
+<div id="input_format_hive_text_allow_variable_number_of_columns">
+  ## input_format_hive_text_allow_variable_number_of_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "Игнорировать лишние столбцы во входных данных Hive Text (если в файле столбцов больше, чем ожидается) и считать отсутствующие поля во входных данных Hive Text значениями по умолчанию."}]}]} />
+
+Игнорировать лишние столбцы во входных данных Hive Text (если в файле столбцов больше, чем ожидается) и считать отсутствующие поля во входных данных Hive Text значениями по умолчанию
+
+<div id="input_format_hive_text_collection_items_delimiter">
+  ## input_format_hive_text_collection_items_delimiter
+</div>
+
+<SettingsInfoBlock type="Char" default_value="" />
+
+Разделитель между элементами коллекций (Array или Map) в формате Hive Text File
+
+<div id="input_format_hive_text_fields_delimiter">
+  ## input_format_hive_text_fields_delimiter
+</div>
+
+<SettingsInfoBlock type="Char" default_value="" />
+
+Разделитель полей в Hive Text File
+
+<div id="input_format_hive_text_map_keys_delimiter">
+  ## input_format_hive_text_map_keys_delimiter
+</div>
+
+<SettingsInfoBlock type="Char" default_value="" />
+
+Разделитель между ключом и значением в паре map в Hive Text File
+
+<div id="input_format_import_nested_json">
+  ## input_format_import_nested_json
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Включает или отключает вставку JSON-данных с вложенными объектами.
+
+Поддерживаемые форматы:
+
+* [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow)
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+См. также:
+
+* [Использование вложенных структур](/ru/guides/clickhouse/data-formats/json/formats#accessing-nested-json-objects) в формате `JSONEachRow`.
+
+<div id="input_format_ipv4_default_on_conversion_error">
+  ## input_format_ipv4_default_on_conversion_error
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+При десериализации IPv4 при ошибке преобразования будут использоваться значения по умолчанию вместо генерации исключения.
+
+По умолчанию отключено.
+
+<div id="input_format_ipv6_default_on_conversion_error">
+  ## input_format_ipv6_default_on_conversion_error
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+При десериализации IPv6 при ошибке преобразования будут использоваться значения по умолчанию вместо генерации исключения.
+
+По умолчанию отключено.
+
+<div id="input_format_json_compact_allow_variable_number_of_columns">
+  ## input_format_json_compact_allow_variable_number_of_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Разрешает переменное число столбцов в строках входных форматов JSONCompact/JSONCompactEachRow.
+Лишние столбцы в строках, где столбцов больше, чем ожидается, игнорируются, а отсутствующим столбцам присваиваются значения по умолчанию.
+
+По умолчанию отключено.
+
+<div id="input_format_json_defaults_for_missing_elements_in_named_tuple">
+  ## input_format_json_defaults_for_missing_elements_in_named_tuple
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.1"},{"label": "1"},{"label": "По умолчанию разрешает отсутствие элементов в объектах JSON при чтении именованных кортежей"}]}]} />
+
+Подставляет значения по умолчанию для отсутствующих элементов в объекте JSON при обработке именованного кортежа.
+Этот параметр работает, только если включен параметр `input_format_json_named_tuples_as_objects`.
+
+Включен по умолчанию.
+
+<div id="input_format_json_empty_as_default">
+  ## input_format_json_empty_as_default
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Добавлена новая настройка, позволяющая трактовать пустые поля во входном JSON как значения по умолчанию."}]}]} />
+
+Если параметр включен, пустые поля во входном JSON заменяются значениями по умолчанию. Для сложных выражений со значениями по умолчанию также должен быть включен параметр `input_format_defaults_for_omitted_fields`.
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+<div id="input_format_json_ignore_unknown_keys_in_named_tuple">
+  ## input_format_json_ignore_unknown_keys_in_named_tuple
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.3"},{"label": "1"},{"label": "Улучшен парсинг объектов JSON как именованных кортежей"}]}]} />
+
+Игнорирует неизвестные ключи в объекте JSON для именованных кортежей.
+
+Включено по умолчанию.
+
+<div id="input_format_json_ignore_unnecessary_fields">
+  ## input_format_json_ignore_unnecessary_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "Игнорировать лишние поля и не разбирать их. При включении этого параметра исключения для строк JSON с некорректным форматом или дублирующимися полями могут не генерироваться"}]}]} />
+
+Игнорировать лишние поля и не разбирать их. При включении этого параметра исключения для строк JSON с некорректным форматом или дублирующимися полями могут не генерироваться
+
+<div id="input_format_json_infer_array_of_dynamic_from_array_of_different_types">
+  ## input_format_json_infer_array_of_dynamic_from_array_of_different_types
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "По умолчанию определяет тип Array(Dynamic) для JSON-массивов со значениями разных типов данных"}]}]} />
+
+Если параметр включен, при определении схемы ClickHouse будет использовать тип Array(Dynamic) для JSON-массивов со значениями разных типов данных.
+
+Пример:
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
+DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type───────────┐
+│ a    │ Array(Dynamic) │
+└──────┴────────────────┘
+```
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
+DESC format(JSONEachRow, '{"a" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type─────────────────────────────────────────────────────────────┐
+│ a    │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │
+└──────┴──────────────────────────────────────────────────────────────────┘
+```
+
+Включено по умолчанию.
+
+<div id="input_format_json_infer_incomplete_types_as_strings">
+  ## input_format_json_infer_incomplete_types_as_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "1"},{"label": "По умолчанию позволяет определять неполные типы как Strings в JSON-форматах"}]}]} />
+
+Позволяет использовать тип String для JSON-ключей, которые в выборке данных при автоматическом определении схемы содержат только `Null`/`{}`/`[]`.
+В JSON-форматах любое значение можно прочитать как String, и благодаря этому можно избежать ошибок вида `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` при автоматическом определении схемы,
+используя тип String для ключей с неизвестными типами.
+
+Пример:
+
+```sql
+SET input_format_json_infer_incomplete_types_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 1;
+DESCRIBE format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+```
+
+Результат:
+
+```
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+
+┌─obj────────────────────────────┐
+│ ([1,2,3],'hello',NULL,'{}',[]) │
+└────────────────────────────────┘
+```
+
+Включено по умолчанию.
+
+<div id="input_format_json_map_as_array_of_tuples">
+  ## input_format_json_map_as_array_of_tuples
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "новая настройка"}]}]} />
+
+Десериализует столбцы типа Map как JSON-массивы кортежей.
+
+По умолчанию отключено.
+
+<div id="input_format_json_max_depth">
+  ## input_format_json_max_depth
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "1000"},{"label": "В предыдущих версиях ограничение отсутствовало, но это было небезопасно."}]}]} />
+
+Максимальная глубина поля в JSON. Это не жёсткое ограничение, и оно не обязано соблюдаться в точности.
+
+<div id="input_format_json_named_tuples_as_objects">
+  ## input_format_json_named_tuples_as_objects
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Разбирать столбцы с именованными кортежами как объекты JSON.
+
+Включено по умолчанию.
+
+<div id="input_format_json_read_arrays_as_strings">
+  ## input_format_json_read_arrays_as_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "1"},{"label": "По умолчанию разрешает читать массивы как строки во входных JSON-форматах"}]}]} />
+
+Разрешает разбирать JSON-массивы как строки во входных JSON-форматах.
+
+Пример:
+
+```sql
+SET input_format_json_read_arrays_as_strings = 1;
+SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow, 'arr String', '{"arr" : [1, "Hello", [1,2,3]]}');
+```
+
+Результат:
+
+```
+┌─arr───────────────────┬─toTypeName(arr)─┬─arrayElement(JSONExtractArrayRaw(arr), 3)─┐
+│ [1, "Hello", [1,2,3]] │ String          │ [1,2,3]                                   │
+└───────────────────────┴─────────────────┴───────────────────────────────────────────┘
+```
+
+Включено по умолчанию.
+
+<div id="input_format_json_read_bools_as_numbers">
+  ## input_format_json_read_bools_as_numbers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Разрешает разбирать логические значения как числа во входных JSON-форматах.
+
+Включено по умолчанию.
+
+<div id="input_format_json_read_bools_as_strings">
+  ## input_format_json_read_bools_as_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "1"},{"label": "По умолчанию разрешает считывать булевы значения как строки в JSON-форматах"}]}]} />
+
+Разрешает считывать булевы значения как строки во входных JSON-форматах.
+
+Включено по умолчанию.
+
+<div id="input_format_json_read_numbers_as_strings">
+  ## input_format_json_read_numbers_as_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "1"},{"label": "Разрешает по умолчанию читать числа как строки в JSON-форматах"}]}]} />
+
+Разрешает разбирать числа как строки во входных JSON-форматах.
+
+Включено по умолчанию.
+
+<div id="input_format_json_read_objects_as_strings">
+  ## input_format_json_read_objects_as_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.1"},{"label": "1"},{"label": "Включает чтение вложенных JSON-объектов как строк, пока тип object является экспериментальным"}]}]} />
+
+Разрешает парсинг объектов JSON как строк в JSON-форматах ввода.
+
+Пример:
+
+```sql
+SET input_format_json_read_objects_as_strings = 1;
+CREATE TABLE test (id UInt64, obj String, date Date) ENGINE=Memory();
+INSERT INTO test FORMAT JSONEachRow {"id" : 1, "obj" : {"a" : 1, "b" : "Hello"}, "date" : "2020-01-01"};
+SELECT * FROM test;
+```
+
+Результат:
+
+```
+┌─id─┬─obj──────────────────────┬───────date─┐
+│  1 │ {"a" : 1, "b" : "Hello"} │ 2020-01-01 │
+└────┴──────────────────────────┴────────────┘
+```
+
+Включено по умолчанию.
+
+<div id="input_format_json_throw_on_bad_escape_sequence">
+  ## input_format_json_throw_on_bad_escape_sequence
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "1"},{"label": "Разрешает сохранять строки JSON с некорректными escape-последовательностями"}]}]} />
+
+Генерирует исключение, если строка JSON содержит некорректную escape-последовательность во входных JSON-форматах. Если параметр отключен, некорректные escape-последовательности останутся в данных как есть.
+
+Включено по умолчанию.
+
+<div id="input_format_json_try_infer_named_tuples_from_objects">
+  ## input_format_json_try_infer_named_tuples_from_objects
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "1"},{"label": "По умолчанию пытаться определять именованные Tuple из объектов JSON"}]}]} />
+
+Если включено, то при определении схемы ClickHouse будет пытаться определять именованный Tuple из объектов JSON.
+Получившийся именованный Tuple будет содержать все элементы из всех соответствующих объектов JSON в выборке данных.
+
+Пример:
+
+```sql
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
+```
+
+Результат:
+
+```
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Включено по умолчанию.
+
+<div id="input_format_json_try_infer_numbers_from_strings">
+  ## input_format_json_try_infer_numbers_from_strings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.9"},{"label": "0"},{"label": "По умолчанию не определять числа из строк в JSON-форматах, чтобы избежать возможных ошибок разбора"}]}]} />
+
+Если включено, при определении схемы ClickHouse будет пытаться определять числа из строковых полей.
+Это может быть полезно, если данные JSON содержат числа UInt64 в кавычках.
+
+По умолчанию отключено.
+
+<div id="input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects">
+  ## input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Разрешить использовать тип String вместо исключения при неоднозначных путях в объектах JSON во время определения именованных кортежей"}]}]} />
+
+Использовать тип String вместо исключения при неоднозначных путях в объектах JSON во время определения именованных кортежей
+
+<div id="input_format_json_validate_types_from_metadata">
+  ## input_format_json_validate_types_from_metadata
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Для входных форматов JSON/JSONCompact/JSONColumnsWithMetadata, если этот параметр установлен в 1,
+типы из метаданных во входных данных будут сравниваться с типами соответствующих столбцов таблицы.
+
+Включён по умолчанию.
+
+<div id="input_format_max_block_size_bytes">
+  ## input_format_max_block_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "Новая настройка для ограничения размера блоков в байтах, если они создаются входным форматом"}]}]} />
+
+Ограничивает размер блоков в байтах, формируемых при разборе данных во входных форматах. Используется во входных форматах на основе строк, когда блок формируется на стороне ClickHouse.
+0 означает отсутствие ограничения в байтах.
+
+<div id="input_format_max_block_wait_ms">
+  ## input_format_max_block_wait_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Новая настройка, ограничивающая максимальное время ожидания в миллисекундах перед выдачей блока входным форматом"}]}]} />
+
+Ограничивает максимальное время ожидания в миллисекундах перед выдачей блока при разборе данных в построчных входных форматах. `0` означает отсутствие ограничения.
+
+<Note>
+  Этот параметр работает только при включенном `input_format_connection_handling`. Установка значения также отключает параллельный разбор и делает дедупликацию невозможной.
+</Note>
+
+<Note>
+  Для стриминговых вставок также необходимо задать `min_insert_block_size_rows=0` и `min_insert_block_size_bytes=0`. В противном случае разобранные блоки все равно могут накапливаться в памяти на этапе укрупнения блоков до достижения этих порогов, что мешает своевременной вставке.
+</Note>
+
+**Пример: стриминг недавних изменений из Википедии в ClickHouse**
+
+```bash
+clickhouse-client --query 'CREATE TABLE wikipedia_edits (data JSON)'
+
+curl -sS --globoff -H 'Accept: application/json' --no-buffer \
+  'https://stream.wikimedia.org/v2/stream/recentchange' \
+  | clickhouse-client \
+      --query 'INSERT INTO wikipedia_edits FORMAT JSONAsObject' \
+      --input_format_max_block_wait_ms 1000 \
+      --input_format_connection_handling 1 \
+      --min_insert_block_size_rows 0 \
+      --min_insert_block_size_bytes 0
+```
+
+<div id="input_format_max_bytes_to_read_for_schema_inference">
+  ## input_format_max_bytes_to_read_for_schema_inference
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="33554432" />
+
+Максимальный объём данных в байтах, считываемых для автоматического определения схемы.
+
+<div id="input_format_max_rows_to_read_for_schema_inference">
+  ## input_format_max_rows_to_read_for_schema_inference
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="25000" />
+
+Максимальное количество строк данных, считываемых при автоматическом определении схемы.
+
+<div id="input_format_msgpack_number_of_columns">
+  ## input_format_msgpack_number_of_columns
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+Количество столбцов во вставляемых данных MsgPack. Используется для автоматического определения схемы по данным.
+
+<div id="input_format_mysql_dump_map_column_names">
+  ## input_format_mysql_dump_map_column_names
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Сопоставлять по именам столбцы таблицы из дампа MySQL и столбцы таблицы ClickHouse
+
+<div id="input_format_mysql_dump_table_name">
+  ## input_format_mysql_dump_table_name
+</div>
+
+Имя таблицы в дампе MySQL, из которой считываются данные
+
+<div id="input_format_native_allow_types_conversion">
+  ## input_format_native_allow_types_conversion
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.3"},{"label": "1"},{"label": "Разрешить преобразование типов в формате ввода Native"}]}]} />
+
+Разрешить преобразование типов в формате ввода Native
+
+<div id="input_format_native_decode_types_in_binary_format">
+  ## input_format_native_decode_types_in_binary_format
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Добавлена новая настройка, позволяющая читать имена типов в бинарном формате в формате вывода Native"}]}]} />
+
+Читать типы данных в бинарном формате вместо имен типов во входном формате Native
+
+<div id="input_format_null_as_default">
+  ## input_format_null_as_default
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "По умолчанию разрешает использовать NULL как значение по умолчанию во входных форматах"}]}]} />
+
+Включает или отключает инициализацию полей со значением [NULL](/ru/reference/syntax#literals) [значениями по умолчанию](/ru/reference/statements/create/table#default_values), если тип данных этих полей не [Nullable](/ru/reference/data-types/nullable).
+Если тип столбца не Nullable и этот параметр отключен, вставка `NULL` вызывает исключение. Если тип столбца — Nullable, значения `NULL` вставляются как есть независимо от этого параметра.
+
+Этот параметр применяется к большинству входных форматов.
+
+Для сложных выражений со значениями по умолчанию также должен быть включен `input_format_defaults_for_omitted_fields`.
+
+Возможные значения:
+
+* 0 — Вставка `NULL` в столбец, не допускающий NULL, вызывает исключение.
+* 1 — Поля со значением `NULL` инициализируются значениями столбца по умолчанию.
+
+<div id="input_format_orc_allow_missing_columns">
+  ## input_format_orc_allow_missing_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.12"},{"label": "1"},{"label": "По умолчанию разрешать отсутствие столбцов в ORC-файлах"}]}]} />
+
+Разрешать отсутствие столбцов при чтении входных данных в формате ORC
+
+<div id="input_format_orc_case_insensitive_column_matching">
+  ## input_format_orc_case_insensitive_column_matching
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Игнорировать регистр при сопоставлении столбцов ORC со столбцами ClickHouse.
+
+<div id="input_format_orc_dictionary_as_low_cardinality">
+  ## input_format_orc_dictionary_as_low_cardinality
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "Обрабатывать столбцы ORC, закодированные словарём, как столбцы LowCardinality при чтении файлов ORC"}]}]} />
+
+Обрабатывать столбцы ORC, закодированные словарём, как столбцы LowCardinality при чтении файлов ORC.
+
+<div id="input_format_orc_filter_push_down">
+  ## input_format_orc_filter_push_down
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+При чтении файлов ORC пропускает целые stripe или группы строк на основании выражений WHERE/PREWHERE, статистики min/max или bloom filter в метаданных ORC.
+
+<div id="input_format_orc_reader_time_zone_name">
+  ## input_format_orc_reader_time_zone_name
+</div>
+
+<SettingsInfoBlock type="String" default_value="GMT" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "GMT"},{"label": "Название часового пояса для считывателя строк ORC; по умолчанию для считывателя строк ORC используется GMT."}]}]} />
+
+Название часового пояса для считывателя строк ORC; по умолчанию для считывателя строк ORC используется GMT.
+
+<div id="input_format_orc_row_batch_size">
+  ## input_format_orc_row_batch_size
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="100000" />
+
+Размер батча при чтении сегментов ORC.
+
+<div id="input_format_orc_skip_columns_with_unsupported_types_in_schema_inference">
+  ## input_format_orc_skip_columns_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Пропускать столбцы с неподдерживаемыми типами при определении схемы для формата ORC
+
+<div id="input_format_orc_use_fast_decoder">
+  ## input_format_orc_use_fast_decoder
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Использует более быструю реализацию декодера ORC.
+
+<div id="input_format_parallel_parsing">
+  ## input_format_parallel_parsing
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Включает или отключает параллельный разбор форматов данных с сохранением порядка строк. Поддерживается только для форматов [TabSeparated (TSV)](/ru/reference/formats/TabSeparated/TabSeparated), [TSKV](/ru/reference/formats/TabSeparated/TSKV), [CSV](/ru/reference/formats/CSV/CSV) и [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow).
+
+Возможные значения:
+
+* 1 — Включено.
+* 0 — Отключено.
+
+<div id="input_format_parquet_allow_geoparquet_parser">
+  ## input_format_parquet_allow_geoparquet_parser
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Новая настройка для использования гео-столбцов в файле Parquet"}]}]} />
+
+Используйте парсер гео-столбцов для преобразования Array(UInt8) в типы Point/Linestring/Polygon/MultiLineString/MultiPolygon
+
+<div id="input_format_parquet_allow_missing_columns">
+  ## input_format_parquet_allow_missing_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.12"},{"label": "1"},{"label": "По умолчанию разрешает отсутствующие столбцы в файлах Parquet"}]}]} />
+
+Разрешает отсутствующие столбцы при чтении данных в формате Parquet
+
+<div id="input_format_parquet_bloom_filter_push_down">
+  ## input_format_parquet_bloom_filter_push_down
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "При чтении файлов Parquet пропускать целые группы строк по выражениям WHERE/PREWHERE и bloom filter в метаданных Parquet."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "При чтении файлов Parquet пропускать целые группы строк по выражениям WHERE/PREWHERE и bloom filter в метаданных Parquet."}]}]} />
+
+При чтении файлов Parquet пропускать целые группы строк по выражениям WHERE и bloom filter в метаданных Parquet.
+
+<div id="input_format_parquet_case_insensitive_column_matching">
+  ## input_format_parquet_case_insensitive_column_matching
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Игнорировать регистр при сопоставлении столбцов Parquet со столбцами ClickHouse.
+
+<div id="input_format_parquet_enable_json_parsing">
+  ## input_format_parquet_enable_json_parsing
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "При чтении файлов Parquet разбирать JSON-столбцы как JSON-столбцы ClickHouse."}]}]} />
+
+При чтении файлов Parquet разбирать JSON-столбцы как JSON-столбцы ClickHouse.
+
+<div id="input_format_parquet_enable_row_group_prefetch">
+  ## input_format_parquet_enable_row_group_prefetch
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "1"},{"label": "Включает предзагрузку групп строк при парсинге Parquet. В настоящее время предзагрузка поддерживается только при однопоточном парсинге."}]}]} />
+
+Включает предзагрузку групп строк при парсинге Parquet. В настоящее время предзагрузка поддерживается только при однопоточном парсинге.
+
+<div id="input_format_parquet_filter_push_down">
+  ## input_format_parquet_filter_push_down
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+При чтении файлов Parquet пропускает целые группы строк на основе выражений WHERE/PREWHERE и статистики min/max из метаданных Parquet.
+
+<div id="input_format_parquet_local_file_min_bytes_for_seek">
+  ## input_format_parquet_local_file_min_bytes_for_seek
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8192" />
+
+Минимальное число байтов при локальном чтении из файла, необходимое для выполнения seek вместо чтения с пропуском во входном формате Parquet
+
+<div id="input_format_parquet_local_time_as_utc">
+  ## input_format_parquet_local_time_as_utc
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Использовать более подходящий тип DateTime64(..., 'UTC') для типа Parquet 'local time without timezone'."}]}]} />
+
+Определяет тип данных, используемый при определении схемы для временных меток Parquet с `isAdjustedToUTC=false`. Если true: DateTime64(..., &#39;UTC&#39;), если false: DateTime64(...). Ни один из вариантов не является полностью корректным, поскольку в ClickHouse нет типа данных для локального времени на часах. Как ни парадоксально, вариант `true`, вероятно, менее ошибочен, потому что форматирование временной метки `UTC` как String даст корректное представление локального времени.
+
+<div id="input_format_parquet_max_block_size">
+  ## input_format_parquet_max_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="65409" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "65409"},{"label": "Увеличен размер блока для ридера Parquet."}]}]} />
+
+Максимальный размер блока для ридера Parquet.
+
+<div id="input_format_parquet_memory_high_watermark">
+  ## input_format_parquet_memory_high_watermark
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4294967296" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "4294967296"},{"label": "новая настройка"}]}]} />
+
+Примерный лимит памяти для ридера Parquet v3. Ограничивает количество групп строк или столбцов, которые можно читать параллельно. При чтении нескольких файлов в одном запросе лимит распространяется на общее использование памяти для всех этих файлов.
+
+<div id="input_format_parquet_memory_low_watermark">
+  ## input_format_parquet_memory_low_watermark
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2097152" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "2097152"},{"label": "новая настройка"}]}]} />
+
+Более агрессивно планирует операции предварительного чтения, если использование памяти ниже порога. Может быть полезно, например, если по сети нужно считывать много небольших bloom-фильтров.
+
+<div id="input_format_parquet_page_filter_push_down">
+  ## input_format_parquet_page_filter_push_down
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "новая настройка (не действует, если input_format_parquet_use_native_reader_v3 отключён)"}]}]} />
+
+Пропускать страницы по минимальным/максимальным значениям из индекса столбца.
+
+<div id="input_format_parquet_prefer_block_bytes">
+  ## input_format_parquet_prefer_block_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16744704" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "16744704"},{"label": "Средний размер в байтах блока, выдаваемого ридером Parquet."}]}]} />
+
+Средний размер в байтах блока, выдаваемого ридером Parquet
+
+<div id="input_format_parquet_preserve_order">
+  ## input_format_parquet_preserve_order
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.5"},{"label": "0"},{"label": "Разрешить ридеру Parquet переупорядочивать строки для повышения параллелизма."}]}]} />
+
+Не переупорядочивать строки при чтении из файлов Parquet. Не рекомендуется, так как порядок строк обычно не гарантируется, а другие части конвейера выполнения запроса могут его нарушить. Вместо этого используйте `ORDER BY _row_number`.
+
+<div id="input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference">
+  ## input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Пропускать столбцы с неподдерживаемыми типами при автоматическом определении схемы для формата Parquet
+
+<div id="input_format_parquet_use_offset_index">
+  ## input_format_parquet_use_offset_index
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "Новая настройка (не влияет, если input_format_parquet_use_native_reader_v3 отключён)"}]}]} />
+
+Небольшое изменение логики чтения страниц из файла Parquet, когда фильтрация страниц не используется.
+
+<div id="input_format_parquet_verify_checksums">
+  ## input_format_parquet_verify_checksums
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Новая настройка"}]}]} />
+
+Проверять контрольные суммы страниц при чтении файлов Parquet.
+
+<div id="input_format_protobuf_flatten_google_wrappers">
+  ## input_format_protobuf_flatten_google_wrappers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Включает обёртки Google для обычных невложенных столбцов, например google.protobuf.StringValue &#39;str&#39; для столбца String &#39;str&#39;. Для столбцов с типом Nullable пустые обёртки распознаются как значения по умолчанию, а отсутствующие — как NULL
+
+<div id="input_format_protobuf_oneof_presence">
+  ## input_format_protobuf_oneof_presence
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "новая настройка"}]}]} />
+
+Указывает, какое поле protobuf oneof было найдено, задавая значение enum в специальном столбце
+
+<div id="input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference">
+  ## input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Пропускать поля с неподдерживаемыми типами при автоматическом определении схемы для формата Protobuf
+
+<div id="input_format_record_errors_file_path">
+  ## input_format_record_errors_file_path
+</div>
+
+Путь к файлу, используемому для записи ошибок при чтении текстовых форматов (CSV, TSV).
+
+<div id="input_format_skip_unknown_fields">
+  ## input_format_skip_unknown_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.6"},{"label": "1"},{"label": "Оптимизация чтения подмножества столбцов для некоторых входных форматов"}]}]} />
+
+Включает или отключает пропуск дополнительных данных при вставке.
+
+При записи данных ClickHouse генерирует исключение, если входные данные содержат столбцы, которых нет в целевой таблице. Если пропуск включен, ClickHouse не вставляет дополнительные данные и не генерирует исключение.
+
+Поддерживаемые форматы:
+
+* [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow) (и другие JSON-форматы)
+* [BSONEachRow](/ru/reference/formats/BSONEachRow) (и другие JSON-форматы)
+* [TSKV](/ru/reference/formats/TabSeparated/TSKV)
+* Все форматы с суффиксами WithNames/WithNamesAndTypes
+* [MySQLDump](/ru/reference/formats/MySQLDump)
+* [Native](/ru/reference/formats/Native)
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+<div id="input_format_try_infer_dates">
+  ## input_format_try_infer_dates
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Если включено, ClickHouse будет пытаться автоматически определять тип `Date` по строковым полям при автоматическом определении схемы для текстовых форматов. Если все поля столбца во входных данных были успешно разобраны как даты, результирующий тип будет `Date`; если хотя бы одно поле не удалось разобрать как дату, результирующий тип будет `String`.
+
+Включено по умолчанию.
+
+<div id="input_format_try_infer_datetimes">
+  ## input_format_try_infer_datetimes
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Если включено, ClickHouse будет пытаться определять тип `DateTime64` для строковых полей при автоматическом определении схемы для текстовых форматов. Если все значения в столбце входных данных были успешно разобраны как дата и время, результирующим типом будет `DateTime64`; если хотя бы одно значение не удалось разобрать как дату и время, результирующим типом будет `String`.
+
+Включено по умолчанию.
+
+<div id="input_format_try_infer_datetimes_only_datetime64">
+  ## input_format_try_infer_datetimes_only_datetime64
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Разрешает автоматически определять DateTime вместо DateTime64 в форматах данных"}]}]} />
+
+Когда включен параметр input&#95;format&#95;try&#95;infer&#95;datetimes, автоматически определяется только тип DateTime64, но не типы DateTime
+
+<div id="input_format_try_infer_exponent_floats">
+  ## input_format_try_infer_exponent_floats
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "По умолчанию не выполнять определение чисел с плавающей точкой в экспоненциальной записи"}]}]} />
+
+Пытаться определять числа с плавающей точкой в экспоненциальной записи при автоматическом определении схемы в текстовых форматах (кроме JSON, где числа в экспоненциальной записи определяются всегда)
+
+<div id="input_format_try_infer_integers">
+  ## input_format_try_infer_integers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Если включено, ClickHouse будет пытаться определять целые числа вместо чисел с плавающей точкой при автоматическом определении схемы для текстовых форматов. Если все числа в столбце входных данных являются целыми, результирующим типом будет `Int64`, а если хотя бы одно число является числом с плавающей точкой, результирующим типом будет `Float64`.
+
+Включено по умолчанию.
+
+<div id="input_format_try_infer_variants">
+  ## input_format_try_infer_variants
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Пытаться определять тип Variant в текстовых форматах, когда для элементов столбца/массива возможно более одного типа"}]}]} />
+
+Если включено, ClickHouse будет пытаться определять тип [`Variant`](/ru/reference/data-types/variant) при автоматическом определении схемы для текстовых форматов, когда для элементов столбца/массива возможно более одного типа.
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+<div id="input_format_tsv_allow_variable_number_of_columns">
+  ## input_format_tsv_allow_variable_number_of_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Игнорировать лишние столбцы во входных данных TSV (если в файле столбцов больше, чем ожидается) и трактовать отсутствующие поля во входных данных TSV как значения по умолчанию
+
+<div id="input_format_tsv_crlf_end_of_line">
+  ## input_format_tsv_crlf_end_of_line
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "Включает чтение окончаний строк CRLF в форматах TSV"}]}]} />
+
+Если задано значение true, функция file будет читать формат TSV с окончаниями строк \r\n вместо \n.
+
+<div id="input_format_tsv_detect_header">
+  ## input_format_tsv_detect_header
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.1"},{"label": "1"},{"label": "По умолчанию автоматически определять заголовок в формате TSV"}]}]} />
+
+Автоматически определять в формате TSV заголовок с именами и типами
+
+<div id="input_format_tsv_empty_as_default">
+  ## input_format_tsv_empty_as_default
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Обрабатывать пустые поля во входных данных TSV как значения по умолчанию.
+
+<div id="input_format_tsv_enum_as_number">
+  ## input_format_tsv_enum_as_number
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Рассматривать значения enum, вставляемые в форматах TSV, как индексы enum.
+
+<div id="input_format_tsv_skip_first_lines">
+  ## input_format_tsv_skip_first_lines
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+Пропускать указанное число строк в начале данных в формате TSV
+
+<div id="input_format_tsv_skip_trailing_empty_lines">
+  ## input_format_tsv_skip_trailing_empty_lines
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Пропускать пустые строки в конце в формате TSV
+
+<div id="input_format_tsv_use_best_effort_in_schema_inference">
+  ## input_format_tsv_use_best_effort_in_schema_inference
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Использовать дополнительные настройки и эвристики для автоматического определения схемы в формате TSV
+
+<div id="input_format_values_accurate_types_of_literals">
+  ## input_format_values_accurate_types_of_literals
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Для формата Values: при разборе и интерпретации выражений с использованием шаблона проверяйте фактический тип литерала, чтобы избежать возможных проблем с переполнением и потерей точности.
+
+<div id="input_format_values_deduce_templates_of_expressions">
+  ## input_format_values_deduce_templates_of_expressions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Для формата Values: если поле не удалось разобрать стриминговым парсером, запускается SQL-парсер, определяется шаблон SQL-выражения, затем предпринимается попытка разобрать все строки по этому шаблону, после чего выражение интерпретируется для всех строк.
+
+<div id="input_format_values_interpret_expressions">
+  ## input_format_values_interpret_expressions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Для формата Values: если поле не удалось разобрать стриминговым парсером, запустить SQL-парсер и попытаться интерпретировать его как SQL-выражение.
+
+<div id="input_format_with_names_use_header">
+  ## input_format_with_names_use_header
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "20.5"},{"label": "1"},{"label": "Использовать заголовок с именами для форматов с суффиксами WithNames/WithNamesAndTypes"}]}]} />
+
+Включает или отключает проверку порядка столбцов при вставке данных.
+
+Чтобы повысить производительность вставки, рекомендуем отключить эту проверку, если вы уверены, что порядок столбцов во входных данных совпадает с порядком столбцов в целевой таблице.
+
+Поддерживаемые форматы:
+
+* [CSVWithNames](/ru/reference/formats/CSV/CSVWithNames)
+* [CSVWithNamesAndTypes](/ru/reference/formats/CSV/CSVWithNamesAndTypes)
+* [TabSeparatedWithNames](/ru/reference/formats/TabSeparated/TabSeparatedWithNames)
+* [TabSeparatedWithNamesAndTypes](/ru/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)
+* [JSONCompactEachRowWithNames](/ru/reference/formats/JSON/JSONCompactEachRowWithNames)
+* [JSONCompactEachRowWithNamesAndTypes](/ru/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)
+* [JSONCompactStringsEachRowWithNames](/ru/reference/formats/JSON/JSONCompactStringsEachRowWithNames)
+* [JSONCompactStringsEachRowWithNamesAndTypes](/ru/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)
+* [RowBinaryWithNames](/ru/reference/formats/RowBinary/RowBinaryWithNames)
+* [RowBinaryWithNamesAndTypes](/ru/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)
+* [CustomSeparatedWithNames](/ru/reference/formats/CustomSeparated/CustomSeparatedWithNames)
+* [CustomSeparatedWithNamesAndTypes](/ru/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+<div id="input_format_with_types_use_header">
+  ## input_format_with_types_use_header
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Управляет тем, должен ли парсер формата проверять, соответствуют ли типы данных во входных данных типам данных целевой таблицы.
+
+Поддерживаемые форматы:
+
+* [CSVWithNamesAndTypes](/ru/reference/formats/CSV/CSVWithNamesAndTypes)
+* [TabSeparatedWithNamesAndTypes](/ru/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)
+* [JSONCompactEachRowWithNamesAndTypes](/ru/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)
+* [JSONCompactStringsEachRowWithNamesAndTypes](/ru/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)
+* [RowBinaryWithNamesAndTypes](/ru/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)
+* [CustomSeparatedWithNamesAndTypes](/ru/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+<div id="insert_distributed_one_random_shard">
+  ## insert_distributed_one_random_shard
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Включает или отключает случайную вставку в один из сегментов таблицы [Distributed](/ru/reference/engines/table-engines/special/distributed), когда распределённый ключ отсутствует.
+
+По умолчанию при вставке данных в таблицу `Distributed` с более чем одним сегментом сервер ClickHouse отклоняет любой запрос на вставку, если распределённый ключ не задан. Когда `insert_distributed_one_random_shard = 1`, вставки разрешаются, и данные случайным образом направляются в один из всех сегментов.
+
+Возможные значения:
+
+* 0 — Вставка отклоняется, если сегментов несколько и распределённый ключ не задан.
+* 1 — Вставка выполняется случайным образом в один из всех доступных сегментов, если распределённый ключ не задан.
+
+<div id="interval_output_format">
+  ## interval_output_format
+</div>
+
+<SettingsInfoBlock type="IntervalOutputFormat" default_value="numeric" />
+
+Позволяет выбирать различные форматы вывода для текстового представления типов interval.
+
+Возможные значения:
+
+* `kusto` - формат вывода в стиле KQL.
+
+  ClickHouse выводит интервалы в [формате KQL](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-timespan-format-strings#the-constant-c-format-specifier). Например, `toIntervalDay(2)` будет отформатирован как `2.00:00:00`. Обратите внимание, что для типов interval переменной длины (то есть `IntervalMonth` и `IntervalYear`) учитывается среднее количество секунд в интервале.
+
+* `numeric` - числовой формат вывода.
+
+  ClickHouse выводит интервалы в виде их числового представления. Например, `toIntervalDay(2)` будет отформатирован как `2`.
+
+См. также:
+
+* [Interval](/ru/reference/data-types/special-data-types/interval)
+
+<div id="into_outfile_create_parent_directories">
+  ## into_outfile_create_parent_directories
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Автоматически создаёт родительские каталоги при использовании INTO OUTFILE, если они ещё не существуют.
+
+<div id="json_type_escape_dots_in_keys">
+  ## json_type_escape_dots_in_keys
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Если параметр включен, точки в ключах JSON будут экранироваться при парсинге.
+
+<div id="max_dynamic_subcolumns_in_json_type_parsing">
+  ## max_dynamic_subcolumns_in_json_type_parsing
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+Максимальное количество динамических подстолбцов, которое может быть создано в каждом столбце при парсинге JSON-столбца.
+Позволяет управлять количеством динамических подстолбцов при парсинге независимо от динамических параметров, указанных в типе данных.
+
+<div id="output_format_always_write_decimal_point_in_float_and_decimal">
+  ## output_format_always_write_decimal_point_in_float_and_decimal
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Новая настройка, которая всегда выводит десятичную точку у чисел с плавающей точкой и чисел типа Decimal в текстовых форматах, даже если значение — целое число."}]}]} />
+
+Всегда выводит десятичную точку у чисел с плавающей точкой и чисел типа Decimal в текстовых форматах, даже если значение — целое число. Например, выводит `1.` вместо `1`.
+
+По умолчанию отключена.
+
+<div id="output_format_arrow_compression_method">
+  ## output_format_arrow_compression_method
+</div>
+
+<SettingsInfoBlock type="ArrowCompression" default_value="lz4_frame" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.3"},{"label": "lz4_frame"},{"label": "По умолчанию используется сжатие lz4 в формате вывода Arrow"}]}]} />
+
+Метод сжатия для формата вывода Arrow. Поддерживаемые кодеки: lz4&#95;frame, zstd, none (без сжатия)
+
+<div id="output_format_arrow_date_as_uint16">
+  ## output_format_arrow_date_as_uint16
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "По умолчанию записывает Date как Arrow DATE32, а не как обычный UInt16."}]}]} />
+
+Записывает значения Date как обычные 16-битные числа (при обратном чтении — как UInt16) вместо преобразования в 32-битный тип Arrow DATE32 (при обратном чтении — как Date32).
+
+<div id="output_format_arrow_fixed_string_as_fixed_byte_array">
+  ## output_format_arrow_fixed_string_as_fixed_byte_array
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.2"},{"label": "1"},{"label": "По умолчанию используется тип Arrow FIXED_SIZE_BINARY для FixedString"}]}]} />
+
+Использовать тип Arrow FIXED&#95;SIZE&#95;BINARY вместо Binary для столбцов FixedString.
+
+<div id="output_format_arrow_low_cardinality_as_dictionary">
+  ## output_format_arrow_low_cardinality_as_dictionary
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Включить вывод типа LowCardinality как типа Dictionary в Arrow
+
+<div id="output_format_arrow_string_as_string">
+  ## output_format_arrow_string_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse допускает произвольные бинарные данные в типе String, который обычно содержит UTF-8. Типы String в Parquet/ORC/Arrow поддерживают только UTF-8. Поэтому вы можете выбрать, какой тип данных Arrow использовать для типа String в ClickHouse — String или Binary. Хотя Binary был бы более корректным и совместимым вариантом, использование String по умолчанию в большинстве случаев соответствует ожиданиям пользователей."}]}]} />
+
+Использовать тип Arrow String вместо Binary для столбцов String
+
+<div id="output_format_arrow_unsupported_types_as_binary">
+  ## output_format_arrow_unsupported_types_as_binary
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "Новая настройка для преобразования неподдерживаемых типов CH в бинарный формат Arrow вместо генерации исключения UNKNOWN_TYPE."}]}]} />
+
+Выводит типы, для которых нет преобразования, в виде необработанных бинарных данных. Если false, для таких типов будет возникать исключение UNKNOWN&#95;TYPE.
+
+<div id="output_format_arrow_use_64_bit_indexes_for_dictionary">
+  ## output_format_arrow_use_64_bit_indexes_for_dictionary
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Разрешено использовать 64-битные индексы в словарях Arrow"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "0"},{"label": "Разрешено использовать 64-битные индексы в словарях Arrow"}]}]} />
+
+Всегда использовать 64-битные целочисленные индексы для словаря в формате Arrow
+
+<div id="output_format_arrow_use_signed_indexes_for_dictionary">
+  ## output_format_arrow_use_signed_indexes_for_dictionary
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "1"},{"label": "По умолчанию использовать знаковый тип индексов для словарей Arrow, как рекомендуется"}]}]} />
+
+Использовать знаковые целые числа для индексов словарей в формате Arrow
+
+<div id="output_format_avro_codec">
+  ## output_format_avro_codec
+</div>
+
+Кодек сжатия, используемый при выводе. Возможные значения: &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;.
+
+<div id="output_format_avro_confluent_subject">
+  ## output_format_avro_confluent_subject
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "Новая настройка для указания имени subject, под которым схема регистрируется в Confluent Schema Registry при записи в формате вывода AvroConfluent."}]}]} />
+
+Для формата вывода AvroConfluent: имя subject, под которым схема регистрируется в Confluent Schema Registry. Обязательно при записи в формате вывода AvroConfluent.
+
+<div id="output_format_avro_rows_in_file">
+  ## output_format_avro_rows_in_file
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+Максимальное количество строк в файле (если это допускается хранилищем)
+
+<div id="output_format_avro_string_column_pattern">
+  ## output_format_avro_string_column_pattern
+</div>
+
+Для формата Avro: шаблон регулярного выражения для выбора столбцов String, которые следует интерпретировать как строки AVRO.
+
+<div id="output_format_avro_sync_interval">
+  ## output_format_avro_sync_interval
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16384" />
+
+Интервал синхронизации, в байтах.
+
+<div id="output_format_binary_encode_types_in_binary_format">
+  ## output_format_binary_encode_types_in_binary_format
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Добавлена новая настройка, позволяющая записывать имена типов в бинарном формате в выходном формате RowBinaryWithNamesAndTypes"}]}]} />
+
+Записывать типы данных в бинарном формате вместо имён типов в выходном формате RowBinaryWithNamesAndTypes
+
+<div id="output_format_binary_write_json_as_string">
+  ## output_format_binary_write_json_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "Добавлена новая настройка для записи значений типа JSON в виде JSON-строк в выходном формате RowBinary"}]}]} />
+
+Записывает значения типа данных [JSON](/ru/reference/data-types/newjson) в виде значений JSON [String](/ru/reference/data-types/string) в выходном формате RowBinary.
+
+<div id="output_format_bson_string_as_string">
+  ## output_format_bson_string_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Использовать тип BSON String вместо Binary для столбцов типа String.
+
+<div id="output_format_compression_level">
+  ## output_format_compression_level
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="3" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "3"},{"label": "Позволяет изменять уровень сжатия в выводе запроса"}]}]} />
+
+Уровень сжатия по умолчанию, если вывод запроса сжат. Настройка применяется, когда запрос `SELECT` использует `INTO OUTFILE` или при записи в табличные функции `file`, `url`, `hdfs`, `s3` или `azureBlobStorage`.
+
+Возможные значения: от `1` до `22`
+
+<div id="output_format_compression_zstd_window_log">
+  ## output_format_compression_zstd_window_log
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "0"},{"label": "Позволяет изменять логарифм размера окна zstd в выводе запроса при использовании сжатия zstd"}]}]} />
+
+Может использоваться, если для сжатия вывода выбран метод `zstd`. Если значение больше `0`, эта настройка явно задаёт размер окна сжатия (степень `2`) и включает режим дальнего действия для сжатия zstd. Это может помочь добиться лучшего коэффициента сжатия.
+
+Возможные значения: неотрицательные числа. Обратите внимание, что если значение слишком маленькое или слишком большое, `zstdlib` сгенерирует исключение. Типичные значения — от `20` (размер окна = `1MB`) до `30` (размер окна = `1GB`).
+
+<div id="output_format_csv_crlf_end_of_line">
+  ## output_format_csv_crlf_end_of_line
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Если задано значение true, в формате CSV в качестве окончания строки будет использоваться \r\n вместо \n.
+
+<div id="output_format_csv_serialize_tuple_into_separate_columns">
+  ## output_format_csv_serialize_tuple_into_separate_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Добавлен новый способ интерпретации Tuple в формате CSV."}]}, {"id": "row-2","items": [{"label": "24.3"},{"label": "1"},{"label": "Добавлен новый способ интерпретации Tuple в формате CSV."}]}]} />
+
+Если установлено значение true, то Tuple в формате CSV сериализуются в отдельные столбцы (то есть их вложенность теряется)
+
+<div id="output_format_decimal_trailing_zeros">
+  ## output_format_decimal_trailing_zeros
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.9"},{"label": "0"},{"label": "По умолчанию конечные нули не выводятся в текстовом представлении типов Decimal для более аккуратного вывода"}]}]} />
+
+Выводить конечные нули при отображении значений Decimal. Например, 1.230000 вместо 1.23.
+
+По умолчанию отключено.
+
+<div id="output_format_float_precision">
+  ## output_format_float_precision
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Новая настройка для управления количеством цифр после десятичной точки в выводе чисел с плавающей точкой"}]}]} />
+
+Если значение не равно нулю, вывод чисел с плавающей точкой (`Float32`, `Float64`, `BFloat16`) форматируется максимум с таким количеством цифр после десятичной точки (конечные нули удаляются).
+Если значение равно 0 (по умолчанию), используется кратчайшее представление, обеспечивающее точное обратное преобразование.
+
+Слишком большие для фиксированной записи значения, а также значения, модуль которых настолько мал, что округление до запрошенной точности привело бы к потере всех значащих цифр (мантисса стала бы `±0`), вместо этого выводятся в научной нотации. В таких случаях мантисса может содержать больше дробных цифр, чем было запрошено.
+
+Допустимый диапазон: от 0 до 100.
+
+<div id="output_format_image_height">
+  ## output_format_image_height
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1024" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1024"},{"label": "Новая настройка, задающая высоту выводимого изображения для форматов вывода изображений, таких как PNG."}]}]} />
+
+Высота выводимого изображения в пикселях для форматов вывода изображений, таких как `PNG`.
+
+Значение по умолчанию: 1024.
+
+<div id="output_format_image_terminal_mode">
+  ## output_format_image_terminal_mode
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "Новая настройка, определяющая, будут ли форматы вывода изображений, такие как PNG, отображаться прямо в терминале с помощью встроенного протокола изображений."}]}]} />
+
+Для форматов вывода изображений, таких как `PNG`, выводить изображение прямо в терминал с помощью встроенного протокола изображений вместо записи сырых байтов изображения.
+
+Возможные значения:
+
+* &#96;&#96; (пусто) — записывать сырые байты изображения (по умолчанию).
+* `iterm` — использовать встроенный протокол изображений iTerm2.
+* `kitty` — использовать графический протокол Kitty.
+* `sixel` — использовать протокол Sixel.
+* `auto` — если вывод идет в терминал, определить его возможности и использовать `iterm`, `kitty` или `sixel` (в этом порядке); в противном случае записывать сырые байты изображения.
+
+Значение по умолчанию: &#96;&#96; (пусто).
+
+<div id="output_format_image_width">
+  ## output_format_image_width
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1024" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1024"},{"label": "Новая настройка, определяющая ширину выводимого изображения для форматов вывода изображений, таких как PNG."}]}]} />
+
+Ширина выводимого изображения в пикселях для форматов вывода изображений, таких как `PNG`.
+
+Значение по умолчанию: 1024.
+
+<div id="output_format_json_array_of_rows">
+  ## output_format_json_array_of_rows
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Включает вывод всех строк в виде JSON-массива в формате [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow).
+
+Возможные значения:
+
+* 1 — ClickHouse выводит все строки как массив, где каждая строка имеет формат `JSONEachRow`.
+* 0 — ClickHouse выводит каждую строку отдельно в формате `JSONEachRow`.
+
+**Пример запроса с включённой настройкой**
+
+Запрос:
+
+```sql
+SET output_format_json_array_of_rows = 1;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+Результат:
+
+```text
+[
+{"number":"0"},
+{"number":"1"},
+{"number":"2"}
+]
+```
+
+**Пример запроса с отключённым параметром**
+
+Запрос:
+
+```sql
+SET output_format_json_array_of_rows = 0;
+SELECT number FROM numbers(3) FORMAT JSONEachRow;
+```
+
+Результат:
+
+```text
+{"number":"0"}
+{"number":"1"}
+{"number":"2"}
+```
+
+<div id="output_format_json_escape_forward_slashes">
+  ## output_format_json_escape_forward_slashes
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Управляет экранированием прямых слешей при выводе строк в формате JSON. Это сделано для совместимости с JavaScript. Не путайте с обратными слешами, которые экранируются всегда.
+
+Включено по умолчанию.
+
+<div id="output_format_json_map_as_array_of_tuples">
+  ## output_format_json_map_as_array_of_tuples
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "новая настройка"}]}]} />
+
+Сериализует столбцы типа Map как JSON-массивы из кортежей.
+
+По умолчанию отключена.
+
+<div id="output_format_json_named_tuples_as_objects">
+  ## output_format_json_named_tuples_as_objects
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "22.6"},{"label": "1"},{"label": "По умолчанию разрешает сериализовать именованные Tuple как объекты JSON в форматах JSON"}]}]} />
+
+Сериализует столбцы именованных Tuple как объекты JSON.
+
+Включено по умолчанию.
+
+<div id="output_format_json_pretty_print">
+  ## output_format_json_pretty_print
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "По умолчанию выводить значения в удобочитаемом виде в формате вывода JSON"}]}]} />
+
+Эта настройка определяет, как вложенные структуры, такие как Tuple, Map и Array, отображаются в массиве `data` при использовании формата вывода JSON.
+
+Например, вместо такого вывода:
+
+```json
+"data":
+[
+  {
+    "tuple": {"a":1,"b":2,"c":3},
+    "array": [1,2,3],
+    "map": {"a":1,"b":2,"c":3}
+  }
+],
+```
+
+Вывод будет иметь следующий формат:
+
+```json
+"data":
+[
+    {
+        "tuple": {
+            "a": 1,
+            "b": 2,
+            "c": 3
+        },
+        "array": [
+            1,
+            2,
+            3
+        ],
+        "map": {
+            "a": 1,
+            "b": 2,
+            "c": 3
+        }
+    }
+],
+```
+
+Включено по умолчанию.
+
+<div id="output_format_json_quote_64bit_floats">
+  ## output_format_json_quote_64bit_floats
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Управляет заключением в кавычки 64-битных [чисел с плавающей запятой](/ru/reference/data-types/float) при выводе в форматах JSON*.
+
+По умолчанию отключено.
+
+<div id="output_format_json_quote_64bit_integers">
+  ## output_format_json_quote_64bit_integers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "По умолчанию отключает заключение 64-битных целых чисел в кавычки в JSON"}]}]} />
+
+Управляет тем, будут ли 64-битные и более крупные [целые числа](/ru/reference/data-types/int-uint) (например, `UInt64` или `Int128`) заключаться в кавычки при выводе в формате [JSON](/ru/reference/formats/JSON/JSON).
+По умолчанию такие целые числа заключаются в кавычки. Такое поведение совместимо с большинством реализаций JavaScript.
+
+Возможные значения:
+
+* 0 — Целые числа выводятся без кавычек.
+* 1 — Целые числа заключаются в кавычки.
+
+<div id="output_format_json_quote_decimals">
+  ## output_format_json_quote_decimals
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Управляет тем, будут ли десятичные числа заключаться в кавычки в выходных JSON-форматах.
+
+По умолчанию отключено.
+
+<div id="output_format_json_quote_denormals">
+  ## output_format_json_quote_denormals
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Включает вывод значений `+nan`, `-nan`, `+inf`, `-inf` в формате вывода [JSON](/ru/reference/formats/JSON/JSON).
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+**Пример**
+
+Рассмотрим следующую таблицу `account_orders`:
+
+```text
+┌─id─┬─name───┬─duration─┬─period─┬─area─┐
+│  1 │ Andrew │       20 │      0 │  400 │
+│  2 │ John   │       40 │      0 │    0 │
+│  3 │ Bob    │       15 │      0 │ -100 │
+└────┴────────┴──────────┴────────┴──────┘
+```
+
+Когда `output_format_json_quote_denormals = 0`, запрос возвращает значения `null` на выходе:
+
+```sql
+SELECT area/period FROM account_orders FORMAT JSON;
+```
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                },
+                {
+                        "divide(area, period)": null
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.003648093,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+Когда `output_format_json_quote_denormals = 1`, запрос возвращает:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "divide(area, period)",
+                        "type": "Float64"
+                }
+        ],
+
+        "data":
+        [
+                {
+                        "divide(area, period)": "inf"
+                },
+                {
+                        "divide(area, period)": "-nan"
+                },
+                {
+                        "divide(area, period)": "-inf"
+                }
+        ],
+
+        "rows": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000070241,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+<div id="output_format_json_skip_null_value_in_named_tuples">
+  ## output_format_json_skip_null_value_in_named_tuples
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Пропускать пары «ключ-значение» со значением NULL при сериализации столбцов именованных Tuple как объектов JSON. Применяется только если output&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects имеет значение true.
+
+<div id="output_format_json_validate_utf8">
+  ## output_format_json_validate_utf8
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Управляет проверкой последовательностей UTF-8 в форматах вывода JSON; не влияет на форматы JSON/JSONCompact/JSONColumnsWithMetadata, так как в них UTF-8 проверяется всегда.
+
+По умолчанию отключено.
+
+<div id="output_format_markdown_escape_special_characters">
+  ## output_format_markdown_escape_special_characters
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Если включено, экранирует специальные символы в Markdown.
+
+[Common Mark](https://spec.commonmark.org/0.30/#example-12) определяет следующие специальные символы, которые можно экранировать с помощью :
+
+```
+! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
+```
+
+Возможные значения:
+
+* 0 — Отключено.
+* 1 — Включено.
+
+<div id="output_format_msgpack_uuid_representation">
+  ## output_format_msgpack_uuid_representation
+</div>
+
+<SettingsInfoBlock type="MsgPackUUIDRepresentation" default_value="ext" />
+
+Определяет способ вывода UUID в формате MsgPack.
+
+<div id="output_format_native_encode_types_in_binary_format">
+  ## output_format_native_encode_types_in_binary_format
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "0"},{"label": "Добавлена новая настройка, позволяющая использовать бинарный формат для записи имён типов в формате вывода Native"}]}]} />
+
+Записывает типы данных в бинарном формате вместо имён типов в формате вывода Native
+
+<div id="output_format_native_use_flattened_dynamic_and_json_serialization">
+  ## output_format_native_use_flattened_dynamic_and_json_serialization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "Добавлена поддержка плоской сериализации Dynamic/JSON в формате Native"}]}]} />
+
+Записывает данные столбцов [JSON](/ru/reference/data-types/newjson) и [Dynamic](/ru/reference/data-types/dynamic) в плоском формате (все типы и пути представлены как отдельные подстолбцы).
+
+<div id="output_format_native_write_json_as_string">
+  ## output_format_native_write_json_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.10"},{"label": "0"},{"label": "Добавлена новая настройка, позволяющая записывать JSON-столбец как единый столбец String в Native format"}]}]} />
+
+Записывает данные [JSON](/ru/reference/data-types/newjson)-столбца как столбец [String](/ru/reference/data-types/string), содержащий JSON-строки, вместо стандартной нативной JSON-сериализации.
+
+<div id="output_format_orc_compression_block_size">
+  ## output_format_orc_compression_block_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="262144" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "262144"},{"label": "новая настройка"}]}]} />
+
+Размер блока сжатия в байтах для выходного формата ORC.
+
+<div id="output_format_orc_compression_method">
+  ## output_format_orc_compression_method
+</div>
+
+<SettingsInfoBlock type="ORCCompression" default_value="zstd" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet/ORC/Arrow поддерживают множество методов сжатия, включая lz4 и zstd. ClickHouse поддерживает все эти методы. Некоторые менее функциональные инструменты, например 'duckdb', не поддерживают более быстрый метод сжатия `lz4`, поэтому по умолчанию используется zstd."}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4_frame"},{"label": "По умолчанию использовать сжатие lz4 для формата вывода ORC"}]}]} />
+
+Метод сжатия для формата вывода ORC. Поддерживаемые кодеки: lz4, snappy, zlib, zstd, none (без сжатия)
+
+<div id="output_format_orc_dictionary_key_size_threshold">
+  ## output_format_orc_dictionary_key_size_threshold
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "Для строкового столбца в формате вывода ORC: если число различных значений превышает эту долю от общего числа строк, не равных NULL, кодирование с использованием словаря отключается. В противном случае кодирование с использованием словаря включается"}]}]} />
+
+Для строкового столбца в формате вывода ORC: если число различных значений превышает эту долю от общего числа строк, не равных NULL, кодирование с использованием словаря отключается. В противном случае кодирование с использованием словаря включается
+
+<div id="output_format_orc_row_index_stride">
+  ## output_format_orc_row_index_stride
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+Целевой шаг индексации строк в формате вывода ORC
+
+<div id="output_format_orc_string_as_string">
+  ## output_format_orc_string_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse допускает произвольные бинарные данные в типе данных String, который обычно содержит данные в UTF-8. Типы String в Parquet/ORC/Arrow поддерживают только UTF-8. Поэтому вы можете выбрать, какой тип данных Arrow использовать для типа данных String в ClickHouse — String или Binary. Хотя Binary был бы более корректным и совместимым вариантом, использование String по умолчанию в большинстве случаев соответствует ожиданиям пользователей."}]}]} />
+
+Использовать тип ORC String вместо Binary для столбцов String
+
+<div id="output_format_orc_writer_time_zone_name">
+  ## output_format_orc_writer_time_zone_name
+</div>
+
+<SettingsInfoBlock type="String" default_value="GMT" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "GMT"},{"label": "Название часового пояса для ORC writer; по умолчанию ORC writer использует часовой пояс GMT."}]}]} />
+
+Название часового пояса для ORC writer; по умолчанию ORC writer использует часовой пояс GMT.
+
+<div id="output_format_parallel_formatting">
+  ## output_format_parallel_formatting
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Включает или отключает параллельное форматирование данных. Поддерживается только для форматов [TSV](/ru/reference/formats/TabSeparated/TabSeparated), [TSKV](/ru/reference/formats/TabSeparated/TSKV), [CSV](/ru/reference/formats/CSV/CSV) и [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow).
+
+Возможные значения:
+
+* 1 — Включено.
+* 0 — Отключено.
+
+<div id="output_format_parquet_batch_size">
+  ## output_format_parquet_batch_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1024" />
+
+Проверяйте размер страницы через каждые N строк. Рассмотрите возможность уменьшить это значение, если средний размер значений в столбцах превышает несколько КБ.
+
+<div id="output_format_parquet_bloom_filter_bits_per_value">
+  ## output_format_parquet_bloom_filter_bits_per_value
+</div>
+
+<SettingsInfoBlock type="Double" default_value="10.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "10.5"},{"label": "Новая настройка."}]}]} />
+
+Примерное число битов для каждого отдельного значения в bloom-фильтрах Parquet. Оценочные уровни ложноположительных срабатываний:
+
+* 6   бит — 10%
+* 10.5 бит —  1%
+* 16.9 бит —  0.1%
+* 26.4 бит —  0.01%
+* 41   бит —  0.001%
+
+<div id="output_format_parquet_bloom_filter_flush_threshold_bytes">
+  ## output_format_parquet_bloom_filter_flush_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "134217728"},{"label": "Новая настройка"}]}]} />
+
+Определяет, где в файле Parquet размещаются bloom-фильтры. Bloom-фильтры будут записываться группами приблизительно такого размера. В частности:
+
+* если 0, bloom-фильтры каждой группы строк записываются сразу после группы строк,
+  * если значение больше общего размера всех bloom-фильтров, bloom-фильтры для всех групп строк будут накапливаться в памяти, а затем записываться вместе ближе к концу файла,
+  * в противном случае bloom-фильтры будут накапливаться в памяти и записываться, когда их общий размер превысит это значение.
+
+<div id="output_format_parquet_compression_method">
+  ## output_format_parquet_compression_method
+</div>
+
+<SettingsInfoBlock type="ParquetCompression" default_value="zstd" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet/ORC/Arrow поддерживают множество методов сжатия, включая lz4 и zstd. ClickHouse поддерживает все эти методы сжатия. Некоторые менее совершенные инструменты, такие как 'duckdb', не поддерживают более быстрый метод сжатия `lz4`, поэтому по умолчанию используется zstd."}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4"},{"label": "По умолчанию использовать сжатие lz4 для формата вывода Parquet"}]}]} />
+
+Метод сжатия для формата вывода Parquet. Поддерживаемые кодеки: snappy, lz4, brotli, zstd, gzip, none (без сжатия)
+
+<div id="output_format_parquet_data_page_size">
+  ## output_format_parquet_data_page_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1048576" />
+
+Целевой размер страницы в байтах, до сжатия.
+
+<div id="output_format_parquet_date_as_uint16">
+  ## output_format_parquet_date_as_uint16
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Добавлена настройка совместимости для небольшого обратно несовместимого изменения, внесённого ранее в 24.12."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Записывать Date как Date32 вместо обычного UInt16 (это два типа Parquet, наиболее близких к Date)."}]}]} />
+
+Записывает значения Date как обычные 16-битные числа (при обратном чтении — UInt16) вместо преобразования в 32-битный тип Parquet DATE (при обратном чтении — Date32).
+
+<div id="output_format_parquet_datetime_as_uint32">
+  ## output_format_parquet_datetime_as_uint32
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "Записывать DateTime как DateTime64(3) вместо UInt32 (это два типа Parquet, наиболее близких к DateTime)."}]}]} />
+
+Записывает значения DateTime как сырую Unix-временную метку (при чтении — UInt32) вместо преобразования в миллисекунды (при чтении — DateTime64(3)).
+
+<div id="output_format_parquet_enum_as_byte_array">
+  ## output_format_parquet_enum_as_byte_array
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "По умолчанию включена запись Enum как массива байтов в Parquet"}]}, {"id": "row-2","items": [{"label": "25.7"},{"label": "0"},{"label": "Записывать Enum с использованием физического типа Parquet: BYTE_ARRAY и логического типа: ENUM"}]}]} />
+
+Записывать Enum с использованием физического типа Parquet: BYTE&#95;ARRAY и логического типа: ENUM
+
+<div id="output_format_parquet_fixed_string_as_fixed_byte_array">
+  ## output_format_parquet_fixed_string_as_fixed_byte_array
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.2"},{"label": "1"},{"label": "По умолчанию использует тип Parquet FIXED_LENGTH_BYTE_ARRAY для FixedString"}]}]} />
+
+Использует тип Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY вместо Binary для столбцов FixedString.
+
+<div id="output_format_parquet_geometadata">
+  ## output_format_parquet_geometadata
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "1"},{"label": "Новая настройка, позволяющая записывать сведения о гео-столбцах в метаданные Parquet и кодировать столбцы в формате WKB."}]}]} />
+
+Позволяет записывать сведения о гео-столбцах в метаданные Parquet и кодировать столбцы в формате WKB.
+
+<div id="output_format_parquet_max_dictionary_size">
+  ## output_format_parquet_max_dictionary_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1048576" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1048576"},{"label": "Новая настройка"}]}]} />
+
+Если размер словаря превышает указанное количество байт, используется кодирование без словаря. Установите значение 0, чтобы отключить кодирование с использованием словаря.
+
+<div id="output_format_parquet_parallel_encoding">
+  ## output_format_parquet_parallel_encoding
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Выполнять кодирование в формате Parquet в нескольких потоках.
+
+<div id="output_format_parquet_row_group_size">
+  ## output_format_parquet_row_group_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000000" />
+
+Целевой размер группы строк в строках.
+
+<div id="output_format_parquet_row_group_size_bytes">
+  ## output_format_parquet_row_group_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="536870912" />
+
+Целевой размер группы строк в байтах до сжатия.
+
+<div id="output_format_parquet_string_as_string">
+  ## output_format_parquet_string_as_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse допускает произвольные бинарные данные в типе String, который обычно содержит UTF-8. Строки в Parquet/ORC/Arrow поддерживают только UTF-8. Поэтому для типа String в ClickHouse можно выбрать, какой тип данных Arrow использовать: String или Binary. Хотя Binary был бы более корректным и совместимым вариантом, использование String по умолчанию в большинстве случаев лучше соответствует ожиданиям пользователей."}]}]} />
+
+Использовать тип Parquet String вместо Binary для столбцов String.
+
+<div id="output_format_parquet_write_bloom_filter">
+  ## output_format_parquet_write_bloom_filter
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Добавлена поддержка записи bloom-фильтров в файлы Parquet."}]}]} />
+
+Записывать bloom-фильтры в файлы Parquet.
+
+<div id="output_format_parquet_write_checksums">
+  ## output_format_parquet_write_checksums
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Новая настройка"}]}]} />
+
+Добавляет контрольные суммы CRC32 в заголовки страниц Parquet.
+
+<div id="output_format_parquet_write_page_index">
+  ## output_format_parquet_write_page_index
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1"},{"label": "Добавлена возможность записывать индекс страниц в файлы Parquet."}]}]} />
+
+Записывает индекс столбца и индекс смещений (то есть статистику по каждой странице данных, которую можно использовать для pushdown фильтров при чтении) в файлы Parquet.
+
+<div id="output_format_pretty_color">
+  ## output_format_pretty_color
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "auto"},{"label": "Настройка изменена: теперь допускается также значение auto; ANSI-последовательности отключаются, если вывод не направляется в tty"}]}]} />
+
+Использовать ANSI-последовательности экранирования в форматах Pretty. 0 — отключено, 1 — включено, &#39;auto&#39; — включено при выводе в терминал.
+
+<div id="output_format_pretty_display_footer_column_names">
+  ## output_format_pretty_display_footer_column_names
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Добавлена настройка для отображения имён столбцов в нижнем колонтитуле, если в таблице много строк. Пороговое значение задаётся параметром output_format_pretty_display_footer_column_names_min_rows."}]}]} />
+
+Отображает имена столбцов в нижнем колонтитуле, если в таблице много строк.
+
+Возможные значения:
+
+* 0 — Имена столбцов не отображаются в нижнем колонтитуле.
+* 1 — Имена столбцов отображаются в нижнем колонтитуле, если количество строк больше или равно пороговому значению, заданному параметром [output&#95;format&#95;pretty&#95;display&#95;footer&#95;column&#95;names&#95;min&#95;rows](#output_format_pretty_display_footer_column_names_min_rows) (50 по умолчанию).
+
+**Пример**
+
+Запрос:
+
+```sql
+SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
+```
+
+Результат:
+
+```response
+      ┌─number─┬─toTypeName(number)─┐
+   1. │      0 │ UInt64             │
+   2. │      1 │ UInt64             │
+   3. │      2 │ UInt64             │
+   ...
+ 999. │    998 │ UInt64             │
+1000. │    999 │ UInt64             │
+      └─number─┴─toTypeName(number)─┘
+```
+
+<div id="output_format_pretty_display_footer_column_names_min_rows">
+  ## output_format_pretty_display_footer_column_names_min_rows
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="50" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "50"},{"label": "Добавлена настройка, управляющая пороговым значением параметра output_format_pretty_display_footer_column_names_min_rows. Значение по умолчанию — 50."}]}]} />
+
+Задает минимальное количество строк, при котором отображается нижний колонтитул с именами столбцов, если включена настройка [output&#95;format&#95;pretty&#95;display&#95;footer&#95;column&#95;names](#output_format_pretty_display_footer_column_names).
+
+<div id="output_format_pretty_fallback_to_vertical">
+  ## output_format_pretty_fallback_to_vertical
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Новая настройка"}]}]} />
+
+Если параметр включен и таблица широкая, но короткая, формат Pretty будет выводить её так же, как формат Vertical.
+Подробную настройку этого поведения см. в `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` и `output_format_pretty_fallback_to_vertical_min_table_width`.
+
+<div id="output_format_pretty_fallback_to_vertical_max_rows_per_chunk">
+  ## output_format_pretty_fallback_to_vertical_max_rows_per_chunk
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "100"},{"label": "Новая настройка"}]}]} />
+
+Переключение на формат Vertical (см. `output_format_pretty_fallback_to_vertical`) будет выполняться только в том случае, если количество строк во фрагменте не превышает указанное значение.
+
+<div id="output_format_pretty_fallback_to_vertical_min_columns">
+  ## output_format_pretty_fallback_to_vertical_min_columns
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "5"},{"label": "Новая настройка"}]}]} />
+
+Переход на формат Vertical (см. `output_format_pretty_fallback_to_vertical`) выполняется, только если количество столбцов больше указанного значения.
+
+<div id="output_format_pretty_fallback_to_vertical_min_table_width">
+  ## output_format_pretty_fallback_to_vertical_min_table_width
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="250" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "250"},{"label": "новая настройка"}]}]} />
+
+Переход к формату Vertical (см. `output_format_pretty_fallback_to_vertical`) произойдёт только в том случае, если суммарная длина столбцов в таблице не меньше указанного значения или если хотя бы одно значение содержит символ новой строки.
+
+<div id="output_format_pretty_glue_chunks">
+  ## output_format_pretty_glue_chunks
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "auto"},{"label": "Новая настройка, которая делает форматы Pretty ещё красивее."}]}]} />
+
+Если данные в форматах Pretty поступают несколькими фрагментами, даже с задержкой, и при этом следующий фрагмент имеет ту же ширину столбцов, что и предыдущий, используются ANSI-последовательности экранирования, чтобы вернуться к предыдущей строке и перезаписать нижний колонтитул предыдущего фрагмента, продолжив его данными из нового фрагмента. Это делает вывод визуально более приятным.
+
+0 — отключено, 1 — включено, &#39;auto&#39; — включено при выводе в терминал.
+
+<div id="output_format_pretty_grid_charset">
+  ## output_format_pretty_grid_charset
+</div>
+
+<SettingsInfoBlock type="String" default_value="UTF-8" />
+
+Кодировка символов для вывода границ таблицы. Доступные кодировки: ASCII, UTF-8 (по умолчанию).
+
+В интерактивном режиме `clickhouse-client` автоматически переключается на `ASCII`, если терминал не поддерживает UTF-8 (это определяется по переменным окружения `LC_ALL`, `LC_CTYPE` и `LANG`), если только этот параметр не задан явно.
+
+<div id="output_format_pretty_highlight_digit_groups">
+  ## output_format_pretty_highlight_digit_groups
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Если параметр включен и вывод осуществляется в терминал, цифры в разрядах тысяч, миллионов и т. д. будут подчеркнуты."}]}]} />
+
+Если параметр включен и вывод осуществляется в терминал, цифры в разрядах тысяч, миллионов и т. д. будут подчеркнуты.
+
+<div id="output_format_pretty_highlight_trailing_spaces">
+  ## output_format_pretty_highlight_trailing_spaces
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Новая настройка."}]}]} />
+
+Если настройка включена и выводится в терминал, конечные пробелы выделяются серым цветом и подчеркиванием.
+
+<div id="output_format_pretty_max_column_name_width_cut_to">
+  ## output_format_pretty_max_column_name_width_cut_to
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="24" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "24"},{"label": "новая настройка"}]}]} />
+
+Если имя столбца слишком длинное, оно будет обрезано до этой длины.
+Имя столбца будет обрезано, если его длина превышает `output_format_pretty_max_column_name_width_cut_to` плюс `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+
+<div id="output_format_pretty_max_column_name_width_min_chars_to_cut">
+  ## output_format_pretty_max_column_name_width_min_chars_to_cut
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "4"},{"label": "Новая настройка"}]}]} />
+
+Минимальное количество символов, на которое нужно сократить имя столбца, если оно слишком длинное.
+Имя столбца будет обрезано, если его длина превышает `output_format_pretty_max_column_name_width_cut_to` плюс `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+
+<div id="output_format_pretty_max_column_pad_width">
+  ## output_format_pretty_max_column_pad_width
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="250" />
+
+Максимальная ширина дополнения для всех значений в столбце в форматах Pretty.
+
+<div id="output_format_pretty_max_rows">
+  ## output_format_pretty_max_rows
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1000"},{"label": "Так удобнее: прокручивать приходится меньше."}]}]} />
+
+Ограничение на количество строк для форматов Pretty.
+
+<div id="output_format_pretty_max_value_width">
+  ## output_format_pretty_max_value_width
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+Максимальная ширина отображаемого значения в форматах Pretty. Если ширина больше, значение будет обрезано.
+Значение 0 означает, что обрезка не выполняется никогда.
+
+<div id="output_format_pretty_max_value_width_apply_for_single_value">
+  ## output_format_pretty_max_value_width_apply_for_single_value
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Одиночные значения в форматах Pretty не обрезаются."}]}]} />
+
+Обрезайте значения (см. настройку `output_format_pretty_max_value_width`) только в том случае, если это не одиночное значение в block. В противном случае выводите его целиком, что полезно для запроса `SHOW CREATE TABLE`.
+
+<div id="output_format_pretty_multiline_fields">
+  ## output_format_pretty_multiline_fields
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "новая настройка"}]}]} />
+
+Если включено, форматы Pretty будут отображать многострочные поля внутри ячеек таблицы, сохраняя её границы.
+Если нет, они будут отображаться как есть, что может привести к искажению таблицы (при этом в отключенном состоянии многострочные значения будет проще копировать и вставлять).
+
+<div id="output_format_pretty_named_tuples_as_json">
+  ## output_format_pretty_named_tuples_as_json
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Новая настройка, управляющая тем, выводятся ли именованные кортежи в формате Pretty как объекты JSON"}]}]} />
+
+Управляет тем, выводятся ли именованные кортежи в формате Pretty в виде красиво отформатированных объектов JSON.
+
+<div id="output_format_pretty_row_numbers">
+  ## output_format_pretty_row_numbers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "Это удобнее в использовании."}]}]} />
+
+Добавляет номера строк перед каждой строкой в выходном формате Pretty
+
+<div id="output_format_pretty_single_large_number_tip_threshold">
+  ## output_format_pretty_single_large_number_tip_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1000000"},{"label": "Выводить справа от таблицы подсказку с удобочитаемым числом, если блок содержит одно число, превышающее это значение (кроме 0)"}]}]} />
+
+Выводить справа от таблицы подсказку с удобочитаемым числом, если блок содержит одно число, превышающее это значение (кроме 0)
+
+<div id="output_format_pretty_squash_consecutive_ms">
+  ## output_format_pretty_squash_consecutive_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="50" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "50"},{"label": "Добавлена новая настройка"}]}]} />
+
+Ожидает следующий блок в течение указанного числа миллисекунд и перед записью объединяет его с предыдущим.
+Это позволяет избежать слишком частого вывода слишком маленьких блоков, сохраняя при этом возможность потокового отображения данных.
+
+<div id="output_format_pretty_squash_max_wait_ms">
+  ## output_format_pretty_squash_max_wait_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000"},{"label": "Добавлена новая настройка"}]}]} />
+
+Выводить ожидающий блок в форматах Pretty, если с момента предыдущего вывода прошло больше указанного количества миллисекунд.
+
+<div id="output_format_pretty_use_nbsp_for_padding">
+  ## output_format_pretty_use_nbsp_for_padding
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Новая настройка. Если включена, дополнение в выводе `Pretty` отображается с использованием `U+00A0`, чтобы оно сохранялось при копировании и вставке через инструменты, которые сжимают последовательности обычных пробелов."}]}]} />
+
+Если включено, дополнение в выходных форматах `Pretty` отображается с использованием `U+00A0` вместо ASCII-пробела.
+В моноширинном шрифте визуально вывод остается таким же, но дополнение сохраняется при использовании инструментов, которые сжимают или обрезают последовательности обычных пробелов.
+Действует только если `output_format_pretty_grid_charset` имеет значение `UTF-8`.
+
+<div id="output_format_protobuf_nullables_with_google_wrappers">
+  ## output_format_protobuf_nullables_with_google_wrappers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+При сериализации столбцов с типом Nullable с использованием обёрток Google значения по умолчанию сериализуются как пустые обёртки. Если параметр отключён, значения по умолчанию и значения NULL не сериализуются
+
+<div id="output_format_schema">
+  ## output_format_schema
+</div>
+
+Путь к файлу, в который будет сохранена автоматически сгенерированная схема в формате [Cap&#39;n Proto](/ru/reference/formats/CapnProto) или [Protobuf](/ru/reference/formats/Protobuf/Protobuf).
+
+<div id="output_format_sql_insert_include_column_names">
+  ## output_format_sql_insert_include_column_names
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Включать имена столбцов в запрос INSERT
+
+<div id="output_format_sql_insert_max_batch_size">
+  ## output_format_sql_insert_max_batch_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="65409" />
+
+Максимальное количество строк в одном операторе INSERT.
+
+<div id="output_format_sql_insert_quote_names">
+  ## output_format_sql_insert_quote_names
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Заключать имена столбцов в символы &#96;&#96;&#96;
+
+<div id="output_format_sql_insert_table_name">
+  ## output_format_sql_insert_table_name
+</div>
+
+<SettingsInfoBlock type="String" default_value="table" />
+
+Имя таблицы в выходном INSERT-запросе
+
+<div id="output_format_sql_insert_use_replace">
+  ## output_format_sql_insert_use_replace
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Использовать оператор REPLACE вместо INSERT
+
+<div id="output_format_trim_fixed_string">
+  ## output_format_trim_fixed_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Новая настройка для удаления завершающих нулевых байтов из значений FixedString в текстовых форматах вывода"}]}]} />
+
+Удаляет завершающие null-байты из значений FixedString в текстовых форматах вывода. Например, `toFixedString('John', 8)` выводится как `John` вместо `John\0\0\0\0`.
+
+<div id="output_format_tsv_crlf_end_of_line">
+  ## output_format_tsv_crlf_end_of_line
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Если задано значение true, окончание строки в формате TSV будет \r\n вместо \n.
+
+<div id="output_format_values_escape_quote_with_quote">
+  ## output_format_values_escape_quote_with_quote
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Если значение равно true, экранирует ' как '', в противном случае используется \'"}]}]} />
+
+Если значение равно true, экранирует &#39; как &#39;&#39;, в противном случае используется &#92;&#39;
+
+<div id="output_format_write_statistics">
+  ## output_format_write_statistics
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Выводит статистику о количестве прочитанных строк, байтов и затраченном времени в подходящих форматах вывода.
+
+Включено по умолчанию
+
+<div id="precise_float_parsing">
+  ## precise_float_parsing
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Использовать более точный (но более медленный) алгоритм разбора чисел с плавающей запятой
+
+<div id="schema_inference_hints">
+  ## schema_inference_hints
+</div>
+
+Список имён столбцов и типов, используемых в качестве подсказок при определении схемы для форматов без схемы.
+
+Пример:
+
+Запрос:
+
+```sql
+desc format(JSONEachRow, '{"x" : 1, "y" : "String", "z" : "0.0.0.0" }') settings schema_inference_hints='x UInt8, z IPv4';
+```
+
+Результат:
+
+```sql
+x   UInt8
+y   Nullable(String)
+z   IPv4
+```
+
+<Note>
+  Если `schema_inference_hints` отформатирован неправильно или содержит опечатку, неверный тип данных и т. п., то schema&#95;inference&#95;hints будет полностью проигнорирован.
+</Note>
+
+<div id="schema_inference_make_columns_nullable">
+  ## schema_inference_make_columns_nullable
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="3" />
+
+Управляет тем, будут ли типы, определённые при определении схемы, иметь тип `Nullable`.
+Возможные значения:
+
+* 0 - тип, определённый при определении схемы, никогда не будет `Nullable` (используйте input&#95;format&#95;null&#95;as&#95;default, чтобы указать, что делать со значениями NULL в этом случае),
+* 1 - все типы, определённые при определении схемы, будут `Nullable`,
+* 2 or `auto` - тип, определённый при определении схемы, будет `Nullable` только если столбец содержит `NULL` в образце, разбираемом во время определения схемы, или если метаданные файла содержат информацию о допустимости `NULL` для столбца,
+* 3 - допустимость `NULL` для типа, определённого при определении схемы, будет соответствовать метаданным файла, если формат её поддерживает (например, Parquet); в противном случае тип всегда будет `Nullable` (например, CSV).
+
+<div id="schema_inference_make_json_columns_nullable">
+  ## schema_inference_make_json_columns_nullable
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Управляет тем, будут ли автоматически определённые типы JSON делаться `Nullable` при определении схемы.
+Если этот параметр включён вместе с schema&#95;inference&#95;make&#95;columns&#95;nullable, автоматически определённый тип JSON будет `Nullable`.
+
+<div id="schema_inference_mode">
+  ## schema_inference_mode
+</div>
+
+<SettingsInfoBlock type="SchemaInferenceMode" default_value="default" />
+
+Режим определения схемы. &#39;default&#39; — предполагается, что все файлы имеют одинаковую схему и её можно определить по любому файлу; &#39;union&#39; — файлы могут иметь разные схемы, и итоговая схема должна представлять собой объединение схем всех файлов
+
+<div id="show_create_query_identifier_quoting_rule">
+  ## show_create_query_identifier_quoting_rule
+</div>
+
+<SettingsInfoBlock type="IdentifierQuotingRule" default_value="when_necessary" />
+
+Задает правило заключения идентификаторов в кавычки в запросе SHOW CREATE
+
+<div id="show_create_query_identifier_quoting_style">
+  ## show_create_query_identifier_quoting_style
+</div>
+
+<SettingsInfoBlock type="IdentifierQuotingStyle" default_value="Backticks" />
+
+Задает стиль заключения идентификаторов в кавычки в запросе SHOW CREATE
+
+<div id="type_json_allow_duplicated_key_with_literal_and_nested_object">
+  ## type_json_allow_duplicated_key_with_literal_and_nested_object
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Если включено, разрешается разбирать JSON-документы вида `{"a" : 42, "a" : {"b" : 42}}`, где ключ дублируется, но одно из его вхождений является вложенным объектом.
+
+<div id="type_json_skip_duplicated_paths">
+  ## type_json_skip_duplicated_paths
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Если включено, при разборе объекта JSON в тип JSON дублирующиеся пути будут игнорироваться, и вместо исключени будет вставлен только первый
+
+<div id="type_json_skip_invalid_typed_paths">
+  ## type_json_skip_invalid_typed_paths
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Если параметр включен, поля со значениями, которые невозможно привести к объявленному типу в столбцах с типом JSON и типизированными путями, пропускаются вместо генерации ошибки. Пропущенные поля считаются отсутствующими, и для них используются значения по умолчанию/NULL в соответствии с определением типизированного пути.
+
+Этот параметр применяется только к столбцам с типом JSON (например, JSON(a Int64, b String)), где для определённых путей объявлены типы. Он не применяется к обычным JSON input formats, таким как JSONEachRow, при вставке в обычные типизированные столбцы.
+
+Возможные значения:
+
+* 0 — Отключено (ошибка при несоответствии типов).
+* 1 — Включено (поле пропускается при несоответствии типов).
+
+<div id="type_json_use_partial_match_to_skip_paths_by_regexp">
+  ## type_json_use_partial_match_to_skip_paths_by_regexp
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Если включено, то при разборе объекта JSON в тип JSON для пропуска пути регулярным выражениям, указанным с помощью SKIP REGEXP, будет достаточно частичного совпадения. Если отключено, потребуется полное совпадение.
+
+<div id="validate_experimental_and_suspicious_types_inside_nested_types">
+  ## validate_experimental_and_suspicious_types_inside_nested_types
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Проверяет использование экспериментальных и подозрительных типов во вложенных типах, таких как Array/Map/Tuple

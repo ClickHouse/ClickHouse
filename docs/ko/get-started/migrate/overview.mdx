@@ -1,0 +1,32 @@
+---
+sidebarTitle: '개요'
+slug: /integrations/migration/overview
+keywords: ['clickhouse', 'migrate', 'migration', 'migrating', 'data']
+title: 'ClickHouse로 데이터 마이그레이션'
+description: 'ClickHouse로 데이터를 마이그레이션할 때 사용할 수 있는 옵션을 설명하는 페이지'
+doc_type: 'guide'
+---
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="https://player.vimeo.com/video/753082620?h=eb566c8c08"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<br />
+
+현재 데이터가 저장된 위치에 따라 ClickHouse Cloud로 데이터를 마이그레이션하는 방법에는 여러 가지가 있습니다:
+
+* [자가 관리형에서 Cloud로](/ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud): `remoteSecure` 함수를 사용해 데이터를 이전합니다
+* [다른 DBMS](/ko/get-started/migrate/other-methods/clickhouse-local-etl): 현재 사용 중인 DBMS에 맞는 ClickHouse 테이블 함수와 함께 [clickhouse-local] ETL 도구를 사용합니다
+* [어디서든!](/ko/get-started/migrate/other-methods/etl-tool-to-clickhouse): 다양한 데이터 소스에 연결할 수 있는 여러 인기 ETL/ELT 도구 중 하나를 사용합니다
+* [객체 스토리지](/ko/get-started/migrate/other-methods/object-storage-to-clickhouse): S3의 데이터를 ClickHouse로 쉽게 삽입합니다
+
+[Redshift에서 마이그레이션](/ko/get-started/migrate/redshift/migration-guide) 예시에서는 ClickHouse로 데이터를 마이그레이션하는 세 가지 방법을 소개합니다.

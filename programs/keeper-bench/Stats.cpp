@@ -1,6 +1,7 @@
 #include <Stats.h>
-#include <iostream>
 
+#include <base/defines.h>
+#include <iostream>
 #include <rapidjson/document.h>
 #include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
@@ -72,7 +73,7 @@ void Stats::clear()
 
 std::pair<double, double> Stats::StatsCollector::getThroughput(double elapsed_seconds) const
 {
-    assert(requests != 0);
+    chassert(requests != 0);
     return {static_cast<double>(requests) / elapsed_seconds, static_cast<double>(requests_bytes) / elapsed_seconds};
 }
 

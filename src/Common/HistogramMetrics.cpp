@@ -73,6 +73,21 @@ namespace HistogramMetrics
         "Bytes read per S3 read request connection.",
         {4096, 65536, 262144, 1048576, 4194304, 8388608, 16777216, 33554432, 67108864, 268435456});
 
+    MetricFamily & HTTPPoolTCPBufBytes = Factory::instance().registerMetric(
+        "http_pool_tcp_buf_bytes",
+        "Kernel TCP buffer memory (sk_rmem_alloc / sk_wmem_alloc) of HTTP connection pool sockets, "
+        "observed once per live socket each time asynchronous metrics are scraped. "
+        "Labels: `group` is one of `disk`, `storage`, `http`; `direction` is `rcv` or `snd`.",
+        {4096, 131072, 262144, 524288, 1048576, 2097152, 4194304, 6291456},
+        {"group", "direction"}
+    );
+    Metric & HTTPPoolTCPBufBytesDiskRcv    = HTTPPoolTCPBufBytes.withLabels({"disk", "rcv"});
+    Metric & HTTPPoolTCPBufBytesDiskSnd    = HTTPPoolTCPBufBytes.withLabels({"disk", "snd"});
+    Metric & HTTPPoolTCPBufBytesStorageRcv = HTTPPoolTCPBufBytes.withLabels({"storage", "rcv"});
+    Metric & HTTPPoolTCPBufBytesStorageSnd = HTTPPoolTCPBufBytes.withLabels({"storage", "snd"});
+    Metric & HTTPPoolTCPBufBytesHTTPRcv    = HTTPPoolTCPBufBytes.withLabels({"http", "rcv"});
+    Metric & HTTPPoolTCPBufBytesHTTPSnd    = HTTPPoolTCPBufBytes.withLabels({"http", "snd"});
+
     MetricFamily & KeeperResponseTime = Factory::instance().registerMetric(
         "keeper_response_time_ms",
         "The response time of Keeper, in milliseconds",

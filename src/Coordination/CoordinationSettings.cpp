@@ -25,13 +25,15 @@ namespace ErrorCodes
     DECLARE(Milliseconds, session_timeout_ms, Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS, "Max client session timeout", 0) \
     DECLARE(Milliseconds, operation_timeout_ms, Coordination::DEFAULT_OPERATION_TIMEOUT_MS, "Default client operation timeout", 0) \
     DECLARE(Milliseconds, dead_session_check_period_ms, 500, "How often leader will check sessions to consider them dead and remove", 0) \
+    DECLARE(Milliseconds, ttl_gc_period_ms, 250, "How often leader scans TTL nodes and enqueues TryRemove for expired nodes", 0) \
+    DECLARE(NonZeroUInt64, ttl_gc_batch_size, 256, "The size of the batch of nodes to be removed by the garbage collector", 0) \
     DECLARE(Milliseconds, heart_beat_interval_ms, 500, "Heartbeat interval between quorum nodes", 0) \
     DECLARE(Milliseconds, election_timeout_lower_bound_ms, 1000, "Lower bound of election timer (avoid too often leader elections)", 0) \
     DECLARE(Milliseconds, election_timeout_upper_bound_ms, 2000, "Upper bound of election timer (avoid too often leader elections)", 0) \
     DECLARE(Milliseconds, leadership_expiry_ms, 0, "Duration after which a leader will expire if it fails to receive responses from peers. Set it lower or equal to election_timeout_lower_bound_ms to avoid multiple leaders.", 0) \
     DECLARE(UInt64, reserved_log_items, 100000, "How many log items to store (don't remove during compaction)", 0) \
     DECLARE(UInt64, snapshot_distance, 100000, "How many log items we have to collect to write new snapshot", 0) \
-    DECLARE(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader", 0) \
+    DECLARE(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader. Has no effect if use_new_dispatcher = true as the new dispatcher has its own forwarding that's always enabled.", 0) \
     DECLARE(Milliseconds, shutdown_timeout, 5000, "How much time we will wait until RAFT shutdown", 0) \
     DECLARE(Milliseconds, session_shutdown_timeout, 10000, "How much time we will wait until sessions are closed during shutdown", 0) \
     DECLARE(Milliseconds, startup_timeout, 180000, "How much time we will wait until RAFT to start.", 0) \
@@ -65,8 +67,6 @@ namespace ErrorCodes
     DECLARE(UInt64, raft_limits_reconnect_limit, 50, "If connection to a peer is silent longer than this limit * (multiplied by heartbeat interval), we re-establish the connection.", 0) \
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
     DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
-    DECLARE(Bool, experimental_use_rocksdb, false, "Use rocksdb as backend storage", 0) \
-    DECLARE(UInt64, rocksdb_load_batch_size, 1000, "Size of write batch used during snapshot loading", 0) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Maximum total size of in-memory cache of log entries needed next for commit.", 0) \
@@ -79,19 +79,33 @@ namespace ErrorCodes
     DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
-    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 6 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
+    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 8 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
-    DECLARE(Bool, nuraft_streaming_mode, false, "Enable NuRaft streaming mode, which allows multiple in-flight AppendEntries requests to followers instead of strict one-by-one pipeline. Reduces RTT bottleneck under heavy write loads. Beneficial in high-latency environments (e.g. cross-zone Kubernetes).", 0) \
-    DECLARE(UInt64, nuraft_max_log_gap_in_stream, 64, "Maximum number of in-flight log entries per follower when streaming mode is enabled. Acts as a throttling cap. Only effective when nuraft_streaming_mode is true.", 0) \
+    DECLARE(Bool, use_new_dispatcher, true, "Use new request dispatcher implementation (KeeperRequestDispatcher)", 0) \
+    DECLARE(UInt64, max_in_flight_request_batches, 20, "Maximum number of request batches in flight in the new dispatcher pipeline", 0) \
+    DECLARE(UInt64, max_request_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes in the request queue before blocking new requests", 0) \
+    DECLARE(UInt64, max_response_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes across all response queues; the dispatch thread throttles at half this limit", 0) \
+    DECLARE(Bool, optimize_read_order, true, "Reorder read requests within a batch to group them together for parallel execution, without changing ordering guarantees within each session", 0) \
+    DECLARE(UInt64, dispatch_busy_wait_sleep_us, 100, "Dispatch and response threads periodically poll to check for work to do, sleeping between checks if idle (as opposed to waiting on something like a futex). The sleep duration is dispatch_busy_wait_sleep_us if there was recent activity, gradually backing off to dispatch_busy_wait_long_sleep_us when idle. Reducing these settings reduces request latency by about the same amount but increases cpu usage when the server is idle.", 0) \
+    DECLARE(UInt64, dispatch_busy_wait_long_sleep_us, 10000, "See dispatch_busy_wait_sleep_us", 0) \
+    DECLARE(Milliseconds, stream_suspect_retry_delay_ms, 1000, "Delay before reconnecting to the leader after a stream breaks while the new stream is suspected to be unhealthy", 0) \
+    DECLARE(Milliseconds, stream_in_flight_drain_timeout_ms, 5000, "Maximum time to wait for in-flight requests to drain after a stream break (e.g. leader change) before dropping them", 0) \
+    DECLARE(Bool, nuraft_use_bg_thread_for_snapshot_io, false, "Use a background thread for NuRaft snapshot IO instead of reading snapshot objects synchronously from Raft worker threads.", 0) \
+    DECLARE(Bool, nuraft_streaming_mode, true, "Enable NuRaft streaming mode, which allows multiple in-flight AppendEntries requests to followers instead of strict one-by-one pipeline. Increases write throughput, especially in high-latency environments (e.g. cross-zone Kubernetes).", 0) \
+    DECLARE(UInt64, nuraft_max_log_gap_in_stream, 0, "Maximum number of in-flight log entries per follower when streaming mode is enabled. Acts as a throttling cap. Only effective when nuraft_streaming_mode is true.", 0) \
+    DECLARE(UInt64, commit_profiler_real_time_period_ns, 0, "Period for real clock timer of the query profiler on the Keeper commit thread (in nanoseconds). The profiling results appear in system.trace_log with query_id = 'KeeperCommit'. 0 means disabled.", 0) \
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
+    DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
+    DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
 
-DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
+DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
 
 struct CoordinationSettingsImpl : public BaseSettings<CoordinationSettingsTraits>
 {
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };
+
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, CoordinationSettings, CoordinationSetting)
 
 void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
@@ -115,19 +129,9 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
 
     /// for backwards compatibility we set max_requests_append_size to max_requests_batch_size
     /// if max_requests_append_size was not changed
-    if (!max_requests_append_size.changed)
-        max_requests_append_size = max_requests_batch_size;
+    if (!(*this)[CoordinationSetting::max_requests_append_size].changed)
+        (*this)[CoordinationSetting::max_requests_append_size] = (*this)[CoordinationSetting::max_requests_batch_size];
 }
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    CoordinationSettings##TYPE NAME = &CoordinationSettingsImpl ::NAME;
-
-namespace CoordinationSetting
-{
-LIST_OF_COORDINATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
 
 CoordinationSettings::CoordinationSettings() : impl(std::make_unique<CoordinationSettingsImpl>())
 {

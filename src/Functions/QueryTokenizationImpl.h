@@ -53,7 +53,7 @@ struct QueryTokenizationSettings
 ///                          size_t & total,
 ///                          const QueryTokenizationSettings & settings);
 template <typename Impl>
-class FunctionQueryTokenization : public IFunction
+class FunctionQueryTokenization final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

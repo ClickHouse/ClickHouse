@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
-#include <cassert>
 
 namespace DB
 {
@@ -36,9 +35,9 @@ void ReplicatedMergeTreeAltersSequence::addMetadataAlter(
 void ReplicatedMergeTreeAltersSequence::finishMetadataAlter(int alter_version, std::unique_lock<SharedMutex> & /*state_lock*/)
 {
     /// Sequence must not be empty
-    assert(!queue_state.empty());
+    chassert(!queue_state.empty());
     /// Alters have to be finished in order
-    assert(queue_state.begin()->first == alter_version);
+    chassert(queue_state.begin()->first == alter_version);
 
     /// If metadata stage finished (or was never added) than we can remove this alter
     if (queue_state[alter_version].data_finished)
@@ -57,7 +56,7 @@ void ReplicatedMergeTreeAltersSequence::finishDataAlter(int alter_version, std::
     if (alter_version >= queue_state.begin()->first)
     {
         /// All alter versions bigger than head must present in queue.
-        assert(queue_state.contains(alter_version));
+        chassert(queue_state.contains(alter_version));
 
         if (queue_state[alter_version].metadata_finished)
             queue_state.erase(alter_version);
@@ -82,7 +81,7 @@ bool ReplicatedMergeTreeAltersSequence::canExecuteDataAlter(int alter_version, s
 
 bool ReplicatedMergeTreeAltersSequence::canExecuteMetaAlter(int alter_version, std::unique_lock<SharedMutex> & /*state_lock*/) const
 {
-    assert(!queue_state.empty());
+    chassert(!queue_state.empty());
 
     /// We can execute only alters of metadata which are in head.
     return queue_state.begin()->first == alter_version;

@@ -1,0 +1,147 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/oss
+title: 'Premiers pas avec ClickStack Open Source'
+sidebarTitle: 'Open source'
+description: 'Premiers pas avec ClickStack Open Source'
+doc_type: 'guide'
+keywords: ['ClickStack Open Source', 'premiers pas', 'déploiement Docker', 'HyperDX UI', 'déploiement local']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Pour déployer **ClickStack Open Source**, dans lequel vous exécutez et administrez vous-même ClickHouse et la ClickStack UI, nous fournissons des images Docker préconstruites qui regroupent l’UI, un OTel collector et ClickHouse dans un seul conteneur, ce qui facilite la prise en main pour le développement local, les tests et les déploiements autogérés.
+
+<Tip>
+  Une version managée de ClickStack est également disponible — voir [Managed ClickStack](/fr/clickstack/getting-started/managed).
+</Tip>
+
+Ces images sont basées sur le paquet Debian officiel de ClickHouse et sont disponibles dans plusieurs distributions pour répondre à différents cas d’usage.
+
+L’option la plus simple est une **distribution à image unique** qui inclut tous les composants principaux de la stack dans une seule image :
+
+* **HyperDX UI**
+* **OpenTelemetry (OTel) collector**
+* **ClickHouse**
+
+Cette image tout-en-un vous permet de lancer l’intégralité de la stack avec une seule commande, ce qui la rend idéale pour les tests, l’expérimentation ou les déploiements locaux rapides.
+
+<Steps>
+  <Step>
+    ## Déployer la stack avec Docker
+
+    La commande suivante lance un OTel collector (sur les ports 4317 et 4318), la HyperDX UI (sur le port 8080) et ClickHouse (8123).
+
+    ```shell
+    docker run --name clickstack -p 8123:8123 -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest clickstack
+    ```
+
+    <Info>
+      **Mise à jour du nom de l’image**
+
+      Les images ClickStack sont désormais publiées sous `clickhouse/clickstack-*` (auparavant `docker.hyperdx.io/hyperdx/*`).
+    </Info>
+
+    <Tip>
+      **Persistance des données et des paramètres**
+
+      Pour conserver les données et les paramètres entre les redémarrages du conteneur, vous pouvez modifier la commande Docker ci-dessus afin de monter les chemins `/data/db`, `/var/lib/clickhouse` et `/var/log/clickhouse-server`.
+
+      Par exemple :
+
+      ```shell
+      # modifier la commande pour monter les chemins
+      docker run \
+        --name clickstack \
+        -p 8123:8123 \
+        -p 8080:8080 \
+        -p 4317:4317 \
+        -p 4318:4318 \
+        -v "$(pwd)/.volumes/db:/data/db" \
+        -v "$(pwd)/.volumes/ch_data:/var/lib/clickhouse" \
+        -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
+        clickhouse/clickstack-all-in-one:latest
+      ```
+    </Tip>
+  </Step>
+
+  <Step>
+    ## Accéder à la ClickStack UI
+
+    Rendez-vous sur [http://localhost:8080](http://localhost:8080) pour accéder à la ClickStack UI (HyperDX).
+
+    Créez un utilisateur en renseignant un nom d’utilisateur et un mot de passe conformes aux exigences de complexité.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    HyperDX se connectera automatiquement au cluster local et créera des sources de données pour les logs, les traces, les métriques et les sessions, afin que vous puissiez explorer le produit immédiatement.
+  </Step>
+
+  <Step>
+    ## Explorer le produit
+
+    Une fois la stack déployée, essayez l’un de nos jeux de données d’exemple.
+
+    Pour continuer à utiliser le cluster local :
+
+    * [Jeu de données d’exemple](/fr/clickstack/example-datasets/sample-data) - Chargez un jeu de données d’exemple depuis notre démo publique. Diagnostiquez un problème simple.
+    * [Fichiers locaux et métriques](/fr/clickstack/example-datasets/local-data) - Chargez des fichiers locaux et surveillez le système sur OSX ou Linux à l’aide d’un OTel collector local.
+
+    <br />
+
+    Vous pouvez également vous connecter à un cluster de démonstration pour explorer un jeu de données plus volumineux :
+
+    * [Jeu de données de démonstration distant](/fr/clickstack/example-datasets/remote-demo-data) - Explorez un jeu de données de démonstration dans notre service ClickHouse de démonstration.
+  </Step>
+</Steps>
+
+<div id="alternative-deployment-models">
+  ## Modèles de déploiement alternatifs
+</div>
+
+<div id="local-mode">
+  ### Mode local
+</div>
+
+Le mode local permet de déployer HyperDX sans avoir à s&#39;authentifier.
+
+**L&#39;authentification n&#39;est pas prise en charge**.
+
+Ce mode est destiné aux tests rapides, au développement, aux démonstrations et aux cas d&#39;usage de débogage pour lesquels l&#39;authentification et la persistance de la configuration ne sont pas nécessaires.
+
+Pour plus de détails sur ce mode de déploiement, consultez [&quot;Mode local uniquement&quot;](/fr/clickstack/deployment/local-mode-only).
+
+<div id="hosted-version">
+  ### Version hébergée
+</div>
+
+Vous pouvez utiliser une version hébergée de ClickStack en mode local, accessible sur [play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com).
+
+<div id="self-hosted-version">
+  ### Version auto-hébergée
+</div>
+
+<Steps>
+  <Step>
+    ### Exécuter avec Docker
+
+    L’image du mode local auto-hébergé inclut également un collecteur OpenTelemetry, la ClickStack UI et un serveur ClickHouse préconfigurés. Vous pouvez ainsi ingérer facilement les données de télémétrie de vos applications et les visualiser avec un minimum de configuration externe. Pour commencer avec la version auto-hébergée, exécutez simplement le conteneur Docker en redirigeant les ports appropriés :
+
+    ```shell
+    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    ```
+
+    Contrairement à l’image &quot;All in one&quot;, vous ne serez pas invité à créer un utilisateur, car **le mode local n’inclut pas d’authentification**.
+  </Step>
+
+  <Step>
+    ### Renseigner les identifiants de connexion
+
+    Pour vous connecter à votre propre **cluster ClickHouse externe**, vous pouvez saisir manuellement vos identifiants de connexion.
+
+    Vous pouvez également, pour découvrir rapidement le produit, cliquer sur **Se connecter au serveur de démonstration** afin d’accéder à des jeux de données préchargés et d’essayer ClickStack sans configuration.
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Identifiants" size="md" />
+
+    Si vous vous connectez au serveur de démonstration, vous pouvez explorer le jeu de données en suivant les [instructions du jeu de données de démonstration](/fr/clickstack/example-datasets/remote-demo-data).
+  </Step>
+</Steps>

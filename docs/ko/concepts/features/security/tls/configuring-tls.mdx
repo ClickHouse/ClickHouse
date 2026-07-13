@@ -1,0 +1,686 @@
+---
+slug: /guides/sre/tls/configuring-tls
+sidebarTitle: 'TLS 구성'
+title: 'TLS 구성'
+description: '이 가이드는 OpenSSL 인증서를 사용해 연결을 검증하도록 ClickHouse를 구성하는 간단한 최소 설정을 제공합니다.'
+keywords: ['SSL 구성', 'TLS 설정', 'OpenSSL 인증서', '보안 연결', 'SRE 가이드']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ko/_self_managed_only_automated.mdx';
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<SelfManaged />
+
+이 가이드는 OpenSSL 인증서를 사용해 연결을 검증하도록 ClickHouse를 구성하는 간단하고 최소한의 설정을 제공합니다. 이 데모에서는 적절한 설정으로 연결할 수 있도록 자체 서명된 인증 기관(CA) 인증서와 키를 생성하고, 노드 인증서도 함께 생성합니다.
+
+<Note>
+  TLS 구현은 복잡하며, 완전히 안전하고 견고한 배포를 위해 고려해야 할 옵션이 많습니다. 이 문서는 기본 TLS 구성 예시를 다루는 기초 튜토리얼입니다. 조직 환경에 맞는 올바른 인증서를 생성하려면 PKI/보안 팀과 상의하십시오.
+
+  입문용 개요는 [인증서 사용에 관한 기본 튜토리얼](https://ubuntu.com/server/docs/security-certificates)을 참조하십시오.
+</Note>
+
+<Steps>
+  <Step>
+    ## ClickHouse 배포 생성
+
+    이 가이드는 Ubuntu 20.04 환경에서 DEB 패키지(apt 사용)를 사용해 다음 호스트에 ClickHouse를 설치한 기준으로 작성되었습니다. 도메인은 `marsnet.local`입니다:
+
+    | 호스트       | IP 주소         |
+    | --------- | ------------- |
+    | `chnode1` | 192.168.1.221 |
+    | `chnode2` | 192.168.1.222 |
+    | `chnode3` | 192.168.1.223 |
+
+    <Note>
+      ClickHouse 설치 방법에 대한 자세한 내용은 [Quick Start](/ko/get-started/setup/install)를 참조하세요.
+    </Note>
+  </Step>
+
+  <Step>
+    ## TLS 인증서 생성
+
+    <Note>
+      자체 서명 인증서는 데모 용도로만 사용해야 하며 운영(production) 환경에서는 사용해서는 안 됩니다. 인증서 요청은 조직에서 서명할 수 있도록 생성해야 하며, 설정에서 구성할 CA 체인을 사용해 검증해야 합니다. 다만 아래 단계는 설정을 구성하고 테스트하는 데 사용할 수 있으며, 이후 실제로 사용할 인증서로 대체할 수 있습니다.
+    </Note>
+
+    1. 새 CA에 사용할 키를 생성합니다:
+       ```bash
+       openssl genrsa -out marsnet_ca.key 2048
+       ```
+
+    2. 새 자체 서명 CA 인증서를 생성합니다. 다음 명령은 CA 키를 사용해 다른 인증서에 서명할 때 사용할 새 인증서를 생성합니다:
+       ```bash
+       openssl req -x509 -subj "/CN=marsnet.local CA" -nodes -key marsnet_ca.key -days 1095 -out marsnet_ca.crt
+       ```
+
+    <Note>
+      키와 CA 인증서는 클러스터 외부의 안전한 위치에 백업하십시오. 노드 인증서를 생성한 후에는 클러스터 노드에서 해당 키를 삭제해야 합니다.
+    </Note>
+
+    3. 새 CA 인증서의 내용을 확인합니다:
+       ```bash
+       openssl x509 -in marsnet_ca.crt -text
+       ```
+
+    4. 각 노드에 대해 인증서 요청(CSR)을 생성하고 키를 만듭니다:
+       ```bash
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode1" -addext "subjectAltName = DNS:chnode1.marsnet.local,IP:192.168.1.221" -keyout chnode1.key -out chnode1.csr
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode2" -addext "subjectAltName = DNS:chnode2.marsnet.local,IP:192.168.1.222" -keyout chnode2.key -out chnode2.csr
+       openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode3" -addext "subjectAltName = DNS:chnode3.marsnet.local,IP:192.168.1.223" -keyout chnode3.key -out chnode3.csr
+       ```
+
+    5. CSR과 CA를 사용해 새 인증서 및 키 쌍을 생성합니다:
+       ```bash
+       openssl x509 -req -in chnode1.csr -out chnode1.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       openssl x509 -req -in chnode2.csr -out chnode2.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       openssl x509 -req -in chnode3.csr -out chnode3.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365 -copy_extensions copy
+       ```
+
+    6. subject와 issuer를 기준으로 인증서를 확인합니다:
+       ```bash
+       openssl x509 -in chnode1.crt -text -noout
+       ```
+
+    7. 새 인증서가 CA 인증서를 기준으로 검증되는지 확인합니다:
+       ```bash
+       openssl verify -CAfile marsnet_ca.crt chnode1.crt
+       chnode1.crt: OK
+       ```
+  </Step>
+
+  <Step>
+    ## 인증서와 키를 저장할 디렉터리를 생성하고 구성합니다.
+
+    <Note>
+      이 작업은 각 노드에서 수행해야 합니다. 각 호스트에는 해당 호스트에 맞는 인증서와 키를 사용하십시오.
+    </Note>
+
+    1. 각 노드에서 ClickHouse가 접근할 수 있는 디렉터리에 폴더를 생성합니다. 기본 구성 디렉터리(예: `/etc/clickhouse-server`)를 사용하는 것을 권장합니다.
+       ```bash
+       mkdir /etc/clickhouse-server/certs
+       ```
+
+    2. CA 인증서, 노드 인증서, 그리고 각 노드에 해당하는 키를 새 `certs` 디렉터리로 복사합니다.
+
+    3. ClickHouse가 인증서를 읽을 수 있도록 소유자와 권한을 변경합니다.
+
+       ```bash
+       chown clickhouse:clickhouse -R /etc/clickhouse-server/certs
+       chmod 600 /etc/clickhouse-server/certs/*
+       chmod 755 /etc/clickhouse-server/certs
+       ll /etc/clickhouse-server/certs
+       ```
+
+       ```response
+       total 20
+       drw-r--r-- 2 clickhouse clickhouse 4096 Apr 12 20:23 ./
+       drwx------ 5 clickhouse clickhouse 4096 Apr 12 20:23 ../
+       -rw------- 1 clickhouse clickhouse  997 Apr 12 20:22 chnode1.crt
+       -rw------- 1 clickhouse clickhouse 1708 Apr 12 20:22 chnode1.key
+       -rw------- 1 clickhouse clickhouse 1131 Apr 12 20:23 marsnet_ca.crt
+       ```
+  </Step>
+
+  <Step>
+    ## ClickHouse Keeper를 사용한 기본 클러스터 환경 구성
+
+    이 배포 환경에서는 각 노드에 다음 ClickHouse Keeper 설정이 사용됩니다. 각 서버는 고유한 `<server_id>`를 가집니다. (예시: `chnode1` 노드의 경우 `<server_id>1</server_id>`, 나머지 노드도 동일합니다.)
+
+    <Note>
+      ClickHouse Keeper의 권장 포트는 `9281`입니다. 하지만 포트는 구성 가능하며, 환경에서 이 포트를 이미 다른 애플리케이션이 사용 중인 경우 다른 포트로 설정할 수 있습니다.
+
+      모든 옵션에 대한 자세한 설명은 https://clickhouse.com/docs/operations/clickhouse-keeper/ 를 참조하십시오.
+    </Note>
+
+    1. ClickHouse 서버 `config.xml`의 `<clickhouse>` 태그 내부에 다음 내용을 추가하세요
+
+    <Note>
+      프로덕션 환경에서는 `config.d` 디렉터리에 별도의 `.xml` 구성 파일을 사용하는 것을 권장합니다.
+      자세한 내용은 https://clickhouse.com/docs/operations/configuration-files/를 참조하십시오.
+    </Note>
+
+    ```xml
+    <keeper_server>
+        <tcp_port_secure>9281</tcp_port_secure>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+        </coordination_settings>
+
+        <raft_configuration>
+            <secure>true</secure>
+            <server>
+                <id>1</id>
+                <hostname>chnode1.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>chnode2.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>chnode3.marsnet.local</hostname>
+                <port>9444</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+    ```
+
+    <Note>
+      ClickHouse Keeper가 ClickHouse 서버에 내장된 경우(위에 표시된 대로), Keeper는 [ClickHouse 노드에서 TLS 인터페이스 구성](#5-configure-tls-interfaces-on-clickhouse-nodes)의 OpenSSL 섹션에 정의된 서버의 OpenSSL 구성을 사용합니다. ClickHouse Keeper를 독립형 프로세스로 실행하는 경우에는 동일한 CA 인증서와 노드 인증서/키 설정을 사용하도록 Keeper 설정 파일에 `<openSSL>` 섹션을 추가해야 합니다. 자세한 내용은 아래의 [독립형 ClickHouse Keeper용 OpenSSL 구성](#configure-openssl-for-standalone-clickhouse-keeper)을 참조하십시오.
+    </Note>
+
+    2. 모든 노드에서 Keeper 설정의 주석 처리를 해제하고 값을 수정한 뒤 `<secure>` 플래그를 1로 설정하세요:
+       ```xml
+       <zookeeper>
+           <node>
+               <host>chnode1.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+           <node>
+               <host>chnode2.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+           <node>
+               <host>chnode3.marsnet.local</host>
+               <port>9281</port>
+               <secure>1</secure>
+           </node>
+       </zookeeper>
+       ```
+
+    3. 다음 클러스터 설정을 `chnode1` 및 `chnode2`에 추가하고 업데이트하십시오. `chnode3`은 ClickHouse Keeper 쿼럼에 사용됩니다.
+
+    <Note>
+      이 구성에서는 예시 클러스터 1개만 설정됩니다. 테스트용 예시 클러스터는 제거하거나 주석 처리해야 합니다. 또는 테스트 중인 기존 클러스터가 있다면 포트를 업데이트하고 `<secure>` 옵션을 추가해야 합니다. 설치 시 또는 `users.xml` 파일에서 `default` 사용자가 처음부터 비밀번호를 사용하도록 구성된 경우에는 `<user` 및 `<password>`를 설정해야 합니다.
+    </Note>
+
+    다음은 두 서버에 세그먼트 레플리카가 하나씩 있는 클러스터를 생성합니다(각 노드에 하나씩).
+
+    ```xml
+    <remote_servers>
+        <cluster_1S_2R>
+            <shard>
+                <replica>
+                    <host>chnode1.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+                <replica>
+                    <host>chnode2.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </cluster_1S_2R>
+    </remote_servers>
+    ```
+
+    4. 테스트용 ReplicatedMergeTree 테이블을 생성할 수 있게 매크로 값을 정의합니다. `chnode1`에서:
+
+       ```xml
+       <macros>
+           <shard>1</shard>
+           <replica>replica_1</replica>
+       </macros>
+       ```
+
+       `chnode2`에서:
+
+       ```xml
+       <macros>
+           <shard>1</shard>
+           <replica>replica_2</replica>
+       </macros>
+       ```
+  </Step>
+
+  <Step>
+    ## ClickHouse 노드에서 TLS 인터페이스 구성
+
+    아래 설정은 ClickHouse 서버의 `config.xml`에서 구성합니다.
+
+    1. 배포의 표시 이름을 설정합니다(선택 사항):
+       ```xml
+       <display_name>clickhouse</display_name>
+       ```
+
+    2. ClickHouse가 외부 포트에서 수신하도록 설정합니다:
+       ```xml
+       <listen_host>0.0.0.0</listen_host>
+       ```
+
+    3. 각 노드에서 `https` 포트를 구성하고 `http` 포트를 비활성화합니다:
+       ```xml
+       <https_port>8443</https_port>
+       {/*<http_port>8123</http_port>*/}
+       ```
+
+    4. 각 노드에서 ClickHouse 네이티브 보안 TCP 포트를 구성하고 기본 비보안 포트를 비활성화합니다:
+       ```xml
+       <tcp_port_secure>9440</tcp_port_secure>
+       {/*<tcp_port>9000</tcp_port>*/}
+       ```
+
+    5. 각 노드에서 `interserver https` 포트를 구성하고 기본 비보안 포트를 비활성화합니다:
+       ```xml
+       <interserver_https_port>9010</interserver_https_port>
+       {/*<interserver_http_port>9009</interserver_http_port>*/}
+       ```
+
+    6. 인증서와 경로를 사용하도록 OpenSSL을 구성합니다
+
+    <Note>
+      각 파일 이름과 경로는 설정을 적용하는 노드에 맞게 업데이트해야 합니다.
+      예를 들어, `chnode2` 호스트에서 구성할 때는 `<certificateFile>` 항목을 `chnode2.crt`로 업데이트합니다.
+    </Note>
+
+    ```xml
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/certs/chnode1.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/certs/chnode1.key</privateKeyFile>
+            <verificationMode>relaxed</verificationMode>
+            <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <verificationMode>relaxed</verificationMode>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+    ```
+
+    자세한 내용은 [이 페이지](/ko/reference/settings/server-settings/settings#openssl)를 참조하십시오.
+
+    7. 모든 노드에서 gRPC에 TLS를 구성합니다:
+
+       ```xml
+       <grpc>
+           <enable_ssl>1</enable_ssl>
+           <ssl_cert_file>/etc/clickhouse-server/certs/chnode1.crt</ssl_cert_file>
+           <ssl_key_file>/etc/clickhouse-server/certs/chnode1.key</ssl_key_file>
+           <ssl_require_client_auth>true</ssl_require_client_auth>
+           <ssl_ca_cert_file>/etc/clickhouse-server/certs/marsnet_ca.crt</ssl_ca_cert_file>
+           <transport_compression_type>none</transport_compression_type>
+           <transport_compression_level>0</transport_compression_level>
+           <max_send_message_size>-1</max_send_message_size>
+           <max_receive_message_size>-1</max_receive_message_size>
+           <verbose_logs>false</verbose_logs>
+       </grpc>
+       ```
+
+       자세한 내용은 https://clickhouse.com/docs/interfaces/grpc/ 를 참조하십시오.
+
+    8. 최소 하나의 노드에서 ClickHouse client가 연결에 TLS를 사용하도록 해당 노드의 `config.xml` 파일(기본 경로: `/etc/clickhouse-client/`)에서 구성합니다:
+       ```xml
+       <openSSL>
+           <client>
+               <loadDefaultCAFile>false</loadDefaultCAFile>
+               <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+               <cacheSessions>true</cacheSessions>
+               <disableProtocols>sslv2,sslv3</disableProtocols>
+               <preferServerCiphers>true</preferServerCiphers>
+               <invalidCertificateHandler>
+                   <name>RejectCertificateHandler</name>
+               </invalidCertificateHandler>
+           </client>
+       </openSSL>
+       ```
+
+    9. MySQL 및 PostgreSQL의 기본 에뮬레이션 포트를 비활성화합니다:
+       ```xml
+       {/*mysql_port>9004</mysql_port*/}
+       {/*postgresql_port>9005</postgresql_port*/}
+       ```
+  </Step>
+
+  <Step>
+    ## 테스트
+
+    1. 모든 노드를 하나씩 시작하십시오:
+       ```bash
+       service clickhouse-server start
+       ```
+
+    2. 보안 포트가 열려 있고 수신 대기 상태인지 확인하십시오. 각 노드에서 다음 예시와 비슷하게 표시되어야 합니다:
+
+       ```bash
+       root@chnode1:/etc/clickhouse-server# netstat -ano | grep tcp
+       ```
+
+       ```response
+       tcp        0      0 0.0.0.0:9010            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:8443            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:9440            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 0.0.0.0:9281            0.0.0.0:*               LISTEN      off (0.00/0/0)
+       tcp        0      0 192.168.1.221:33046     192.168.1.222:9444      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:42730     192.168.1.223:9444      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:51952     192.168.1.222:9281      ESTABLISHED off (0.00/0/0)
+       tcp        0      0 192.168.1.221:22        192.168.1.210:49801     ESTABLISHED keepalive (6618.05/0/0)
+       tcp        0     64 192.168.1.221:22        192.168.1.210:59195     ESTABLISHED on (0.24/0/0)
+       tcp6       0      0 :::22                   :::*                    LISTEN      off (0.00/0/0)
+       tcp6       0      0 :::9444                 :::*                    LISTEN      off (0.00/0/0)
+       tcp6       0      0 192.168.1.221:9444      192.168.1.222:59046     ESTABLISHED off (0.00/0/0)
+       tcp6       0      0 192.168.1.221:9444      192.168.1.223:41976     ESTABLISHED off (0.00/0/0)
+       ```
+
+       | ClickHouse 포트 | 설명                        |
+       | ------------- | ------------------------- |
+       | 8443          | HTTPS 인터페이스               |
+       | 9010          | 서버 간 HTTPS 포트             |
+       | 9281          | ClickHouse Keeper 보안 포트   |
+       | 9440          | 보안 네이티브 TCP 프로토콜          |
+       | 9444          | ClickHouse Keeper Raft 포트 |
+
+    3. ClickHouse Keeper 상태 확인
+       일반적인 [4 letter word (4lW)](/ko/guides/oss/deployment-and-scaling/keeper/index#four-letter-word-commands) 명령은 TLS 없이 `echo`로는 작동하지 않습니다. 아래는 `openssl`을 사용해 해당 명령을 실행하는 방법입니다.
+       * `openssl`을 실행해 대화형 세션을 시작합니다
+
+    ```bash
+    openssl s_client -connect chnode1.marsnet.local:9281
+    ```
+
+    ```response
+    CONNECTED(00000003)
+    depth=0 CN = chnode1
+    verify error:num=20:unable to get local issuer certificate
+    verify return:1
+    depth=0 CN = chnode1
+    verify error:num=21:unable to verify the first certificate
+    verify return:1
+    ---
+    Certificate chain
+     0 s:CN = chnode1
+       i:CN = marsnet.local CA
+    ---
+    Server certificate
+    -----BEGIN CERTIFICATE-----
+    MIICtDCCAZwCFD321grxU3G5pf6hjitf2u7vkusYMA0GCSqGSIb3DQEBCwUAMBsx
+    ...
+    ```
+
+    * OpenSSL 세션에서 4LW 명령을 입력합니다
+
+      ```bash
+      mntr
+      ```
+
+      ```response highlight={9,15,24}
+      ---
+      Post-Handshake New Session Ticket arrived:
+      SSL-Session:
+          Protocol  : TLSv1.3
+      ...
+      read R BLOCK
+      zk_version      v22.7.3.5-stable-e140b8b5f3a5b660b6b576747063fd040f583cf3
+      zk_avg_latency  0
+      zk_max_latency  4087
+      zk_min_latency  0
+      zk_packets_received     4565774
+      zk_packets_sent 4565773
+      zk_num_alive_connections        2
+      zk_outstanding_requests 0
+      zk_server_state leader
+      zk_znode_count  1087
+      zk_watch_count  26
+      zk_ephemerals_count     12
+      zk_approximate_data_size        426062
+      zk_key_arena_size       258048
+      zk_latest_snapshot_size 0
+      zk_open_file_descriptor_count   187
+      zk_max_file_descriptor_count    18446744073709551615
+      zk_followers    2
+      zk_synced_followers     1
+      closed
+      ```
+
+    4. `--secure` 플래그와 TLS 포트를 사용해 clickhouse client를 시작하십시오:
+       ```bash
+       root@chnode1:/etc/clickhouse-server# clickhouse-client --user default --password ClickHouse123! --port 9440 --secure --host chnode1.marsnet.local
+       ClickHouse client version 22.3.3.44 (official build).
+       Connecting to chnode1.marsnet.local:9440 as user default.
+       Connected to ClickHouse server version 22.3.3 revision 54455.
+
+       clickhouse :)
+       ```
+
+    5. `https` 인터페이스를 통해 `https://chnode1.marsnet.local:8443/play`의 Play UI에 로그인하세요.
+
+       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="TLS 구성" size="md" border />
+
+    <Note>
+      브라우저는 워크스테이션에서 접속하고 있으며 인증서가 클라이언트 머신의 루트 CA 저장소에 없기 때문에 신뢰되지 않는 인증서로 표시합니다.
+      공개 인증 기관 또는 엔터프라이즈 CA에서 발급한 인증서를 사용하는 경우 신뢰되는 것으로 표시되어야 합니다.
+    </Note>
+
+    6. 복제된 테이블(Replicated Table)을 생성하세요:
+
+       ```sql
+       clickhouse :) CREATE TABLE repl_table ON CLUSTER cluster_1S_2R
+                   (
+                       id UInt64,
+                       column1 Date,
+                       column2 String
+                   )
+                   ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/default/repl_table', '{replica}' )
+                   ORDER BY (id);
+       ```
+
+       ```response
+       ┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+       │ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+       │ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+       └───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+       ```
+
+    7. `chnode1`에 두어 개의 행을 추가하세요:
+       ```sql
+       INSERT INTO repl_table
+       (id, column1, column2)
+       VALUES
+       (1,'2022-04-01','abc'),
+       (2,'2022-04-02','def');
+       ```
+
+    8. `chnode2`에서 행을 확인하여 복제가 제대로 되었는지 확인합니다:
+
+       ```sql
+       SELECT * FROM repl_table
+       ```
+
+       ```response
+       ┌─id─┬────column1─┬─column2─┐
+       │  1 │ 2022-04-01 │ abc     │
+       │  2 │ 2022-04-02 │ def     │
+       └────┴────────────┴─────────┘
+       ```
+  </Step>
+</Steps>
+
+<div id="configure-openssl-for-standalone-clickhouse-keeper">
+  ## 독립 실행형 ClickHouse Keeper용 OpenSSL 구성
+</div>
+
+ClickHouse Keeper를 독립 실행형 ClickHouse Keeper 프로세스(ClickHouse 서버에 내장되지 않은 형태)로 실행하는 경우, OpenSSL 인증서와 설정은 Keeper 설정 파일에서 별도로 구성해야 합니다. 이를 구성하지 않으면 Keeper는 클라이언트 통신(`tcp_port_secure`)이나 Keeper 노드 간 Raft 복제를 위한 보안 연결을 설정할 수 없습니다.
+
+각 노드의 독립 실행형 ClickHouse Keeper 설정 파일에 다음 `<openSSL>` 섹션을 추가하십시오:
+
+<Note>
+  각 파일명은 현재 구성 중인 노드에 맞게 수정해야 합니다.
+  예를 들어, `chnode2` 호스트에서 구성하는 경우 `<certificateFile>` 항목을 `chnode2.crt`로 수정하십시오.
+</Note>
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-keeper/certs/chnode1.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-keeper/certs/chnode1.key</privateKeyFile>
+        <verificationMode>relaxed</verificationMode>
+        <caConfig>/etc/clickhouse-keeper/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-keeper/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>relaxed</verificationMode>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+`<server>` 섹션은 보안 Keeper 포트(`tcp_port_secure`)로 들어오는 클라이언트 연결에 사용됩니다. `<client>` 섹션은 Raft 복제 중 Keeper 노드 간에 이루어지는 아웃바운드 연결에 사용됩니다.
+
+<Note>
+  위 인증서 경로는 독립형 Keeper 설치에서 일반적으로 사용하는 `/etc/clickhouse-keeper/certs/`를 기준으로 합니다. Keeper를 다른 경로에 설치한 경우에는 그에 맞게 조정하십시오. 인증서 자체는 [2단계](#2-create-tls-certificates)에서 생성한 것과 동일합니다.
+</Note>
+
+<div id="openssl-verification-modes">
+  ## OpenSSL 검증 모드 및 인증서 핸들러
+</div>
+
+`<openSSL>` 구성은 ClickHouse가 TLS 인증서를 검증하는 방식을 제어하는 `<verificationMode>` 및 `<invalidCertificateHandler>`에 대해 여러 옵션을 지원합니다. 이러한 설정은 clickhouse-server, clickhouse-client 및 독립 실행형 ClickHouse Keeper에 적용됩니다.
+
+<div id="verification-modes">
+  ### 검증 모드
+</div>
+
+`<openSSL>`의 `<server>` 또는 `<client>` 섹션에서 `<verificationMode>`를 설정합니다:
+
+| 모드        | 설명                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------ |
+| `none`    | 인증서를 검증하지 않습니다. 연결은 암호화되지만 피어의 아이덴티티는 확인하지 않습니다. 테스트에만 사용하십시오.                             |
+| `relaxed` | 피어 인증서가 제시되면 이를 검증하지만, 인증서가 제공되지 않아도 실패하지 않습니다.                                            |
+| `once`    | server 측에서는 초기 핸드셰이크에서만 client 인증서를 검증하고 재협상은 건너뜁니다. client 측에서는 `relaxed`와 동일하게 동작합니다.    |
+| `strict`  | 피어 인증서를 요구하고 완전히 검증합니다. 인증서가 없거나 만료되었거나 신뢰할 수 있는 CA가 서명하지 않은 경우 연결이 실패합니다. 프로덕션 환경에 권장됩니다. |
+
+<div id="invalid-certificate-handlers">
+  ### 유효하지 않은 인증서 핸들러
+</div>
+
+`<openSSL>`의 `<server>` 또는 `<client>` 섹션 내에 `<invalidCertificateHandler>`를 설정합니다. 이 핸들러는 인증서 검증에 실패했을 때 어떻게 처리할지를 결정합니다. server 측에서는 유효하지 않은 클라이언트 인증서에 대한 응답을 제어합니다. client 측에서는 유효하지 않은 server 인증서에 대한 응답을 제어합니다.
+
+| 핸들러                        | 설명                                                 |
+| -------------------------- | -------------------------------------------------- |
+| `RejectCertificateHandler` | 인증서가 유효하지 않으면 connection을 거부합니다. 기본값이며 권장되는 설정입니다. |
+| `AcceptCertificateHandler` | 인증서가 유효하지 않아도 connection을 허용합니다. 테스트 용도로만 사용하십시오.  |
+
+<div id="disabling-certificate-verification">
+  ### 예시: 인증서 검증 비활성화
+</div>
+
+<Warning>
+  인증서 검증을 비활성화하면 TLS 아이덴티티 확인이 제거되어 연결이 중간자 공격에 노출될 수 있습니다. 이 구성은 격리된 개발 또는 테스트 환경에서만 사용하십시오.
+</Warning>
+
+인증서 검증을 완전히 건너뛰려면(예를 들어 테스트 환경에서 자체 서명 인증서를 사용하는 경우) `verificationMode`를 `none`으로 설정하고 `AcceptCertificateHandler`를 사용하십시오.
+
+`clickhouse-client`에서는 `--accept-invalid-certificate` CLI 플래그를 사용할 수도 있으며, 이 경우 두 설정이 모두 자동으로 적용됩니다.
+
+**clickhouse-client** (`/etc/clickhouse-client/config.xml`):
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+**clickhouse-server** (`config.xml` 또는 `config.d/`의 파일). 서버가 클라이언트의 인증서를 검증하지 않더라도 자체 인증서를 클라이언트에 제시해야 하므로, `<server>` 섹션에는 여전히 인증서와 개인 키 경로가 필요합니다:
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-server/certs/server.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-server/certs/server.key</privateKeyFile>
+        <verificationMode>none</verificationMode>
+        <caConfig>/etc/clickhouse-server/certs/ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+**독립 실행형 ClickHouse Keeper** (Keeper 설정 파일):
+
+```xml
+<openSSL>
+    <server>
+        <certificateFile>/etc/clickhouse-keeper/certs/keeper.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-keeper/certs/keeper.key</privateKeyFile>
+        <verificationMode>none</verificationMode>
+        <caConfig>/etc/clickhouse-keeper/certs/ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <verificationMode>none</verificationMode>
+        <invalidCertificateHandler>
+            <name>AcceptCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="summary">
+  ## 요약
+</div>
+
+이 문서에서는 TLS가 적용된 ClickHouse 환경을 구성하는 방법을 중점적으로 살펴보았습니다. 프로덕션 환경에서는 요구 사항에 따라 설정이 달라질 수 있습니다. 예를 들어 인증서 검증 수준, 프로토콜, 암호군 등이 달라질 수 있습니다. 이제 보안 연결을 구성하고 구현하는 데 필요한 단계는 충분히 이해할 수 있을 것입니다.

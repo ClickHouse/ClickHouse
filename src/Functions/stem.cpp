@@ -102,7 +102,7 @@ public:
     /// Snowball stemming never lengthens a word, so upper_bound bytes is a safe pre-allocation.
     MutableColumnPtr stemColumn(const IColumn & col, size_t input_rows_count, const NullMap * null_map = nullptr)
     {
-        size_t upper_bound;
+        size_t upper_bound = 0;
         const bool is_fixed_string = checkAndGetColumn<ColumnFixedString>(&col) != nullptr;
         if (const auto * col_str = checkAndGetColumn<ColumnString>(&col))
             upper_bound = col_str->getChars().size();
@@ -146,7 +146,7 @@ private:
 };
 
 
-class FunctionStem : public IFunction
+class FunctionStem final : public IFunction
 {
 public:
     static constexpr auto name = "stem";
@@ -229,6 +229,7 @@ Each input string must be a single, lowercase word — strings containing whites
 Passing uppercase characters produces undefined results.
 Returns String for scalar inputs (including FixedString) and Array(String) for array inputs.
 Nullable and LowCardinality variants of String and FixedString are supported.
+The list of supported language identifiers is available in [system.stemmers](/operations/system-tables/stemmers).
 )";
     FunctionDocumentation::Syntax syntax = "stem(word, language)";
     FunctionDocumentation::Arguments arguments = {
@@ -239,7 +240,8 @@ Nullable and LowCardinality variants of String and FixedString are supported.
          "Array(Nullable(String)), or Array(Nullable(FixedString)).",
          {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
         {"language",
-         "Language whose stemming rules will be applied. Use the two-letter ISO 639-1 code (e.g. 'en', 'de', 'fr'), see https://en.wikipedia.org/wiki/List_of_ISO_639_language_codes.",
+         "Language whose stemming rules will be applied. The canonical identifiers are listed in [system.stemmers](/operations/system-tables/stemmers) (e.g. 'english', 'german', 'porter'). "
+         "Snowball also accepts 2- or 3-letter ISO 639 codes (e.g. 'en', 'eng') as aliases where defined, but coverage varies by language — prefer the names from `system.stemmers` for portability.",
          {"String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {

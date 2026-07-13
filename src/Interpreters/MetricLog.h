@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Core/Field.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -24,6 +25,12 @@ struct MetricLogElement
 
     std::vector<ProfileEvents::Count> profile_events;
     std::vector<CurrentMetrics::Metric> current_metrics;
+
+    Array histogram_metric;
+    Array histogram_labels;
+    Array histogram_histogram;
+    Array histogram_count;
+    Array histogram_sum;
 
     static std::string name() { return "MetricLog"; }
     static ColumnsDescription getColumnsDescription();

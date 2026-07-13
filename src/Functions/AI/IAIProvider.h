@@ -1,12 +1,32 @@
 #pragma once
 
+#include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <memory>
 
 namespace DB
 {
+
+class AIProviderHTTPException : public Exception
+{
+public:
+    AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg);
+
+    AIProviderHTTPException * clone() const override { return new AIProviderHTTPException(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+
+    Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
+
+private:
+    Poco::Net::HTTPResponse::HTTPStatus http_status;
+
+    const char * name() const noexcept override { return "DB::AIProviderHTTPException"; }
+    const char * className() const noexcept override { return "DB::AIProviderHTTPException"; }
+};
 
 /** Parameters for a single AI chat completion request.
   *
@@ -59,6 +79,34 @@ struct AIResponse
     String finish_reason;
 };
 
+/** Parameters for a single AI embedding request.
+  *
+  * Embedding APIs typically accept multiple inputs per call, so inputs is a vector.
+  * The provider serializes it into the HTTP body format expected by the API.
+  */
+struct AIEmbeddingRequest
+{
+    /// Texts to embed. Providers send these in a single batched HTTP request.
+    VectorWithMemoryTracking<String> inputs;
+
+    /// Model identifier as specified in the named collection (e.g. "text-embedding-3-small").
+    String model;
+
+    /// Optional target dimensionality for the output vectors. 0 means use the model's native size.
+    /// Supported by OpenAI's `text-embedding-3-*` models; providers that ignore it return the native size.
+    UInt64 dimensions = 0;
+};
+
+/// Response from a single embedding request. `embeddings` is aligned 1:1 with `AIEmbeddingRequest::inputs`.
+struct AIEmbeddingResponse
+{
+    /// One vector per input, in the same order as `AIEmbeddingRequest::inputs`.
+    VectorWithMemoryTracking<VectorWithMemoryTracking<Float32>> embeddings;
+
+    /// Number of tokens in the input, as reported by the provider. Used for quota tracking.
+    UInt64 input_tokens = 0;
+};
+
 /** Abstract interface for AI provider HTTP clients.
   *
   * Each provider (OpenAI, Anthropic, etc.) implements this interface to handle
@@ -72,6 +120,12 @@ public:
 
     /// Send a chat completion request and return the parsed response.
     virtual AIResponse call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts) = 0;
+
+    /// Whether this provider exposes an embeddings endpoint.
+    virtual bool supportsEmbeddings() const { return false; }
+
+    /// Send an embedding request. Only valid when `supportsEmbeddings()` is true.
+    virtual AIEmbeddingResponse embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts);
 };
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;

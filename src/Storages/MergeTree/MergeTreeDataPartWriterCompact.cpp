@@ -79,7 +79,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
 {
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
-        assert(!substream_path.empty());
+        chassert(!substream_path.empty());
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         /// Shared offsets for Nested type.
@@ -223,8 +223,14 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     return serialize_settings;
 }
 
-void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPermutation * permutation)
+void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPermutation * permutation, Block * /*permuted_columns_cache*/)
 {
+    /// The permuted columns cache is intentionally ignored in the Compact writer:
+    /// `permuteBlockIfNeeded` below permutes the whole block once, and the subsequent
+    /// `getIndexBlockAndPermute` calls in `writeDataBlockPrimaryIndexAndSkipIndices`
+    /// pass `permutation = nullptr` (they only re-pick columns by name from the
+    /// already-permuted block). So the cache would only ever be written to, never
+    /// read from — pure overhead.
     Block result_block = block;
 
     /// For some columns the set of streams may depend on the actual column data.
@@ -242,11 +248,11 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     if (compute_granularity)
     {
         size_t index_granularity_for_block = computeIndexGranularity(result_block);
-        assert(index_granularity_for_block >= 1);
+        chassert(index_granularity_for_block >= 1);
         fillIndexGranularity(index_granularity_for_block, result_block.rows());
     }
 
-    result_block = permuteBlockIfNeeded(result_block, permutation);
+    result_block = permuteBlockIfNeeded(result_block, permutation, nullptr);
 
     if (header.empty())
         header = result_block.cloneEmpty();
@@ -277,6 +283,9 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 {
     writeDataBlock(block, granules_to_write);
 
+    /// `block` here is already fully permuted by `permuteBlockIfNeeded` in `write`,
+    /// so we pass `permutation = nullptr` and no cache — only Wide writer benefits
+    /// from the permuted columns cache (see comment in `MergeTreeDataPartWriterCompact::write`).
     if (settings.rewrite_primary_key)
     {
         Block primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
@@ -315,7 +324,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 if (prev_stream && prev_stream != result_stream)
                 {
                     /// Offset should be 0, because compressed block is written for every granule.
-                    assert(result_stream->hashing_buf.offset() == 0);
+                    chassert(result_stream->hashing_buf.offset() == 0);
                     prev_stream->hashing_buf.next();
                 }
 
@@ -386,7 +395,7 @@ void MergeTreeDataPartWriterCompact::finalizeIndexGranularity()
 #ifndef NDEBUG
     /// Offsets should be 0, because compressed block is written for every granule.
     for (const auto & [_, stream] : streams_by_codec)
-        assert(stream->hashing_buf.offset() == 0);
+        chassert(stream->hashing_buf.offset() == 0);
 #endif
 
     WriteBuffer & marks_out = marks_source_hashing ? *marks_source_hashing : *marks_file_hashing;
@@ -440,6 +449,20 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 
     plain_file->finalize();
     marks_file->finalize();
+
+    /// Release the data (`data.bin`) and marks (`data.cmrk*`) file descriptors now that everything
+    /// has been flushed and synced. Otherwise the writer keeps these handles open until it is
+    /// destroyed, which happens only after the part's temporary directory has been renamed to its
+    /// final name. Renaming a directory that still has open file descriptors inside fails on
+    /// filesystems backed by Windows (WSL, CIFS/SMB, Docker Desktop bind mounts).
+    /// See https://github.com/ClickHouse/ClickHouse/issues/56288.
+    ///
+    /// Only plain_file and marks_file own the file descriptors. The wrapper buffers
+    /// (plain_hashing, streams_by_codec, marks_*_hashing, marks_compressor) were already finalized in
+    /// fillDataChecksums, and a finalized WriteBuffer never touches its underlying buffer on
+    /// destruction, so releasing the file streams here is safe even though the wrappers outlive them.
+    plain_file = nullptr;
+    marks_file = nullptr;
 }
 
 static void fillIndexGranularityImpl(
@@ -582,7 +605,14 @@ void MergeTreeDataPartWriterCompact::cancel() noexcept
 
     plain_hashing.cancel();
 
-    plain_file->cancel();
+    /// plain_file and marks_file may already be released: finishDataSerialization resets them as
+    /// soon as the data is flushed and synced, before the part is committed. cancel() can still run
+    /// afterwards (e.g. MergeTreeTemporaryPart::cancel from the sink destructor when a quorum INSERT
+    /// finishes the part but the subsequent quorum wait throws), so guard against the null streams.
+    /// The wrapper buffers above were finalized, so their cancel() is a no-op and never touches the
+    /// underlying file. This mirrors the null guards in MergeTreeDataPartWriterOnDisk::cancel.
+    if (plain_file)
+        plain_file->cancel();
 
     if (marks_source_hashing)
         marks_source_hashing->cancel();
@@ -592,7 +622,8 @@ void MergeTreeDataPartWriterCompact::cancel() noexcept
 
     marks_file_hashing->cancel();
 
-    marks_file->cancel();
+    if (marks_file)
+        marks_file->cancel();
 
     Base::cancel();
 }

@@ -13,6 +13,50 @@ from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 CURRENT_DIR = Utils.cwd()
 TEMP_DIR = f"{CURRENT_DIR}/ci/tmp/"
 
+_EXTRA_BASELINES_TARGET = 5
+_S3_BASE_URL = "https://clickhouse-builds.s3.amazonaws.com/REFs/master"
+
+
+def _download_extra_baselines(master_commits: list[str], first_base_commit: str) -> int:
+    """Download up to _EXTRA_BASELINES_TARGET additional master coverage baselines.
+
+    Walks master_commits (nearest-first) starting after first_base_commit,
+    skipping commits without a published .info, until the target count is reached.
+    Files are written to TEMP_DIR/base_llvm_coverage_{2..N}.info.
+    Returns the number of extra baselines successfully downloaded.
+
+    Note: the .info is the authoritative artifact — no profdata-existence probe needed.
+    """
+    found = 0
+    slot = 2
+    saw_first = False
+    for sha in master_commits:
+        if sha == first_base_commit:
+            saw_first = True
+            continue
+        if not saw_first:
+            continue
+        if found >= _EXTRA_BASELINES_TARGET:
+            break
+        url = f"{_S3_BASE_URL}/{sha}/llvm_coverage/llvm_coverage.info"
+        dest = Path(TEMP_DIR) / f"base_llvm_coverage_{slot}.info"
+        check = Shell.get_output(f"wget --spider '{url}' 2>&1 || true", verbose=False)
+        if "200 OK" not in check:
+            continue
+        print(f"Downloading extra baseline #{slot} from {sha[:12]}...")
+        rc = Shell.run(f"wget --quiet '{url}' -O '{dest}'", verbose=False)
+        if rc == 0 and dest.exists() and dest.stat().st_size > 0:
+            # Write sidecar SHA so the analysis scripts can compute git diffs
+            # between this extra baseline's binary and the primary's binary.
+            (Path(TEMP_DIR) / f"base_llvm_coverage_{slot}.sha").write_text(sha)
+            found += 1
+            slot += 1
+        else:
+            dest.unlink(missing_ok=True)
+    print(f"Downloaded {found} extra master baseline(s) for cross-validation (target: {_EXTRA_BASELINES_TARGET}).")
+    return found
+
+
 
 def get_lcov_summary(
     info_file_path: str,
@@ -116,7 +160,7 @@ def get_git_info() -> tuple[str, list[str], str, str, str, int]:
         ).strip()
         if merge_base:
             raw = Shell.get_output(
-                f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base}&per_page=30' -q '.[].sha'",
+                f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base}&per_page=100' -q '.[].sha'",
                 verbose=True,
             )
             master_track_commits = raw.splitlines()
@@ -190,6 +234,7 @@ if __name__ == "__main__":
         name="Generate LLVM Coverage Report",
         command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
     )
+
     # Compress and attach the full HTML report archive + files to the generate result.
     # Keeping files/assets inside the same sub-Result ensures upload_result_files_to_s3
     # computes common_root = llvm_coverage_html_report/, so relative links stay intact.
@@ -220,7 +265,7 @@ if __name__ == "__main__":
         b_branch_hit = b_branch_total = c_branch_hit = c_branch_total = 0
 
         if _diff_ran:
-            # Baseline coverage for the current branch (from the merged report)
+            # Baseline coverage from the primary master run.
             (b_line_cov, b_line_hit, b_line_total), \
             (b_function_cov, b_func_hit, b_func_total), \
             (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(
@@ -338,21 +383,230 @@ if __name__ == "__main__":
             _lbc_lines = print_res.ext.get("lbc_lines", 0)
             _lbc_fns = print_res.ext.get("lbc_fns", 0)
 
+            # Classify the changed paths so we can decide what coverage signal is most
+            # useful. Functional tests (tests/queries/...), integration tests
+            # (tests/integration/...) and unit tests (src/**/tests/...) all shift
+            # coverage even though the production binary may be unchanged, so for a
+            # tests-only PR the per-file diff report is uninformative — we want to
+            # show "which previously-uncovered code did these tests start to cover".
+            # Populate _changed_paths from the stored PR changed files written by
+            # store_data.py (BASE_COMMIT-relative, the actual PR diff). Do NOT parse
+            # changes.diff for this: changes.diff is anchored at FIRST_BASE_COMMIT
+            # (for genhtml line remapping), and when FIRST_BASE_COMMIT is older than
+            # BASE_COMMIT the file list includes unrelated master-side edits that
+            # would incorrectly flip _binary_unchanged=False.
+            _changed_paths: set[str] = set()
+            _stored_files = Info().get_kv_data("changed_files") or []
+            if _stored_files:
+                _changed_paths = set(_stored_files)
+                print(f"Loaded {len(_changed_paths)} changed paths from stored PR data")
+            elif pr_number > 0 and base_commit_sha:
+                # Fall back to GitHub API with BASE_COMMIT when stored data is absent.
+                try:
+                    _gh_files = Shell.get_output(
+                        f"gh api repos/{repo_name}/compare/{base_commit_sha}...{current_commit_sha}"
+                        f" --jq '.files[].filename'",
+                        verbose=False,
+                    )
+                    _changed_paths = {p for p in _gh_files.splitlines() if p}
+                    print(f"Loaded {len(_changed_paths)} changed paths from GitHub API")
+                except Exception as _e:
+                    print(f"Warning: could not fetch changed files from GitHub API: {_e}")
+
+            def _is_test_path(p: str) -> bool:
+                # Strict allowlist of paths containing runnable test
+                # definitions. `tests/ci/**`, `tests/integration/helpers/**`,
+                # `tests/clickhouse-test`, `tests/runner` and other
+                # `tests/`-prefixed *infrastructure* are deliberately NOT
+                # tests — counting them as test changes would mis-attribute
+                # coverage-build noise to PRs that only touched helpers.
+                if p.startswith("tests/queries/"):
+                    return True
+                if p.startswith("tests/performance/"):
+                    return True
+                if p.startswith("tests/stress/"):
+                    return True
+                # Integration tests live in tests/integration/test_*/.
+                # tests/integration/helpers/, tests/integration/runner, the
+                # top-level conftest.py, ... are infrastructure.
+                if p.startswith("tests/integration/test_"):
+                    return True
+                # Unit tests: C++ files under src/**/tests/.
+                if p.startswith("src/") and "/tests/" in p:
+                    return True
+                return False
+
+            # Conservative allowlist of paths that *definitely* cannot affect
+            # the compiled ClickHouse binary. Anything not in this set is
+            # assumed to potentially affect the binary, which suppresses the
+            # newly-covered analysis below — exhaustively enumerating
+            # build-affecting inputs (CMakeLists at any depth, *.cmake,
+            # *.h.in, parser/grammar files, codegen drivers, Rust sources,
+            # assembly, contrib/**, ...) is impractical, and missing one
+            # over-attributes coverage transitions to "tests catching up"
+            # when in fact the binary itself changed. Notably, `contrib/**`
+            # is absent from this list, so any contrib change correctly
+            # suppresses the newly-covered claim.
+            _NON_BINARY_TOP_LEVEL_FILES = frozenset({
+                "README.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
+                "NOTICE", "AUTHORS", "CODE_OF_CONDUCT.md", "SECURITY.md",
+                ".gitignore", ".gitattributes", ".editorconfig",
+                ".dockerignore", ".clang-format", ".clang-tidy",
+            })
+
+            def _is_non_binary_path(p: str) -> bool:
+                # Everything under tests/ — runnable tests AND infrastructure
+                # (helpers, runners, tests/ci, conftests, jepsen.clickhouse,
+                # ...) — does not link into the production ClickHouse binary.
+                # The test-infrastructure case is intentionally broader than
+                # _is_test_path so changes to helpers don't flip
+                # _binary_unchanged to False, but they also don't flip
+                # _tests_changed to True (so no spurious comment is posted).
+                if p.startswith("tests/"):
+                    return True
+                # Unit tests under src/**/tests/.
+                if p.startswith("src/") and "/tests/" in p:
+                    return True
+                # CI infrastructure and dev tooling.
+                if p.startswith("ci/") or p.startswith(".github/"):
+                    return True
+                # Documentation.
+                if p.startswith("docs/"):
+                    return True
+                # Top-level repo metadata files.
+                if "/" not in p and p in _NON_BINARY_TOP_LEVEL_FILES:
+                    return True
+                return False
+
+            _tests_changed = any(_is_test_path(p) for p in _changed_paths)
+            # The production binary is identical to baseline iff *every*
+            # changed path is on the conservative allowlist above. Anything
+            # outside the allowlist — a `.cmake` file, a CMakeLists.txt, an
+            # unusual codegen input, a Rust source, a `utils/` change that
+            # also rebuilds a tool, a `contrib/` bump, etc. — flips this to
+            # False and suppresses the newly-covered analysis.
+            _binary_unchanged = bool(_changed_paths) and all(
+                _is_non_binary_path(p) for p in _changed_paths
+            )
+
+            _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
+            _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
+            _global_stats_available = Path(_base_info).exists() and Path(_curr_info).exists()
+
+            # Download extra master baselines only when a consumer will actually
+            # use them. The two consumers are:
+            #   1. print_newly_covered_code.py — runs when _tests_changed and
+            #      _binary_unchanged (stable union cross-validation)
+            #   2. print_uncovered_code.py diff report — runs when _diff_ran
+            #      (C/C++ source changed, stable union used for the delta)
+            # Docs-only, helper-only, or CI-only PRs where neither consumer fires
+            # should not pay the ~2.5 GB download cost.
+            if _global_stats_available and _tests_changed and _binary_unchanged:
+                # Use the actual SHA stored by generate_diff_coverage_report.sh
+                # alongside base_llvm_coverage.info as the skip anchor. This is
+                # the commit whose .info was really downloaded — it may differ
+                # from master_track_commits[0] when the first commit in the list
+                # had no .info and the script skipped to the next one. Using the
+                # wrong anchor causes the same commit to be downloaded again as
+                # extra #2, double-counting it in stable_base and producing a
+                # spurious negative delta.
+                _primary_sha_file = Path(TEMP_DIR) / "base_llvm_coverage.sha"
+                if _primary_sha_file.exists():
+                    _first_base = _primary_sha_file.read_text().strip()
+                else:
+                    _first_base = master_track_commits[0] if master_track_commits else base_commit_sha
+                _download_extra_baselines(master_track_commits, _first_base)
+
+            # The stable union is now computed in Python inside
+            # print_newly_covered_code.py (accumulating sets from primary + extras).
+            # We just tell it where the primary baseline is; it loads the extras
+            # itself via EXTRA_BASELINE_PATHS.
+            os.environ["COVERAGE_BASE_INFO"] = _base_info
+
+            # Newly-covered analysis: only meaningful when the production binary is
+            # unchanged (so 0->nonzero transitions can be attributed to the test
+            # change) AND at least one test file actually changed (otherwise there
+            # is no reason to expect coverage to differ). This admits PRs that mix
+            # test additions with CI script / config / doc edits, which is the
+            # common shape of a "fix CI" or "add regression test" PR.
+            _nc_info = ""
+            _nc_url = ""
+            _nc_top_files: list[dict] = []
+            _stable_override_applied = False
+            if (
+                _tests_changed
+                and _binary_unchanged
+                and _global_stats_available
+            ):
+                _nc_log = f"{TEMP_DIR}{Utils.normalize_string('Newly Covered Code')}.log"
+                Shell.run(
+                    f"python3 ci/jobs/scripts/print_newly_covered_code.py 2>&1 | tee {_nc_log}",
+                    verbose=True,
+                )
+                nc_res = Result.from_fs("Newly Covered Code")
+                nc_res.files.append(_nc_log)
+                results.append(nc_res)
+                _nc_info = nc_res.ext.get("comment", "") or ""
+                _nc_top_files = list(nc_res.ext.get("newly_covered_top_files", []))
+
+                # Override all three coverage metrics with stable-union values
+                # computed in print_newly_covered_code.py (lines, functions, AND
+                # branches). Raw lcov --summary numbers are single-run and noisy;
+                # the stable union eliminates run-to-run flicker for all metrics.
+                if nc_res.ext.get("stable_b_line_cov") is not None:
+                    b_line_cov      = nc_res.ext["stable_b_line_cov"]
+                    c_line_cov      = nc_res.ext["stable_c_line_cov"]
+                    b_function_cov  = nc_res.ext["stable_b_func_cov"]
+                    c_function_cov  = nc_res.ext["stable_c_func_cov"]
+                    b_branch_cov    = nc_res.ext.get("stable_b_branch_cov", b_branch_cov)
+                    c_branch_cov    = nc_res.ext.get("stable_c_branch_cov", c_branch_cov)
+                    _stable_override_applied = True
+                    b_line_hit      = nc_res.ext["stable_b_line_hit"]
+                    b_line_total    = nc_res.ext["stable_b_line_tot"]
+                    c_line_hit      = nc_res.ext["stable_c_line_hit"]
+                    c_line_total    = nc_res.ext["stable_c_line_tot"]
+                    b_func_hit      = nc_res.ext["stable_b_func_hit"]
+                    b_func_total    = nc_res.ext["stable_b_func_tot"]
+                    c_func_hit      = nc_res.ext["stable_c_func_hit"]
+                    c_func_total    = nc_res.ext["stable_c_func_tot"]
+                    b_branch_hit    = nc_res.ext.get("stable_b_branch_hit", b_branch_hit)
+                    b_branch_total  = nc_res.ext.get("stable_b_branch_tot", b_branch_total)
+                    c_branch_hit    = nc_res.ext.get("stable_c_branch_hit", c_branch_hit)
+                    c_branch_total  = nc_res.ext.get("stable_c_branch_tot", c_branch_total)
+                    delta           = c_line_cov - b_line_cov
+                    print(f"Using stable-union coverage delta for comment: {delta:+.4f} pp")
+                _nc_log_name = f"{Utils.normalize_string(nc_res.name)}.log"
+                _nc_url = (
+                    f"{_s3_base}/llvm_coverage/"
+                    f"{Utils.normalize_string(nc_res.name)}/{_nc_log_name}"
+                )
+
             # Only write coverage_comment.json (and thus post a GitHub comment) when
-            # there is something coverage-related to report: either the diff HTML report
-            # was generated (C++ source files changed) or LBC was detected (tests removed).
-            # Pure non-C++ PRs (scripts, Docker, configs) produce neither and should not
-            # generate a comment.
-            _has_coverage_data = _diff_ran or _lbc_lines > 0 or _lbc_fns > 0
+            # there is something coverage-related to report:
+            #   - the diff HTML report was generated (C/C++ source files changed), OR
+            #   - LBC was detected (tests removed -> baseline coverage lost), OR
+            #   - an actual runnable test changed AND the production binary is
+            #     unchanged AND we have both .info files. The global delta on its
+            #     own is mostly run-to-run noise (~1000 lines flicker between two
+            #     master runs); we only post the comment when there's an
+            #     attributable test change to anchor it to.
+            # PRs that don't fall in any of those buckets — contrib-only,
+            # docs-only, helper-only changes that don't alter a runnable test —
+            # get no comment.
+            _has_coverage_data = (
+                _diff_ran
+                or _lbc_lines > 0
+                or _lbc_fns > 0
+                or (_tests_changed and _binary_unchanged and _global_stats_available)
+            )
             if not _has_coverage_data:
-                print("No C/C++ source files changed and no lost baseline coverage — skipping coverage comment.")
+                print("No coverage-relevant changes detected (no C/C++ source, no runnable-test changes, no LBC) — skipping coverage comment.")
             else:
-                # When _diff_ran is False but LBC was found (test-only removal), fetch
-                # the global percentages from the .info files that were downloaded during
-                # the diff script run for LBC comparison.
-                _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
-                _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
-                if not _diff_ran and Path(_base_info).exists() and Path(_curr_info).exists():
+                # When _diff_ran is False (tests-only PR), fetch the global
+                # percentages from the .info files. Skip if the stable-union override
+                # already applied accurate values — the raw lcov --summary is single-run
+                # and noisy, and would overwrite the stable values with wrong numbers.
+                if not _diff_ran and _global_stats_available and not _stable_override_applied:
                     try:
                         (b_line_cov, b_line_hit, b_line_total), \
                         (b_function_cov, b_func_hit, b_func_total), \
@@ -389,7 +643,15 @@ if __name__ == "__main__":
                     "changed_lines_covered": _changed_lines_covered,
                     "changed_lines_cov": _changed_lines_cov,
                     "diff_url": _diff_url if _diff_ran else "",
-                    "uncovered_code_url": uncovered_code_url,
+                    # The uncovered-code log is produced only when print_uncovered_code.py
+                    # actually ran (i.e. C/C++ source files changed). For tests-only PRs
+                    # the log doesn't exist on S3, so don't surface a 404 link.
+                    "uncovered_code_url": uncovered_code_url if _diff_inputs_exist else "",
+                    # Newly-covered code analysis: only run (and only meaningful) for
+                    # tests-only PRs. Empty fields are gracefully ignored by the hook.
+                    "newly_covered_info": _nc_info,
+                    "newly_covered_url": _nc_url,
+                    "newly_covered_top_files": _nc_top_files,
                     # CIDB fields
                     "check_start_time": datetime.now(timezone.utc).strftime(
                         "%Y-%m-%d %H:%M:%S"

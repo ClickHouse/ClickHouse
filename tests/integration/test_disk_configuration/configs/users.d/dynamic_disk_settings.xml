@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <dynamic_disk_allow_from_env>1</dynamic_disk_allow_from_env>
+            <dynamic_disk_allow_include>1</dynamic_disk_allow_include>
+            <dynamic_disk_allow_from_zk>1</dynamic_disk_allow_from_zk>
+        </default>
+    </profiles>
+</clickhouse>

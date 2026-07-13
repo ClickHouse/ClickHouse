@@ -6,8 +6,6 @@ title: 'Conditional Functions'
 doc_type: 'reference'
 ---
 
-# Conditional functions
-
 ## Overview {#overview}
 
 ### Using Conditional Results Directly {#using-conditional-results-directly}
