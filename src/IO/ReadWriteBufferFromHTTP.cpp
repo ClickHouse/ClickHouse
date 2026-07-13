@@ -295,7 +295,10 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
         if (redirect_callback)
             redirect_callback(current_uri, uri_redirect);
 
-        current_uri = uri_redirect;
+        {
+            std::lock_guard lock(request_state_mutex);
+            current_uri = uri_redirect;
+        }
         result = callImpl(response, current_uri, method_, range, true);
     }
 
@@ -452,7 +455,11 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
 
     // Remember file size. It'll be used to report eof in next nextImpl() call.
     if (!read_range.end && response.hasContentLength())
-        file_info = parseFileInfo(response, range.has_value() ? getOffset() : 0);
+    {
+        auto parsed = parseFileInfo(response, range.has_value() ? getOffset() : 0);
+        std::lock_guard lock(request_state_mutex);
+        file_info = parsed;
+    }
 
     return std::move(result).transformToReadBuffer(use_external_buffer ? 0 : buffer_size);
 }
@@ -523,12 +530,17 @@ bool ReadWriteBufferFromHTTP::nextImpl()
 
 size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const
 {
-    /// Caller must have checked supportsReadAt(), which sends the first request and populates
-    /// current_uri / file_info. Snapshot the shared state once into request-local variables so the
-    /// rest of this method uses only local state and is safe to run concurrently with next()/seek().
-    chassert(file_info && file_info->seekable);
-    const Poco::URI request_uri = current_uri;
-    const size_t file_size = *file_info->file_size;
+    /// supportsReadAt() already populated current_uri / file_info. Snapshot them under the lock so
+    /// the rest of the method uses only request-local state and can run concurrently with a
+    /// sequential next() that rewrites current_uri (redirect) or file_info (initialize).
+    Poco::URI request_uri;
+    size_t file_size;
+    {
+        std::lock_guard lock(request_state_mutex);
+        chassert(file_info && file_info->seekable);
+        request_uri = current_uri;
+        file_size = *file_info->file_size;
+    }
 
     size_t initial_n = n;
     size_t total_bytes_copied = 0;
@@ -785,7 +797,9 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
         throw;
     }
 
-    file_info = parseFileInfo(response, 0);
+    auto parsed = parseFileInfo(response, 0);
+    std::lock_guard lock(request_state_mutex);
+    file_info = parsed;
     return *file_info;
 }
 

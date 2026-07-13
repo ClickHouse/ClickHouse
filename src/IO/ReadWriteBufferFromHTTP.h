@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <mutex>
 #include <Core/Field.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -92,6 +93,10 @@ private:
     OutStreamCallback out_stream_callback;
     RedirectCallback redirect_callback;
 
+    /// Guards current_uri and file_info: readBigAt() snapshots them while a concurrent
+    /// sequential next() may rewrite them (redirect / initialize). Only ever held around the
+    /// in-memory assignment, never across a network request, so it adds no serialization.
+    mutable std::mutex request_state_mutex;
     Poco::URI current_uri;
     size_t redirects = 0;
 
