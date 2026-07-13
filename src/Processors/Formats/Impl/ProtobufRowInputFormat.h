@@ -37,6 +37,7 @@ public:
         bool with_length_delimiter_,
         bool flatten_google_wrappers_,
         bool oneof_presence_,
+        bool cast_float_to_decimal_uses_rounding_,
         const String & google_protos_path);
 
     String getName() const override { return "ProtobufRowInputFormat"; }
@@ -62,6 +63,7 @@ private:
     bool with_length_delimiter;
     bool flatten_google_wrappers;
     bool oneof_presence;
+    bool cast_float_to_decimal_uses_rounding;
 };
 
 class ProtobufSchemaReader final : public IExternalSchemaReader

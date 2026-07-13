@@ -1,0 +1,120 @@
+-- Verify that casting floating-point values to Decimal rounds to nearest
+-- instead of truncating toward zero.
+-- See https://github.com/ClickHouse/ClickHouse/issues/57935
+
+-- Scale 0: half values round to even (banker's rounding)
+SELECT 'Scale 0 - positive half values:';
+SELECT
+    toFloat64(number * 2 + 1) / 2 AS x,
+    CAST(x, 'Decimal(9, 0)') AS d
+FROM numbers(4);
+
+SELECT 'Scale 0 - negative half values:';
+SELECT
+    -toFloat64(number * 2 + 1) / 2 AS x,
+    CAST(x, 'Decimal(9, 0)') AS d
+FROM numbers(4);
+
+SELECT 'Scale 0 - non-half rounding:';
+SELECT CAST(toFloat64(2.7), 'Decimal(9, 0)') AS d1, CAST(toFloat64(-2.7), 'Decimal(9, 0)') AS d2;
+SELECT CAST(toFloat64(2.3), 'Decimal(9, 0)') AS d1, CAST(toFloat64(-2.3), 'Decimal(9, 0)') AS d2;
+
+-- Scale 2: use values that are exact in IEEE-754 (x.125, x.375, x.875 etc.)
+SELECT 'Scale 2 - exact half values:';
+SELECT CAST(toFloat64(1.125), 'Decimal(9, 2)') AS d1, CAST(toFloat64(-1.125), 'Decimal(9, 2)') AS d2;
+SELECT CAST(toFloat64(2.375), 'Decimal(9, 2)') AS d1, CAST(toFloat64(-2.375), 'Decimal(9, 2)') AS d2;
+SELECT CAST(toFloat64(0.875), 'Decimal(9, 2)') AS d1, CAST(toFloat64(-0.875), 'Decimal(9, 2)') AS d2;
+
+-- Float32 input
+SELECT 'Float32 input:';
+SELECT CAST(toFloat32(0.5), 'Decimal(9, 0)') AS d1, CAST(toFloat32(-0.5), 'Decimal(9, 0)') AS d2;
+
+-- Representable-edge rounding: values past the native type limit that round back into range must be accepted.
+SELECT 'Edge values that round to representable limits:';
+SELECT CAST(toFloat64(2147483647.4), 'Decimal(9, 0)') AS d1, CAST(toFloat64(-2147483647.4), 'Decimal(9, 0)') AS d2;
+
+-- Negative edge toward INT32_MIN: a value rounding into the lower limit must be accepted.
+-- Decimal(9,0) holds -2147483648 exactly; under round-half-to-even, -2147483648.5 rounds to the
+-- even neighbor -2147483648, so it fits in range (true overflow is covered below).
+SELECT 'Negative edge rounding:';
+SELECT CAST(toFloat64(-2147483647.9), 'Decimal(9, 0)');
+SELECT CAST(toFloat64(-2147483648.5), 'Decimal(9, 0)');
+
+-- True overflow must still throw.
+SELECT 'True overflow still throws:';
+SELECT CAST(toFloat64(2147483648.0), 'Decimal(9, 0)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(toFloat64(-2147483649.0), 'Decimal(9, 0)'); -- { serverError DECIMAL_OVERFLOW }
+
+-- Float32 non-half rounding: verify the scalar/batch contract at values that Float32 can
+-- represent cleanly (no boundary-precision concerns).
+SELECT 'Float32 non-half rounding:';
+SELECT CAST(toFloat32(2.75), 'Decimal(9, 0)') AS d1, CAST(toFloat32(-2.75), 'Decimal(9, 0)') AS d2;
+SELECT CAST(toFloat32(2.25), 'Decimal(9, 0)') AS d1, CAST(toFloat32(-2.25), 'Decimal(9, 0)') AS d2;
+
+-- Column path (vectorized batch conversion) must match the scalar path.
+SELECT 'Column path matches scalar:';
+WITH arrayJoin([0.5, 1.5, -0.5, -1.5, 2.7, -2.7]) AS x
+SELECT toFloat64(x) AS f, CAST(f, 'Decimal(9, 0)') AS d;
+
+-- Float32 -> Decimal256 with high scale: the multiplier overflows to +inf in Float32,
+-- so a finite input still produces a non-finite product. Must surface as DECIMAL_OVERFLOW
+-- instead of silently casting +inf to a wide integer.
+SELECT 'Float32 -> Decimal256 high-scale non-finite multiplier:';
+SELECT CAST(toFloat32(1), 'Decimal256(76)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(toFloat32(-1), 'Decimal256(76)'); -- { serverError DECIMAL_OVERFLOW }
+-- Same in the column (batch) path.
+SELECT CAST(materialize(toFloat32(1)), 'Decimal256(76)'); -- { serverError DECIMAL_OVERFLOW }
+
+-- Zero must always succeed even when the multiplier itself overflows the source float.
+-- (Without the early-exit, `0 * +inf = NaN` would be misreported as `DECIMAL_OVERFLOW`.)
+SELECT 'Zero is representable for every Decimal scale:';
+SELECT CAST(toFloat32(0), 'Decimal256(76)') AS d_scalar, CAST(materialize(toFloat32(0)), 'Decimal256(76)') AS d_batch;
+SELECT CAST(toFloat32(-0.0), 'Decimal256(76)') AS d_scalar, CAST(materialize(toFloat32(-0.0)), 'Decimal256(76)') AS d_batch;
+
+-- Float32 -> Decimal256 at a scale (38) whose multiplier is still finite, but whose bound
+-- `2^255` overflows to +inf in Float32. A product that overflows to -inf must still throw:
+-- `-inf >= +inf` and `-inf < -inf` are both false, so without an explicit `isFinite(out)` guard
+-- the batch path would reach the integer cast (undefined). Both signs and the batch path.
+SELECT 'Float32 -> Decimal256 finite multiplier, infinite product:';
+SELECT CAST(toFloat32(-10), 'Decimal256(38)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(toFloat32(10), 'Decimal256(38)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(materialize(toFloat32(-10)), 'Decimal256(38)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(materialize(toFloat32(10)), 'Decimal256(38)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(materialize(toFloat32(-10)), 'Decimal256(38)') SETTINGS cast_float_to_decimal_uses_rounding = 0; -- { serverError DECIMAL_OVERFLOW }
+-- Zero still succeeds on this path.
+SELECT CAST(materialize(toFloat32(0)), 'Decimal256(38)') AS d_batch;
+
+-- Float32 -> wide Decimal (Decimal128/Decimal256) whose scaled value lands above the Int64 range
+-- but within the target's native range must convert through Float64: the wide-integer builtin-float
+-- constructor otherwise narrows through int64_t, producing garbage (~0.0922...) instead of ~1.
+-- `toFloat32(1)` at scale 20/30 scales to ~1e20 / ~1e30 (in range for Int128/Int256). The trailing
+-- digits are the exact Float32 representation of the scaled value; scalar and batch must agree.
+SELECT 'Float32 -> wide Decimal above Int64 range:';
+SELECT CAST(toFloat32(1), 'Decimal128(20)');
+SELECT CAST(materialize(toFloat32(1)), 'Decimal128(20)');
+SELECT CAST(toFloat32(1), 'Decimal256(30)');
+SELECT CAST(materialize(toFloat32(1)), 'Decimal256(30)');
+
+-- Compatibility: `cast_float_to_decimal_uses_rounding = 0` restores the old truncate-toward-zero
+-- behavior, both in the scalar and the vectorized (batch) paths.
+SELECT 'Truncation when rounding is disabled (scalar):';
+SET cast_float_to_decimal_uses_rounding = 0;
+SELECT CAST(toFloat64(0.5), 'Decimal(9, 0)') AS d1, CAST(toFloat64(-0.5), 'Decimal(9, 0)') AS d2;
+SELECT CAST(toFloat64(2.7), 'Decimal(9, 0)') AS d1, CAST(toFloat64(-2.7), 'Decimal(9, 0)') AS d2;
+SELECT 'Truncation when rounding is disabled (batch):';
+WITH arrayJoin([0.5, 1.5, -0.5, -1.5, 2.7, -2.7]) AS x
+SELECT toFloat64(x) AS f, CAST(f, 'Decimal(9, 0)') AS d;
+-- The non-finite-multiplier path (`Float32` -> `Decimal256` high scale) is independent of rounding;
+-- exercise it under truncation too (overflow stays an error, zero stays representable).
+SELECT CAST(materialize(toFloat32(1)), 'Decimal256(76)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(materialize(toFloat32(0)), 'Decimal256(76)');
+SET cast_float_to_decimal_uses_rounding = 1;
+
+-- The setting also reaches the float -> `DateTime64`/`Time64` conversion paths
+-- (`toDateTime64`/`toTime64`), which internally cast through Decimal, not only `CAST(... AS Decimal)`.
+SELECT 'Float -> DateTime64 honors the rounding setting:';
+SELECT toDateTime64(1.5, 0, 'UTC') AS rounded;
+SELECT toDateTime64(1.5, 0, 'UTC') AS truncated SETTINGS cast_float_to_decimal_uses_rounding = 0;
+SELECT 'Float -> Time64 honors the rounding setting:';
+SELECT toTime64(1.5, 0) AS rounded;
+SELECT toTime64(1.5, 0) AS truncated SETTINGS cast_float_to_decimal_uses_rounding = 0;

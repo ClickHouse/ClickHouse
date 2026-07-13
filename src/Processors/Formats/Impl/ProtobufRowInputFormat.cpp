@@ -19,6 +19,7 @@ ProtobufRowInputFormat::ProtobufRowInputFormat(
     bool with_length_delimiter_,
     bool flatten_google_wrappers_,
     bool oneof_presence_,
+    bool cast_float_to_decimal_uses_rounding_,
     const String & google_protos_path)
     : IRowInputFormat(header_, in_, params_)
     , descriptor(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
@@ -26,12 +27,14 @@ ProtobufRowInputFormat::ProtobufRowInputFormat(
     , with_length_delimiter(with_length_delimiter_)
     , flatten_google_wrappers(flatten_google_wrappers_)
     , oneof_presence(oneof_presence_)
+    , cast_float_to_decimal_uses_rounding(cast_float_to_decimal_uses_rounding_)
 {
 }
 
 void ProtobufRowInputFormat::createReaderAndSerializer()
 {
     reader = std::make_unique<ProtobufReader>(*in);
+    reader->cast_float_to_decimal_uses_rounding = cast_float_to_decimal_uses_rounding;
     serializer = ProtobufSerializer::create(
         getPort().getHeader().getNames(),
         getPort().getHeader().getDataTypes(),
@@ -164,6 +167,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
                     with_length_delimiter,
                     settings.protobuf.input_flatten_google_wrappers,
                     settings.protobuf.oneof_presence,
+                    settings.cast_float_to_decimal_uses_rounding,
                     settings.protobuf.google_protos_path);
             });
         factory.markFormatSupportsSubsetOfColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");

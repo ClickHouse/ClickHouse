@@ -10,6 +10,7 @@
 #include <IO/readDecimalText.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <cmath>
 #include <type_traits>
 
 namespace DB
@@ -393,7 +394,7 @@ FOR_EACH_ARITHMETIC_TYPE(INVOKE);
 
 template <typename FromDataType, typename ToDataType, typename ReturnType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
-ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType & result)
+ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType & result, bool round)
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
@@ -415,10 +416,37 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
                 return ReturnType(false);
         }
 
-        auto out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
+        /// Short-circuit zero so we don't compute `0 * multiplier`: when the multiplier overflows
+        /// the source float (e.g. `Float32` × `10^76` for `Decimal256(76)`), the product becomes
+        /// `NaN` and the bounds check below would incorrectly flag a valid zero input as overflow.
+        if (value == FromFieldType{})
+        {
+            result = ToNativeType{};
+            return ReturnType(true);
+        }
 
-        if (out <= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::min()) ||
-            out >= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max()))
+        /// Round first, then check bounds against the rounded value: a value just past the
+        /// `ToNativeType` limit (e.g. `2147483647.4` for `Decimal(9,0)`) rounds to a
+        /// representable integer and must not be rejected as overflow.
+        /// When `round` is false (e.g. legacy `compatibility` mode), the fractional part is
+        /// truncated toward zero by the `static_cast<ToNativeType>` below, preserving the
+        /// behavior from before `cast_float_to_decimal_uses_rounding` was introduced.
+        FromFieldType out = value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
+        if (round)
+            out = std::rint(out);
+
+        /// Bound at `2^(width - 1)` (i.e. `ToNativeType::max + 1`) rather than `max` itself:
+        /// for signed `ToNativeType` the valid range is `[-2^(width-1), 2^(width-1) - 1]`, and
+        /// `2^(width-1)` is a power of two, so it is exactly representable in any IEEE float with
+        /// enough exponent range. Using `static_cast<Float>(max)` loses precision when `max`
+        /// isn't exactly representable — e.g. `Float64(Int64::max) == 2^63` — and then
+        /// `out > max_as_float` fails to detect values that would cast to undefined behavior.
+        /// `!isFinite(out)` covers the case where the multiplier or product is `+/-inf`
+        /// (`Float32` × scale-76 multiplier for `Decimal256`), in which case the bound itself
+        /// may also be `inf` and the strict comparison would not fire.
+        const FromFieldType max_plus_one = std::ldexp(static_cast<FromFieldType>(1), sizeof(ToNativeType) * 8 - 1);
+
+        if (!isFinite(out) || out >= max_plus_one || out < -max_plus_one)
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Float is out of Decimal range", ToDataType::family_name);
@@ -426,7 +454,7 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
                 return ReturnType(false);
         }
 
-        result = static_cast<ToNativeType>(out);
+        result = static_cast<ToNativeType>(static_cast<Float64>(out));
         return ReturnType(true);
     }
     else
@@ -447,7 +475,8 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
     typename ToDataType::FieldType * __restrict to,
     size_t size,
     UInt32 scale,
-    ReturnType * __restrict nullmap)
+    ReturnType * __restrict nullmap,
+    bool round)
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ToNativeType = typename ToDataType::FieldType::NativeType;
@@ -461,34 +490,86 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
     else if constexpr (is_floating_point<FromFieldType>)
     {
         const auto multiplier = static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
-        for (size_t i = 0; i < size; ++i)
+        /// See `convertToDecimalImpl` for the rationale: use `2^(width-1)` as the strict bound
+        /// rather than `max` itself, so the comparison stays correct for widths where the
+        /// integer max can't be exactly represented in the source float (e.g. `Int64::max`).
+        const FromFieldType max_plus_one = std::ldexp(static_cast<FromFieldType>(1), sizeof(ToNativeType) * 8 - 1);
+        /// Resolve `round` and the rare non-finite handling at compile time, and forward the
+        /// `__restrict` pointers, so each instantiation is a branch-free, auto-vectorizable loop.
+        /// (The per-element zero short-circuit and `isFinite(out)` guard otherwise defeat
+        /// vectorization, which regresses throughput vs. the previous truncating conversion.)
+        /// The tight path (`tight == true`) is valid only when BOTH the multiplier and the
+        /// `max_plus_one` bound are finite: a finite multiplier can't turn a finite input into `NaN`
+        /// (no `0 * inf`), and a finite bound rejects infinite products via
+        /// `out >= max_plus_one || out < -max_plus_one` (catching both `+inf` and `-inf`).
+        /// When the bound is `+inf` (e.g. `Float32` -> `Decimal256`, where `2^255` overflows
+        /// `Float32`) a negative infinite product slips past both comparisons, so the guarded path
+        /// keeps an explicit `isFinite(out)` check (plus a zero short-circuit for the non-finite
+        /// multiplier case, where `0 * inf = NaN`).
+        auto convert = [&]<bool do_round, bool tight>(
+            const FromFieldType * __restrict from_ptr,
+            typename ToDataType::FieldType * __restrict to_ptr,
+            [[maybe_unused]] ReturnType * __restrict nullmap_ptr)
         {
-            bool overflow = !isFinite(from[i]);
-            FromFieldType out = from[i] * multiplier;
-
-            overflow |= out <= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::min())
-                     || out >= static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max());
-
-            if constexpr (has_nullmap)
+            for (size_t i = 0; i < size; ++i)
             {
-                nullmap[i] = overflow;
-                to[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(out);
-            }
-            else
-            {
-                if (overflow)
+                FromFieldType scaled;
+                if constexpr (tight)
+                    scaled = from_ptr[i] * multiplier;
+                else
+                    scaled = from_ptr[i] == FromFieldType{} ? FromFieldType{} : from_ptr[i] * multiplier;
+
+                FromFieldType out;
+                if constexpr (do_round)
+                    out = std::rint(scaled);
+                else
+                    out = scaled;
+
+                bool overflow = !isFinite(from_ptr[i]) || out >= max_plus_one || out < -max_plus_one;
+                if constexpr (!tight)
+                    overflow = overflow || !isFinite(out);
+
+                /// Widen to `Float64` before the integer cast: `wide::integer`'s builtin-float
+                /// constructor narrows a `Float32` through `int64_t`, so a `Float32` value above the
+                /// `Int64` range (e.g. `Float32` -> `Decimal128`/`Decimal256` at scale > 18) would be
+                /// cast incorrectly. `Float64` -> wide integer is safe; the widen is a no-op for
+                /// `Float64` and exact for `Float32`.
+                if constexpr (has_nullmap)
                 {
-                    if (!isFinite(from[i]))
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                            "{} convert overflow. Cannot convert infinity or NaN to decimal",
-                            ToDataType::family_name);
-                    else
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                            "{} convert overflow. Float is out of Decimal range",
-                            ToDataType::family_name);
+                    nullmap_ptr[i] = overflow;
+                    to_ptr[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(static_cast<Float64>(out));
                 }
-                to[i] = static_cast<ToNativeType>(out);
+                else
+                {
+                    if (overflow) [[unlikely]]
+                    {
+                        if (!isFinite(from_ptr[i]))
+                            throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                                "{} convert overflow. Cannot convert infinity or NaN to decimal",
+                                ToDataType::family_name);
+                        else
+                            throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                                "{} convert overflow. Float is out of Decimal range",
+                                ToDataType::family_name);
+                    }
+                    to_ptr[i] = static_cast<ToNativeType>(static_cast<Float64>(out));
+                }
             }
+        };
+
+        if (isFinite(multiplier) && isFinite(max_plus_one)) [[likely]]
+        {
+            if (round)
+                convert.template operator()<true, true>(from, to, nullmap);
+            else
+                convert.template operator()<false, true>(from, to, nullmap);
+        }
+        else
+        {
+            if (round)
+                convert.template operator()<true, false>(from, to, nullmap);
+            else
+                convert.template operator()<false, false>(from, to, nullmap);
         }
     }
     else
@@ -561,16 +642,16 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
 }
 
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
-    template void convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result);  \
-    template bool convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result);
+    template void convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result, bool round);  \
+    template bool convertToDecimalImpl<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType & result, bool round);
 #define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE
 #undef DISPATCH
 
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
-    template void convertToDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE, void>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, void *); \
-    template void convertToDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE, UInt8>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, UInt8 *);
+    template void convertToDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE, void>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, void *, bool); \
+    template void convertToDecimalBatch<FROM_DATA_TYPE, TO_DATA_TYPE, UInt8>(const typename FROM_DATA_TYPE::FieldType * __restrict, typename TO_DATA_TYPE::FieldType * __restrict, size_t, UInt32, UInt8 *, bool);
 #define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE
@@ -579,15 +660,15 @@ FOR_EACH_DECIMAL_TYPE(INVOKE);
 
 template <typename FromDataType, typename ToDataType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
-inline typename ToDataType::FieldType convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
+inline typename ToDataType::FieldType convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, bool round)
 {
     typename ToDataType::FieldType result;
-    convertToDecimalImpl<FromDataType, ToDataType, void>(value, scale, result);
+    convertToDecimalImpl<FromDataType, ToDataType, void>(value, scale, result, round);
     return result;
 }
 
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
-    template typename TO_DATA_TYPE::FieldType convertToDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale);
+    template typename TO_DATA_TYPE::FieldType convertToDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, bool round);
 #define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE
@@ -596,13 +677,13 @@ FOR_EACH_DECIMAL_TYPE(INVOKE);
 
 template <typename FromDataType, typename ToDataType>
 requires (is_arithmetic_v<typename FromDataType::FieldType> && IsDataTypeDecimal<ToDataType>)
-inline bool tryConvertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result)
+inline bool tryConvertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale, typename ToDataType::FieldType& result, bool round)
 {
-    return convertToDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result);
+    return convertToDecimalImpl<FromDataType, ToDataType, bool>(value, scale, result, round);
 }
 
 #define DISPATCH(FROM_DATA_TYPE, TO_DATA_TYPE) \
-    template bool tryConvertToDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType& result);
+    template bool tryConvertToDecimal<FROM_DATA_TYPE, TO_DATA_TYPE>(const typename FROM_DATA_TYPE::FieldType & value, UInt32 scale, typename TO_DATA_TYPE::FieldType& result, bool round);
 #define INVOKE(X) FOR_EACH_ARITHMETIC_TYPE_PASS(DISPATCH, X)
 FOR_EACH_DECIMAL_TYPE(INVOKE);
 #undef INVOKE

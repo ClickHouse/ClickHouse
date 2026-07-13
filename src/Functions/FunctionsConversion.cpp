@@ -3299,10 +3299,20 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
 
             if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
             {
+                using LeftFieldType = typename LeftDataType::FieldType;
                 if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
                     return true;
                 else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                {
+                    /// `Float` → `Decimal` JIT path lowers `nativeCast` to `FPToSI`/`FPToUI`, which
+                    /// is poison/undefined when the float is out of integer range. The scalar and
+                    /// batch implementations in `DataTypesDecimal.cpp` enforce explicit bounds and
+                    /// throw `DECIMAL_OVERFLOW`; until the JIT emits the equivalent checks, fall
+                    /// back to the interpreted path for floats.
+                    if constexpr (std::is_floating_point_v<LeftFieldType>)
+                        return false;
                     return true;
+                }
                 else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
                     return true;
             }
@@ -3348,6 +3358,11 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
                         auto * from_type = arguments[0].value->getType();
                         auto * from_value = arguments[0].value;
                         result = builder.CreateFMul(from_value, llvm::ConstantFP::get(from_type, static_cast<double>(multiplier)));
+                        /// Round to nearest before truncation to integer; matches `std::rint` (round half
+                        /// to even) in the scalar/batch paths in `DataTypesDecimal.cpp`.
+                        auto * func_round = llvm::Intrinsic::getOrInsertDeclaration(
+                            builder.GetInsertBlock()->getModule(), llvm::Intrinsic::rint, {from_type});
+                        result = builder.CreateCall(func_round, {result});
                         result = nativeCast(builder, left.getPtr(), result, right.getPtr());
                     }
                     else
@@ -3415,10 +3430,20 @@ bool FunctionCast::isCompilable() const
         using RightDataType = std::decay_t<decltype(right)>;
         if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
         {
+            using LeftFieldType = typename LeftDataType::FieldType;
             if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
                 return true;
             else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+            {
+                /// Same as in `convertIsCompilableImpl`: `Float` → `Decimal` JIT path lowers
+                /// `nativeCast` to `FPToSI`/`FPToUI`, which is poison/undefined for out-of-range
+                /// inputs. The scalar/batch paths in `DataTypesDecimal.cpp` enforce explicit bounds
+                /// and throw `DECIMAL_OVERFLOW`; until the JIT emits equivalent checks, fall back
+                /// to the interpreted path for floats.
+                if constexpr (std::is_floating_point_v<LeftFieldType>)
+                    return false;
                 return true;
+            }
             else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
                 return true;
         }
@@ -3478,6 +3503,11 @@ llvm::Value * FunctionCast::compile(llvm::IRBuilderBase & builder, const ValuesW
                         /// left type is float and right type is decimal
                         auto * from_type = toNativeType(builder, left);
                         result_value = builder.CreateFMul(input_value, llvm::ConstantFP::get(from_type, static_cast<double>(multiplier)));
+                        /// Round to nearest before truncation to integer; matches `std::rint` (round half
+                        /// to even) in the scalar/batch paths in `DataTypesDecimal.cpp`.
+                        auto * func_round = llvm::Intrinsic::getOrInsertDeclaration(
+                            builder.GetInsertBlock()->getModule(), llvm::Intrinsic::rint, {from_type});
+                        result_value = builder.CreateCall(func_round, {result_value});
                         result_value = nativeCast(builder, left.getPtr(), result_value, right.getPtr());
                     }
                     else

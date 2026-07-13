@@ -114,6 +114,7 @@ select toDecimal32(2147483647.0 + 1.0, 0); -- { serverError DECIMAL_OVERFLOW }
 select toDecimal64(9223372036854775807.0, 0); -- { serverError DECIMAL_OVERFLOW }
 select toDecimal128(170141183460469231731687303715884105729.0, 0); -- { serverError DECIMAL_OVERFLOW }
 
-select toDecimal32(-2147483647.0 - 1.0, 0); -- { serverError DECIMAL_OVERFLOW }
-select toDecimal64(-9223372036854775807.0, 0); -- { serverError DECIMAL_OVERFLOW }
-select toDecimal128(-170141183460469231731687303715884105729.0, 0); -- { serverError DECIMAL_OVERFLOW }
+-- Native min (-2^(width-1)) is in range. To force overflow on the negative side, go strictly past it.
+select toDecimal32(-2147483647.0 - 2.0, 0); -- { serverError DECIMAL_OVERFLOW }
+select toDecimal64(-9223372036854775807.0 - 9223372036854775807.0, 0); -- { serverError DECIMAL_OVERFLOW }
+select toDecimal128(-170141183460469231731687303715884105729.0 * 2, 0); -- { serverError DECIMAL_OVERFLOW }

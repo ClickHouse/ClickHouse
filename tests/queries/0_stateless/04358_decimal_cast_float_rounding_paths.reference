@@ -1,0 +1,18 @@
+1. compile_expressions path
+0
+2
+2
+4
+2. accurateCast from Float
+2
+1
+2	0
+\N	\N
+0	16.4
+3. INSERT float into Decimal column
+insert rounds:	[0,2,2,4]
+insert truncates:	[0,1,2,3]
+4. wide decimals (Decimal128/Decimal256) ties
+0	2	2	4
+0	2	2	4
+5. inf / nan

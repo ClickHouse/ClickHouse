@@ -32,8 +32,11 @@ public:
     }
 };
 
-ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
-ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
-ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
+/// `context`, when not null, is forwarded to the internal cast so it honors query settings such as
+/// `cast_float_to_decimal_uses_rounding`. Defaults to null, which preserves the previous behavior
+/// (the cast uses default settings).
+ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr, ContextPtr context = nullptr);
+ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr, ContextPtr context = nullptr);
+ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr, ContextPtr context = nullptr);
 
 }

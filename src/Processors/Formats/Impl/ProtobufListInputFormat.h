@@ -31,6 +31,7 @@ public:
         const Params & params_,
         const ProtobufSchemaInfo & schema_info_,
         bool flatten_google_wrappers_,
+        bool cast_float_to_decimal_uses_rounding_,
         const String & google_protos_path);
 
     String getName() const override { return "ProtobufListInputFormat"; }
