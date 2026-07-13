@@ -1,5 +1,6 @@
 #include <memory>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Databases/DataLake/RestCatalog.h>
 
 #if USE_AWS_S3
 #include <Common/HTTPHeaderFilter.h>
@@ -1147,22 +1148,41 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
     }
 }
 
-void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
+void StorageS3Configuration::parseFromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
     chassert(s3_settings != nullptr);
-    if (!biglake_adc_client_id.empty())
-    {
-        s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
-        s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = biglake_adc_client_id;
-        s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = biglake_adc_client_secret;
-        s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = biglake_adc_refresh_token;
-    }
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
         || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+}
+
+void StorageS3Configuration::fromAST(
+    ASTs & args,
+    ContextPtr context,
+    bool with_structure)
+{
+    parseFromAST(args, context, with_structure);
+}
+
+void StorageS3Configuration::fromCatalog(
+    const DataLake::ICatalog & catalog,
+    ASTs & args,
+    ContextPtr context,
+    bool with_structure)
+{
+    parseFromAST(args, context, with_structure);
+
+    const auto * biglake = dynamic_cast<const DataLake::BigLakeCatalog *>(&catalog);
+    if (!biglake)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Catalog is not BigLake type");
+
+    s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
+    s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = biglake->getGoogleADCClientId();
+    s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = biglake->getGoogleADCClientSecret();
+    s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = biglake->getGoogleADCRefreshToken();
 }
 
 void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(

@@ -135,11 +135,24 @@ public:
         is_onelake = true;
     }
 
+
 protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+    void fromAST(
+        ASTs & args,
+        ContextPtr context,
+        bool with_structure) override;
+
+    void fromCatalog(
+        const DataLake::ICatalog & catalog,
+        ASTs & args,
+        ContextPtr context,
+        bool with_structure) override;
+
+    void parseFromAST(ASTs & args, ContextPtr context, bool with_structure);
+
     ASTPtr extractExtraCredentials(ASTs & args);
 
     Path blob_path;
@@ -153,6 +166,7 @@ private:
     String onelake_access_token;
     bool onelake_use_blob_endpoint = true;
     bool is_onelake = false;
+
 
     void initializeFromParsedArguments(const AzureStorageParsedArguments & parsed_arguments);
 };

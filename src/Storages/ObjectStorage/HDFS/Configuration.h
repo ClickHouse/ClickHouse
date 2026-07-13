@@ -84,7 +84,10 @@ public:
 private:
     void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments);
     void setURL(const std::string & url_);
-    void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
+    void fromAST(
+        ASTs & args,
+        ContextPtr context,
+        bool with_structure) override;
 
     void fromNamedCollection(const NamedCollection &, ContextPtr context) override;
 

@@ -795,6 +795,50 @@ def _fresh_glue_db(node, mgr: AwsGlueCatalogManager, **kwargs) -> str:
 
 
 # ---------------------------------------------------------------------------
+# BigLake-specific: create table credential propagation
+# ---------------------------------------------------------------------------
+
+
+@only_biglake
+def test_biglake_create_table_uses_database_credentials(node, catalog_manager):
+    """`CREATE TABLE ... ENGINE = Iceberg('gs://...')` must reuse database credentials."""
+
+    db = catalog_manager.make_database_name()
+    catalog_manager.create_catalog(node, db)
+
+    table_name = f"created_from_clickhouse_{uuid.uuid4().hex[:8]}"
+    namespace = catalog_manager._session_namespace
+    location = f"{catalog_manager._warehouse_path()}/{namespace}/{table_name}"
+    full_name = f"{namespace}.{table_name}"
+
+    created = False
+    try:
+        node.query(
+            f"""
+CREATE TABLE {db}.`{full_name}`
+(
+    `timestamp` Nullable(Int64),
+    `data` Nullable(String)
+)
+ENGINE = Iceberg('{location}')
+"""
+        )
+        created = True
+
+        catalog_manager.wait_for_table_ready(table_name)
+        resolved = catalog_manager.resolve_table_name(node, db, table_name)
+        assert resolved == full_name
+
+        count = node.query(
+            f"SELECT count() FROM {db}.`{full_name}` FORMAT TSV"
+        ).strip()
+        assert int(count) == 0
+    finally:
+        if created:
+            catalog_manager.cleanup_table(table_name)
+
+
+# ---------------------------------------------------------------------------
 # OneLake-specific: auth error handling
 # ---------------------------------------------------------------------------
 

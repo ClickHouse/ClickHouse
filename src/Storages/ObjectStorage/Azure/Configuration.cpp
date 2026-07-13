@@ -1,5 +1,6 @@
 #include "config.h"
 #include <Poco/URI.h>
+#include <Databases/DataLake/RestCatalog.h>
 
 
 #if USE_AZURE_BLOB_STORAGE
@@ -875,11 +876,22 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     setPaths({parsed_arguments.blob_path});
 }
 
-void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
+void StorageAzureConfiguration::parseFromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
     AzureStorageParsedArguments parsed_arguments;
+    parsed_arguments.fromAST(engine_args, context, with_structure);
+    initializeFromParsedArguments(parsed_arguments);
+    setPaths({parsed_arguments.blob_path});
+}
+
+void StorageAzureConfiguration::fromAST(
+    ASTs & engine_args,
+    ContextPtr context,
+    bool with_structure)
+{
     if (is_onelake)
     {
+        AzureStorageParsedArguments parsed_arguments;
         parsed_arguments.initializeForOneLake(engine_args, context, onelake_use_blob_endpoint);
         if (!onelake_access_token.empty())
         {
@@ -899,11 +911,35 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
                 onelake_client_secret
             );
         }
+        initializeFromParsedArguments(parsed_arguments);
+        setPaths({parsed_arguments.blob_path});
     }
     else
     {
-        parsed_arguments.fromAST(engine_args, context, with_structure);
+        parseFromAST(engine_args, context, with_structure);
     }
+}
+
+void StorageAzureConfiguration::fromCatalog(
+    const DataLake::ICatalog & catalog,
+    ASTs & args,
+    ContextPtr context,
+    bool with_structure)
+{
+    const auto * onelake = dynamic_cast<const DataLake::OneLakeCatalog *>(&catalog);
+    if (!onelake)
+    {
+        parseFromAST(args, context, with_structure);
+        return;
+    }
+
+    AzureStorageParsedArguments parsed_arguments;
+    parsed_arguments.initializeForOneLake(args, context, onelake->getUseBlobEndpoint());
+    parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
+        onelake->getTenantId(),
+        onelake->getClientId(),
+        onelake->getClientSecret()
+    );
     initializeFromParsedArguments(parsed_arguments);
     setPaths({parsed_arguments.blob_path});
 }

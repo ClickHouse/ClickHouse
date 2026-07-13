@@ -50,6 +50,7 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
+    auto catalog = configuration->getCatalog(context, args.table_id);
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
     // Use format settings from global server context + settings from
@@ -104,7 +105,10 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
-        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
+        configuration->createObjectStorage(
+            context,
+            /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE,
+            catalog ? catalog->getCredentialsConfigurationCallback(args.table_id) : std::nullopt),
         context_copy, /// Use global context.
         args.table_id,
         args.columns,
@@ -112,7 +116,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.comment,
         format_settings,
         args.mode,
-        configuration->getCatalog(context, args.table_id),
+        std::move(catalog),
         args.query.if_not_exists,
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,

@@ -301,6 +301,7 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & onelake_tenant_id,
     const std::string & onelake_client_id,
     const std::string & onelake_client_secret,
+    bool onelake_use_blob_endpoint_,
     const std::string & bearer_token_,
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
@@ -308,6 +309,7 @@ OneLakeCatalog::OneLakeCatalog(
     DB::ContextPtr context_)
     : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, context_)
     , tenant_id(onelake_tenant_id)
+    , onelake_use_blob_endpoint(onelake_use_blob_endpoint_)
 {
     if (!bearer_token_.empty())
     {
@@ -460,6 +462,7 @@ BigLakeCatalog::BigLakeCatalog(
     }
     config = loadConfig();
 }
+
 
 DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const
 {
@@ -1244,6 +1247,16 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     try
     {
         sendRequest(endpoint, request_body);
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_CONFLICT)
+        {
+            LOG_TRACE(log, "Namespace '{}' already exists", namespace_name);
+            return;
+        }
+
+        DB::tryLogCurrentException(log);
     }
     catch (...)
     {

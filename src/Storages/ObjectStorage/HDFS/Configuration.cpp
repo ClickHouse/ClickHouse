@@ -214,7 +214,10 @@ void StorageHDFSConfiguration::initializeFromParsedArguments(const HDFSStoragePa
     StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
 }
 
-void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
+void StorageHDFSConfiguration::fromAST(
+    ASTs & args,
+    ContextPtr context,
+    bool with_structure)
 {
     HDFSStorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
