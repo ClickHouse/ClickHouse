@@ -1306,7 +1306,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
             {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
             {"allow_minmax_index_for_json", true, false, "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"},
-            {"allow_experimental_text_index_positions", false, false, "New setting"},
             {"leader_election", false, false, "New setting to enable leader election for non-replicated MergeTree tables on shared object storage"},
             {"leader_election_heartbeat_interval", 10, 10, "New setting to control leader lease renewal interval"},
             {"leader_election_session_timeout", 30, 30, "New setting to control leader lease expiry threshold"},
