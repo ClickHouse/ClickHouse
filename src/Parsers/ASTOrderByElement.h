@@ -67,10 +67,24 @@ private:
 
     void setChild(Child child, ASTPtr node)
     {
-        if (node == nullptr)
-            return;
-
         auto it = positions.find(child);
+        if (node == nullptr)
+        {
+            /// Remove the child, shifting down the positions of the children stored after it.
+            if (it != positions.end())
+            {
+                const size_t removed_pos = it->second;
+                children.erase(children.begin() + removed_pos);
+                positions.erase(it);
+                for (auto & [_, pos] : positions)
+                {
+                    if (pos > removed_pos)
+                        --pos;
+                }
+            }
+            return;
+        }
+
         if (it != positions.end())
         {
             children[it->second] = node;
