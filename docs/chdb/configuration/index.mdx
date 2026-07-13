@@ -62,7 +62,7 @@ config.set_log_format("verbose")  # More details
 config.enable_debug()  # Sets DEBUG level + verbose format
 ```
 
-See [Logging](/products/chdb/debugging/logging) for details.
+See [Logging](/chdb/debugging/logging) for details.
 
 ### Cache Configuration {#cache}
 
@@ -102,7 +102,7 @@ config.set_cross_datastore_engine('pandas')
 print(config.execution_engine)
 ```
 
-See [Execution Engine](/products/chdb/configuration/execution-engine) for details.
+See [Execution Engine](/chdb/configuration/execution-engine) for details.
 
 ### Compatibility Mode {#compat-mode}
 
@@ -119,7 +119,7 @@ config.use_pandas_compat()
 print(config.compat_mode)  # 'pandas' or 'performance'
 ```
 
-See [Performance Mode](/products/chdb/configuration/performance-mode) for details.
+See [Performance Mode](/chdb/configuration/performance-mode) for details.
 
 ### Profiling Configuration {#profiling}
 
@@ -135,7 +135,7 @@ config.set_profiling_enabled(False)
 print(config.profiling_enabled)
 ```
 
-See [Profiling](/products/chdb/debugging/profiling) for details.
+See [Profiling](/chdb/debugging/profiling) for details.
 
 ### Dtype Correction {#dtype}
 
@@ -259,8 +259,8 @@ config.enable_debug()        # See what operations are used
 
 ## Related Documentation {#related}
 
-- [Execution Engine](/products/chdb/configuration/execution-engine) - Engine selection details
-- [Performance Mode](/products/chdb/configuration/performance-mode) - SQL-first mode for maximum throughput
-- [Function Config](/products/chdb/configuration/function-config) - Per-function engine configuration
-- [Logging](/products/chdb/debugging/logging) - Logging configuration
-- [Profiling](/products/chdb/debugging/profiling) - Performance profiling
+- [Execution Engine](/chdb/configuration/execution-engine) - Engine selection details
+- [Performance Mode](/chdb/configuration/performance-mode) - SQL-first mode for maximum throughput
+- [Function Config](/chdb/configuration/function-config) - Per-function engine configuration
+- [Logging](/chdb/debugging/logging) - Logging configuration
+- [Profiling](/chdb/debugging/profiling) - Performance profiling
