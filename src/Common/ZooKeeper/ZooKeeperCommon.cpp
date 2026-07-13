@@ -62,7 +62,7 @@ size_t ZooKeeperRequest::requestSize(bool use_xid_64) const
 void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64, bool supports_tracing) const
 {
     size_t request_size = requestSize(use_xid_64);
-    // Last stand: the length prefix is serialized as int32, so the request must fit into it.
+    /// Last stand: the length prefix is serialized as int32, so the request must fit into it.
     if (request_size > static_cast<size_t>(std::numeric_limits<int32_t>::max()))
         throw Exception(Error::ZBADARGUMENTS,
             "Request size {} does not fit into the int32 length prefix, request: {}",

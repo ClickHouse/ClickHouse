@@ -24,6 +24,7 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <chrono>
@@ -237,8 +238,13 @@ public:
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
-    // Effective max request size in bytes: client config wins, else server-advertised; 0 == unlimited.
-    UInt64 getMaxRequestSize() const { return args.max_request_size != 0 ? args.max_request_size : keeper_max_request_size; }
+    /// Effective max request size in bytes: client config wins, else server-advertised; 0 == unlimited.
+    UInt64 getMaxRequestSize() const
+    {
+        if (args.max_request_size != 0 && keeper_max_request_size != 0)
+            return std::min(args.max_request_size, keeper_max_request_size);
+        return args.max_request_size != 0 ? args.max_request_size : keeper_max_request_size;
+    }
 
     int64_t getLastZXIDSeen() const override { return last_zxid_seen.load(std::memory_order_relaxed); }
 
@@ -397,7 +403,7 @@ private:
     std::atomic<Int64> last_received_timestamp_us{0};
 
     DB::KeeperFeatureFlags keeper_feature_flags;
-    // Server-advertised max request size in bytes, learned at connect; 0 == unlimited/unknown.
+    /// Server-advertised max request size in bytes, resolved at connect; 0 == unlimited/unset.
     UInt64 keeper_max_request_size = 0;
 };
 

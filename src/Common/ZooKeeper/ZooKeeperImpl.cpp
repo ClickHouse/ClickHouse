@@ -1,6 +1,5 @@
 #include <atomic>
 #include <chrono>
-#include <limits>
 #include <ranges>
 
 #include <Common/OpenTelemetryTracingContext.h>
@@ -850,8 +849,8 @@ namespace
 /// Shared by the pre-check in `pushRequest` (lower-bound size) and the exact check in `sendThread` (wire size).
 void assertRequestSizeIsValid(size_t request_size, size_t max_request_size, const ZooKeeperRequest & request)
 {
-    constexpr size_t hard_limit = std::numeric_limits<int32_t>::max();
-    const size_t limit = (max_request_size == 0 || max_request_size > hard_limit) ? hard_limit : max_request_size;
+    const size_t limit = (max_request_size == 0 || max_request_size > MAX_REQUEST_SIZE_HARD_LIMIT)
+        ? MAX_REQUEST_SIZE_HARD_LIMIT : max_request_size;
     if (request_size <= limit)
         return;
 
@@ -912,6 +911,10 @@ void ZooKeeper::sendThread()
                     /// error in that window instead. The completion itself allocates, so block
                     /// MEMORY_LIMIT_EXCEEDED inside the guard rather than prebuilding the response.
                     bool callback_registered = false;
+                    /// Set when the request is rejected before send (size check / serialization
+                    /// failure): the guard completes the callback with this code instead of a
+                    /// session-level error.
+                    std::optional<Error> reject_error;
                     SCOPE_EXIT({
                         if (callback_registered || !info.callback)
                             return;
@@ -919,7 +922,8 @@ void ZooKeeper::sendThread()
                         try
                         {
                             ZooKeeperResponsePtr response = info.request->makeResponse();
-                            response->error = info.request->probably_sent ? Error::ZCONNECTIONLOSS : Error::ZSESSIONEXPIRED;
+                            response->error = reject_error.value_or(
+                                info.request->probably_sent ? Error::ZCONNECTIONLOSS : Error::ZSESSIONEXPIRED);
                             response->xid = info.request->xid;
                             info.callback(*response);
                         }
@@ -959,14 +963,17 @@ void ZooKeeper::sendThread()
                     }
                     catch (const Exception & e)
                     {
-                        callback_registered = true;
-                        if (info.callback)
-                        {
-                            ZooKeeperResponsePtr response = info.request->makeResponse();
-                            response->error = e.code;
-                            response->xid = info.request->xid;
-                            info.callback(*response);
-                        }
+                        reject_error = e.code;
+                        serialized.clear();
+                        /// The SCOPE_EXIT guard above completes the callback with reject_error.
+                        continue;
+                    }
+                    catch (...)
+                    {
+                        /// E.g. bad_alloc / MEMORY_LIMIT_EXCEEDED while buffering the request:
+                        /// attributable to this request alone, must not tear down the session.
+                        tryLogCurrentException(log);
+                        reject_error = Error::ZBADARGUMENTS;
                         serialized.clear();
                         continue;
                     }
@@ -1781,7 +1788,11 @@ void ZooKeeper::initFeatureFlags()
 
 void ZooKeeper::initMaxRequestSize()
 {
-    // Best-effort: an absent node (old Keeper / third-party ZooKeeper) keeps the default; a genuine read failure propagates and the connect path reconnects.
+    /// If server doesn't explicitly advertise it, we ignore the path
+    if (!isFeatureEnabled(KeeperFeatureFlag::MAX_REQUEST_SIZE))
+        return;
+
+    /// Best-effort: an absent node keeps the default; a genuine read failure propagates and the connect path reconnects.
     auto value = tryGetSystemZnode(keeper_max_request_size_path, "max request size");
     if (!value.has_value())
         return;
@@ -1793,7 +1804,7 @@ void ZooKeeper::initMaxRequestSize()
         LOG_WARNING(log, "Cannot parse server-advertised max_request_size '{}', ignoring it", value->substr(0, 64));
         return;
     }
-    if (parsed != 0 && (parsed < 1024 || parsed > static_cast<UInt64>(std::numeric_limits<int32_t>::max())))
+    if (parsed != 0 && (parsed < 1024 || parsed > MAX_REQUEST_SIZE_HARD_LIMIT))
     {
         LOG_WARNING(log, "Server-advertised max_request_size {} is out of sane bounds, ignoring it", parsed);
         return;

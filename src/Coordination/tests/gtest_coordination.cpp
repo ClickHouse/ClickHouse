@@ -1022,6 +1022,7 @@ TEST_P(CoordinationTest, TestFeatureFlags)
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE));
     ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA));
+    ASSERT_TRUE(feature_flags.isEnabled(KeeperFeatureFlag::MAX_REQUEST_SIZE));
 }
 
 TEST(CoordinationRequestSize, WriteRejectsRequestOverInt32)

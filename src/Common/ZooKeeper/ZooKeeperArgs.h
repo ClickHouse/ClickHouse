@@ -48,7 +48,7 @@ struct ZooKeeperArgs
     UInt64 num_connection_retries = 2;
     int32_t session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
     int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
-    // Max serialized request size in bytes on the client side; 0 == unlimited.
+    /// Max serialized request size in bytes on the client side; 0 == unlimited.
     UInt64 max_request_size = 0;
     bool enable_fault_injections_during_startup = false;
     double send_fault_probability = 0.0;

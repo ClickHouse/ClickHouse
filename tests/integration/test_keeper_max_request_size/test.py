@@ -157,3 +157,23 @@ def test_compressed_client(started_cluster):
     with pytest.raises(Exception, match="exceeds limit"):
         _insert(node_compressed, "/compr_large", 100, 3000)
     _insert(node_compressed, "/compr_small", 10, 100)
+
+
+# on plain Apache ZooKeeper `/keeper/max_request_size` is ordinary user data and the server
+# does not advertise the MAX_REQUEST_SIZE feature flag, so a value written there by a user
+# must not become a client-side limit
+def test_plain_zookeeper_ignores_user_znode(started_cluster):
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        zk.ensure_path("/keeper")
+        if zk.exists("/keeper/max_request_size"):
+            zk.set("/keeper/max_request_size", b"2048")
+        else:
+            zk.create("/keeper/max_request_size", b"2048")
+        zk.ensure_path("/zk_large")
+    finally:
+        zk.stop()
+        zk.close()
+    # reconnect so the client re-runs the feature-flag discovery against the poisoned znode
+    node_zk.restart_clickhouse()
+    _insert(node_zk, "/zk_large", 100, 3000)
