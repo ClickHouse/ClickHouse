@@ -517,16 +517,26 @@ static bool joinKeyTypeBreaksHashSharding(const IDataType & type)
 /// hash of the join keys, each virtual row is routed to one shard and, having lost its `MergeTreeReadInfo`
 /// through the scatter, would surface as a spurious result row. The in-order read itself is preserved.
 ///
-/// The walk stops at any nested `SortingStep` below the one being scattered (`node` itself): that inner
-/// sort's `MergingSortedTransform` is where the virtual rows of the reads beneath it are consumed, so those
-/// rows never reach the outer scatter and must be left in place. Clearing them would be worse than useless:
-/// `optimizeReadInOrder` may have admitted such an inner read-in-order plan only because
-/// `setVirtualRowConversions` succeeded (for a non-`LEFT ANY/ALL` inner join it otherwise bails out of the
-/// in-order read to avoid reading excessive data), so resetting the conversions after that decision would
-/// leave the inner plan in a shape the inner optimizer would never have produced. A nested `JoinStep` is
-/// not a boundary: `JoiningTransform` forwards virtual rows unchanged, so without an intervening sort they
-/// can still reach the outer scatter through a join - the walk therefore recurses through joins, filters and
-/// unions and only stops at inner sorts.
+/// The walk stops at a nested `SortingStep` below the one being scattered (`node` itself) only when that
+/// inner sort actually consumes or removes the virtual rows of the reads beneath it: `Type::FinishSorting`,
+/// `Type::MergingSorted` and `Type::Full` all run a `MergingSortedTransform` (or, for a single-stream full
+/// sort, a `RemoveVirtualRowTransform`), so those rows never reach the outer scatter and must be left in
+/// place. Clearing them there would be worse than useless: `optimizeReadInOrder` may have admitted such an
+/// inner read-in-order plan only because `setVirtualRowConversions` succeeded (for a non-`LEFT ANY/ALL`
+/// inner join it otherwise bails out of the in-order read to avoid reading excessive data), so resetting the
+/// conversions after that decision would leave the inner plan in a shape the inner optimizer would never
+/// have produced.
+///
+/// `Type::PartitionedFinishSorting` is not such a boundary: with `scatter_partitions == 0` (the
+/// primary-key-range path, `query_plan_join_shard_by_pk_ranges`, which shards a nested read-in-order join at
+/// the source) it only finishes the sort suffix within each partition and never merges, so it does not
+/// consume the source virtual rows below it. Left in place, those rows would reach the outer
+/// `ScatterByPartitionTransform` unchanged - `JoiningTransform` forwards them (see below) - and surface as
+/// spurious result rows. The walk therefore keeps descending through it and resets those sources too.
+///
+/// A nested `JoinStep` is likewise not a boundary: `JoiningTransform` forwards virtual rows unchanged, so
+/// without an intervening consuming sort they can still reach the outer scatter through a join - the walk
+/// recurses through joins, filters and unions and only stops at inner consuming sorts.
 static void disableVirtualRowInSubtree(QueryPlan::Node & node)
 {
     std::stack<QueryPlan::Node *> stack;
@@ -541,9 +551,12 @@ static void disableVirtualRowInSubtree(QueryPlan::Node & node)
 
         for (auto * child : current->children)
         {
-            /// A nested `SortingStep` consumes (in its `MergingSortedTransform`) the virtual rows of the
-            /// reads below it, so those reads cannot reach the outer scatter - do not descend past it.
-            if (typeid_cast<SortingStep *>(child->step.get()))
+            /// A nested consuming `SortingStep` (`FinishSorting` / `MergingSorted` / `Full`) consumes or
+            /// removes the virtual rows of the reads below it, so those reads cannot reach the outer scatter
+            /// - do not descend past it. `PartitionedFinishSorting` does not consume them (see above), so it
+            /// is not a boundary: descend through it and reset the sources beneath it.
+            if (const auto * sort = typeid_cast<const SortingStep *>(child->step.get());
+                sort && sort->getType() != SortingStep::Type::PartitionedFinishSorting)
                 continue;
             stack.push(child);
         }
