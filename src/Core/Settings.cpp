@@ -1903,6 +1903,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Float, group_by_top_k_optimization_load_factor, 1.5, R"(
+For `enable_group_by_top_k_optimization`: how far past the query's `LIMIT` the top-K heap may grow before it is trimmed back, as a multiple of the limit. The same factor bounds the hash table (it is pruned to the heap's size) and gates the optimization off when recorded size statistics show the query produces at most `LIMIT * load_factor` groups.
+
+Larger values trim less often at the cost of a bigger heap and a weaker skip boundary. The minimum is 1. Analogous to the `load_factor` parameter of the `topK` aggregate function.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, group_by_top_k_optimization_observation_rows, 65536, R"(
+For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before declaring a full top-K heap that never skipped a row or evicted a key pure overhead and freezing it. A frozen heap means aggregation continues as if the optimization were disabled.
+
+The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze (the heap still freezes when a boundary tie-set overgrows it).
+)", EXPERIMENTAL) \
     DECLARE(Bool, use_top_k_dynamic_filtering_for_variable_length_types, false, R"(
 Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable-length data type (e.g. `String`, `Array`, `Map`, `Tuple` containing variable-length elements).
 

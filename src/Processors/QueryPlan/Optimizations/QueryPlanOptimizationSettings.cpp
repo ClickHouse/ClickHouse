@@ -29,6 +29,8 @@ namespace Setting
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool enable_group_by_top_k_optimization;
+    extern const SettingsFloat group_by_top_k_optimization_load_factor;
+    extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -171,6 +173,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
     enable_group_by_top_k_optimization = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_group_by_top_k_optimization];
+    top_k_optimization_load_factor = static_cast<Float64>(from[Setting::group_by_top_k_optimization_load_factor].value);
+    top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
 
     query_plan_optimize_join_order_limit = from[Setting::query_plan_optimize_join_order_limit];

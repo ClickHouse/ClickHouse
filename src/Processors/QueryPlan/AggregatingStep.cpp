@@ -185,18 +185,15 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     params.top_k.reset();
 }
 
-void AggregatingStep::applyLimitPushdown(
-    size_t top_k,
-    std::vector<int> directions_,
-    std::vector<int> nulls_directions_,
-    size_t num_key_columns)
+void AggregatingStep::applyLimitPushdown(Aggregator::Params::TopKParams top_k)
 {
-    params.top_k = Aggregator::Params::TopKParams{
-        .keys = top_k,
-        .directions = std::move(directions_),
-        .nulls_directions = std::move(nulls_directions_),
-        .key_columns = num_key_columns,
-    };
+    params.top_k = std::move(top_k);
+
+    /// Note on hash-table size statistics: a heap that skipped or evicted
+    /// prunes the hash tables, so only runs whose heap never rejected anything
+    /// record sizes (see `updateStatistics`); the `Aggregator` constructor
+    /// reads the hint back and skips the heap when the recorded cardinality
+    /// cannot reach the limit.
 }
 
 const SortDescription & AggregatingStep::getSortDescription() const

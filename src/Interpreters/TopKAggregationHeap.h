@@ -50,12 +50,15 @@ struct TopKAggregationHeap
         size_t total_group_by_keys,
         size_t cap,
         const std::vector<int> & dirs,
-        const std::vector<int> & null_dirs)
+        const std::vector<int> & null_dirs,
+        Float64 load_factor,
+        UInt64 observation_rows)
     {
         if (heap_column)
             return;
 
         is_prefix_mode = heap_key_count < total_group_by_keys;
+        trim_load_factor = std::max(1.0, load_factor);
 
         if (heap_key_count == 1)
         {
@@ -70,6 +73,16 @@ struct TopKAggregationHeap
             ColumnRawPtrs heap_cols(key_columns.begin(), key_columns.begin() + heap_key_count);
             init(heap_cols, cap, dirs, null_dirs);
         }
+
+        /// The window must cover at least one full fill of the heap plus as
+        /// much again, so the skip rate is judged on a heap that had a chance
+        /// to establish its boundary.
+        if (observation_rows == 0)
+            profitability_window = 0;
+        else if (next_trim_size >= std::numeric_limits<UInt64>::max() / 2)
+            profitability_window = std::numeric_limits<UInt64>::max();
+        else
+            profitability_window = std::max<UInt64>(observation_rows, 2 * next_trim_size);
     }
 
     size_t size() const { return heap_indices.size(); }
@@ -80,15 +93,30 @@ struct TopKAggregationHeap
         skipped_rows += skipped;
     }
 
+    /// Whether the heap ever skipped a row or evicted a key.  When it never
+    /// did, the aggregation produced exactly the groups it would have produced
+    /// without the heap - in particular the final hash-table sizes are the
+    /// query's true group counts and are safe to record as size statistics.
+    bool everRejected() const { return skipped_rows > 0 || evicted_keys > 0; }
+
     /// Freeze when the heap is pure overhead (full for many rows, never
-    /// rejected anything) or a boundary tie-set overgrew it; the downstream
-    /// sort+limit discards any group an earlier eviction left incomplete.
+    /// rejected anything - a low-cardinality key set) or a boundary tie-set
+    /// overgrew it.  Freezing is always safe: the downstream sort+limit
+    /// discards any group an earlier eviction or skip left incomplete, and a
+    /// frozen heap behaves as if the optimization were off (same time and
+    /// memory).
+    ///
+    /// Note the deliberately narrow condition: a heap that keeps evicting
+    /// (keys arriving in improving order) is left alone even though the churn
+    /// costs time, because it also keeps the hash table bounded, and with
+    /// parallel streams that regularly wins outright.  See the PR notes for
+    /// the measured trade-off.
     bool shouldFreeze() const
     {
         if (frozen || !heap_column)
             return false;
 
-        if (observed_rows >= freeze_observation_threshold
+        if (profitability_window && observed_rows >= profitability_window
             && skipped_rows == 0 && evicted_keys == 0
             && heap_indices.size() >= capacity)
             return true;
@@ -188,7 +216,7 @@ struct TopKAggregationHeap
                 std::push_heap(heap_indices.begin(), heap_indices.end(), cmp);
                 /// Step over the tie-set so the next trim is not immediately
                 /// blocked by the same ties.
-                next_trim_size = std::max(next_trim_size, heap_indices.size() + capacity / 2 + 1);
+                next_trim_size = std::max(next_trim_size, heap_indices.size() + trim_slack + 1);
                 if (heap_indices.size() > tie_overflow_limit)
                     tie_overflow = true;
                 break;
@@ -227,7 +255,11 @@ struct TopKAggregationHeap
 
 private:
     static constexpr size_t max_preallocated_rows = 1ULL << 20;
-    static constexpr UInt64 freeze_observation_threshold = 256 * 1024;
+
+    /// Set from the group_by_top_k_optimization_* settings in `initIfNeeded`.
+    Float64 trim_load_factor = 1.5;
+    size_t trim_slack = 0;
+    UInt64 profitability_window = 0;
 
     std::vector<int> directions;
     std::vector<int> nulls_directions;
@@ -243,10 +275,16 @@ private:
     void setCapacity(size_t cap)
     {
         capacity = cap;
-        const size_t half = capacity / 2;
-        next_trim_size = capacity > std::numeric_limits<size_t>::max() - half
+        /// Slack before a trim: (load_factor - 1) * capacity, at least 1 so a
+        /// trim always makes progress.  Computed in floating point and
+        /// saturated - `capacity` can be near the `size_t` range.
+        const auto slack_f = static_cast<Float64>(capacity) * (trim_load_factor - 1.0);
+        trim_slack = slack_f >= static_cast<Float64>(std::numeric_limits<size_t>::max())
             ? std::numeric_limits<size_t>::max()
-            : capacity + half;
+            : std::max<size_t>(1, static_cast<size_t>(slack_f));
+        next_trim_size = capacity > std::numeric_limits<size_t>::max() - trim_slack
+            ? std::numeric_limits<size_t>::max()
+            : capacity + trim_slack;
         chassert(next_trim_size >= capacity);
 
         /// The heap may exceed `capacity` by at most `max_preallocated_rows` of

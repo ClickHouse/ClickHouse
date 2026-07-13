@@ -1030,7 +1030,9 @@ void Aggregator::executeImpl(
             key_columns, params.top_k->key_columns,
             params.keys.size(),
             params.top_k->keys, params.top_k->directions,
-            params.top_k->nulls_directions);
+            params.top_k->nulls_directions,
+            params.top_k->load_factor,
+            params.top_k->observation_rows);
 
     auto call = [&]<bool prefetch_v, bool top_k_v>(
         bool no_more_keys_arg, bool use_compiled_functions)

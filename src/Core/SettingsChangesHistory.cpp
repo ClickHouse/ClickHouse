@@ -79,6 +79,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_eval_table_function", false, false, "New setting to enable the experimental table function `eval`."},
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
             {"enable_group_by_top_k_optimization", false, false, "New experimental setting to enable the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
+            {"group_by_top_k_optimization_load_factor", 1.5, 1.5, "New experimental setting: how far past the query's LIMIT the top-K heap may grow before it is trimmed back, as a multiple of the limit."},
+            {"group_by_top_k_optimization_observation_rows", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."},
             {"reader_executor_use_long_connections", false, false, "New experimental ReaderExecutor setting (off by default): reuse a held source connection across sequential windows."},
             {"reader_executor_min_bytes_for_seek", 2097152, 2097152, "New experimental ReaderExecutor setting: forward-gap bound for bridging on a held source connection."},
             {"reader_executor_max_tail_for_drain", 1048576, 1048576, "New experimental ReaderExecutor setting: drain bound for completing a dropped long connection."},

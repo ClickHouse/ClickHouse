@@ -120,6 +120,8 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_group_by_top_k_optimization;
+    extern const SettingsFloat group_by_top_k_optimization_load_factor;
+    extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool extremes;
     extern const SettingsBool force_aggregation_in_order;
@@ -780,11 +782,14 @@ void applyTopKPushdownToPartialAggregation(
         nulls_directions.push_back(sort_description[i].nulls_direction);
     }
 
-    aggregating_step.applyLimitPushdown(
-        limit,
-        std::move(directions),
-        std::move(nulls_directions),
-        sort_description.size());
+    aggregating_step.applyLimitPushdown(Aggregator::Params::TopKParams{
+        .keys = limit,
+        .directions = std::move(directions),
+        .nulls_directions = std::move(nulls_directions),
+        .key_columns = sort_description.size(),
+        .load_factor = static_cast<Float64>(settings[Setting::group_by_top_k_optimization_load_factor].value),
+        .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
+    });
 }
 
 void addAggregationStep(QueryPlan & query_plan,

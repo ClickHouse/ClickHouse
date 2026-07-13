@@ -196,11 +196,14 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
         node_above_aggregation->children.front() = &sort_node;
     }
 
-    aggregating_step->applyLimitPushdown(
-        limit,
-        std::move(directions),
-        std::move(nulls_directions),
-        num_key_columns);
+    aggregating_step->applyLimitPushdown(Aggregator::Params::TopKParams{
+        .keys = limit,
+        .directions = std::move(directions),
+        .nulls_directions = std::move(nulls_directions),
+        .key_columns = num_key_columns,
+        .load_factor = settings.top_k_optimization_load_factor,
+        .observation_rows = settings.top_k_optimization_observation_rows,
+    });
     return 0;
 }
 

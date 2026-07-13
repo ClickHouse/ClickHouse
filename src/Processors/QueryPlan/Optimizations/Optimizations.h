@@ -61,6 +61,9 @@ struct Optimization
         std::optional<bool> join_swap_table;
 
         bool enable_group_by_top_k_optimization;
+        /// Tuning for the GROUP BY top-K heap (group_by_top_k_optimization_* settings).
+        Float64 top_k_optimization_load_factor{};
+        UInt64 top_k_optimization_observation_rows{};
         /// For plan steps constructed inside optimizations (e.g. the SortingStep
         /// injected by the GROUP BY top-K pushdown).
         size_t max_block_size{};
