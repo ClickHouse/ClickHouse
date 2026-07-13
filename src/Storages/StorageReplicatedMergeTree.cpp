@@ -7640,12 +7640,12 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
         return;
 
     auto zookeeper = getZooKeeper();
-    bool has_active_unfinished_replica = std::ranges::any_of(unfinished_replicas, [&](const String & replica)
+    bool all_unfinished_replicas_are_inactive = std::ranges::all_of(unfinished_replicas, [&](const String & replica)
     {
-        return zookeeper->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active");
+        return !zookeeper->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active");
     });
 
-    if (!is_dropped && !has_active_unfinished_replica)
+    if (!is_dropped && all_unfinished_replicas_are_inactive)
     {
         throw Exception(
             ErrorCodes::REPLICATED_OPERATION_WILL_BE_DONE_ASYNCHRONOUSLY,

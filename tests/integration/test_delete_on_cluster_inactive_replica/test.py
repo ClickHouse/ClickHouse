@@ -68,15 +68,16 @@ def best_effort_restore_replica_and_drop_database():
             print(f"Failed to drop {DB} on {node.name} during cleanup: {ex}")
 
 
-def get_last_lightweight_delete_task_entry():
+def get_last_task_entry(*query_fragments):
+    query_conditions = "\n          ".join(
+        f"AND position(query, '{fragment}') > 0" for fragment in query_fragments
+    )
     return node1.query(
         f"""
         SELECT entry
         FROM system.distributed_ddl_queue
         WHERE cluster = '{CLUSTER}'
-          AND position(query, '{DB}') > 0
-          AND position(query, '{TABLE}') > 0
-          AND position(query, '_row_exists') > 0
+          {query_conditions}
         ORDER BY entry DESC
         LIMIT 1
         FORMAT TSVRaw
@@ -84,18 +85,11 @@ def get_last_lightweight_delete_task_entry():
     ).strip()
 
 
-def get_last_metadata_alter_task_entry():
-    return node1.query(
-        f"""
-        SELECT entry
-        FROM system.distributed_ddl_queue
-        WHERE cluster = '{CLUSTER}'
-          AND position(query, 'metadata_column') > 0
-        ORDER BY entry DESC
-        LIMIT 1
-        FORMAT TSVRaw
-        """
-    ).strip()
+def assert_async_query(query, settings, match):
+    with pytest.raises(QueryRuntimeException, match=match) as exc_info:
+        node1.query(query, settings=settings, timeout=30)
+
+    assert exc_info.value.returncode == 779
 
 
 def assert_task_executed(zk, entry):
@@ -142,36 +136,23 @@ def test_leader_only_ddl_marks_task_executed_with_inactive_replica(started_clust
             zk.delete(REPLICA_IS_ACTIVE_PATH)
             wait_for_keeper_path_absent(zk, REPLICA_IS_ACTIVE_PATH)
 
-            with pytest.raises(
-                QueryRuntimeException,
-                match="Mutation is not finished because some replicas are inactive right now",
-            ) as exc_info:
-                node1.query(
-                    f"DELETE FROM {DB}.{TABLE} ON CLUSTER {CLUSTER} WHERE id = 1",
-                    settings=DDL_SETTINGS,
-                    timeout=30,
-                )
+            assert_async_query(
+                f"DELETE FROM {DB}.{TABLE} ON CLUSTER {CLUSTER} WHERE id = 1",
+                DDL_SETTINGS,
+                "Mutation is not finished because some replicas are inactive right now",
+            )
+            assert_task_executed(zk, get_last_task_entry(DB, TABLE, "_row_exists"))
 
-            assert exc_info.value.returncode == 779
-
-            assert_task_executed(zk, get_last_lightweight_delete_task_entry())
-
-            with pytest.raises(
-                QueryRuntimeException,
-                match="replicas are inactive right now",
-            ) as exc_info:
-                node1.query(
-                    f"ALTER TABLE {DB}.{TABLE} ON CLUSTER {CLUSTER} ADD COLUMN metadata_column UInt8",
-                    settings={
-                        **DDL_SETTINGS,
-                        "alter_sync": 2,
-                        "replication_wait_for_inactive_replica_timeout": 0,
-                    },
-                    timeout=30,
-                )
-
-            assert exc_info.value.returncode == 779
-            assert_task_executed(zk, get_last_metadata_alter_task_entry())
+            assert_async_query(
+                f"ALTER TABLE {DB}.{TABLE} ON CLUSTER {CLUSTER} ADD COLUMN metadata_column UInt8",
+                {
+                    **DDL_SETTINGS,
+                    "alter_sync": 2,
+                    "replication_wait_for_inactive_replica_timeout": 0,
+                },
+                "replicas are inactive right now",
+            )
+            assert_task_executed(zk, get_last_task_entry("metadata_column"))
         finally:
             zk.stop()
             zk.close()
