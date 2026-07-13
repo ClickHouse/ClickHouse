@@ -91,7 +91,7 @@ public:
 
     /// Wrappers around the private reach / open-decision math.
     bool shouldOpenLongConnection(size_t phys_off) const { return ex.shouldOpenLongConnection(phys_off); }
-    size_t clampReach(size_t reach, size_t phys_off) const { return ex.clampReach(reach, phys_off); }
+    size_t clampReach(size_t predicted_end, size_t phys_off) const { return ex.clampReach(predicted_end, phys_off); }
     size_t scheduleLookaheadReach(size_t phys_off) const { return ex.scheduleLookaheadReach(phys_off); }
 
     /// Counters.
