@@ -18,6 +18,8 @@ CREATE TABLE t_stats_merge_regression
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0;  -- always write wide parts so statistics files are written
 
+SET materialize_statistics_on_insert = 1;
+
 SYSTEM STOP MERGES t_stats_merge_regression;
 
 -- Part 1: 10 rows — 3 zeros in `col`, 3 NULLs in `nullable`.
@@ -34,7 +36,7 @@ INSERT INTO t_stats_merge_regression
            if(number < 4, NULL, toInt32(number))
     FROM numbers(10);
 
--- Sanity: two active parts, each carrying statistics.
+-- Sanity: two active parts, each carrying statistics (built on insert).
 SELECT count() FROM system.parts
 WHERE table = 't_stats_merge_regression' AND active AND database = currentDatabase();
 
