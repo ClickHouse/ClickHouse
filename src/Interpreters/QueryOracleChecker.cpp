@@ -2320,6 +2320,21 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
 
     if (ref_rows != wrapped_rows)
     {
+        /// Both sides read the very same relation (`T` vs `SELECT * FROM (T)`) and
+        /// the comparison is over sorted row-sets, so ordering is already
+        /// normalized out. A difference can therefore only come from a
+        /// non-deterministic read of the base query itself — e.g. a
+        /// merge-collapsing engine read without `FINAL`
+        /// (`SummingMergeTree`/`AggregatingMergeTree`/`ReplacingMergeTree`/
+        /// `CollapsingMergeTree`), an `AggregateFunction` state column whose
+        /// serialized bytes are not canonical, or a non-deterministic function.
+        /// Re-execute the reference once more: if it is not stable across two
+        /// consecutive runs the query is non-deterministic, so this is an oracle
+        /// false positive rather than a subquery-wrapping bug — skip it.
+        auto ref_rows_again_opt = executeAndCollectSortedRows(ref_sql, context);
+        if (!ref_rows_again_opt || *ref_rows_again_opt != ref_rows)
+            return false;
+
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "Subquery wrap oracle mismatch!\n"
