@@ -63,6 +63,11 @@
             --button-active-color: #FE0;
             --button-active-text-color: #000;
             --misc-text-color: #888;
+            /* Theme-varying stops of the progress-line text fill (see #progress-text). In the light
+               theme the text goes smoothly from gray to black across the colored fill: the peak sits
+               at the progress edge (fraction 1) and the peak color is that same black. */
+            --progress-text-peak-color: #000;
+            --progress-text-peak-fraction: 1;
             --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
             --table-header-color: #EEE;
             --table-hover-filter: brightness(0.9);
@@ -129,6 +134,11 @@
             --button-active-color: #FE0;
             --button-active-text-color: #000;
             --misc-text-color: #888;
+            /* In the dark theme the text fill goes gray -> white over the first quarter of the
+               colored fill (peak color white at fraction 0.25), then jumps to black and stays black
+               for the remaining three quarters, returning to gray past the progress edge. */
+            --progress-text-peak-color: #fff;
+            --progress-text-peak-fraction: 0.25;
             --error-color: #400;
             --table-header-color: #102020;
             --table-hover-filter: contrast(0.9) brightness(2);
@@ -1604,10 +1614,12 @@ class QueryProgressElement extends HTMLElement
                 :host
                 {
                     display: grid;
-                    /* Progress and stats share the available width equally, and both can
-                       shrink below their content size (the zero minimum), so they resize
-                       uniformly when the row is narrow instead of one hogging the space. */
-                    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+                    /* A single row: spinner, the progress bar, and the read stats. The progress bar
+                       holds the rows-in-result/elapsed time and the realtime resource usage, so the
+                       progress-bar gradient renders behind all of them. The read stats are sized to
+                       their content (up to a max width, see #stats); the progress bar takes all the
+                       remaining middle space. */
+                    grid-template-columns: auto minmax(0, 1fr) auto;
                     gap: 1rem;
                     align-items: center;
                 }
@@ -1615,6 +1627,18 @@ class QueryProgressElement extends HTMLElement
                 #hourglass, #check-mark
                 {
                     grid-column: 1;
+                    grid-row: 1;
+                }
+
+                #progress
+                {
+                    grid-column: 2;
+                    grid-row: 1;
+                }
+
+                #stats
+                {
+                    grid-column: 3;
                     grid-row: 1;
                 }
 
@@ -1633,10 +1657,17 @@ class QueryProgressElement extends HTMLElement
                     color: #080;
                 }
 
+                /* The progress bar: the --progress gradient fills left-to-right as the query runs,
+                   behind the rows-in-result/elapsed text and the realtime resource usage, which sit
+                   side by side on this single line. Shown as flex from JS. */
                 #progress
                 {
                     display: none;
                     width: 100%;
+                    gap: 0.75rem;
+                    align-items: baseline;
+                    overflow: hidden;
+                    white-space: nowrap;
                     color: var(--misc-text-color);
                     background: linear-gradient(to right,
                         transparent 0%,
@@ -1646,12 +1677,56 @@ class QueryProgressElement extends HTMLElement
 
                 #stats
                 {
+                    /* Sized to the content, but capped so a long read-stats string does not crowd
+                       out the progress bar - it wraps within this width instead. Right-aligned so it
+                       sits next to the download/theme buttons. */
+                    max-width: 28rem;
+                    text-align: right;
                     color: var(--misc-text-color);
                 }
 
                 #stats b
                 {
                     color: var(--progress-color);
+                }
+
+                /* The elapsed time and the realtime metrics (CPU, memory, disk - shown like
+                   clickhouse-client does) share this one element, which sits on top of the
+                   progress-bar gradient. To keep the text readable over the colored fill, the glyphs
+                   are filled (via background-clip: text) with a gradient keyed off the same
+                   --progress stop as the bar, so the text darkens only where it overlaps the bright
+                   fill and stays the usual gray elsewhere. The gradient must be declared here (not
+                   in a custom property) so that var(--progress) is substituted against this
+                   element's live value rather than being baked at the theme's :root declaration. The
+                   two theme-varying scalars come in as --progress-text-peak-color and
+                   --progress-text-peak-fraction: light uses black at fraction 1 (a smooth gray->black
+                   over the whole fill), dark uses white at fraction 0.25 (gray->white over the first
+                   quarter, then a jump to black for the rest). The element spans the full width
+                   (flex: 1) so its gradient lines up with the bar behind it. */
+                #progress-text
+                {
+                    flex: 1;
+                    background-image: linear-gradient(to right,
+                        var(--misc-text-color) 0%,
+                        var(--progress-text-peak-color) calc(var(--progress, 0%) * var(--progress-text-peak-fraction)),
+                        #000 calc(var(--progress, 0%) * var(--progress-text-peak-fraction)),
+                        #000 var(--progress, 0%),
+                        var(--misc-text-color) var(--progress, 0%));
+                    -webkit-background-clip: text;
+                    background-clip: text;
+                    color: transparent;
+                    -webkit-text-fill-color: transparent;
+                    /* Equal-width digits so numbers do not shift as their digits change; combined
+                       with the figure-space padding in _padMetric (a figure space is one digit
+                       wide) this keeps the metrics from bouncing even in a proportional font. */
+                    font-variant-numeric: tabular-nums;
+                }
+
+                /* Elapsed time, realtime metrics, and rows/bytes progress use a monospace font, so
+                   the numbers line up and stay steady as they change. */
+                #progress-text, #stats
+                {
+                    font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
                 }
 
                 @keyframes hourglass-animation
@@ -1665,13 +1740,16 @@ class QueryProgressElement extends HTMLElement
             </style>
             <span id="hourglass">&#10711;</span>
             <span id="check-mark">&#10004;</span>
-            <span id="progress"></span>
+            <div id="progress"><span id="progress-text"></span></div>
             <span id="stats"></span>
         `;
         this._hourglass = this.shadowRoot.getElementById('hourglass');
         this._checkMark = this.shadowRoot.getElementById('check-mark');
         this._progress = this.shadowRoot.getElementById('progress');
+        /// The elapsed time and the realtime metrics share this one element (see `_renderProgressLine`).
+        this._progressText = this.shadowRoot.getElementById('progress-text');
         this._stats = this.shadowRoot.getElementById('stats');
+        this.resetResources();
     }
 
     clear()
@@ -1680,8 +1758,149 @@ class QueryProgressElement extends HTMLElement
         this._checkMark.style.display = 'none';
         this._stats.innerText = '';
         this._progress.style.display = 'none';
-        this._progress.innerText = '';
+        this._progressText.innerText = '';
         this.style.setProperty('--progress', '0%');
+        this.resetResources();
+    }
+
+    /// Reset the realtime resource meters (CPU/memory/disk). CPU usage is derived from the
+    /// cumulative `UserTimeMicroseconds`/`SystemTimeMicroseconds` increments in the profile-events
+    /// packets, divided by the elapsed time from progress packets, like `clickhouse-client` does.
+    resetResources()
+    {
+        this._resources_state = {
+            cpu: 0,          /// Smoothed CPU usage, in cores.
+            cpu_ns: 0,       /// Cumulative CPU time (user + system), in nanoseconds.
+            cpu_at_ns: 0,    /// Elapsed time at which CPU was last sampled, in nanoseconds.
+            /// Per-host memory/disk gauges, keyed by host name: { memory, peak, disk } in bytes.
+            /// The display shows the total across hosts and, for a distributed query (many hosts),
+            /// the maximum over hosts as "max/host" - like `clickhouse-client`.
+            hosts: {},
+            has: false,
+        };
+        /// The maximum rendered width (in characters) seen for each metric, so a value that becomes
+        /// shorter is left-padded to keep its width and the text does not bounce (see `_padMetric`).
+        /// The font is monospace, so one padding character equals one digit.
+        this._resources_widths = {};
+        this._last_elapsed_ns = 0;
+        /// While the query runs the CPU/memory/disk are shown live; once it finishes only the peak
+        /// memory usage is kept (the last CPU and current memory are transient).
+        this._resources_final = false;
+        /// The elapsed time and the metrics are rendered into the single `#progress-text` element;
+        /// each half is kept here and combined by `_renderProgressLine`.
+        this._progress_elapsed = '';
+        this._resources_text = '';
+        if (this._progressText)
+            this._renderProgressLine();
+    }
+
+    /// Consume a batch of profile-event objects (from a framing `profile_events` packet) and
+    /// update the resource meters. Only the per-query aggregate (`thread_id == 0`) is considered;
+    /// memory and disk are tracked per host (by `host_name`) so a distributed query can show both
+    /// the total across hosts and the maximum over hosts.
+    feedProfileEvents(events)
+    {
+        const r = this._resources_state;
+        let cpu_delta_ns = 0;
+
+        for (const e of events)
+        {
+            if (e.thread_id !== '0') continue;
+            const value = +e.value;
+            if (value < 0) continue;
+
+            if (e.name === 'UserTimeMicroseconds' || e.name === 'SystemTimeMicroseconds')
+            {
+                cpu_delta_ns += value * 1000; /// The value is a per-packet increment in microseconds.
+                continue;
+            }
+
+            /// Memory/disk gauges are absolute per host; keep the latest value for each host.
+            let host = r.hosts[e.host_name];
+            if (!host) host = r.hosts[e.host_name] = { memory: 0, peak: 0, disk: 0 };
+            if (e.name === 'MemoryTrackerUsage')
+                host.memory = value;
+            else if (e.name === 'MemoryTrackerPeakUsage')
+                host.peak = value;
+            else if (e.name === 'TemporaryDataOnDiskUsage')
+                host.disk = value;
+        }
+
+        r.cpu_ns += cpu_delta_ns;
+        const elapsed_ns = this._last_elapsed_ns;
+        const dt = elapsed_ns - r.cpu_at_ns;
+        if (dt > 0)
+        {
+            const instant = cpu_delta_ns / dt; /// Cores used during this interval.
+            /// Light smoothing to reduce jitter, similar to the client's event-rate meter.
+            r.cpu = r.cpu ? (r.cpu * 0.5 + instant * 0.5) : instant;
+            r.cpu_at_ns = elapsed_ns;
+        }
+
+        r.has = true;
+        this._renderResources();
+    }
+
+    _renderResources()
+    {
+        const r = this._resources_state;
+        if (!r.has) return;
+
+        /// Aggregate the per-host gauges into totals and per-host maxima.
+        let mem_total = 0, mem_max = 0, peak_max = 0, disk_total = 0, disk_max = 0;
+        for (const name in r.hosts)
+        {
+            const host = r.hosts[name];
+            mem_total += host.memory; mem_max = Math.max(mem_max, host.memory);
+            peak_max = Math.max(peak_max, host.peak);
+            disk_total += host.disk; disk_max = Math.max(disk_max, host.disk);
+        }
+
+        /// Once the query has finished, keep only the peak memory usage (like the final line of
+        /// clickhouse-client) - the last CPU and current memory readings are no longer meaningful.
+        if (this._resources_final)
+        {
+            this._resources_text = peak_max > 0 ? `${formatReadableBytes(peak_max)} RAM` : '';
+            this._renderProgressLine();
+            return;
+        }
+
+        /// While the query runs, show only momentary values (CPU, current memory, disk on disk);
+        /// the peak is shown only after the query finishes (in the branch above). For a distributed
+        /// query (many hosts), also show the maximum over hosts as "max/host", like the client.
+        /// Each metric is padded to the widest it has been so the text does not bounce as values
+        /// grow and shrink (e.g. CPU going from "12.3" to "9.1").
+        const parts = [this._padMetric('cpu', `${Math.max(0, r.cpu).toFixed(1)} CPU`)];
+        if (mem_total > 0) parts.push(this._padMetric('ram', `${formatReadableBytes(mem_total)} RAM`));
+        if (mem_max < mem_total) parts.push(this._padMetric('ram_max', `${formatReadableBytes(mem_max)} max/host`));
+        if (disk_total > 0) parts.push(this._padMetric('disk', `${formatReadableBytes(disk_total)} disk`));
+        if (disk_max < disk_total) parts.push(this._padMetric('disk_max', `${formatReadableBytes(disk_max)} max/host`));
+
+        this._resources_text = parts.join(', ');
+        this._renderProgressLine();
+    }
+
+    /// Render the single progress-bar line combining the elapsed time and the realtime metrics
+    /// (two figure spaces apart), and reveal the progress bar when there is anything to show.
+    _renderProgressLine()
+    {
+        const elapsed = this._progress_elapsed || '';
+        const metrics = this._resources_text || '';
+        const separator = (elapsed && metrics) ? '\u2007' : ''; /// a single figure space (does not collapse); metric padding adds any extra
+        this._progressText.textContent = elapsed + separator + metrics;
+        if (elapsed || metrics)
+            this._progress.style.display = 'flex';
+    }
+
+    /// Left-pad a metric string with non-breaking spaces so its width never shrinks below the widest
+    /// it has been (per `key`). This stops the realtime metrics from bouncing left/right as numbers
+    /// change width; the monospace font makes a padding space exactly one digit wide.
+    _padMetric(key, str)
+    {
+        const widths = this._resources_widths;
+        const width = Math.max(widths[key] || 0, str.length);
+        widths[key] = width;
+        return '\u2007'.repeat(width - str.length) + str; /// pad with figure spaces (one digit wide, non-collapsing)
     }
 
     start()
@@ -1694,14 +1913,32 @@ class QueryProgressElement extends HTMLElement
     {
         this._hourglass.style.display = 'none';
         this._checkMark.style.display = 'inline-block';
+        /// Collapse the resource line to the peak memory usage now that the query is done.
+        this._resources_final = true;
+        this._renderResources();
+    }
+
+    /// The query was cancelled (Stop): stop the spinner without showing the success check mark,
+    /// and collapse the resource line to the peak memory usage, keeping whatever was shown so far.
+    stop()
+    {
+        this._hourglass.style.display = 'none';
+        this._checkMark.style.display = 'none';
+        this._resources_final = true;
+        this._renderResources();
     }
 
     updateProgress(progress)
     {
-        const rows = +progress.read_rows;
-        const bytes = +progress.read_bytes;
-        const total_rows = +progress.total_rows_to_read;
-        const elapsed_ns = +progress.elapsed_ns;
+        /// The framing format's progress packet omits zero fields, so a missing field must read as 0
+        /// (not NaN) - otherwise "Read NaN rows, NaN" is shown before the first rows are processed.
+        const rows = +progress.read_rows || 0;
+        const bytes = +progress.read_bytes || 0;
+        const total_rows = +progress.total_rows_to_read || 0;
+        const elapsed_ns = +progress.elapsed_ns || 0;
+
+        /// Remembered for CPU-usage computation from the profile-events packets.
+        if (elapsed_ns) this._last_elapsed_ns = elapsed_ns;
 
         let formatted_rows = formatReadableRows(rows);
         let formatted_bytes = formatReadableBytes(bytes);
@@ -1719,16 +1956,21 @@ class QueryProgressElement extends HTMLElement
 
         let text = '';
 
-        if (total_rows) { text += (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, '; }
+        /// Don't show the read progress until something has actually been read (avoids a useless
+        /// "Read 0 rows, 0.00 B" before the query starts producing progress).
+        if (rows || bytes)
+        {
+            if (total_rows) { text += (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, '; }
 
-        text += `Read ${formatted_rows} rows, ${formatted_bytes}`;
+            text += `Read ${formatted_rows} rows, ${formatted_bytes}`;
 
-        if (rps > 1e6) { text += ` (${formatted_rps}, ${formatted_bps})`; }
+            if (rps > 1e6) { text += ` (${formatted_rps}, ${formatted_bps})`; }
+        }
 
         this._stats.innerHTML = text;
 
         this.style.setProperty('--progress',
-            rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
+            rows && total_rows ? (100 * rows / total_rows) + '%' : '0%');
     }
 
     updateText(rowCount, elapsedNs, incomplete)
@@ -1740,8 +1982,8 @@ class QueryProgressElement extends HTMLElement
             if (elapsedNs) progress_text += ', ';
         }
         if (elapsedNs) { progress_text += `${(elapsedNs / 1e9).toFixed(2)} sec.`; }
-        this._progress.innerText = progress_text;
-        this._progress.style.display = 'block';
+        this._progress_elapsed = progress_text;
+        this._renderProgressLine();
     }
 }
 customElements.define('query-progress', QueryProgressElement);
@@ -2165,16 +2407,112 @@ class QueryResultElement extends HTMLElement
                 .u-hz .u-cursor-y, .u-vt .u-cursor-x {width: 100%;border-bottom: 1px dashed #607D8B;}
                 .u-cursor-pt {position: absolute;top: 0;left: 0;border-radius: 50%;border: 0 solid;pointer-events: none;will-change: transform;z-index: 100;background-clip: padding-box !important;}
                 .u-axis.u-off, .u-select.u-off, .u-cursor-x.u-off, .u-cursor-y.u-off, .u-cursor-pt.u-off {display: none;}
+
+                /* Tab bar to switch between the result and the server logs streamed via the
+                   framing format. Hidden until a framing query starts. */
+                #view-toggle
+                {
+                    display: none;
+                    margin-top: 1rem;
+                    gap: 0.5rem;
+                }
+
+                .view-btn
+                {
+                    user-select: none;
+                    cursor: pointer;
+                    padding: 0.2rem 0.75rem;
+                    font-family: inherit;
+                    font-size: 100%;
+                    color: var(--text-color);
+                    background-color: var(--table-header-color);
+                    border: 1px solid var(--border-color);
+                }
+
+                .view-btn.active
+                {
+                    color: var(--button-active-text-color);
+                    background-color: var(--button-color);
+                    font-weight: bold;
+                }
+
+                /* The logs grow to fit their content (no inner scroll bar); the page scrolls. */
+                #logs_div
+                {
+                    display: none;
+                    margin-top: 1rem;
+                    padding: 0.5rem;
+                    background-color: var(--element-background-color);
+                    filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+                }
+
+                #logs-content
+                {
+                    white-space: pre-wrap;
+                    /* Break long log lines at any character rather than only at word boundaries. */
+                    word-break: break-all;
+                    font-size: 90%;
+                    line-height: 1.35;
+                    color: var(--text-color);
+                }
+
+                .log-line
+                {
+                    color: var(--text-color);
+                    /* Keep every line in the DOM (so native find-in-page / Ctrl+F searches all of
+                       them, and the browser reveals matches) but skip layout and paint for the lines
+                       scrolled out of view, so the logs view stays fast with very many lines.
+                       contain-intrinsic-size gives an estimated height for the skipped lines. */
+                    content-visibility: auto;
+                    contain-intrinsic-size: auto 1.5em;
+                }
+
+                /* Priority-token colors, mirroring the ANSI palette clickhouse-client uses
+                   (see setColorForLogPriority in base/base/terminalColors.cpp). Only the
+                   priority token is styled; the other fields are hash-colored inline. */
+                .log-prio-Fatal { color: #fff; background-color: #e5484d; font-weight: bold; }
+                .log-prio-Critical { color: #fff; background-color: #e5484d; }
+                .log-prio-Error { color: #e5484d; font-weight: bold; }
+                .log-prio-Warning { color: #e5484d; }
+                .log-prio-Notice { color: #b58900; }
+                .log-prio-Information { font-weight: bold; }
+                .log-prio-Debug { }
+                .log-prio-Trace { opacity: 0.6; }
+                .log-prio-Test { opacity: 0.5; }
             </style>
-            <div id="data_div">
-                <table class="monospace shadow" id="data-table"></table>
-                <pre class="monospace shadow" id="data-unparsed"></pre>
+            <div id="view-toggle">
+                <button type="button" class="view-btn active" id="view-result">Result</button>
+                <button type="button" class="view-btn" id="view-logs">Logs</button>
             </div>
-            <img id="image" class="shadow" alt="Query result image">
-            <div id="chart"></div>
-            <div id="graph"></div>
-            <p id="error" class="monospace shadow"></p>
+            <div id="result-group">
+                <div id="data_div">
+                    <table class="monospace shadow" id="data-table"></table>
+                    <pre class="monospace shadow" id="data-unparsed"></pre>
+                </div>
+                <img id="image" class="shadow" alt="Query result image">
+                <div id="chart"></div>
+                <div id="graph"></div>
+                <p id="error" class="monospace shadow"></p>
+            </div>
+            <div id="logs_div"><div id="logs-content" class="monospace"></div></div>
         `;
+
+        this._resultGroup = this.shadowRoot.getElementById('result-group');
+        this._viewToggle = this.shadowRoot.getElementById('view-toggle');
+        this._btnResult = this.shadowRoot.getElementById('view-result');
+        this._btnLogs = this.shadowRoot.getElementById('view-logs');
+        this._logsDiv = this.shadowRoot.getElementById('logs_div');
+        this._logsContent = this.shadowRoot.getElementById('logs-content');
+        this._log_count = 0;
+        /// Incoming log lines are buffered and appended to the DOM in batches (see `appendLog`),
+        /// at most `MAX_PER_FRAME` per animation frame, so a burst of many lines does not block.
+        /// Every line stays in the DOM (for native find-in-page); `content-visibility` keeps the
+        /// off-screen ones cheap. `_log_flush_raf` is the pending frame request (0 when none).
+        this._log_buffer = [];
+        this._log_flush_raf = 0;
+        this._view = 'result';
+        this._btnResult.addEventListener('click', () => this.showView('result'));
+        this._btnLogs.addEventListener('click', () => this.showView('logs'));
 
         this._dataDiv = this.shadowRoot.getElementById('data_div');
         this._dataTable = this.shadowRoot.getElementById('data-table');
@@ -2286,6 +2624,20 @@ class QueryResultElement extends HTMLElement
         this._emphasized_value = null;
         this._emphasized_active_cell = null;
         clearTimeout(this._emphasis_timer);
+
+        /// Reset the logs view (streamed via the framing format).
+        if (this._log_flush_raf) { cancelAnimationFrame(this._log_flush_raf); this._log_flush_raf = 0; }
+        this._log_buffer = [];
+        this._clearElement(this._logsContent);
+        this._logsContent.style.display = 'block';
+        this._log_count = 0;
+        this._view = 'result';
+        this._resultGroup.style.display = '';
+        this._logsDiv.style.display = 'none';
+        this._viewToggle.style.display = 'none';
+        this._btnLogs.textContent = 'Logs';
+        this._btnResult.classList.add('active');
+        this._btnLogs.classList.remove('active');
     }
 
     /// Select a cell and move keyboard focus to it. We focus the cell itself rather than
@@ -3187,6 +3539,117 @@ class QueryResultElement extends HTMLElement
         this._error.style.display = 'block';
     }
 
+    get logCount() { return this._log_count; }
+
+    /// Reveal the result/logs tab bar (used when a framing query starts, so the switcher is
+    /// available even before the first log line arrives).
+    enableViews()
+    {
+        this._viewToggle.style.display = 'flex';
+    }
+
+    /// Queue a server log entry (from a framing `log` packet) for the logs view. Lines are buffered
+    /// and appended in batches per animation frame (see `_flushLogs`), so streaming many lines does
+    /// not do a DOM insertion, reflow and counter update per line.
+    appendLog(entry)
+    {
+        this._log_buffer.push(entry);
+        ++this._log_count;
+
+        if (!this._log_flush_raf)
+            this._log_flush_raf = requestAnimationFrame(() => this._flushLogs());
+    }
+
+    /// Append buffered log lines to the DOM. To keep the UI responsive when a very large burst
+    /// arrives at once, at most `MAX_PER_FRAME` lines are built per frame; if more remain, another
+    /// frame is scheduled. All lines stay in the DOM (so native find-in-page can search them);
+    /// `content-visibility` keeps the off-screen ones cheap to hold.
+    _flushLogs()
+    {
+        this._log_flush_raf = 0;
+        if (this._log_buffer.length === 0)
+            return;
+
+        const MAX_PER_FRAME = 1000;
+        const chunk = this._log_buffer.length > MAX_PER_FRAME
+            ? this._log_buffer.splice(0, MAX_PER_FRAME)
+            : this._log_buffer.splice(0);
+
+        const fragment = document.createDocumentFragment();
+        for (const entry of chunk)
+            fragment.appendChild(this._buildLogLine(entry));
+        this._logsContent.appendChild(fragment);
+
+        this._btnLogs.textContent = `Logs (${this._log_count})`;
+        this._viewToggle.style.display = 'flex';
+
+        if (this._log_buffer.length > 0)
+            this._log_flush_raf = requestAnimationFrame(() => this._flushLogs());
+    }
+
+    /// Build one log line element. It mirrors clickhouse-client's format (see `writeLogs` in
+    /// src/Client/InternalTextLogs.cpp):
+    ///   [host_name] event_time [ thread_id ] {query_id} <priority> source: text
+    /// with each field hash-colored and the priority token colored by its level.
+    _buildLogLine(entry)
+    {
+        const line = document.createElement('div');
+        line.className = 'log-line';
+
+        const plain = text => line.appendChild(document.createTextNode(text));
+        const colored = text =>
+        {
+            const span = document.createElement('span');
+            span.textContent = text;
+            span.style.color = logColor(text);
+            line.appendChild(span);
+        };
+
+        if (entry.host_name)
+        {
+            plain('[');
+            colored(entry.host_name);
+            plain('] ');
+        }
+
+        plain(entry.event_time);
+
+        plain(' [ ');
+        colored(String(entry.thread_id));
+        plain(' ]');
+
+        if (entry.query_id)
+        {
+            plain(' {');
+            colored(entry.query_id);
+            plain('}');
+        }
+
+        plain(' <');
+        const prio = document.createElement('span');
+        prio.textContent = entry.priority;
+        prio.className = 'log-prio-' + entry.priority;
+        line.appendChild(prio);
+        plain('> ');
+
+        colored(entry.source);
+        plain(': ');
+        plain(entry.text);
+
+        return line;
+    }
+
+    /// Switch between the query result and the server logs.
+    showView(view)
+    {
+        this._view = view;
+        const logs = view === 'logs';
+        this._resultGroup.style.display = logs ? 'none' : '';
+        this._logsDiv.style.display = logs ? 'block' : 'none';
+        this._btnResult.classList.toggle('active', !logs);
+        this._btnLogs.classList.toggle('active', logs);
+    }
+
     updateRaw(data)
     {
         const fragment = document.createTextNode(data);
@@ -3616,7 +4079,8 @@ let resultEl = document.getElementById('query-result');
 let logoEl = document.getElementById('logo-container');
 
 resultEl.addEventListener('query-progress', (e) => {
-    elapsed_ns = +e.detail.elapsed_ns;
+    /// A missing `elapsed_ns` (omitted when zero by the framing progress packet) reads as 0, not NaN.
+    elapsed_ns = +e.detail.elapsed_ns || 0;
     progressEl.updateProgress(e.detail);
     progressEl.updateText(resultEl.rowCount, elapsed_ns, resultEl.incompleteResult);
 });
@@ -4469,6 +4933,253 @@ let elapsed_ns = 0;
 const default_format = 'JSONStringsEachRowWithProgress';
 
 let controller = null;
+
+/// Color helpers for the logs view, mirroring how `clickhouse-client` colors streamed server logs
+/// (see `writeLogs` in src/Client/InternalTextLogs.cpp): each of the host name, query id, thread id
+/// and logger name is tinted by a hash of its value. The exact hash need not match the server's -
+/// we reuse the same constant-luminance mapping (`setColor` in base/base/terminalColors.cpp) so the
+/// palette has the same look.
+function _logHash(s)
+{
+    /// A small FNV-1a hash; only the low 16 bits are used for the color.
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; ++i)
+    {
+        h ^= s.charCodeAt(i);
+        h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return h;
+}
+
+function logColor(text)
+{
+    const hash = _logHash(text);
+    const cb = hash % 256;
+    const cr = Math.floor(hash / 256) % 256;
+    const y = 128;
+    /// `static_cast<UInt8>` truncates toward zero, and the values are clamped to [0, 255].
+    const clamp = v => Math.max(0, Math.min(255, Math.trunc(v)));
+    const r = clamp(y + 1.402 * (cr - 128));
+    const g = clamp(y - 0.344136 * (cb - 128) - 0.714136 * (cr - 128));
+    const b = clamp(y + 1.772 * (cb - 128));
+    return `rgb(${r}, ${g}, ${b})`;
+}
+
+/// Parse a framing `EventStream` (HTTP server-sent events) response and drive the result element.
+///
+/// Every packet is an event named after its kind: `data`, `totals`, `extremes`, `progress`, `log`,
+/// `profile_events`, `exception`. Payload packets (`data`/`totals`/`extremes`) carry the output
+/// format bytes split over one `data:` field per line; per the SSE specification the client rebuilds
+/// the payload by joining the `data:` field values with '\n'. Here the output format is the default
+/// line-delimited JSON, so we feed each reconstructed line to `update`, exactly like the non-framed
+/// streaming path. Auxiliary packets are JSON: `progress` updates the progress indicator, `log`
+/// entries go to the logs view, `profile_events` feed the CPU/memory/disk meters, and `exception`
+/// is rendered as an error.
+///
+/// Returns `{ reply }` with the raw response text, or `{ cancelled: true }` if a newer request
+/// superseded this one.
+/// Decode a base64 string (an `EventStream` payload for a binary output format) into a byte array.
+function base64ToBytes(b64)
+{
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; ++i)
+        bytes[i] = binary.charCodeAt(i);
+    return bytes;
+}
+
+/// Output formats that produce an image, mapped to their MIME type. With a framing format the
+/// response `Content-Type` is `text/event-stream`, so the output format is taken from the
+/// `X-ClickHouse-Format` header instead.
+function imageMimeForFormat(format)
+{
+    return format === 'PNG' ? 'image/png' : null;
+}
+
+/// If the bytes begin with a known image signature, return the corresponding MIME type, else null.
+function imageMimeFromBytes(bytes)
+{
+    const startsWith = (sig, offset = 0) => sig.every((b, i) => bytes[offset + i] === b);
+    if (startsWith([0x89, 0x50, 0x4E, 0x47])) return 'image/png';
+    if (startsWith([0xFF, 0xD8, 0xFF])) return 'image/jpeg';
+    if (startsWith([0x47, 0x49, 0x46, 0x38])) return 'image/gif';
+    if (startsWith([0x42, 0x4D])) return 'image/bmp';
+    if (startsWith([0x52, 0x49, 0x46, 0x46]) && startsWith([0x57, 0x45, 0x42, 0x50], 8)) return 'image/webp';
+    return null;
+}
+
+/// Render the concatenated bytes of the base64-decoded `data`/`totals`/`extremes` payloads of a
+/// binary `EventStream` response: as an inline image when the output format is an image one
+/// (`imageMime`, from the `X-ClickHouse-Format` header) or the bytes carry an image signature,
+/// otherwise as raw text (best effort - true binary shows as its UTF-8 interpretation, like the
+/// non-framed path). Returns true if an image was rendered.
+function renderBinaryPayload(targetResultEl, chunks, imageMime)
+{
+    let length = 0;
+    for (const chunk of chunks) length += chunk.length;
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+
+    const mime = imageMime || imageMimeFromBytes(bytes);
+    if (mime)
+    {
+        targetResultEl.renderImage(new Blob([bytes], { type: mime }));
+        return true;
+    }
+    targetResultEl.updateRaw(new TextDecoder().decode(bytes));
+    return false;
+}
+
+/// Dispatch a single parsed SSE event (a packet of a framing `EventStream` response) to the result
+/// element. `options.onStop` is called when the result element asks to stop (e.g. a row limit was
+/// reached); `options.resourceMeter`, if given, receives profile-event batches for the live meters;
+/// `options.onBytes`, if given (binary output formats), receives the base64-decoded payload bytes.
+function makeEventStreamHandler(targetResultEl, options = {})
+{
+    return (name, dataLines) =>
+    {
+        if (name === 'data' || name === 'totals' || name === 'extremes')
+        {
+            /// For a binary or raw output format (`options.onBytes`), the payload is base64-encoded
+            /// (a single `data:` field). Decode it to bytes and hand them off to be rendered as an
+            /// image or raw text once the whole stream is read.
+            if (options.onBytes)
+            {
+                options.onBytes(base64ToBytes(dataLines.join('')));
+                return;
+            }
+            const payload = dataLines.join('\n');
+            /// For a non-default output format (`options.rawText`), the payload is the format's own
+            /// text (e.g. `Pretty`, `TSV`), shown verbatim. Concatenating the payloads of the data,
+            /// totals and extremes packets reproduces exactly what the format would have written.
+            if (options.rawText)
+            {
+                targetResultEl.updateRaw(payload);
+                return;
+            }
+            const fragment = document.createDocumentFragment();
+            let cont = true;
+            for (const line of payload.split('\n'))
+            {
+                if (line === '') continue;
+                cont = targetResultEl.update(JSON.parse(line), fragment);
+                if (!cont) break;
+            }
+            targetResultEl.flushFragment(fragment);
+            if (!cont && options.onStop) options.onStop();
+        }
+        else if (name === 'progress')
+        {
+            if (dataLines[0]) targetResultEl.update({ progress: JSON.parse(dataLines[0]) });
+        }
+        else if (name === 'log')
+        {
+            for (const line of dataLines)
+                if (line) targetResultEl.appendLog(JSON.parse(line));
+        }
+        else if (name === 'profile_events')
+        {
+            if (!options.resourceMeter) return;
+            const events = [];
+            for (const line of dataLines)
+                if (line) events.push(JSON.parse(line));
+            if (events.length) options.resourceMeter(events);
+        }
+        else if (name === 'exception')
+        {
+            /// The payload is `{"exception": "..."}`, handled by `update` as an error.
+            if (dataLines[0]) targetResultEl.update(JSON.parse(dataLines[0]));
+        }
+    };
+}
+
+/// Parse one SSE event block (the text between two blank lines) into its event name and the list of
+/// its `data:` field values, then dispatch it. Returns false for an empty block.
+function dispatchEventStreamBlock(block, handleEvent)
+{
+    if (block === '') return false;
+
+    let name = 'message';
+    const dataLines = [];
+    for (const raw of block.split('\n'))
+    {
+        if (raw.startsWith('event:')) name = raw.slice(6).trim();
+        /// A single optional space after the colon is part of the SSE syntax, not the data.
+        else if (raw.startsWith('data:')) dataLines.push(raw.slice(5).replace(/^ /, ''));
+    }
+    if (name === 'message' && dataLines.length === 0) return false;
+
+    handleEvent(name, dataLines);
+    return true;
+}
+
+/// Render a complete framing `EventStream` response given as text (used when restoring a result
+/// snapshot from history, where the whole stream was already captured). `rawText` selects raw-text
+/// rendering for non-default output formats (see `makeEventStreamHandler`).
+function renderEventStreamText(text, targetResultEl, rawText)
+{
+    const handleEvent = makeEventStreamHandler(targetResultEl, { rawText });
+    for (const block of text.split('\n\n'))
+        dispatchEventStreamBlock(block, handleEvent);
+}
+
+async function readEventStream(response, targetResultEl, abortController, posted_request_num, rawText, base64, imageMime)
+{
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    let buffer = '';
+    let reply = '';
+    let stop = false;
+    /// In base64 mode (binary output format) the decoded payload bytes are collected and rendered
+    /// (as an image or raw text) once the whole stream has been read.
+    const binary_chunks = base64 ? [] : null;
+
+    const handleEvent = makeEventStreamHandler(targetResultEl, {
+        onStop: () => { stop = true; },
+        resourceMeter: (events) => progressEl.feedProfileEvents(events),
+        rawText,
+        onBytes: base64 ? (bytes) => binary_chunks.push(bytes) : undefined,
+    });
+
+    while (true)
+    {
+        const { done, value } = await reader.read();
+        if (posted_request_num != request_num) { return { cancelled: true }; }
+
+        if (value)
+        {
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
+            reply += chunk;
+        }
+
+        /// Events are separated by a blank line; process every complete event in the buffer.
+        let sep;
+        while ((sep = buffer.indexOf('\n\n')) >= 0)
+        {
+            const block = buffer.slice(0, sep);
+            buffer = buffer.slice(sep + 2);
+
+            dispatchEventStreamBlock(block, handleEvent);
+
+            if (stop)
+            {
+                abortController.abort();
+                return { reply };
+            }
+        }
+
+        if (done) break;
+    }
+
+    /// Render the collected binary payload (image or raw text) once the stream is complete.
+    const is_image = binary_chunks ? renderBinaryPayload(targetResultEl, binary_chunks, imageMime) : false;
+
+    return { reply, is_image };
+}
+
 /// Execute a single query, rendering results into the given targetResultEl.
 /// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_image, is_error }.
 /// The caller is responsible for top-level UI (download buttons, history, favicon).
@@ -4494,8 +5205,21 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
     }
 
-    /// Extremes only if the format is likely to be unchanged. This is imprecise.
-    if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
+    /// The default JSON-based format applies only when the query has no explicit `FORMAT` clause.
+    /// This is the same (imprecise) condition under which we request extremes.
+    const explicit_format_match = query.match(/\bFORMAT\s+(\w+)/i);
+    const explicit_format = explicit_format_match ? explicit_format_match[1] : null;
+    const default_format_applies = !explicit_format;
+    if (default_format_applies) url += '&extremes=1';
+
+    /// Always stream progress, server logs, and profile events (metrics), regardless of the output
+    /// format, by multiplexing them with the formatted data in a single response stream (the
+    /// `EventStream` framing format - server-sent events). This works for any output format; if the
+    /// server rejects it (a format that cannot be framed, or a server without framing support), we
+    /// retry without framing (see below). `JSONCompactColumns` is excluded because charts are
+    /// rendered from the full response, not streamed. See `docs/en/interfaces/framing-formats.md`.
+    let use_framing = !(explicit_format && explicit_format.toLowerCase() === 'jsoncompactcolumns');
+    const framing_url = url + '&framing_output_format=EventStream&send_logs_level=trace';
 
     targetResultEl.queryText = query;
 
@@ -4508,15 +5232,49 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     let response, reply, format;
     reply = '';
     try {
-        response = await fetch(url, { method: "POST", body: query, signal: abortController.signal,
-            headers: { 'Authorization': 'never' } });
+        const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: { 'Authorization': 'never' } };
+        response = await fetch(use_framing ? framing_url : url, fetch_options);
 
-        format = response.headers.get('X-ClickHouse-Format') ?? default_format;
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
         /// parsing the query, so any format that emits an image is rendered inline as a picture.
-        const content_type = response.headers.get('Content-Type') ?? '';
+        let content_type = response.headers.get('Content-Type') ?? '';
 
-        if (!response.ok) {
+        /// If framing was requested but the response is not a framing stream on an error, the output
+        /// format is not compatible with framing (binary or raw output), or the server does not
+        /// support framing. Retry once without framing so the query still runs - without the streamed
+        /// logs and metrics. (When framing is applied, even an exception comes back as an event
+        /// stream, so a non-event-stream error unambiguously means framing was not applied.)
+        if (use_framing && !response.ok && !content_type.startsWith('text/event-stream')) {
+            use_framing = false;
+            response = await fetch(url, fetch_options);
+            content_type = response.headers.get('Content-Type') ?? '';
+        }
+
+        format = response.headers.get('X-ClickHouse-Format') ?? default_format;
+
+        /// An image output format (`PNG`) is detected by the `X-ClickHouse-Format` header as well as
+        /// by the `Content-Type`: with a framing format the `Content-Type` is `text/event-stream`, so
+        /// it no longer reveals the output format.
+        const image_mime = imageMimeForFormat(format);
+
+        /// For any streaming (framing) query, show the result/logs switcher up front - regardless of
+        /// the outcome - so the server logs streamed before a failure stay reachable and the Logs
+        /// button is present in the case of an exception too.
+        if (use_framing) {
+            targetResultEl.enableViews();
+        }
+
+        if (!response.ok && content_type.startsWith('text/event-stream')) {
+            /// A framing `EventStream` response carries the exception as the last packet even on an
+            /// HTTP error status, along with any data and logs produced before it. Parse the whole
+            /// stream: `readEventStream` renders the partial result, the logs, and the exception.
+            is_error = true;
+            const base64 = content_type.includes('payload=base64');
+            const res = await readEventStream(response, targetResultEl, abortController, posted_request_num, !base64 && format !== default_format, base64, image_mime);
+            if (res.cancelled) { return { cancelled: true }; }
+            reply = res.reply;
+            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
+        } else if (!response.ok) {
             is_error = true;
             reply = await response.text();
             if (posted_request_num != request_num) { return { cancelled: true }; }
@@ -4534,11 +5292,30 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             }
 
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
-        } else if (content_type.startsWith('image/')) {
+        } else if ((content_type.startsWith('image/') || image_mime) && !content_type.startsWith('text/event-stream')) {
+            /// A non-framed image response: the whole body is the image. (A framed image response is
+            /// an event stream and is handled below, where the base64 payload is decoded to bytes.)
             is_image = true;
-            const blob = await response.blob();
+            /// Use the format's MIME type when the response `Content-Type` does not carry it.
+            const blob = image_mime && !content_type.startsWith('image/')
+                ? new Blob([await response.arrayBuffer()], { type: image_mime })
+                : await response.blob();
             if (posted_request_num != request_num) { return { cancelled: true }; }
             targetResultEl.renderImage(blob);
+        } else if (content_type.startsWith('text/event-stream')) {
+            /// The framing `EventStream` format: data/totals/extremes packets carry the bytes of the
+            /// output format; progress, log, and profile-event packets drive the progress indicator,
+            /// the logs view, and the realtime resource meters. The payload is line-delimited JSON
+            /// parsed into a table for the default format; raw text for another text format; or, when
+            /// the content type carries `payload=base64` (a binary or raw output format), base64 that
+            /// is decoded and rendered as an image or raw text.
+            const base64 = content_type.includes('payload=base64');
+            const raw_text = !base64 && format !== default_format;
+            const res = await readEventStream(response, targetResultEl, abortController, posted_request_num, raw_text, base64, image_mime);
+            if (res.cancelled) { return { cancelled: true }; }
+            if (base64) { if (res.is_image) is_image = true; else is_raw = true; }
+            else if (raw_text) is_raw = true; else is_table = true;
+            reply = res.reply;
         } else if (format == default_format) {
             is_table = true;
             const reader = response.body.getReader();
@@ -4696,7 +5473,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
     }
 
     progressEl.updateText(resultEl.rowCount, resultEl.elapsedNs, resultEl.incompleteResult);
-    progressEl.style.setProperty('--progress', '0');
+    progressEl.style.setProperty('--progress', '0%');
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
 
     if (posted_request_num != request_num) { return; }
@@ -4850,7 +5627,7 @@ async function postMulti(posted_request_num, parsed, params_restore_pending)
     progressEl.finish();
     elapsed_ns = max_elapsed_ns || 1e6 * (performance.now() - last_query_start);
     progressEl.updateText(total_rows, elapsed_ns, any_incomplete);
-    progressEl.style.setProperty('--progress', '0');
+    progressEl.style.setProperty('--progress', '0%');
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(parsed[0].query));
 
     if (posted_request_num != request_num) return;
@@ -4892,6 +5669,28 @@ async function renderSnapshotIntoElement(el, snap, token) {
     el.queryText = snap.query;
     if (!snap.data) return;
     const format = snap.format;
+
+    /// A framing `EventStream` snapshot (data, logs, progress, and possibly an exception, all
+    /// multiplexed as server-sent events). Replay the whole stream, then finish like a table.
+    if (snap.data.startsWith('event:')) {
+        const raw_text = format !== default_format;
+        el.enableViews();
+        renderEventStreamText(snap.data, el, raw_text);
+        if (el.isExplainGraph) {
+            try {
+                await el.renderGraph(() => token === request_num);
+            } catch (e) {
+                if (token !== request_num) return;
+                console.log(e);
+                el.renderError(e.toString());
+            }
+        } else if (!raw_text) {
+            el.renderTotals();
+            el.applyColumnColors();
+            el.transposeIfNeeded();
+        }
+        return;
+    }
 
     if (!snap.ok) {
         let has_exception = false;
@@ -5022,7 +5821,7 @@ async function restoreMultiQuery(snapshot, token) {
     progressEl.finish();
     elapsed_ns = snapshot.elapsed_ns || max_elapsed_ns;
     progressEl.updateText(total_rows, elapsed_ns, any_incomplete);
-    progressEl.style.setProperty('--progress', '0');
+    progressEl.style.setProperty('--progress', '0%');
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(snapshot.multi[0].query));
 }
 
@@ -5109,7 +5908,21 @@ async function restoreFromHistory(state, token) {
 
     let format = result.format;
 
-    if (!result.ok) {
+    if (result.data.startsWith('event:')) {
+        /// A framing `EventStream` snapshot: replay the multiplexed data, logs, progress, and
+        /// (on failure) the exception. The default format is a table; any other format is raw text.
+        /// Fall through to the shared finish on success.
+        const raw_text = format !== default_format;
+        if (raw_text) is_raw = true; else is_table = true;
+        resultEl.enableViews();
+        renderEventStreamText(result.data, resultEl, raw_text);
+        if (!result.ok) {
+            is_error = true;
+            logoEl.style.display = 'none';
+            progressEl.clear();
+            return;
+        }
+    } else if (!result.ok) {
         is_error = true;
         /// Hide the idle logo for the whole error branch, matching the live single-query error
         /// path (`postSingle` hides it once at the top of its `!result.response_ok` block, for
@@ -5199,7 +6012,7 @@ async function restoreFromHistory(state, token) {
     elapsed_ns = resultEl.elapsedNs;
 
     progressEl.updateText(resultEl.rowCount, resultEl.elapsedNs, resultEl.incompleteResult);
-    progressEl.style.setProperty('--progress', '0');
+    progressEl.style.setProperty('--progress', '0%');
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(state.query));
 }
 
@@ -6042,6 +6855,9 @@ async function cancel()
         ac.abort();
     }
     multiQueryControllers = [];
+    /// Stop the progress spinner - the awaiting post* paths bail out on the bumped request_num
+    /// without touching it, so it would otherwise keep spinning after the query was stopped.
+    progressEl.stop();
     endFlight();
 }
 
