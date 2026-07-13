@@ -72,16 +72,16 @@ public:
         /// In fact, they could be released in destructors of BucketHolder,
         /// but we anyway try to release them explicitly,
         /// because we want to be able to rethrow exceptions if they might happen.
-        /// If `force_release_unfinished` is true, release even a non-finished
-        /// bucket holder (allowed only when no one is processing files
-        /// of this bucket, the bucket will be re-acquired when needed).
+        /// If `force_release_unfinished` is true, also release a non-finished
+        /// bucket holder. Allowed only when no one is processing files of its bucket;
+        /// the bucket is re-acquired when needed.
         void releaseFinishedBuckets(bool force_release_unfinished);
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
 
-        /// How long ago the iterator was created.
-        /// The iterator acquires and holds bucket locks,
-        /// so no bucket lock can be held longer than the iterator age.
+        /// Time since the iterator creation.
+        /// Bucket locks are acquired and held by the iterator,
+        /// so no lock is held longer than the iterator age.
         double getAgeSeconds() const { return age_watch.elapsedSeconds(); }
 
     private:

@@ -922,14 +922,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
-        /// Bucket locks in keeper are considered abandoned and cleaned up once
-        /// `persistent_processing_node_ttl_seconds` passes since acquisition.
-        /// They are held by the file iterator, which is shared between streaming tasks
-        /// and can outlive a single streamToViews execution, so the stop condition
-        /// is based on the iterator age (no bucket lock can be held longer than that):
-        /// once it reaches half of the TTL, all streaming tasks stop using the iterator
-        /// within their current iteration, and the next execution starts with
-        /// a fresh iterator, re-acquiring bucket locks.
+        /// Bucket locks are cleaned up as abandoned once `persistent_processing_node_ttl_seconds`
+        /// passes since acquisition. They are held by the file iterator, which is shared
+        /// between streaming tasks and outlives a single execution, so once the iterator age
+        /// reaches half of the TTL, all tasks stop using it and the next execution
+        /// starts with a fresh iterator, re-acquiring bucket locks.
         const size_t ttl_seconds = files_metadata->getPersistentProcessingNodeTTLSeconds();
         if (ttl_seconds && file_iterator->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 2)
         {
@@ -945,13 +942,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                     streaming_file_iterator.reset();
             }
 
-            /// Once the shared iterator is dropped (by us or by another task before us),
-            /// no new user of it can appear, so use_count == 1 means we are the last one:
-            /// release all held buckets, including a non-finished one.
-            /// If other streaming tasks are still using the iterator, releasing
-            /// a non-finished bucket is not safe - they can have in-flight files from it -
-            /// so the buckets are released the same way by the last of them
-            /// (or in BucketHolder destructors in case of a race between last two users).
+            /// After the shared iterator is dropped, no new user can appear,
+            /// so use_count == 1 means we are its last user: release all held buckets,
+            /// including a non-finished one (unsafe earlier, because other tasks
+            /// can have in-flight files from it). If the last two users race,
+            /// buckets are released in BucketHolder destructors.
             if (file_iterator.use_count() == 1)
                 file_iterator->releaseFinishedBuckets(/*force_release_unfinished=*/true);
 
