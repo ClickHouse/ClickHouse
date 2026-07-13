@@ -1,0 +1,105 @@
+---
+title: 'Mise à l’échelle des DB ClickPipes via OpenAPI'
+description: 'Comment mettre à l’échelle les Postgres ClickPipes via OpenAPI'
+slug: /integrations/clickpipes/postgres/scaling
+sidebarTitle: 'Mise à l’échelle'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Warning>
+  **La plupart des utilisateurs n’auront pas besoin de cette API**
+
+  La configuration par défaut des DB ClickPipes est conçue pour prendre en charge la majorité des charges de travail sans configuration supplémentaire. Si vous pensez que votre charge de travail nécessite une mise à l’échelle, ouvrez un [ticket d’assistance](https://clickhouse.com/support/program) et nous vous guiderons vers les paramètres optimaux pour votre cas d’usage.
+</Warning>
+
+L’API de mise à l’échelle peut être utile pour :
+
+* Des chargements initiaux volumineux (plus de 4 To)
+* Migrer une quantité modérée de données aussi rapidement que possible
+* Prendre en charge plus de 8 ClickPipes CDC sur le même service
+
+Avant d’essayer d’augmenter la capacité, tenez compte des points suivants :
+
+* Vérifier que la DB source dispose d’une capacité disponible suffisante
+* Commencer par ajuster le [parallélisme du chargement initial et le partitionnement](/fr/integrations/clickpipes/postgres/parallel-initial-load) lors de la création d’un ClickPipe
+* Vérifier la présence de [transactions longues](/fr/integrations/clickpipes/postgres/controlling-sync#transactions) sur la source, qui pourraient entraîner des retards du CDC
+
+**L’augmentation de l’échelle augmentera proportionnellement vos coûts de compute ClickPipes.** Si vous augmentez l’échelle uniquement pour les chargements initiaux, il est important de la réduire une fois l’instantané terminé afin d’éviter des frais inattendus. Pour plus de détails sur la tarification, consultez [Tarification de Postgres CDC](/fr/products/cloud/reference/billing/clickpipes/index).
+
+<div id="prerequisites">
+  ## Prérequis pour ce processus
+</div>
+
+Avant de commencer, vous aurez besoin de :
+
+1. D’une [clé API ClickHouse](/fr/products/cloud/features/admin-features/api/openapi) avec les autorisations Admin sur le service ClickHouse Cloud cible.
+2. D’un ClickPipe DB (Postgres, MySQL ou MongoDB) ayant déjà été provisionné sur le service. L’infrastructure CDC est créée avec le premier ClickPipe, et les endpoints de mise à l’échelle deviennent disponibles à partir de ce moment-là.
+
+<div id="cdc-scaling-steps">
+  ## Étapes pour mettre à l’échelle les DB ClickPipes
+</div>
+
+Définissez les variables d’environnement suivantes avant d’exécuter toute commande :
+
+```bash
+ORG_ID=<Your ClickHouse organization ID>
+SERVICE_ID=<Your ClickHouse service ID>
+KEY_ID=<Your ClickHouse key ID>
+KEY_SECRET=<Your ClickHouse key secret>
+```
+
+Récupérez la configuration actuelle de mise à l’échelle (facultatif) :
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# example result:
+{
+  "result": {
+    "replicaCpuMillicores": 2000,
+    "replicaMemoryGb": 8
+  },
+  "requestId": "04310d9e-1126-4c03-9b05-2aa884dbecb7",
+  "status": 200
+}
+```
+
+Définissez le dimensionnement souhaité. Les configurations prises en charge vont de 1 à 32 cœurs CPU, avec une mémoire (Go) définie sur 4× le nombre de cœurs :
+
+```bash
+cat <<EOF | tee cdc_scaling.json
+{
+  "replicaCpuMillicores": 32000,
+  "replicaMemoryGb": 128
+}
+EOF
+
+curl --silent --user $KEY_ID:$KEY_SECRET \
+-X PATCH -H "Content-Type: application/json" \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+-d @cdc_scaling.json | jq
+```
+
+Attendez que la configuration se propage (généralement 3 à 5 minutes). Une fois la mise à l’échelle terminée, l’endpoint GET reflétera les nouvelles valeurs :
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# example result:
+{
+  "result": {
+    "replicaCpuMillicores": 32000,
+    "replicaMemoryGb": 128
+  },
+  "requestId": "5a76d642-d29f-45af-a857-8c4d4b947bf0",
+  "status": 200
+}
+```

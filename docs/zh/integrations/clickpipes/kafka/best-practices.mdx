@@ -1,0 +1,183 @@
+---
+sidebarTitle: '最佳实践'
+description: '介绍使用 Kafka ClickPipes 时应遵循的最佳实践。'
+slug: /integrations/clickpipes/kafka/best-practices
+title: '最佳实践'
+doc_type: 'guide'
+keywords: ['Kafka 最佳实践', 'ClickPipes', '压缩', '身份验证', '扩缩容']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="compression">
+  ## 消息压缩
+</div>
+
+我们强烈建议为 Kafka topic 启用压缩。压缩可以显著节省数据传输成本，同时几乎不会对性能产生影响。
+如需进一步了解 Kafka 中的消息压缩，我们建议先阅读这篇[指南](https://www.confluent.io/blog/apache-kafka-message-compression/)。
+
+<div id="limitations">
+  ## 限制
+</div>
+
+* 不支持 [`DEFAULT`](/zh/reference/statements/create/table#default)。
+* 默认情况下，在使用最小 (XS) 副本大小运行时，单条消息的大小上限为 16MB (未压缩) ；使用更大副本时，上限为 32MB (未压缩) 。超过此限制的消息会因报错而被拒绝。如果您需要更大的消息，请联系支持团队。
+
+<div id="delivery-semantics">
+  ## 交付语义
+</div>
+
+ClickPipes for Kafka 提供 `at-least-once` 交付语义 (这是最常见的方法之一) 。如果您对交付语义有任何反馈，欢迎通过[联系表单](https://clickhouse.com/company/contact?loc=clickpipes)告诉我们。如果您需要精确一次语义，我们建议使用官方的 [`clickhouse-kafka-connect`](https://clickhouse.com/blog/real-time-event-streaming-with-kafka-connect-confluent-cloud-clickhouse) sink。
+
+<div id="authentication">
+  ## 身份验证
+</div>
+
+对于 Apache Kafka 协议的数据源，ClickPipes 支持结合 TLS 加密的 [SASL/PLAIN](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html) 身份验证，以及 `SASL/SCRAM-SHA-256` 和 `SASL/SCRAM-SHA-512`。根据流式数据源 (Redpanda、MSK 等) 的兼容性，支持的身份验证机制可能是全部，也可能只是其中一部分。如果您的身份验证需求不同，请[向我们提供反馈](https://clickhouse.com/company/contact?loc=clickpipes)。
+
+<div id="warpstream-settings">
+  ## Warpstream 拉取大小
+</div>
+
+ClickPipes 依赖 Kafka 设置 `max.fetch_bytes` 来限制单个 ClickPipes 节点在任一时刻处理的数据量。在某些情况下，
+Warpstream 可能不会遵循该设置，从而导致管道意外失败。我们强烈建议在配置 WarpStream agent 时，将 Warpstream 专用设置 `kafkaMaxFetchPartitionBytesUncompressedOverride`
+设置为 8MB (或更低) ，以防止 ClickPipes 失败。
+
+<div id="iam">
+  ### IAM
+</div>
+
+ClickPipes 支持以下 AWS MSK 身份验证方式
+
+* [SASL/SCRAM-SHA-512](https://docs.aws.amazon.com/msk/latest/developerguide/msk-password.html) 身份验证
+* [IAM 凭证或基于角色的访问](https://docs.aws.amazon.com/msk/latest/developerguide/how-to-use-iam-access-control.html) 身份验证
+
+使用 IAM 身份验证连接到 MSK broker 时，IAM 角色必须具有相应的权限。
+下面是 MSK 的 Apache Kafka API 所需 IAM 策略示例：
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:Connect"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:cluster/clickpipes-testing-brokers/b194d5ae-5013-4b5b-ad27-3ca9f56299c9-10"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:DescribeTopic",
+                "kafka-cluster:ReadData"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:topic/clickpipes-testing-brokers/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:AlterGroup",
+                "kafka-cluster:DescribeGroup"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-east-1:12345678912:group/clickpipes-testing-brokers/*"
+            ]
+        }
+    ]
+}
+```
+
+<div id="configuring-a-trusted-relationship">
+  #### 配置信任关系
+</div>
+
+如果你使用 IAM 角色 ARN 对 MSK 进行身份验证，则需要在你的 ClickHouse Cloud 实例与该角色之间建立信任关系，以便可以代入该角色。
+
+<Note>
+  基于角色的访问仅适用于部署在 AWS 上的 ClickHouse Cloud 实例。
+</Note>
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        ...
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::12345678912:role/CH-S3-your-clickhouse-cloud-role"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+
+<div id="custom-certificates">
+  ### 自定义证书
+</div>
+
+ClickPipes for Kafka 支持为使用非公开服务器证书的 Kafka broker 上传自定义证书。
+
+也支持上传客户端证书和私钥，用于基于双向 TLS (mTLS) 的身份验证。
+
+<div id="performance">
+  ## 性能
+</div>
+
+<div id="batching">
+  ### 批处理
+</div>
+
+ClickPipes 以批次方式将数据插入 ClickHouse。这样做是为了避免在数据库中产生过多的 parts，否则可能会导致集群性能问题。
+
+当满足以下任一条件时，就会插入一个批次：
+
+* 批次大小达到上限 (每 1GB pod (容器组) 内存对应 100,000 行或 28MB)
+* 批次保持打开状态达到最长时限 (5 秒)
+
+<div id="latency">
+  ### 延迟
+</div>
+
+延迟 (指 Kafka 消息生成后到该消息在 ClickHouse 中可用之间的时间) 取决于多种因素 (例如 broker 延迟、网络延迟、消息大小/格式) 。上文所述的[批处理](#batching)也会影响延迟。我们始终建议针对您的具体用例，在典型负载下进行测试，以确定预期延迟。
+
+ClickPipes 不对延迟提供任何保证。如果您有特定的低延迟要求，请 [联系我们](https://clickhouse.com/company/contact?loc=clickpipes)。
+
+<div id="scaling">
+  ### 扩缩容
+</div>
+
+ClickPipes for Kafka 设计上支持水平和垂直扩缩容。默认情况下，我们会创建一个仅包含一个消费者的消费者组。你可以在创建 ClickPipe 时进行配置，也可以随时在 **设置** -&gt; **高级设置** -&gt; **扩缩容** 中调整。
+
+ClickPipes 通过跨可用区分布式架构提供高可用性。
+这要求至少扩缩容到两个消费者。
+
+无论当前运行的消费者数量是多少，系统在设计上都具备容错能力。
+如果某个消费者或其底层基础设施发生故障，
+ClickPipe 都会自动重启该消费者并继续处理消息。
+
+<div id="benchmarks">
+  ### 基准测试
+</div>
+
+以下是一些 ClickPipes for Kafka 的非正式基准测试，可用于大致了解其基线性能。需要注意的是，影响性能的因素很多，包括消息大小、数据类型和数据格式。实际表现会因环境而异，这里展示的结果并不构成对实际性能的保证。
+
+基准测试详情：
+
+* 我们使用了生产环境中的 ClickHouse Cloud 服务，并为其配置了充足资源，以确保吞吐量不会受 ClickHouse 侧插入处理瓶颈的影响。
+* ClickHouse Cloud 服务、Kafka 集群 (Confluent Cloud) 和 ClickPipe 都运行在同一区域 (`us-east-2`) 。
+* ClickPipe 配置为单个 L 规格副本 (4 GiB RAM 和 1 个 vCPU) 。
+* 样本数据包含嵌套数据，混合使用了 `UUID`、`String` 和 `Int` 数据类型。其他数据类型 (如 `Float`、`Decimal` 和 `DateTime`) 的性能可能会更低。
+* 使用压缩和未压缩数据时，性能没有明显差异。
+
+| 副本大小    | 消息大小  | 数据格式 | 吞吐量    |
+| ------- | ----- | ---- | ------ |
+| 大型 (L)  | 1.6kb | JSON | 63mb/s |
+| 大型 (L)  | 1.6kb | Avro | 99mb/s |

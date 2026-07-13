@@ -1,0 +1,59 @@
+---
+sidebarTitle: 'Middleware'
+slug: /integrations/middleware
+keywords: ['ClickHouse', 'middleware', 'オブザーバビリティ', 'インテグレーション', '監視']
+description: 'MiddlewareをClickHouseに接続して、ClickHouseのメトリクスとログを監視・分析します。'
+title: 'MiddlewareをClickHouseに接続する'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Middleware](https://middleware.io/) は、インフラストラクチャ、ログ、アプリケーションのパフォーマンスを監視するためのクラウド オブザーバビリティプラットフォームです。
+
+ClickHouse を Middleware に接続すると、より広範な監視ワークフローの一環として、データベースのテレメトリーを収集・可視化できます。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* 稼働中の ClickHouse サービス (Cloud またはセルフマネージド) 
+* ClickHouse のホスト、ポート、ユーザー名、パスワードへのアクセス
+* Middleware アカウント
+
+<div id="connect-clickhouse-in-middleware">
+  ## Middleware で ClickHouse に接続する
+</div>
+
+1. Middleware アカウントにサインインします。
+2. **Integrations** に移動し、**ClickHouse** を検索します。
+3. ClickHouse 連携を選択し、次の接続情報を入力します。
+   * ホスト
+   * ポート
+   * データベース
+   * ユーザー名
+   * パスワード
+4. インテグレーションを保存し、接続テストを実行します。
+
+<div id="verify-data-collection">
+  ## データ収集を確認する
+</div>
+
+セットアップ後、ClickHouse のメトリクスおよび/またはログが Middleware のダッシュボードに表示されていることを確認してください。
+
+接続の検証に失敗した場合は、次の点を確認してください。
+
+* ClickHouse が Middleware からの受信接続を許可している
+* SSL/TLS の設定が ClickHouse のエンドポイントと一致している
+* 認証情報とデータベース権限が正しい
+
+<div id="additional-resources">
+  ## 関連リソース
+</div>
+
+* [Middleware の公式サイト](https://middleware.io/)

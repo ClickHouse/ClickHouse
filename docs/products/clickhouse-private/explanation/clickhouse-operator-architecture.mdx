@@ -1,0 +1,134 @@
+---
+noindex: true
+title: "ClickHouse Operator Architecture"
+sidebarTitle: "Architecture"
+description: "This document explains the architecture and internal mechanisms of the clickhouse-operator, which manages the lifecycle of ClickHouse clusters running on"
+---
+
+This document explains the architecture and internal mechanisms of the clickhouse-operator, which manages the lifecycle of ClickHouse clusters running on Kubernetes.
+
+## Operator Overview
+
+The clickhouse-operator is responsible for the provisioning and reconciliation of registered `ClickHouseCluster` custom resources and their full cluster lifecycle. Its responsibilities include:
+
+- **Deploying and terminating** server and keeper components
+- **Controlling cluster state** (running, stopping, etc.)
+- **Processing backup requests**
+- **Cleaning PVCs** (PersistentVolumeClaims) after scale-in or replica removal
+- **Horizontally scaling** the cluster by adding or removing replicas
+
+The operator watches for changes to `ClickHouseCluster` custom resources and reconciles the actual cluster state to match the desired state declared in the CR.
+
+## Instance Lifecycle
+
+A ClickHouse instance moves through a defined set of states from creation to termination. The diagram below illustrates these transitions:
+
+<Frame caption="Instance lifecycle">
+  ![Instance lifecycle](/images/instance-lifecycle.png)
+</Frame>
+
+Understanding this lifecycle is important when diagnosing why a cluster may be in an unexpected state or when planning operations such as scaling or upgrades.
+
+## One ClickHouseCluster Per Namespace
+
+The operator assumes exactly one `ClickHouseCluster` custom resource per Kubernetes namespace. Deploying multiple `ClickHouseCluster` instances in the same namespace will lead to reconciliation conflicts, as the operator cannot distinguish which resources belong to which cluster.
+
+The `onprem-clickhouse-cluster` Helm chart enforces this at the Kubernetes API server level by creating a `ResourceQuota` that limits the namespace to a single `ClickHouseCluster`:
+
+``` yaml
+apiVersion: v1
+kind: ResourceQuota
+spec:
+  hard:
+    count/clickhouseclusters.clickhouse.com: "1"
+```
+
+This quota is enabled by default (`resourceQuota.enabled: true` in the Helm values). Do not disable it. It will lead to a degraded cluster state as the Operator can not reconcile the cluster.
+
+If you need to run multiple ClickHouse clusters, deploy each in its own namespace.
+
+## StatefulSet Architecture (MultiSTS)
+
+The operator uses a **MultiStatefulSet (MultiSTS)** model where **each replica is owned by its own dedicated StatefulSet** (one StatefulSet per one ClickHouse server pod). This design provides finer-grained control over individual replicas, which is critical for operations like scale-in where specific replicas need to be removed without affecting others.
+
+<Frame caption="MultiSTS layout">
+  ![MultiSTS layout](/images/multists-layout.png)
+</Frame>
+
+MultiSTS decouples replicas from ordinal-based identity, allowing the operator to manage each replica independently.
+
+## ReplicaStateMap
+
+Because MultiSTS replicas cannot rely on ordinal indices as a deterministic way to understand a pod's age or lifecycle, the operator tracks the state of each StatefulSet inside a map stored in the CR's `.status.replicaStateMap` field.
+
+A sample ReplicaStateMap looks like this:
+
+``` yaml
+replicaStateMap:
+  c-navy-wl-64-server-5hvvzxe:
+    createdAt: "2023-08-03T13:25:40Z"
+    isBackupPod: true
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+  c-navy-wl-64-server-fvnytjb:
+    createdAt: "2023-08-03T13:25:40Z"
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+  c-navy-wl-64-server-un85gpo:
+    createdAt: "2023-08-03T13:25:40Z"
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+```
+
+### Replica States
+
+Each replica can be in one of the following states:
+
+| State | Description |
+|----|----|
+| **Pending** | The replica has been registered in the map but has not yet reached a healthy running state. Once added, the operator works to transition it to Ready. |
+| **Ready** | The replica is running and healthy. |
+| **Stopped** | The replica has been intentionally stopped. |
+| **Condemned** | The replica has been marked for deletion during a scale-in operation. |
+| **Dropped** | The replica has been fully removed. |
+| **VolumeRestoring** | The replica's persistent volume is being restored from a backup. |
+| **VolumeRestored** | The replica's persistent volume has been restored and is ready for use. |
+
+### Backup Pod Designation
+
+Exactly one replica at any given time is designated as the **backup pod** (`isBackupPod: true`). This is the replica on which backup operations execute. The operator avoids marking the backup replica as Condemned during scale-in to prevent disrupting backup operations, though the code handles this edge case defensively if it does occur.
+
+> **Warning:** The state tracking in the ReplicaStateMap is for the operator's internal state management only and should not be consumed by external components.
+
+## Parallel vs Rolling Reconciliation
+
+The operator uses two different reconciliation strategies depending on the nature of the change:
+
+- **Parallel reconciliation** is used when the only change to the StatefulSet spec is a change in replica count. In this case, all StatefulSets can be updated simultaneously since there is no disruptive change to existing pods.
+
+- **Rolling reconciliation** is used for all other spec changes (configuration updates, image changes, resource adjustments, etc.). A secondary upgrade loop kicks in that reconciles StatefulSets one by one, respecting the PodDisruptionBudget's `maxUnavailable` setting to ensure the cluster never exceeds its allowed disruption budget during the rollout.
+
+## Horizontal Scaling
+
+### Scale-Out
+
+Scaling out in MultiSTS mode is straightforward. When a new replica name is added to the ReplicaStateMap, the operator creates the corresponding StatefulSet and reconciles it. Subsequent reconcile loops ensure the newly created replica is brought up to date with the rest of the cluster.
+
+### Scale-In
+
+Scaling in is significantly more complex because a replica being removed may still be receiving traffic or holding data that needs to be synchronized. The operator follows a multi-step process to safely remove replicas.
+
+#### Condemned Replicas
+
+When the actual replica count exceeds the desired count, the excess replicas are marked as **Condemned**. Their state transitions from Ready to Condemned in the ReplicaStateMap, which tells the operator which replicas need to be safely deleted.
+
+#### Scale-In Flow
+
+The scale-in process proceeds through these steps:
+
+1.  **Remove the Topology Key** -- The condemned replica is removed from the `TopologySpreadConstraint` skew calculations so it no longer affects pod scheduling decisions.
+2.  **Wait for all StatefulSets to be Ready** -- If any StatefulSet is not in a Ready state, the scale-in is deferred and the reconciliation is re-queued.
+3.  **Execute [`SYSTEM SYNC REPLICA ... LIGHTWEIGHT`](https://clickhouse.com/docs/sql-reference/statements/system#sync-replica)** -- Ensures all data on the condemned replica is synchronized before removal. Runs on the backup pod.
+4.  **Delete the condemned StatefulSets** -- The StatefulSets are deleted and their entries are removed from the ReplicaStateMap.
+5.  **Execute [`SYSTEM DROP REPLICA`](https://clickhouse.com/docs/sql-reference/statements/system#drop-replica)** -- Removes the deleted replica's metadata from ClickHouse Keeper on the remaining Ready replicas.
+6.  **Label PVCs for cleanup** -- The PVCs belonging to the deleted StatefulSets are labeled with `clickhouse.com/delete-pvc`. This is referred to as "PVC leaking," and at this point the operator's responsibility ends. The PersistentVolumeClaimCleaner component takes over to handle the actual PVC deletion.

@@ -1,0 +1,16 @@
+---
+title: 目录
+---
+
+| 页面                                                                       | 描述                                                    |
+| ------------------------------------------------------------------------ | ----------------------------------------------------- |
+| [选择主键](/zh/concepts/best-practices/choosing-a-primary-key)                  | 如何选择既能最大化查询性能，又能尽量降低存储开销的主键。                          |
+| [选择数据类型](/zh/concepts/best-practices/select-data-type)                      | 选择最佳数据类型，以降低内存占用、提升压缩效果并加快查询速度。                       |
+| [使用 materialized views](/zh/concepts/best-practices/use-materialized-views) | 利用 materialized views 预聚合数据，并显著加快分析查询。                |
+| [最小化并优化 JOIN](/zh/concepts/best-practices/minimize-optimize-joins)          | 高效使用 ClickHouse `JOIN` 能力的最佳实践。                       |
+| [选择分区键](/zh/concepts/best-practices/partitioning-keys)                      | 选择能够实现高效数据剪枝并加快查询执行的分区策略。                             |
+| [选择插入策略](/zh/concepts/best-practices/selecting-an-insert-strategy)          | 通过合适的插入方式优化数据摄取吞吐量，并降低资源消耗。                           |
+| [数据跳过索引](/zh/concepts/best-practices/using-data-skipping-indices)           | 有策略地应用二级索引，以跳过无关的数据块并加快带过滤条件的查询。                      |
+| [避免变更操作](/zh/concepts/best-practices/avoid-mutations)                       | 设计能够避免高成本 `UPDATE`/`DELETE` 操作的 schema 和工作流，以获得更好的性能。 |
+| [避免 OPTIMIZE FINAL](/zh/concepts/best-practices/avoid-optimize-final)       | 了解 `OPTIMIZE FINAL` 何时弊大于利，从而避免性能瓶颈。                  |
+| [在适当情况下使用 JSON](/zh/concepts/best-practices/json-type)                      | 在 ClickHouse 中处理半结构化 JSON 数据时，兼顾灵活性与性能。               |

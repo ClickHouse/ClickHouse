@@ -1,0 +1,54 @@
+---
+description: 'جدول نظامي يعرض مراقبات ZooKeeper النشطة حاليًا والمسجَّلة بواسطة
+  خادم ClickHouse هذا.'
+keywords: ['جدول نظامي', 'zookeeper_watches']
+slug: /operations/system-tables/zookeeper_watches
+title: 'system.zookeeper_watches'
+doc_type: 'مرجع'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يعرض [مراقبات](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) النشطة حاليًا والمسجَّلة من خادم ClickHouse هذا على عُقد ZooKeeper (بما في ذلك مثيلات ZooKeeper الإضافية). يمثّل كل صف مراقبة واحدة.
+
+<div id="columns">
+  ## الأعمدة
+</div>
+
+* `zookeeper_name` ([String](/ar/reference/data-types/string)) — اسم اتصال ZooKeeper (`default` للاتصال الرئيسي، أو الاسم المساعد).
+* `create_time` ([DateTime](/ar/reference/data-types/datetime)) — وقت إنشاء المراقبة.
+* `create_time_microseconds` ([DateTime64](/ar/reference/data-types/datetime64)) — وقت إنشاء المراقبة بدقة الميكروثانية.
+* `path` ([String](/ar/reference/data-types/string)) — مسار ZooKeeper الخاضع للمراقبة.
+* `session_id` ([Int64](/ar/reference/data-types/int-uint)) — معرّف الجلسة للاتصال الذي سجّل المراقبة.
+* `request_xid` ([Int64](/ar/reference/data-types/int-uint)) — XID للطلب الذي أنشأ المراقبة.
+* `op_num` ([Enum](/ar/reference/data-types/enum)) — نوع الطلب الذي أنشأ المراقبة.
+* `watch_type` ([Enum8](/ar/reference/data-types/enum)) — نوع المراقبة. القيم الممكنة:
+  * `Children` — مراقبة التغييرات في قائمة العقد الفرعية (تُضبط بواسطة عمليات `List`).
+  * `Exists` — مراقبة إنشاء العقدة أو حذفها.
+  * `Data` — مراقبة التغييرات في بيانات العقدة (تُضبط بواسطة عمليات `Get`).
+
+مثال:
+
+```sql
+SELECT * FROM system.zookeeper_watches FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+zookeeper_name:           default
+create_time:              2026-03-16 12:00:00
+create_time_microseconds: 2026-03-16 12:00:00.123456
+path:                     /clickhouse/task_queue/ddl
+session_id:               106662742089334927
+request_xid:              10858
+op_num:                   List
+watch_type:               Children
+```
+
+**انظر أيضًا**
+
+* [ZooKeeper](/ar/guides/oss/best-practices/tips#zookeeper)
+* [دليل ZooKeeper](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html)

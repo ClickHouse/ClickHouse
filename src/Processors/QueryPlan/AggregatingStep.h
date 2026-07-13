@@ -100,6 +100,9 @@ public:
     bool hasCorrelatedExpressions() const override { return false; }
 
     Aggregator::Params getAggregatorParameters() const { return params; }
+    /// Set during query-plan optimization (see setAggregationHashTableCacheKeys). A non-zero key
+    /// enables hash-table-size preallocation; StatsCollectingParams treats key == 0 as disabled.
+    void setStatsCacheKey(UInt64 stats_cache_key) { params.stats_collecting_params.setKey(stats_cache_key); }
     bool getFinal() const noexcept { return final; }
     void setFinal(bool new_value);
     size_t getMaxBlockSize() const noexcept { return max_block_size; }
