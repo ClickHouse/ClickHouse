@@ -1839,10 +1839,16 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
             Identifier explicit_identifier = matched_qualified_identifier;
             explicit_identifier.push_back(matched_column_node_typed.getColumnName());
             auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
-            IdentifierResolveContext explicit_resolve_settings;
-            explicit_resolve_settings.allow_to_check_cte = false;
-            explicit_resolve_settings.allow_to_check_database_catalog = false;
-            auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, scope, explicit_resolve_settings);
+
+            /// The qualifier is a table expression (the matcher already resolved it to one), so any
+            /// type change can only come from the join tree. Resolve against the nearest query scope's
+            /// join tree directly rather than through tryResolveIdentifier: the latter first consults
+            /// expression arguments and aliases, and a non-compound entry sharing the qualifier's name
+            /// throws there before the join tree is ever tried. For a scalar alias (`WITH 0 AS b`) that
+            /// throw is suppressed (the alias path passes can_be_not_found = allow_to_check_join_tree),
+            /// but a lambda argument goes through tryResolveIdentifierFromExpressionArguments, which does
+            /// not, so `arrayMap(b -> b.*, ...) FROM l JOIN r AS b USING (id)` used to fail here.
+            auto explicit_resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(explicit_lookup, *nearest_query_scope);
             if (!explicit_resolve_result.resolved_identifier)
                 continue;
 
@@ -1917,9 +1923,10 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
 /** Resolve qualified tree matcher.
   *
-  * First try to match qualified identifier to expression. If qualified identifier matched expression node then
-  * if expression is compound match it column names using matcher `isMatchingColumn` method, if expression is not compound, throw exception.
-  * If qualified identifier did not match expression in query tree, try to lookup qualified identifier in table context.
+  * First try to match qualified identifier to expression. If qualified identifier matched a compound expression node then
+  * match its column names using matcher `isMatchingColumn` method. If the matched expression is not compound, or the
+  * qualified identifier did not match any expression in the query tree, try to lookup qualified identifier in table context.
+  * Only if neither a compound expression nor a table expression matches, throw an exception.
   */
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
@@ -1930,7 +1937,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
-    /// Try to resolve unqualified matcher for query expression
+    /// Try to resolve unqualified matcher for query expression.
+
+    QueryTreeNodePtr non_compound_expression_node;
 
     if (expression_query_tree_node)
     {
@@ -1950,37 +1959,38 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
         const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
         if (!tuple_data_type)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Qualified matcher {} found a non-compound expression {} with type {}. Expected a tuple or an array of tuples. In scope {}",
-                matcher_node->formatASTForErrorMessage(),
-                expression_query_tree_node->formatASTForErrorMessage(),
-                expression_query_tree_node->getResultType()->getName(),
-                scope.scope_node->formatASTForErrorMessage());
-
-        const auto & element_names = tuple_data_type->getElementNames();
-        QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
-
-        auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
-        for (const auto & element_name : element_names)
         {
-            if (!matcher_node_typed.isMatchingColumn(element_name))
-                continue;
-
-            auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
-            get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
-            get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
-
-            QueryTreeNodePtr function_query_node = get_subcolumn_function;
-            resolveFunction(function_query_node, scope);
-
-            qualified_matcher_element_identifier.push_back(element_name);
-            node_to_projection_name.emplace(function_query_node, qualified_matcher_element_identifier.getFullName());
-            qualified_matcher_element_identifier.pop_back();
-
-            matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
+            /// The qualifier resolved to a non-compound column and cannot be expanded by a matcher.
+            /// Fall through to table-expression resolution, since the same name may also be a table alias.
+            non_compound_expression_node = expression_query_tree_node;
         }
+        else
+        {
+            const auto & element_names = tuple_data_type->getElementNames();
+            QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
 
-        return matched_expression_nodes_with_column_names;
+            auto qualified_matcher_element_identifier = matcher_node_typed.getQualifiedIdentifier();
+            for (const auto & element_name : element_names)
+            {
+                if (!matcher_node_typed.isMatchingColumn(element_name))
+                    continue;
+
+                auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+                get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
+                get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
+
+                QueryTreeNodePtr function_query_node = get_subcolumn_function;
+                resolveFunction(function_query_node, scope);
+
+                qualified_matcher_element_identifier.push_back(element_name);
+                node_to_projection_name.emplace(function_query_node, qualified_matcher_element_identifier.getFullName());
+                qualified_matcher_element_identifier.pop_back();
+
+                matched_expression_nodes_with_column_names.emplace_back(std::move(function_query_node), element_name);
+            }
+
+            return matched_expression_nodes_with_column_names;
+        }
     }
 
     /// Try to resolve qualified matcher for table expression
@@ -1995,6 +2005,16 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
 
     if (!table_expression_node)
     {
+        /// The qualifier bound to a non-compound column and there is no table with this name either.
+        /// Emit the precise diagnostic about the non-compound expression rather than "does not find table".
+        if (non_compound_expression_node)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Qualified matcher {} found a non-compound expression {} with type {}. Expected a tuple or an array of tuples. In scope {}",
+                matcher_node->formatASTForErrorMessage(),
+                non_compound_expression_node->formatASTForErrorMessage(),
+                non_compound_expression_node->getResultType()->getName(),
+                scope.scope_node->formatASTForErrorMessage());
+
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
             "Qualified matcher {} does not find table. In scope {}",
             matcher_node->formatASTForErrorMessage(),
