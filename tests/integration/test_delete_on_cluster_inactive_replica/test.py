@@ -89,7 +89,8 @@ def assert_async_query(query, settings, match):
     with pytest.raises(QueryRuntimeException, match=match) as exc_info:
         node1.query(query, settings=settings, timeout=30)
 
-    assert exc_info.value.returncode == 779
+    assert "Code: 779" in exc_info.value.stderr
+    assert "REPLICATED_OPERATION_WILL_BE_DONE_ASYNCHRONOUSLY" in exc_info.value.stderr
 
 
 def assert_task_executed(zk, entry):
