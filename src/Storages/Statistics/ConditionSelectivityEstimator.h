@@ -28,6 +28,7 @@ class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+struct RangesInDataParts;
 
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
@@ -63,6 +64,8 @@ public:
     RelationProfile estimateRelationProfile() const;
 
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;
+    /// Same check against a query's analyzed part set, without materializing a parts vector.
+    bool isStale(const RangesInDataParts & parts) const;
 
     struct RPNElement
     {

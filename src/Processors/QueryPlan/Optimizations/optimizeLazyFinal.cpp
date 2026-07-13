@@ -402,8 +402,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// early exit — the flag is checked before the partial split below.
     const bool reading_in_order = reading_step->readsInOrder();
 
-    /// Skip if projection was applied.
-    if (reading_step->getAnalyzedResult())
+    /// Skip if projection was applied. A non-null analysis result alone does not imply
+    /// a projection: join-order estimation runs index analysis for join relations and
+    /// memoizes the result (see estimateReadRowsCount in optimizeJoin.cpp).
+    if (auto analyzed = reading_step->getAnalyzedResult(); analyzed && analyzed->readFromProjection())
         return;
 
     /// Find a LIMIT that applies directly to the reading step's output (only Expression/Filter
