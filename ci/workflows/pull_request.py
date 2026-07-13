@@ -57,7 +57,7 @@ workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
-    engine="praktika",
+    engine=Workflow.Engine.PRAKTIKA,
     jobs=[
         JobConfigs.style_check,
         JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),

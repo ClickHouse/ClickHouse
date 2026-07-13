@@ -6,6 +6,7 @@ from ci.defs.job_configs import JobConfigs
 workflow = Workflow.Config(
     name="MergeQueueCI",
     event=Workflow.Event.MERGE_QUEUE,
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.style_check,
         JobConfigs.fast_test,

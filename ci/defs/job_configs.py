@@ -178,14 +178,14 @@ common_integration_test_job_config = Job.Config(
 class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
         post_hooks=[
@@ -194,7 +194,7 @@ class JobConfigs:
     )
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
-        runs_on=RunnerLabels.ARM_LARGE,
+        runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
@@ -483,7 +483,7 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.CH_AMD_RELEASE,
@@ -493,7 +493,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.CH_ARM_RELEASE,
@@ -517,7 +517,7 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
@@ -527,7 +527,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
@@ -1141,12 +1141,12 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
+            runs_on=RunnerLabels.AMD_TINY,
             requires=[ArtifactNames.DEB_AMD_RELEASE],
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             requires=[ArtifactNames.DEB_ARM_RELEASE],
         ),
     )
@@ -1387,7 +1387,7 @@ class JobConfigs:
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -1401,7 +1401,7 @@ class JobConfigs:
     )
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -1492,13 +1492,13 @@ class JobConfigs:
     )
     jepsen_keeper = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/jepsen_check.py keeper",
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
         name=JobNames.JEPSEN_KEEPER,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
     )
@@ -1565,7 +1565,7 @@ class JobConfigs:
     )
     update_toolchain_dockerfile_job = Job.Config(
         name=JobNames.UPDATE_TOOLCHAIN_DOCKERFILE,
-        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        runs_on=RunnerLabels.AMD_TINY,
         command="python3 ./ci/jobs/update_toolchain_dockerfile.py",
         enable_gh_auth=True,
     )

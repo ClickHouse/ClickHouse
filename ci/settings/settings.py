@@ -9,8 +9,8 @@ S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
 S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
 
 class RunnerLabels:
-    AMD_TINY = ["amd-tiny"]
-    ARM_TINY = ["arm-tiny"]
+    AMD_TINY = ["self-hosted", "amd-tiny"]
+    ARM_TINY = ["self-hosted", "arm-tiny"]
 
 
 MAIN_BRANCH = "master"

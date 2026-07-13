@@ -9,6 +9,7 @@ workflow = Workflow.Config(
     name="NightlyCoverage",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.coverage_build_jobs[1],  # Build (amd_llvm_coverage_per_test): WITH_COVERAGE + depth instrumentation
         *JobConfigs.functional_tests_jobs_coverage,
