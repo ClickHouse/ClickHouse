@@ -200,188 +200,24 @@
     "destination": "/resources/changelogs/cloud/release-notes/26_4"
   },
   {
-    "source": "/chdb",
-    "destination": "/products/chdb"
-  },
-  {
-    "source": "/chdb/api/python",
-    "destination": "/products/chdb/api/python"
-  },
-  {
-    "source": "/chdb/configuration",
-    "destination": "/products/chdb/configuration"
-  },
-  {
-    "source": "/chdb/configuration/execution-engine",
-    "destination": "/products/chdb/configuration/execution-engine"
-  },
-  {
-    "source": "/chdb/configuration/function-config",
-    "destination": "/products/chdb/configuration/function-config"
-  },
-  {
-    "source": "/chdb/configuration/performance-mode",
-    "destination": "/products/chdb/configuration/performance-mode"
-  },
-  {
     "source": "/chdb/data-formats",
-    "destination": "/products/chdb/reference/data-formats"
-  },
-  {
-    "source": "/chdb/datastore",
-    "destination": "/products/chdb/datastore"
-  },
-  {
-    "source": "/chdb/datastore/accessors",
-    "destination": "/products/chdb/datastore/accessors"
-  },
-  {
-    "source": "/chdb/datastore/aggregation",
-    "destination": "/products/chdb/datastore/aggregation"
-  },
-  {
-    "source": "/chdb/datastore/class-reference",
-    "destination": "/products/chdb/datastore/class-reference"
-  },
-  {
-    "source": "/chdb/datastore/execution-model",
-    "destination": "/products/chdb/datastore/execution-model"
-  },
-  {
-    "source": "/chdb/datastore/factory-methods",
-    "destination": "/products/chdb/datastore/factory-methods"
-  },
-  {
-    "source": "/chdb/datastore/io",
-    "destination": "/products/chdb/datastore/io"
-  },
-  {
-    "source": "/chdb/datastore/pandas-compat",
-    "destination": "/products/chdb/datastore/pandas-compat"
-  },
-  {
-    "source": "/chdb/datastore/query-building",
-    "destination": "/products/chdb/datastore/query-building"
-  },
-  {
-    "source": "/chdb/datastore/quickstart",
-    "destination": "/products/chdb/datastore/quickstart"
-  },
-  {
-    "source": "/chdb/debugging",
-    "destination": "/products/chdb/debugging"
-  },
-  {
-    "source": "/chdb/debugging/explain",
-    "destination": "/products/chdb/debugging/explain"
-  },
-  {
-    "source": "/chdb/debugging/logging",
-    "destination": "/products/chdb/debugging/logging"
-  },
-  {
-    "source": "/chdb/debugging/profiling",
-    "destination": "/products/chdb/debugging/profiling"
-  },
-  {
-    "source": "/chdb/getting-started",
-    "destination": "/products/chdb/getting-started"
-  },
-  {
-    "source": "/chdb/guides",
-    "destination": "/products/chdb/guides"
+    "destination": "/chdb/reference/data-formats"
   },
   {
     "source": "/chdb/guides/apache-arrow",
-    "destination": "/products/chdb/guides/querying-apache-arrow"
-  },
-  {
-    "source": "/chdb/guides/clickhouse-local",
-    "destination": "/products/chdb/guides/clickhouse-local"
-  },
-  {
-    "source": "/chdb/guides/jupysql",
-    "destination": "/products/chdb/guides/jupysql"
-  },
-  {
-    "source": "/chdb/guides/migration-from-pandas",
-    "destination": "/products/chdb/guides/migration-from-pandas"
+    "destination": "/chdb/guides/querying-apache-arrow"
   },
   {
     "source": "/chdb/guides/pandas",
-    "destination": "/products/chdb/guides/querying-pandas"
-  },
-  {
-    "source": "/chdb/guides/pandas-cookbook",
-    "destination": "/products/chdb/guides/pandas-cookbook"
-  },
-  {
-    "source": "/chdb/guides/pandas-differences",
-    "destination": "/products/chdb/guides/pandas-differences"
-  },
-  {
-    "source": "/chdb/guides/pandas-performance",
-    "destination": "/products/chdb/guides/pandas-performance"
-  },
-  {
-    "source": "/chdb/guides/pandas-to-sql",
-    "destination": "/products/chdb/guides/pandas-to-sql"
-  },
-  {
-    "source": "/chdb/guides/query-remote-clickhouse",
-    "destination": "/products/chdb/guides/query-remote-clickhouse"
-  },
-  {
-    "source": "/chdb/guides/querying-parquet",
-    "destination": "/products/chdb/guides/querying-parquet"
+    "destination": "/chdb/guides/querying-pandas"
   },
   {
     "source": "/chdb/guides/querying-s3",
-    "destination": "/products/chdb/guides/querying-s3-bucket"
-  },
-  {
-    "source": "/chdb/install",
-    "destination": "/products/chdb/install"
-  },
-  {
-    "source": "/chdb/install/bun",
-    "destination": "/products/chdb/install/bun"
-  },
-  {
-    "source": "/chdb/install/c",
-    "destination": "/products/chdb/install/c"
-  },
-  {
-    "source": "/chdb/install/go",
-    "destination": "/products/chdb/install/go"
-  },
-  {
-    "source": "/chdb/install/nodejs",
-    "destination": "/products/chdb/install/nodejs"
-  },
-  {
-    "source": "/chdb/install/python",
-    "destination": "/products/chdb/install/python"
-  },
-  {
-    "source": "/chdb/install/rust",
-    "destination": "/products/chdb/install/rust"
-  },
-  {
-    "source": "/chdb/reference",
-    "destination": "/products/chdb/reference"
-  },
-  {
-    "source": "/chdb/reference/data-formats",
-    "destination": "/products/chdb/reference/data-formats"
-  },
-  {
-    "source": "/chdb/reference/sql-reference",
-    "destination": "/products/chdb/reference/sql-reference"
+    "destination": "/chdb/guides/querying-s3-bucket"
   },
   {
     "source": "/chdb/sql-reference",
-    "destination": "/products/chdb/reference/sql-reference"
+    "destination": "/chdb/reference/sql-reference"
   },
   {
     "source": "/clickhouse-operator/guides/configuration",

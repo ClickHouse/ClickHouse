@@ -15,7 +15,7 @@ While DataStore is highly compatible with pandas, there are important difference
 |--------|--------|-----------|
 | **Execution** | Eager (immediate) | Lazy (deferred) |
 | **Return types** | DataFrame/Series | DataStore/ColumnExpr |
-| **Row order** | Preserved | Preserved (automatic); not guaranteed in [performance mode](/products/chdb/configuration/performance-mode) |
+| **Row order** | Preserved | Preserved (automatic); not guaranteed in [performance mode](/chdb/configuration/performance-mode) |
 | **inplace** | Supported | Not supported |
 | **Index** | Full support | Simplified |
 | **Memory** | All data in memory | Data at source |
@@ -168,7 +168,7 @@ DataStore automatically tracks original row positions internally (using `rowNumb
 
 - After `groupby()` aggregations (use `sort_values()` to ensure consistent order)
 - After `merge()` / `join()` with certain join types
-- In **performance mode** (`config.use_performance_mode()`): row order is not guaranteed for any operation. See [Performance Mode](/products/chdb/configuration/performance-mode).
+- In **performance mode** (`config.use_performance_mode()`): row order is not guaranteed for any operation. See [Performance Mode](/chdb/configuration/performance-mode).
 
 ---
 
