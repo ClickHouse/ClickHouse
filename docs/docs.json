@@ -69,7 +69,7 @@
               {
                 "href": "#",
                 "icon": "/images/icons/section-header.svg",
-                "item": "ClickHouse"
+                "item": "ClickHouse Cloud"
               },
               { "$ref": "./products/cloud/navigation.json" },
               { "$ref": "./products/managed-postgres/navigation.json" },
@@ -85,7 +85,7 @@
                 "item": "Open source"
               },
               { "$ref": "./products/agentic-data-stack/navigation.json" },
-              { "$ref": "./products/chdb/navigation.json" },
+              { "$ref": "./chdb/navigation.json" },
               { "$ref": "./products/kubernetes-operator/navigation.json" },
               { "$ref": "./products/clickhouse-private/navigation.json" }
             ],
