@@ -88,6 +88,7 @@ namespace FailPoints
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
+    extern const char mt_start_mutation_pause_before_register[];
     extern const char mt_alter_throw_in_durable_rollback[];
 }
 
@@ -936,6 +937,17 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     /// mutex across the file I/O would block merge selection for its full duration.
     auto prepared = prepareMutationEntry(commands, query_context);
     Int64 version = prepared.version;
+
+    /// At this point a transactional mutation is already registered in the transaction
+    /// (`txn->addMutation` in `prepareMutationEntry`) but not yet in
+    /// `current_mutations_by_version`. A concurrent `KILL TRANSACTION` rolling the
+    /// transaction back in this window runs its `killMutation` sweep before the entry
+    /// is registered, so the entry added below becomes an orphan: its transaction is
+    /// gone and was never committed. `selectPartsToMutate` detects and removes such
+    /// entries. The failpoint makes the window reachable deterministically in tests.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/83252
+    FailPointInjection::pauseFailPoint(FailPoints::mt_start_mutation_pause_before_register);
+
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
         addPreparedMutationEntry(std::move(prepared));
@@ -1854,30 +1866,62 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             txn = tryGetTransactionForMutation(mutations_begin_it->second, log.load());
             if (!txn)
             {
-                /// The transaction that started this mutation is no longer running.
-                /// The mutation entry's `csn` field is only an in-memory cache and may be
-                /// stale; the transaction log is the authoritative source, so consult it
-                /// before deciding (the same check that `loadMutations` and `clearOldMutations`
-                /// do). If it committed, the mutation may proceed; otherwise (rolled back, or
-                /// an orphaned entry left by a race between mutation registration and
-                /// `KILL TRANSACTION`) the mutation must not be applied, so skip the part
-                /// instead of raising a `LOGICAL_ERROR`.
+                /// The transaction that started this mutation has reached a terminal state:
+                /// `finalizeCommittedTransaction` erases it from the running list only after
+                /// `afterCommit` has cached the CSN in the entry, and `rollbackTransaction`
+                /// erases it only after the `killMutation` sweep in `rollback`. If the cached
+                /// CSN is still unknown, consult the transaction log (the authoritative
+                /// source, the same check that `loadMutations` and `clearOldMutations` do).
                 /// Related: https://github.com/ClickHouse/ClickHouse/issues/83252
                 CSN mutation_csn = mutations_begin_it->second.csn;
                 if (mutation_csn == Tx::UnknownCSN)
-                    mutation_csn = TransactionLog::getCSN(first_mutation_tid);
-
-                if (mutation_csn == Tx::UnknownCSN || mutation_csn == Tx::RolledBackCSN)
                 {
-                    /// The transaction was rolled back or is otherwise not committed. Its
-                    /// mutation must not be applied (it will be removed by `killMutation`
-                    /// on rollback); skip the part for now instead of applying a mutation
-                    /// from a transaction that did not commit.
-                    LOG_DEBUG(log, "Mutation {} was started by transaction {} that is not committed (CSN {}), skipping part {}",
-                              mutations_begin_it->second.file_name, first_mutation_tid, mutation_csn, part->name);
+                    mutation_csn = TransactionLog::getCSN(first_mutation_tid);
+                    if (mutation_csn != Tx::UnknownCSN && mutation_csn != Tx::RolledBackCSN)
+                    {
+                        /// The transaction has committed. Cache the CSN in the entry
+                        /// (as `setMutationCSN` does, under the same mutex), so that
+                        /// `system.mutations` shows it and the next scheduling rounds
+                        /// do not consult the transaction log again.
+                        mutations_begin_it->second.writeCSN(mutation_csn);
+                    }
+                }
+
+                if (mutation_csn == Tx::RolledBackCSN)
+                {
+                    /// Transaction was rolled back: `killMutation` is removing the entry,
+                    /// skip the part for now.
+                    LOG_DEBUG(log, "Mutation {} was started by transaction {} that was rolled back, skipping part {}",
+                              mutations_begin_it->second.file_name, first_mutation_tid, part->name);
                     current_parts_postpone_reasons[part->name] = PostponeReasons::TRANSACTION_NOT_COMMITTED;
                     continue;
                 }
+
+                if (mutation_csn == Tx::UnknownCSN)
+                {
+                    /// The transaction is not running and never committed, so it was rolled
+                    /// back, and the `killMutation` sweep of the rollback did not see this
+                    /// entry: the entry was registered in `current_mutations_by_version`
+                    /// concurrently with `KILL TRANSACTION` (see the failpoint in
+                    /// `startMutation`). Nothing else removes such an orphaned entry, and
+                    /// because mutation selection always starts from the earliest pending
+                    /// mutation, it would block all subsequent mutations of these parts
+                    /// forever. Remove it, as `loadMutations` does for entries of
+                    /// uncommitted transactions at startup.
+                    LOG_WARNING(log, "Mutation {} was started by transaction {} that is not running and was not committed. "
+                                     "Removing the orphaned mutation entry so that it does not block subsequent mutations",
+                                mutations_begin_it->second.file_name, first_mutation_tid);
+                    if (!mutations_begin_it->second.is_done)
+                        decrementMutationsCounters(mutation_counters, *mutations_begin_it->second.commands);
+                    MergeTreeMutationEntry orphaned_entry = std::move(mutations_begin_it->second);
+                    current_mutations_by_version.erase(mutations_begin_it);
+                    orphaned_entry.removeFile();
+                    /// Waiters in `waitForMutation` poll with a timeout, so there is no need
+                    /// to notify `mutation_wait_event` here (`mutation_wait_mutex` must not
+                    /// be acquired under `currently_processing_in_background_mutex` anyway).
+                    continue;
+                }
+
                 /// Transaction has committed, mutation can proceed without the transaction pointer
                 /// (txn is already null, which is fine for MergeMutateSelectedEntry)
             }

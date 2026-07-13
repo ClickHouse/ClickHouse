@@ -1,6 +1,9 @@
+import threading
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -751,26 +754,21 @@ def test_removal_csn_concurrent_rollback_stress(start_cluster):
 
 def test_mutation_after_restart_does_not_abort(start_cluster):
     """
-    Regression test for https://github.com/ClickHouse/ClickHouse/issues/83252
+    Restart smoke test for transactional mutations, in the spirit of
+    https://github.com/ClickHouse/ClickHouse/issues/83252 (which was originally
+    hit with implicit_transaction=1).
 
-    A background mutation-selecting job (StorageMergeTree::selectPartsToMutate)
-    could raise a LOGICAL_ERROR "Cannot find transaction ... that has started
-    mutation ... that is going to be applied to part ..." and abort the server
-    when it encountered a transactional mutation whose transaction was no longer
-    running.  This is especially reachable after a restart, when no transactions
-    are running at all, so every still-present transactional mutation is processed
-    with a null transaction pointer.
+    Note: this test alone does not exercise the txn == nullptr &&
+    csn == UnknownCSN branch of StorageMergeTree::selectPartsToMutate: with
+    implicit_transaction=1 the commit waits for the mutation to finish, and on
+    startup loadMutations resolves or removes unresolved transactional entries.
+    The deterministic regression test for that branch is
+    test_kill_transaction_mutation_registration_race below.
 
-    selectPartsToMutate now consults the transaction log (the authoritative CSN
-    source, the same check that loadMutations and clearOldMutations use) instead of
-    relying only on the in-memory CSN cache, and skips a mutation whose transaction
-    is not committed instead of aborting.
-
-    The issue was originally hit with implicit_transaction=1, so we use it here:
-    each ALTER ... UPDATE runs inside an implicit transaction that commits when the
-    statement finishes.  After committing several such mutations we restart and make
-    sure the server comes back up cleanly with consistent data and no failed or
-    stuck mutations.
+    Here each ALTER ... UPDATE runs inside an implicit transaction that commits
+    when the statement finishes.  After committing several such mutations we
+    restart and make sure the server comes back up cleanly with consistent data
+    and no failed or stuck mutations.
     """
     node.query("DROP TABLE IF EXISTS mt_txn_restart SYNC")
     node.query(
@@ -820,3 +818,96 @@ def test_mutation_after_restart_does_not_abort(start_cluster):
     assert total == str(1000 * 45 + 10 * 10000), f"Unexpected sum after mutations: {total}"
 
     node.query("DROP TABLE IF EXISTS mt_txn_restart SYNC")
+
+
+def test_kill_transaction_mutation_registration_race(start_cluster):
+    """
+    Deterministic regression test for
+    https://github.com/ClickHouse/ClickHouse/issues/83252
+
+    StorageMergeTree::prepareMutationEntry registers a transactional mutation in
+    the transaction (txn->addMutation) before startMutation registers it in
+    current_mutations_by_version.  If KILL TRANSACTION rolls the transaction back
+    between the two steps, the rollback's killMutation sweep finds nothing to
+    remove, and the entry registered afterwards is orphaned: its transaction is
+    gone from the running list and was never committed.
+
+    On an unfixed server the background selectPartsToMutate then raises
+    LOGICAL_ERROR "Cannot find transaction ... that has started mutation ..." on
+    every scheduling round; the orphaned mutation stays pending forever and
+    blocks all subsequent mutations of the parts.  With the fix, the orphaned
+    entry is detected against the transaction log and removed, so subsequent
+    mutations proceed.
+
+    The pause failpoint mt_start_mutation_pause_before_register holds the ALTER
+    exactly inside the race window, and SYSTEM WAIT FAILPOINT ... PAUSE gives a
+    deterministic handshake, so no timing assumptions are needed.
+    """
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_race SYNC")
+    node.query(
+        "CREATE TABLE mt_kill_txn_race (key UInt64, value UInt64)"
+        " ENGINE=MergeTree ORDER BY key"
+    )
+    node.query("INSERT INTO mt_kill_txn_race SELECT number, 0 FROM numbers(100)")
+
+    node.query("SYSTEM ENABLE FAILPOINT mt_start_mutation_pause_before_register")
+    alter_thread = None
+    try:
+        # The ALTER runs in an implicit transaction (as in the original report)
+        # and pauses between the transaction-side and the storage-side mutation
+        # registration.  It is expected to fail: its transaction gets killed.
+        # max_execution_time bounds the wait on an unfixed server (the time
+        # limit is checked every second while waiting for the mutation, which
+        # never completes there).
+        def run_alter():
+            try:
+                node.query(
+                    "ALTER TABLE mt_kill_txn_race UPDATE value = 1 WHERE 1",
+                    settings={"implicit_transaction": 1, "max_execution_time": 60},
+                )
+            except Exception:
+                pass
+
+        alter_thread = threading.Thread(target=run_alter)
+        alter_thread.start()
+
+        # Wait until the ALTER is paused at the failpoint, i.e. the mutation is
+        # already registered in the transaction but not yet in the storage.
+        node.query(
+            "SYSTEM WAIT FAILPOINT mt_start_mutation_pause_before_register PAUSE"
+        )
+
+        # Kill the transaction while the ALTER is paused.  The rollback's
+        # killMutation sweep runs now and finds nothing to remove.
+        tid_hash = node.query("SELECT tid_hash FROM system.transactions").strip()
+        assert tid_hash, "The implicit transaction is not in system.transactions"
+        node.query(f"KILL TRANSACTION WHERE tid_hash = {tid_hash}")
+        assert_eq_with_retry(node, "SELECT count() FROM system.transactions", "0")
+    finally:
+        # Resume the ALTER: it now registers the orphaned mutation entry.
+        node.query(
+            "SYSTEM DISABLE FAILPOINT mt_start_mutation_pause_before_register"
+        )
+
+    if alter_thread is not None:
+        alter_thread.join()
+
+    # The orphaned mutation (its transaction is gone and was never committed)
+    # must be removed by the background mutation selection instead of raising
+    # LOGICAL_ERROR and staying pending forever.
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM system.mutations"
+        " WHERE database=currentDatabase() AND table='mt_kill_txn_race' AND is_done = 0",
+        "0",
+        retry_count=60,
+    )
+
+    # Subsequent mutations of the same parts must not be blocked by the orphan.
+    node.query(
+        "ALTER TABLE mt_kill_txn_race UPDATE value = 2 WHERE 1",
+        settings={"mutations_sync": 1},
+    )
+    assert node.query("SELECT sum(value) FROM mt_kill_txn_race").strip() == "200"
+
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_race SYNC")
