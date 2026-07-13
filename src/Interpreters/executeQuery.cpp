@@ -36,6 +36,7 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
@@ -1243,18 +1244,43 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::polyglot && !internal)
         {
-            /// Pass through to `ParserPolyglotQuery` which handles SET queries
-            /// internally (via the standard parser) even when the feature gate
-            /// is off.  This lets users recover from misconfigured profiles
-            /// (e.g. `SET dialect = 'clickhouse'`) without being locked out.
-            ParserPolyglotQuery parser(
-                max_query_size,
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks],
-                settings[Setting::polyglot_dialect],
-                end,
-                settings[Setting::allow_experimental_polyglot_dialect]);
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            /// A SET query is standard ClickHouse SQL and is parsed as-is, so that
+            /// `dialect`/`polyglot_dialect` can always be changed back (and before the
+            /// feature gate, to recover from a misconfigured profile). Everything else is
+            /// transpiled to ClickHouse SQL up front: the transpiled text is kept alive on
+            /// the query context and becomes the query buffer, so inline INSERT data
+            /// (`data`/`end`) points into a live buffer and is processed by the normal path.
+            ParserSetQuery set_parser;
+            const char * set_pos = begin;
+            String set_error;
+            out_ast = tryParseQuery(
+                set_parser, set_pos, end, set_error, false, "", false,
+                max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+
+            if (!out_ast)
+            {
+                if (!settings[Setting::allow_experimental_polyglot_dialect])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Support for polyglot SQL transpiler is disabled (turn on setting 'allow_experimental_polyglot_dialect')");
+
+                const String source_dialect = settings[Setting::polyglot_dialect];
+                if (source_dialect.empty())
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR,
+                        "The `polyglot_dialect` setting must not be empty. "
+                        "Please specify the source SQL dialect (e.g. 'sqlite', 'mysql', 'postgresql').");
+
+                /// Keep the transpiled query alive for the whole query lifetime (see Context).
+                context->setTranspiledQuery(transpilePolyglotToClickHouse(
+                    std::string_view(begin, static_cast<size_t>(end - begin)), source_dialect, max_query_size));
+                const String & transpiled = context->getTranspiledQuery();
+                begin = transpiled.data();
+                end = transpiled.data() + transpiled.size();
+
+                ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+                out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
         }
         else
         {

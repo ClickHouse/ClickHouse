@@ -5,6 +5,14 @@
 namespace DB
 {
 
+/// Transpile a query written in a foreign SQL dialect (`source_dialect`, e.g. "postgresql")
+/// to ClickHouse SQL using the polyglot-sql library. Throws on transpilation errors or when
+/// the input exceeds `max_query_size` (0 disables the limit). The returned string is a
+/// standalone ClickHouse query; because it is a real, owned buffer, inline
+/// `INSERT ... VALUES`/`FORMAT` data survives parsing (unlike a transient buffer), which is
+/// why the server transpiles up front (see executeQuery) rather than inside a parser.
+String transpilePolyglotToClickHouse(std::string_view query, std::string_view source_dialect, size_t max_query_size);
+
 /// Transpiles a SQL query from a foreign dialect to ClickHouse SQL using the
 /// polyglot-sql library and then parses the result with the standard ClickHouse
 /// parser.

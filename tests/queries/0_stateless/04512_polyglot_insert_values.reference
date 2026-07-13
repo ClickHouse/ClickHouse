@@ -1,0 +1,7 @@
+--- after VALUES inserts (expect: 10 4) ---
+10	4
+--- after INSERT SELECT (expect: 100 5) ---
+100	5
+--- boolean transpile (expect: 1 2) ---
+1	2
+SYNTAX_ERROR

@@ -2532,6 +2532,13 @@ void ClientBase::processParsedSingleQuery(
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
+        /// With a non-ClickHouse dialect (e.g. polyglot) the query text is a foreign SQL
+        /// statement; its transpiled form — including any inline INSERT data — differs from the
+        /// text the client holds, so the client cannot split the query from its data. Instead it
+        /// sends the whole query verbatim and lets the server transpile it and read the inline
+        /// data itself (the server keeps the transpiled query alive so the data pointers stay valid).
+        const bool send_query_verbatim = client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
+
         /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
         /// `send_table_structure_on_insert_with_inline_data = 0`), it takes precedence over `async_insert`
         /// on the client side: both paths send the data inline with the query, and the explicit user choice
@@ -2568,13 +2575,13 @@ void ClientBase::processParsedSingleQuery(
         /// Send part of the query without data, because data will be sent separately.
         /// But for asynchronous inserts or inline insert data mode we don't extract data,
         /// because it's needed to be done on server side.
-        if (insert && insert->data && !is_async_insert_with_inlined_data && !is_inline_insert_data && insert_query_without_data_length)
+        if (insert && insert->data && !is_async_insert_with_inlined_data && !is_inline_insert_data && !send_query_verbatim && insert_query_without_data_length)
             query = query_.substr(0, insert_query_without_data_length);
         else
             query = query_;
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data)
+        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data && !send_query_verbatim)
         {
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
